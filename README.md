@@ -12,17 +12,8 @@ npm install --save feathery-react-client-sdk
 
 ## Usage
 
-```jsx
-import React, { Component } from 'react'
+```
 
-import MyComponent from 'feathery-react-client-sdk'
-import 'feathery-react-client-sdk/dist/index.css'
-
-class Example extends Component {
-  render() {
-    return <MyComponent />
-  }
-}
 ```
 
 ## License
