@@ -6,8 +6,8 @@ import Component from './Component';
 const App = () => {
     return (
         <Feathery
-            sdkKey='ae33f89-e913-4e10-9fe7-c229931a382b'
-            userKey='Feathery'
+            sdkKey='some-key'
+            userKey='some-user'
             fallback={<div>Loading ... </div>}
         >
             <Component />
