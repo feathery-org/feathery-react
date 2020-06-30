@@ -14,7 +14,7 @@ npm install --save feathery-react-client-sdk
 
 ### `<Feathery>` Component
 
-The SDK exposes the `<Feathery>` component, inside which, flags are accessible. Your app, or the components which need access to flags should be wrapped inside the `<Feathery>` component. The component will render out all the children passed to it.
+This SDK exposes the `<Feathery>` component. Your app (or the component that needs to access user settings) should be wrapped with `<Feathery>`.
 
 ```JavaScript
 
@@ -26,14 +26,15 @@ import { Feathery } from 'feathery-react-client-sdk';
 
 1. `sdkKey` and `userKey`\
    Type: `string` or `boolean`\
-   The component expects `sdkKey` and `userKey` props to fetch flags. In case either are missing, or are passed in as `false`, the components does not fetch the flags, and the children are rendered.\
+   `sdkKey` is used for authentication and `userKey` refers to the user whose settings are being accessed. If either of these are missing or set to `false`, the settings are not fetched but the children are rendered by default.\
    Default: `false`
 2. `fallback`\
-   Type:`React Component`\
-   While the flags are being fetched, a fallback UI is rendered, which can be passed in by the `fallback` prop.\
+   Type: `React Component`\
+   This fallback component is rendered while user settings are unavailable.\
    Default: `null`
 3. `async`\
-   If the children components should render out even if the flags are not fetched, `async` prop can be passed in as `true`. While the flags are not loaded, the flags retunred by the hooks will be `null`, and it up to the children to render UI while the flags are loading. When `async` is true, `fallback` is ignored. \
+   Type: `boolean`\
+   If `true`, the children of `<Feathery>` will be rendered even if user settings are not yet available. In this case, user settings returned by the hook will be `null`. When `async` is `false`, `fallback` is ignored and rendering only happens once user settings become available.\
    Default: `false`
 
 **Usage**
