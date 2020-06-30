@@ -34,7 +34,7 @@ import { Feathery } from 'feathery-react-client-sdk';
    Default: `null`
 3. `async`\
    Type: `boolean`\
-   If `true`, the children of `<Feathery>` will be rendered even if user settings are not yet available. In this case, user settings returned by the hook will be `null`. When `async` is `false`, `fallback` is ignored and rendering only happens once user settings become available.\
+   If `true`, `fallback` is ignored and the children of `<Feathery>` will be rendered even if user settings are not yet available. In this case, user settings returned by the hook will be `null`.\
    Default: `false`
 
 **Usage**
@@ -43,7 +43,7 @@ Basic Usage
 
 ```JavaScript
 
-<Feathery sdkKey='SDK-KEY' userKey='USER_KEY'>
+<Feathery sdkKey='SDK_KEY' userKey='USER_KEY'>
     <App />
 </Feathery>
 
@@ -54,7 +54,7 @@ With `fallback`
 
 ```JavaScript
 
-<Feathery sdkKey='SDK-KEY' userKey='USER_KEY' fallback={<Loader />}>
+<Feathery sdkKey='SDK_KEY' userKey='USER_KEY' fallback={<Loader />}>
     <App />
 </Feathery>
 
@@ -65,7 +65,7 @@ With `async`
 
 ```JavaScript
 
-<Feathery sdkKey='SDK-KEY' userKey='USER_KEY' async>
+<Feathery sdkKey='SDK_KEY' userKey='USER_KEY' async>
     <App />
 </Feathery>
 
@@ -73,7 +73,7 @@ With `async`
 
 ### `useFeathery` Hook
 
-The SDK exposes the `useFeathery` hook, which can be used to access flags' state. It uses React's Context API under the hood and can only work in components inside the `<Feathery>` component.
+Use the `useFeathery` hook to access user settings. Since it uses React's Context API, it will only work in components inside `<Feathery>`.
 
 ```JavaScript
 
@@ -85,19 +85,19 @@ _It accepts no arguments._
 
 ### Return Value
 
-It returns the flag's state, which is an object consisting of the following keys:
+`useFeathery` returns user settings in an object with the following properties:
 
 1. `loading`\
    `boolean`\
-   `true` when flags are being loaded, `false` otherwise. Can be used to display a loaded when `async` is `true`.
+   `true` when settings are being fetched, `false` otherwise. Can be used to display loading state when `async` is `true`.
 
-2. `flags`\
+2. `settings`\
    `object` or `null`\
-   An object containing all the flags as key-value pairs. If the flags are not loaded, `flags` is `null`.
+   An object containing all of the settings as key-value pairs. If the settings are not yet loaded, `settings` is `null`.
 
 3. `error`\
    `Error object` or `false`\
-   If an error occures during the fetching of flags, like Fetch request failing, invalid keys etc., an `error` is set with an Error object.
+   If an error occures while settings are being fetched, `error` is set.
 
 ### Usage
 
@@ -105,13 +105,13 @@ It returns the flag's state, which is an object consisting of the following keys
 
 const MyComponent = () => {
 
-    { flags, error } = useFeathery();
+    { settings, error } = useFeathery();
 
-    // No need to check for loading when using with fallback, <Feathery> takes care of rendering loading UI.
+    // No need to check for loading when using fallback, <Feathery> takes care of rendering the loading UI.
     return(
         <>
-            { error && <div> Oops! En error occured: { error.message } </div> }
-            { flags && <div> Flags loaded! </div> }
+            { error && <div> Oops! An error occured: { error.message } </div> }
+            { flags && <div> Settings loaded! </div> }
         </>
     );
 }
