@@ -111,7 +111,7 @@ const MyComponent = () => {
     return(
         <>
             { error && <div> Oops! An error occured: { error.message } </div> }
-            { flags && <div> Settings loaded! </div> }
+            { settings && <div> Settings loaded! </div> }
         </>
     );
 }

@@ -2,11 +2,11 @@ import React from 'react';
 import { useFeathery } from 'feathery-react-client-sdk';
 
 export default function Component() {
-    const { error, loading, flags } = useFeathery();
+    const { error, loading, settings } = useFeathery();
 
     return (
         <>
-            {flags && <div>Flags Loaded!</div>}
+            {settings && <div>Settings Loaded!</div>}
             {error && <div>Error :( {error.message}</div>}
         </>
     );

@@ -7,7 +7,7 @@ import reducer from './reducer';
 
 const initialState = {
     client: null,
-    flags: null,
+    settings: null,
     error: false,
     loading: true
 };
@@ -32,10 +32,10 @@ function Feathery({
                 type: actionTypes.START,
                 client: featheryClient
             });
-            const flags = await featheryClient.fetch();
+            const settings = await featheryClient.fetch();
             dispatch({
                 type: actionTypes.LOADED,
-                flags: flags
+                settings: settings,
             });
         } catch (error) {
             dispatch({ type: actionTypes.ERROR, error });

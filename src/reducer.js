@@ -6,21 +6,21 @@ const reducer = (state, action) => {
             return {
                 ...state,
                 client: action.client,
-                flags: null,
+                settings: null,
                 error: false,
                 loading: true
             };
         case actionTypes.LOADED:
             return {
                 ...state,
-                flags: action.flags,
+                settings: action.settings,
                 error: false,
                 loading: false
             };
         case actionTypes.ERROR:
             return {
                 ...state,
-                flags: null,
+                settings: null,
                 loading: false,
                 error: action.error
             };
@@ -29,7 +29,7 @@ const reducer = (state, action) => {
                 ...state,
                 loading: false,
                 error: false,
-                flags: null,
+                settings: null,
                 client: null
             };
         default:
