@@ -2,11 +2,12 @@ import React from 'react';
 import { useFeathery } from 'feathery-react-client-sdk';
 
 export default function Component() {
-    const flagsState = useFeathery();
+    const { error, loading, flags } = useFeathery();
+
     return (
         <>
-            {flagsState.flags && <div>Flags Loaded!</div>}
-            {flagsState.error && <div>Error :( {flagsState.error.message}</div>}
+            {flags && <div>Flags Loaded!</div>}
+            {error && <div>Error :( {error.message}</div>}
         </>
     );
 }

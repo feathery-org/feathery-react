@@ -12,7 +12,7 @@ const initialState = {
     loading: true
 };
 
-export default function Feathery({
+function Feathery({
     sdkKey = false,
     userKey = false,
     children,
@@ -52,3 +52,5 @@ export default function Feathery({
         </featheryContext.Provider>
     );
 }
+
+export default React.memo(Feathery);
