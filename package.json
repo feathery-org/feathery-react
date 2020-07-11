@@ -51,6 +51,6 @@
     "dist"
   ],
   "dependencies": {
-    "feathery-js-client-sdk": "^1.0.7"
+    "feathery-js-client-sdk": "^1.0.10"
   }
 }
