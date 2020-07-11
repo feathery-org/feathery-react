@@ -32,7 +32,7 @@ function Feathery({
                 type: actionTypes.START,
                 client: featheryClient
             });
-            const settings = await featheryClient.fetch();
+            const settings = await featheryClient.resolve();
             dispatch({
                 type: actionTypes.LOADED,
                 settings: settings,
