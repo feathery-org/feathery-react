@@ -4,7 +4,7 @@
   "description": "React SDK for Feathery",
   "author": "rohan-dhar",
   "license": "MIT",
-  "repository": "https://github.com/bo-dun-1/feathery-react-client-sdk",
+  "repository": "https://github.com/feathery-org/feathery-react-client-sdk",
   "main": "dist/index.js",
   "module": "dist/index.modern.js",
   "source": "src/index.js",
