@@ -4677,10 +4677,10 @@ fb-watchman@^2.0.0:
   dependencies:
     bser "2.1.1"
 
-feathery-js-client-sdk@^1.0.11:
-  version "1.0.11"
-  resolved "https://registry.yarnpkg.com/feathery-js-client-sdk/-/feathery-js-client-sdk-1.0.11.tgz#b43bf0668e63d6bb0a0effcad47e9cc6f261e120"
-  integrity sha512-u0mrc0DrWX8BW6+ZWAIEzcQ+FnXO8Kl/Q4szhlltuKtptBRTp/0sx2D74dqccRKRA6x1ttudU1xeIIfqtkaj2A==
+feathery-js-client-sdk@^1.0.13:
+  version "1.0.13"
+  resolved "https://registry.yarnpkg.com/feathery-js-client-sdk/-/feathery-js-client-sdk-1.0.13.tgz#d36a72d08d1382f3b5606306fe34739c67c1e794"
+  integrity sha512-+jicgHAhGQ6f5v607jDGmosoAvBfVve5YMLStyH3rLzf5BmzUNu4GyF5ulprpA4fZlt5rL2Msl7TowFFUVUp7w==
   dependencies:
     jquery "^3.5.1"
 
