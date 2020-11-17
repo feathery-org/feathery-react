@@ -1,2 +1,3 @@
-export { default as Feathery } from './Feathery';
-export { default as useFeathery } from './useFeathery';
+import Feathery from './Feathery';
+
+export { Feathery };

@@ -2,7 +2,7 @@
   "name": "feathery-react-client-sdk",
   "version": "1.0.4",
   "description": "React SDK for Feathery",
-  "author": "rohan-dhar",
+  "author": "Boyang Dun",
   "license": "MIT",
   "repository": "https://github.com/feathery-org/feathery-react-client-sdk",
   "main": "dist/index.js",
@@ -24,7 +24,8 @@
     "deploy": "gh-pages -d example/build"
   },
   "peerDependencies": {
-    "react": "^16.0.0"
+    "react": "^16.13.1",
+    "react-dom": "^16.13.1"
   },
   "devDependencies": {
     "babel-eslint": "^10.0.3",
@@ -43,14 +44,22 @@
     "microbundle-crl": "^0.13.10",
     "npm-run-all": "^4.1.5",
     "prettier": "^2.0.4",
-    "react": "^16.13.1",
-    "react-dom": "^16.13.1",
     "react-scripts": "^3.4.1"
   },
   "files": [
     "dist"
   ],
   "dependencies": {
-    "feathery-js-client-sdk": "^1.0.13"
+    "@zendeskgarden/react-buttons": "^8.26.0",
+    "@zendeskgarden/react-dropdowns": "^8.26.0",
+    "@zendeskgarden/react-forms": "^8.26.0",
+    "@zendeskgarden/react-loaders": "^8.26.0",
+    "@zendeskgarden/react-theming": "^8.26.0",
+    "@zendeskgarden/react-typography": "^8.26.0",
+    "feathery-js-client-sdk": "^1.0.20",
+    "react-bootstrap": "^1.4.0",
+    "react-color": "^2.19.3",
+    "react-dropzone": "^11.2.4",
+    "styled-components": "^5.2.1"
   }
 }
