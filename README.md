@@ -120,4 +120,4 @@ const MyComponent = () => {
 
 ## License
 
-MIT © [rohan-dhar](https://github.com/rohan-dhar)
+MIT © [Peter Dun](https://github.com/bo-dun-1)
