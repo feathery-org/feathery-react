@@ -36,6 +36,7 @@ Basic Usage
 ```JavaScript
 
 <Feathery sdkKey='SDK_KEY' userKey='USER_KEY'/>
+```
 
 
 ## License
