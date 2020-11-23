@@ -50,16 +50,9 @@
     "dist"
   ],
   "dependencies": {
-    "@zendeskgarden/react-buttons": "^8.26.0",
-    "@zendeskgarden/react-dropdowns": "^8.26.0",
-    "@zendeskgarden/react-forms": "^8.26.0",
-    "@zendeskgarden/react-loaders": "^8.26.0",
-    "@zendeskgarden/react-theming": "^8.26.0",
-    "@zendeskgarden/react-typography": "^8.26.0",
     "feathery-js-client-sdk": "^1.0.20",
     "react-bootstrap": "^1.4.0",
     "react-color": "^2.19.3",
-    "react-dropzone": "^11.2.4",
     "styled-components": "^5.2.1"
   }
 }
