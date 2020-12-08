@@ -358,7 +358,7 @@ function Feathery({
                             <Button
                                 onClick={() => {
                                     if (
-                                        displayStep === null ||
+                                        displayStep !== null ||
                                         field.link === null
                                     )
                                         return;
@@ -370,7 +370,7 @@ function Feathery({
                             <div
                                 onClick={() => {
                                     if (
-                                        displayStep === null ||
+                                        displayStep !== null ||
                                         field.link === null
                                     )
                                         return;
