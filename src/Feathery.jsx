@@ -1,147 +1,103 @@
 import React, { useEffect, useState } from 'react';
 import FeatheryClient from 'feathery-js-client-sdk';
-import { DefaultDropdown, DefaultRadio } from './DefaultComponents';
 
-import { PALETTE } from '@zendeskgarden/react-theming';
-import { Button as DefaultButton } from '@zendeskgarden/react-buttons';
-import { LG, XXL, Paragraph } from '@zendeskgarden/react-typography';
-import { Progress } from '@zendeskgarden/react-loaders';
-import {
-    Field,
-    Input,
-    Label,
-    Checkbox,
-    Range
-} from '@zendeskgarden/react-forms';
-
+import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
+import ProgressBar from 'react-bootstrap/ProgressBar';
 import { SketchPicker } from 'react-color';
-import { useDropzone } from 'react-dropzone';
 
 const uuidV4Regex = /^[0-9A-F]{8}-[0-9A-F]{4}-[4][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i;
 const angleBracketRegex = /<[^>]*>/g;
 
-export function Feathery({
-    sdkKey,
-    userKey,
+// sdkKey and userKey are required if displayStep === null
+// totalSteps is required if displayStep !== null
+function Feathery({
+    sdkKey = null,
+    userKey = null,
     clientKey = null,
-    Button = DefaultButton,
-    Radio = DefaultRadio,
-    Dropdown = DefaultDropdown,
-    redirectURI = null
+    redirectURI = null,
+
+    displayStep = null,
+    showGrid = false,
+    totalSteps = null,
+    setExternalState = () => {}
 }) {
     const [featheryClient, setFeatheryClient] = useState(null);
     const [errorMessage, setErrorMessage] = useState('');
 
-    const [servars, setServars] = useState([]);
-    const [header, setHeader] = useState('');
-    const [actions, setActions] = useState([]);
-    const [description, setDescription] = useState('');
-    const [stepNum, setStepNum] = useState(0);
-    const [maxSteps, setMaxSteps] = useState(0);
     const [finishConfig, setFinishConfig] = useState(false);
     const [displayColorPicker, setDisplayColorPicker] = useState({});
-
-    const { acceptedFiles, getRootProps, getInputProps } = useDropzone({
-        accept: 'image/*',
-        maxFiles: 1
-    });
-
-    let acceptedFileItem = null;
-    if (acceptedFiles.length > 0) {
-        const acceptedFile = acceptedFiles[0];
-        acceptedFileItem = `${acceptedFile.path} - ${acceptedFile.size} bytes`;
-    }
+    const [acceptedFile, setAcceptedFile] = useState(null);
+    const [step, setStep] = useState(displayStep);
 
     useEffect(() => {
-        const clientInstance = new FeatheryClient(sdkKey, userKey);
-        setFeatheryClient(clientInstance);
-        clientInstance
-            .fetchFirstIncompleteStep()
-            .then((step) => {
-                const stepNumber = step.step_number;
-                if (stepNumber === null) setFinishConfig(true);
-                else {
-                    setStepNum(stepNumber);
-                    setMaxSteps(step.total_steps);
-                    setServars(fillDefaults(step.servars));
-                    if (step.header) setHeader(step.header);
-                    if (step.description) setDescription(step.description);
-                    if (step.actions) setActions(step.actions);
-                }
-            })
-            .catch((error) => {
-                setErrorMessage(error.toString());
-            });
-    }, [sdkKey, userKey]);
+        if (displayStep !== null) setStep(displayStep);
+    }, [displayStep]);
 
-    if (finishConfig && redirectURI) {
+    useEffect(() => {
+        if (displayStep === null) {
+            const clientInstance = new FeatheryClient(sdkKey, userKey);
+            setFeatheryClient(clientInstance);
+            clientInstance
+                .fetchFirstIncompleteStep()
+                .then((step) => setStep(step))
+                .catch((error) => setErrorMessage(error.toString()));
+        }
+    }, [displayStep, sdkKey, userKey]);
+
+    if (displayStep === null && finishConfig && redirectURI) {
         window.location.href = redirectURI;
         return null;
     }
-
-    const fillDefaults = (servars) => {
-        const colorPickerDisplays = {};
-        const filledServars = servars.map((s) => {
-            if (s.value === null) {
-                if (s.type === 'checkbox') s.value = false;
-                else if (s.type === 'multiselect') s.value = [];
-                else if (s.type === 'integer_field') s.value = 0;
-                else if (s.type === 'hex_color') {
-                    s.value = '000000';
-                    colorPickerDisplays[s.id] = false;
-                } else s.value = '';
-            }
-            return s;
-        });
-        setDisplayColorPicker(colorPickerDisplays);
-        return filledServars;
-    };
 
     const handleChange = (e) => {
         const target = e.target;
         const value =
             target.type === 'checkbox' ? target.checked : target.value;
         const name = target.name;
-        const newServars = servars.map((s) => {
-            if (s.id !== name) return s;
-            if (s.type === 'integer_field') {
-                s.value = parseInt(value);
+        const newServarFields = step.servar_fields.map((field) => {
+            const servar = field.servar;
+            if (servar.id !== name) return field;
+            if (servar.type === 'integer_field') {
+                field.servar.value = parseInt(value);
             }
-            s.value = value;
-            return s;
+            field.servar.value = value;
+            return field;
         });
-        setServars(newServars);
+        setStep({ ...step, servar_fields: newServarFields });
     };
 
     const handleDropdownChange = (servarID) => (item) => {
-        const newServars = servars.map((s) => {
-            if (s.id !== servarID) return s;
-            s.value = item;
-            return s;
+        const newServarFields = step.servar_fields.map((field) => {
+            const servar = field.servar;
+            if (servar.id !== servarID) return field;
+            field.servar.value = item;
+            return field;
         });
-        setServars(newServars);
+        setStep({ ...step, servar_fields: newServarFields });
     };
 
     const handleMultiselectChange = (servarID) => (e) => {
         const target = e.target;
         const opt = target.name;
-        const newServars = servars.map((s) => {
-            if (s.id !== servarID) return s;
-            if (target.checked) s.value.push(opt);
-            else s.value = s.value.filter((val) => val !== opt);
-            return s;
+        const newServarFields = step.servar_fields.map((field) => {
+            const servar = field.servar;
+            if (servar.id !== servarID) return field;
+            if (target.checked) servar.value.push(opt);
+            else servar.value = servar.value.filter((val) => val !== opt);
+            return field;
         });
-        setServars(newServars);
+        setStep({ ...step, servar_fields: newServarFields });
     };
 
     const handleColorChange = (servarID) => (color) => {
-        const newServars = servars.map((s) => {
-            if (s.id !== servarID) return s;
-            s.value = color.hex.substr(1, 6);
-            return s;
+        const newServarFields = step.servar_fields.map((field) => {
+            const servar = field.servar;
+            if (servar.id !== servarID) return field;
+            servar.value = color.hex.substr(1, 6);
+            return field;
         });
-        setServars(newServars);
+        setStep({ ...step, servar_fields: newServarFields });
     };
 
     const handleColorPickerClick = (servarID) => () => {
@@ -233,26 +189,32 @@ export function Feathery({
 
     const submit = () => {
         let fileUploadServarID = '';
-        servars.forEach((s) => {
-            if (s.type === 'file_upload') {
-                if (acceptedFileItem === null) return;
-                fileUploadServarID = s.id;
+        step.servar_fields.forEach((field) => {
+            const servar = field.servar;
+            if (servar.type === 'file_upload') {
+                if (acceptedFile === null) return;
+                fileUploadServarID = servar.id;
             }
         });
 
-        const submitServars = servars
-            .filter((s) => s.type !== 'file_upload')
-            .map((s) => {
-                return { key: s.key, [s.type]: s.value };
+        const submitServars = step.servar_fields
+            .filter((field) => field.servar.type !== 'file_upload')
+            .map((field) => {
+                const servar = field.servar;
+                return { key: servar.key, [servar.type]: servar.value };
             });
         featheryClient
-            .submitStep(stepNum, submitServars)
+            .submitStep(step.step_number, submitServars)
             .then(async (step) => {
-                const servarLookupMap = servars.reduce((map, servar) => {
-                    map[servar.id] = servar.value;
-                    return map;
-                }, {});
-                for (const action of actions) {
+                const servarLookupMap = step.servar_fields.reduce(
+                    (map, field) => {
+                        const servar = field.servar;
+                        map[servar.id] = servar.value;
+                        return map;
+                    },
+                    {}
+                );
+                for (const action of step.actions) {
                     const options = {
                         method: action.method.toUpperCase(),
                         headers: { Authorization: `Bearer ${clientKey}` }
@@ -269,7 +231,7 @@ export function Feathery({
                             return;
                         }
                         const body = new FormData();
-                        body.append(action.form_data_key, acceptedFiles[0]);
+                        body.append(action.form_data_key, acceptedFile);
                         options.body = body;
                     }
 
@@ -289,16 +251,7 @@ export function Feathery({
                 }
 
                 if (step.step_number === null) setFinishConfig(true);
-                else {
-                    setServars(fillDefaults(step.servars));
-                    setStepNum(step.step_number);
-                    if (step.header) setHeader(step.header);
-                    else setHeader('');
-                    if (step.description) setDescription(step.description);
-                    else setDescription('');
-                    if (step.actions) setActions(step.actions);
-                    else setActions([]);
-                }
+                else setStep(step);
             })
             .catch((error) => {
                 if (error) setErrorMessage(error.toString());
@@ -313,241 +266,331 @@ export function Feathery({
         return (
             <div
                 style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    width: '100%',
-                    textAlign: 'left',
-                    justifyItems: 'center',
-                    alignItems: 'center'
+                    height: '100%',
+                    backgroundColor: '#F7F8FA',
+                    backgroundSize: '100% 100%',
+                    display: 'grid',
+                    gridTemplateColumns: step.grid_columns
+                        .map((c) => `${c}fr`)
+                        .join(' '),
+                    gridTemplateRows: step.grid_rows
+                        .map((c) => `${c}fr`)
+                        .join(' '),
+                    ...(step.background_image
+                        ? { backgroundImage: `url(${step.background_image})` }
+                        : {})
                 }}
             >
-                {stepNum >= 0 && maxSteps > 0 && (
-                    <div style={{ width: '50%', textAlign: 'center' }}>
-                        <Paragraph style={{ marginBottom: 10 }}>
-                            {Math.round((stepNum / maxSteps) * 100)}% completed
-                        </Paragraph>
-                        <Progress
-                            value={(stepNum / maxSteps) * 100}
-                            color={PALETTE.blue[600]}
+                {showGrid &&
+                    Array.from(
+                        { length: step.grid_columns.length - 1 },
+                        (_, i) => (
+                            <div
+                                style={{
+                                    gridColumn: i + 1,
+                                    gridRowStart: 1,
+                                    gridRowEnd: -1,
+                                    borderRight: '3px dashed #DEDFE2'
+                                }}
+                            />
+                        )
+                    )}
+                {showGrid &&
+                    Array.from(
+                        { length: step.grid_rows.length - 1 },
+                        (_, i) => (
+                            <div
+                                style={{
+                                    gridRowStart: i + 1,
+                                    gridColumnStart: 1,
+                                    gridColumnEnd: -1,
+                                    borderBottom: '3px dashed #DEDFE2'
+                                }}
+                            />
+                        )
+                    )}
+                {step.progress_bar && (
+                    <div
+                        style={{
+                            gridColumn: step.progress_bar.column_index + 1,
+                            gridRow: step.progress_bar.row_index + 1,
+                            alignItems: step.progress_bar.layout,
+                            fontStyle: step.progress_bar.font_italic
+                                ? 'italic'
+                                : 'normal',
+                            fontWeight: step.progress_bar.font_weight,
+                            fontFamily: step.progress_bar.font_family,
+                            fontSize: `${step.progress_bar.font_size}px`,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'center',
+                            ...(displayStep ? { cursor: 'pointer' } : {})
+                        }}
+                        onClick={() => setExternalState('progressBar', true)}
+                    >
+                        {Math.round((step.step_number / totalSteps) * 100)}%
+                        completed
+                        <ProgressBar
+                            style={{ width: '100%' }}
+                            now={(step.step_number / totalSteps) * 100}
                         />
                     </div>
                 )}
-                {header && (
-                    // eslint-disable-next-line react/jsx-pascal-case
-                    <XXL isBold style={{ marginTop: 20, marginBottom: 30 }}>
-                        {header}
-                    </XXL>
-                )}
-                {description && (
-                    // eslint-disable-next-line react/jsx-pascal-case
-                    <LG
+                {step.text_fields.map((field, i) => (
+                    <div
+                        key={i}
                         style={{
-                            marginBottom: 30,
-                            overflowWrap: 'break-word',
-                            maxWidth: '600px'
+                            gridColumn: field.column_index + 1,
+                            gridRow: field.row_index + 1,
+                            alignItems: field.layout,
+                            fontStyle: field.font_italic ? 'italic' : 'normal',
+                            fontWeight: field.font_weight,
+                            fontFamily: field.font_family,
+                            fontSize: `${field.font_size}px`,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'center',
+                            ...(displayStep ? { cursor: 'pointer' } : {})
                         }}
-                        dangerouslySetInnerHTML={{ __html: description }}
-                    />
-                )}
-                <div
-                    style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-around',
-                        alignItems: 'left',
-                        minWidth: 400,
-                        width: '600px',
-                        minHeight: 120 * servars.length
-                    }}
-                >
-                    {servars.map((servar) => {
-                        switch (servar.type) {
-                            case 'file_upload':
-                                return (
-                                    <Field>
-                                        <Form.Label>{servar.name}</Form.Label>
-                                        <section
-                                            style={{
-                                                flex: 1,
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                alignItems: 'center',
-                                                padding: '20px',
-                                                borderWidth: '2px',
-                                                borderRadius: '2px',
-                                                borderColor: '#eeeeee',
-                                                borderStyle: 'dashed',
-                                                backgroundColor: '#ffffff',
-                                                color: '#bdbdbd',
-                                                outline: 'none',
-                                                transition:
-                                                    'border .24s ease-in-out'
-                                            }}
-                                            {...getRootProps({
-                                                className: 'dropzone'
-                                            })}
-                                        >
-                                            <input {...getInputProps()} />
-                                            <em>
-                                                {acceptedFileItem ||
-                                                    'No image uploaded'}
-                                            </em>
-                                        </section>
-                                    </Field>
-                                );
-                            case 'checkbox':
-                                return (
-                                    <Field>
-                                        <Checkbox
-                                            name={servar.id}
-                                            checked={servar.value}
-                                            onChange={handleChange}
-                                        >
-                                            <Form.Label>
-                                                {servar.name}
-                                            </Form.Label>
-                                        </Checkbox>
-                                    </Field>
-                                );
-                            case 'dropdown':
-                                return (
-                                    <Dropdown
-                                        servar={servar}
-                                        handleDropdownChange={
-                                            handleDropdownChange
+                        onClick={() => setExternalState('text', i)}
+                    >
+                        {field.is_button ? (
+                            <Button
+                                onClick={() => {
+                                    if (
+                                        displayStep === null ||
+                                        field.link === null
+                                    )
+                                        return;
+                                    submit();
+                                }}
+                                dangerouslySetInnerHTML={{ __html: field.text }}
+                            />
+                        ) : (
+                            <div
+                                onClick={() => {
+                                    if (
+                                        displayStep === null ||
+                                        field.link === null
+                                    )
+                                        return;
+                                    submit();
+                                }}
+                                style={{
+                                    ...(field.link === null
+                                        ? {}
+                                        : { cursor: 'pointer' })
+                                }}
+                                dangerouslySetInnerHTML={{ __html: field.text }}
+                            />
+                        )}
+                    </div>
+                ))}
+                {step.servar_fields.map((field, i) => {
+                    const servar = field.servar;
+                    let servarComponent;
+
+                    switch (servar.type) {
+                        case 'file_upload':
+                            servarComponent = (
+                                <Form.Group>
+                                    <Form.Label>{servar.name}</Form.Label>
+                                    <Form.File
+                                        id={servar.id}
+                                        label={
+                                            acceptedFile
+                                                ? acceptedFile.name
+                                                : 'Upload Image'
                                         }
+                                        accept='image/*'
+                                        custom
+                                        onChange={(e) => {
+                                            setAcceptedFile(e.target.files[0]);
+                                        }}
                                     />
-                                );
-                            case 'multiselect':
-                                return (
-                                    <div>
-                                        <Form.Label>{servar.name}</Form.Label>
-                                        {servar.metadata.options.map((opt) => {
-                                            return (
-                                                <Field key={opt}>
-                                                    <Checkbox
-                                                        name={opt}
-                                                        checked={servar.value.includes(
-                                                            opt
-                                                        )}
-                                                        onChange={handleMultiselectChange(
-                                                            servar.id
-                                                        )}
-                                                    >
-                                                        <Label>{opt}</Label>
-                                                    </Checkbox>
-                                                </Field>
-                                            );
-                                        })}
-                                    </div>
-                                );
-                            case 'select':
-                                return (
-                                    <div>
-                                        <Form.Label>{servar.name}</Form.Label>
-                                        {servar.metadata.options.map((opt) => {
-                                            return (
-                                                <Radio
-                                                    radioID={servar.id}
-                                                    checked={
-                                                        servar.value === opt
-                                                    }
-                                                    onChange={handleChange}
-                                                    value={opt}
-                                                    key={opt}
-                                                />
-                                            );
-                                        })}
-                                    </div>
-                                );
-                            case 'integer_field':
-                                return (
-                                    <Field>
-                                        <Form.Label>
-                                            {servar.name}: <b>{servar.value}</b>
-                                        </Form.Label>
-                                        <Range
-                                            name={servar.id}
-                                            type='range'
-                                            step={1}
-                                            value={servar.value}
-                                            onChange={handleChange}
-                                        />
-                                    </Field>
-                                );
-                            case 'hex_color':
-                                return (
-                                    <div>
-                                        <Field>
-                                            <Form.Label>
-                                                {servar.name}
-                                            </Form.Label>
+                                </Form.Group>
+                            );
+                            break;
+                        case 'checkbox':
+                            servarComponent = (
+                                <Form.Group>
+                                    <Form.Check
+                                        type='checkbox'
+                                        id={servar.id}
+                                        label={servar.name}
+                                        checked={servar.value}
+                                        onChange={handleChange}
+                                        custom
+                                    />
+                                </Form.Group>
+                            );
+                            break;
+                        case 'dropdown':
+                            servarComponent = (
+                                <Form.Group>
+                                    <Form.Label>{servar.name}</Form.Label>
+                                    <Form.Control
+                                        as='select'
+                                        onChange={handleDropdownChange(
+                                            servar.id
+                                        )}
+                                    >
+                                        {servar.metadata.options.map(
+                                            (option) => (
+                                                <option key={option}>
+                                                    {option}
+                                                </option>
+                                            )
+                                        )}
+                                    </Form.Control>
+                                </Form.Group>
+                            );
+                            break;
+                        case 'multiselect':
+                            servarComponent = (
+                                <Form.Group>
+                                    <Form.Label>{servar.name}</Form.Label>
+                                    {servar.metadata.options.map((opt) => {
+                                        return (
+                                            <Form.Check
+                                                type='checkbox'
+                                                id={opt}
+                                                key={opt}
+                                                label={opt}
+                                                checked={servar.value.includes(
+                                                    opt
+                                                )}
+                                                onChange={handleMultiselectChange(
+                                                    servar.id
+                                                )}
+                                                custom
+                                            />
+                                        );
+                                    })}
+                                </Form.Group>
+                            );
+                            break;
+                        case 'select':
+                            servarComponent = (
+                                <Form.Group>
+                                    <Form.Label>{servar.name}</Form.Label>
+                                    {servar.metadata.options.map((opt) => {
+                                        return (
+                                            <Form.Check
+                                                type='radio'
+                                                id={opt}
+                                                label={opt}
+                                                checked={servar.value === opt}
+                                                onChange={handleChange}
+                                                value={opt}
+                                                key={opt}
+                                                custom
+                                            />
+                                        );
+                                    })}
+                                </Form.Group>
+                            );
+                            break;
+                        case 'integer_field':
+                            servarComponent = (
+                                <Form.Group>
+                                    <Form.Label>
+                                        {servar.name}: <b>0</b>
+                                    </Form.Label>
+                                    <Form.Control
+                                        type='range'
+                                        step={1}
+                                        value={servar.value}
+                                        custom
+                                        onChange={handleChange}
+                                    />
+                                </Form.Group>
+                            );
+                            break;
+                        case 'hex_color':
+                            servarComponent = (
+                                <Form.Group>
+                                    <Form.Label>{servar.name}</Form.Label>
+                                    <div
+                                        style={{
+                                            width: '36px',
+                                            height: '36px',
+                                            background: `#${servar.value}`,
+                                            cursor: 'pointer'
+                                        }}
+                                        onClick={handleColorPickerClick(
+                                            servar.id
+                                        )}
+                                    />
+                                    {displayColorPicker[servar.id] ? (
+                                        <div
+                                            style={{
+                                                position: 'absolute',
+                                                zIndex: 2
+                                            }}
+                                        >
                                             <div
                                                 style={{
-                                                    width: '36px',
-                                                    height: '36px',
-                                                    background: `#${servar.value}`,
-                                                    cursor: 'pointer'
+                                                    position: 'fixed',
+                                                    top: '0px',
+                                                    right: '0px',
+                                                    bottom: '0px',
+                                                    left: '0px'
                                                 }}
                                                 onClick={handleColorPickerClick(
                                                     servar.id
                                                 )}
                                             />
-                                            {displayColorPicker[servar.id] ? (
-                                                <div
-                                                    style={{
-                                                        position: 'absolute',
-                                                        zIndex: 2
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            position: 'fixed',
-                                                            top: '0px',
-                                                            right: '0px',
-                                                            bottom: '0px',
-                                                            left: '0px'
-                                                        }}
-                                                        onClick={handleColorPickerClick(
-                                                            servar.id
-                                                        )}
-                                                    />
-                                                    <SketchPicker
-                                                        color={`#${servar.value}`}
-                                                        onChange={handleColorChange(
-                                                            servar.id
-                                                        )}
-                                                    />
-                                                </div>
-                                            ) : null}
-                                        </Field>
-                                    </div>
-                                );
-                            default:
-                                return (
-                                    <Field>
-                                        <Form.Label>{servar.name}</Form.Label>
-                                        <Input
-                                            name={servar.id}
-                                            type='text'
-                                            value={servar.value}
-                                            onChange={handleChange}
-                                        />
-                                    </Field>
-                                );
-                        }
-                    })}
-                </div>
-                <Button
-                    isPrimary
-                    onClick={() => submit()}
-                    style={{ marginTop: '20px' }}
-                >
-                    {stepNum + 1 === maxSteps ? 'Finish' : 'Next →'}
-                </Button>
+                                            <SketchPicker
+                                                color={`#${servar.value}`}
+                                                onChange={handleColorChange(
+                                                    servar.id
+                                                )}
+                                            />
+                                        </div>
+                                    ) : null}
+                                </Form.Group>
+                            );
+                            break;
+                        default:
+                            servarComponent = (
+                                <Form.Group>
+                                    <Form.Label>{servar.name}</Form.Label>
+                                    <Form.Control
+                                        as='textarea'
+                                        value={servar.value}
+                                        onChange={handleChange}
+                                    />
+                                </Form.Group>
+                            );
+                    }
+                    return (
+                        <div
+                            style={{
+                                gridColumn: field.column_index + 1,
+                                gridRow: field.row_index + 1,
+                                alignItems: field.layout,
+                                fontStyle: field.font_italic
+                                    ? 'italic'
+                                    : 'normal',
+                                fontWeight: field.font_weight,
+                                fontFamily: field.font_family,
+                                fontSize: `${field.font_size}px`,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'center',
+                                cursor: 'pointer'
+                            }}
+                            onClick={() => setExternalState('servar', i)}
+                            key={i}
+                        >
+                            {servarComponent}
+                        </div>
+                    );
+                })}
             </div>
         );
     }
 }
 
-export default React.memo(Feathery);
+export { Feathery };

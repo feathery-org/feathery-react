@@ -1,3 +1,3 @@
-import Feathery from './Feathery';
+import { Feathery } from './Feathery';
 
 export { Feathery };
