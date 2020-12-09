@@ -50,6 +50,7 @@
     "dist"
   ],
   "dependencies": {
+    "@zendeskgarden/react-loaders": "^8.28.1",
     "bootstrap": "^4.5.3",
     "feathery-js-client-sdk": "^1.0.20",
     "react-bootstrap": "^1.4.0",
