@@ -261,6 +261,7 @@ function Feathery({
                 <div
                     style={{
                         height: '100%',
+                        minHeight: '100%',
                         backgroundColor: '#F7F8FA',
                         backgroundSize: '100% 100%',
                         display: 'grid',
