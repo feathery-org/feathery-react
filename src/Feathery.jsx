@@ -270,6 +270,7 @@ function Feathery({
                     backgroundColor: '#F7F8FA',
                     backgroundSize: '100% 100%',
                     display: 'grid',
+                    overflow: 'hidden',
                     gridTemplateColumns: step.grid_columns
                         .map((c) => `${c}fr`)
                         .join(' '),
