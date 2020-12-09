@@ -54,7 +54,6 @@ function Feathery({
 
     const handleChange = (e) => {
         const target = e.target;
-        console.log(target);
         const value =
             target.type === 'checkbox' ? target.checked : target.value;
         const id = target.id;
