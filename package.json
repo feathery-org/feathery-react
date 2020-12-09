@@ -50,6 +50,7 @@
     "dist"
   ],
   "dependencies": {
+    "bootstrap": "^4.5.3",
     "feathery-js-client-sdk": "^1.0.20",
     "react-bootstrap": "^1.4.0",
     "react-color": "^2.19.3",

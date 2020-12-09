@@ -3,8 +3,10 @@ import FeatheryClient from 'feathery-js-client-sdk';
 
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
-import ProgressBar from 'react-bootstrap/ProgressBar';
+import { Progress } from '@zendeskgarden/react-loaders'
 import { SketchPicker } from 'react-color';
+
+import 'bootstrap/dist/css/bootstrap.min.css';
 
 const uuidV4Regex = /^[0-9A-F]{8}-[0-9A-F]{4}-[4][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i;
 const angleBracketRegex = /<[^>]*>/g;
@@ -52,26 +54,16 @@ function Feathery({
 
     const handleChange = (e) => {
         const target = e.target;
+        console.log(target);
         const value =
             target.type === 'checkbox' ? target.checked : target.value;
-        const name = target.name;
+        const id = target.id;
         const newServarFields = step.servar_fields.map((field) => {
             const servar = field.servar;
-            if (servar.id !== name) return field;
-            if (servar.type === 'integer_field') {
+            if (servar.id !== id) return field;
+            if (servar.type === 'integer_field')
                 field.servar.value = parseInt(value);
-            }
-            field.servar.value = value;
-            return field;
-        });
-        setStep({ ...step, servar_fields: newServarFields });
-    };
-
-    const handleDropdownChange = (servarID) => (item) => {
-        const newServarFields = step.servar_fields.map((field) => {
-            const servar = field.servar;
-            if (servar.id !== servarID) return field;
-            field.servar.value = item;
+            else field.servar.value = value;
             return field;
         });
         setStep({ ...step, servar_fields: newServarFields });
@@ -205,7 +197,7 @@ function Feathery({
             });
         featheryClient
             .submitStep(step.step_number, submitServars)
-            .then(async (step) => {
+            .then(async (newStep) => {
                 const servarLookupMap = step.servar_fields.reduce(
                     (map, field) => {
                         const servar = field.servar;
@@ -250,323 +242,104 @@ function Feathery({
                     if (action.response_params) await timeout(1000, promise);
                 }
 
-                if (step.step_number === null) setFinishConfig(true);
-                else setStep(step);
+                if (newStep.step_number === null) setFinishConfig(true);
+                else setStep(newStep);
             })
             .catch((error) => {
                 if (error) setErrorMessage(error.toString());
             });
     };
 
-    if (errorMessage) {
-        return <div>{errorMessage}</div>;
-    } else if (finishConfig) {
+    if (finishConfig) {
         return <div>Finished</div>;
+    } else if (step === null) {
+        return null;
     } else {
+        const maxSteps = displayStep ? totalSteps : step.total_steps;
         return (
-            <div
-                style={{
-                    height: '100%',
-                    backgroundColor: '#F7F8FA',
-                    backgroundSize: '100% 100%',
-                    display: 'grid',
-                    overflow: 'hidden',
-                    gridTemplateColumns: step.grid_columns
-                        .map((c) => `${c}fr`)
-                        .join(' '),
-                    gridTemplateRows: step.grid_rows
-                        .map((c) => `${c}fr`)
-                        .join(' '),
-                    ...(step.background_image
-                        ? { backgroundImage: `url(${step.background_image})` }
-                        : {})
-                }}
-            >
-                {showGrid &&
-                    Array.from(
-                        { length: step.grid_columns.length - 1 },
-                        (_, i) => (
-                            <div
-                                style={{
-                                    gridColumn: i + 1,
-                                    gridRowStart: 1,
-                                    gridRowEnd: -1,
-                                    borderRight: '3px dashed #DEDFE2'
-                                }}
-                            />
-                        )
-                    )}
-                {showGrid &&
-                    Array.from(
-                        { length: step.grid_rows.length - 1 },
-                        (_, i) => (
-                            <div
-                                style={{
-                                    gridRowStart: i + 1,
-                                    gridColumnStart: 1,
-                                    gridColumnEnd: -1,
-                                    borderBottom: '3px dashed #DEDFE2'
-                                }}
-                            />
-                        )
-                    )}
-                {step.progress_bar && (
-                    <div
-                        style={{
-                            gridColumn: step.progress_bar.column_index + 1,
-                            gridRow: step.progress_bar.row_index + 1,
-                            alignItems: step.progress_bar.layout,
-                            fontStyle: step.progress_bar.font_italic
-                                ? 'italic'
-                                : 'normal',
-                            fontWeight: step.progress_bar.font_weight,
-                            fontFamily: step.progress_bar.font_family,
-                            fontSize: `${step.progress_bar.font_size}px`,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            justifyContent: 'center',
-                            ...(displayStep ? { cursor: 'pointer' } : {})
-                        }}
-                        onClick={() => setExternalState('progressBar', true)}
-                    >
-                        {Math.round((step.step_number / totalSteps) * 100)}%
-                        completed
-                        <ProgressBar
-                            style={{ width: '100%' }}
-                            now={(step.step_number / totalSteps) * 100}
-                        />
-                    </div>
-                )}
-                {step.text_fields.map((field, i) => (
-                    <div
-                        key={i}
-                        style={{
-                            gridColumn: field.column_index + 1,
-                            gridRow: field.row_index + 1,
-                            alignItems: field.layout,
-                            fontStyle: field.font_italic ? 'italic' : 'normal',
-                            fontWeight: field.font_weight,
-                            fontFamily: field.font_family,
-                            fontSize: `${field.font_size}px`,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            justifyContent: 'center',
-                            ...(displayStep ? { cursor: 'pointer' } : {})
-                        }}
-                        onClick={() => setExternalState('text', i)}
-                    >
-                        {field.is_button ? (
-                            <Button
-                                onClick={() => {
-                                    if (
-                                        displayStep !== null ||
-                                        field.link === null
-                                    )
-                                        return;
-                                    submit();
-                                }}
-                                dangerouslySetInnerHTML={{ __html: field.text }}
-                            />
-                        ) : (
-                            <div
-                                onClick={() => {
-                                    if (
-                                        displayStep !== null ||
-                                        field.link === null
-                                    )
-                                        return;
-                                    submit();
-                                }}
-                                style={{
-                                    ...(field.link === null
-                                        ? {}
-                                        : { cursor: 'pointer' })
-                                }}
-                                dangerouslySetInnerHTML={{ __html: field.text }}
-                            />
+            <div>
+                {errorMessage && <div>{errorMessage}</div>}
+                <div
+                    style={{
+                        height: '100%',
+                        backgroundColor: '#F7F8FA',
+                        backgroundSize: '100% 100%',
+                        display: 'grid',
+                        overflow: 'hidden',
+                        gridTemplateColumns: step.grid_columns
+                            .map((c) => `${c}fr`)
+                            .join(' '),
+                        gridTemplateRows: step.grid_rows
+                            .map((c) => `${c}fr`)
+                            .join(' '),
+                        ...(step.background_image
+                            ? {
+                                  backgroundImage: `url(${step.background_image})`
+                              }
+                            : {})
+                    }}
+                >
+                    {showGrid &&
+                        Array.from(
+                            { length: step.grid_columns.length - 1 },
+                            (_, i) => (
+                                <div
+                                    style={{
+                                        gridColumn: i + 1,
+                                        gridRowStart: 1,
+                                        gridRowEnd: -1,
+                                        borderRight: '3px dashed #DEDFE2'
+                                    }}
+                                />
+                            )
                         )}
-                    </div>
-                ))}
-                {step.servar_fields.map((field, i) => {
-                    const servar = field.servar;
-                    let servarComponent;
-
-                    switch (servar.type) {
-                        case 'file_upload':
-                            servarComponent = (
-                                <Form.Group>
-                                    <Form.Label>{servar.name}</Form.Label>
-                                    <Form.File
-                                        id={servar.id}
-                                        label={
-                                            acceptedFile
-                                                ? acceptedFile.name
-                                                : 'Upload Image'
-                                        }
-                                        accept='image/*'
-                                        custom
-                                        onChange={(e) => {
-                                            setAcceptedFile(e.target.files[0]);
-                                        }}
-                                    />
-                                </Form.Group>
-                            );
-                            break;
-                        case 'checkbox':
-                            servarComponent = (
-                                <Form.Group>
-                                    <Form.Check
-                                        type='checkbox'
-                                        id={servar.id}
-                                        label={servar.name}
-                                        checked={servar.value}
-                                        onChange={handleChange}
-                                        custom
-                                    />
-                                </Form.Group>
-                            );
-                            break;
-                        case 'dropdown':
-                            servarComponent = (
-                                <Form.Group>
-                                    <Form.Label>{servar.name}</Form.Label>
-                                    <Form.Control
-                                        as='select'
-                                        onChange={handleDropdownChange(
-                                            servar.id
-                                        )}
-                                    >
-                                        {servar.metadata.options.map(
-                                            (option) => (
-                                                <option key={option}>
-                                                    {option}
-                                                </option>
-                                            )
-                                        )}
-                                    </Form.Control>
-                                </Form.Group>
-                            );
-                            break;
-                        case 'multiselect':
-                            servarComponent = (
-                                <Form.Group>
-                                    <Form.Label>{servar.name}</Form.Label>
-                                    {servar.metadata.options.map((opt) => {
-                                        return (
-                                            <Form.Check
-                                                type='checkbox'
-                                                id={opt}
-                                                key={opt}
-                                                label={opt}
-                                                checked={servar.value.includes(
-                                                    opt
-                                                )}
-                                                onChange={handleMultiselectChange(
-                                                    servar.id
-                                                )}
-                                                custom
-                                            />
-                                        );
-                                    })}
-                                </Form.Group>
-                            );
-                            break;
-                        case 'select':
-                            servarComponent = (
-                                <Form.Group>
-                                    <Form.Label>{servar.name}</Form.Label>
-                                    {servar.metadata.options.map((opt) => {
-                                        return (
-                                            <Form.Check
-                                                type='radio'
-                                                id={opt}
-                                                label={opt}
-                                                checked={servar.value === opt}
-                                                onChange={handleChange}
-                                                value={opt}
-                                                key={opt}
-                                                custom
-                                            />
-                                        );
-                                    })}
-                                </Form.Group>
-                            );
-                            break;
-                        case 'integer_field':
-                            servarComponent = (
-                                <Form.Group>
-                                    <Form.Label>
-                                        {servar.name}: <b>0</b>
-                                    </Form.Label>
-                                    <Form.Control
-                                        type='range'
-                                        step={1}
-                                        value={servar.value}
-                                        custom
-                                        onChange={handleChange}
-                                    />
-                                </Form.Group>
-                            );
-                            break;
-                        case 'hex_color':
-                            servarComponent = (
-                                <Form.Group>
-                                    <Form.Label>{servar.name}</Form.Label>
-                                    <div
-                                        style={{
-                                            width: '36px',
-                                            height: '36px',
-                                            background: `#${servar.value}`,
-                                            cursor: 'pointer'
-                                        }}
-                                        onClick={handleColorPickerClick(
-                                            servar.id
-                                        )}
-                                    />
-                                    {displayColorPicker[servar.id] ? (
-                                        <div
-                                            style={{
-                                                position: 'absolute',
-                                                zIndex: 2
-                                            }}
-                                        >
-                                            <div
-                                                style={{
-                                                    position: 'fixed',
-                                                    top: '0px',
-                                                    right: '0px',
-                                                    bottom: '0px',
-                                                    left: '0px'
-                                                }}
-                                                onClick={handleColorPickerClick(
-                                                    servar.id
-                                                )}
-                                            />
-                                            <SketchPicker
-                                                color={`#${servar.value}`}
-                                                onChange={handleColorChange(
-                                                    servar.id
-                                                )}
-                                            />
-                                        </div>
-                                    ) : null}
-                                </Form.Group>
-                            );
-                            break;
-                        default:
-                            servarComponent = (
-                                <Form.Group>
-                                    <Form.Label>{servar.name}</Form.Label>
-                                    <Form.Control
-                                        as='textarea'
-                                        value={servar.value}
-                                        onChange={handleChange}
-                                    />
-                                </Form.Group>
-                            );
-                    }
-                    return (
+                    {showGrid &&
+                        Array.from(
+                            { length: step.grid_rows.length - 1 },
+                            (_, i) => (
+                                <div
+                                    style={{
+                                        gridRowStart: i + 1,
+                                        gridColumnStart: 1,
+                                        gridColumnEnd: -1,
+                                        borderBottom: '3px dashed #DEDFE2'
+                                    }}
+                                />
+                            )
+                        )}
+                    {step.progress_bar && (
                         <div
+                            style={{
+                                gridColumn: step.progress_bar.column_index + 1,
+                                gridRow: step.progress_bar.row_index + 1,
+                                alignItems: step.progress_bar.layout,
+                                fontStyle: step.progress_bar.font_italic
+                                    ? 'italic'
+                                    : 'normal',
+                                fontWeight: step.progress_bar.font_weight,
+                                fontFamily: step.progress_bar.font_family,
+                                fontSize: `${step.progress_bar.font_size}px`,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'center',
+                                ...(displayStep ? { cursor: 'pointer' } : {})
+                            }}
+                            onClick={() =>
+                                setExternalState('progressBar', true)
+                            }
+                        >
+                            {Math.round((step.step_number / maxSteps) * 100)}%
+                            completed
+                            <Progress
+                                style={{ width: '100%' }}
+                                color='#007bff'
+                                value={(step.step_number / maxSteps) * 100}
+                            />
+                        </div>
+                    )}
+                    {step.text_fields.map((field, i) => (
+                        <div
+                            key={i}
                             style={{
                                 gridColumn: field.column_index + 1,
                                 gridRow: field.row_index + 1,
@@ -580,15 +353,248 @@ function Feathery({
                                 display: 'flex',
                                 flexDirection: 'column',
                                 justifyContent: 'center',
-                                cursor: 'pointer'
+                                ...(displayStep ? { cursor: 'pointer' } : {})
                             }}
-                            onClick={() => setExternalState('servar', i)}
-                            key={i}
+                            onClick={() => setExternalState('text', i)}
                         >
-                            {servarComponent}
+                            {field.is_button ? (
+                                <Button
+                                    onClick={() => {
+                                        if (
+                                            displayStep !== null ||
+                                            field.link === null
+                                        )
+                                            return;
+                                        submit();
+                                    }}
+                                    dangerouslySetInnerHTML={{
+                                        __html: field.text
+                                    }}
+                                />
+                            ) : (
+                                <div
+                                    onClick={() => {
+                                        if (
+                                            displayStep !== null ||
+                                            field.link === null
+                                        )
+                                            return;
+                                        submit();
+                                    }}
+                                    style={{
+                                        ...(field.link === null
+                                            ? {}
+                                            : { cursor: 'pointer' })
+                                    }}
+                                    dangerouslySetInnerHTML={{
+                                        __html: field.text
+                                    }}
+                                />
+                            )}
                         </div>
-                    );
-                })}
+                    ))}
+                    {step.servar_fields.map((field, i) => {
+                        const servar = field.servar;
+                        let servarComponent;
+
+                        switch (servar.type) {
+                            case 'file_upload':
+                                servarComponent = (
+                                    <Form.Group>
+                                        <Form.Label>{servar.name}</Form.Label>
+                                        <Form.File
+                                            id={servar.id}
+                                            accept='image/*'
+                                            onChange={(e) => {
+                                                setAcceptedFile(
+                                                    e.target.files[0]
+                                                );
+                                            }}
+                                        />
+                                    </Form.Group>
+                                );
+                                break;
+                            case 'checkbox':
+                                servarComponent = (
+                                    <Form.Group>
+                                        <Form.Check
+                                            type='checkbox'
+                                            id={servar.id}
+                                            label={servar.name}
+                                            checked={servar.value}
+                                            onChange={handleChange}
+                                        />
+                                    </Form.Group>
+                                );
+                                break;
+                            case 'dropdown':
+                                servarComponent = (
+                                    <Form.Group>
+                                        <Form.Label>{servar.name}</Form.Label>
+                                        <Form.Control
+                                            as='select'
+                                            id={servar.id}
+                                            value={servar.value}
+                                            onChange={handleChange}
+                                        >
+                                            <option key='' value='' disabled>
+                                                Select an option
+                                            </option>
+                                            {servar.metadata.options.map(
+                                                (option) => (
+                                                    <option key={option}>
+                                                        {option}
+                                                    </option>
+                                                )
+                                            )}
+                                        </Form.Control>
+                                    </Form.Group>
+                                );
+                                break;
+                            case 'multiselect':
+                                servarComponent = (
+                                    <Form.Group>
+                                        <Form.Label>{servar.name}</Form.Label>
+                                        {servar.metadata.options.map((opt) => {
+                                            return (
+                                                <Form.Check
+                                                    type='checkbox'
+                                                    name={opt}
+                                                    key={opt}
+                                                    label={opt}
+                                                    checked={servar.value.includes(
+                                                        opt
+                                                    )}
+                                                    onChange={handleMultiselectChange(
+                                                        servar.id
+                                                    )}
+                                                />
+                                            );
+                                        })}
+                                    </Form.Group>
+                                );
+                                break;
+                            case 'select':
+                                servarComponent = (
+                                    <Form.Group>
+                                        <Form.Label>{servar.name}</Form.Label>
+                                        {servar.metadata.options.map((opt) => {
+                                            return (
+                                                <Form.Check
+                                                    type='radio'
+                                                    id={servar.id}
+                                                    label={opt}
+                                                    checked={
+                                                        servar.value === opt
+                                                    }
+                                                    onChange={handleChange}
+                                                    value={opt}
+                                                    key={opt}
+                                                />
+                                            );
+                                        })}
+                                    </Form.Group>
+                                );
+                                break;
+                            case 'integer_field':
+                                servarComponent = (
+                                    <Form.Group>
+                                        <Form.Label>
+                                            {servar.name}: <b>0</b>
+                                        </Form.Label>
+                                        <Form.Control
+                                            id={servar.id}
+                                            type='range'
+                                            step={1}
+                                            value={servar.value}
+                                            onChange={handleChange}
+                                        />
+                                    </Form.Group>
+                                );
+                                break;
+                            case 'hex_color':
+                                servarComponent = (
+                                    <Form.Group>
+                                        <Form.Label>{servar.name}</Form.Label>
+                                        <div
+                                            style={{
+                                                width: '36px',
+                                                height: '36px',
+                                                background: `#${servar.value}`,
+                                                cursor: 'pointer'
+                                            }}
+                                            onClick={handleColorPickerClick(
+                                                servar.id
+                                            )}
+                                        />
+                                        {displayColorPicker[servar.id] ? (
+                                            <div
+                                                style={{
+                                                    position: 'absolute',
+                                                    zIndex: 2
+                                                }}
+                                            >
+                                                <div
+                                                    style={{
+                                                        position: 'fixed',
+                                                        top: '0px',
+                                                        right: '0px',
+                                                        bottom: '0px',
+                                                        left: '0px'
+                                                    }}
+                                                    onClick={handleColorPickerClick(
+                                                        servar.id
+                                                    )}
+                                                />
+                                                <SketchPicker
+                                                    color={`#${servar.value}`}
+                                                    onChange={handleColorChange(
+                                                        servar.id
+                                                    )}
+                                                />
+                                            </div>
+                                        ) : null}
+                                    </Form.Group>
+                                );
+                                break;
+                            default:
+                                servarComponent = (
+                                    <Form.Group>
+                                        <Form.Label>{servar.name}</Form.Label>
+                                        <Form.Control
+                                            as='textarea'
+                                            id={servar.id}
+                                            value={servar.value}
+                                            onChange={handleChange}
+                                        />
+                                    </Form.Group>
+                                );
+                        }
+                        return (
+                            <div
+                                style={{
+                                    gridColumn: field.column_index + 1,
+                                    gridRow: field.row_index + 1,
+                                    alignItems: field.layout,
+                                    fontStyle: field.font_italic
+                                        ? 'italic'
+                                        : 'normal',
+                                    fontWeight: field.font_weight,
+                                    fontFamily: field.font_family,
+                                    fontSize: `${field.font_size}px`,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer'
+                                }}
+                                onClick={() => setExternalState('servar', i)}
+                                key={i}
+                            >
+                                {servarComponent}
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
         );
     }
