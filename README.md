@@ -14,30 +14,39 @@ npm install --save feathery-react-client-sdk
 
 ### `<Feathery>` Component
 
-This SDK exposes the `<Feathery>` component. Your app (or the component that needs to access user settings) should be wrapped with `<Feathery>`.
+This SDK exposes the `<Feathery>` component. Include it where you want
+the onboarding flow to appear in your app.
 
 ```JavaScript
-
 import { Feathery } from 'feathery-react-client-sdk';
-
 ```
 
 ### Props
 
-1. `sdkKey` and `userKey`\
-   Type: `string` or `boolean`\
-   `sdkKey` is used for authentication and `userKey` refers to the user whose settings are being accessed. If either of these are missing or set to `false`, the settings are not fetched but the children are rendered by default.\
-   Default: `false`
+1. `userKey`\
+   Type: `string`\
+   Unique ID of the user who is onboarding
+2. `sdkKey`\
+   Type: `string`\
+   Feathery API Key
+3. `redirectURI`\
+   Type: `string`\
+   URL to redirect to after user completes the onboarding flow
+4. `clientKey` - Optional\
+   Type: `string`\
+   Authentication token to authorize non-Feathery API actions
 
-**Usage**
 
-Basic Usage
+### Usage
 
 ```JavaScript
-
-<Feathery sdkKey='SDK_KEY' userKey='USER_KEY'/>
+<Feathery
+    sdkKey='SDK_KEY'
+    userKey='USER_KEY'
+    redirectURI='https://homepage.com'
+    clientKey='CLIENT_KEY'
+/>
 ```
-
 
 ## License
 
