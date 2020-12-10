@@ -12,10 +12,10 @@ npm install --save feathery-react-client-sdk
 
 ## API Guide
 
-### `<Feathery>` Component
+### `<Feathery>`
 
-This SDK exposes the `<Feathery>` component. Include it where you want
-the onboarding flow to appear in your app.
+Include the `<Feathery>` component in your React app at the location where
+you want the onboarding flow to appear.
 
 ```JavaScript
 import { Feathery } from 'feathery-react-client-sdk';
