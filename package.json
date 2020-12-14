@@ -55,7 +55,6 @@
     "feathery-js-client-sdk": "^1.0.20",
     "react-bootstrap": "^1.4.0",
     "react-color": "^2.19.3",
-    "react-theming": "^0.2.5",
     "styled-components": "^5.2.1"
   }
 }

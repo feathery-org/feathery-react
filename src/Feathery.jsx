@@ -315,6 +315,7 @@ function Feathery({
                         gridColumn: step.progress_bar.column_index + 1,
                         gridRow: step.progress_bar.row_index + 1,
                         alignItems: step.progress_bar.layout,
+                        color: `#${step.progress_bar.font_color}`,
                         fontStyle: step.progress_bar.font_italic
                             ? 'italic'
                             : 'normal',
@@ -555,6 +556,7 @@ function Feathery({
                             gridColumn: field.column_index + 1,
                             gridRow: field.row_index + 1,
                             alignItems: field.layout,
+                            color: `#${field.font_color}`,
                             fontStyle: field.font_italic ? 'italic' : 'normal',
                             fontWeight: field.font_weight,
                             fontFamily: field.font_family,
