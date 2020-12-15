@@ -262,12 +262,16 @@ function Feathery({
                     backgroundSize: '100% 100%',
                     display: 'grid',
                     overflow: 'hidden',
-                    gridTemplateColumns: step.grid_columns
-                        .map((c) => `${c}fr`)
-                        .join(' '),
-                    gridTemplateRows: step.grid_rows
-                        .map((c) => `${c}fr`)
-                        .join(' '),
+                    ...(window.innerWidth < 768
+                        ? { gridTemplateColumns: '1fr' }
+                        : {
+                              gridTemplateColumns: step.grid_columns
+                                  .map((c) => `${c}fr`)
+                                  .join(' '),
+                              gridTemplateRows: step.grid_rows
+                                  .map((c) => `${c}fr`)
+                                  .join(' ')
+                          }),
                     ...(step.background_image
                         ? {
                               backgroundImage: `url(${step.background_image})`
@@ -306,8 +310,19 @@ function Feathery({
                 {step.progress_bar && (
                     <div
                         style={{
-                            gridColumn: step.progress_bar.column_index + 1,
-                            gridRow: step.progress_bar.row_index + 1,
+                            ...(window.innerWidth < 768
+                                ? {
+                                      gridColumn: 1,
+                                      gridRow:
+                                          step.progress_bar.row_index *
+                                              step.grid_columns +
+                                          step.progress_bar.column_index
+                                  }
+                                : {
+                                      gridColumn:
+                                          step.progress_bar.column_index + 1,
+                                      gridRow: step.progress_bar.row_index + 1
+                                  }),
                             alignItems: step.progress_bar.layout,
                             fontStyle: step.progress_bar.font_italic
                                 ? 'italic'
@@ -335,8 +350,17 @@ function Feathery({
                     <div
                         key={i}
                         style={{
-                            gridColumn: field.column_index + 1,
-                            gridRow: field.row_index + 1,
+                            ...(window.innerWidth < 768
+                                ? {
+                                      gridColumn: 1,
+                                      gridRow:
+                                          field.row_index * step.grid_columns +
+                                          field.column_index
+                                  }
+                                : {
+                                      gridColumn: field.column_index + 1,
+                                      gridRow: field.row_index + 1
+                                  }),
                             alignItems: field.layout,
                             fontStyle: field.font_italic ? 'italic' : 'normal',
                             fontWeight: field.font_weight,
@@ -561,8 +585,18 @@ function Feathery({
                     return (
                         <div
                             style={{
-                                gridColumn: field.column_index + 1,
-                                gridRow: field.row_index + 1,
+                                ...(window.innerWidth < 768
+                                    ? {
+                                          gridColumn: 1,
+                                          gridRow:
+                                              field.row_index *
+                                                  step.grid_columns +
+                                              field.column_index
+                                      }
+                                    : {
+                                          gridColumn: field.column_index + 1,
+                                          gridRow: field.row_index + 1
+                                      }),
                                 alignItems: field.layout,
                                 fontStyle: field.font_italic
                                     ? 'italic'
