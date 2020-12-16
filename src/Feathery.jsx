@@ -274,17 +274,12 @@ function Feathery({
         <div
             style={{
                 height: '100%',
-                backgroundColor: '#F7F8FA',
+                backgroundColor: step.default_background_color,
                 backgroundSize: '100% 100%',
                 display: 'grid',
                 overflow: 'hidden',
                 gridTemplateColumns,
-                gridTemplateRows,
-                ...(step.background_image
-                    ? {
-                          backgroundImage: `url(${step.background_image})`
-                      }
-                    : {})
+                gridTemplateRows
             }}
         >
             {showGrid &&
@@ -388,12 +383,13 @@ function Feathery({
             ))}
             {step.servar_fields.map((field, i) => {
                 const servar = field.servar;
+                const metadata = field.metadata;
                 let servarComponent;
 
                 switch (servar.type) {
                     case 'file_upload':
                         servarComponent = (
-                            <Form.Group>
+                            <Form.Group style={{ width: '100%' }}>
                                 <Form.Label>{servar.name}</Form.Label>
                                 <Form.File
                                     id={servar.id}
@@ -407,7 +403,7 @@ function Feathery({
                         break;
                     case 'checkbox':
                         servarComponent = (
-                            <Form.Group>
+                            <Form.Group style={{ width: '100%' }}>
                                 <Form.Check
                                     type='checkbox'
                                     id={servar.id}
@@ -420,7 +416,7 @@ function Feathery({
                         break;
                     case 'dropdown':
                         servarComponent = (
-                            <Form.Group>
+                            <Form.Group style={{ width: '100%' }}>
                                 <Form.Label>{servar.name}</Form.Label>
                                 <Form.Control
                                     as='select'
@@ -440,7 +436,7 @@ function Feathery({
                         break;
                     case 'multiselect':
                         servarComponent = (
-                            <Form.Group>
+                            <Form.Group style={{ width: '100%' }}>
                                 <Form.Label>{servar.name}</Form.Label>
                                 {servar.metadata.options.map((opt) => {
                                     return (
@@ -461,7 +457,7 @@ function Feathery({
                         break;
                     case 'select':
                         servarComponent = (
-                            <Form.Group>
+                            <Form.Group style={{ width: '100%' }}>
                                 <Form.Label>{servar.name}</Form.Label>
                                 {servar.metadata.options.map((opt) => {
                                     return (
@@ -481,7 +477,7 @@ function Feathery({
                         break;
                     case 'integer_field':
                         servarComponent = (
-                            <Form.Group>
+                            <Form.Group style={{ width: '100%' }}>
                                 <Form.Label>
                                     {servar.name}: <b>0</b>
                                 </Form.Label>
@@ -497,7 +493,7 @@ function Feathery({
                         break;
                     case 'hex_color':
                         servarComponent = (
-                            <Form.Group>
+                            <Form.Group style={{ width: '100%' }}>
                                 <Form.Label>{servar.name}</Form.Label>
                                 <div
                                     style={{
@@ -540,13 +536,15 @@ function Feathery({
                         break;
                     default:
                         servarComponent = (
-                            <Form.Group>
+                            <Form.Group style={{ width: '100%' }}>
                                 <Form.Label>{servar.name}</Form.Label>
                                 <Form.Control
-                                    as='textarea'
+                                    type='text'
+                                    style={{ height: '50px' }}
                                     id={servar.id}
                                     value={servar.value}
                                     onChange={handleChange}
+                                    placeholder={metadata.placeholder || ''}
                                 />
                             </Form.Group>
                         );
@@ -565,7 +563,7 @@ function Feathery({
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: 'center',
-                            cursor: 'pointer'
+                            cursor: 'pointer',
                         }}
                         onClick={() => setExternalState('servar', i)}
                         key={i}
