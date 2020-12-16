@@ -344,6 +344,7 @@ function Feathery({
                         gridColumn: field.column_index + 1,
                         gridRow: field.row_index + 1,
                         alignItems: field.layout,
+                        color: `#${field.font_color}`,
                         fontStyle: field.font_italic ? 'italic' : 'normal',
                         fontWeight: field.font_weight,
                         fontFamily: field.font_family,
