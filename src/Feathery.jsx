@@ -54,6 +54,29 @@ function Feathery({
         return null;
     }
 
+    const isFilled = () => {
+        for (const field of step.servar_fields) {
+            const value = field.servar.value;
+            switch (field.servar.type) {
+                case 'text_field':
+                    if (value === '') return false;
+                    break;
+                case 'select':
+                    if (value === '') return false;
+                    break;
+                case 'dropdown':
+                    if (value === '') return false;
+                    break;
+                case 'file_upload':
+                    if (acceptedFile === null) return false;
+                    break;
+                default:
+                    break;
+            }
+        }
+        return true;
+    };
+
     const handleChange = (e) => {
         const target = e.target;
         const value =
@@ -353,6 +376,13 @@ function Feathery({
                 >
                     {field.is_button ? (
                         <Button
+                            style={{
+                                borderColor: `#${field.button_color}`,
+                                backgroundColor: `#${field.button_color}`,
+                                width: '100%',
+                                height: '50px'
+                            }}
+                            disabled={!isFilled()}
                             onClick={() => {
                                 if (displayStep !== null || field.link === null)
                                     return;
@@ -563,7 +593,7 @@ function Feathery({
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: 'center',
-                            cursor: 'pointer',
+                            cursor: 'pointer'
                         }}
                         onClick={() => setExternalState('servar', i)}
                         key={i}
