@@ -300,7 +300,7 @@ function Feathery({
     return (
         <div
             style={{
-                height: '100vh',
+                height: '100%',
                 backgroundColor: step.default_background_color,
                 backgroundSize: '100% 100%',
                 display: 'grid',
