@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import FeatheryClient from 'feathery-js-client-sdk';
 
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
 import { Progress } from '@zendeskgarden/react-loaders';
 import { SketchPicker } from 'react-color';
+
+import Client from './utils/client';
 
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -14,17 +15,20 @@ const angleBracketRegex = /<[^>]*>/g;
 // sdkKey and userKey are required if displayStep === null
 // totalSteps is required if displayStep !== null
 function Feathery({
+    // Public API
     sdkKey = null,
     userKey = null,
     clientKey = null,
     redirectURI = null,
 
+    // Internal
+    companyKey = null,
     displayStep = null,
     showGrid = false,
     totalSteps = null,
     setExternalState = () => {}
 }) {
-    const [featheryClient, setFeatheryClient] = useState(null);
+    const [client, setClient] = useState(null);
 
     const [finishConfig, setFinishConfig] = useState(false);
     const [displayColorPicker, setDisplayColorPicker] = useState({});
@@ -32,25 +36,25 @@ function Feathery({
     const [step, setStep] = useState(displayStep);
 
     useEffect(() => {
-        if (displayStep !== null) setStep(displayStep);
-    }, [displayStep]);
-
-    useEffect(() => {
         if (displayStep === null) {
-            const clientInstance = new FeatheryClient(sdkKey, userKey);
-            setFeatheryClient(clientInstance);
+            const clientInstance = new Client(
+                sdkKey,
+                userKey,
+                companyKey || userKey
+            );
+            setClient(clientInstance);
             clientInstance
-                .fetchFirstIncompleteStep()
+                .begin()
                 .then((step) => {
                     if (step.step_number === null) setFinishConfig(true);
                     else setStep(step);
                 })
-                .catch((error) => console.log(error.toString));
-        }
+                .catch((error) => console.log(error));
+        } else setStep(displayStep);
     }, [displayStep, sdkKey, userKey]);
 
-    if (displayStep === null && finishConfig && redirectURI) {
-        window.location.href = redirectURI;
+    if (displayStep === null && finishConfig) {
+        if (redirectURI) window.location.href = redirectURI;
         return null;
     }
 
@@ -219,7 +223,7 @@ function Feathery({
                 const servar = field.servar;
                 return { key: servar.key, [servar.type]: servar.value };
             });
-        featheryClient
+        client
             .submitStep(step.step_number, submitServars)
             .then(async (newStep) => {
                 const servarLookupMap = step.servar_fields.reduce(
@@ -270,7 +274,7 @@ function Feathery({
                 else setStep(newStep);
             })
             .catch((error) => {
-                if (error) console.log(error.toString());
+                if (error) console.log(error);
             });
     };
 
@@ -296,7 +300,7 @@ function Feathery({
     return (
         <div
             style={{
-                height: '100%',
+                height: '100vh',
                 backgroundColor: step.default_background_color,
                 backgroundSize: '100% 100%',
                 display: 'grid',

@@ -4934,13 +4934,6 @@ fb-watchman@^2.0.0:
   dependencies:
     bser "2.1.1"
 
-feathery-js-client-sdk@^1.0.20:
-  version "1.0.20"
-  resolved "https://registry.yarnpkg.com/feathery-js-client-sdk/-/feathery-js-client-sdk-1.0.20.tgz#5d01e4803fc36e53c58f1e1c24e1f23b583f8956"
-  integrity sha512-wbvzOqLam0+b5+opEVEv88QxEnmw6kXQ8dfR3uhBUScs6sQ7AGvzQ/0YiG46pmcbVZgrJR05ei/tOWvX6pFOhA==
-  dependencies:
-    jquery "^3.5.1"
-
 figgy-pudding@^3.5.1:
   version "3.5.2"
   resolved "https://registry.yarnpkg.com/figgy-pudding/-/figgy-pudding-3.5.2.tgz#b4eee8148abb01dcf1d1ac34367d59e12fa61d6e"
@@ -6770,11 +6763,6 @@ jest@24.9.0:
   dependencies:
     import-local "^2.0.0"
     jest-cli "^24.9.0"
-
-jquery@^3.5.1:
-  version "3.5.1"
-  resolved "https://registry.yarnpkg.com/jquery/-/jquery-3.5.1.tgz#d7b4d08e1bfdb86ad2f1a3d039ea17304717abb5"
-  integrity sha512-XwIBPqcMn57FxfT+Go5pzySnm4KWkT1Tv7gjrpT1srtf8Weynl6R273VJ5GjkRb51IzMp5nbaPjJXMWeju2MKg==
 
 "js-tokens@^3.0.0 || ^4.0.0", js-tokens@^4.0.0:
   version "4.0.0"
