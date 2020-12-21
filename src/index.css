@@ -1,0 +1,4 @@
+.step-button-active:hover {
+  background: linear-gradient(rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.1));
+  transition: background 0.5s;
+}

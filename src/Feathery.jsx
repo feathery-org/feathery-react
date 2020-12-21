@@ -7,6 +7,7 @@ import { SketchPicker } from 'react-color';
 
 import Client from './utils/client';
 
+import './index.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 const uuidV4Regex = /^[0-9A-F]{8}-[0-9A-F]{4}-[4][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i;
@@ -57,29 +58,6 @@ function Feathery({
         if (redirectURI) window.location.href = redirectURI;
         return null;
     }
-
-    const isFilled = () => {
-        for (const field of step.servar_fields) {
-            const value = field.servar.value;
-            switch (field.servar.type) {
-                case 'text_field':
-                    if (value === '') return false;
-                    break;
-                case 'select':
-                    if (value === '') return false;
-                    break;
-                case 'dropdown':
-                    if (value === '') return false;
-                    break;
-                case 'file_upload':
-                    if (acceptedFile === null) return false;
-                    break;
-                default:
-                    break;
-            }
-        }
-        return true;
-    };
 
     const handleChange = (e) => {
         const target = e.target;
@@ -207,7 +185,7 @@ function Feathery({
         });
     };
 
-    const submit = () => {
+    const submit = (skip = false) => {
         let fileUploadServarID = '';
         step.servar_fields.forEach((field) => {
             const servar = field.servar;
@@ -224,50 +202,61 @@ function Feathery({
                 return { key: servar.key, [servar.type]: servar.value };
             });
         client
-            .submitStep(step.step_number, submitServars)
+            .submitStep(step.step_number, submitServars, skip)
             .then(async (newStep) => {
-                const servarLookupMap = step.servar_fields.reduce(
-                    (map, field) => {
-                        const servar = field.servar;
-                        map[servar.id] = servar.value;
-                        return map;
-                    },
-                    {}
-                );
-                for (const action of step.actions) {
-                    const options = {
-                        method: action.method.toUpperCase(),
-                        headers: { Authorization: `Bearer ${clientKey}` }
-                    };
+                if (!skip) {
+                    const servarLookupMap = step.servar_fields.reduce(
+                        (map, field) => {
+                            const servar = field.servar;
+                            map[servar.id] = servar.value;
+                            return map;
+                        },
+                        {}
+                    );
+                    for (const action of step.actions) {
+                        const options = {
+                            method: action.method.toUpperCase(),
+                            headers: { Authorization: `Bearer ${clientKey}` }
+                        };
 
-                    if (action.body_type === 'application/json') {
-                        options.headers['Content-Type'] = action.body_type;
-                        options.body = JSON.stringify(
-                            replaceRequestParams(action.params, servarLookupMap)
-                        );
-                    } else if (action.body_type === 'multipart/form-data') {
-                        if (action.form_data_servar !== fileUploadServarID) {
-                            console.log('Invalid file upload action');
-                            return;
-                        }
-                        const body = new FormData();
-                        body.append(action.form_data_key, acceptedFile);
-                        options.body = body;
-                    }
-
-                    const url = replaceURLParams(action.url, servarLookupMap);
-                    const promise = fetch(url, options)
-                        .then((r) => r.json())
-                        .then(async (d) => {
-                            const promises = setResponseParams(
-                                action.response_params,
-                                d,
-                                servarLookupMap
+                        if (action.body_type === 'application/json') {
+                            options.headers['Content-Type'] = action.body_type;
+                            options.body = JSON.stringify(
+                                replaceRequestParams(
+                                    action.params,
+                                    servarLookupMap
+                                )
                             );
-                            if (promises) await Promise.all(promises);
-                        })
-                        .catch((e) => console.log(e));
-                    if (action.response_params) await timeout(1000, promise);
+                        } else if (action.body_type === 'multipart/form-data') {
+                            if (
+                                action.form_data_servar !== fileUploadServarID
+                            ) {
+                                console.log('Invalid file upload action');
+                                return;
+                            }
+                            const body = new FormData();
+                            body.append(action.form_data_key, acceptedFile);
+                            options.body = body;
+                        }
+
+                        const url = replaceURLParams(
+                            action.url,
+                            servarLookupMap
+                        );
+                        const promise = fetch(url, options)
+                            .then((r) => r.json())
+                            .then(async (d) => {
+                                const promises = setResponseParams(
+                                    action.response_params,
+                                    d,
+                                    servarLookupMap
+                                );
+                                if (promises) await Promise.all(promises);
+                            })
+                            .catch((e) => console.log(e));
+                        if (action.response_params)
+                            await timeout(1000, promise);
+                    }
                 }
 
                 if (newStep.step_number === null) setFinishConfig(true);
@@ -279,6 +268,27 @@ function Feathery({
     };
 
     if (step === null) return null;
+
+    let isFilled = true;
+    for (const field of step.servar_fields) {
+        const value = field.servar.value;
+        switch (field.servar.type) {
+            case 'text_field':
+                if (value === '') isFilled = false;
+                break;
+            case 'select':
+                if (value === '') isFilled = false;
+                break;
+            case 'dropdown':
+                if (value === '') isFilled = false;
+                break;
+            case 'file_upload':
+                if (acceptedFile === null) isFilled = false;
+                break;
+            default:
+                break;
+        }
+    }
 
     const numColumns = step.grid_columns.length;
     const numRows = step.grid_rows.length;
@@ -366,11 +376,6 @@ function Feathery({
                         gridColumn: field.column_index + 1,
                         gridRow: field.row_index + 1,
                         alignItems: field.layout,
-                        color: `#${field.font_color}`,
-                        fontStyle: field.font_italic ? 'italic' : 'normal',
-                        fontWeight: field.font_weight,
-                        fontFamily: field.font_family,
-                        fontSize: `${field.font_size}px`,
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'center',
@@ -380,17 +385,28 @@ function Feathery({
                 >
                     {field.is_button ? (
                         <Button
+                            className={
+                                (field.link !== 'next' || isFilled) &&
+                                'step-button-active'
+                            }
                             style={{
+                                color: `#${field.font_color}`,
+                                fontStyle: field.font_italic
+                                    ? 'italic'
+                                    : 'normal',
+                                fontWeight: field.font_weight,
+                                fontFamily: field.font_family,
+                                fontSize: `${field.font_size}px`,
                                 borderColor: `#${field.button_color}`,
                                 backgroundColor: `#${field.button_color}`,
                                 width: '100%',
                                 height: '50px'
                             }}
-                            disabled={!isFilled()}
+                            disabled={field.link === 'next' && !isFilled}
                             onClick={() => {
                                 if (displayStep !== null || field.link === null)
                                     return;
-                                submit();
+                                submit(field.link === 'skip');
                             }}
                             dangerouslySetInnerHTML={{
                                 __html: field.text
@@ -401,9 +417,16 @@ function Feathery({
                             onClick={() => {
                                 if (displayStep !== null || field.link === null)
                                     return;
-                                submit();
+                                submit(field.link === 'skip');
                             }}
                             style={{
+                                color: `#${field.font_color}`,
+                                fontStyle: field.font_italic
+                                    ? 'italic'
+                                    : 'normal',
+                                fontWeight: field.font_weight,
+                                fontFamily: field.font_family,
+                                fontSize: `${field.font_size}px`,
                                 ...(field.link === null
                                     ? {}
                                     : { cursor: 'pointer' })
@@ -453,13 +476,14 @@ function Feathery({
                             <Form.Group style={{ width: '100%' }}>
                                 <Form.Label>{servar.name}</Form.Label>
                                 <Form.Control
+                                    style={{ height: '50px' }}
                                     as='select'
                                     id={servar.id}
                                     value={servar.value}
                                     onChange={handleChange}
                                 >
                                     <option key='' value='' disabled>
-                                        Select an option
+                                        Select...
                                     </option>
                                     {servar.metadata.options.map((option) => (
                                         <option key={option}>{option}</option>

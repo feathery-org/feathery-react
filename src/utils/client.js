@@ -64,7 +64,7 @@ export default class Client {
             });
     }
 
-    async submitStep(stepNum, servars) {
+    async submitStep(stepNum, servars, skip = false) {
         // servars = [{key: <servarKey>, <type>: <value>}]
         const {
             _userKey: userKey,
@@ -76,7 +76,8 @@ export default class Client {
         const data = {
             fuser_key: userKey,
             step_number: stepNum,
-            servars: servars
+            servars: servars,
+            skip
         };
         const options = {
             cache: 'no-store',
