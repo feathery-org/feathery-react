@@ -19,7 +19,7 @@ function Feathery({
     // Public API
     sdkKey = null,
     userKey = null,
-    clientKey = null,
+    clientKey = '',
     redirectURI = null,
 
     // Internal

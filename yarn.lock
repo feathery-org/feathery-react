@@ -2175,10 +2175,24 @@
   resolved "https://registry.yarnpkg.com/@xtuc/long/-/long-4.2.2.tgz#d291c6a4e97989b5c61d9acf396ae4fe133a718d"
   integrity sha512-NuHqBY1PB/D8xU6s/thBgOAiAP7HOYDQ32+BFZILJ8ivkUkAHQnWfn6WhL79Owj1qmUnoN/YPhktdIoucipkAQ==
 
+"@zendeskgarden/container-focusvisible@^0.4.3":
+  version "0.4.5"
+  resolved "https://registry.yarnpkg.com/@zendeskgarden/container-focusvisible/-/container-focusvisible-0.4.5.tgz#6b9f701730ff21c36173e4bd5fab6b36e6d57e0b"
+  integrity sha512-cFCdDHda8s50oXVY7yqf1ZBI+n0HR2wvbVK604SX+BV9U/KYkkqvNWxZ46SCppLG7b8O7DG4XpzUPow1VPOS/A==
+  dependencies:
+    "@babel/runtime" "^7.8.4"
+
 "@zendeskgarden/container-schedule@^1.3.1":
   version "1.3.6"
   resolved "https://registry.yarnpkg.com/@zendeskgarden/container-schedule/-/container-schedule-1.3.6.tgz#e7685ecb9e26c70f31e42de531f738ae8db8c0db"
   integrity sha512-sPddgwzln7fiaox5HJ0DEUtOLnu6GTpn1vCVly+SWNiMwXz6ysrejftljn8e6c6Li1w0nlzYKaTt2ysik/2r2w==
+  dependencies:
+    "@babel/runtime" "^7.8.4"
+
+"@zendeskgarden/container-utilities@^0.5.1":
+  version "0.5.4"
+  resolved "https://registry.yarnpkg.com/@zendeskgarden/container-utilities/-/container-utilities-0.5.4.tgz#8550404cafd0aab5ed80f3da0a51d424e8e3facb"
+  integrity sha512-Iz6YZ6va3JIShzKXKjK4TCf168GSX+/XeeBr6o9MTJ4K84lO0F0ZX2GIFuZmacfkBjCXfyNxj4aua/5/1ZXyPg==
   dependencies:
     "@babel/runtime" "^7.8.4"
 
@@ -2188,6 +2202,15 @@
   integrity sha512-votxkb9ScMiQ9qToGVm81KhokEP8mp7ki2kpOuChh5yNOnllBVdu/s0sH3/SM9JP2izky4HhrJWPrXAkDgRvJQ==
   dependencies:
     "@zendeskgarden/container-schedule" "^1.3.1"
+    polished "^4.0.0"
+
+"@zendeskgarden/react-theming@^8.29.0":
+  version "8.29.0"
+  resolved "https://registry.yarnpkg.com/@zendeskgarden/react-theming/-/react-theming-8.29.0.tgz#37998482392760c2967810530c701f7c2f67b161"
+  integrity sha512-NnCVb/Tw+oSYvPsAM6SDrEKJHBHhYnMUSBxBArt8ige1NHHjqPZyiFv2rMBpxSiyFgKvmaH5wP2dzhLH894xvQ==
+  dependencies:
+    "@zendeskgarden/container-focusvisible" "^0.4.3"
+    "@zendeskgarden/container-utilities" "^0.5.1"
     polished "^4.0.0"
 
 abbrev@1:
