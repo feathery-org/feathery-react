@@ -26,10 +26,10 @@ import { Feathery } from 'feathery-react-client-sdk';
 
 1. `userKey`\
    Type: `string`\
-   Unique ID of the user who is onboarding
+   Unique ID of the user who is onboarding. This can be anything as long as it's unique per user.
 2. `sdkKey`\
    Type: `string`\
-   Feathery API Key
+   Feathery API Key. This authorizes your SDK to communicate with Feathery servers.
 3. `redirectURI` - Optional\
    Type: `string`\
    URL to redirect to after user completes the onboarding flow. If not present, the component returns `null` after the onboarding flow is completed.
