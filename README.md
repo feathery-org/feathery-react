@@ -15,7 +15,8 @@ npm install --save feathery-react-client-sdk
 ### `<Feathery>`
 
 Include the `<Feathery>` component in your React app at the location where
-you want the onboarding flow to appear.
+you want the onboarding flow to appear. It renders a `div` that contains
+the onboarding flow and expands to fill the height of its parent container.
 
 ```JavaScript
 import { Feathery } from 'feathery-react-client-sdk';
@@ -29,9 +30,9 @@ import { Feathery } from 'feathery-react-client-sdk';
 2. `sdkKey`\
    Type: `string`\
    Feathery API Key
-3. `redirectURI`\
+3. `redirectURI` - Optional\
    Type: `string`\
-   URL to redirect to after user completes the onboarding flow
+   URL to redirect to after user completes the onboarding flow. If not present, the component returns `null` after the onboarding flow is completed.
 4. `clientKey` - Optional\
    Type: `string`\
    Authentication token to authorize non-Feathery API actions
@@ -42,7 +43,7 @@ import { Feathery } from 'feathery-react-client-sdk';
 ```JavaScript
 <Feathery
     sdkKey='SDK_KEY'
-    userKey='USER_KEY'
+    userKey='peter@feathery.tech'
     redirectURI='https://homepage.com'
     clientKey='CLIENT_KEY'
 />
