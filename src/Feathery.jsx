@@ -294,17 +294,17 @@ function Feathery({
     const numRows = step.grid_rows.length;
     const maxSteps = displayStep ? totalSteps : step.total_steps;
 
-    const gridTemplateRows = step.grid_rows.map((c) => `${c}fr`).join(' ');
+    const gridTemplateRows = step.grid_rows.join(' ');
     let gridTemplateColumns;
     if (window.innerWidth >= 768) {
-        gridTemplateColumns = step.grid_columns.map((c) => `${c}fr`).join(' ');
+        gridTemplateColumns = step.grid_columns.join(' ');
     } else {
         const seenColumns = new Set();
         seenColumns.add(step.progress_bar.column_index);
         step.text_fields.map((field) => seenColumns.add(field.column_index));
         step.servar_fields.map((field) => seenColumns.add(field.column_index));
         gridTemplateColumns = step.grid_columns
-            .map((c, index) => (seenColumns.has(index) ? `${c}fr` : '10px'))
+            .map((c, index) => (seenColumns.has(index) ? c : '10px'))
             .join(' ');
     }
     return (
@@ -481,6 +481,7 @@ function Feathery({
                                     id={servar.id}
                                     value={servar.value}
                                     onChange={handleChange}
+                                    custom
                                 >
                                     <option key='' value='' disabled>
                                         Select...
