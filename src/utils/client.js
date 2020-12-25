@@ -76,7 +76,7 @@ export default class Client {
         const data = {
             fuser_key: userKey,
             step_number: stepNum,
-            servars: servars,
+            servars: skip ? [] : servars,
             skip
         };
         const options = {
