@@ -593,6 +593,21 @@ function Feathery({
                             </Form.Group>
                         );
                         break;
+                    case 'text_area':
+                        servarComponent = (
+                            <Form.Group style={{ width: '100%' }}>
+                                <Form.Label>{servar.name}</Form.Label>
+                                <Form.Control
+                                    as='textarea'
+                                    rows={3}
+                                    id={servar.id}
+                                    value={servar.value}
+                                    onChange={handleChange}
+                                    placeholder={metadata.placeholder || ''}
+                                />
+                            </Form.Group>
+                        );
+                        break;
                     default:
                         servarComponent = (
                             <Form.Group style={{ width: '100%' }}>
