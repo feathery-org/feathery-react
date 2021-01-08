@@ -300,7 +300,7 @@ function Feathery({
         gridTemplateColumns = step.grid_columns.join(' ');
     } else {
         const seenColumns = new Set();
-        seenColumns.add(step.progress_bar.column_index);
+        if (step.progress_bar) seenColumns.add(step.progress_bar.column_index);
         step.text_fields.map((field) => seenColumns.add(field.column_index));
         step.servar_fields.map((field) => seenColumns.add(field.column_index));
         gridTemplateColumns = step.grid_columns
