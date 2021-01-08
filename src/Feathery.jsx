@@ -311,7 +311,7 @@ function Feathery({
         <div
             style={{
                 height: '100%',
-                backgroundColor: step.default_background_color,
+                backgroundColor: `#${step.default_background_color}`,
                 backgroundSize: '100% 100%',
                 display: 'grid',
                 overflow: 'hidden',
