@@ -6,6 +6,8 @@ import { Progress } from '@zendeskgarden/react-loaders';
 import { SketchPicker } from 'react-color';
 
 import Client from './utils/client';
+import { initInfo } from './utils/init';
+import { attributeState } from './Attributes';
 
 import './index.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -15,10 +17,8 @@ const angleBracketRegex = /<[^>]*>/g;
 
 // sdkKey and userKey are required if displayStep === null
 // totalSteps is required if displayStep !== null
-function Feathery({
+export function Div({
     // Public API
-    sdkKey = null,
-    userKey = null,
     clientKey = '',
     redirectURI = null,
 
@@ -29,6 +29,8 @@ function Feathery({
     totalSteps = null,
     setExternalState = () => {}
 }) {
+    const { sdkKey, userKey } = initInfo();
+
     const [client, setClient] = useState(null);
 
     const [finishConfig, setFinishConfig] = useState(false);
@@ -38,11 +40,7 @@ function Feathery({
 
     useEffect(() => {
         if (displayStep === null) {
-            const clientInstance = new Client(
-                sdkKey,
-                userKey,
-                companyKey || userKey
-            );
+            const clientInstance = new Client(companyKey || userKey);
             setClient(clientInstance);
             clientInstance
                 .begin()
@@ -195,15 +193,22 @@ function Feathery({
             }
         });
 
-        const submitServars = step.servar_fields
-            .filter((field) => field.servar.type !== 'file_upload')
-            .map((field) => {
-                const servar = field.servar;
-                return { key: servar.key, [servar.type]: servar.value };
-            });
+        const noFileServars = step.servar_fields.filter(
+            (field) => field.servar.type !== 'file_upload'
+        );
+        const submitServars = noFileServars.map((field) => {
+            const servar = field.servar;
+            return { key: servar.key, [servar.type]: servar.value };
+        });
         client
             .submitStep(step.step_number, submitServars, skip)
             .then(async (newStep) => {
+                // set real time attributes for programmatic access
+                noFileServars.forEach((field) => {
+                    const servar = field.servar;
+                    attributeState.realTimeAttributes[servar.key] =
+                        servar.value;
+                });
                 if (!skip) {
                     const servarLookupMap = step.servar_fields.reduce(
                         (map, field) => {
@@ -649,5 +654,3 @@ function Feathery({
         </div>
     );
 }
-
-export { Feathery };

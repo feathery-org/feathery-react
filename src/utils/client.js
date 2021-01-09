@@ -1,33 +1,22 @@
 import * as errors from './error';
+import { initInfo } from './init';
 import encodeGetParams from './string';
 
 export default class Client {
-    constructor(sdkKey, userKey, companyKey) {
-        Client.validateKeys(sdkKey, userKey, companyKey);
-        this._sdkKey = sdkKey;
-        this._userKey = userKey;
+    constructor(companyKey) {
+        Client.validateKeys(companyKey);
         this._companyKey = companyKey;
     }
 
-    static validateKeys(sdkKey, userKey, companyKey) {
-        if (!sdkKey || typeof sdkKey !== 'string') {
-            throw new errors.SdkKeyError('Invalid SDK Key');
-        }
-        if (!userKey || typeof userKey !== 'string') {
-            throw new errors.UserKeyError('Invalid User Key');
-        }
+    static validateKeys(companyKey) {
         if (!companyKey || typeof companyKey !== 'string') {
-            throw new errors.CompanyKeyError('Invalid User Key');
+            throw new errors.CompanyKeyError('Invalid Company Key');
         }
     }
 
     async begin() {
-        const {
-            _userKey: userKey,
-            _sdkKey: sdkKey,
-            _companyKey: companyKey
-        } = this;
-        Client.validateKeys(userKey, sdkKey, companyKey);
+        const { userKey, sdkKey } = initInfo();
+        const { _companyKey: companyKey } = this;
         const params = encodeGetParams({
             fuser_key: userKey,
             company_key: companyKey
@@ -66,12 +55,7 @@ export default class Client {
 
     async submitStep(stepNum, servars, skip = false) {
         // servars = [{key: <servarKey>, <type>: <value>}]
-        const {
-            _userKey: userKey,
-            _sdkKey: sdkKey,
-            _companyKey: companyKey
-        } = this;
-        Client.validateKeys(userKey, sdkKey, companyKey);
+        const { userKey, sdkKey } = initInfo();
         const url = `https://api.feathery.tech/api/panel/step/submit/`;
         const data = {
             fuser_key: userKey,
