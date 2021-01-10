@@ -70,7 +70,7 @@ empty. If the user doesn't have a value for a particular attribute,
 the attribute value will be `null`.
 
 This method is implemented as a singleton, so there will only be one
-global source of data and one network request made.
+global source of data.
 
 ## License
 MIT © [Peter Dun](https://github.com/bo-dun-1)
