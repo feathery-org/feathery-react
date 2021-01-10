@@ -49,7 +49,7 @@ This is necessary before using the rest of the API.
    Feathery API Key. This authorizes your SDK to communicate with Feathery servers.
 
 ### `<Feathery.Div>`
-Include the `<Feathery.Div>` component in your React app at the location where
+Initialize this component in your React app at the location where
 you want the onboarding flow to appear. It renders a `div` that contains
 the onboarding flow and expands to fill its parent container.
 
