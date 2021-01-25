@@ -376,7 +376,7 @@ export function Div({
             )}
             {step.text_fields.map((field, i) => (
                 <div
-                    key={i}
+                    key={i.toString() + ':' + step.step_number.toString()}
                     style={{
                         gridColumn: field.column_index + 1,
                         gridRow: field.row_index + 1,
@@ -391,7 +391,9 @@ export function Div({
                     {field.is_button ? (
                         <Button
                             className={
-                                (field.link !== 'next' || isFilled) &&
+                                (displayStep !== null ||
+                                    field.link !== 'next' ||
+                                    isFilled) &&
                                 'step-button-active'
                             }
                             style={{
@@ -407,7 +409,11 @@ export function Div({
                                 width: '100%',
                                 height: '50px'
                             }}
-                            disabled={field.link === 'next' && !isFilled}
+                            disabled={
+                                field.link === 'next' &&
+                                !isFilled &&
+                                displayStep === null
+                            }
                             onClick={() => {
                                 if (displayStep !== null || field.link === null)
                                     return;
