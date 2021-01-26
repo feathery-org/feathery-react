@@ -14,10 +14,11 @@ export default class Client {
         }
     }
 
-    async begin() {
+    async begin(flowKey) {
         const { userKey, sdkKey } = initInfo();
         const { _companyKey: companyKey } = this;
         const params = encodeGetParams({
+            flow_key: flowKey,
             fuser_key: userKey,
             company_key: companyKey
         });
@@ -53,11 +54,12 @@ export default class Client {
             });
     }
 
-    async submitStep(stepNum, servars, skip = false) {
+    async submitStep(flowKey, stepNum, servars, skip = false) {
         // servars = [{key: <servarKey>, <type>: <value>}]
         const { userKey, sdkKey } = initInfo();
         const url = `https://api.feathery.tech/api/panel/step/submit/`;
         const data = {
+            flow_key: flowKey,
             fuser_key: userKey,
             step_number: stepNum,
             servars: skip ? [] : servars,

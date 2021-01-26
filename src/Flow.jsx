@@ -17,10 +17,10 @@ const angleBracketRegex = /<[^>]*>/g;
 
 // sdkKey and userKey are required if displayStep === null
 // totalSteps is required if displayStep !== null
-export function Div({
+export function Flow({
     // Public API
+    flowKey,
     clientKey = '',
-    redirectURI = null,
 
     // Internal
     companyKey = null,
@@ -33,7 +33,10 @@ export function Div({
 
     const [client, setClient] = useState(null);
 
-    const [finishConfig, setFinishConfig] = useState(false);
+    const [finishConfig, setFinishConfig] = useState({
+        finished: false,
+        redirectURL: null
+    });
     const [displayColorPicker, setDisplayColorPicker] = useState({});
     const [acceptedFile, setAcceptedFile] = useState(null);
     const [step, setStep] = useState(displayStep);
@@ -43,17 +46,23 @@ export function Div({
             const clientInstance = new Client(companyKey || userKey);
             setClient(clientInstance);
             clientInstance
-                .begin()
+                .begin(flowKey)
                 .then((step) => {
-                    if (step.step_number === null) setFinishConfig(true);
-                    else setStep(step);
+                    if (step.step_number === null) {
+                        setFinishConfig({
+                            finished: true,
+                            redirectURL: step.redirect_url
+                        });
+                    } else setStep(step);
                 })
                 .catch((error) => console.log(error));
         } else setStep(displayStep);
     }, [displayStep, sdkKey, userKey]);
 
-    if (displayStep === null && finishConfig) {
-        if (redirectURI) window.location.href = redirectURI;
+    if (displayStep === null && finishConfig.finished) {
+        if (finishConfig.redirectURL) {
+            window.location.href = finishConfig.redirectURL;
+        }
         return null;
     }
 
@@ -201,7 +210,7 @@ export function Div({
             return { key: servar.key, [servar.type]: servar.value };
         });
         client
-            .submitStep(step.step_number, submitServars, skip)
+            .submitStep(flowKey, step.step_number, submitServars, skip)
             .then(async (newStep) => {
                 // set real time attributes for programmatic access
                 noFileServars.forEach((field) => {
@@ -264,8 +273,12 @@ export function Div({
                     }
                 }
 
-                if (newStep.step_number === null) setFinishConfig(true);
-                else setStep(newStep);
+                if (newStep.step_number === null) {
+                    setFinishConfig({
+                        finished: true,
+                        redirectURL: step.redirect_url
+                    });
+                } else setStep(newStep);
             })
             .catch((error) => {
                 if (error) console.log(error);

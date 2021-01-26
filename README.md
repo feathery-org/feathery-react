@@ -1,6 +1,6 @@
 # feathery-react-client-sdk
 
-> React SDK for Div
+> React SDK for Feathery
 
 [![NPM](https://img.shields.io/npm/v/feathery-react-client-sdk.svg)](https://www.npmjs.com/package/feathery-react-client-sdk) [![JavaScript Style Guide](https://img.shields.io/badge/code_style-standard-brightgreen.svg)](https://standardjs.com)
 
@@ -24,8 +24,7 @@ function App() {
   // Initialize Feathery to Peter
   Feathery.init('sdkKey', 'peter@feathery.tech');
 
-  // Access the attributes that Peter filled out in the
-  // onboarding flow
+  // Access the attributes that Peter filled out in the flow
   const [attributes, setAttributes] = useState({});
   useEffect(() => {
     Feathery
@@ -33,10 +32,10 @@ function App() {
         .then(newAttrs => {setAttributes(newAttrs)});
   }, [])
 
-  // Show Peter's onboarding flow
-  return <Feathery.Div
+  // Show the `onboarding` Feathery flow
+  return <Feathery.Flow
+    flowKey='onboarding'
     clientKey='clientKey'
-    redirectURI='https://homepage.com'
   />
 }
 ```
@@ -53,15 +52,15 @@ This is necessary before using the rest of the API.
    Type: `string`\
    Feathery API Key. This authorizes your SDK to communicate with Feathery servers.
 
-### `<Feathery.Div>`
+### `<Feathery.Flow>`
 Initialize this component in your React app at the location where
-you want the onboarding flow to appear. It renders a `div` that contains
-the onboarding flow and expands to fill its parent container.
+you want a Feathery flow to appear. It renders a `div` that contains
+the flow and expands to fill its parent container.
 
 #### Props
-1. `redirectURI` - Optional\
+1. `flowKey`\
    Type: `string`\
-   URL to redirect to after user completes the onboarding flow. If not present, the component returns `null` after the onboarding flow is completed.
+   ID of the Feathery flow to display
 2. `clientKey` - Optional\
    Type: `string`\
    Authentication token to authorize non-Feathery API actions

@@ -1,7 +1,7 @@
 import { fetchAttributes } from './Attributes';
-import { Div } from './Div';
+import { Flow } from './Flow';
 import { init } from './utils/init';
 
-const Feathery = { Div, fetchAttributes, init };
+const Feathery = { Flow, fetchAttributes, init };
 
 export { Feathery };
