@@ -276,7 +276,7 @@ export function Flow({
                 if (newStep.step_number === null) {
                     setFinishConfig({
                         finished: true,
-                        redirectURL: step.redirect_url
+                        redirectURL: newStep.redirect_url
                     });
                 } else setStep(newStep);
             })
