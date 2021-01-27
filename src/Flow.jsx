@@ -325,6 +325,26 @@ export function Flow({
             .map((c, index) => (seenColumns.has(index) ? c : '10px'))
             .join(' ');
     }
+
+    let progressBarElements = null;
+    if (step.progress_bar) {
+        progressBarElements = [
+            <Progress
+                key='progress'
+                style={{ width: `${step.progress_bar.bar_width}%` }}
+                color={`#${step.progress_bar.bar_color}`}
+                value={(step.step_number / maxSteps) * 100}
+            />
+        ];
+        const completionPercentage = `${Math.round(
+            (step.step_number / maxSteps) * 100
+        )}% completed`;
+        if (step.progress_bar.percent_text_layout === 'top') {
+            progressBarElements.splice(0, 0, completionPercentage);
+        } else if (step.progress_bar.percent_text_layout === 'bottom') {
+            progressBarElements.splice(1, 0, completionPercentage);
+        }
+    }
     return (
         <div
             style={{
@@ -379,12 +399,7 @@ export function Flow({
                     }}
                     onClick={() => setExternalState('progressBar', true)}
                 >
-                    {Math.round((step.step_number / maxSteps) * 100)}% completed
-                    <Progress
-                        style={{ width: '100%' }}
-                        color='#007bff'
-                        value={(step.step_number / maxSteps) * 100}
-                    />
+                    {progressBarElements}
                 </div>
             )}
             {step.text_fields.map((field, i) => (
