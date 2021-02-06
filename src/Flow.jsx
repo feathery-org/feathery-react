@@ -434,8 +434,8 @@ export function Flow({
                                 fontSize: `${field.font_size}px`,
                                 borderColor: `#${field.button_color}`,
                                 backgroundColor: `#${field.button_color}`,
-                                width: '100%',
-                                height: '50px'
+                                height: `${field.button_height}${field.button_height_unit}`,
+                                width: `${field.button_width}${field.button_width_unit}`
                             }}
                             disabled={
                                 field.link === 'next' &&
