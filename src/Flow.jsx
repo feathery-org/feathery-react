@@ -364,7 +364,7 @@ export function Flow({
                             gridColumn: i + 1,
                             gridRowStart: 1,
                             gridRowEnd: -1,
-                            borderRight: '3px dashed #DEDFE2'
+                            borderRight: '2px dashed #DEDFE2'
                         }}
                     />
                 ))}
@@ -375,7 +375,7 @@ export function Flow({
                             gridRowStart: i + 1,
                             gridColumnStart: 1,
                             gridColumnEnd: -1,
-                            borderBottom: '3px dashed #DEDFE2'
+                            borderBottom: '2px dashed #DEDFE2'
                         }}
                     />
                 ))}
@@ -515,7 +515,10 @@ export function Flow({
                             <Form.Group style={{ width: '100%' }}>
                                 <Form.Label>{servar.name}</Form.Label>
                                 <Form.Control
-                                    style={{ height: '50px' }}
+                                    style={{
+                                        height: '50px',
+                                        width: `${field.field_width}${field.field_width_unit}`
+                                    }}
                                     as='select'
                                     id={servar.id}
                                     value={servar.value}
@@ -585,6 +588,9 @@ export function Flow({
                                     step={1}
                                     value={servar.value}
                                     onChange={handleChange}
+                                    style={{
+                                      width: `${field.field_width}${field.field_width_unit}`
+                                    }}
                                 />
                             </Form.Group>
                         );
@@ -638,11 +644,14 @@ export function Flow({
                                 <Form.Label>{servar.name}</Form.Label>
                                 <Form.Control
                                     as='textarea'
-                                    rows={3}
+                                    rows={metadata.num_rows}
                                     id={servar.id}
                                     value={servar.value}
                                     onChange={handleChange}
                                     placeholder={metadata.placeholder || ''}
+                                    style={{
+                                        width: `${field.field_width}${field.field_width_unit}`
+                                    }}
                                 />
                             </Form.Group>
                         );
@@ -653,7 +662,10 @@ export function Flow({
                                 <Form.Label>{servar.name}</Form.Label>
                                 <Form.Control
                                     type='text'
-                                    style={{ height: '50px' }}
+                                    style={{
+                                        height: '50px',
+                                        width: `${field.field_width}${field.field_width_unit}`
+                                    }}
                                     id={servar.id}
                                     value={servar.value}
                                     onChange={handleChange}
