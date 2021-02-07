@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
 import Button from 'react-bootstrap/Button';
-import Form from 'react-bootstrap/Form';
+import ReactForm from 'react-bootstrap/Form';
 import { Progress } from '@zendeskgarden/react-loaders';
 import { SketchPicker } from 'react-color';
 
@@ -17,9 +17,9 @@ const angleBracketRegex = /<[^>]*>/g;
 
 // sdkKey and userKey are required if displayStep === null
 // totalSteps is required if displayStep !== null
-export function Flow({
+export function Form({
     // Public API
-    flowKey,
+    formKey,
     clientKey = '',
 
     // Internal
@@ -46,7 +46,7 @@ export function Flow({
             const clientInstance = new Client(companyKey || userKey);
             setClient(clientInstance);
             clientInstance
-                .begin(flowKey)
+                .begin(formKey)
                 .then((step) => {
                     if (step.step_number === null) {
                         setFinishConfig({
@@ -210,7 +210,7 @@ export function Flow({
             return { key: servar.key, [servar.type]: servar.value };
         });
         client
-            .submitStep(flowKey, step.step_number, submitServars, skip)
+            .submitStep(formKey, step.step_number, submitServars, skip)
             .then(async (newStep) => {
                 // set real time attributes for programmatic access
                 noFileServars.forEach((field) => {
@@ -485,22 +485,22 @@ export function Flow({
                 switch (servar.type) {
                     case 'file_upload':
                         servarComponent = (
-                            <Form.Group style={{ width: '100%' }}>
-                                <Form.Label>{servar.name}</Form.Label>
-                                <Form.File
+                            <ReactForm.Group style={{ width: '100%' }}>
+                                <ReactForm.Label>{servar.name}</ReactForm.Label>
+                                <ReactForm.File
                                     id={servar.id}
                                     accept='image/*'
                                     onChange={(e) => {
                                         setAcceptedFile(e.target.files[0]);
                                     }}
                                 />
-                            </Form.Group>
+                            </ReactForm.Group>
                         );
                         break;
                     case 'checkbox':
                         servarComponent = (
-                            <Form.Group style={{ width: '100%' }}>
-                                <Form.Check
+                            <ReactForm.Group style={{ width: '100%' }}>
+                                <ReactForm.Check
                                     type='checkbox'
                                     id={servar.id}
                                     label={servar.name}
@@ -510,14 +510,14 @@ export function Flow({
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                 />
-                            </Form.Group>
+                            </ReactForm.Group>
                         );
                         break;
                     case 'dropdown':
                         servarComponent = (
-                            <Form.Group style={{ width: '100%' }}>
-                                <Form.Label>{servar.name}</Form.Label>
-                                <Form.Control
+                            <ReactForm.Group style={{ width: '100%' }}>
+                                <ReactForm.Label>{servar.name}</ReactForm.Label>
+                                <ReactForm.Control
                                     style={{
                                         height: '50px',
                                         width: `${field.field_width}${field.field_width_unit}`,
@@ -535,17 +535,17 @@ export function Flow({
                                     {servar.metadata.options.map((option) => (
                                         <option key={option}>{option}</option>
                                     ))}
-                                </Form.Control>
-                            </Form.Group>
+                                </ReactForm.Control>
+                            </ReactForm.Group>
                         );
                         break;
                     case 'multiselect':
                         servarComponent = (
-                            <Form.Group style={{ width: '100%' }}>
-                                <Form.Label>{servar.name}</Form.Label>
+                            <ReactForm.Group style={{ width: '100%' }}>
+                                <ReactForm.Label>{servar.name}</ReactForm.Label>
                                 {servar.metadata.options.map((opt) => {
                                     return (
-                                        <Form.Check
+                                        <ReactForm.Check
                                             type='checkbox'
                                             name={opt}
                                             key={opt}
@@ -560,16 +560,16 @@ export function Flow({
                                         />
                                     );
                                 })}
-                            </Form.Group>
+                            </ReactForm.Group>
                         );
                         break;
                     case 'select':
                         servarComponent = (
-                            <Form.Group style={{ width: '100%' }}>
-                                <Form.Label>{servar.name}</Form.Label>
+                            <ReactForm.Group style={{ width: '100%' }}>
+                                <ReactForm.Label>{servar.name}</ReactForm.Label>
                                 {servar.metadata.options.map((opt) => {
                                     return (
-                                        <Form.Check
+                                        <ReactForm.Check
                                             type='radio'
                                             id={servar.id}
                                             label={opt}
@@ -583,16 +583,16 @@ export function Flow({
                                         />
                                     );
                                 })}
-                            </Form.Group>
+                            </ReactForm.Group>
                         );
                         break;
                     case 'integer_field':
                         servarComponent = (
-                            <Form.Group style={{ width: '100%' }}>
-                                <Form.Label>
+                            <ReactForm.Group style={{ width: '100%' }}>
+                                <ReactForm.Label>
                                     {servar.name}: <b>0</b>
-                                </Form.Label>
-                                <Form.Control
+                                </ReactForm.Label>
+                                <ReactForm.Control
                                     id={servar.id}
                                     type='range'
                                     step={1}
@@ -603,13 +603,13 @@ export function Flow({
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                 />
-                            </Form.Group>
+                            </ReactForm.Group>
                         );
                         break;
                     case 'hex_color':
                         servarComponent = (
-                            <Form.Group style={{ width: '100%' }}>
-                                <Form.Label>{servar.name}</Form.Label>
+                            <ReactForm.Group style={{ width: '100%' }}>
+                                <ReactForm.Label>{servar.name}</ReactForm.Label>
                                 <div
                                     style={{
                                         width: '36px',
@@ -647,14 +647,14 @@ export function Flow({
                                         />
                                     </div>
                                 ) : null}
-                            </Form.Group>
+                            </ReactForm.Group>
                         );
                         break;
                     case 'text_area':
                         servarComponent = (
-                            <Form.Group style={{ width: '100%' }}>
-                                <Form.Label>{servar.name}</Form.Label>
-                                <Form.Control
+                            <ReactForm.Group style={{ width: '100%' }}>
+                                <ReactForm.Label>{servar.name}</ReactForm.Label>
+                                <ReactForm.Control
                                     as='textarea'
                                     rows={metadata.num_rows}
                                     id={servar.id}
@@ -666,14 +666,14 @@ export function Flow({
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                 />
-                            </Form.Group>
+                            </ReactForm.Group>
                         );
                         break;
                     default:
                         servarComponent = (
-                            <Form.Group style={{ width: '100%' }}>
-                                <Form.Label>{servar.name}</Form.Label>
-                                <Form.Control
+                            <ReactForm.Group style={{ width: '100%' }}>
+                                <ReactForm.Label>{servar.name}</ReactForm.Label>
+                                <ReactForm.Control
                                     type='text'
                                     style={{
                                         height: '50px',
@@ -685,7 +685,7 @@ export function Flow({
                                     onChange={handleChange}
                                     placeholder={metadata.placeholder || ''}
                                 />
-                            </Form.Group>
+                            </ReactForm.Group>
                         );
                 }
                 return (

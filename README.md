@@ -24,7 +24,7 @@ function App() {
   // Initialize Feathery to Peter
   Feathery.init('sdkKey', 'peter@feathery.tech');
 
-  // Access the attributes that Peter filled out in the flow
+  // Access the attributes that Peter filled out in the form
   const [attributes, setAttributes] = useState({});
   useEffect(() => {
     Feathery
@@ -32,9 +32,9 @@ function App() {
         .then(newAttrs => {setAttributes(newAttrs)});
   }, [])
 
-  // Show the `onboarding` Feathery flow
-  return <Feathery.Flow
-    flowKey='onboarding'
+  // Show the `onboarding` Feathery form
+  return <Feathery.Form
+    formKey='onboarding'
     clientKey='clientKey'
   />
 }
@@ -52,15 +52,15 @@ This is necessary before using the rest of the API.
    Type: `string`\
    Feathery API Key. This authorizes your SDK to communicate with Feathery servers.
 
-### `<Feathery.Flow>`
+### `<Feathery.Form>`
 Initialize this component in your React app at the location where
-you want a Feathery flow to appear. It renders a `div` that contains
-the flow and expands to fill its parent container.
+you want a Feathery form to appear. It renders a `div` that contains
+the form and expands to fill its parent container.
 
 #### Props
-1. `flowKey`\
+1. `formKey`\
    Type: `string`\
-   ID of the Feathery flow to display
+   ID of the Feathery form to display
 2. `clientKey` - Optional\
    Type: `string`\
    Authentication token to authorize non-Feathery API actions
