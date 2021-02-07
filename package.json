@@ -57,6 +57,8 @@
     "dist"
   ],
   "dependencies": {
+    "@emotion/babel-preset-css-prop": "^11.0.0",
+    "@emotion/react": "^11.1.5",
     "@zendeskgarden/react-loaders": "^8.28.1",
     "@zendeskgarden/react-theming": "^8.29.0",
     "bootstrap": "^4.5.3",
@@ -67,7 +69,8 @@
   "babel": {
     "presets": [
       "@babel/preset-env",
-      "@babel/preset-react"
+      "@babel/preset-react",
+      "@emotion/babel-preset-css-prop"
     ]
   }
 }

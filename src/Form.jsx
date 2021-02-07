@@ -17,7 +17,7 @@ const angleBracketRegex = /<[^>]*>/g;
 
 // sdkKey and userKey are required if displayStep === null
 // totalSteps is required if displayStep !== null
-export function Form({
+export default function Form({
     // Public API
     formKey,
     clientKey = '',
@@ -331,7 +331,7 @@ export function Form({
         progressBarElements = [
             <Progress
                 key='progress'
-                style={{ width: `${step.progress_bar.bar_width}%` }}
+                css={{ width: `${step.progress_bar.bar_width}%` }}
                 color={`#${step.progress_bar.bar_color}`}
                 value={(step.step_number / maxSteps) * 100}
             />
@@ -347,7 +347,7 @@ export function Form({
     }
     return (
         <div
-            style={{
+            css={{
                 height: '100%',
                 backgroundColor: `#${step.default_background_color}`,
                 backgroundSize: '100% 100%',
@@ -360,7 +360,7 @@ export function Form({
             {showGrid &&
                 Array.from({ length: numColumns - 1 }, (_, i) => (
                     <div
-                        style={{
+                        css={{
                             gridColumn: i + 1,
                             gridRowStart: 1,
                             gridRowEnd: -1,
@@ -371,7 +371,7 @@ export function Form({
             {showGrid &&
                 Array.from({ length: numRows - 1 }, (_, i) => (
                     <div
-                        style={{
+                        css={{
                             gridRowStart: i + 1,
                             gridColumnStart: 1,
                             gridColumnEnd: -1,
@@ -381,7 +381,7 @@ export function Form({
                 ))}
             {step.progress_bar && (
                 <div
-                    style={{
+                    css={{
                         gridColumn: step.progress_bar.column_index + 1,
                         gridRow: step.progress_bar.row_index + 1,
                         alignItems: step.progress_bar.layout,
@@ -405,7 +405,7 @@ export function Form({
             {step.text_fields.map((field, i) => (
                 <div
                     key={i.toString() + ':' + step.step_number.toString()}
-                    style={{
+                    css={{
                         gridColumn: field.column_index + 1,
                         gridRow: field.row_index + 1,
                         alignItems: field.layout,
@@ -424,7 +424,7 @@ export function Form({
                                     isFilled) &&
                                 'step-button-active'
                             }
-                            style={{
+                            css={{
                                 color: `#${field.font_color}`,
                                 fontStyle: field.font_italic
                                     ? 'italic'
@@ -458,7 +458,7 @@ export function Form({
                                     return;
                                 submit(field.link === 'skip');
                             }}
-                            style={{
+                            css={{
                                 color: `#${field.font_color}`,
                                 fontStyle: field.font_italic
                                     ? 'italic'
@@ -485,28 +485,30 @@ export function Form({
                 switch (servar.type) {
                     case 'file_upload':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
-                                <ReactForm.Label>{servar.name}</ReactForm.Label>
+                            <ReactForm.Group css={{ width: '100%' }}>
+                                {servar.name}
                                 <ReactForm.File
                                     id={servar.id}
                                     accept='image/*'
                                     onChange={(e) => {
                                         setAcceptedFile(e.target.files[0]);
                                     }}
+                                    css={{ marginTop: '10px' }}
                                 />
                             </ReactForm.Group>
                         );
                         break;
                     case 'checkbox':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
+                            <ReactForm.Group css={{ width: '100%' }}>
                                 <ReactForm.Check
                                     type='checkbox'
                                     id={servar.id}
                                     label={servar.name}
                                     checked={servar.value}
                                     onChange={handleChange}
-                                    style={{
+                                    css={{
+                                        marginTop: '10px',
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                 />
@@ -515,10 +517,12 @@ export function Form({
                         break;
                     case 'dropdown':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
-                                <ReactForm.Label>{servar.name}</ReactForm.Label>
+                            <ReactForm.Group css={{ width: '100%' }}>
+                                {servar.name}
                                 <ReactForm.Control
-                                    style={{
+                                    css={{
+                                        marginTop: '10px',
+                                        display: 'block',
                                         height: '50px',
                                         width: `${field.field_width}${field.field_width_unit}`,
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
@@ -541,64 +545,67 @@ export function Form({
                         break;
                     case 'multiselect':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
-                                <ReactForm.Label>{servar.name}</ReactForm.Label>
-                                {servar.metadata.options.map((opt) => {
-                                    return (
-                                        <ReactForm.Check
-                                            type='checkbox'
-                                            name={opt}
-                                            key={opt}
-                                            label={opt}
-                                            checked={servar.value.includes(opt)}
-                                            onChange={handleMultiselectChange(
-                                                servar.id
-                                            )}
-                                            style={{
-                                                borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                            }}
-                                        />
-                                    );
-                                })}
+                            <ReactForm.Group css={{ width: '100%' }}>
+                                {servar.name}
+                                <div css={{ marginTop: '10px' }}>
+                                    {servar.metadata.options.map((opt) => {
+                                        return (
+                                            <ReactForm.Check
+                                                type='checkbox'
+                                                name={opt}
+                                                key={opt}
+                                                label={opt}
+                                                checked={servar.value.includes(opt)}
+                                                onChange={handleMultiselectChange(
+                                                    servar.id
+                                                )}
+                                                css={{
+                                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                                }}
+                                            />
+                                        );
+                                    })}
+                                </div>
                             </ReactForm.Group>
                         );
                         break;
                     case 'select':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
-                                <ReactForm.Label>{servar.name}</ReactForm.Label>
-                                {servar.metadata.options.map((opt) => {
-                                    return (
-                                        <ReactForm.Check
-                                            type='radio'
-                                            id={servar.id}
-                                            label={opt}
-                                            checked={servar.value === opt}
-                                            onChange={handleChange}
-                                            value={opt}
-                                            key={opt}
-                                            style={{
-                                                borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                            }}
-                                        />
-                                    );
-                                })}
+                            <ReactForm.Group css={{ width: '100%' }}>
+                                {servar.name}
+                                <div css={{ marginTop: '10px' }}>
+                                    {servar.metadata.options.map((opt) => {
+                                        return (
+                                            <ReactForm.Check
+                                                type='radio'
+                                                id={servar.id}
+                                                label={opt}
+                                                checked={servar.value === opt}
+                                                onChange={handleChange}
+                                                value={opt}
+                                                key={opt}
+                                                css={{
+                                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                                }}
+                                            />
+                                        );
+                                    })}
+                                </div>
                             </ReactForm.Group>
                         );
                         break;
                     case 'integer_field':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
-                                <ReactForm.Label>
-                                    {servar.name}: <b>0</b>
-                                </ReactForm.Label>
+                            <ReactForm.Group css={{ width: '100%' }}>
+                                {servar.name}: <b>0</b>
                                 <ReactForm.Control
                                     id={servar.id}
                                     type='range'
                                     step={1}
                                     value={servar.value}
                                     onChange={handleChange}
-                                    style={{
+                                    css={{
+                                        marginTop: '10px',
                                         width: `${field.field_width}${field.field_width_unit}`,
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
@@ -608,10 +615,11 @@ export function Form({
                         break;
                     case 'hex_color':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
-                                <ReactForm.Label>{servar.name}</ReactForm.Label>
+                            <ReactForm.Group css={{ width: '100%' }}>
+                                {servar.name}
                                 <div
-                                    style={{
+                                    css={{
+                                        marginTop: '10px',
                                         width: '36px',
                                         height: '36px',
                                         background: `#${servar.value}`,
@@ -622,13 +630,13 @@ export function Form({
                                 />
                                 {displayColorPicker[servar.id] ? (
                                     <div
-                                        style={{
+                                        css={{
                                             position: 'absolute',
                                             zIndex: 2
                                         }}
                                     >
                                         <div
-                                            style={{
+                                            css={{
                                                 position: 'fixed',
                                                 top: '0px',
                                                 right: '0px',
@@ -652,8 +660,8 @@ export function Form({
                         break;
                     case 'text_area':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
-                                <ReactForm.Label>{servar.name}</ReactForm.Label>
+                            <ReactForm.Group css={{ width: '100%' }}>
+                                {servar.name}
                                 <ReactForm.Control
                                     as='textarea'
                                     rows={metadata.num_rows}
@@ -661,9 +669,17 @@ export function Form({
                                     value={servar.value}
                                     onChange={handleChange}
                                     placeholder={metadata.placeholder || ''}
-                                    style={{
+                                    css={{
+                                        marginTop: '10px',
                                         width: `${field.field_width}${field.field_width_unit}`,
-                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                        '::placeholder': {
+                                            color: `#${field.metadata.placeholder_color}`,
+                                            fontStyle: field.metadata
+                                                .placeholder_italic
+                                                ? 'italic'
+                                                : 'normal'
+                                        }
                                     }}
                                 />
                             </ReactForm.Group>
@@ -671,14 +687,23 @@ export function Form({
                         break;
                     default:
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
-                                <ReactForm.Label>{servar.name}</ReactForm.Label>
+                            <ReactForm.Group css={{ width: '100%' }}>
+                                {servar.name}
                                 <ReactForm.Control
                                     type='text'
-                                    style={{
+                                    css={{
+                                        marginTop: '10px',
+                                        display: 'block',
                                         height: '50px',
                                         width: `${field.field_width}${field.field_width_unit}`,
-                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                        '::placeholder': {
+                                            color: `#${field.metadata.placeholder_color}`,
+                                            fontStyle: field.metadata
+                                                .placeholder_italic
+                                                ? 'italic'
+                                                : 'normal'
+                                        }
                                     }}
                                     id={servar.id}
                                     value={servar.value}
@@ -690,7 +715,7 @@ export function Form({
                 }
                 return (
                     <div
-                        style={{
+                        css={{
                             gridColumn: field.column_index + 1,
                             gridRow: field.row_index + 1,
                             alignItems: field.layout,
