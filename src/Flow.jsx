@@ -506,6 +506,9 @@ export function Flow({
                                     label={servar.name}
                                     checked={servar.value}
                                     onChange={handleChange}
+                                    style={{
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                    }}
                                 />
                             </Form.Group>
                         );
@@ -517,7 +520,8 @@ export function Flow({
                                 <Form.Control
                                     style={{
                                         height: '50px',
-                                        width: `${field.field_width}${field.field_width_unit}`
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                     as='select'
                                     id={servar.id}
@@ -550,6 +554,9 @@ export function Flow({
                                             onChange={handleMultiselectChange(
                                                 servar.id
                                             )}
+                                            style={{
+                                                borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                            }}
                                         />
                                     );
                                 })}
@@ -570,6 +577,9 @@ export function Flow({
                                             onChange={handleChange}
                                             value={opt}
                                             key={opt}
+                                            style={{
+                                                borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                            }}
                                         />
                                     );
                                 })}
@@ -589,7 +599,8 @@ export function Flow({
                                     value={servar.value}
                                     onChange={handleChange}
                                     style={{
-                                      width: `${field.field_width}${field.field_width_unit}`
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                 />
                             </Form.Group>
@@ -604,7 +615,8 @@ export function Flow({
                                         width: '36px',
                                         height: '36px',
                                         background: `#${servar.value}`,
-                                        cursor: 'pointer'
+                                        cursor: 'pointer',
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                     onClick={handleColorPickerClick(servar.id)}
                                 />
@@ -650,7 +662,8 @@ export function Flow({
                                     onChange={handleChange}
                                     placeholder={metadata.placeholder || ''}
                                     style={{
-                                        width: `${field.field_width}${field.field_width_unit}`
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                 />
                             </Form.Group>
@@ -664,7 +677,8 @@ export function Flow({
                                     type='text'
                                     style={{
                                         height: '50px',
-                                        width: `${field.field_width}${field.field_width_unit}`
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                     id={servar.id}
                                     value={servar.value}
