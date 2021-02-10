@@ -35,6 +35,7 @@ function App() {
   // Show the `onboarding` Feathery form
   return <Feathery.Form
     formKey='onboarding'
+    onSubmit={(fieldInfo, stepNumber, lastStep) => cache(fieldInfo)}
     clientKey='clientKey'
   />
 }
