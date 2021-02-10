@@ -1,7 +1,7 @@
 import Form from './Form';
-import { fetchAttributes } from './Attributes';
+import { fetchFields } from './Fields';
 import { init } from './utils/init';
 
-const Feathery = { Form, fetchAttributes, init };
+const Feathery = { Form, fetchFields, init };
 
 export { Feathery };

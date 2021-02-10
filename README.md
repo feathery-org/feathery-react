@@ -16,7 +16,7 @@ npm install --save feathery-react-client-sdk
 ```
 
 ## API Guide
-The following is an example React functional component that leverages the Feathery API.
+The following is an example React component that uses the Feathery library.
 ```JavaScript
 import { Feathery } from 'feathery-react-client-sdk';
 
@@ -24,12 +24,12 @@ function App() {
   // Initialize Feathery to Peter
   Feathery.init('sdkKey', 'peter@feathery.tech');
 
-  // Access the attributes that Peter filled out in the form
-  const [attributes, setAttributes] = useState({});
+  const [fields, setFields] = useState({});
   useEffect(() => {
+    // Access the fields that Peter filled out in the form
     Feathery
-        .fetchAttributes()
-        .then(newAttrs => {setAttributes(newAttrs)});
+      .fetchFields()
+      .then(fields => {setFields(fields)});
   }, [])
 
   // Show the `onboarding` Feathery form
@@ -65,13 +65,12 @@ the form and expands to fill its parent container.
    Type: `string`\
    Authentication token to authorize non-Feathery API actions
 
-### `Feathery.fetchAttributes`
-Function that returns a Promise containing a map of user attributes of the form
-`{attributeKey: attributeValue}`.
+### `Feathery.fetchFields`
+Function that returns a Promise containing a map of user field inputs of the form
+`{fieldKey: fieldValue}`.
 
-If the user doesn't exist, the map will be
-empty. If the user doesn't have a value for a particular attribute,
-the attribute value will be `null`.
+If the user doesn't exist, the map will be empty. If the user doesn't have a
+value for a particular field, the field value will be `null`.
 
 This method is implemented as a singleton, so there will only be one
 global source of data.

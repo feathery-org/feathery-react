@@ -1,23 +1,23 @@
 import * as errors from './utils/error';
 import { initInfo, keyError } from './utils/init';
 
-const attributeState = {
+const fieldState = {
     loaded: false,
-    attributes: null,
-    realTimeAttributes: {}
+    fields: null,
+    realTimeFields: {}
 };
 
-function _allAttributes() {
+function _allFields() {
     return {
-        ...attributeState.attributes,
-        ...attributeState.realTimeAttributes
+        ...fieldState.fields,
+        ...fieldState.realTimeFields
     };
 }
 
-function fetchAttributes() {
+function fetchFields() {
     const err = keyError();
     if (err) return Promise.reject(err);
-    if (attributeState.attributes) return Promise.resolve(_allAttributes());
+    if (fieldState.fields) return Promise.resolve(_allFields());
 
     const { userKey, sdkKey } = initInfo();
     const url = `https://api.feathery.tech/external/fuser/?fuser_key=${encodeURIComponent(
@@ -48,12 +48,12 @@ function fetchAttributes() {
             }
         })
         .then((json) => {
-            attributeState.attributes = json.reduce(function (map, attr) {
+            fieldState.fields = json.reduce(function (map, attr) {
                 map[attr.key] = attr.value;
                 return map;
             }, {});
-            return _allAttributes();
+            return _allFields();
         });
 }
 
-export { fetchAttributes, attributeState };
+export { fetchFields, fieldState };

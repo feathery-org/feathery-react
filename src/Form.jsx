@@ -7,7 +7,7 @@ import { SketchPicker } from 'react-color';
 
 import Client from './utils/client';
 import { initInfo } from './utils/init';
-import { attributeState } from './Attributes';
+import { fieldState } from './Fields';
 
 import './index.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -212,11 +212,10 @@ export default function Form({
         client
             .submitStep(formKey, step.step_number, submitServars, skip)
             .then(async (newStep) => {
-                // set real time attributes for programmatic access
+                // set real time field values for programmatic access
                 noFileServars.forEach((field) => {
                     const servar = field.servar;
-                    attributeState.realTimeAttributes[servar.key] =
-                        servar.value;
+                    fieldState.realTimeFields[servar.key] = servar.value;
                 });
                 if (!skip) {
                     const servarLookupMap = step.servar_fields.reduce(
@@ -555,7 +554,9 @@ export default function Form({
                                                 name={opt}
                                                 key={opt}
                                                 label={opt}
-                                                checked={servar.value.includes(opt)}
+                                                checked={servar.value.includes(
+                                                    opt
+                                                )}
                                                 onChange={handleMultiselectChange(
                                                     servar.id
                                                 )}
