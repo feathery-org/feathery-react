@@ -9,11 +9,26 @@ import Client from './utils/client';
 import { initInfo } from './utils/init';
 import { fieldState } from './Fields';
 
-import './index.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 const uuidV4Regex = /^[0-9A-F]{8}-[0-9A-F]{4}-[4][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i;
 const angleBracketRegex = /<[^>]*>/g;
+function adjustColor(color, amount) {
+    return (
+        '#' +
+        color
+            .replace(/^#/, '')
+            .replace(/../g, (color) =>
+                (
+                    '0' +
+                    Math.min(
+                        255,
+                        Math.max(0, parseInt(color, 16) + amount)
+                    ).toString(16)
+                ).substr(-2)
+            )
+    );
+}
 
 // sdkKey and userKey are required if displayStep === null
 // totalSteps is required if displayStep !== null
@@ -305,6 +320,9 @@ export default function Form({
     for (const field of step.servar_fields) {
         const value = field.servar.value;
         switch (field.servar.type) {
+            case 'text_area':
+                if (value === '') isFilled = false;
+                break;
             case 'text_field':
                 if (value === '') isFilled = false;
                 break;
@@ -432,12 +450,6 @@ export default function Form({
                 >
                     {field.is_button ? (
                         <Button
-                            className={
-                                (displayStep !== null ||
-                                    field.link !== 'next' ||
-                                    isFilled) &&
-                                'step-button-active'
-                            }
                             css={{
                                 color: `#${field.font_color}`,
                                 fontStyle: field.font_italic
@@ -449,7 +461,14 @@ export default function Form({
                                 borderColor: `#${field.button_color}`,
                                 backgroundColor: `#${field.button_color}`,
                                 height: `${field.button_height}${field.button_height_unit}`,
-                                width: `${field.button_width}${field.button_width_unit}`
+                                width: `${field.button_width}${field.button_width_unit}`,
+                                ':hover:enabled': {
+                                    backgroundColor: `#${adjustColor(
+                                        field.button_color,
+                                        -30
+                                    )}`,
+                                    transition: 'background 0.5s'
+                                }
                             }}
                             disabled={
                                 field.link === 'next' &&
@@ -507,7 +526,10 @@ export default function Form({
                                     onChange={(e) => {
                                         setAcceptedFile(e.target.files[0]);
                                     }}
-                                    css={{ marginTop: '10px' }}
+                                    css={{
+                                        marginTop: '10px',
+                                        cursor: 'pointer'
+                                    }}
                                 />
                             </ReactForm.Group>
                         );
@@ -523,7 +545,8 @@ export default function Form({
                                     onChange={handleChange}
                                     css={{
                                         marginTop: '10px',
-                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                        cursor: 'pointer'
                                     }}
                                 />
                             </ReactForm.Group>
@@ -539,7 +562,8 @@ export default function Form({
                                         display: 'block',
                                         height: '50px',
                                         width: `${field.field_width}${field.field_width_unit}`,
-                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                        cursor: 'pointer'
                                     }}
                                     as='select'
                                     id={servar.id}
@@ -576,7 +600,8 @@ export default function Form({
                                                     servar.id
                                                 )}
                                                 css={{
-                                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                                    cursor: 'pointer'
                                                 }}
                                             />
                                         );
@@ -601,7 +626,8 @@ export default function Form({
                                                 value={opt}
                                                 key={opt}
                                                 css={{
-                                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                                    cursor: 'pointer'
                                                 }}
                                             />
                                         );
@@ -623,7 +649,8 @@ export default function Form({
                                     css={{
                                         marginTop: '10px',
                                         width: `${field.field_width}${field.field_width_unit}`,
-                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                        cursor: 'pointer'
                                     }}
                                 />
                             </ReactForm.Group>
@@ -743,7 +770,9 @@ export default function Form({
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: 'center',
-                            cursor: 'pointer'
+                            ...(displayStep !== null
+                                ? { cursor: 'pointer' }
+                                : {})
                         }}
                         onClick={() => setExternalState('servar', i)}
                         key={i}
