@@ -61,7 +61,17 @@ the form and expands to fill its parent container.
 1. `formKey`\
    Type: `string`\
    ID of the Feathery form to display
-2. `clientKey` - Optional\
+2. `onSubmit(fieldInfo, stepNumber, lastStep)`\
+   Type: `function`\
+   Callback function to access user-submitted form information.
+   It's called every time the user submits a step of the form.\
+   Parameters (in order):
+    * `fieldInfo`: An array of the form `[{key: <fieldKey>, type: <fieldType>, value: <fieldValue>}]`.\
+      Note that if the field is of `file_upload` type, the value will be a File object.
+    * `stepNumber`: An `int` that's the zero-indexed step number that is being submitted.
+    * `lastStep`: A `boolean` that is `True` when the step being submitted is
+      the last step the user needs to complete.
+3. `clientKey` - Optional\
    Type: `string`\
    Authentication token to authorize non-Feathery API actions
 

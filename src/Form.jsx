@@ -20,6 +20,7 @@ const angleBracketRegex = /<[^>]*>/g;
 export default function Form({
     // Public API
     formKey,
+    onSubmit = null,
     clientKey = '',
 
     // Internal
@@ -205,19 +206,31 @@ export default function Form({
         const noFileServars = step.servar_fields.filter(
             (field) => field.servar.type !== 'file_upload'
         );
-        const submitServars = noFileServars.map((field) => {
+        const featheryServars = noFileServars.map((field) => {
             const servar = field.servar;
             return { key: servar.key, [servar.type]: servar.value };
         });
         client
-            .submitStep(formKey, step.step_number, submitServars, skip)
+            .submitStep(formKey, step.step_number, featheryServars, skip)
             .then(async (newStep) => {
+                const finished = newStep.step_number === null;
                 // set real time field values for programmatic access
                 noFileServars.forEach((field) => {
                     const servar = field.servar;
                     fieldState.realTimeFields[servar.key] = servar.value;
                 });
                 if (!skip) {
+                    // Execute user-provided onSubmit function if present
+                    const userServars = step.servar_fields.map((field) => {
+                        const servar = field.servar;
+                        const value =
+                            servar.type === 'file_upload'
+                                ? acceptedFile
+                                : servar.value;
+                        return { value, type: servar.type, key: servar.key };
+                    });
+                    onSubmit(userServars, step.step_number, finished);
+                    // Execute step actions
                     const servarLookupMap = step.servar_fields.reduce(
                         (map, field) => {
                             const servar = field.servar;
@@ -272,7 +285,7 @@ export default function Form({
                     }
                 }
 
-                if (newStep.step_number === null) {
+                if (finished) {
                     setFinishConfig({
                         finished: true,
                         redirectURL: newStep.redirect_url
