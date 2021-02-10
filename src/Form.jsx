@@ -229,7 +229,9 @@ export default function Form({
                                 : servar.value;
                         return { value, type: servar.type, key: servar.key };
                     });
-                    onSubmit(userServars, step.step_number, finished);
+                    if (typeof onSubmit === 'function') {
+                        onSubmit(userServars, step.step_number, finished);
+                    }
                     // Execute step actions
                     const servarLookupMap = step.servar_fields.reduce(
                         (map, field) => {
