@@ -377,6 +377,7 @@ export default function Form({
             progressBarElements.splice(1, 0, completionPercentage);
         }
     }
+
     return (
         <div
             css={{
@@ -450,7 +451,8 @@ export default function Form({
                 >
                     {field.is_button ? (
                         <Button
-                            css={{
+                            style={{
+                                cursor: field.link ? 'pointer' : 'default',
                                 color: `#${field.font_color}`,
                                 fontStyle: field.font_italic
                                     ? 'italic'
@@ -461,14 +463,23 @@ export default function Form({
                                 borderColor: `#${field.button_color}`,
                                 backgroundColor: `#${field.button_color}`,
                                 height: `${field.button_height}${field.button_height_unit}`,
-                                width: `${field.button_width}${field.button_width_unit}`,
-                                ':hover:enabled': {
-                                    backgroundColor: `#${adjustColor(
-                                        field.button_color,
-                                        -30
-                                    )}`,
-                                    transition: 'background 0.5s'
-                                }
+                                width: `${field.button_width}${field.button_width_unit}`
+                            }}
+                            css={{
+                                '&:hover:enabled': field.link
+                                    ? {
+                                          backgroundColor: `${adjustColor(
+                                              field.button_color,
+                                              -30
+                                          )} !important`,
+                                          borderColor: `${adjustColor(
+                                              field.button_color,
+                                              -30
+                                          )} !important`,
+                                          transition:
+                                              'background 0.3s !important'
+                                      }
+                                    : {}
                             }}
                             disabled={
                                 field.link === 'next' &&
@@ -716,7 +727,7 @@ export default function Form({
                                         marginTop: '10px',
                                         width: `${field.field_width}${field.field_width_unit}`,
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                        '::placeholder': {
+                                        '&::placeholder': {
                                             color: `#${field.metadata.placeholder_color}`,
                                             fontStyle: field.metadata
                                                 .placeholder_italic
