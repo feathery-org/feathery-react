@@ -323,6 +323,7 @@ export default function Form({
 
     let isFilled = true;
     for (const field of step.servar_fields) {
+        if (!field.servar.required) continue;
         const value = field.servar.value;
         switch (field.servar.type) {
             case 'email':
@@ -549,6 +550,7 @@ export default function Form({
                                 <ReactForm.File
                                     id={servar.id}
                                     accept='image/*'
+                                    required={servar.required}
                                     onChange={(e) => {
                                         setAcceptedFile(e.target.files[0]);
                                     }}
@@ -594,6 +596,7 @@ export default function Form({
                                     as='select'
                                     id={servar.id}
                                     value={servar.value}
+                                    required={servar.required}
                                     onChange={handleChange}
                                     custom
                                 >
@@ -629,6 +632,7 @@ export default function Form({
                                     }}
                                     id={servar.id}
                                     value={servar.value}
+                                    required={servar.required}
                                     onChange={handleChange}
                                     placeholder={metadata.placeholder || ''}
                                 />
@@ -676,6 +680,7 @@ export default function Form({
                                                 id={servar.id}
                                                 label={opt}
                                                 checked={servar.value === opt}
+                                                required={servar.required}
                                                 onChange={handleChange}
                                                 value={opt}
                                                 key={opt}
@@ -699,6 +704,7 @@ export default function Form({
                                     type='range'
                                     step={1}
                                     value={servar.value}
+                                    required={servar.required}
                                     onChange={handleChange}
                                     css={{
                                         marginTop: '10px',
@@ -766,6 +772,7 @@ export default function Form({
                                     value={servar.value}
                                     onChange={handleChange}
                                     placeholder={metadata.placeholder || ''}
+                                    required={servar.required}
                                     css={{
                                         marginTop: '10px',
                                         width: `${field.field_width}${field.field_width_unit}`,
@@ -804,6 +811,7 @@ export default function Form({
                                     }}
                                     id={servar.id}
                                     value={servar.value}
+                                    required={servar.required}
                                     onChange={handleChange}
                                     placeholder={metadata.placeholder || ''}
                                 />
@@ -832,6 +840,7 @@ export default function Form({
                                     }}
                                     id={servar.id}
                                     value={servar.value}
+                                    required={servar.required}
                                     onChange={handleChange}
                                     placeholder={metadata.placeholder || ''}
                                 />
