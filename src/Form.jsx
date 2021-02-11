@@ -320,6 +320,9 @@ export default function Form({
     for (const field of step.servar_fields) {
         const value = field.servar.value;
         switch (field.servar.type) {
+            case 'email':
+                if (value === '') isFilled = false;
+                break;
             case 'text_area':
                 if (value === '') isFilled = false;
                 break;
@@ -334,6 +337,9 @@ export default function Form({
                 break;
             case 'file_upload':
                 if (acceptedFile === null) isFilled = false;
+                break;
+            case 'url':
+                if (value === '') isFilled = false;
                 break;
             default:
                 break;
@@ -379,7 +385,8 @@ export default function Form({
     }
 
     return (
-        <div
+        <ReactForm
+            onSubmit={() => submit(false)}
             css={{
                 height: '100%',
                 backgroundColor: `#${step.default_background_color}`,
@@ -484,12 +491,16 @@ export default function Form({
                             disabled={
                                 field.link === 'next' &&
                                 !isFilled &&
-                                displayStep === null
+                                !displayStep
+                            }
+                            type={
+                                !displayStep && field.link === 'next'
+                                    ? 'submit'
+                                    : undefined
                             }
                             onClick={() => {
-                                if (displayStep !== null || field.link === null)
-                                    return;
-                                submit(field.link === 'skip');
+                                if (!displayStep && field.link === 'skip')
+                                    submit(false);
                             }}
                             dangerouslySetInnerHTML={{
                                 __html: field.text
@@ -498,8 +509,7 @@ export default function Form({
                     ) : (
                         <div
                             onClick={() => {
-                                if (displayStep !== null || field.link === null)
-                                    return;
+                                if (displayStep || field.link === null) return;
                                 submit(field.link === 'skip');
                             }}
                             css={{
@@ -571,7 +581,7 @@ export default function Form({
                                     css={{
                                         marginTop: '10px',
                                         display: 'block',
-                                        height: '50px',
+                                        height: `${field.field_height}${field.field_height_unit}`,
                                         width: `${field.field_width}${field.field_width_unit}`,
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                                         cursor: 'pointer'
@@ -589,6 +599,34 @@ export default function Form({
                                         <option key={option}>{option}</option>
                                     ))}
                                 </ReactForm.Control>
+                            </ReactForm.Group>
+                        );
+                        break;
+                    case 'email':
+                        servarComponent = (
+                            <ReactForm.Group css={{ width: '100%' }}>
+                                {servar.name}
+                                <ReactForm.Control
+                                    type='email'
+                                    css={{
+                                        marginTop: '10px',
+                                        display: 'block',
+                                        height: `${field.field_height}${field.field_height_unit}`,
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                        '::placeholder': {
+                                            color: `#${field.metadata.placeholder_color}`,
+                                            fontStyle: field.metadata
+                                                .placeholder_italic
+                                                ? 'italic'
+                                                : 'normal'
+                                        }
+                                    }}
+                                    id={servar.id}
+                                    value={servar.value}
+                                    onChange={handleChange}
+                                    placeholder={metadata.placeholder || ''}
+                                />
                             </ReactForm.Group>
                         );
                         break;
@@ -739,6 +777,34 @@ export default function Form({
                             </ReactForm.Group>
                         );
                         break;
+                    case 'url':
+                        servarComponent = (
+                            <ReactForm.Group css={{ width: '100%' }}>
+                                {servar.name}
+                                <ReactForm.Control
+                                    type='url'
+                                    css={{
+                                        marginTop: '10px',
+                                        display: 'block',
+                                        height: `${field.field_height}${field.field_height_unit}`,
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                        '::placeholder': {
+                                            color: `#${field.metadata.placeholder_color}`,
+                                            fontStyle: field.metadata
+                                                .placeholder_italic
+                                                ? 'italic'
+                                                : 'normal'
+                                        }
+                                    }}
+                                    id={servar.id}
+                                    value={servar.value}
+                                    onChange={handleChange}
+                                    placeholder={metadata.placeholder || ''}
+                                />
+                            </ReactForm.Group>
+                        );
+                        break;
                     default:
                         servarComponent = (
                             <ReactForm.Group css={{ width: '100%' }}>
@@ -748,7 +814,7 @@ export default function Form({
                                     css={{
                                         marginTop: '10px',
                                         display: 'block',
-                                        height: '50px',
+                                        height: `${field.field_height}${field.field_height_unit}`,
                                         width: `${field.field_width}${field.field_width_unit}`,
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                                         '::placeholder': {
@@ -792,6 +858,6 @@ export default function Form({
                     </div>
                 );
             })}
-        </div>
+        </ReactForm>
     );
 }
