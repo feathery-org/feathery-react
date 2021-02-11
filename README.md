@@ -67,7 +67,9 @@ the form and expands to fill its parent container.
    Callback function to access user-submitted form information.
    It's called every time the user submits a step of the form.\
    Parameters (in order):
-    * `fieldInfo`: An array of the form `[{key: <fieldKey>, type: <fieldType>, value: <fieldValue>}]`.\
+    * `fieldInfo`: An array of the form
+      `[{name: <fieldName>, key: <fieldKey>, type: <fieldType>, value: <fieldValue>}]`.\
+      For example, `[{name: 'How old are you?', key: 'age', type: 'integer_field', value: 21 }]`.\
       Note that if the field is of `file_upload` type, the value will be a File object.
     * `stepNumber`: An `int` that's the zero-indexed step number that is being submitted.
     * `lastStep`: A `boolean` that is `True` when the step being submitted is

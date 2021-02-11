@@ -242,7 +242,12 @@ export default function Form({
                             servar.type === 'file_upload'
                                 ? acceptedFile
                                 : servar.value;
-                        return { value, type: servar.type, key: servar.key };
+                        return {
+                            value,
+                            type: servar.type,
+                            key: servar.key,
+                            name: servar.name
+                        };
                     });
                     if (typeof onSubmit === 'function') {
                         onSubmit(userServars, step.step_number, finished);
