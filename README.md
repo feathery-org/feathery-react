@@ -55,7 +55,7 @@ This is necessary before using the rest of the API.
 
 ### `<Feathery.Form>`
 Initialize this component in your React app at the location where
-you want a Feathery form to appear. It renders a `div` that contains
+you want a Feathery form to appear. It renders a `form` that contains
 the form and expands to fill its parent container.
 
 #### Props
