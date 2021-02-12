@@ -479,6 +479,7 @@ export default function Form({
                                 width: `${field.button_width}${field.button_width_unit}`
                             }}
                             css={{
+                                '&:disabled': { cursor: 'default !important' },
                                 '&:hover:enabled': field.link
                                     ? {
                                           backgroundColor: `${adjustColor(
