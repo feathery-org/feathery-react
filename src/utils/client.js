@@ -27,31 +27,25 @@ export default class Client {
             cache: 'no-store',
             headers: { Authorization: 'Token ' + sdkKey }
         };
-        return fetch(url, options)
-            .then((response) => {
-                const { status } = response;
-                switch (status) {
-                    case 200:
-                        return response.json();
-                    case 401:
-                        return Promise.reject(
-                            new errors.SdkKeyError('Invalid SDK key')
-                        );
-                    case 404:
-                        return Promise.reject(
-                            new errors.UserKeyError('Invalid User key')
-                        );
-                    default:
-                        return Promise.reject(
-                            new errors.FetchError('Unknown error')
-                        );
-                }
-            })
-            .catch((error) => {
-                throw error instanceof TypeError
-                    ? new errors.FetchError('Could not connect to the server')
-                    : error;
-            });
+        return fetch(url, options).then((response) => {
+            const { status } = response;
+            switch (status) {
+                case 200:
+                    return response.json();
+                case 401:
+                    return Promise.reject(
+                        new errors.SdkKeyError('Invalid SDK key')
+                    );
+                case 404:
+                    return Promise.reject(
+                        new errors.UserKeyError('Invalid User key')
+                    );
+                default:
+                    return Promise.reject(
+                        new errors.FetchError('Unknown error')
+                    );
+            }
+        });
     }
 
     async submitStep(formKey, stepNum, servars, skip = false) {
@@ -74,32 +68,28 @@ export default class Client {
             method: 'POST',
             body: JSON.stringify(data)
         };
-        return fetch(url, options)
-            .then((response) => {
-                const { status } = response;
-                switch (status) {
-                    case 200:
-                        return response.json();
-                    case 201:
-                        return response.json();
-                    case 401:
-                        return Promise.reject(
-                            new errors.SdkKeyError('Invalid SDK key')
-                        );
-                    case 404:
-                        return Promise.reject(
-                            new errors.UserKeyError('Invalid User key')
-                        );
-                    default:
-                        return Promise.reject(
-                            new errors.FetchError('Unknown error')
-                        );
-                }
-            })
-            .catch((error) => {
-                throw error instanceof TypeError
-                    ? new errors.FetchError('Could not connect to the server')
-                    : error;
-            });
+        console.log(data, options)
+        return fetch(url, options).then((response) => {
+            console.log(response);
+            const { status } = response;
+            switch (status) {
+                case 200:
+                    return response.json();
+                case 201:
+                    return response.json();
+                case 401:
+                    return Promise.reject(
+                        new errors.SdkKeyError('Invalid SDK key')
+                    );
+                case 404:
+                    return Promise.reject(
+                        new errors.UserKeyError('Invalid User key')
+                    );
+                default:
+                    return Promise.reject(
+                        new errors.FetchError('Unknown error')
+                    );
+            }
+        });
     }
 }

@@ -392,7 +392,12 @@ export default function Form({
 
     return (
         <ReactForm
-            onSubmit={() => submit(false)}
+            onSubmit={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const form = event.currentTarget;
+                if (form.checkValidity()) submit(false);
+            }}
             css={{
                 height: '100%',
                 backgroundColor: `#${step.default_background_color}`,
@@ -507,7 +512,7 @@ export default function Form({
                             }
                             onClick={() => {
                                 if (!displayStep && field.link === 'skip')
-                                    submit(false);
+                                    submit(true);
                             }}
                             dangerouslySetInnerHTML={{
                                 __html: field.text
@@ -574,8 +579,7 @@ export default function Form({
                                     onChange={handleChange}
                                     css={{
                                         marginTop: '10px',
-                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                        cursor: 'pointer'
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                 />
                             </ReactForm.Group>
@@ -659,8 +663,7 @@ export default function Form({
                                                     servar.id
                                                 )}
                                                 css={{
-                                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                                    cursor: 'pointer'
+                                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                                 }}
                                             />
                                         );
@@ -686,8 +689,7 @@ export default function Form({
                                                 value={opt}
                                                 key={opt}
                                                 css={{
-                                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                                    cursor: 'pointer'
+                                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                                 }}
                                             />
                                         );
