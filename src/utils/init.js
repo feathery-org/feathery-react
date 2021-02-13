@@ -1,23 +1,23 @@
 import * as errors from './error';
 
-const initState = { sdkKey: null, userKey: null };
+const initState = { apiKey: null, userKey: null };
 
-function init(sdkKey, userKey) {
-    if (!sdkKey || typeof sdkKey !== 'string') {
-        throw new errors.SdkKeyError('Invalid SDK Key');
+function init(apiKey, userKey) {
+    if (!apiKey || typeof apiKey !== 'string') {
+        throw new errors.APIKeyError('Invalid API Key');
     }
     if (!userKey || typeof userKey !== 'string') {
         throw new errors.UserKeyError('Invalid User Key');
     }
 
-    initState.sdkKey = sdkKey;
+    initState.apiKey = apiKey;
     initState.userKey = userKey;
 }
 
 function keyError() {
-    const { sdkKey, userKey } = initState;
-    if (!sdkKey || typeof sdkKey !== 'string') {
-        return new errors.SdkKeyError('Invalid SDK Key');
+    const { apiKey, userKey } = initState;
+    if (!apiKey || typeof apiKey !== 'string') {
+        return new errors.APIKeyError('Invalid API Key');
     }
     if (!userKey || typeof userKey !== 'string') {
         return new errors.UserKeyError('Invalid User Key');

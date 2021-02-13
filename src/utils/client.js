@@ -15,7 +15,7 @@ export default class Client {
     }
 
     async begin(formKey) {
-        const { userKey, sdkKey } = initInfo();
+        const { userKey, apiKey } = initInfo();
         const { _companyKey: companyKey } = this;
         const params = encodeGetParams({
             flow_key: formKey,
@@ -25,7 +25,7 @@ export default class Client {
         const url = `https://api.feathery.tech/api/panel/step/?${params}`;
         const options = {
             cache: 'no-store',
-            headers: { Authorization: 'Token ' + sdkKey }
+            headers: { Authorization: 'Token ' + apiKey }
         };
         return fetch(url, options).then((response) => {
             const { status } = response;
@@ -34,7 +34,7 @@ export default class Client {
                     return response.json();
                 case 401:
                     return Promise.reject(
-                        new errors.SdkKeyError('Invalid SDK key')
+                        new errors.APIKeyError('Invalid API key')
                     );
                 case 404:
                     return Promise.reject(
@@ -48,29 +48,27 @@ export default class Client {
         });
     }
 
-    async submitStep(formKey, stepNum, servars, skip = false) {
+    async submitStep(formKey, stepNum, servars, action) {
         // servars = [{key: <servarKey>, <type>: <value>}]
-        const { userKey, sdkKey } = initInfo();
+        const { userKey, apiKey } = initInfo();
         const url = `https://api.feathery.tech/api/panel/step/submit/`;
         const data = {
             flow_key: formKey,
             fuser_key: userKey,
             step_number: stepNum,
-            servars: skip ? [] : servars,
-            skip
+            servars: action === 'next' ? servars : [],
+            action
         };
         const options = {
             cache: 'no-store',
             headers: {
-                Authorization: 'Token ' + sdkKey,
+                Authorization: 'Token ' + apiKey,
                 'Content-Type': 'application/json'
             },
             method: 'POST',
             body: JSON.stringify(data)
         };
-        console.log(data, options)
         return fetch(url, options).then((response) => {
-            console.log(response);
             const { status } = response;
             switch (status) {
                 case 200:
@@ -79,7 +77,7 @@ export default class Client {
                     return response.json();
                 case 401:
                     return Promise.reject(
-                        new errors.SdkKeyError('Invalid SDK key')
+                        new errors.APIKeyError('Invalid API key')
                     );
                 case 404:
                     return Promise.reject(

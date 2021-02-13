@@ -19,13 +19,13 @@ function fetchFields() {
     if (err) return Promise.reject(err);
     if (fieldState.fields) return Promise.resolve(_allFields());
 
-    const { userKey, sdkKey } = initInfo();
+    const { userKey, apiKey } = initInfo();
     const url = `https://api.feathery.tech/external/fuser/?fuser_key=${encodeURIComponent(
         userKey
     )}`;
     const options = {
         cache: 'no-store',
-        headers: { Authorization: 'Token ' + sdkKey }
+        headers: { Authorization: 'Token ' + apiKey }
     };
     return fetch(url, options)
         .then((response) => {
@@ -35,7 +35,7 @@ function fetchFields() {
                     return response.json();
                 case 401:
                     return Promise.reject(
-                        new errors.SdkKeyError('Invalid SDK key')
+                        new errors.APIKeyError('Invalid API key')
                     );
                 case 404:
                     // User not available, which may be due to a race condition

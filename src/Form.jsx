@@ -30,22 +30,22 @@ function adjustColor(color, amount) {
     );
 }
 
-// sdkKey and userKey are required if displayStep === null
+// apiKey and userKey are required if displayStep === null
 // totalSteps is required if displayStep !== null
 export default function Form({
     // Public API
     formKey,
     onSubmit = null,
-    clientKey = '',
 
     // Internal
+    clientKey = '',
     companyKey = null,
     displayStep = null,
     showGrid = false,
     totalSteps = null,
     setExternalState = () => {}
 }) {
-    const { sdkKey, userKey } = initInfo();
+    const { apiKey, userKey } = initInfo();
 
     const [client, setClient] = useState(null);
 
@@ -73,7 +73,7 @@ export default function Form({
                 })
                 .catch((error) => console.log(error));
         } else setStep(displayStep);
-    }, [displayStep, sdkKey, userKey]);
+    }, [displayStep, apiKey, userKey]);
 
     if (displayStep === null && finishConfig.finished) {
         if (finishConfig.redirectURL) {
@@ -173,7 +173,7 @@ export default function Form({
                 fetch(`https://api.feathery.tech/api/servar/fuser/`, {
                     method: 'POST',
                     headers: {
-                        Authorization: `Token ${sdkKey}`,
+                        Authorization: `Token ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
@@ -208,7 +208,9 @@ export default function Form({
         });
     };
 
-    const submit = (skip = false) => {
+    const submit = (action) => {
+        if (!action) return;
+
         let fileUploadServarID = '';
         step.servar_fields.forEach((field) => {
             const servar = field.servar;
@@ -226,15 +228,16 @@ export default function Form({
             return { key: servar.key, [servar.type]: servar.value };
         });
         client
-            .submitStep(formKey, step.step_number, featheryServars, skip)
+            .submitStep(formKey, step.step_number, featheryServars, action)
             .then(async (newStep) => {
                 const finished = newStep.step_number === null;
-                // set real time field values for programmatic access
-                noFileServars.forEach((field) => {
-                    const servar = field.servar;
-                    fieldState.realTimeFields[servar.key] = servar.value;
-                });
-                if (!skip) {
+                if (action === 'next') {
+                    // Set real time field values for programmatic access
+                    noFileServars.forEach((field) => {
+                        const servar = field.servar;
+                        fieldState.realTimeFields[servar.key] = servar.value;
+                    });
+
                     // Execute user-provided onSubmit function if present
                     const userServars = step.servar_fields.map((field) => {
                         const servar = field.servar;
@@ -396,7 +399,7 @@ export default function Form({
                 event.preventDefault();
                 event.stopPropagation();
                 const form = event.currentTarget;
-                if (form.checkValidity()) submit(false);
+                if (form.checkValidity()) submit('next');
             }}
             css={{
                 height: '100%',
@@ -511,8 +514,8 @@ export default function Form({
                                     : undefined
                             }
                             onClick={() => {
-                                if (!displayStep && field.link === 'skip')
-                                    submit(true);
+                                if (!displayStep && field.link !== 'next')
+                                    submit(field.link);
                             }}
                             dangerouslySetInnerHTML={{
                                 __html: field.text
@@ -521,8 +524,7 @@ export default function Form({
                     ) : (
                         <div
                             onClick={() => {
-                                if (displayStep || field.link === null) return;
-                                submit(field.link === 'skip');
+                                if (!displayStep) submit(field.link);
                             }}
                             css={{
                                 color: `#${field.font_color}`,

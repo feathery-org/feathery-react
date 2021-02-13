@@ -22,7 +22,7 @@ import { Feathery } from 'feathery-react-client-sdk';
 
 function App() {
   // Initialize Feathery to Peter
-  Feathery.init('sdkKey', 'peter@feathery.tech');
+  Feathery.init('apiKey', 'peter@feathery.tech');
 
   const [fields, setFields] = useState({});
   useEffect(() => {
@@ -35,8 +35,7 @@ function App() {
   // Show the `onboarding` Feathery form
   return <Feathery.Form
     formKey='onboarding'
-    onSubmit={(fieldInfo, stepNumber, lastStep) => cache(fieldInfo)}
-    clientKey='clientKey'
+    onSubmit={(fieldInfo, stepNumber, lastStep) => store(fieldInfo)}
   />
 }
 ```
@@ -49,9 +48,9 @@ This is necessary before using the rest of the API.
 1. `userKey`\
    Type: `string`\
    Unique ID of the user who is accessing Feathery. This can be anything as long as it's unique per user.
-2. `sdkKey`\
+2. `apiKey`\
    Type: `string`\
-   Feathery API Key. This authorizes your SDK to communicate with Feathery servers.
+   Feathery API Key. This authorizes the library to communicate with Feathery servers.
 
 ### `<Feathery.Form>`
 Initialize this component in your React app at the location where
@@ -74,9 +73,6 @@ the form and expands to fill its parent container.
     * `stepNumber`: An `int` that's the zero-indexed step number that is being submitted.
     * `lastStep`: A `boolean` that is `True` when the step being submitted is
       the last step the user needs to complete.
-3. `clientKey` - Optional\
-   Type: `string`\
-   Authentication token to authorize non-Feathery API actions
 
 ### `Feathery.fetchFields`
 Function that returns a Promise containing a map of user field inputs of the form
