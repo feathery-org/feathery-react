@@ -436,8 +436,10 @@ export default function Form({
             {step.progress_bar && (
                 <div
                     css={{
-                        gridColumn: step.progress_bar.column_index + 1,
-                        gridRow: step.progress_bar.row_index + 1,
+                        gridColumnStart: step.progress_bar.column_index + 1,
+                        gridRowStart: step.progress_bar.row_index + 1,
+                        gridColumnEnd: step.progress_bar.column_index_end + 2,
+                        gridRowEnd: step.progress_bar.row_index_end + 2,
                         alignItems: step.progress_bar.layout,
                         color: `#${step.progress_bar.font_color}`,
                         fontStyle: step.progress_bar.font_italic
@@ -460,8 +462,10 @@ export default function Form({
                 <div
                     key={i.toString() + ':' + step.step_number.toString()}
                     css={{
-                        gridColumn: field.column_index + 1,
-                        gridRow: field.row_index + 1,
+                        gridColumnStart: field.column_index + 1,
+                        gridRowStart: field.row_index + 1,
+                        gridColumnEnd: field.column_index_end + 2,
+                        gridRowEnd: field.row_index_end + 2,
                         alignItems: field.layout,
                         display: 'flex',
                         flexDirection: 'column',
@@ -855,8 +859,10 @@ export default function Form({
                 return (
                     <div
                         css={{
-                            gridColumn: field.column_index + 1,
-                            gridRow: field.row_index + 1,
+                            gridColumnStart: field.column_index + 1,
+                            gridRowStart: field.row_index + 1,
+                            gridColumnEnd: field.column_index_end + 2,
+                            gridRowEnd: field.row_index_end + 2,
                             alignItems: field.layout,
                             color: `#${field.font_color}`,
                             fontStyle: field.font_italic ? 'italic' : 'normal',
