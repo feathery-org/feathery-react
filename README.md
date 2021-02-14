@@ -42,7 +42,7 @@ function App() {
 
 ### `Feathery.init`
 Function that initializes the Feathery library to the correct user and auth info.
-This is necessary before using the rest of the API.
+This is necessary before using the rest of the API and can be called multiple times.
 
 #### Parameters
 1. `userKey`\
@@ -54,8 +54,7 @@ This is necessary before using the rest of the API.
 
 ### `<Feathery.Form>`
 Initialize this component in your React app at the location where
-you want a Feathery form to appear. It renders a `form` that contains
-the form and expands to fill its parent container.
+you want a Feathery form to appear. It renders an HTML `form` element.
 
 #### Props
 1. `formKey`\
@@ -70,7 +69,7 @@ the form and expands to fill its parent container.
       `[{name: <fieldName>, key: <fieldKey>, type: <fieldType>, value: <fieldValue>}]`.\
       For example, `[{name: 'How old are you?', key: 'age', type: 'integer_field', value: 21 }]`.\
       Note that if the field is of `file_upload` type, the value will be a File object.
-    * `stepNumber`: An `int` that's the zero-indexed step number that is being submitted.
+    * `stepNumber`: An `int` that's the zero-indexed step number being submitted.
     * `lastStep`: A `boolean` that is `True` when the step being submitted is
       the last step the user needs to complete.
 

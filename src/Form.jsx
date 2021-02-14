@@ -358,6 +358,22 @@ export default function Form({
     const numColumns = step.grid_columns.length;
     const numRows = step.grid_rows.length;
     const maxSteps = displayStep ? totalSteps : step.total_steps;
+    let definiteHeight = 0;
+    let definiteWidth = 0;
+    step.grid_columns.forEach((column) => {
+        if (definiteWidth !== null && column.slice(-2) === 'px') {
+            definiteWidth += parseFloat(column);
+        } else {
+            definiteWidth = null;
+        }
+    });
+    step.grid_rows.forEach((rows) => {
+        if (definiteHeight !== null && rows.slice(-2) === 'px') {
+            definiteHeight += parseFloat(rows);
+        } else {
+            definiteHeight = null;
+        }
+    });
 
     const gridTemplateRows = step.grid_rows.join(' ');
     let gridTemplateColumns;
@@ -402,11 +418,10 @@ export default function Form({
                 if (form.checkValidity()) submit('next');
             }}
             css={{
-                height: '100%',
                 backgroundColor: `#${step.default_background_color}`,
-                backgroundSize: '100% 100%',
                 display: 'grid',
-                overflow: 'hidden',
+                height: definiteHeight ? `${definiteHeight}px` : '100%',
+                width: definiteWidth ? `${definiteWidth}px` : '100%',
                 gridTemplateColumns,
                 gridTemplateRows
             }}
