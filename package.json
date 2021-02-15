@@ -59,12 +59,9 @@
   "dependencies": {
     "@emotion/babel-preset-css-prop": "^11.0.0",
     "@emotion/react": "^11.1.5",
-    "@zendeskgarden/react-loaders": "^8.28.1",
-    "@zendeskgarden/react-theming": "^8.29.0",
     "bootstrap": "^4.5.3",
     "react-bootstrap": "^1.4.0",
-    "react-color": "^2.19.3",
-    "styled-components": "^5.2.1"
+    "react-color": "^2.19.3"
   },
   "babel": {
     "presets": [

@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-import Button from 'react-bootstrap/Button';
-import ReactForm from 'react-bootstrap/Form';
-import { Progress } from '@zendeskgarden/react-loaders';
+import { Button, ProgressBar, Form as ReactForm } from 'react-bootstrap';
 import { SketchPicker } from 'react-color';
 
 import Client from './utils/client';
@@ -397,11 +395,16 @@ export default function Form({
     let progressBarElements = null;
     if (step.progress_bar) {
         progressBarElements = [
-            <Progress
+            <ProgressBar
                 key='progress'
-                css={{ width: `${step.progress_bar.bar_width}%` }}
-                color={`#${step.progress_bar.bar_color}`}
-                value={(step.step_number / maxSteps) * 100}
+                css={{
+                    height: '0.4rem',
+                    width: `${step.progress_bar.bar_width}%`,
+                    '.progress-bar': {
+                        backgroundColor: `#${step.progress_bar.bar_color}`
+                    }
+                }}
+                now={(step.step_number / maxSteps) * 100}
             />
         ];
         const completionPercentage = `${Math.round(
