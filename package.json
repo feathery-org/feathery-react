@@ -1,10 +1,10 @@
 {
-  "name": "feathery-react-client-sdk",
+  "name": "feathery-react",
   "version": "1.0.49",
-  "description": "React SDK for Feathery",
+  "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
-  "repository": "https://github.com/feathery-org/feathery-react-client-sdk",
+  "repository": "https://github.com/feathery-org/feathery-react",
   "main": "dist/index.js",
   "engines": {
     "node": ">=10"

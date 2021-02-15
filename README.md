@@ -1,24 +1,24 @@
-# feathery-react-client-sdk
+# feathery-react
 
-> React SDK for Feathery
+> React library for Feathery
 
-[![NPM](https://img.shields.io/npm/v/feathery-react-client-sdk.svg)](https://www.npmjs.com/package/feathery-react-client-sdk) [![JavaScript Style Guide](https://img.shields.io/badge/code_style-standard-brightgreen.svg)](https://standardjs.com)
+[![NPM](https://img.shields.io/npm/v/feathery-react.svg)](https://www.npmjs.com/package/feathery-react) [![JavaScript Style Guide](https://img.shields.io/badge/code_style-standard-brightgreen.svg)](https://standardjs.com)
 
 ## Install
 You can use `yarn` or `npm`.
 ### Yarn
 ```bash
-yarn add feathery-react-client-sdk
+yarn add feathery-react
 ```
 ### npm
 ```bash
-npm install --save feathery-react-client-sdk
+npm install --save feathery-react
 ```
 
 ## API Guide
 The following is an example React component that uses the Feathery library.
 ```JavaScript
-import { Feathery } from 'feathery-react-client-sdk';
+import { Feathery } from 'feathery-react';
 
 function App() {
   // Initialize Feathery to Peter
