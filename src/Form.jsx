@@ -804,6 +804,7 @@ export default function Form({
                                     placeholder={metadata.placeholder || ''}
                                     required={servar.required}
                                     css={{
+                                        resize: 'none',
                                         marginTop: '10px',
                                         width: `${field.field_width}${field.field_width_unit}`,
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
