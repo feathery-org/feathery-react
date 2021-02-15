@@ -358,22 +358,27 @@ export default function Form({
     const numColumns = step.grid_columns.length;
     const numRows = step.grid_rows.length;
     const maxSteps = displayStep ? totalSteps : step.total_steps;
-    let definiteHeight = 0;
-    let definiteWidth = 0;
-    step.grid_columns.forEach((column) => {
-        if (definiteWidth !== null && column.slice(-2) === 'px') {
-            definiteWidth += parseFloat(column);
-        } else {
-            definiteWidth = null;
-        }
-    });
-    step.grid_rows.forEach((rows) => {
-        if (definiteHeight !== null && rows.slice(-2) === 'px') {
-            definiteHeight += parseFloat(rows);
-        } else {
-            definiteHeight = null;
-        }
-    });
+
+    let definiteHeight = null;
+    let definiteWidth = null;
+    if (!step.full_size) {
+        definiteHeight = 0;
+        definiteWidth = 0;
+        step.grid_columns.forEach((column) => {
+            if (definiteWidth !== null && column.slice(-2) === 'px') {
+                definiteWidth += parseFloat(column);
+            } else {
+                definiteWidth = null;
+            }
+        });
+        step.grid_rows.forEach((rows) => {
+            if (definiteHeight !== null && rows.slice(-2) === 'px') {
+                definiteHeight += parseFloat(rows);
+            } else {
+                definiteHeight = null;
+            }
+        });
+    }
 
     const gridTemplateRows = step.grid_rows.join(' ');
     let gridTemplateColumns;
@@ -420,6 +425,7 @@ export default function Form({
             css={{
                 backgroundColor: `#${step.default_background_color}`,
                 display: 'grid',
+                justifyContent: 'center',
                 height: definiteHeight ? `${definiteHeight}px` : '100%',
                 width: definiteWidth ? `${definiteWidth}px` : '100%',
                 gridTemplateColumns,
