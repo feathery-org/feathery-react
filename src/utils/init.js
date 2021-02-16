@@ -26,6 +26,11 @@ function keyError() {
 }
 
 function initInfo() {
+    const { apiKey, userKey } = initState;
+    if (apiKey === null)
+        throw new errors.APIKeyError('API key has not been set');
+    if (userKey === null)
+        throw new errors.UserKeyError('User key has not been set');
     return initState;
 }
 
