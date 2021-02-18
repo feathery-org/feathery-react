@@ -235,7 +235,7 @@ export default function Form({
                         const servar = field.servar;
                         fieldState.realTimeFields[servar.key] = {
                             value: servar.value,
-                            display_text: servar.name,
+                            displayText: servar.name,
                             type: servar.type
                         };
                     });
@@ -251,7 +251,7 @@ export default function Form({
                             value,
                             type: servar.type,
                             key: servar.key,
-                            display_text: servar.name
+                            displayText: servar.name
                         };
                     });
                     if (typeof onSubmit === 'function') {

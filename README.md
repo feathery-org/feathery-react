@@ -66,8 +66,8 @@ you want a Feathery form to appear. It renders an HTML `form` element.
    It's called every time the user submits a step of the form.\
    Parameters (in order):
     * `fields`: An array of the form
-      `[{display_text: <string>, key: <string>, type: <enum>, value: <polymorphic>}]`.\
-      For example, `[{display_text: 'How old are you?', key: 'age', type: 'integer_field', value: 21 }]`.\
+      `[{displayText: <string>, key: <string>, type: <enum>, value: <polymorphic>}]`.\
+      For example, `[{displayText: 'How old are you?', key: 'age', type: 'integer_field', value: 21 }]`.\
       Note that if the field is of `file_upload` type, the value will be a File object.
     * `stepNumber`: An `int` that's the zero-indexed step number being submitted.
     * `lastStep`: A `boolean` that is `True` when the step being submitted is
@@ -76,7 +76,7 @@ you want a Feathery form to appear. It renders an HTML `form` element.
 ### `Feathery.fetchFields`
 Function that returns a Promise containing an array of the same shape as the
 `fields` param of the `<Feathery.Form> onSubmit` callback function.
-For example, `[{display_text: 'How old are you?', key: 'age', type: 'integer_field', value: 21 }]`.\
+For example, `[{displayText: 'How old are you?', key: 'age', type: 'integer_field', value: 21 }]`.\
 
 If the user doesn't exist, the map will be empty. If the user doesn't have a
 value for a particular field, the field value will be `null`.

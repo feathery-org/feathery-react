@@ -8,10 +8,14 @@ const fieldState = {
 };
 
 function _allFields() {
-    return {
+    const fieldUnion = {
         ...fieldState.fields,
         ...fieldState.realTimeFields
     };
+    return Object.keys(fieldUnion).map((key) => {
+        const { type, displayText, value } = fieldUnion[key];
+        return { key, displayText, type, value };
+    });
 }
 
 function fetchFields() {
@@ -51,7 +55,7 @@ function fetchFields() {
             fieldState.fields = json.reduce(function (map, attr) {
                 map[attr.key] = {
                     value: attr.value,
-                    display_text: attr.name,
+                    displayText: attr.name,
                     type: attr.type
                 };
                 return map;
