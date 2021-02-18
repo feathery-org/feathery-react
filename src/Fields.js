@@ -24,9 +24,8 @@ function fetchFields() {
     if (fieldState.fields) return Promise.resolve(_allFields());
 
     const { userKey, apiKey } = initInfo();
-    const url = `https://api.feathery.tech/external/fuser/?fuser_key=${encodeURIComponent(
-        userKey
-    )}`;
+    let url = 'https://api.feathery.tech/external/fuser/';
+    if (userKey) url += `?fuser_key=${encodeURIComponent(userKey)}`;
     const options = {
         cache: 'no-store',
         headers: { Authorization: 'Token ' + apiKey }

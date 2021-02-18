@@ -37,7 +37,6 @@ export default function Form({
 
     // Internal
     clientKey = '',
-    companyKey = null,
     displayStep = null,
     showGrid = false,
     totalSteps = null,
@@ -57,7 +56,7 @@ export default function Form({
 
     useEffect(() => {
         if (displayStep === null) {
-            const clientInstance = new Client(companyKey || userKey);
+            const clientInstance = new Client();
             setClient(clientInstance);
             clientInstance
                 .begin(formKey)
@@ -71,7 +70,7 @@ export default function Form({
                 })
                 .catch((error) => console.log(error));
         } else setStep(displayStep);
-    }, [displayStep, apiKey, userKey]);
+    }, [displayStep, apiKey]);
 
     if (displayStep === null && finishConfig.finished) {
         if (finishConfig.redirectURL) {
@@ -175,7 +174,7 @@ export default function Form({
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        fuser_key: userKey,
+                        ...(userKey ? { fuser_key: userKey } : {}),
                         servar_id: params,
                         value: response
                     })

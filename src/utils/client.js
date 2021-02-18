@@ -3,24 +3,11 @@ import { initInfo } from './init';
 import encodeGetParams from './string';
 
 export default class Client {
-    constructor(companyKey) {
-        Client.validateKeys(companyKey);
-        this._companyKey = companyKey;
-    }
-
-    static validateKeys(companyKey) {
-        if (!companyKey || typeof companyKey !== 'string') {
-            throw new errors.CompanyKeyError('Invalid Company Key');
-        }
-    }
-
     async begin(formKey) {
         const { userKey, apiKey } = initInfo();
-        const { _companyKey: companyKey } = this;
         const params = encodeGetParams({
             flow_key: formKey,
-            fuser_key: userKey,
-            company_key: companyKey
+            ...(userKey ? { fuser_key: userKey } : {})
         });
         const url = `https://api.feathery.tech/api/panel/step/?${params}`;
         const options = {
@@ -53,8 +40,8 @@ export default class Client {
         const { userKey, apiKey } = initInfo();
         const url = `https://api.feathery.tech/api/panel/step/submit/`;
         const data = {
+            ...(userKey ? { fuser_key: userKey } : {}),
             flow_key: formKey,
-            fuser_key: userKey,
             step_number: stepNum,
             servars: action === 'next' ? servars : [],
             action
