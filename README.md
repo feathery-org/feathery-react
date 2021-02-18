@@ -22,7 +22,7 @@ import { Feathery } from 'feathery-react';
 
 function App() {
   // Initialize Feathery to Peter
-  Feathery.init('apiKey', 'peter@feathery.tech');
+  Feathery.init('adminAPIKey', 'peter@feathery.tech');
 
   const [fields, setFields] = useState({});
   useEffect(() => {
@@ -34,23 +34,25 @@ function App() {
 
   // Show the `onboarding` Feathery form
   return <Feathery.Form
-    formKey='onboarding'
+    formKey='onboarding-form'
     onSubmit={(fields, stepNumber, lastStep) => console.log(fields)}
   />
 }
 ```
 
 ### `Feathery.init`
-Function that initializes the Feathery library to the correct user and auth info.
+Function that initializes the Feathery library to the correct auth and user info.
 This is necessary before using the rest of the API and can be called multiple times.
 
 #### Parameters
-1. `userKey`\
+1. `apiKey`\
    Type: `string`\
+   Feathery admin or user API Key. This authorizes the library to communicate with Feathery servers.
+   If it's a user API key, there's no need to pass in the second `userKey` parameter to `init`.
+2. `userKey`\
+   Type: `optional string`\
    Unique ID of the user who is accessing Feathery. This can be anything as long as it's unique per user.
-2. `apiKey`\
-   Type: `string`\
-   Feathery API Key. This authorizes the library to communicate with Feathery servers.
+
 
 ### `<Feathery.Form>`
 Initialize this component in your React app at the location where
@@ -65,7 +67,7 @@ you want a Feathery form to appear. It renders an HTML `form` element.
    Callback function to access user-submitted form information.
    It's called every time the user submits a step of the form.\
    Parameters (in order):
-    * `fields`: An array of the form
+    * `fields`: An array of the shape
       `[{displayText: <string>, key: <string>, type: <enum>, value: <polymorphic>}]`.\
       For example, `[{displayText: 'How old are you?', key: 'age', type: 'integer_field', value: 21 }]`.\
       Note that if the field is of `file_upload` type, the value will be a File object.
