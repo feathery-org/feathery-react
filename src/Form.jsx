@@ -233,7 +233,11 @@ export default function Form({
                     // Set real time field values for programmatic access
                     noFileServars.forEach((field) => {
                         const servar = field.servar;
-                        fieldState.realTimeFields[servar.key] = servar.value;
+                        fieldState.realTimeFields[servar.key] = {
+                            value: servar.value,
+                            display_text: servar.name,
+                            type: servar.type
+                        };
                     });
 
                     // Execute user-provided onSubmit function if present
@@ -247,7 +251,7 @@ export default function Form({
                             value,
                             type: servar.type,
                             key: servar.key,
-                            name: servar.name
+                            display_text: servar.name
                         };
                     });
                     if (typeof onSubmit === 'function') {

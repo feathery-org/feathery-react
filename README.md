@@ -29,13 +29,13 @@ function App() {
     // Access the fields that Peter filled out in the form
     Feathery
       .fetchFields()
-      .then(fields => {setFields(fields)});
+      .then(fields => console.log(fields));
   }, [])
 
   // Show the `onboarding` Feathery form
   return <Feathery.Form
     formKey='onboarding'
-    onSubmit={(fieldInfo, stepNumber, lastStep) => store(fieldInfo)}
+    onSubmit={(fields, stepNumber, lastStep) => console.log(fields)}
   />
 }
 ```
@@ -60,22 +60,23 @@ you want a Feathery form to appear. It renders an HTML `form` element.
 1. `formKey`\
    Type: `string`\
    ID of the Feathery form to display
-2. `onSubmit(fieldInfo, stepNumber, lastStep)`\
+2. `onSubmit(fields, stepNumber, lastStep)`\
    Type: `function`\
    Callback function to access user-submitted form information.
    It's called every time the user submits a step of the form.\
    Parameters (in order):
-    * `fieldInfo`: An array of the form
-      `[{name: <fieldName>, key: <fieldKey>, type: <fieldType>, value: <fieldValue>}]`.\
-      For example, `[{name: 'How old are you?', key: 'age', type: 'integer_field', value: 21 }]`.\
+    * `fields`: An array of the form
+      `[{display_text: <string>, key: <string>, type: <enum>, value: <polymorphic>}]`.\
+      For example, `[{display_text: 'How old are you?', key: 'age', type: 'integer_field', value: 21 }]`.\
       Note that if the field is of `file_upload` type, the value will be a File object.
     * `stepNumber`: An `int` that's the zero-indexed step number being submitted.
     * `lastStep`: A `boolean` that is `True` when the step being submitted is
       the last step the user needs to complete.
 
 ### `Feathery.fetchFields`
-Function that returns a Promise containing a map of user field inputs of the form
-`{fieldKey: fieldValue}`.
+Function that returns a Promise containing an array of the same shape as the
+`fields` param of the `<Feathery.Form> onSubmit` callback function.
+For example, `[{display_text: 'How old are you?', key: 'age', type: 'integer_field', value: 21 }]`.\
 
 If the user doesn't exist, the map will be empty. If the user doesn't have a
 value for a particular field, the field value will be `null`.

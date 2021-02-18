@@ -49,7 +49,11 @@ function fetchFields() {
         })
         .then((json) => {
             fieldState.fields = json.reduce(function (map, attr) {
-                map[attr.key] = attr.value;
+                map[attr.key] = {
+                    value: attr.value,
+                    display_text: attr.name,
+                    type: attr.type
+                };
                 return map;
             }, {});
             return _allFields();
