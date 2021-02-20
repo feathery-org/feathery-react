@@ -362,19 +362,33 @@ export default function Form({
     const numRows = step.grid_rows.length;
     const maxSteps = displayStep ? totalSteps : step.total_steps;
 
+    const gridTemplateRows = step.grid_rows.join(' ');
+    let gridTemplateColumns;
+    if (window.innerWidth >= 768) {
+        gridTemplateColumns = step.grid_columns;
+    } else {
+        const seenColumns = new Set();
+        if (step.progress_bar) seenColumns.add(step.progress_bar.column_index);
+        step.text_fields.map((field) => seenColumns.add(field.column_index));
+        step.servar_fields.map((field) => seenColumns.add(field.column_index));
+        gridTemplateColumns = step.grid_columns.map((c, index) =>
+            seenColumns.has(index) ? c : '10px'
+        );
+    }
+
     let definiteHeight = null;
     let definiteWidth = null;
     if (!step.full_size) {
         definiteHeight = 0;
         definiteWidth = 0;
-        step.grid_columns.forEach((column) => {
+        gridTemplateColumns.forEach((column) => {
             if (definiteWidth !== null && column.slice(-2) === 'px') {
                 definiteWidth += parseFloat(column);
             } else {
                 definiteWidth = null;
             }
         });
-        step.grid_rows.forEach((rows) => {
+        gridTemplateRows.split(' ').forEach((rows) => {
             if (definiteHeight !== null && rows.slice(-2) === 'px') {
                 definiteHeight += parseFloat(rows);
             } else {
@@ -382,20 +396,12 @@ export default function Form({
             }
         });
     }
-
-    const gridTemplateRows = step.grid_rows.join(' ');
-    let gridTemplateColumns;
-    if (window.innerWidth >= 768) {
-        gridTemplateColumns = step.grid_columns.join(' ');
-    } else {
-        const seenColumns = new Set();
-        if (step.progress_bar) seenColumns.add(step.progress_bar.column_index);
-        step.text_fields.map((field) => seenColumns.add(field.column_index));
-        step.servar_fields.map((field) => seenColumns.add(field.column_index));
-        gridTemplateColumns = step.grid_columns
-            .map((c, index) => (seenColumns.has(index) ? c : '10px'))
-            .join(' ');
+    if (definiteWidth) {
+        gridTemplateColumns = gridTemplateColumns.map(
+            (c) => `${(100 * parseFloat(c)) / definiteWidth}%`
+        );
     }
+    gridTemplateColumns = gridTemplateColumns.join(' ');
 
     let progressBarElements = null;
     if (step.progress_bar) {
@@ -404,7 +410,8 @@ export default function Form({
                 key='progress'
                 style={{
                     height: '0.4rem',
-                    width: `${step.progress_bar.bar_width}%`
+                    width: `${step.progress_bar.bar_width}%`,
+                    maxWidth: '100%'
                 }}
                 css={{
                     '.progress-bar': {
@@ -438,6 +445,7 @@ export default function Form({
                 backgroundColor: `#${step.default_background_color}`,
                 display: 'grid',
                 justifyContent: 'center',
+                maxWidth: '100%',
                 height: definiteHeight ? `${definiteHeight}px` : '100%',
                 width: definiteWidth ? `${definiteWidth}px` : '100%',
                 gridTemplateColumns,
@@ -521,7 +529,8 @@ export default function Form({
                                 borderColor: `#${field.button_color}`,
                                 backgroundColor: `#${field.button_color}`,
                                 height: `${field.button_height}${field.button_height_unit}`,
-                                width: `${field.button_width}${field.button_width_unit}`
+                                width: `${field.button_width}${field.button_width_unit}`,
+                                maxWidth: '100%'
                             }}
                             css={{
                                 '&:disabled': { cursor: 'default !important' },
@@ -590,7 +599,7 @@ export default function Form({
                 switch (servar.type) {
                     case 'file_upload':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
+                            <>
                                 {servar.name}
                                 <ReactForm.File
                                     id={servar.id}
@@ -604,12 +613,12 @@ export default function Form({
                                         cursor: 'pointer'
                                     }}
                                 />
-                            </ReactForm.Group>
+                            </>
                         );
                         break;
                     case 'checkbox':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
+                            <>
                                 <ReactForm.Check
                                     type='checkbox'
                                     id={servar.id}
@@ -621,12 +630,12 @@ export default function Form({
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                 />
-                            </ReactForm.Group>
+                            </>
                         );
                         break;
                     case 'dropdown':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
+                            <>
                                 {servar.name}
                                 <ReactForm.Control
                                     style={{
@@ -634,6 +643,7 @@ export default function Form({
                                         display: 'block',
                                         height: `${field.field_height}${field.field_height_unit}`,
                                         width: `${field.field_width}${field.field_width_unit}`,
+                                        maxWidth: '100%',
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                                         cursor: 'pointer'
                                     }}
@@ -651,12 +661,12 @@ export default function Form({
                                         <option key={option}>{option}</option>
                                     ))}
                                 </ReactForm.Control>
-                            </ReactForm.Group>
+                            </>
                         );
                         break;
                     case 'email':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
+                            <>
                                 {servar.name}
                                 <ReactForm.Control
                                     type='email'
@@ -665,6 +675,7 @@ export default function Form({
                                         display: 'block',
                                         height: `${field.field_height}${field.field_height_unit}`,
                                         width: `${field.field_width}${field.field_width_unit}`,
+                                        maxWidth: '100%',
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                     css={{
@@ -682,12 +693,12 @@ export default function Form({
                                     onChange={handleChange}
                                     placeholder={metadata.placeholder || ''}
                                 />
-                            </ReactForm.Group>
+                            </>
                         );
                         break;
                     case 'multiselect':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
+                            <>
                                 {servar.name}
                                 <div css={{ marginTop: '10px' }}>
                                     {servar.metadata.options.map((opt) => {
@@ -710,12 +721,12 @@ export default function Form({
                                         );
                                     })}
                                 </div>
-                            </ReactForm.Group>
+                            </>
                         );
                         break;
                     case 'select':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
+                            <>
                                 {servar.name}
                                 <div css={{ marginTop: '10px' }}>
                                     {servar.metadata.options.map((opt) => {
@@ -736,12 +747,12 @@ export default function Form({
                                         );
                                     })}
                                 </div>
-                            </ReactForm.Group>
+                            </>
                         );
                         break;
                     case 'integer_field':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
+                            <>
                                 {servar.name}: <b>0</b>
                                 <ReactForm.Control
                                     id={servar.id}
@@ -753,16 +764,17 @@ export default function Form({
                                     style={{
                                         marginTop: '10px',
                                         width: `${field.field_width}${field.field_width_unit}`,
+                                        maxWidth: '100%',
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                                         cursor: 'pointer'
                                     }}
                                 />
-                            </ReactForm.Group>
+                            </>
                         );
                         break;
                     case 'hex_color':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
+                            <>
                                 {servar.name}
                                 <div
                                     css={{
@@ -802,12 +814,12 @@ export default function Form({
                                         />
                                     </div>
                                 ) : null}
-                            </ReactForm.Group>
+                            </>
                         );
                         break;
                     case 'text_area':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
+                            <>
                                 {servar.name}
                                 <ReactForm.Control
                                     as='textarea'
@@ -821,6 +833,7 @@ export default function Form({
                                         resize: 'none',
                                         marginTop: '10px',
                                         width: `${field.field_width}${field.field_width_unit}`,
+                                        maxWidth: '100%',
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                     css={{
@@ -833,12 +846,12 @@ export default function Form({
                                         }
                                     }}
                                 />
-                            </ReactForm.Group>
+                            </>
                         );
                         break;
                     case 'url':
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
+                            <>
                                 {servar.name}
                                 <ReactForm.Control
                                     type='url'
@@ -846,7 +859,8 @@ export default function Form({
                                         marginTop: '10px',
                                         display: 'block',
                                         height: `${field.field_height}${field.field_height_unit}`,
-                                        width: `${field.field_width}${field.field_width_unit}`
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        maxWidth: '100%'
                                     }}
                                     css={{
                                         '&::placeholder': {
@@ -863,12 +877,12 @@ export default function Form({
                                     onChange={handleChange}
                                     placeholder={metadata.placeholder || ''}
                                 />
-                            </ReactForm.Group>
+                            </>
                         );
                         break;
                     default:
                         servarComponent = (
-                            <ReactForm.Group style={{ width: '100%' }}>
+                            <>
                                 {servar.name}
                                 <ReactForm.Control
                                     type='text'
@@ -877,6 +891,7 @@ export default function Form({
                                         display: 'block',
                                         height: `${field.field_height}${field.field_height_unit}`,
                                         width: `${field.field_width}${field.field_width_unit}`,
+                                        maxWidth: '100%',
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                     css={{
@@ -894,12 +909,12 @@ export default function Form({
                                     onChange={handleChange}
                                     placeholder={metadata.placeholder || ''}
                                 />
-                            </ReactForm.Group>
+                            </>
                         );
                 }
                 return (
-                    <div
-                        css={{
+                    <ReactForm.Group
+                        style={{
                             gridColumnStart: field.column_index + 1,
                             gridRowStart: field.row_index + 1,
                             gridColumnEnd: field.column_index_end + 2,
@@ -913,6 +928,7 @@ export default function Form({
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: 'center',
+                            width: '100%',
                             ...(displayStep !== null
                                 ? { cursor: 'pointer' }
                                 : {})
@@ -921,7 +937,7 @@ export default function Form({
                         key={i}
                     >
                         {servarComponent}
-                    </div>
+                    </ReactForm.Group>
                 );
             })}
         </ReactForm>
