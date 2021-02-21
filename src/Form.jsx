@@ -482,6 +482,8 @@ export default function Form({
                         gridColumnEnd: step.progress_bar.column_index_end + 2,
                         gridRowEnd: step.progress_bar.row_index_end + 2,
                         alignItems: step.progress_bar.layout,
+                        paddingBottom: `${step.progress_bar.padding_bottom}px`,
+                        paddingTop: `${step.progress_bar.padding_top}px`,
                         color: `#${step.progress_bar.font_color}`,
                         fontStyle: step.progress_bar.font_italic
                             ? 'italic'
@@ -508,6 +510,8 @@ export default function Form({
                         gridColumnEnd: field.column_index_end + 2,
                         gridRowEnd: field.row_index_end + 2,
                         alignItems: field.layout,
+                        paddingBottom: `${field.padding_bottom}px`,
+                        paddingTop: `${field.padding_top}px`,
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'center',
@@ -914,12 +918,14 @@ export default function Form({
                         );
                 }
                 return (
-                    <ReactForm.Group
+                    <div
                         style={{
                             gridColumnStart: field.column_index + 1,
                             gridRowStart: field.row_index + 1,
                             gridColumnEnd: field.column_index_end + 2,
                             gridRowEnd: field.row_index_end + 2,
+                            paddingBottom: `${field.padding_bottom}px`,
+                            paddingTop: `${field.padding_top}px`,
                             alignItems: field.layout,
                             color: `#${field.font_color}`,
                             fontStyle: field.font_italic ? 'italic' : 'normal',
@@ -938,7 +944,7 @@ export default function Form({
                         key={i}
                     >
                         {servarComponent}
-                    </ReactForm.Group>
+                    </div>
                 );
             })}
         </ReactForm>
