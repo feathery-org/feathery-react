@@ -753,7 +753,8 @@ export default function Form({
                     case 'integer_field':
                         servarComponent = (
                             <>
-                                {servar.name}: <b>0</b>
+                                {servar.name && `${servar.name}: `}
+                                <b>0</b>
                                 <ReactForm.Control
                                     id={servar.id}
                                     type='range'
