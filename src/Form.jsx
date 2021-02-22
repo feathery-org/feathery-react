@@ -44,7 +44,6 @@ export default function Form({
     clientKey = '',
     displayStep = null,
     totalSteps = null,
-    setExternalState = () => {},
     setFormDimensions = () => {}
 }) {
     const { apiKey, userKey } = initInfo();
@@ -510,10 +509,8 @@ export default function Form({
                         fontSize: `${step.progress_bar.font_size}px`,
                         display: 'flex',
                         flexDirection: 'column',
-                        justifyContent: 'center',
-                        ...(displayStep ? { cursor: 'pointer' } : {})
+                        justifyContent: 'center'
                     }}
-                    onClick={() => setExternalState('progressBar', 'edit')}
                 >
                     {progressBarElements}
                 </div>
@@ -531,10 +528,8 @@ export default function Form({
                         paddingTop: `${field.padding_top}px`,
                         display: 'flex',
                         flexDirection: 'column',
-                        justifyContent: 'center',
-                        ...(displayStep ? { cursor: 'pointer' } : {})
+                        justifyContent: 'center'
                     }}
-                    onClick={() => setExternalState('textIndex', i)}
                 >
                     {field.is_button ? (
                         <Button
@@ -952,12 +947,8 @@ export default function Form({
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: 'center',
-                            width: '100%',
-                            ...(displayStep !== null
-                                ? { cursor: 'pointer' }
-                                : {})
+                            width: '100%'
                         }}
-                        onClick={() => setExternalState('servarIndex', i)}
                         key={i}
                     >
                         {servarComponent}
