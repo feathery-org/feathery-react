@@ -5,13 +5,6 @@ export class APIKeyError extends Error {
     }
 }
 
-export class CompanyKeyError extends Error {
-    constructor(message) {
-        super(message);
-        this.name = 'CompanyKeyError';
-    }
-}
-
 export class UserKeyError extends Error {
     constructor(message) {
         super(message);
