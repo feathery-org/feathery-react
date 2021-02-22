@@ -566,11 +566,7 @@ export default function Form({
                                       }
                                     : {}
                             }}
-                            disabled={
-                                field.link === 'next' &&
-                                !isFilled &&
-                                !displayStep
-                            }
+                            disabled={field.link === 'next' && !isFilled}
                             type={
                                 !displayStep && field.link === 'next'
                                     ? 'submit'
