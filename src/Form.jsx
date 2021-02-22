@@ -37,12 +37,15 @@ export default function Form({
     formKey,
     onSubmit = null,
 
+    // Default functionality
+    style = {},
+
     // Internal
     clientKey = '',
     displayStep = null,
-    showGrid = false,
     totalSteps = null,
-    setExternalState = () => {}
+    setExternalState = () => {},
+    setFormDimensions = () => {}
 }) {
     const { apiKey, userKey } = initInfo();
 
@@ -55,24 +58,100 @@ export default function Form({
     const [displayColorPicker, setDisplayColorPicker] = useState({});
     const [acceptedFile, setAcceptedFile] = useState(null);
     const [step, setStep] = useState(displayStep);
+    const [dimensions, setDimensions] = useState({
+        height: null,
+        width: null,
+        rows: [],
+        columns: []
+    });
+
+    const calculateDimensions = (inputStep) => {
+        const gridTemplateRows = inputStep.grid_rows;
+        let gridTemplateColumns;
+        if (window.innerWidth >= 768) {
+            gridTemplateColumns = inputStep.grid_columns;
+        } else {
+            const seenColumns = new Set();
+            if (inputStep.progress_bar)
+                seenColumns.add(inputStep.progress_bar.column_index);
+            inputStep.text_fields.map((field) =>
+                seenColumns.add(field.column_index)
+            );
+            inputStep.servar_fields.map((field) =>
+                seenColumns.add(field.column_index)
+            );
+            gridTemplateColumns = inputStep.grid_columns.map((c, index) =>
+                seenColumns.has(index) ? c : '10px'
+            );
+        }
+
+        let definiteHeight = null;
+        let definiteWidth = null;
+        if (!inputStep.full_size) {
+            definiteHeight = 0;
+            definiteWidth = 0;
+            gridTemplateColumns.forEach((column) => {
+                if (definiteWidth !== null && column.slice(-2) === 'px') {
+                    definiteWidth += parseFloat(column);
+                } else {
+                    definiteWidth = null;
+                }
+            });
+            gridTemplateRows.forEach((rows) => {
+                if (definiteHeight !== null && rows.slice(-2) === 'px') {
+                    definiteHeight += parseFloat(rows);
+                } else {
+                    definiteHeight = null;
+                }
+            });
+        }
+        if (definiteWidth) {
+            gridTemplateColumns = gridTemplateColumns.map(
+                (c) => `${(100 * parseFloat(c)) / definiteWidth}%`
+            );
+        }
+        const newDimensions = {
+            height: definiteHeight,
+            width: definiteWidth,
+            columns: gridTemplateColumns,
+            rows: gridTemplateRows
+        };
+        if (JSON.stringify(newDimensions) !== JSON.stringify(dimensions)) {
+            setDimensions(newDimensions);
+            setFormDimensions(
+                definiteHeight,
+                definiteWidth,
+                gridTemplateColumns,
+                gridTemplateRows
+            );
+        }
+    };
 
     useEffect(() => {
         if (displayStep === null) {
-            const clientInstance = new Client();
-            setClient(clientInstance);
-            clientInstance
-                .begin(formKey)
-                .then((step) => {
-                    if (step.step_number === null) {
-                        setFinishConfig({
-                            finished: true,
-                            redirectURL: step.redirect_url
-                        });
-                    } else setStep(step);
-                })
-                .catch((error) => console.log(error));
-        } else setStep(displayStep);
-    }, [displayStep, apiKey]);
+            if (client === null) {
+                const clientInstance = new Client();
+                setClient(clientInstance);
+                clientInstance
+                    .begin(formKey)
+                    .then((stepResponse) => {
+                        if (stepResponse.step_number === null) {
+                            setFinishConfig({
+                                finished: true,
+                                redirectURL: stepResponse.redirect_url
+                            });
+                        } else {
+                            setStep(stepResponse);
+                            calculateDimensions(stepResponse);
+                        }
+                    })
+                    .catch((error) => console.log(error));
+            }
+        } else {
+            setStep(displayStep);
+            calculateDimensions(displayStep);
+        }
+    }, [client, displayStep, apiKey, calculateDimensions]);
 
     if (displayStep === null && finishConfig.finished) {
         if (finishConfig.redirectURL) {
@@ -318,7 +397,10 @@ export default function Form({
                         finished: true,
                         redirectURL: newStep.redirect_url
                     });
-                } else setStep(newStep);
+                } else {
+                    setStep(newStep);
+                    calculateDimensions(newStep);
+                }
             })
             .catch((error) => {
                 if (error) console.log(error);
@@ -358,53 +440,9 @@ export default function Form({
         }
     }
 
-    const numColumns = step.grid_columns.length;
-    const numRows = step.grid_rows.length;
-    const maxSteps = displayStep ? totalSteps : step.total_steps;
-
-    const gridTemplateRows = step.grid_rows.join(' ');
-    let gridTemplateColumns;
-    if (window.innerWidth >= 768) {
-        gridTemplateColumns = step.grid_columns;
-    } else {
-        const seenColumns = new Set();
-        if (step.progress_bar) seenColumns.add(step.progress_bar.column_index);
-        step.text_fields.map((field) => seenColumns.add(field.column_index));
-        step.servar_fields.map((field) => seenColumns.add(field.column_index));
-        gridTemplateColumns = step.grid_columns.map((c, index) =>
-            seenColumns.has(index) ? c : '10px'
-        );
-    }
-
-    let definiteHeight = null;
-    let definiteWidth = null;
-    if (!step.full_size) {
-        definiteHeight = 0;
-        definiteWidth = 0;
-        gridTemplateColumns.forEach((column) => {
-            if (definiteWidth !== null && column.slice(-2) === 'px') {
-                definiteWidth += parseFloat(column);
-            } else {
-                definiteWidth = null;
-            }
-        });
-        gridTemplateRows.split(' ').forEach((rows) => {
-            if (definiteHeight !== null && rows.slice(-2) === 'px') {
-                definiteHeight += parseFloat(rows);
-            } else {
-                definiteHeight = null;
-            }
-        });
-    }
-    if (definiteWidth) {
-        gridTemplateColumns = gridTemplateColumns.map(
-            (c) => `${(100 * parseFloat(c)) / definiteWidth}%`
-        );
-    }
-    gridTemplateColumns = gridTemplateColumns.join(' ');
-
     let progressBarElements = null;
     if (step.progress_bar) {
+        const maxSteps = displayStep ? totalSteps : step.total_steps;
         progressBarElements = [
             <ProgressBar
                 key='progress'
@@ -446,34 +484,13 @@ export default function Form({
                 display: 'grid',
                 justifyContent: 'center',
                 maxWidth: '100%',
-                height: definiteHeight ? `${definiteHeight}px` : '100%',
-                width: definiteWidth ? `${definiteWidth}px` : '100%',
-                gridTemplateColumns,
-                gridTemplateRows
+                height: dimensions.height ? `${dimensions.height}px` : '100%',
+                width: dimensions.width ? `${dimensions.width}px` : '100%',
+                gridTemplateColumns: dimensions.columns.join(' '),
+                gridTemplateRows: dimensions.rows.join(' '),
+                ...style
             }}
         >
-            {showGrid &&
-                Array.from({ length: numColumns - 1 }, (_, i) => (
-                    <div
-                        css={{
-                            gridColumn: i + 1,
-                            gridRowStart: 1,
-                            gridRowEnd: -1,
-                            borderRight: '2px dashed #DEDFE2'
-                        }}
-                    />
-                ))}
-            {showGrid &&
-                Array.from({ length: numRows - 1 }, (_, i) => (
-                    <div
-                        css={{
-                            gridRowStart: i + 1,
-                            gridColumnStart: 1,
-                            gridColumnEnd: -1,
-                            borderBottom: '2px dashed #DEDFE2'
-                        }}
-                    />
-                ))}
             {step.progress_bar && (
                 <div
                     css={{
@@ -496,7 +513,7 @@ export default function Form({
                         justifyContent: 'center',
                         ...(displayStep ? { cursor: 'pointer' } : {})
                     }}
-                    onClick={() => setExternalState('progressBar', true)}
+                    onClick={() => setExternalState('progressBar', 'edit')}
                 >
                     {progressBarElements}
                 </div>
@@ -517,7 +534,7 @@ export default function Form({
                         justifyContent: 'center',
                         ...(displayStep ? { cursor: 'pointer' } : {})
                     }}
-                    onClick={() => setExternalState('text', i)}
+                    onClick={() => setExternalState('textIndex', i)}
                 >
                     {field.is_button ? (
                         <Button
@@ -940,7 +957,7 @@ export default function Form({
                                 ? { cursor: 'pointer' }
                                 : {})
                         }}
-                        onClick={() => setExternalState('servar', i)}
+                        onClick={() => setExternalState('servarIndex', i)}
                         key={i}
                     >
                         {servarComponent}
