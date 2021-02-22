@@ -39,6 +39,7 @@ export default function Form({
 
     // Default functionality
     style = {},
+    className = '',
 
     // Internal
     clientKey = '',
@@ -471,7 +472,7 @@ export default function Form({
 
     return (
         <ReactForm
-            className='bootstrap-iso'
+            className={`bootstrap-iso ${className}`}
             onSubmit={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
