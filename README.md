@@ -1,6 +1,6 @@
-# feathery-react
+# Feathery
 
-> React library for [Feathery](https://feathery.tech)
+> React client library for [Feathery](https://feathery.tech)
 
 [![NPM](https://img.shields.io/npm/v/feathery-react.svg)](https://www.npmjs.com/package/feathery-react) [![JavaScript Style Guide](https://img.shields.io/badge/code_style-standard-brightgreen.svg)](https://standardjs.com)
 
