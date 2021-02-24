@@ -6,13 +6,10 @@ import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
 
 import Client from './utils/client';
-import { initInfo } from './utils/init';
 import { fieldState } from './Fields';
 
 import './bootstrap-iso.css';
 
-const uuidV4Regex = /^[0-9A-F]{8}-[0-9A-F]{4}-[4][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i;
-const angleBracketRegex = /<[^>]*>/g;
 function adjustColor(color, amount) {
     return (
         '#' +
@@ -36,19 +33,17 @@ export default function Form({
     // Public API
     formKey,
     onSubmit = null,
+    checkValidity = () => [],
 
     // Default functionality
     style = {},
     className = '',
 
     // Internal
-    clientKey = '',
     displayStep = null,
     totalSteps = null,
     setFormDimensions = () => {}
 }) {
-    const { apiKey, userKey } = initInfo();
-
     const [client, setClient] = useState(null);
 
     const [finishConfig, setFinishConfig] = useState({
@@ -151,7 +146,7 @@ export default function Form({
             setStep(displayStep);
             calculateDimensions(displayStep);
         }
-    }, [client, displayStep, apiKey, calculateDimensions]);
+    }, [client, displayStep, calculateDimensions]);
 
     if (displayStep === null && finishConfig.finished) {
         if (finishConfig.redirectURL) {
@@ -164,10 +159,10 @@ export default function Form({
         const target = e.target;
         const value =
             target.type === 'checkbox' ? target.checked : target.value;
-        const id = target.id;
+        const key = target.id;
         const newServarFields = step.servar_fields.map((field) => {
             const servar = field.servar;
-            if (servar.id !== id) return field;
+            if (servar.key !== key) return field;
             if (servar.type === 'integer_field')
                 field.servar.value = parseInt(value);
             else field.servar.value = value;
@@ -176,12 +171,12 @@ export default function Form({
         setStep({ ...step, servar_fields: newServarFields });
     };
 
-    const handleMultiselectChange = (servarID) => (e) => {
+    const handleMultiselectChange = (servarKey) => (e) => {
         const target = e.target;
         const opt = target.name;
         const newServarFields = step.servar_fields.map((field) => {
             const servar = field.servar;
-            if (servar.id !== servarID) return field;
+            if (servar.key !== servarKey) return field;
             if (target.checked) servar.value.push(opt);
             else servar.value = servar.value.filter((val) => val !== opt);
             return field;
@@ -189,114 +184,26 @@ export default function Form({
         setStep({ ...step, servar_fields: newServarFields });
     };
 
-    const handleColorChange = (servarID) => (color) => {
+    const handleColorChange = (servarKey) => (color) => {
         const newServarFields = step.servar_fields.map((field) => {
             const servar = field.servar;
-            if (servar.id !== servarID) return field;
+            if (servar.key !== servarKey) return field;
             servar.value = color.hex.substr(1, 6);
             return field;
         });
         setStep({ ...step, servar_fields: newServarFields });
     };
 
-    const handleColorPickerClick = (servarID) => () => {
-        const curVal = displayColorPicker[servarID];
+    const handleColorPickerClick = (servarKey) => () => {
+        const curVal = displayColorPicker[servarKey];
         setDisplayColorPicker({
             ...displayColorPicker,
-            [servarID]: !curVal
+            [servarKey]: !curVal
         });
     };
 
-    const replaceRequestParams = (params, servarLookupMap) => {
-        if (Array.isArray(params))
-            return params.map((p) => replaceRequestParams(p, servarLookupMap));
-        else if (typeof params === 'object' && params !== null) {
-            const newParams = {};
-            for (const key in params) {
-                newParams[key] = replaceRequestParams(
-                    params[key],
-                    servarLookupMap
-                );
-            }
-            return newParams;
-        } else if (typeof params === 'string' && params.match(uuidV4Regex))
-            return servarLookupMap[params];
-        else return params;
-    };
-
-    const setResponseParams = (params, response, servarLookupMap) => {
-        if (Array.isArray(params)) {
-            let promises = [];
-            params.forEach((p, index) => {
-                promises = promises.concat(
-                    setResponseParams(p, response[index], servarLookupMap)
-                );
-            });
-            return promises;
-        } else if (typeof params === 'object' && params !== null) {
-            let promises = [];
-            for (const key in params) {
-                promises = promises.concat(
-                    setResponseParams(
-                        params[key],
-                        response[key],
-                        servarLookupMap
-                    )
-                );
-            }
-            return promises;
-        } else if (typeof params === 'string' && params.match(uuidV4Regex)) {
-            servarLookupMap[params] = response;
-            return [
-                fetch(`https://api.feathery.tech/api/servar/fuser/`, {
-                    method: 'POST',
-                    headers: {
-                        Authorization: `Token ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        ...(userKey ? { fuser_key: userKey } : {}),
-                        servar_id: params,
-                        value: response
-                    })
-                }).catch((e) => console.log(e))
-            ];
-        }
-    };
-
-    const replaceURLParams = (url, servarLookupMap) => {
-        return url.replace(angleBracketRegex, (match) => {
-            const val = match.substring(1, match.length - 1);
-            if (val in servarLookupMap) return servarLookupMap[val];
-            return match;
-        });
-    };
-
-    /**
-     * Timeout function
-     * @param {Integer} time (milliseconds)
-     * @param {Promise} promise
-     */
-    const timeout = (time, promise) => {
-        return new Promise(function (resolve, reject) {
-            setTimeout(() => {
-                reject(new Error('Request timed out.'));
-            }, time);
-            promise.then(resolve, reject);
-        });
-    };
-
-    const submit = (action) => {
+    const submit = (action, userFields) => {
         if (!action) return;
-
-        let fileUploadServarID = '';
-        step.servar_fields.forEach((field) => {
-            const servar = field.servar;
-            if (servar.type === 'file_upload') {
-                if (acceptedFile === null) return;
-                fileUploadServarID = servar.id;
-            }
-        });
 
         const noFileServars = step.servar_fields.filter(
             (field) => field.servar.type !== 'file_upload'
@@ -319,76 +226,9 @@ export default function Form({
                             type: servar.type
                         };
                     });
-
                     // Execute user-provided onSubmit function if present
-                    const userServars = step.servar_fields.map((field) => {
-                        const servar = field.servar;
-                        const value =
-                            servar.type === 'file_upload'
-                                ? acceptedFile
-                                : servar.value;
-                        return {
-                            value,
-                            type: servar.type,
-                            key: servar.key,
-                            displayText: servar.name
-                        };
-                    });
                     if (typeof onSubmit === 'function') {
-                        onSubmit(userServars, step.step_number, finished);
-                    }
-                    // Execute step actions
-                    const servarLookupMap = step.servar_fields.reduce(
-                        (map, field) => {
-                            const servar = field.servar;
-                            map[servar.id] = servar.value;
-                            return map;
-                        },
-                        {}
-                    );
-                    for (const action of step.actions) {
-                        const options = {
-                            method: action.method.toUpperCase(),
-                            headers: { Authorization: `Bearer ${clientKey}` }
-                        };
-
-                        if (action.body_type === 'application/json') {
-                            options.headers['Content-Type'] = action.body_type;
-                            options.body = JSON.stringify(
-                                replaceRequestParams(
-                                    action.params,
-                                    servarLookupMap
-                                )
-                            );
-                        } else if (action.body_type === 'multipart/form-data') {
-                            if (
-                                action.form_data_servar !== fileUploadServarID
-                            ) {
-                                console.log('Invalid file upload action');
-                                return;
-                            }
-                            const body = new FormData();
-                            body.append(action.form_data_key, acceptedFile);
-                            options.body = body;
-                        }
-
-                        const url = replaceURLParams(
-                            action.url,
-                            servarLookupMap
-                        );
-                        const promise = fetch(url, options)
-                            .then((r) => r.json())
-                            .then(async (d) => {
-                                const promises = setResponseParams(
-                                    action.response_params,
-                                    d,
-                                    servarLookupMap
-                                );
-                                if (promises) await Promise.all(promises);
-                            })
-                            .catch((e) => console.log(e));
-                        if (action.response_params)
-                            await timeout(1000, promise);
+                        onSubmit(userFields, step.step_number, finished);
                     }
                 }
 
@@ -476,8 +316,33 @@ export default function Form({
             onSubmit={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
+
+                const userFields = step.servar_fields.map((field) => {
+                    const servar = field.servar;
+                    const value =
+                        servar.type === 'file_upload'
+                            ? acceptedFile
+                            : servar.value;
+                    return {
+                        value,
+                        type: servar.type,
+                        key: servar.key,
+                        displayText: servar.name
+                    };
+                });
+
                 const form = event.currentTarget;
-                if (form.checkValidity()) submit('next');
+                // Execute user-provided checkValidity function if present
+                if (typeof checkValidity === 'function') {
+                    const errors = checkValidity(userFields);
+                    errors.forEach((err) => {
+                        const [fieldKey, message] = err;
+                        const element = form.elements[fieldKey];
+                        if (element) element.setCustomValidity(message);
+                    });
+                    form.reportValidity();
+                }
+                if (form.checkValidity()) submit('next', userFields);
             }}
             style={{
                 backgroundColor: `#${step.default_background_color}`,
@@ -582,9 +447,6 @@ export default function Form({
                         />
                     ) : (
                         <div
-                            onClick={() => {
-                                if (!displayStep) submit(field.link);
-                            }}
                             css={{
                                 color: `#${field.font_color}`,
                                 fontStyle: field.font_italic
@@ -597,10 +459,9 @@ export default function Form({
                                     ? {}
                                     : { cursor: 'pointer' })
                             }}
-                            dangerouslySetInnerHTML={{
-                                __html: field.text
-                            }}
-                        />
+                        >
+                            {field.text}
+                        </div>
                     )}
                 </div>
             ))}
@@ -615,7 +476,7 @@ export default function Form({
                             <>
                                 {servar.name}
                                 <ReactForm.File
-                                    id={servar.id}
+                                    id={servar.key}
                                     accept='image/*'
                                     required={servar.required}
                                     onChange={(e) => {
@@ -634,7 +495,7 @@ export default function Form({
                             <>
                                 <ReactForm.Check
                                     type='checkbox'
-                                    id={servar.id}
+                                    id={servar.key}
                                     label={servar.name}
                                     checked={servar.value}
                                     onChange={handleChange}
@@ -661,7 +522,7 @@ export default function Form({
                                         cursor: 'pointer'
                                     }}
                                     as='select'
-                                    id={servar.id}
+                                    id={servar.key}
                                     value={servar.value}
                                     required={servar.required}
                                     onChange={handleChange}
@@ -700,7 +561,7 @@ export default function Form({
                                                 : 'normal !important'
                                         }
                                     }}
-                                    id={servar.id}
+                                    id={servar.key}
                                     value={servar.value}
                                     required={servar.required}
                                     onChange={handleChange}
@@ -718,6 +579,7 @@ export default function Form({
                                         return (
                                             <ReactForm.Check
                                                 type='checkbox'
+                                                id={servar.key}
                                                 name={opt}
                                                 key={opt}
                                                 label={opt}
@@ -725,7 +587,7 @@ export default function Form({
                                                     opt
                                                 )}
                                                 onChange={handleMultiselectChange(
-                                                    servar.id
+                                                    servar.key
                                                 )}
                                                 style={{
                                                     borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
@@ -746,7 +608,7 @@ export default function Form({
                                         return (
                                             <ReactForm.Check
                                                 type='radio'
-                                                id={servar.id}
+                                                id={servar.key}
                                                 label={opt}
                                                 checked={servar.value === opt}
                                                 required={servar.required}
@@ -769,7 +631,7 @@ export default function Form({
                                 {servar.name && `${servar.name}: `}
                                 <b>0</b>
                                 <ReactForm.Control
-                                    id={servar.id}
+                                    id={servar.key}
                                     type='range'
                                     step={1}
                                     value={servar.value}
@@ -799,9 +661,9 @@ export default function Form({
                                         cursor: 'pointer',
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
-                                    onClick={handleColorPickerClick(servar.id)}
+                                    onClick={handleColorPickerClick(servar.key)}
                                 />
-                                {displayColorPicker[servar.id] ? (
+                                {displayColorPicker[servar.key] ? (
                                     <div
                                         css={{
                                             position: 'absolute',
@@ -817,13 +679,13 @@ export default function Form({
                                                 left: '0px'
                                             }}
                                             onClick={handleColorPickerClick(
-                                                servar.id
+                                                servar.key
                                             )}
                                         />
                                         <SketchPicker
                                             color={`#${servar.value}`}
                                             onChange={handleColorChange(
-                                                servar.id
+                                                servar.key
                                             )}
                                         />
                                     </div>
@@ -838,7 +700,7 @@ export default function Form({
                                 <ReactForm.Control
                                     as='textarea'
                                     rows={metadata.num_rows}
-                                    id={servar.id}
+                                    id={servar.key}
                                     value={servar.value}
                                     onChange={handleChange}
                                     placeholder={metadata.placeholder || ''}
@@ -885,7 +747,7 @@ export default function Form({
                                                 : 'normal !important'
                                         }
                                     }}
-                                    id={servar.id}
+                                    id={servar.key}
                                     value={servar.value}
                                     required={servar.required}
                                     onChange={handleChange}
@@ -917,7 +779,7 @@ export default function Form({
                                                 : 'normal !important'
                                         }
                                     }}
-                                    id={servar.id}
+                                    id={servar.key}
                                     value={servar.value}
                                     required={servar.required}
                                     onChange={handleChange}
