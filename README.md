@@ -87,4 +87,4 @@ This method is implemented as a singleton, so there will only be one
 global source of data.
 
 ## License
-MIT © [Peter Dun](https://github.com/bo-dun-1)
+[BSL](https://github.com/feathery-org/feathery-react/LICENSE)
