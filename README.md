@@ -87,4 +87,4 @@ This method is implemented as a singleton, so there will only be one
 global source of data.
 
 ## License
-[BSL](https://github.com/feathery-org/feathery-react/LICENSE)
+[BSL](https://github.com/feathery-org/feathery-react/blob/master/LICENSE)
