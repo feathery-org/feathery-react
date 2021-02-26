@@ -38,6 +38,7 @@ export default function Form({
     // Default functionality
     style = {},
     className = '',
+    children,
 
     // Internal
     displayStep = null,
@@ -356,6 +357,7 @@ export default function Form({
                 ...style
             }}
         >
+            {children}
             {step.progress_bar && (
                 <div
                     css={{
