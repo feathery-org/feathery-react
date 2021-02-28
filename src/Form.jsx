@@ -55,14 +55,13 @@ export default function Form({
     const [acceptedFile, setAcceptedFile] = useState(null);
     const [step, setStep] = useState(displayStep);
     const [dimensions, setDimensions] = useState({
-        height: null,
         width: null,
         rows: [],
         columns: []
     });
 
     const calculateDimensions = (inputStep) => {
-        const gridTemplateRows = inputStep.grid_rows;
+        let gridTemplateRows = inputStep.grid_rows;
         let gridTemplateColumns;
         if (window.innerWidth >= 768) {
             gridTemplateColumns = inputStep.grid_columns;
@@ -81,10 +80,8 @@ export default function Form({
             );
         }
 
-        let definiteHeight = null;
         let definiteWidth = null;
         if (!inputStep.full_size) {
-            definiteHeight = 0;
             definiteWidth = 0;
             gridTemplateColumns.forEach((column) => {
                 if (definiteWidth !== null && column.slice(-2) === 'px') {
@@ -93,21 +90,14 @@ export default function Form({
                     definiteWidth = null;
                 }
             });
-            gridTemplateRows.forEach((rows) => {
-                if (definiteHeight !== null && rows.slice(-2) === 'px') {
-                    definiteHeight += parseFloat(rows);
-                } else {
-                    definiteHeight = null;
-                }
-            });
         }
+        gridTemplateRows = gridTemplateRows.map((row) => `minmax(${row},auto)`);
         if (definiteWidth) {
             gridTemplateColumns = gridTemplateColumns.map(
                 (c) => `${(100 * parseFloat(c)) / definiteWidth}%`
             );
         }
         const newDimensions = {
-            height: definiteHeight,
             width: definiteWidth,
             columns: gridTemplateColumns,
             rows: gridTemplateRows
@@ -115,7 +105,6 @@ export default function Form({
         if (JSON.stringify(newDimensions) !== JSON.stringify(dimensions)) {
             setDimensions(newDimensions);
             setFormDimensions(
-                definiteHeight,
                 definiteWidth,
                 gridTemplateColumns,
                 gridTemplateRows
@@ -350,10 +339,9 @@ export default function Form({
                 display: 'grid',
                 justifyContent: 'center',
                 maxWidth: '100%',
-                height: dimensions.height ? `${dimensions.height}px` : '100%',
-                width: dimensions.width ? `${dimensions.width}px` : '100%',
                 gridTemplateColumns: dimensions.columns.join(' '),
                 gridTemplateRows: dimensions.rows.join(' '),
+                width: dimensions.width ? `${dimensions.width}px` : '100%',
                 ...style
             }}
         >
@@ -503,7 +491,6 @@ export default function Form({
                         controlElement = (
                             <ReactForm.Control
                                 style={{
-                                    display: 'block',
                                     height: `${field.field_height}${field.field_height_unit}`,
                                     width: `${field.field_width}${field.field_width_unit}`,
                                     maxWidth: '100%',
@@ -530,7 +517,6 @@ export default function Form({
                             <ReactForm.Control
                                 type='email'
                                 style={{
-                                    display: 'block',
                                     height: `${field.field_height}${field.field_height_unit}`,
                                     width: `${field.field_width}${field.field_width_unit}`,
                                     maxWidth: '100%',
@@ -693,7 +679,6 @@ export default function Form({
                             <ReactForm.Control
                                 type='url'
                                 style={{
-                                    display: 'block',
                                     height: `${field.field_height}${field.field_height_unit}`,
                                     width: `${field.field_width}${field.field_width_unit}`,
                                     maxWidth: '100%',
@@ -721,7 +706,6 @@ export default function Form({
                             <ReactForm.Control
                                 type='text'
                                 style={{
-                                    display: 'block',
                                     height: `${field.field_height}${field.field_height_unit}`,
                                     width: `${field.field_width}${field.field_width_unit}`,
                                     maxWidth: '100%',
@@ -766,25 +750,16 @@ export default function Form({
                         }}
                         key={i}
                     >
-                        <div
+                        <label
+                            htmlFor={servar.key}
                             style={{
-                                height: 0,
-                                width: '100%',
-                                position: 'relative'
+                                marginBottom: '10px'
                             }}
                         >
-                            <label
-                                htmlFor={servar.key}
-                                style={{
-                                    position: 'absolute',
-                                    bottom: '0'
-                                }}
-                            >
-                                {servar.type === 'integer_field'
-                                    ? `${servar.name}: ${servar.value}`
-                                    : servar.name}
-                            </label>
-                        </div>
+                            {servar.type === 'integer_field'
+                                ? `${servar.name}: ${servar.value}`
+                                : servar.name}
+                        </label>
                         {controlElement}
                     </div>
                 );
