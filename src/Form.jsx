@@ -354,6 +354,7 @@ export default function Form({
                         gridColumnEnd: step.progress_bar.column_index_end + 2,
                         gridRowEnd: step.progress_bar.row_index_end + 2,
                         alignItems: step.progress_bar.layout,
+                        justifyContent: step.vertical_layout,
                         paddingBottom: `${step.progress_bar.padding_bottom}px`,
                         paddingTop: `${step.progress_bar.padding_top}px`,
                         color: `#${step.progress_bar.font_color}`,
@@ -365,7 +366,6 @@ export default function Form({
                         fontSize: `${step.progress_bar.font_size}px`,
                         display: 'flex',
                         flexDirection: 'column',
-                        justifyContent: 'center'
                     }}
                 >
                     {progressBarElements}
@@ -379,12 +379,12 @@ export default function Form({
                         gridRowStart: field.row_index + 1,
                         gridColumnEnd: field.column_index_end + 2,
                         gridRowEnd: field.row_index_end + 2,
-                        alignItems: field.layout,
                         paddingBottom: `${field.padding_bottom}px`,
                         paddingTop: `${field.padding_top}px`,
                         display: 'flex',
                         flexDirection: 'column',
-                        justifyContent: 'center'
+                        alignItems: field.layout,
+                        justifyContent: field.vertical_layout,
                     }}
                 >
                     {field.is_button ? (
@@ -745,7 +745,7 @@ export default function Form({
                             fontSize: `${field.font_size}px`,
                             display: 'flex',
                             flexDirection: 'column',
-                            justifyContent: 'center',
+                            justifyContent: field.vertical_layout,
                             width: '100%'
                         }}
                         key={i}
