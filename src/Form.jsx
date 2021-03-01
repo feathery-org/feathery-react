@@ -478,7 +478,6 @@ export default function Form({
                             <ReactForm.Check
                                 type='checkbox'
                                 id={servar.key}
-                                label={servar.name}
                                 checked={servar.value}
                                 onChange={handleChange}
                                 style={{
