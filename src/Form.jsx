@@ -61,7 +61,10 @@ export default function Form({
     });
 
     const calculateDimensions = (inputStep) => {
-        let gridTemplateRows = inputStep.grid_rows;
+        const gridTemplateRows = inputStep.grid_rows.map(
+            (row) => `minmax(${row},auto)`
+        );
+
         let gridTemplateColumns;
         if (window.innerWidth >= 768) {
             gridTemplateColumns = inputStep.grid_columns;
@@ -80,23 +83,20 @@ export default function Form({
             );
         }
 
-        let definiteWidth = null;
-        if (!inputStep.full_size) {
-            definiteWidth = 0;
-            gridTemplateColumns.forEach((column) => {
-                if (definiteWidth !== null && column.slice(-2) === 'px') {
-                    definiteWidth += parseFloat(column);
-                } else {
-                    definiteWidth = null;
-                }
-            });
-        }
-        gridTemplateRows = gridTemplateRows.map((row) => `minmax(${row},auto)`);
+        let definiteWidth = 0;
+        gridTemplateColumns.forEach((column) => {
+            if (definiteWidth !== null && column.slice(-2) === 'px') {
+                definiteWidth += parseFloat(column);
+            } else {
+                definiteWidth = null;
+            }
+        });
         if (definiteWidth) {
             gridTemplateColumns = gridTemplateColumns.map(
                 (c) => `${(100 * parseFloat(c)) / definiteWidth}%`
             );
         }
+
         const newDimensions = {
             width: definiteWidth,
             columns: gridTemplateColumns,
@@ -354,7 +354,7 @@ export default function Form({
                         gridColumnEnd: step.progress_bar.column_index_end + 2,
                         gridRowEnd: step.progress_bar.row_index_end + 2,
                         alignItems: step.progress_bar.layout,
-                        justifyContent: step.vertical_layout,
+                        justifyContent: step.progress_bar.vertical_layout,
                         paddingBottom: `${step.progress_bar.padding_bottom}px`,
                         paddingTop: `${step.progress_bar.padding_top}px`,
                         color: `#${step.progress_bar.font_color}`,
@@ -365,7 +365,7 @@ export default function Form({
                         fontFamily: step.progress_bar.font_family,
                         fontSize: `${step.progress_bar.font_size}px`,
                         display: 'flex',
-                        flexDirection: 'column',
+                        flexDirection: 'column'
                     }}
                 >
                     {progressBarElements}
@@ -384,7 +384,7 @@ export default function Form({
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: field.layout,
-                        justifyContent: field.vertical_layout,
+                        justifyContent: field.vertical_layout
                     }}
                 >
                     {field.is_button ? (
