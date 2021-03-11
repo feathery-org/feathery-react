@@ -588,17 +588,27 @@ export default function Form({
                     case 'integer_field':
                         controlElement = (
                             <ReactForm.Control
-                                id={servar.key}
-                                type='range'
-                                step={1}
-                                value={servar.value}
-                                required={servar.required}
-                                onChange={handleChange}
+                                type='number'
                                 style={{
+                                    height: `${field.field_height}${field.field_height_unit}`,
                                     width: `${field.field_width}${field.field_width_unit}`,
                                     maxWidth: '100%',
                                     borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                 }}
+                                css={{
+                                    '&::placeholder': {
+                                        color: `#${field.metadata.placeholder_color} !important`,
+                                        fontStyle: field.metadata
+                                            .placeholder_italic
+                                            ? 'italic !important'
+                                            : 'normal !important'
+                                    }
+                                }}
+                                id={servar.key}
+                                value={servar.value}
+                                required={servar.required}
+                                onChange={handleChange}
+                                placeholder={metadata.placeholder || ''}
                             />
                         );
                         break;
@@ -755,9 +765,7 @@ export default function Form({
                                 marginBottom: '10px'
                             }}
                         >
-                            {servar.type === 'integer_field'
-                                ? `${servar.name}: ${servar.value}`
-                                : servar.name}
+                          {servar.name}
                         </label>
                         {controlElement}
                     </div>
