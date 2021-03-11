@@ -62,7 +62,7 @@ export default function Form({
 
     const calculateDimensions = (inputStep) => {
         const gridTemplateRows = inputStep.grid_rows.map(
-            (row) => `minmax(${row},auto)`
+            (row) => `minmax(${row},min-content)`
         );
 
         let gridTemplateColumns;
