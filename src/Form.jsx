@@ -4,6 +4,7 @@ import Button from 'react-bootstrap/Button';
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
+import TextField from '@material-ui/core/TextField';
 
 import Client from './utils/client';
 import { fieldState } from './Fields';
@@ -302,7 +303,11 @@ export default function Form({
 
     return (
         <ReactForm
-            className={`bootstrap-iso ${className}`}
+            className={
+                step.component_type === 'bootstrap'
+                    ? `bootstrap-iso ${className}`
+                    : className
+            }
             onSubmit={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -460,87 +465,135 @@ export default function Form({
                 switch (servar.type) {
                     case 'file_upload':
                         controlElement = (
-                            <ReactForm.File
-                                id={servar.key}
-                                accept='image/*'
-                                required={servar.required}
-                                onChange={(e) => {
-                                    setAcceptedFile(e.target.files[0]);
-                                }}
-                                style={{
-                                    cursor: 'pointer'
-                                }}
-                            />
+                            <>
+                                <label
+                                    htmlFor={servar.key}
+                                    style={{
+                                        marginBottom: '10px'
+                                    }}
+                                >
+                                    {servar.name}
+                                </label>
+                                <ReactForm.File
+                                    id={servar.key}
+                                    accept='image/*'
+                                    required={servar.required}
+                                    onChange={(e) => {
+                                        setAcceptedFile(e.target.files[0]);
+                                    }}
+                                    style={{
+                                        cursor: 'pointer'
+                                    }}
+                                />
+                            </>
                         );
                         break;
                     case 'checkbox':
                         controlElement = (
-                            <ReactForm.Check
-                                type='checkbox'
-                                id={servar.key}
-                                checked={servar.value}
-                                onChange={handleChange}
-                                style={{
-                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                }}
-                            />
+                            <>
+                                <label
+                                    htmlFor={servar.key}
+                                    style={{
+                                        marginBottom: '10px'
+                                    }}
+                                >
+                                    {servar.name}
+                                </label>
+                                <ReactForm.Check
+                                    type='checkbox'
+                                    id={servar.key}
+                                    checked={servar.value}
+                                    onChange={handleChange}
+                                    style={{
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                    }}
+                                />
+                            </>
                         );
                         break;
                     case 'dropdown':
                         controlElement = (
-                            <ReactForm.Control
-                                style={{
-                                    height: `${field.field_height}${field.field_height_unit}`,
-                                    width: `${field.field_width}${field.field_width_unit}`,
-                                    maxWidth: '100%',
-                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                }}
-                                as='select'
-                                id={servar.key}
-                                value={servar.value}
-                                required={servar.required}
-                                onChange={handleChange}
-                                custom
-                            >
-                                <option key='' value='' disabled>
-                                    Select...
-                                </option>
-                                {servar.metadata.options.map((option) => (
-                                    <option key={option}>{option}</option>
-                                ))}
-                            </ReactForm.Control>
+                            <>
+                                <label
+                                    htmlFor={servar.key}
+                                    style={{
+                                        marginBottom: '10px'
+                                    }}
+                                >
+                                    {servar.name}
+                                </label>
+                                <ReactForm.Control
+                                    style={{
+                                        height: `${field.field_height}${field.field_height_unit}`,
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        maxWidth: '100%',
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                    }}
+                                    as='select'
+                                    id={servar.key}
+                                    value={servar.value}
+                                    required={servar.required}
+                                    onChange={handleChange}
+                                    custom
+                                >
+                                    <option key='' value='' disabled>
+                                        Select...
+                                    </option>
+                                    {servar.metadata.options.map((option) => (
+                                        <option key={option}>{option}</option>
+                                    ))}
+                                </ReactForm.Control>
+                            </>
                         );
                         break;
                     case 'email':
                         controlElement = (
-                            <ReactForm.Control
-                                type='email'
-                                style={{
-                                    height: `${field.field_height}${field.field_height_unit}`,
-                                    width: `${field.field_width}${field.field_width_unit}`,
-                                    maxWidth: '100%',
-                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                }}
-                                css={{
-                                    '::placeholder': {
-                                        color: `#${field.metadata.placeholder_color} !important`,
-                                        fontStyle: field.metadata
-                                            .placeholder_italic
-                                            ? 'italic !important'
-                                            : 'normal !important'
-                                    }
-                                }}
-                                id={servar.key}
-                                value={servar.value}
-                                required={servar.required}
-                                onChange={handleChange}
-                                placeholder={metadata.placeholder || ''}
-                            />
+                            <>
+                                <label
+                                    htmlFor={servar.key}
+                                    style={{
+                                        marginBottom: '10px'
+                                    }}
+                                >
+                                    {servar.name}
+                                </label>
+                                <ReactForm.Control
+                                    type='email'
+                                    style={{
+                                        height: `${field.field_height}${field.field_height_unit}`,
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        maxWidth: '100%',
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                    }}
+                                    css={{
+                                        '::placeholder': {
+                                            color: `#${field.metadata.placeholder_color} !important`,
+                                            fontStyle: field.metadata
+                                                .placeholder_italic
+                                                ? 'italic !important'
+                                                : 'normal !important'
+                                        }
+                                    }}
+                                    id={servar.key}
+                                    value={servar.value}
+                                    required={servar.required}
+                                    onChange={handleChange}
+                                    placeholder={metadata.placeholder || ''}
+                                />
+                            </>
                         );
                         break;
                     case 'multiselect':
                         controlElement = (
                             <>
+                                <label
+                                    htmlFor={servar.key}
+                                    style={{
+                                        marginBottom: '10px'
+                                    }}
+                                >
+                                    {servar.name}
+                                </label>
                                 {servar.metadata.options.map((opt) => {
                                     return (
                                         <ReactForm.Check
@@ -565,6 +618,14 @@ export default function Form({
                     case 'select':
                         controlElement = (
                             <>
+                                <label
+                                    htmlFor={servar.key}
+                                    style={{
+                                        marginBottom: '10px'
+                                    }}
+                                >
+                                    {servar.name}
+                                </label>
                                 {servar.metadata.options.map((opt) => {
                                     return (
                                         <ReactForm.Check
@@ -587,34 +648,52 @@ export default function Form({
                         break;
                     case 'integer_field':
                         controlElement = (
-                            <ReactForm.Control
-                                type='number'
-                                style={{
-                                    height: `${field.field_height}${field.field_height_unit}`,
-                                    width: `${field.field_width}${field.field_width_unit}`,
-                                    maxWidth: '100%',
-                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                }}
-                                css={{
-                                    '&::placeholder': {
-                                        color: `#${field.metadata.placeholder_color} !important`,
-                                        fontStyle: field.metadata
-                                            .placeholder_italic
-                                            ? 'italic !important'
-                                            : 'normal !important'
-                                    }
-                                }}
-                                id={servar.key}
-                                value={servar.value}
-                                required={servar.required}
-                                onChange={handleChange}
-                                placeholder={metadata.placeholder || ''}
-                            />
+                            <>
+                                <label
+                                    htmlFor={servar.key}
+                                    style={{
+                                        marginBottom: '10px'
+                                    }}
+                                >
+                                    {servar.name}
+                                </label>
+                                <ReactForm.Control
+                                    type='number'
+                                    style={{
+                                        height: `${field.field_height}${field.field_height_unit}`,
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        maxWidth: '100%',
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                    }}
+                                    css={{
+                                        '&::placeholder': {
+                                            color: `#${field.metadata.placeholder_color} !important`,
+                                            fontStyle: field.metadata
+                                                .placeholder_italic
+                                                ? 'italic !important'
+                                                : 'normal !important'
+                                        }
+                                    }}
+                                    id={servar.key}
+                                    value={servar.value}
+                                    required={servar.required}
+                                    onChange={handleChange}
+                                    placeholder={metadata.placeholder || ''}
+                                />
+                            </>
                         );
                         break;
                     case 'hex_color':
                         controlElement = (
                             <>
+                                <label
+                                    htmlFor={servar.key}
+                                    style={{
+                                        marginBottom: '10px'
+                                    }}
+                                >
+                                    {servar.name}
+                                </label>
                                 <div
                                     css={{
                                         width: '36px',
@@ -657,85 +736,158 @@ export default function Form({
                         break;
                     case 'text_area':
                         controlElement = (
-                            <ReactForm.Control
-                                as='textarea'
-                                rows={metadata.num_rows}
-                                id={servar.key}
-                                value={servar.value}
-                                onChange={handleChange}
-                                placeholder={metadata.placeholder || ''}
-                                required={servar.required}
-                                style={{
-                                    resize: 'none',
-                                    width: `${field.field_width}${field.field_width_unit}`,
-                                    maxWidth: '100%',
-                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                }}
-                                css={{
-                                    '&::placeholder': {
-                                        color: `#${field.metadata.placeholder_color} !important`,
-                                        fontStyle: field.metadata
-                                            .placeholder_italic
-                                            ? 'italic !important'
-                                            : 'normal !important'
-                                    }
-                                }}
-                            />
+                            <>
+                                <label
+                                    htmlFor={servar.key}
+                                    style={{
+                                        marginBottom: '10px'
+                                    }}
+                                >
+                                    {servar.name}
+                                </label>
+                                <ReactForm.Control
+                                    as='textarea'
+                                    rows={metadata.num_rows}
+                                    id={servar.key}
+                                    value={servar.value}
+                                    onChange={handleChange}
+                                    placeholder={metadata.placeholder || ''}
+                                    required={servar.required}
+                                    style={{
+                                        resize: 'none',
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        maxWidth: '100%',
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                    }}
+                                    css={{
+                                        '&::placeholder': {
+                                            color: `#${field.metadata.placeholder_color} !important`,
+                                            fontStyle: field.metadata
+                                                .placeholder_italic
+                                                ? 'italic !important'
+                                                : 'normal !important'
+                                        }
+                                    }}
+                                />
+                            </>
                         );
                         break;
                     case 'url':
                         controlElement = (
-                            <ReactForm.Control
-                                type='url'
-                                style={{
-                                    height: `${field.field_height}${field.field_height_unit}`,
-                                    width: `${field.field_width}${field.field_width_unit}`,
-                                    maxWidth: '100%',
-                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                }}
-                                css={{
-                                    '&::placeholder': {
-                                        color: `#${field.metadata.placeholder_color} !important`,
-                                        fontStyle: field.metadata
-                                            .placeholder_italic
-                                            ? 'italic !important'
-                                            : 'normal !important'
-                                    }
-                                }}
-                                id={servar.key}
-                                value={servar.value}
-                                required={servar.required}
-                                onChange={handleChange}
-                                placeholder={metadata.placeholder || ''}
-                            />
+                            <>
+                                <label
+                                    htmlFor={servar.key}
+                                    style={{
+                                        marginBottom: '10px'
+                                    }}
+                                >
+                                    {servar.name}
+                                </label>
+                                <ReactForm.Control
+                                    type='url'
+                                    style={{
+                                        height: `${field.field_height}${field.field_height_unit}`,
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        maxWidth: '100%',
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                    }}
+                                    css={{
+                                        '&::placeholder': {
+                                            color: `#${field.metadata.placeholder_color} !important`,
+                                            fontStyle: field.metadata
+                                                .placeholder_italic
+                                                ? 'italic !important'
+                                                : 'normal !important'
+                                        }
+                                    }}
+                                    id={servar.key}
+                                    value={servar.value}
+                                    required={servar.required}
+                                    onChange={handleChange}
+                                    placeholder={metadata.placeholder || ''}
+                                />
+                            </>
                         );
                         break;
                     default:
-                        controlElement = (
-                            <ReactForm.Control
-                                type='text'
-                                style={{
-                                    height: `${field.field_height}${field.field_height_unit}`,
-                                    width: `${field.field_width}${field.field_width_unit}`,
-                                    maxWidth: '100%',
-                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                }}
-                                css={{
-                                    '&::placeholder': {
-                                        color: `#${field.metadata.placeholder_color} !important`,
-                                        fontStyle: field.metadata
-                                            .placeholder_italic
-                                            ? 'italic !important'
-                                            : 'normal !important'
-                                    }
-                                }}
-                                id={servar.key}
-                                value={servar.value}
-                                required={servar.required}
-                                onChange={handleChange}
-                                placeholder={metadata.placeholder || ''}
-                            />
-                        );
+                        controlElement =
+                            step.component_type === 'bootstrap' ? (
+                                <>
+                                    <label
+                                        htmlFor={servar.key}
+                                        style={{
+                                            marginBottom: '10px'
+                                        }}
+                                    >
+                                        {servar.name}
+                                    </label>
+                                    <ReactForm.Control
+                                        type='text'
+                                        style={{
+                                            height: `${field.field_height}${field.field_height_unit}`,
+                                            width: `${field.field_width}${field.field_width_unit}`,
+                                            maxWidth: '100%',
+                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                        }}
+                                        css={{
+                                            '&::placeholder': {
+                                                color: `#${field.metadata.placeholder_color} !important`,
+                                                fontStyle: field.metadata
+                                                    .placeholder_italic
+                                                    ? 'italic !important'
+                                                    : 'normal !important'
+                                            }
+                                        }}
+                                        id={servar.key}
+                                        value={servar.value}
+                                        required={servar.required}
+                                        onChange={handleChange}
+                                        placeholder={metadata.placeholder || ''}
+                                    />
+                                </>
+                            ) : (
+                                <TextField
+                                    label={servar.name}
+                                    style={{
+                                        color: `#${field.font_color}`,
+                                        fontStyle: field.font_italic
+                                            ? 'italic'
+                                            : 'normal',
+                                        fontWeight: field.font_weight,
+                                        fontFamily: field.font_family,
+                                        fontSize: `${field.font_size}px`,
+                                        height: `${field.field_height}${field.field_height_unit}`,
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        maxWidth: '100%',
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                    }}
+                                    css={{
+                                        '&::placeholder': {
+                                            color: `#${field.metadata.placeholder_color} !important`,
+                                            fontStyle: field.metadata
+                                                .placeholder_italic
+                                                ? 'italic !important'
+                                                : 'normal !important'
+                                        }
+                                    }}
+                                    InputLabelProps={{
+                                        style: {
+                                            color: `#${field.font_color}`,
+                                            fontStyle: field.font_italic
+                                                ? 'italic'
+                                                : 'normal',
+                                            fontWeight: field.font_weight,
+                                            fontFamily: field.font_family,
+                                            fontSize: `${field.font_size}px`
+                                        }
+                                    }}
+                                    id={servar.key}
+                                    value={servar.value}
+                                    required={servar.required}
+                                    onChange={handleChange}
+                                    placeholder={metadata.placeholder || ''}
+                                />
+                            );
                 }
                 return (
                     <div
@@ -759,14 +911,6 @@ export default function Form({
                         }}
                         key={i}
                     >
-                        <label
-                            htmlFor={servar.key}
-                            style={{
-                                marginBottom: '10px'
-                            }}
-                        >
-                          {servar.name}
-                        </label>
                         {controlElement}
                     </div>
                 );
