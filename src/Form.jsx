@@ -4,8 +4,8 @@ import Button from 'react-bootstrap/Button';
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
-import TextField from '@material-ui/core/TextField';
 
+import { MuiField, MuiProgress } from './components/MaterialUI';
 import Client from './utils/client';
 import { fieldState } from './Fields';
 
@@ -274,30 +274,41 @@ export default function Form({
     let progressBarElements = null;
     if (step.progress_bar) {
         const maxSteps = displayStep ? totalSteps : step.total_steps;
-        progressBarElements = [
-            <ProgressBar
-                key='progress'
-                style={{
-                    height: '0.4rem',
-                    width: `${step.progress_bar.bar_width}%`,
-                    maxWidth: '100%'
-                }}
-                css={{
-                    '.progress-bar': {
-                        margin: '0 0 0 0 !important',
-                        backgroundColor: `#${step.progress_bar.bar_color} !important`
-                    }
-                }}
-                now={(step.step_number / maxSteps) * 100}
-            />
-        ];
-        const completionPercentage = `${Math.round(
-            (step.step_number / maxSteps) * 100
-        )}% completed`;
-        if (step.progress_bar.percent_text_layout === 'top') {
-            progressBarElements.splice(0, 0, completionPercentage);
-        } else if (step.progress_bar.percent_text_layout === 'bottom') {
-            progressBarElements.splice(1, 0, completionPercentage);
+        if (step.component_type === 'bootstrap') {
+            progressBarElements = [
+                <ProgressBar
+                    key='progress'
+                    style={{
+                        height: '0.4rem',
+                        width: `${step.progress_bar.bar_width}%`,
+                        maxWidth: '100%'
+                    }}
+                    css={{
+                        '.progress-bar': {
+                            margin: '0 0 0 0 !important',
+                            backgroundColor: `#${step.progress_bar.bar_color} !important`
+                        }
+                    }}
+                    now={(step.step_number / maxSteps) * 100}
+                />
+            ];
+            const completionPercentage = `${Math.round(
+                (step.step_number / maxSteps) * 100
+            )}% completed`;
+            if (step.progress_bar.percent_text_layout === 'top') {
+                progressBarElements.splice(0, 0, completionPercentage);
+            } else if (step.progress_bar.percent_text_layout === 'bottom') {
+                progressBarElements.splice(1, 0, completionPercentage);
+            }
+        } else {
+            progressBarElements = [
+                <MuiProgress
+                    key='progress'
+                    curStep={step.step_number}
+                    maxStep={maxSteps}
+                    progressBar={step.progress_bar}
+                />
+            ];
         }
     }
 
@@ -547,41 +558,52 @@ export default function Form({
                         );
                         break;
                     case 'email':
-                        controlElement = (
-                            <>
-                                <label
-                                    htmlFor={servar.key}
-                                    style={{
-                                        marginBottom: '10px'
-                                    }}
-                                >
-                                    {servar.name}
-                                </label>
-                                <ReactForm.Control
+                        controlElement =
+                            step.component_type === 'bootstrap' ? (
+                                <>
+                                    <label
+                                        htmlFor={servar.key}
+                                        style={{
+                                            marginBottom: '10px'
+                                        }}
+                                    >
+                                        {servar.name}
+                                    </label>
+                                    <ReactForm.Control
+                                        type='email'
+                                        style={{
+                                            height: `${field.field_height}${field.field_height_unit}`,
+                                            width: `${field.field_width}${field.field_width_unit}`,
+                                            maxWidth: '100%',
+                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                        }}
+                                        css={{
+                                            '&::placeholder': {
+                                                color: `#${field.metadata.placeholder_color} !important`,
+                                                fontStyle: field.metadata
+                                                    .placeholder_italic
+                                                    ? 'italic !important'
+                                                    : 'normal !important'
+                                            },
+                                            '&:focus': {
+                                                'box-shadow': `0 0 0 0.2rem #${field.focus_color} !important`
+                                            }
+                                        }}
+                                        id={servar.key}
+                                        value={servar.value}
+                                        required={servar.required}
+                                        onChange={handleChange}
+                                        placeholder={metadata.placeholder || ''}
+                                    />
+                                </>
+                            ) : (
+                                <MuiField
+                                    servar={servar}
+                                    field={field}
                                     type='email'
-                                    style={{
-                                        height: `${field.field_height}${field.field_height_unit}`,
-                                        width: `${field.field_width}${field.field_width_unit}`,
-                                        maxWidth: '100%',
-                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                    }}
-                                    css={{
-                                        '::placeholder': {
-                                            color: `#${field.metadata.placeholder_color} !important`,
-                                            fontStyle: field.metadata
-                                                .placeholder_italic
-                                                ? 'italic !important'
-                                                : 'normal !important'
-                                        }
-                                    }}
-                                    id={servar.key}
-                                    value={servar.value}
-                                    required={servar.required}
                                     onChange={handleChange}
-                                    placeholder={metadata.placeholder || ''}
                                 />
-                            </>
-                        );
+                            );
                         break;
                     case 'multiselect':
                         controlElement = (
@@ -647,41 +669,52 @@ export default function Form({
                         );
                         break;
                     case 'integer_field':
-                        controlElement = (
-                            <>
-                                <label
-                                    htmlFor={servar.key}
-                                    style={{
-                                        marginBottom: '10px'
-                                    }}
-                                >
-                                    {servar.name}
-                                </label>
-                                <ReactForm.Control
+                        controlElement =
+                            step.component_type === 'bootstrap' ? (
+                                <>
+                                    <label
+                                        htmlFor={servar.key}
+                                        style={{
+                                            marginBottom: '10px'
+                                        }}
+                                    >
+                                        {servar.name}
+                                    </label>
+                                    <ReactForm.Control
+                                        type='number'
+                                        style={{
+                                            height: `${field.field_height}${field.field_height_unit}`,
+                                            width: `${field.field_width}${field.field_width_unit}`,
+                                            maxWidth: '100%',
+                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                        }}
+                                        css={{
+                                            '&::placeholder': {
+                                                color: `#${field.metadata.placeholder_color} !important`,
+                                                fontStyle: field.metadata
+                                                    .placeholder_italic
+                                                    ? 'italic !important'
+                                                    : 'normal !important'
+                                            },
+                                            '&:focus': {
+                                                'box-shadow': `0 0 0 0.2rem #${field.focus_color} !important`
+                                            }
+                                        }}
+                                        id={servar.key}
+                                        value={servar.value}
+                                        required={servar.required}
+                                        onChange={handleChange}
+                                        placeholder={metadata.placeholder || ''}
+                                    />
+                                </>
+                            ) : (
+                                <MuiField
+                                    servar={servar}
+                                    field={field}
                                     type='number'
-                                    style={{
-                                        height: `${field.field_height}${field.field_height_unit}`,
-                                        width: `${field.field_width}${field.field_width_unit}`,
-                                        maxWidth: '100%',
-                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                    }}
-                                    css={{
-                                        '&::placeholder': {
-                                            color: `#${field.metadata.placeholder_color} !important`,
-                                            fontStyle: field.metadata
-                                                .placeholder_italic
-                                                ? 'italic !important'
-                                                : 'normal !important'
-                                        }
-                                    }}
-                                    id={servar.key}
-                                    value={servar.value}
-                                    required={servar.required}
                                     onChange={handleChange}
-                                    placeholder={metadata.placeholder || ''}
                                 />
-                            </>
-                        );
+                            );
                         break;
                     case 'hex_color':
                         controlElement = (
@@ -735,79 +768,102 @@ export default function Form({
                         );
                         break;
                     case 'text_area':
-                        controlElement = (
-                            <>
-                                <label
-                                    htmlFor={servar.key}
-                                    style={{
-                                        marginBottom: '10px'
-                                    }}
-                                >
-                                    {servar.name}
-                                </label>
-                                <ReactForm.Control
-                                    as='textarea'
-                                    rows={metadata.num_rows}
-                                    id={servar.key}
-                                    value={servar.value}
+                        controlElement =
+                            step.component_type === 'bootstrap' ? (
+                                <>
+                                    <label
+                                        htmlFor={servar.key}
+                                        style={{
+                                            marginBottom: '10px'
+                                        }}
+                                    >
+                                        {servar.name}
+                                    </label>
+                                    <ReactForm.Control
+                                        as='textarea'
+                                        rows={metadata.num_rows}
+                                        id={servar.key}
+                                        value={servar.value}
+                                        onChange={handleChange}
+                                        placeholder={metadata.placeholder || ''}
+                                        required={servar.required}
+                                        style={{
+                                            resize: 'none',
+                                            width: `${field.field_width}${field.field_width_unit}`,
+                                            maxWidth: '100%',
+                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                        }}
+                                        css={{
+                                            '&::placeholder': {
+                                                color: `#${field.metadata.placeholder_color} !important`,
+                                                fontStyle: field.metadata
+                                                    .placeholder_italic
+                                                    ? 'italic !important'
+                                                    : 'normal !important'
+                                            },
+                                            '&:focus': {
+                                                'box-shadow': `0 0 0 0.2rem #${field.focus_color} !important`
+                                            }
+                                        }}
+                                    />
+                                </>
+                            ) : (
+                                <MuiField
+                                    servar={servar}
+                                    field={field}
+                                    type='text'
                                     onChange={handleChange}
-                                    placeholder={metadata.placeholder || ''}
-                                    required={servar.required}
-                                    style={{
-                                        resize: 'none',
-                                        width: `${field.field_width}${field.field_width_unit}`,
-                                        maxWidth: '100%',
-                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                    }}
-                                    css={{
-                                        '&::placeholder': {
-                                            color: `#${field.metadata.placeholder_color} !important`,
-                                            fontStyle: field.metadata
-                                                .placeholder_italic
-                                                ? 'italic !important'
-                                                : 'normal !important'
-                                        }
-                                    }}
+                                    multiline
                                 />
-                            </>
-                        );
+                            );
                         break;
                     case 'url':
-                        controlElement = (
-                            <>
-                                <label
-                                    htmlFor={servar.key}
-                                    style={{
-                                        marginBottom: '10px'
-                                    }}
-                                >
-                                    {servar.name}
-                                </label>
-                                <ReactForm.Control
+                        controlElement =
+                            step.component_type === 'bootstrap' ? (
+                                <>
+                                    <label
+                                        htmlFor={servar.key}
+                                        style={{
+                                            marginBottom: '10px'
+                                        }}
+                                    >
+                                        {servar.name}
+                                    </label>
+                                    <ReactForm.Control
+                                        type='url'
+                                        style={{
+                                            height: `${field.field_height}${field.field_height_unit}`,
+                                            width: `${field.field_width}${field.field_width_unit}`,
+                                            maxWidth: '100%',
+                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                        }}
+                                        css={{
+                                            '&::placeholder': {
+                                                color: `#${field.metadata.placeholder_color} !important`,
+                                                fontStyle: field.metadata
+                                                    .placeholder_italic
+                                                    ? 'italic !important'
+                                                    : 'normal !important'
+                                            },
+                                            '&:focus': {
+                                                'box-shadow': `0 0 0 0.2rem #${field.focus_color} !important`
+                                            }
+                                        }}
+                                        id={servar.key}
+                                        value={servar.value}
+                                        required={servar.required}
+                                        onChange={handleChange}
+                                        placeholder={metadata.placeholder || ''}
+                                    />
+                                </>
+                            ) : (
+                                <MuiField
+                                    servar={servar}
+                                    field={field}
                                     type='url'
-                                    style={{
-                                        height: `${field.field_height}${field.field_height_unit}`,
-                                        width: `${field.field_width}${field.field_width_unit}`,
-                                        maxWidth: '100%',
-                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                    }}
-                                    css={{
-                                        '&::placeholder': {
-                                            color: `#${field.metadata.placeholder_color} !important`,
-                                            fontStyle: field.metadata
-                                                .placeholder_italic
-                                                ? 'italic !important'
-                                                : 'normal !important'
-                                        }
-                                    }}
-                                    id={servar.key}
-                                    value={servar.value}
-                                    required={servar.required}
                                     onChange={handleChange}
-                                    placeholder={metadata.placeholder || ''}
                                 />
-                            </>
-                        );
+                            );
                         break;
                     default:
                         controlElement =
@@ -836,6 +892,9 @@ export default function Form({
                                                     .placeholder_italic
                                                     ? 'italic !important'
                                                     : 'normal !important'
+                                            },
+                                            '&:focus': {
+                                                'box-shadow': `0 0 0 0.2rem #${field.focus_color} !important`
                                             }
                                         }}
                                         id={servar.key}
@@ -846,46 +905,11 @@ export default function Form({
                                     />
                                 </>
                             ) : (
-                                <TextField
-                                    label={servar.name}
-                                    style={{
-                                        color: `#${field.font_color}`,
-                                        fontStyle: field.font_italic
-                                            ? 'italic'
-                                            : 'normal',
-                                        fontWeight: field.font_weight,
-                                        fontFamily: field.font_family,
-                                        fontSize: `${field.font_size}px`,
-                                        height: `${field.field_height}${field.field_height_unit}`,
-                                        width: `${field.field_width}${field.field_width_unit}`,
-                                        maxWidth: '100%',
-                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                    }}
-                                    css={{
-                                        '&::placeholder': {
-                                            color: `#${field.metadata.placeholder_color} !important`,
-                                            fontStyle: field.metadata
-                                                .placeholder_italic
-                                                ? 'italic !important'
-                                                : 'normal !important'
-                                        }
-                                    }}
-                                    InputLabelProps={{
-                                        style: {
-                                            color: `#${field.font_color}`,
-                                            fontStyle: field.font_italic
-                                                ? 'italic'
-                                                : 'normal',
-                                            fontWeight: field.font_weight,
-                                            fontFamily: field.font_family,
-                                            fontSize: `${field.font_size}px`
-                                        }
-                                    }}
-                                    id={servar.key}
-                                    value={servar.value}
-                                    required={servar.required}
+                                <MuiField
+                                    servar={servar}
+                                    field={field}
+                                    type='text'
                                     onChange={handleChange}
-                                    placeholder={metadata.placeholder || ''}
                                 />
                             );
                 }
