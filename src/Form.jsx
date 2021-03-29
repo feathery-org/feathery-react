@@ -414,6 +414,7 @@ export default function Form({
                                 fontWeight: field.font_weight,
                                 fontFamily: field.font_family,
                                 fontSize: `${field.font_size}px`,
+                                borderRadius: `${field.border_radius}px`,
                                 borderColor: `#${field.button_color}`,
                                 backgroundColor: `#${field.button_color}`,
                                 height: `${field.button_height}${field.button_height_unit}`,

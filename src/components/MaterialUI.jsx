@@ -17,6 +17,13 @@ function MuiProgress({ curStep, maxStep, progressBar }) {
                     '&$active': {
                         color: `#${progressBar.bar_color}`
                     }
+                },
+                text: {
+                    color: `#${progressBar.font_color}`,
+                    'font-style': progressBar.font_italic ? 'italic' : 'normal',
+                    'font-weight': progressBar.font_weight,
+                    'font-family': progressBar.font_family,
+                    'font-size': `${progressBar.font_size}px`
                 }
             },
             MuiSvgIcon: {
