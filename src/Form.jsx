@@ -698,7 +698,7 @@ export default function Form({
                                                     : 'normal !important'
                                             },
                                             '&:focus': {
-                                                'box-shadow': `0 0 0 0.2rem #${field.focus_color} !important`
+                                                boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
                                             }
                                         }}
                                         id={servar.key}
@@ -803,7 +803,7 @@ export default function Form({
                                                     : 'normal !important'
                                             },
                                             '&:focus': {
-                                                'box-shadow': `0 0 0 0.2rem #${field.focus_color} !important`
+                                                boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
                                             }
                                         }}
                                     />
@@ -847,7 +847,7 @@ export default function Form({
                                                     : 'normal !important'
                                             },
                                             '&:focus': {
-                                                'box-shadow': `0 0 0 0.2rem #${field.focus_color} !important`
+                                                boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
                                             }
                                         }}
                                         id={servar.key}
@@ -895,7 +895,7 @@ export default function Form({
                                                     : 'normal !important'
                                             },
                                             '&:focus': {
-                                                'box-shadow': `0 0 0 0.2rem #${field.focus_color} !important`
+                                                boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
                                             }
                                         }}
                                         id={servar.key}
