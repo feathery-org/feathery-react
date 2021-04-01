@@ -517,7 +517,8 @@ export default function Form({
                                     checked={servar.value}
                                     onChange={handleChange}
                                     style={{
-                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                        display: 'flex',
+                                        alignItems: 'center'
                                     }}
                                 />
                             </>
@@ -630,7 +631,8 @@ export default function Form({
                                                 servar.key
                                             )}
                                             style={{
-                                                borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                                display: 'flex',
+                                                alignItems: 'center'
                                             }}
                                         />
                                     );
@@ -661,7 +663,8 @@ export default function Form({
                                             value={opt}
                                             key={opt}
                                             style={{
-                                                borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                              display: 'flex',
+                                              alignItems: 'center'
                                             }}
                                         />
                                     );
