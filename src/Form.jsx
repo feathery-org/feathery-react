@@ -167,7 +167,7 @@ export default function Form({
             JSON.stringify(displayStep) !== JSON.stringify(displayStepCache)
         ) {
             setInitialOtherState(displayStep);
-            setDisplayStepCache(displayStep);
+            setDisplayStepCache(JSON.parse(JSON.stringify(displayStep)));
             setStep(displayStep);
             calculateDimensions(displayStep);
         }
