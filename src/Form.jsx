@@ -52,6 +52,8 @@ export default function Form({
         finished: false,
         redirectURL: null
     });
+    const [displayStepCache, setDisplayStepCache] = useState(null);
+    const [otherVals, setOtherVals] = useState({});
     const [displayColorPicker, setDisplayColorPicker] = useState({});
     const [acceptedFile, setAcceptedFile] = useState(null);
     const [step, setStep] = useState(displayStep);
@@ -113,6 +115,33 @@ export default function Form({
         }
     };
 
+    const setInitialOtherState = (step) => {
+        const newOtherVals = {};
+        step.servar_fields.forEach((field) => {
+            const servar = field.servar;
+            let val = null;
+            if (servar.metadata.other) {
+                if (servar.type === 'multiselect') {
+                    val = '';
+                    field.servar.value = servar.value.map((selectedVal) => {
+                        if (!servar.metadata.options.includes(selectedVal)) {
+                            val = selectedVal;
+                            return '';
+                        } else return selectedVal;
+                    });
+                } else if (servar.type === 'select') {
+                    if (servar.metadata.options.includes(servar.value)) val = '';
+                    else {
+                        val = servar.value;
+                        field.servar.value = '';
+                    }
+                }
+            }
+            if (val !== null) newOtherVals[field.servar.key] = val;
+        });
+        setOtherVals(newOtherVals);
+    };
+
     useEffect(() => {
         if (displayStep === null) {
             if (client === null) {
@@ -127,17 +156,29 @@ export default function Form({
                                 redirectURL: stepResponse.redirect_url
                             });
                         } else {
+                            setInitialOtherState(stepResponse);
                             setStep(stepResponse);
                             calculateDimensions(stepResponse);
                         }
                     })
                     .catch((error) => console.log(error));
             }
-        } else {
+        } else if (
+            JSON.stringify(displayStep) !== JSON.stringify(displayStepCache)
+        ) {
+            setInitialOtherState(displayStep);
+            setDisplayStepCache(displayStep);
             setStep(displayStep);
             calculateDimensions(displayStep);
         }
-    }, [client, displayStep, calculateDimensions]);
+    }, [
+        client,
+        displayStep,
+        calculateDimensions,
+        displayStepCache,
+        setDisplayStepCache,
+        setInitialOtherState
+    ]);
 
     if (displayStep === null && finishConfig.finished) {
         if (finishConfig.redirectURL) {
@@ -160,6 +201,11 @@ export default function Form({
             return field;
         });
         setStep({ ...step, servar_fields: newServarFields });
+    };
+
+    const handleOtherStateChange = (e) => {
+        const target = e.target;
+        setOtherVals({ ...otherVals, [target.id]: target.value });
     };
 
     const handleMultiselectChange = (servarKey) => (e) => {
@@ -193,28 +239,26 @@ export default function Form({
         });
     };
 
-    const submit = (action, userFields) => {
+    const submit = (action, userFields = []) => {
         if (!action) return;
 
-        const noFileServars = step.servar_fields.filter(
-            (field) => field.servar.type !== 'file_upload'
+        const noFileFields = userFields.filter(
+            (field) => field.type !== 'file_upload'
         );
-        const featheryServars = noFileServars.map((field) => {
-            const servar = field.servar;
-            return { key: servar.key, [servar.type]: servar.value };
+        const featheryFields = noFileFields.map((field) => {
+            return { key: field.key, [field.type]: field.value };
         });
         client
-            .submitStep(formKey, step.step_number, featheryServars, action)
+            .submitStep(formKey, step.step_number, featheryFields, action)
             .then(async (newStep) => {
                 const finished = newStep.step_number === null;
                 if (action === 'next') {
                     // Set real time field values for programmatic access
-                    noFileServars.forEach((field) => {
-                        const servar = field.servar;
-                        fieldState.realTimeFields[servar.key] = {
-                            value: servar.value,
-                            displayText: servar.name,
-                            type: servar.type
+                    noFileFields.forEach((field) => {
+                        fieldState.realTimeFields[field.key] = {
+                            value: field.value,
+                            displayText: field.displayText,
+                            type: field.type
                         };
                     });
                     // Execute user-provided onSubmit function if present
@@ -229,6 +273,7 @@ export default function Form({
                         redirectURL: newStep.redirect_url
                     });
                 } else {
+                    setInitialOtherState(newStep);
                     setStep(newStep);
                     calculateDimensions(newStep);
                 }
@@ -255,7 +300,8 @@ export default function Form({
                 if (value === '') isFilled = false;
                 break;
             case 'select':
-                if (value === '') isFilled = false;
+                if (value === '' && !otherVals[field.servar.key])
+                    isFilled = false;
                 break;
             case 'dropdown':
                 if (value === '') isFilled = false;
@@ -325,10 +371,22 @@ export default function Form({
 
                 const userFields = step.servar_fields.map((field) => {
                     const servar = field.servar;
-                    const value =
-                        servar.type === 'file_upload'
-                            ? acceptedFile
-                            : servar.value;
+                    let value;
+                    switch (servar.type) {
+                        case 'file_upload':
+                            value = acceptedFile;
+                            break;
+                        case 'select':
+                            value = servar.value || otherVals[servar.key];
+                            break;
+                        case 'multiselect':
+                            value = servar.value.map(
+                                (val) => val || otherVals[servar.key]
+                            );
+                            break;
+                        default:
+                            value = servar.value;
+                    }
                     return {
                         value,
                         type: servar.type,
@@ -637,6 +695,55 @@ export default function Form({
                                         />
                                     );
                                 })}
+                                {servar.metadata.other && (
+                                    <div
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center'
+                                        }}
+                                    >
+                                        <ReactForm.Check
+                                            type='checkbox'
+                                            id={servar.key}
+                                            name=''
+                                            key=''
+                                            label='Other'
+                                            checked={servar.value.includes('')}
+                                            onChange={handleMultiselectChange(
+                                                servar.key
+                                            )}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center'
+                                            }}
+                                        />
+                                        <ReactForm.Control
+                                            type='text'
+                                            style={{
+                                                marginLeft: '5px',
+                                                height: `${
+                                                    field.font_size + 4
+                                                }px`,
+                                                borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                                color: `#${field.font_color}`,
+                                                fontStyle: field.font_italic
+                                                    ? 'italic'
+                                                    : 'normal',
+                                                fontWeight: field.font_weight,
+                                                fontFamily: field.font_family,
+                                                fontSize: `${field.font_size}px`
+                                            }}
+                                            css={{
+                                                '&:focus': {
+                                                    boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
+                                                }
+                                            }}
+                                            id={servar.key}
+                                            value={otherVals[servar.key]}
+                                            onChange={handleOtherStateChange}
+                                        />
+                                    </div>
+                                )}
                             </>
                         );
                         break;
@@ -663,12 +770,59 @@ export default function Form({
                                             value={opt}
                                             key={opt}
                                             style={{
-                                              display: 'flex',
-                                              alignItems: 'center'
+                                                display: 'flex',
+                                                alignItems: 'center'
                                             }}
                                         />
                                     );
                                 })}
+                                {servar.metadata.other && (
+                                    <div
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center'
+                                        }}
+                                    >
+                                        <ReactForm.Check
+                                            type='radio'
+                                            id={servar.key}
+                                            label='Other'
+                                            checked={servar.value === ''}
+                                            onChange={handleChange}
+                                            value=''
+                                            key=''
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center'
+                                            }}
+                                        />
+                                        <ReactForm.Control
+                                            type='text'
+                                            style={{
+                                                marginLeft: '5px',
+                                                height: `${
+                                                    field.font_size + 4
+                                                }px`,
+                                                borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                                color: `#${field.font_color}`,
+                                                fontStyle: field.font_italic
+                                                    ? 'italic'
+                                                    : 'normal',
+                                                fontWeight: field.font_weight,
+                                                fontFamily: field.font_family,
+                                                fontSize: `${field.font_size}px`
+                                            }}
+                                            css={{
+                                                '&:focus': {
+                                                    boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
+                                                }
+                                            }}
+                                            id={servar.key}
+                                            value={otherVals[servar.key]}
+                                            onChange={handleOtherStateChange}
+                                        />
+                                    </div>
+                                )}
                             </>
                         );
                         break;
