@@ -3,13 +3,12 @@ import { initInfo } from './init';
 import encodeGetParams from './string';
 
 export default class Client {
-    async begin(formKey) {
-        const { userKey, apiKey } = initInfo();
+    async fetchForm(formKey) {
+        const { apiKey } = initInfo();
         const params = encodeGetParams({
-            flow_key: formKey,
-            ...(userKey ? { fuser_key: userKey } : {})
+            form_key: formKey
         });
-        const url = `https://api.feathery.tech/api/panel/step/?${params}`;
+        const url = `https://api.feathery.tech/api/panel/?${params}`;
         const options = {
             cache: 'no-store',
             headers: { Authorization: 'Token ' + apiKey }
@@ -25,7 +24,39 @@ export default class Client {
                     );
                 case 404:
                     return Promise.reject(
-                        new errors.UserKeyError('Invalid User key')
+                        new errors.FormKeyError('Invalid form key')
+                    );
+                default:
+                    return Promise.reject(
+                        new errors.FetchError('Unknown error')
+                    );
+            }
+        });
+    }
+
+    async fetchFormValues(formKey) {
+        const { apiKey, userKey } = initInfo();
+        const params = encodeGetParams({
+            form_key: formKey,
+            ...(userKey ? { fuser_key: userKey } : {})
+        });
+        const url = `https://api.feathery.tech/api/panel/values/?${params}`;
+        const options = {
+            cache: 'no-store',
+            headers: { Authorization: 'Token ' + apiKey }
+        };
+        return fetch(url, options).then((response) => {
+            const { status } = response;
+            switch (status) {
+                case 200:
+                    return response.json();
+                case 401:
+                    return Promise.reject(
+                        new errors.APIKeyError('Invalid API key')
+                    );
+                case 404:
+                    return Promise.reject(
+                        new errors.FormKeyError('Invalid form key')
                     );
                 default:
                     return Promise.reject(
