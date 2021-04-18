@@ -134,7 +134,7 @@ export default function Form({
         ) {
             const newStep = displaySteps[displayStepIndex];
             setInitialOtherState(newStep);
-            setStepCache(displaySteps);
+            setStepCache(JSON.parse(JSON.stringify(displaySteps)));
             setSteps(displaySteps);
             setStepIndexCache(displayStepIndex);
             setStepIndex(displayStepIndex);
@@ -273,7 +273,7 @@ export default function Form({
         }
     };
 
-    if (!steps || steps.length === 0) return null;
+    if (!activeStep) return null;
 
     let isFilled = true;
     for (const field of activeStep.servar_fields) {
