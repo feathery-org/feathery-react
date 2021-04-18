@@ -10,7 +10,8 @@ import Client from './utils/client';
 import {
     adjustColor,
     calculateDimensionsHelper,
-    setFieldValues
+    getDefaultFieldValues,
+    setConditionalIndex
 } from './utils/formHelperFunctions';
 import { fieldState } from './Fields';
 
@@ -23,6 +24,7 @@ export default function Form({
     formKey,
     onSubmit = null,
     checkValidity = () => [],
+    initialValues = {},
     style = {},
     className = '',
     children,
@@ -34,6 +36,12 @@ export default function Form({
 }) {
     const [client, setClient] = useState(null);
 
+    const [stepCache, setStepCache] = useState(null);
+    const [stepIndexCache, setStepIndexCache] = useState(displayStepIndex);
+    const [steps, setSteps] = useState(displaySteps);
+    const [stepIndex, setStepIndex] = useState(displayStepIndex);
+    const [fieldValues, setFieldValues] = useState(initialValues);
+
     const [finishConfig, setFinishConfig] = useState({
         finished: false,
         redirectURL: null
@@ -41,10 +49,6 @@ export default function Form({
     const [otherVals, setOtherVals] = useState({});
     const [displayColorPicker, setDisplayColorPicker] = useState({});
     const [acceptedFile, setAcceptedFile] = useState(null);
-    const [stepCache, setStepCache] = useState(null);
-    const [stepIndexCache, setStepIndexCache] = useState(displayStepIndex);
-    const [steps, setSteps] = useState(displaySteps);
-    const [stepIndex, setStepIndex] = useState(displayStepIndex);
     const [dimensions, setDimensions] = useState({
         width: null,
         rows: [],
@@ -59,32 +63,54 @@ export default function Form({
         setFormDimensions
     );
 
+    const updateFieldValues = (newFieldValues, baseFieldValues = null) => {
+        const base = baseFieldValues || fieldValues;
+        setFieldValues({ ...base, ...newFieldValues });
+    };
+
     const setInitialOtherState = (step) => {
         const newOtherVals = {};
         step.servar_fields.forEach((field) => {
             const servar = field.servar;
-            let val = null;
+            let otherVal = null;
             if (servar.metadata.other) {
+                const fieldVal = fieldValues[servar.key];
                 if (servar.type === 'multiselect') {
-                    val = '';
-                    field.servar.value = servar.value.map((selectedVal) => {
+                    otherVal = '';
+                    const newFieldVal = fieldVal.map((selectedVal) => {
                         if (!servar.metadata.options.includes(selectedVal)) {
-                            val = selectedVal;
+                            otherVal = selectedVal;
                             return '';
                         } else return selectedVal;
                     });
+                    updateFieldValues({ [servar.key]: newFieldVal });
                 } else if (servar.type === 'select') {
-                    if (servar.metadata.options.includes(servar.value))
-                        val = '';
+                    if (servar.metadata.options.includes(fieldVal))
+                        otherVal = '';
                     else {
-                        val = servar.value;
-                        field.servar.value = '';
+                        otherVal = fieldVal;
+                        updateFieldValues({ [servar.key]: '' });
                     }
                 }
             }
-            if (val !== null) newOtherVals[field.servar.key] = val;
+            if (otherVal !== null) newOtherVals[field.servar.key] = otherVal;
         });
         setOtherVals(newOtherVals);
+    };
+
+    const updateNewIndex = (newIndex, data = null) => {
+        data = data || steps;
+        if (newIndex >= data.length) {
+            setFinishConfig({
+                finished: true,
+                redirectURL: activeStep.redirect_url
+            });
+        } else {
+            activeStep = data[newIndex];
+            setInitialOtherState(activeStep);
+            calculateDimensions(activeStep);
+            setStepIndex(newIndex);
+        }
     };
 
     useEffect(() => {
@@ -92,7 +118,8 @@ export default function Form({
             if (client === null) {
                 const clientInstance = new Client();
                 setClient(clientInstance);
-                clientInstance
+
+                const fetchPromise = clientInstance
                     .fetchForm(formKey)
                     .then((stepsResponse) => {
                         const data = stepsResponse.data;
@@ -102,29 +129,34 @@ export default function Form({
                                 redirectURL: stepsResponse.redirect_url
                             });
                         } else {
-                            setFieldValues(data);
-                            setInitialOtherState(data[stepIndex]);
-                            // render default information first for good user
-                            // experience
+                            // render form without values first for speed
                             setSteps(data);
+                            updateFieldValues(
+                                fieldValues,
+                                getDefaultFieldValues(data)
+                            );
+                            setInitialOtherState(data[stepIndex]);
                             calculateDimensions(data[stepIndex]);
-
-                            // fetch values separately because this request
-                            // goes to Feathery origin, while the previous
-                            // request will eventually go to our CDN
-                            // TODO: issue request parallel to fetching form,
-                            //  not serially
-                            clientInstance
-                                .fetchFormValues(formKey)
-                                .then((vals) => {
-                                    setFieldValues(data, vals);
-                                    setInitialOtherState(data[stepIndex]);
-                                    // render actual user state once/if it's
-                                    // fetched
-                                    setSteps(data);
-                                })
-                                .catch((error) => console.log(error));
                         }
+                        return data;
+                    })
+                    .catch((error) => console.log(error));
+
+                // fetch values separately because this request
+                // goes to Feathery origin, while the previous
+                // request goes to our CDN
+                clientInstance
+                    .fetchFormValues(formKey)
+                    .then((vals) => {
+                        fetchPromise.then((data) => {
+                            updateFieldValues(vals);
+                            const newIndex = setConditionalIndex(
+                                stepIndex,
+                                vals,
+                                data
+                            );
+                            updateNewIndex(newIndex, data);
+                        });
                     })
                     .catch((error) => console.log(error));
             }
@@ -152,7 +184,9 @@ export default function Form({
         setStepCache,
         setSteps,
         setStepIndexCache,
-        setStepIndex
+        setStepIndex,
+        getDefaultFieldValues,
+        updateFieldValues
     ]);
 
     if (finishConfig.finished) {
@@ -164,20 +198,15 @@ export default function Form({
 
     const handleChange = (e) => {
         const target = e.target;
-        const value =
-            target.type === 'checkbox' ? target.checked : target.value;
+        let value = target.type === 'checkbox' ? target.checked : target.value;
         const key = target.id;
         activeStep.servar_fields.forEach((field) => {
             const servar = field.servar;
             if (servar.key !== key) return;
 
-            if (servar.type === 'integer_field')
-                field.servar.value = parseInt(value);
-            else field.servar.value = value;
+            if (servar.type === 'integer_field') value = parseInt(value);
+            updateFieldValues({ [servar.key]: value });
         });
-        const stepsCopy = JSON.parse(JSON.stringify(steps));
-        stepsCopy[stepIndex] = activeStep;
-        setSteps(stepsCopy);
     };
 
     const handleOtherStateChange = (e) => {
@@ -192,24 +221,19 @@ export default function Form({
             const servar = field.servar;
             if (servar.key !== servarKey) return;
 
-            if (target.checked) servar.value.push(opt);
-            else servar.value = servar.value.filter((val) => val !== opt);
+            let val = fieldValues[servar.key];
+            if (target.checked) val.push(opt);
+            else val = val.filter((val) => val !== opt);
+            updateFieldValues({ [servar.key]: val });
         });
-        const stepsCopy = JSON.parse(JSON.stringify(steps));
-        stepsCopy[stepIndex] = activeStep;
-        setSteps(stepsCopy);
     };
 
     const handleColorChange = (servarKey) => (color) => {
         activeStep.servar_fields.forEach((field) => {
             const servar = field.servar;
             if (servar.key !== servarKey) return;
-
-            servar.value = color.hex.substr(1, 6);
+            updateFieldValues({ [servar.key]: color.hex.substr(1, 6) });
         });
-        const stepsCopy = JSON.parse(JSON.stringify(steps));
-        stepsCopy[stepIndex] = activeStep;
-        setSteps(stepsCopy);
     };
 
     const handleColorPickerClick = (servarKey) => () => {
@@ -220,13 +244,6 @@ export default function Form({
         });
     };
 
-    const updateNewIndex = (newIndex) => {
-        activeStep = steps[newIndex];
-        setInitialOtherState(activeStep);
-        calculateDimensions(activeStep);
-        setStepIndex(newIndex);
-    };
-
     const submit = (action, userFields = []) => {
         if (!action) return;
 
@@ -234,40 +251,33 @@ export default function Form({
             (field) => field.type !== 'file_upload'
         );
         const featheryFields = noFileFields.map((field) => {
-            return { key: field.key, [field.type]: field.value };
+            return { key: field.key, [field.type]: fieldValues[field.key] };
         });
 
         if (['next', 'skip'].includes(action)) {
-            const lastStep = stepIndex === steps.length - 1;
             if (action === 'next') {
                 // Execute user-provided onSubmit function if present
                 if (typeof onSubmit === 'function') {
+                    const lastStep = stepIndex === steps.length - 1;
                     onSubmit(userFields, stepIndex, lastStep);
                 }
-                client
-                    .submitStep(formKey, stepIndex, featheryFields, action)
-                    .catch((error) => {
-                        if (error) console.log(error);
-                    });
+                client.submitStep(featheryFields).catch((error) => {
+                    if (error) console.log(error);
+                });
 
                 // Set real time field values for programmatic access
                 noFileFields.forEach((field) => {
                     fieldState.realTimeFields[field.key] = {
-                        value: field.value,
+                        value: fieldValues[field.key],
                         displayText: field.displayText,
                         type: field.type
                     };
                 });
             }
 
-            if (lastStep) {
-                setFinishConfig({
-                    finished: true,
-                    redirectURL: activeStep.redirect_url
-                });
-            } else {
-                updateNewIndex(stepIndex + 1);
-            }
+            updateNewIndex(
+                setConditionalIndex(stepIndex + 1, fieldValues, steps)
+            );
         } else if (action === 'back') {
             updateNewIndex(stepIndex - 1);
         }
@@ -277,9 +287,10 @@ export default function Form({
 
     let isFilled = true;
     for (const field of activeStep.servar_fields) {
-        if (!field.servar.required) continue;
-        const value = field.servar.value;
-        switch (field.servar.type) {
+        const servar = field.servar;
+        if (!servar.required) continue;
+        const value = fieldValues[servar.key];
+        switch (servar.type) {
             case 'email':
                 if (value === '') isFilled = false;
                 break;
@@ -290,8 +301,7 @@ export default function Form({
                 if (value === '') isFilled = false;
                 break;
             case 'select':
-                if (value === '' && !otherVals[field.servar.key])
-                    isFilled = false;
+                if (value === '' && !otherVals[servar.key]) isFilled = false;
                 break;
             case 'dropdown':
                 if (value === '') isFilled = false;
@@ -362,21 +372,21 @@ export default function Form({
 
                 const userFields = activeStep.servar_fields.map((field) => {
                     const servar = field.servar;
-                    let value;
+                    let value = fieldValues[servar.key];
                     switch (servar.type) {
                         case 'file_upload':
                             value = acceptedFile;
                             break;
                         case 'select':
-                            value = servar.value || otherVals[servar.key];
+                            value = value || otherVals[servar.key];
                             break;
                         case 'multiselect':
-                            value = servar.value.map(
+                            value = value.map(
                                 (val) => val || otherVals[servar.key]
                             );
                             break;
                         default:
-                            value = servar.value;
+                            break;
                     }
                     return {
                         value,
@@ -522,6 +532,7 @@ export default function Form({
             ))}
             {activeStep.servar_fields.map((field, i) => {
                 const servar = field.servar;
+                const fieldVal = fieldValues[servar.key];
                 const metadata = field.metadata;
                 let controlElement;
 
@@ -565,7 +576,7 @@ export default function Form({
                                 <ReactForm.Check
                                     type='checkbox'
                                     id={servar.key}
-                                    checked={servar.value}
+                                    checked={fieldVal}
                                     onChange={handleChange}
                                     style={{
                                         display: 'flex',
@@ -595,7 +606,7 @@ export default function Form({
                                     }}
                                     as='select'
                                     id={servar.key}
-                                    value={servar.value}
+                                    value={fieldVal}
                                     required={servar.required}
                                     onChange={handleChange}
                                     custom
@@ -643,7 +654,7 @@ export default function Form({
                                             }
                                         }}
                                         id={servar.key}
-                                        value={servar.value}
+                                        value={fieldVal}
                                         required={servar.required}
                                         onChange={handleChange}
                                         placeholder={metadata.placeholder || ''}
@@ -677,7 +688,7 @@ export default function Form({
                                             name={opt}
                                             key={opt}
                                             label={opt}
-                                            checked={servar.value.includes(opt)}
+                                            checked={fieldVal.includes(opt)}
                                             onChange={handleMultiselectChange(
                                                 servar.key
                                             )}
@@ -701,7 +712,7 @@ export default function Form({
                                             name=''
                                             key=''
                                             label='Other'
-                                            checked={servar.value.includes('')}
+                                            checked={fieldVal.includes('')}
                                             onChange={handleMultiselectChange(
                                                 servar.key
                                             )}
@@ -757,7 +768,7 @@ export default function Form({
                                             type='radio'
                                             id={servar.key}
                                             label={opt}
-                                            checked={servar.value === opt}
+                                            checked={fieldVal === opt}
                                             required={servar.required}
                                             onChange={handleChange}
                                             value={opt}
@@ -780,7 +791,7 @@ export default function Form({
                                             type='radio'
                                             id={servar.key}
                                             label='Other'
-                                            checked={servar.value === ''}
+                                            checked={fieldVal === ''}
                                             onChange={handleChange}
                                             value=''
                                             key=''
@@ -852,7 +863,7 @@ export default function Form({
                                             }
                                         }}
                                         id={servar.key}
-                                        value={servar.value}
+                                        value={fieldVal}
                                         required={servar.required}
                                         onChange={handleChange}
                                         placeholder={metadata.placeholder || ''}
@@ -882,7 +893,7 @@ export default function Form({
                                     css={{
                                         width: '36px',
                                         height: '36px',
-                                        background: `#${servar.value}`,
+                                        background: `#${fieldVal}`,
                                         cursor: 'pointer',
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
@@ -908,7 +919,7 @@ export default function Form({
                                             )}
                                         />
                                         <SketchPicker
-                                            color={`#${servar.value}`}
+                                            color={`#${fieldVal}`}
                                             onChange={handleColorChange(
                                                 servar.key
                                             )}
@@ -934,7 +945,7 @@ export default function Form({
                                         as='textarea'
                                         rows={metadata.num_rows}
                                         id={servar.key}
-                                        value={servar.value}
+                                        value={fieldVal}
                                         onChange={handleChange}
                                         placeholder={metadata.placeholder || ''}
                                         required={servar.required}
@@ -1001,7 +1012,7 @@ export default function Form({
                                             }
                                         }}
                                         id={servar.key}
-                                        value={servar.value}
+                                        value={fieldVal}
                                         required={servar.required}
                                         onChange={handleChange}
                                         placeholder={metadata.placeholder || ''}
@@ -1049,7 +1060,7 @@ export default function Form({
                                             }
                                         }}
                                         id={servar.key}
-                                        value={servar.value}
+                                        value={fieldVal}
                                         required={servar.required}
                                         onChange={handleChange}
                                         placeholder={metadata.placeholder || ''}

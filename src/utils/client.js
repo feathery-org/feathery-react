@@ -4,6 +4,7 @@ import encodeGetParams from './string';
 
 export default class Client {
     async fetchForm(formKey) {
+        // TODO: fetch from CDN
         const { apiKey } = initInfo();
         const params = encodeGetParams({
             form_key: formKey
@@ -66,16 +67,13 @@ export default class Client {
         });
     }
 
-    async submitStep(formKey, stepNum, servars, action) {
+    async submitStep(servars) {
         // servars = [{key: <servarKey>, <type>: <value>}]
         const { userKey, apiKey } = initInfo();
         const url = `https://api.feathery.tech/api/panel/step/submit/`;
         const data = {
             ...(userKey ? { fuser_key: userKey } : {}),
-            flow_key: formKey,
-            step_number: stepNum,
-            servars: action === 'next' ? servars : [],
-            action
+            servars
         };
         const options = {
             cache: 'no-store',

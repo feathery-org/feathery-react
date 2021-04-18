@@ -67,33 +67,68 @@ const calculateDimensionsHelper = (
     }
 };
 
-const setFieldValues = (data, fieldValues = {}) => {
-    data.forEach((step) => {
+const getDefaultFieldValues = (steps) => {
+    const fieldValues = {};
+    steps.forEach((step) => {
         step.servar_fields.forEach((field) => {
-            const servar = field.servar;
-            if (servar.key in fieldValues) {
-                servar.value = fieldValues[servar.key];
-            } else {
-                switch (servar.type) {
-                    case 'checkbox':
-                        servar.value = false;
-                        break;
-                    case 'multiselect':
-                        servar.value = [];
-                        break;
-                    case 'integer_field':
-                        servar.value = 0;
-                        break;
-                    case 'hex_color':
-                        servar.value = '000000';
-                        break;
-                    default:
-                        servar.value = '';
-                        break;
-                }
+            let val = '';
+            switch (field.servar.type) {
+                case 'checkbox':
+                    val = false;
+                    break;
+                case 'multiselect':
+                    val = [];
+                    break;
+                case 'integer_field':
+                    val = 0;
+                    break;
+                case 'hex_color':
+                    val = '000000';
+                    break;
+                default:
+                    val = '';
+                    break;
             }
+            fieldValues[field.servar.key] = val;
         });
     });
+    return fieldValues;
 };
 
-export { adjustColor, calculateDimensionsHelper, setFieldValues };
+const _conditionMatch = (condition, fieldValues) => {
+    const fieldKey = condition.key;
+    if (fieldKey in fieldValues) {
+        const fieldVal = fieldValues[fieldKey];
+        if (condition.type === 'multiselect') {
+            return fieldVal.includes(condition.value);
+        }
+        return condition.value === fieldVal;
+    }
+    return false;
+};
+
+const setConditionalIndex = (curIndex, fieldValues, steps) => {
+    let curConditions;
+    while (curIndex < steps.length) {
+        curConditions = steps[curIndex].attributes;
+        if (curConditions.length > 0) {
+            let show = true;
+            curConditions.forEach(
+                (condition) => (show &= _conditionMatch(condition, fieldValues))
+            );
+            if (!show) {
+                curIndex++;
+                continue;
+            }
+        }
+        break;
+    }
+    return curIndex;
+};
+
+export {
+    adjustColor,
+    calculateDimensionsHelper,
+    getDefaultFieldValues,
+    setConditionalIndex
+};
