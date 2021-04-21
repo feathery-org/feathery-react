@@ -10,6 +10,7 @@ import Client from './utils/client';
 import {
     adjustColor,
     calculateDimensionsHelper,
+    getABVariant,
     getDefaultFieldValues,
     setConditionalIndex
 } from './utils/formHelperFunctions';
@@ -122,7 +123,7 @@ export default function Form({
                 const fetchPromise = clientInstance
                     .fetchForm(formKey)
                     .then((stepsResponse) => {
-                        const data = stepsResponse.data;
+                        const data = getABVariant(stepsResponse);
                         if (data.length === 0) {
                             setFinishConfig({
                                 finished: true,

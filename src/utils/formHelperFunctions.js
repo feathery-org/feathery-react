@@ -1,3 +1,6 @@
+import { initInfo } from './init';
+import getRandomBoolean from './random';
+
 function adjustColor(color, amount) {
     return (
         '#' +
@@ -67,6 +70,16 @@ const calculateDimensionsHelper = (
     }
 };
 
+const getABVariant = (stepRes) => {
+    if (!stepRes.variant) return stepRes.data;
+    const { apiKey, userKey } = initInfo();
+    // If userKey was not passed in, apiKey is assumed to be a user admin key
+    // and thus a unique user ID
+    return getRandomBoolean(userKey || apiKey, stepRes.form_name)
+        ? stepRes.data
+        : stepRes.variant;
+};
+
 const getDefaultFieldValues = (steps) => {
     const fieldValues = {};
     steps.forEach((step) => {
@@ -129,6 +142,7 @@ const setConditionalIndex = (curIndex, fieldValues, steps) => {
 export {
     adjustColor,
     calculateDimensionsHelper,
+    getABVariant,
     getDefaultFieldValues,
     setConditionalIndex
 };
