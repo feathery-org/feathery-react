@@ -8,12 +8,11 @@ export default class Client {
     }
 
     async fetchForm() {
-        // TODO: fetch from CDN
         const { apiKey } = initInfo();
         const params = encodeGetParams({
             form_key: this.formKey
         });
-        const url = `https://api.feathery.tech/api/panel/?${params}`;
+        const url = `https://cdn.feathery.tech/api/panel/?${params}`;
         const options = {
             cache: 'no-store',
             headers: { Authorization: 'Token ' + apiKey }
