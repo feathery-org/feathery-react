@@ -86,9 +86,12 @@ export default function Form({
                     });
                     updateFieldValues({ [servar.key]: newFieldVal });
                 } else if (servar.type === 'select') {
-                    if (servar.metadata.options.includes(fieldVal))
+                    if (
+                        fieldVal === null ||
+                        servar.metadata.options.includes(fieldVal)
+                    ) {
                         otherVal = '';
-                    else {
+                    } else {
                         otherVal = fieldVal;
                         updateFieldValues({ [servar.key]: '' });
                     }
@@ -117,11 +120,11 @@ export default function Form({
     useEffect(() => {
         if (displaySteps === null) {
             if (client === null) {
-                const clientInstance = new Client();
+                const clientInstance = new Client(formKey);
                 setClient(clientInstance);
 
                 const fetchPromise = clientInstance
-                    .fetchForm(formKey)
+                    .fetchForm()
                     .then((stepsResponse) => {
                         const data = getABVariant(stepsResponse);
                         if (data.length === 0) {
@@ -132,6 +135,10 @@ export default function Form({
                         } else {
                             // render form without values first for speed
                             setSteps(data);
+
+                            // register that form was loaded
+                            clientInstance.registerEvent(0, 'load');
+
                             updateFieldValues(
                                 fieldValues,
                                 getDefaultFieldValues(data)
@@ -147,16 +154,22 @@ export default function Form({
                 // goes to Feathery origin, while the previous
                 // request goes to our CDN
                 clientInstance
-                    .fetchFormValues(formKey)
+                    .fetchFormValues()
                     .then((vals) => {
                         fetchPromise.then((data) => {
-                            updateFieldValues(vals);
+                            updateFieldValues(
+                                vals,
+                                getDefaultFieldValues(data)
+                            );
                             const newIndex = setConditionalIndex(
                                 stepIndex,
                                 vals,
-                                data
+                                data,
+                                clientInstance
                             );
                             updateNewIndex(newIndex, data);
+                            setInitialOtherState(data[newIndex]);
+                            calculateDimensions(data[newIndex]);
                         });
                     })
                     .catch((error) => console.log(error));
@@ -252,7 +265,7 @@ export default function Form({
             (field) => field.type !== 'file_upload'
         );
         const featheryFields = noFileFields.map((field) => {
-            return { key: field.key, [field.type]: fieldValues[field.key] };
+            return { key: field.key, [field.type]: field.value };
         });
 
         if (['next', 'skip'].includes(action)) {
@@ -262,9 +275,8 @@ export default function Form({
                     const lastStep = stepIndex === steps.length - 1;
                     onSubmit(userFields, stepIndex, lastStep);
                 }
-                client.submitStep(featheryFields).catch((error) => {
-                    if (error) console.log(error);
-                });
+                client.submitStep(featheryFields);
+                client.registerEvent(stepIndex, 'complete');
 
                 // Set real time field values for programmatic access
                 noFileFields.forEach((field) => {
@@ -274,10 +286,10 @@ export default function Form({
                         type: field.type
                     };
                 });
-            }
+            } else client.registerEvent(stepIndex, 'user_skip');
 
             updateNewIndex(
-                setConditionalIndex(stepIndex + 1, fieldValues, steps)
+                setConditionalIndex(stepIndex + 1, fieldValues, steps, client)
             );
         } else if (action === 'back') {
             updateNewIndex(stepIndex - 1);
@@ -302,7 +314,8 @@ export default function Form({
                 if (value === '') isFilled = false;
                 break;
             case 'select':
-                if (value === '' && !otherVals[servar.key]) isFilled = false;
+                if (value === null || (value === '' && !otherVals[servar.key]))
+                    isFilled = false;
                 break;
             case 'dropdown':
                 if (value === '') isFilled = false;
@@ -379,7 +392,8 @@ export default function Form({
                             value = acceptedFile;
                             break;
                         case 'select':
-                            value = value || otherVals[servar.key];
+                            value =
+                                value === '' ? otherVals[servar.key] : value;
                             break;
                         case 'multiselect':
                             value = value.map(
@@ -744,7 +758,7 @@ export default function Form({
                                                 }
                                             }}
                                             id={servar.key}
-                                            value={otherVals[servar.key]}
+                                            value={otherVals[servar.key] || ''}
                                             onChange={handleOtherStateChange}
                                         />
                                     </div>
@@ -823,7 +837,7 @@ export default function Form({
                                                 }
                                             }}
                                             id={servar.key}
-                                            value={otherVals[servar.key]}
+                                            value={otherVals[servar.key] || ''}
                                             onChange={handleOtherStateChange}
                                         />
                                     </div>
@@ -1061,7 +1075,7 @@ export default function Form({
                                             }
                                         }}
                                         id={servar.key}
-                                        value={fieldVal}
+                                        value={fieldVal || ''}
                                         required={servar.required}
                                         onChange={handleChange}
                                         placeholder={metadata.placeholder || ''}

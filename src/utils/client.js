@@ -3,11 +3,15 @@ import { initInfo } from './init';
 import encodeGetParams from './string';
 
 export default class Client {
-    async fetchForm(formKey) {
+    constructor(formKey) {
+        this.formKey = formKey;
+    }
+
+    async fetchForm() {
         // TODO: fetch from CDN
         const { apiKey } = initInfo();
         const params = encodeGetParams({
-            form_key: formKey
+            form_key: this.formKey
         });
         const url = `https://api.feathery.tech/api/panel/?${params}`;
         const options = {
@@ -35,10 +39,10 @@ export default class Client {
         });
     }
 
-    async fetchFormValues(formKey) {
+    async fetchFormValues() {
         const { apiKey, userKey } = initInfo();
         const params = encodeGetParams({
-            form_key: formKey,
+            form_key: this.formKey,
             ...(userKey ? { fuser_key: userKey } : {})
         });
         const url = `https://api.feathery.tech/api/panel/values/?${params}`;
@@ -67,8 +71,8 @@ export default class Client {
         });
     }
 
-    async submitStep(servars) {
-        // servars = [{key: <servarKey>, <type>: <value>}]
+    // servars = [{key: <servarKey>, <type>: <value>}]
+    submitStep(servars) {
         const { userKey, apiKey } = initInfo();
         const url = `https://api.feathery.tech/api/panel/step/submit/`;
         const data = {
@@ -84,25 +88,54 @@ export default class Client {
             method: 'POST',
             body: JSON.stringify(data)
         };
-        return fetch(url, options).then((response) => {
+        fetch(url, options).then((response) => {
             const { status } = response;
             switch (status) {
                 case 200:
-                    return response.json();
+                    return;
                 case 201:
-                    return response.json();
+                    return;
                 case 401:
-                    return Promise.reject(
-                        new errors.APIKeyError('Invalid API key')
-                    );
+                    throw new errors.APIKeyError('Invalid API key');
                 case 404:
-                    return Promise.reject(
-                        new errors.UserKeyError('Invalid User key')
-                    );
+                    throw new errors.UserKeyError('Invalid user key');
                 default:
-                    return Promise.reject(
-                        new errors.FetchError('Unknown error')
-                    );
+                    throw new errors.FetchError('Unknown error');
+            }
+        });
+    }
+
+    registerEvent(stepNumber, event) {
+        const { userKey, apiKey } = initInfo();
+        const url = `https://api.feathery.tech/api/event/`;
+        const data = {
+            form_key: this.formKey,
+            step_number: stepNumber,
+            event,
+            ...(userKey ? { fuser_key: userKey } : {})
+        };
+        const options = {
+            cache: 'no-store',
+            headers: {
+                Authorization: 'Token ' + apiKey,
+                'Content-Type': 'application/json'
+            },
+            method: 'POST',
+            body: JSON.stringify(data)
+        };
+        fetch(url, options).then((response) => {
+            const { status } = response;
+            switch (status) {
+                case 200:
+                    return;
+                case 201:
+                    return;
+                case 401:
+                    throw new errors.APIKeyError('Invalid API key');
+                case 404:
+                    throw new errors.UserKeyError('Invalid user key');
+                default:
+                    throw new errors.FetchError('Unknown error');
             }
         });
     }

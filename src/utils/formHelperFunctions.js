@@ -98,6 +98,9 @@ const getDefaultFieldValues = (steps) => {
                 case 'hex_color':
                     val = '000000';
                     break;
+                case 'select':
+                    val = null;
+                    break;
                 default:
                     val = '';
                     break;
@@ -120,7 +123,7 @@ const _conditionMatch = (condition, fieldValues) => {
     return false;
 };
 
-const setConditionalIndex = (curIndex, fieldValues, steps) => {
+const setConditionalIndex = (curIndex, fieldValues, steps, client) => {
     let curConditions;
     while (curIndex < steps.length) {
         curConditions = steps[curIndex].attributes;
@@ -130,6 +133,8 @@ const setConditionalIndex = (curIndex, fieldValues, steps) => {
                 (condition) => (show &= _conditionMatch(condition, fieldValues))
             );
             if (!show) {
+                // register that step was skipped due to condition
+                client.registerEvent(curIndex, 'conditional_skip');
                 curIndex++;
                 continue;
             }
