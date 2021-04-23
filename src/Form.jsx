@@ -84,11 +84,10 @@ export default function Form({
         const newOtherVals = {};
         step.servar_fields.forEach((field) => {
             const servar = field.servar;
-            let otherVal = null;
             if (servar.metadata.other) {
+                let otherVal = '';
                 const fieldVal = fieldValues[servar.key];
                 if (servar.type === 'multiselect') {
-                    otherVal = '';
                     const newFieldVal = fieldVal.map((selectedVal) => {
                         if (!servar.metadata.options.includes(selectedVal)) {
                             otherVal = selectedVal;
@@ -98,17 +97,15 @@ export default function Form({
                     updateFieldValues({ [servar.key]: newFieldVal });
                 } else if (servar.type === 'select') {
                     if (
-                        fieldVal === null ||
-                        servar.metadata.options.includes(fieldVal)
+                        fieldVal !== null &&
+                        !servar.metadata.options.includes(fieldVal)
                     ) {
-                        otherVal = '';
-                    } else {
                         otherVal = fieldVal;
                         updateFieldValues({ [servar.key]: '' });
                     }
                 }
+                newOtherVals[field.servar.key] = otherVal;
             }
-            if (otherVal !== null) newOtherVals[field.servar.key] = otherVal;
         });
         setOtherVals(newOtherVals);
         return newOtherVals;
@@ -213,6 +210,7 @@ export default function Form({
             JSON.stringify(displaySteps) !== JSON.stringify(stepCache) ||
             displayStepIndex !== stepIndexCache
         ) {
+            updateFieldValues(getDefaultFieldValues(displaySteps));
             const newStep = displaySteps[displayStepIndex];
             setInitialOtherState(newStep);
             setStepCache(JSON.parse(JSON.stringify(displaySteps)));
