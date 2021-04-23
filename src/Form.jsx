@@ -64,8 +64,17 @@ export default function Form({
     );
 
     const updateFieldValues = (newFieldValues, baseFieldValues = null) => {
-        const base = baseFieldValues || fieldValues;
-        setFieldValues({ ...base, ...newFieldValues });
+        let newValues;
+        if (baseFieldValues) {
+            newValues = {
+                ...baseFieldValues,
+                ...fieldValues,
+                ...newFieldValues
+            };
+        } else {
+            newValues = { ...fieldValues, ...newFieldValues };
+        }
+        setFieldValues(newValues);
     };
 
     const setInitialOtherState = (step) => {
