@@ -14,7 +14,6 @@ import {
     getDefaultFieldValues,
     setConditionalIndex
 } from './utils/formHelperFunctions';
-import { fieldState } from './Fields';
 
 import './bootstrap-iso.css';
 
@@ -277,15 +276,6 @@ export default function Form({
                 }
                 client.submitStep(featheryFields);
                 client.registerEvent(stepIndex, 'complete');
-
-                // Set real time field values for programmatic access
-                noFileFields.forEach((field) => {
-                    fieldState.realTimeFields[field.key] = {
-                        value: fieldValues[field.key],
-                        displayText: field.displayText,
-                        type: field.type
-                    };
-                });
             } else client.registerEvent(stepIndex, 'user_skip');
 
             updateNewIndex(
