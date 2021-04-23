@@ -9,6 +9,7 @@ import { MuiField, MuiProgress } from './components/MaterialUI';
 import Client from './utils/client';
 import {
     adjustColor,
+    arrayFormatFields,
     calculateDimensionsHelper,
     getABVariant,
     getDefaultFieldValues,
@@ -22,8 +23,9 @@ import './bootstrap-iso.css';
 export default function Form({
     // Public API
     formKey,
+    onLoad = null,
     onSubmit = null,
-    checkValidity = () => [],
+    onValidate = null,
     initialValues = {},
     style = {},
     className = '',
@@ -75,6 +77,7 @@ export default function Form({
             newValues = { ...fieldValues, ...newFieldValues };
         }
         setFieldValues(newValues);
+        return newValues;
     };
 
     const setInitialOtherState = (step) => {
@@ -108,6 +111,7 @@ export default function Form({
             if (otherVal !== null) newOtherVals[field.servar.key] = otherVal;
         });
         setOtherVals(newOtherVals);
+        return newOtherVals;
     };
 
     const updateNewIndex = (newIndex, data = null) => {
@@ -165,7 +169,7 @@ export default function Form({
                     .fetchFormValues()
                     .then((vals) => {
                         fetchPromise.then((data) => {
-                            updateFieldValues(
+                            const newFieldValues = updateFieldValues(
                                 vals,
                                 getDefaultFieldValues(data)
                             );
@@ -176,8 +180,31 @@ export default function Form({
                                 clientInstance
                             );
                             updateNewIndex(newIndex, data);
-                            setInitialOtherState(data[newIndex]);
-                            calculateDimensions(data[newIndex]);
+                            if (newIndex < data.length) {
+                                const newStep = data[newIndex];
+                                const newOtherVals = setInitialOtherState(
+                                    newStep
+                                );
+                                calculateDimensions(newStep);
+                                if (typeof onLoad === 'function') {
+                                    const arrayFields = arrayFormatFields(
+                                        newStep,
+                                        newFieldValues,
+                                        newOtherVals,
+                                        acceptedFile
+                                    );
+                                    onLoad(
+                                        arrayFields,
+                                        newIndex,
+                                        newIndex === data.length - 1,
+                                        (userVals) =>
+                                            updateFieldValues(
+                                                userVals,
+                                                newFieldValues
+                                            )
+                                    );
+                                }
+                            }
                         });
                     })
                     .catch((error) => console.log(error));
@@ -266,10 +293,16 @@ export default function Form({
         });
     };
 
-    const submit = (action, userFields = []) => {
+    const submit = (action) => {
         if (!action) return;
 
-        const noFileFields = userFields.filter(
+        const arrayFields = arrayFormatFields(
+            activeStep,
+            fieldValues,
+            otherVals,
+            acceptedFile
+        );
+        const noFileFields = arrayFields.filter(
             (field) => field.type !== 'file_upload'
         );
         const featheryFields = noFileFields.map((field) => {
@@ -280,16 +313,32 @@ export default function Form({
             if (action === 'next') {
                 // Execute user-provided onSubmit function if present
                 if (typeof onSubmit === 'function') {
-                    const lastStep = stepIndex === steps.length - 1;
-                    onSubmit(userFields, stepIndex, lastStep);
+                    onSubmit(
+                        arrayFields,
+                        stepIndex,
+                        stepIndex === steps.length - 1,
+                        updateFieldValues
+                    );
                 }
                 client.submitStep(featheryFields);
                 client.registerEvent(stepIndex, 'complete');
             } else client.registerEvent(stepIndex, 'user_skip');
 
-            updateNewIndex(
-                setConditionalIndex(stepIndex + 1, fieldValues, steps, client)
+            const newIndex = setConditionalIndex(
+                stepIndex + 1,
+                fieldValues,
+                steps,
+                client
             );
+            updateNewIndex(newIndex);
+            if (typeof onLoad === 'function' && newIndex < steps.length) {
+                onLoad(
+                    arrayFields,
+                    newIndex,
+                    newIndex === steps.length - 1,
+                    updateFieldValues
+                );
+            }
         } else if (action === 'back') {
             updateNewIndex(stepIndex - 1);
         }
@@ -383,37 +432,21 @@ export default function Form({
                 event.preventDefault();
                 event.stopPropagation();
 
-                const userFields = activeStep.servar_fields.map((field) => {
-                    const servar = field.servar;
-                    let value = fieldValues[servar.key];
-                    switch (servar.type) {
-                        case 'file_upload':
-                            value = acceptedFile;
-                            break;
-                        case 'select':
-                            value =
-                                value === '' ? otherVals[servar.key] : value;
-                            break;
-                        case 'multiselect':
-                            value = value.map(
-                                (val) => val || otherVals[servar.key]
-                            );
-                            break;
-                        default:
-                            break;
-                    }
-                    return {
-                        value,
-                        type: servar.type,
-                        key: servar.key,
-                        displayText: servar.name
-                    };
-                });
-
                 const form = event.currentTarget;
                 // Execute user-provided checkValidity function if present
-                if (typeof checkValidity === 'function') {
-                    const errors = checkValidity(userFields);
+                if (typeof onValidate === 'function') {
+                    const arrayFields = arrayFormatFields(
+                        activeStep,
+                        fieldValues,
+                        otherVals,
+                        acceptedFile
+                    );
+                    const errors = onValidate(
+                        arrayFields,
+                        stepIndex,
+                        stepIndex === steps.length - 1,
+                        updateFieldValues
+                    );
                     errors.forEach((err) => {
                         const [fieldKey, message] = err;
                         const element = form.elements[fieldKey];
@@ -421,7 +454,7 @@ export default function Form({
                     });
                     form.reportValidity();
                 }
-                if (form.checkValidity()) submit('next', userFields);
+                if (form.checkValidity()) submit('next');
             }}
             style={{
                 backgroundColor: `#${activeStep.default_background_color}`,

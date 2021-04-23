@@ -18,6 +18,32 @@ function adjustColor(color, amount) {
     );
 }
 
+const arrayFormatFields = (step, fieldValues, otherVals, fileObj) => {
+    return step.servar_fields.map((field) => {
+        const servar = field.servar;
+        let value = fieldValues[servar.key];
+        switch (servar.type) {
+            case 'file_upload':
+                value = fileObj;
+                break;
+            case 'select':
+                value = value === '' ? otherVals[servar.key] : value;
+                break;
+            case 'multiselect':
+                value = value.map((val) => val || otherVals[servar.key]);
+                break;
+            default:
+                break;
+        }
+        return {
+            value,
+            type: servar.type,
+            key: servar.key,
+            displayText: servar.name
+        };
+    });
+};
+
 const calculateDimensionsHelper = (
     dimensions,
     setDimensions,
@@ -146,6 +172,7 @@ const setConditionalIndex = (curIndex, fieldValues, steps, client) => {
 
 export {
     adjustColor,
+    arrayFormatFields,
     calculateDimensionsHelper,
     getABVariant,
     getDefaultFieldValues,
