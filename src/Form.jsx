@@ -190,16 +190,17 @@ export default function Form({
                                         newOtherVals,
                                         acceptedFile
                                     );
-                                    onLoad(
-                                        arrayFields,
-                                        newIndex,
-                                        newIndex === data.length - 1,
-                                        (userVals) =>
+                                    onLoad({
+                                        fields: arrayFields,
+                                        stepName: newStep.key,
+                                        stepNumber: newIndex,
+                                        lastStep: newIndex === data.length - 1,
+                                        setValues: (userVals) =>
                                             updateFieldValues(
                                                 userVals,
                                                 newFieldValues
                                             )
-                                    );
+                                    });
                                 }
                             }
                         });
@@ -311,12 +312,13 @@ export default function Form({
             if (action === 'next') {
                 // Execute user-provided onSubmit function if present
                 if (typeof onSubmit === 'function') {
-                    onSubmit(
-                        arrayFields,
-                        stepIndex,
-                        stepIndex === steps.length - 1,
-                        updateFieldValues
-                    );
+                    onSubmit({
+                        fields: arrayFields,
+                        stepName: activeStep.key,
+                        stepNumber: stepIndex,
+                        lastStep: stepIndex === steps.length - 1,
+                        setValues: updateFieldValues
+                    });
                 }
                 client.submitStep(featheryFields);
                 client.registerEvent(stepIndex, 'complete');
@@ -330,12 +332,13 @@ export default function Form({
             );
             updateNewIndex(newIndex);
             if (typeof onLoad === 'function' && newIndex < steps.length) {
-                onLoad(
-                    arrayFields,
-                    newIndex,
-                    newIndex === steps.length - 1,
-                    updateFieldValues
-                );
+                onLoad({
+                    fields: arrayFields,
+                    stepName: activeStep.key,
+                    stepNumber: newIndex,
+                    lastStep: newIndex === steps.length - 1,
+                    setValues: updateFieldValues
+                });
             }
         } else if (action === 'back') {
             updateNewIndex(stepIndex - 1);
@@ -439,12 +442,13 @@ export default function Form({
                         otherVals,
                         acceptedFile
                     );
-                    const errors = onValidate(
-                        arrayFields,
-                        stepIndex,
-                        stepIndex === steps.length - 1,
-                        updateFieldValues
-                    );
+                    const errors = onValidate({
+                        fields: arrayFields,
+                        stepName: activeStep.key,
+                        stepNumber: stepIndex,
+                        lastStep: stepIndex === steps.length - 1,
+                        setValues: updateFieldValues
+                    });
                     errors.forEach((err) => {
                         const [fieldKey, message] = err;
                         const element = form.elements[fieldKey];
