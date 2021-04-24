@@ -64,6 +64,7 @@ function MuiField({ servar, field, type, onChange, multiline = false }) {
                 height: `${field.field_height}${field.field_height_unit}`,
                 width: `${field.field_width}${field.field_width_unit}`,
                 maxWidth: '100%',
+                backgroundColor: `#${field.background_color}`,
                 borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
             }}
             css={{

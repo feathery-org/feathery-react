@@ -589,14 +589,16 @@ export default function Form({
                     case 'file_upload':
                         controlElement = (
                             <>
-                                <label
-                                    htmlFor={servar.key}
-                                    style={{
-                                        marginBottom: '10px'
-                                    }}
-                                >
-                                    {servar.name}
-                                </label>
+                                {servar.name && (
+                                    <label
+                                        htmlFor={servar.key}
+                                        style={{
+                                            marginBottom: '10px'
+                                        }}
+                                    >
+                                        {servar.name}
+                                    </label>
+                                )}
                                 <ReactForm.File
                                     id={servar.key}
                                     accept='image/*'
@@ -614,14 +616,16 @@ export default function Form({
                     case 'checkbox':
                         controlElement = (
                             <>
-                                <label
-                                    htmlFor={servar.key}
-                                    style={{
-                                        marginBottom: '10px'
-                                    }}
-                                >
-                                    {servar.name}
-                                </label>
+                                {servar.name && (
+                                    <label
+                                        htmlFor={servar.key}
+                                        style={{
+                                            marginBottom: '10px'
+                                        }}
+                                    >
+                                        {servar.name}
+                                    </label>
+                                )}
                                 <ReactForm.Check
                                     type='checkbox'
                                     id={servar.key}
@@ -638,20 +642,31 @@ export default function Form({
                     case 'dropdown':
                         controlElement = (
                             <>
-                                <label
-                                    htmlFor={servar.key}
-                                    style={{
-                                        marginBottom: '10px'
-                                    }}
-                                >
-                                    {servar.name}
-                                </label>
+                                {servar.name && (
+                                    <label
+                                        htmlFor={servar.key}
+                                        style={{
+                                            marginBottom: '10px'
+                                        }}
+                                    >
+                                        {servar.name}
+                                    </label>
+                                )}
                                 <ReactForm.Control
                                     style={{
                                         height: `${field.field_height}${field.field_height_unit}`,
                                         width: `${field.field_width}${field.field_width_unit}`,
                                         maxWidth: '100%',
+                                        backgroundColor: `#${field.background_color}`,
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                    }}
+                                    css={{
+                                        '&::placeholder': {
+                                            color: `#${metadata.placeholder_color} !important`,
+                                            fontStyle: metadata.placeholder_italic
+                                                ? 'italic !important'
+                                                : 'normal !important'
+                                        }
                                     }}
                                     as='select'
                                     id={servar.key}
@@ -661,7 +676,7 @@ export default function Form({
                                     custom
                                 >
                                     <option key='' value='' disabled>
-                                        Select...
+                                        {metadata.placeholder || 'Select...'}
                                     </option>
                                     {servar.metadata.options.map((option) => (
                                         <option key={option}>{option}</option>
@@ -674,27 +689,29 @@ export default function Form({
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
                                 <>
-                                    <label
-                                        htmlFor={servar.key}
-                                        style={{
-                                            marginBottom: '10px'
-                                        }}
-                                    >
-                                        {servar.name}
-                                    </label>
+                                    {servar.name && (
+                                        <label
+                                            htmlFor={servar.key}
+                                            style={{
+                                                marginBottom: '10px'
+                                            }}
+                                        >
+                                            {servar.name}
+                                        </label>
+                                    )}
                                     <ReactForm.Control
                                         type='email'
                                         style={{
                                             height: `${field.field_height}${field.field_height_unit}`,
                                             width: `${field.field_width}${field.field_width_unit}`,
                                             maxWidth: '100%',
+                                            backgroundColor: `#${field.background_color}`,
                                             borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                         }}
                                         css={{
                                             '&::placeholder': {
-                                                color: `#${field.metadata.placeholder_color} !important`,
-                                                fontStyle: field.metadata
-                                                    .placeholder_italic
+                                                color: `#${metadata.placeholder_color} !important`,
+                                                fontStyle: metadata.placeholder_italic
                                                     ? 'italic !important'
                                                     : 'normal !important'
                                             },
@@ -721,14 +738,16 @@ export default function Form({
                     case 'multiselect':
                         controlElement = (
                             <>
-                                <label
-                                    htmlFor={servar.key}
-                                    style={{
-                                        marginBottom: '10px'
-                                    }}
-                                >
-                                    {servar.name}
-                                </label>
+                                {servar.name && (
+                                    <label
+                                        htmlFor={servar.key}
+                                        style={{
+                                            marginBottom: '10px'
+                                        }}
+                                    >
+                                        {servar.name}
+                                    </label>
+                                )}
                                 {servar.metadata.options.map((opt) => {
                                     return (
                                         <ReactForm.Check
@@ -743,7 +762,8 @@ export default function Form({
                                             )}
                                             style={{
                                                 display: 'flex',
-                                                alignItems: 'center'
+                                                alignItems: 'center',
+                                                marginBottom: '5px'
                                             }}
                                         />
                                     );
@@ -777,6 +797,7 @@ export default function Form({
                                                 height: `${
                                                     field.font_size + 4
                                                 }px`,
+                                                backgroundColor: `#${field.background_color}`,
                                                 borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                                                 color: `#${field.font_color}`,
                                                 fontStyle: field.font_italic
@@ -803,14 +824,16 @@ export default function Form({
                     case 'select':
                         controlElement = (
                             <>
-                                <label
-                                    htmlFor={servar.key}
-                                    style={{
-                                        marginBottom: '10px'
-                                    }}
-                                >
-                                    {servar.name}
-                                </label>
+                                {servar.name && (
+                                    <label
+                                        htmlFor={servar.key}
+                                        style={{
+                                            marginBottom: '10px'
+                                        }}
+                                    >
+                                        {servar.name}
+                                    </label>
+                                )}
                                 {servar.metadata.options.map((opt) => {
                                     return (
                                         <ReactForm.Check
@@ -824,7 +847,8 @@ export default function Form({
                                             key={opt}
                                             style={{
                                                 display: 'flex',
-                                                alignItems: 'center'
+                                                alignItems: 'center',
+                                                marginBottom: '5px'
                                             }}
                                         />
                                     );
@@ -846,7 +870,7 @@ export default function Form({
                                             key=''
                                             style={{
                                                 display: 'flex',
-                                                alignItems: 'center'
+                                                alignItems: 'center',
                                             }}
                                         />
                                         <ReactForm.Control
@@ -856,6 +880,7 @@ export default function Form({
                                                 height: `${
                                                     field.font_size + 4
                                                 }px`,
+                                                backgroundColor: `#${field.background_color}`,
                                                 borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                                                 color: `#${field.font_color}`,
                                                 fontStyle: field.font_italic
@@ -883,27 +908,29 @@ export default function Form({
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
                                 <>
-                                    <label
-                                        htmlFor={servar.key}
-                                        style={{
-                                            marginBottom: '10px'
-                                        }}
-                                    >
-                                        {servar.name}
-                                    </label>
+                                    {servar.name && (
+                                        <label
+                                            htmlFor={servar.key}
+                                            style={{
+                                                marginBottom: '10px'
+                                            }}
+                                        >
+                                            {servar.name}
+                                        </label>
+                                    )}
                                     <ReactForm.Control
                                         type='number'
                                         style={{
                                             height: `${field.field_height}${field.field_height_unit}`,
                                             width: `${field.field_width}${field.field_width_unit}`,
                                             maxWidth: '100%',
+                                            backgroundColor: `#${field.background_color}`,
                                             borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                         }}
                                         css={{
                                             '&::placeholder': {
-                                                color: `#${field.metadata.placeholder_color} !important`,
-                                                fontStyle: field.metadata
-                                                    .placeholder_italic
+                                                color: `#${metadata.placeholder_color} !important`,
+                                                fontStyle: metadata.placeholder_italic
                                                     ? 'italic !important'
                                                     : 'normal !important'
                                             },
@@ -930,14 +957,16 @@ export default function Form({
                     case 'hex_color':
                         controlElement = (
                             <>
-                                <label
-                                    htmlFor={servar.key}
-                                    style={{
-                                        marginBottom: '10px'
-                                    }}
-                                >
-                                    {servar.name}
-                                </label>
+                                {servar.name && (
+                                    <label
+                                        htmlFor={servar.key}
+                                        style={{
+                                            marginBottom: '10px'
+                                        }}
+                                    >
+                                        {servar.name}
+                                    </label>
+                                )}
                                 <div
                                     css={{
                                         width: '36px',
@@ -982,14 +1011,16 @@ export default function Form({
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
                                 <>
-                                    <label
-                                        htmlFor={servar.key}
-                                        style={{
-                                            marginBottom: '10px'
-                                        }}
-                                    >
-                                        {servar.name}
-                                    </label>
+                                    {servar.name && (
+                                        <label
+                                            htmlFor={servar.key}
+                                            style={{
+                                                marginBottom: '10px'
+                                            }}
+                                        >
+                                            {servar.name}
+                                        </label>
+                                    )}
                                     <ReactForm.Control
                                         as='textarea'
                                         rows={metadata.num_rows}
@@ -1002,13 +1033,13 @@ export default function Form({
                                             resize: 'none',
                                             width: `${field.field_width}${field.field_width_unit}`,
                                             maxWidth: '100%',
+                                            backgroundColor: `#${field.background_color}`,
                                             borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                         }}
                                         css={{
                                             '&::placeholder': {
-                                                color: `#${field.metadata.placeholder_color} !important`,
-                                                fontStyle: field.metadata
-                                                    .placeholder_italic
+                                                color: `#${metadata.placeholder_color} !important`,
+                                                fontStyle: metadata.placeholder_italic
                                                     ? 'italic !important'
                                                     : 'normal !important'
                                             },
@@ -1032,27 +1063,29 @@ export default function Form({
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
                                 <>
-                                    <label
-                                        htmlFor={servar.key}
-                                        style={{
-                                            marginBottom: '10px'
-                                        }}
-                                    >
-                                        {servar.name}
-                                    </label>
+                                    {servar.name && (
+                                        <label
+                                            htmlFor={servar.key}
+                                            style={{
+                                                marginBottom: '10px'
+                                            }}
+                                        >
+                                            {servar.name}
+                                        </label>
+                                    )}
                                     <ReactForm.Control
                                         type='url'
                                         style={{
                                             height: `${field.field_height}${field.field_height_unit}`,
                                             width: `${field.field_width}${field.field_width_unit}`,
                                             maxWidth: '100%',
+                                            backgroundColor: `#${field.background_color}`,
                                             borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                         }}
                                         css={{
                                             '&::placeholder': {
-                                                color: `#${field.metadata.placeholder_color} !important`,
-                                                fontStyle: field.metadata
-                                                    .placeholder_italic
+                                                color: `#${metadata.placeholder_color} !important`,
+                                                fontStyle: metadata.placeholder_italic
                                                     ? 'italic !important'
                                                     : 'normal !important'
                                             },
@@ -1080,27 +1113,29 @@ export default function Form({
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
                                 <>
-                                    <label
-                                        htmlFor={servar.key}
-                                        style={{
-                                            marginBottom: '10px'
-                                        }}
-                                    >
-                                        {servar.name}
-                                    </label>
+                                    {servar.name && (
+                                        <label
+                                            htmlFor={servar.key}
+                                            style={{
+                                                marginBottom: '10px'
+                                            }}
+                                        >
+                                            {servar.name}
+                                        </label>
+                                    )}
                                     <ReactForm.Control
                                         type='text'
                                         style={{
                                             height: `${field.field_height}${field.field_height_unit}`,
                                             width: `${field.field_width}${field.field_width_unit}`,
                                             maxWidth: '100%',
+                                            backgroundColor: `#${field.background_color}`,
                                             borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                         }}
                                         css={{
                                             '&::placeholder': {
-                                                color: `#${field.metadata.placeholder_color} !important`,
-                                                fontStyle: field.metadata
-                                                    .placeholder_italic
+                                                color: `#${metadata.placeholder_color} !important`,
+                                                fontStyle: metadata.placeholder_italic
                                                     ? 'italic !important'
                                                     : 'normal !important'
                                             },
