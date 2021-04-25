@@ -152,7 +152,7 @@ const _conditionMatch = (condition, fieldValues) => {
 const setConditionalIndex = (curIndex, fieldValues, steps, client) => {
     let curConditions;
     while (curIndex < steps.length) {
-        curConditions = steps[curIndex].attributes;
+        curConditions = steps[curIndex].conditions;
         if (curConditions.length > 0) {
             let show = true;
             curConditions.forEach(
