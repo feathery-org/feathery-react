@@ -18,30 +18,28 @@ function adjustColor(color, amount) {
     );
 }
 
-const arrayFormatFields = (step, fieldValues, otherVals, fileObj) => {
-    return step.servar_fields.map((field) => {
+const formatStepFields = (step, fieldValues, fileObj) => {
+    const formattedFields = {};
+    step.servar_fields.forEach((field) => {
         const servar = field.servar;
         let value = fieldValues[servar.key];
-        switch (servar.type) {
-            case 'file_upload':
-                value = fileObj;
-                break;
-            case 'select':
-                value = value === '' ? otherVals[servar.key] : value;
-                break;
-            case 'multiselect':
-                value = value.map((val) => val || otherVals[servar.key]);
-                break;
-            default:
-                break;
-        }
-        return {
+        if (servar.type === 'file_upload') value = fileObj;
+        formattedFields[servar.key] = {
             value,
             type: servar.type,
-            key: servar.key,
             displayText: servar.name
         };
     });
+    return formattedFields;
+};
+
+const formatAllStepFields = (steps, fieldValues, fileObj) => {
+    let formattedFields = {};
+    steps.forEach((step) => {
+        const stepFields = formatStepFields(step, fieldValues, fileObj);
+        formattedFields = { ...formattedFields, ...stepFields };
+    });
+    return formattedFields;
 };
 
 const calculateDimensionsHelper = (
@@ -149,14 +147,26 @@ const _conditionMatch = (condition, fieldValues) => {
     return false;
 };
 
+const _customConditionMatch = (condition, fieldValues) => {
+    const fieldKey = condition.key;
+    if (fieldKey in fieldValues) {
+        const fieldVal = fieldValues[fieldKey];
+        return condition.value === fieldVal;
+    } else return false;
+};
+
 const setConditionalIndex = (curIndex, fieldValues, steps, client) => {
-    let curConditions;
     while (curIndex < steps.length) {
-        curConditions = steps[curIndex].conditions;
-        if (curConditions.length > 0) {
+        const curConds = steps[curIndex].conditions;
+        const curCustomConds = steps[curIndex].custom_conditions;
+        if (curConds.length > 0 || curCustomConds.length > 0) {
             let show = true;
-            curConditions.forEach(
+            curConds.forEach(
                 (condition) => (show &= _conditionMatch(condition, fieldValues))
+            );
+            curCustomConds.forEach(
+                (condition) =>
+                    (show &= _customConditionMatch(condition, fieldValues))
             );
             if (!show) {
                 // register that step was skipped due to condition
@@ -172,7 +182,8 @@ const setConditionalIndex = (curIndex, fieldValues, steps, client) => {
 
 export {
     adjustColor,
-    arrayFormatFields,
+    formatAllStepFields,
+    formatStepFields,
     calculateDimensionsHelper,
     getABVariant,
     getDefaultFieldValues,

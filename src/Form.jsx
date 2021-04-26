@@ -9,8 +9,9 @@ import { MuiField, MuiProgress } from './components/MaterialUI';
 import Client from './utils/client';
 import {
     adjustColor,
-    arrayFormatFields,
     calculateDimensionsHelper,
+    formatAllStepFields,
+    formatStepFields,
     getABVariant,
     getDefaultFieldValues,
     setConditionalIndex
@@ -48,7 +49,6 @@ export default function Form({
         finished: false,
         redirectURL: null
     });
-    const [otherVals, setOtherVals] = useState({});
     const [displayColorPicker, setDisplayColorPicker] = useState({});
     const [acceptedFile, setAcceptedFile] = useState(null);
     const [dimensions, setDimensions] = useState({
@@ -80,37 +80,6 @@ export default function Form({
         return newValues;
     };
 
-    const setInitialOtherState = (step) => {
-        const newOtherVals = {};
-        step.servar_fields.forEach((field) => {
-            const servar = field.servar;
-            if (servar.metadata.other) {
-                let otherVal = '';
-                const fieldVal = fieldValues[servar.key];
-                if (servar.type === 'multiselect') {
-                    const newFieldVal = fieldVal.map((selectedVal) => {
-                        if (!servar.metadata.options.includes(selectedVal)) {
-                            otherVal = selectedVal;
-                            return '';
-                        } else return selectedVal;
-                    });
-                    updateFieldValues({ [servar.key]: newFieldVal });
-                } else if (servar.type === 'select') {
-                    if (
-                        fieldVal !== null &&
-                        !servar.metadata.options.includes(fieldVal)
-                    ) {
-                        otherVal = fieldVal;
-                        updateFieldValues({ [servar.key]: '' });
-                    }
-                }
-                newOtherVals[field.servar.key] = otherVal;
-            }
-        });
-        setOtherVals(newOtherVals);
-        return newOtherVals;
-    };
-
     const updateNewIndex = (newIndex, data = null) => {
         data = data || steps;
         if (newIndex >= data.length) {
@@ -120,7 +89,6 @@ export default function Form({
             });
         } else {
             activeStep = data[newIndex];
-            setInitialOtherState(activeStep);
             calculateDimensions(activeStep);
             setStepIndex(newIndex);
         }
@@ -152,7 +120,6 @@ export default function Form({
                                 fieldValues,
                                 getDefaultFieldValues(data)
                             );
-                            setInitialOtherState(data[stepIndex]);
                             calculateDimensions(data[stepIndex]);
                         }
                         return data;
@@ -179,19 +146,15 @@ export default function Form({
                             updateNewIndex(newIndex, data);
                             if (newIndex < data.length) {
                                 const newStep = data[newIndex];
-                                const newOtherVals = setInitialOtherState(
-                                    newStep
-                                );
                                 calculateDimensions(newStep);
                                 if (typeof onLoad === 'function') {
-                                    const arrayFields = arrayFormatFields(
-                                        newStep,
+                                    const formattedFields = formatAllStepFields(
+                                        data,
                                         newFieldValues,
-                                        newOtherVals,
                                         acceptedFile
                                     );
                                     onLoad({
-                                        fields: arrayFields,
+                                        fields: formattedFields,
                                         stepName: newStep.key,
                                         stepNumber: newIndex,
                                         lastStep: newIndex === data.length - 1,
@@ -213,7 +176,6 @@ export default function Form({
         ) {
             updateFieldValues(getDefaultFieldValues(displaySteps));
             const newStep = displaySteps[displayStepIndex];
-            setInitialOtherState(newStep);
             setStepCache(JSON.parse(JSON.stringify(displaySteps)));
             setSteps(displaySteps);
             setStepIndexCache(displayStepIndex);
@@ -227,7 +189,6 @@ export default function Form({
         stepCache,
         stepIndexCache,
         calculateDimensions,
-        setInitialOtherState,
         setClient,
         setStepCache,
         setSteps,
@@ -257,9 +218,21 @@ export default function Form({
         });
     };
 
-    const handleOtherStateChange = (e) => {
+    const handleOtherStateChange = (oldOtherVal) => (e) => {
         const target = e.target;
-        setOtherVals({ ...otherVals, [target.id]: target.value });
+        const curOtherVal = target.value;
+        let curFieldVal = fieldValues[target.id];
+        if (Array.isArray(curFieldVal)) {
+            if (oldOtherVal) {
+                curFieldVal = curFieldVal.filter((val) => val !== oldOtherVal);
+            }
+            if (curOtherVal) {
+                curFieldVal.push(curOtherVal);
+            }
+        } else {
+            if (curFieldVal === oldOtherVal) curFieldVal = curOtherVal;
+        }
+        updateFieldValues({ [target.id]: curFieldVal });
     };
 
     const handleMultiselectChange = (servarKey) => (e) => {
@@ -295,32 +268,39 @@ export default function Form({
     const submit = (action) => {
         if (!action) return;
 
-        const arrayFields = arrayFormatFields(
-            activeStep,
-            fieldValues,
-            otherVals,
-            acceptedFile
-        );
-        const noFileFields = arrayFields.filter(
-            (field) => field.type !== 'file_upload'
-        );
-        const featheryFields = noFileFields.map((field) => {
-            return { key: field.key, [field.type]: field.value };
-        });
-
         if (['next', 'skip'].includes(action)) {
+            const allFields = formatAllStepFields(
+                steps,
+                fieldValues,
+                acceptedFile
+            );
+
             if (action === 'next') {
+                const formattedFields = formatStepFields(
+                    activeStep,
+                    fieldValues,
+                    acceptedFile
+                );
+
                 // Execute user-provided onSubmit function if present
                 if (typeof onSubmit === 'function') {
                     onSubmit({
-                        fields: arrayFields,
+                        fields: allFields,
+                        submitFields: formattedFields,
                         stepName: activeStep.key,
                         stepNumber: stepIndex,
                         lastStep: stepIndex === steps.length - 1,
                         setValues: updateFieldValues
                     });
                 }
+
+                const featheryFields = Object.entries(formattedFields)
+                    .filter(([key, val]) => val.type !== 'file_upload')
+                    .map(([key, val]) => {
+                        return { key, [val.type]: val.value };
+                    });
                 client.submitStep(featheryFields);
+
                 client.registerEvent(stepIndex, 'complete');
             } else client.registerEvent(stepIndex, 'user_skip');
 
@@ -333,7 +313,7 @@ export default function Form({
             updateNewIndex(newIndex);
             if (typeof onLoad === 'function' && newIndex < steps.length) {
                 onLoad({
-                    fields: arrayFields,
+                    fields: allFields,
                     stepName: activeStep.key,
                     stepNumber: newIndex,
                     lastStep: newIndex === steps.length - 1,
@@ -363,8 +343,7 @@ export default function Form({
                 if (value === '') isFilled = false;
                 break;
             case 'select':
-                if (value === null || (value === '' && !otherVals[servar.key]))
-                    isFilled = false;
+                if (!value) isFilled = false;
                 break;
             case 'dropdown':
                 if (value === '') isFilled = false;
@@ -436,14 +415,19 @@ export default function Form({
                 const form = event.currentTarget;
                 // Execute user-provided checkValidity function if present
                 if (typeof onValidate === 'function') {
-                    const arrayFields = arrayFormatFields(
+                    const allFields = formatAllStepFields(
+                        steps,
+                        fieldValues,
+                        acceptedFile
+                    );
+                    const formattedFields = formatStepFields(
                         activeStep,
                         fieldValues,
-                        otherVals,
                         acceptedFile
                     );
                     const errors = onValidate({
-                        fields: arrayFields,
+                        fields: allFields,
+                        submitFields: formattedFields,
                         stepName: activeStep.key,
                         stepNumber: stepIndex,
                         lastStep: stepIndex === steps.length - 1,
@@ -583,8 +567,23 @@ export default function Form({
                 const servar = field.servar;
                 const fieldVal = fieldValues[servar.key];
                 const metadata = field.metadata;
-                let controlElement;
 
+                let otherVal = '';
+                if (servar.metadata.other) {
+                    if (
+                        servar.type === 'select' &&
+                        !servar.metadata.options.includes(fieldVal)
+                    ) {
+                        otherVal = fieldVal;
+                    } else if (servar.type === 'multiselect') {
+                        fieldVal.forEach((val) => {
+                            if (!servar.metadata.options.includes(val))
+                                otherVal = val;
+                        });
+                    }
+                }
+
+                let controlElement;
                 switch (servar.type) {
                     case 'file_upload':
                         controlElement = (
@@ -701,6 +700,7 @@ export default function Form({
                                     )}
                                     <ReactForm.Control
                                         type='email'
+                                        pattern="^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$"
                                         style={{
                                             height: `${field.field_height}${field.field_height_unit}`,
                                             width: `${field.field_width}${field.field_width_unit}`,
@@ -778,10 +778,12 @@ export default function Form({
                                         <ReactForm.Check
                                             type='checkbox'
                                             id={servar.key}
-                                            name=''
-                                            key=''
+                                            name={otherVal}
+                                            key={otherVal}
                                             label='Other'
-                                            checked={fieldVal.includes('')}
+                                            checked={fieldVal.includes(
+                                                otherVal
+                                            )}
                                             onChange={handleMultiselectChange(
                                                 servar.key
                                             )}
@@ -813,8 +815,10 @@ export default function Form({
                                                 }
                                             }}
                                             id={servar.key}
-                                            value={otherVals[servar.key] || ''}
-                                            onChange={handleOtherStateChange}
+                                            value={otherVal}
+                                            onChange={handleOtherStateChange(
+                                                otherVal
+                                            )}
                                         />
                                     </div>
                                 )}
@@ -864,13 +868,13 @@ export default function Form({
                                             type='radio'
                                             id={servar.key}
                                             label='Other'
-                                            checked={fieldVal === ''}
+                                            checked={fieldVal === otherVal}
                                             onChange={handleChange}
-                                            value=''
-                                            key=''
+                                            value={otherVal}
+                                            key={otherVal}
                                             style={{
                                                 display: 'flex',
-                                                alignItems: 'center',
+                                                alignItems: 'center'
                                             }}
                                         />
                                         <ReactForm.Control
@@ -896,8 +900,10 @@ export default function Form({
                                                 }
                                             }}
                                             id={servar.key}
-                                            value={otherVals[servar.key] || ''}
-                                            onChange={handleOtherStateChange}
+                                            value={otherVal}
+                                            onChange={handleOtherStateChange(
+                                                otherVal
+                                            )}
                                         />
                                     </div>
                                 )}
