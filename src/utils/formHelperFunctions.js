@@ -155,10 +155,36 @@ const _customConditionMatch = (condition, fieldValues) => {
     } else return false;
 };
 
-const setConditionalIndex = (curIndex, fieldValues, steps, client) => {
+const setConditionalIndex = (
+    curIndex,
+    fieldValues,
+    steps,
+    file,
+    client,
+    onLoad,
+    updateFieldValues
+) => {
     while (curIndex < steps.length) {
-        const curConds = steps[curIndex].conditions;
-        const curCustomConds = steps[curIndex].custom_conditions;
+        const curStep = steps[curIndex];
+
+        if (typeof onLoad === 'function') {
+            const formattedFields = formatAllStepFields(
+                steps,
+                fieldValues,
+                file
+            );
+            onLoad({
+                fields: formattedFields,
+                stepName: curStep.key,
+                stepNumber: curIndex,
+                lastStep: curIndex === steps.length - 1,
+                setValues: (userVals) =>
+                    (fieldValues = updateFieldValues(userVals, fieldValues))
+            });
+        }
+
+        const curConds = curStep.conditions;
+        const curCustomConds = curStep.custom_conditions;
         if (curConds.length > 0 || curCustomConds.length > 0) {
             let show = true;
             curConds.forEach(

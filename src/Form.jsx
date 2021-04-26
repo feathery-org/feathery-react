@@ -139,33 +139,14 @@ export default function Form({
                             );
                             const newIndex = setConditionalIndex(
                                 stepIndex,
-                                vals,
+                                newFieldValues,
                                 data,
-                                clientInstance
+                                acceptedFile,
+                                clientInstance,
+                                onLoad,
+                                updateFieldValues
                             );
                             updateNewIndex(newIndex, data);
-                            if (newIndex < data.length) {
-                                const newStep = data[newIndex];
-                                calculateDimensions(newStep);
-                                if (typeof onLoad === 'function') {
-                                    const formattedFields = formatAllStepFields(
-                                        data,
-                                        newFieldValues,
-                                        acceptedFile
-                                    );
-                                    onLoad({
-                                        fields: formattedFields,
-                                        stepName: newStep.key,
-                                        stepNumber: newIndex,
-                                        lastStep: newIndex === data.length - 1,
-                                        setValues: (userVals) =>
-                                            updateFieldValues(
-                                                userVals,
-                                                newFieldValues
-                                            )
-                                    });
-                                }
-                            }
                         });
                     })
                     .catch((error) => console.log(error));
@@ -308,18 +289,12 @@ export default function Form({
                 stepIndex + 1,
                 fieldValues,
                 steps,
-                client
+                acceptedFile,
+                client,
+                onLoad,
+                updateFieldValues
             );
             updateNewIndex(newIndex);
-            if (typeof onLoad === 'function' && newIndex < steps.length) {
-                onLoad({
-                    fields: allFields,
-                    stepName: activeStep.key,
-                    stepNumber: newIndex,
-                    lastStep: newIndex === steps.length - 1,
-                    setValues: updateFieldValues
-                });
-            }
         } else if (action === 'back') {
             updateNewIndex(stepIndex - 1);
         }
