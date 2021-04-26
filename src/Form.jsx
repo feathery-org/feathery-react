@@ -637,6 +637,7 @@ export default function Form({
                                     css={{
                                         '&::placeholder': {
                                             color: `#${metadata.placeholder_color} !important`,
+                                            fontSize: `${field.font_size}px`,
                                             fontStyle: metadata.placeholder_italic
                                                 ? 'italic !important'
                                                 : 'normal !important'
@@ -686,6 +687,7 @@ export default function Form({
                                         css={{
                                             '&::placeholder': {
                                                 color: `#${metadata.placeholder_color} !important`,
+                                                fontSize: `${field.font_size}px`,
                                                 fontStyle: metadata.placeholder_italic
                                                     ? 'italic !important'
                                                     : 'normal !important'
@@ -911,6 +913,7 @@ export default function Form({
                                         css={{
                                             '&::placeholder': {
                                                 color: `#${metadata.placeholder_color} !important`,
+                                                fontSize: `${field.font_size}px`,
                                                 fontStyle: metadata.placeholder_italic
                                                     ? 'italic !important'
                                                     : 'normal !important'
@@ -1020,6 +1023,7 @@ export default function Form({
                                         css={{
                                             '&::placeholder': {
                                                 color: `#${metadata.placeholder_color} !important`,
+                                                fontSize: `${field.font_size}px`,
                                                 fontStyle: metadata.placeholder_italic
                                                     ? 'italic !important'
                                                     : 'normal !important'
@@ -1066,6 +1070,7 @@ export default function Form({
                                         css={{
                                             '&::placeholder': {
                                                 color: `#${metadata.placeholder_color} !important`,
+                                                fontSize: `${field.font_size}px`,
                                                 fontStyle: metadata.placeholder_italic
                                                     ? 'italic !important'
                                                     : 'normal !important'
@@ -1116,6 +1121,7 @@ export default function Form({
                                         css={{
                                             '&::placeholder': {
                                                 color: `#${metadata.placeholder_color} !important`,
+                                                fontSize: `${field.font_size}px`,
                                                 fontStyle: metadata.placeholder_italic
                                                     ? 'italic !important'
                                                     : 'normal !important'

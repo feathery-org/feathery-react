@@ -70,6 +70,7 @@ function MuiField({ servar, field, type, onChange, multiline = false }) {
             css={{
                 '&::placeholder': {
                     color: `#${field.metadata.placeholder_color} !important`,
+                    fontSize: `${field.font_size}px`,
                     fontStyle: field.metadata.placeholder_italic
                         ? 'italic !important'
                         : 'normal !important'
