@@ -632,12 +632,12 @@ export default function Form({
                                         width: `${field.field_width}${field.field_width_unit}`,
                                         maxWidth: '100%',
                                         backgroundColor: `#${field.background_color}`,
-                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                        fontSize: `${field.font_size}px`
                                     }}
                                     css={{
                                         '&::placeholder': {
                                             color: `#${metadata.placeholder_color} !important`,
-                                            fontSize: `${field.font_size}px`,
                                             fontStyle: metadata.placeholder_italic
                                                 ? 'italic !important'
                                                 : 'normal !important'
