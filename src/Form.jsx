@@ -80,6 +80,21 @@ export default function Form({
         return newValues;
     };
 
+    const updateFieldOptions = (stepData) => (newFieldOptions) => {
+        stepData.forEach((step) => {
+            step.servar_fields.forEach((field) => {
+                const servar = field.servar;
+                if (
+                    servar.metadata.allow_custom_options &&
+                    servar.key in newFieldOptions
+                ) {
+                    servar.metadata.options = newFieldOptions[servar.key];
+                }
+            });
+        });
+        setSteps(JSON.parse(JSON.stringify(stepData)));
+    };
+
     const updateNewIndex = (newIndex, data = null) => {
         data = data || steps;
         if (newIndex >= data.length) {
@@ -144,7 +159,8 @@ export default function Form({
                                 acceptedFile,
                                 clientInstance,
                                 onLoad,
-                                updateFieldValues
+                                updateFieldValues,
+                                updateFieldOptions
                             );
                             updateNewIndex(newIndex, data);
                         });
@@ -271,7 +287,8 @@ export default function Form({
                         stepName: activeStep.key,
                         stepNumber: stepIndex,
                         lastStep: stepIndex === steps.length - 1,
-                        setValues: updateFieldValues
+                        setValues: updateFieldValues,
+                        setOptions: updateFieldOptions(steps)
                     });
                 }
 
@@ -292,7 +309,8 @@ export default function Form({
                 acceptedFile,
                 client,
                 onLoad,
-                updateFieldValues
+                updateFieldValues,
+                updateFieldOptions
             );
             updateNewIndex(newIndex);
         } else if (action === 'back') {
@@ -406,7 +424,8 @@ export default function Form({
                         stepName: activeStep.key,
                         stepNumber: stepIndex,
                         lastStep: stepIndex === steps.length - 1,
-                        setValues: updateFieldValues
+                        setValues: updateFieldValues,
+                        setOptions: updateFieldOptions(steps)
                     });
                     errors.forEach((err) => {
                         const [fieldKey, message] = err;

@@ -162,7 +162,8 @@ const setConditionalIndex = (
     file,
     client,
     onLoad,
-    updateFieldValues
+    updateFieldValues,
+    updateFieldOptions
 ) => {
     while (curIndex < steps.length) {
         const curStep = steps[curIndex];
@@ -179,7 +180,8 @@ const setConditionalIndex = (
                 stepNumber: curIndex,
                 lastStep: curIndex === steps.length - 1,
                 setValues: (userVals) =>
-                    (fieldValues = updateFieldValues(userVals, fieldValues))
+                    (fieldValues = updateFieldValues(userVals, fieldValues)),
+                setOptions: updateFieldOptions(steps)
             });
         }
 
