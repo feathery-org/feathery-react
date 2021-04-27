@@ -59,9 +59,11 @@
   "dependencies": {
     "@emotion/babel-preset-css-prop": "^11.0.0",
     "@emotion/react": "^11.1.5",
+    "@fingerprintjs/fingerprintjs": "^3.1.0",
     "@material-ui/core": "^4.11.3",
     "react-bootstrap": "^1.4.0",
-    "react-color": "^2.19.3"
+    "react-color": "^2.19.3",
+    "uuid": "^8.3.2"
   },
   "babel": {
     "presets": [

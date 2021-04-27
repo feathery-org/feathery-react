@@ -1,8 +1,17 @@
+import FingerprintJS from '@fingerprintjs/fingerprintjs';
+import { v4 as uuidv4 } from 'uuid';
+
 import * as errors from './error';
 
+const fpPromise = FingerprintJS.load();
+let initUserPromise = Promise.resolve();
+let initialized = false;
 const initState = { apiKey: null, userKey: null };
 
 function init(apiKey, userKey = null) {
+    if (initialized) return; // can only be initialized one time per load
+    initialized = true;
+
     if (!apiKey || typeof apiKey !== 'string') {
         throw new errors.APIKeyError('Invalid API Key');
     }
@@ -12,17 +21,14 @@ function init(apiKey, userKey = null) {
 
     initState.apiKey = apiKey;
     initState.userKey = userKey;
-}
-
-function keyError() {
-    const { apiKey, userKey } = initState;
-    if (!apiKey || typeof apiKey !== 'string') {
-        return new errors.APIKeyError('Invalid API Key');
+    if (!initState.userKey) {
+        initUserPromise = fpPromise
+            .then((fp) => fp.get())
+            .then((result) => {
+                initState.userKey = result.visitorId;
+                if (!initState.userKey) initState.userKey = uuidv4();
+            });
     }
-    if (userKey && typeof userKey !== 'string') {
-        return new errors.UserKeyError('Invalid User Key');
-    }
-    return null;
 }
 
 function initInfo() {
@@ -32,4 +38,4 @@ function initInfo() {
     return initState;
 }
 
-export { init, initInfo, keyError };
+export { init, initInfo, initUserPromise };
