@@ -2,6 +2,9 @@ import * as errors from './error';
 import { initInfo, initUserPromise } from './init';
 import encodeGetParams from './string';
 
+const API_URL = 'https://api.feathery.tech/';
+const CDN_URL = 'https://cdn.feathery.tech/';
+
 export default class Client {
     constructor(formKey) {
         this.formKey = formKey;
@@ -12,7 +15,7 @@ export default class Client {
         const params = encodeGetParams({
             form_key: this.formKey
         });
-        const url = `https://cdn.feathery.tech/api/panel/?${params}`;
+        const url = `${CDN_URL}api/panel/v2/?${params}`;
         const options = {
             cache: 'no-store',
             headers: { Authorization: 'Token ' + apiKey }
@@ -45,7 +48,7 @@ export default class Client {
             form_key: this.formKey,
             ...(userKey ? { fuser_key: userKey } : {})
         });
-        const url = `https://api.feathery.tech/api/panel/values/?${params}`;
+        const url = `${API_URL}api/panel/values/?${params}`;
         const options = {
             cache: 'no-store',
             headers: { Authorization: 'Token ' + apiKey }
@@ -74,7 +77,7 @@ export default class Client {
     // servars = [{key: <servarKey>, <type>: <value>}]
     submitStep(servars) {
         const { userKey, apiKey } = initInfo();
-        const url = `https://api.feathery.tech/api/panel/step/submit/`;
+        const url = `${API_URL}api/panel/step/submit/`;
         const data = {
             ...(userKey ? { fuser_key: userKey } : {}),
             servars
@@ -105,13 +108,13 @@ export default class Client {
         });
     }
 
-    registerEvent(stepNumber, event) {
+    registerEvent(stepKey, event) {
         initUserPromise.then(() => {
             const { userKey, apiKey } = initInfo();
-            const url = `https://api.feathery.tech/api/event/`;
+            const url = `${API_URL}api/event/`;
             const data = {
                 form_key: this.formKey,
-                step_number: stepNumber,
+                step_key: stepKey,
                 event,
                 ...(userKey ? { fuser_key: userKey } : {})
             };

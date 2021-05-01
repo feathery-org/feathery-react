@@ -14,7 +14,10 @@ import {
     formatStepFields,
     getABVariant,
     getDefaultFieldValues,
-    setConditionalIndex
+    nextStepKey,
+    prevStepKey,
+    getOrigin,
+    recurseDepth
 } from './utils/formHelperFunctions';
 
 import './bootstrap-iso.css';
@@ -34,15 +37,14 @@ export default function Form({
 
     // Internal
     displaySteps = null,
-    displayStepIndex = 0,
+    displayStepKey = '',
     setFormDimensions = () => {}
 }) {
     const [client, setClient] = useState(null);
 
-    const [stepCache, setStepCache] = useState(null);
-    const [stepIndexCache, setStepIndexCache] = useState(displayStepIndex);
-    const [steps, setSteps] = useState(displaySteps);
-    const [stepIndex, setStepIndex] = useState(displayStepIndex);
+    const [steps, setSteps] = useState(null);
+    const [stepKey, setStepKey] = useState(displayStepKey);
+    const [seenStepKeys, setSeenStepKeys] = useState(new Set());
     const [fieldValues, setFieldValues] = useState(initialValues);
 
     const [finishConfig, setFinishConfig] = useState({
@@ -56,8 +58,10 @@ export default function Form({
         rows: [],
         columns: []
     });
+    const [curDepth, setCurDepth] = useState(0);
+    const [maxDepth, setMaxDepth] = useState(1);
 
-    let activeStep = steps && steps.length > 0 ? steps[stepIndex] : null;
+    let activeStep = steps ? steps[stepKey] : null;
 
     const calculateDimensions = calculateDimensionsHelper(
         dimensions,
@@ -81,7 +85,7 @@ export default function Form({
     };
 
     const updateFieldOptions = (stepData) => (newFieldOptions) => {
-        stepData.forEach((step) => {
+        Object.values(stepData).forEach((step) => {
             step.servar_fields.forEach((field) => {
                 const servar = field.servar;
                 if (
@@ -95,18 +99,17 @@ export default function Form({
         setSteps(JSON.parse(JSON.stringify(stepData)));
     };
 
-    const updateNewIndex = (newIndex, data = null) => {
+    const updateNewStepKey = (newStepKey, data = null) => {
         data = data || steps;
-        if (newIndex >= data.length) {
-            setFinishConfig({
-                finished: true,
-                redirectURL: activeStep.redirect_url
-            });
-        } else {
-            activeStep = data[newIndex];
-            calculateDimensions(activeStep);
-            setStepIndex(newIndex);
-        }
+        activeStep = data[newStepKey];
+
+        calculateDimensions(activeStep);
+        setStepKey(newStepKey);
+        setSeenStepKeys(new Set([...seenStepKeys, newStepKey]));
+
+        const depth = recurseDepth(data, getOrigin(data), newStepKey);
+        setCurDepth(depth);
+        setMaxDepth(depth + recurseDepth(data, newStepKey));
     };
 
     useEffect(() => {
@@ -115,29 +118,26 @@ export default function Form({
                 const clientInstance = new Client(formKey);
                 setClient(clientInstance);
 
+                // render form without values first for speed
                 const fetchPromise = clientInstance
                     .fetchForm()
                     .then((stepsResponse) => {
-                        const data = getABVariant(stepsResponse);
-                        if (data.length === 0) {
-                            setFinishConfig({
-                                finished: true,
-                                redirectURL: stepsResponse.redirect_url
-                            });
-                        } else {
-                            // render form without values first for speed
-                            setSteps(data);
+                        const data = {};
+                        getABVariant(stepsResponse).forEach((step) => {
+                            data[step.key] = step;
+                        });
+                        updateFieldValues(
+                            fieldValues,
+                            getDefaultFieldValues(data)
+                        );
 
-                            // register that form was loaded
-                            clientInstance.registerEvent(0, 'load');
+                        setSteps(data);
+                        const originKey = getOrigin(data);
+                        updateNewStepKey(originKey, data);
 
-                            updateFieldValues(
-                                fieldValues,
-                                getDefaultFieldValues(data)
-                            );
-                            calculateDimensions(data[stepIndex]);
-                        }
-                        return data;
+                        // register that initial form step was loaded
+                        clientInstance.registerEvent(originKey, 'load');
+                        return [data, originKey];
                     })
                     .catch((error) => console.log(error));
 
@@ -147,50 +147,50 @@ export default function Form({
                 clientInstance
                     .fetchFormValues()
                     .then((vals) => {
-                        fetchPromise.then((data) => {
+                        fetchPromise.then(([data, originKey]) => {
                             const newFieldValues = updateFieldValues(
                                 vals,
                                 getDefaultFieldValues(data)
                             );
-                            const newIndex = setConditionalIndex(
-                                stepIndex,
-                                newFieldValues,
-                                data,
-                                acceptedFile,
-                                clientInstance,
-                                onLoad,
-                                updateFieldValues,
-                                updateFieldOptions
-                            );
-                            updateNewIndex(newIndex, data);
+
+                            if (typeof onLoad === 'function') {
+                                const formattedFields = formatAllStepFields(
+                                    data,
+                                    newFieldValues,
+                                    acceptedFile
+                                );
+                                onLoad({
+                                    fields: formattedFields,
+                                    stepName: originKey,
+                                    lastStep:
+                                        data[originKey].next_conditions
+                                            .length === 0,
+                                    setValues: (userVals) =>
+                                        updateFieldValues(
+                                            userVals,
+                                            newFieldValues
+                                        ),
+                                    setOptions: updateFieldOptions(steps)
+                                });
+                            }
                         });
                     })
                     .catch((error) => console.log(error));
             }
-        } else if (
-            JSON.stringify(displaySteps) !== JSON.stringify(stepCache) ||
-            displayStepIndex !== stepIndexCache
-        ) {
+        } else if (displaySteps !== steps || displayStepKey !== stepKey) {
             updateFieldValues(getDefaultFieldValues(displaySteps));
-            const newStep = displaySteps[displayStepIndex];
-            setStepCache(JSON.parse(JSON.stringify(displaySteps)));
             setSteps(displaySteps);
-            setStepIndexCache(displayStepIndex);
-            setStepIndex(displayStepIndex);
-            calculateDimensions(newStep);
+            setStepKey(displayStepKey);
+            calculateDimensions(displaySteps[displayStepKey]);
         }
     }, [
         client,
-        displayStepIndex,
+        displayStepKey,
         displaySteps,
-        stepCache,
-        stepIndexCache,
         calculateDimensions,
         setClient,
-        setStepCache,
         setSteps,
-        setStepIndexCache,
-        setStepIndex,
+        setStepKey,
         getDefaultFieldValues,
         updateFieldValues
     ]);
@@ -285,8 +285,7 @@ export default function Form({
                         fields: allFields,
                         submitFields: formattedFields,
                         stepName: activeStep.key,
-                        stepNumber: stepIndex,
-                        lastStep: stepIndex === steps.length - 1,
+                        lastStep: activeStep.next_conditions.length === 0,
                         setValues: updateFieldValues,
                         setOptions: updateFieldOptions(steps)
                     });
@@ -299,22 +298,33 @@ export default function Form({
                     });
                 client.submitStep(featheryFields);
 
-                client.registerEvent(stepIndex, 'complete');
-            } else client.registerEvent(stepIndex, 'user_skip');
+                client.registerEvent(stepKey, 'complete');
+            } else client.registerEvent(stepKey, 'user_skip');
 
-            const newIndex = setConditionalIndex(
-                stepIndex + 1,
-                fieldValues,
+            const newStepKey = nextStepKey(
+                activeStep.next_conditions,
                 steps,
+                fieldValues,
                 acceptedFile,
                 client,
                 onLoad,
                 updateFieldValues,
                 updateFieldOptions
             );
-            updateNewIndex(newIndex);
+            if (!newStepKey) {
+                setFinishConfig({
+                    finished: true,
+                    redirectURL: activeStep.redirect_url
+                });
+            } else {
+                updateNewStepKey(newStepKey);
+            }
         } else if (action === 'back') {
-            updateNewIndex(stepIndex - 1);
+            const newKey = prevStepKey(
+                activeStep.previous_conditions,
+                seenStepKeys
+            );
+            if (newKey) updateNewStepKey(newKey);
         }
     };
 
@@ -355,6 +365,7 @@ export default function Form({
     let progressBarElements = null;
     if (activeStep.progress_bar) {
         if (activeStep.component_type === 'bootstrap') {
+            const percent = Math.round((100 * curDepth) / (maxDepth + 1));
             progressBarElements = [
                 <ProgressBar
                     key='progress'
@@ -369,12 +380,10 @@ export default function Form({
                             backgroundColor: `#${activeStep.progress_bar.bar_color} !important`
                         }
                     }}
-                    now={(stepIndex / steps.length) * 100}
+                    now={percent}
                 />
             ];
-            const completionPercentage = `${Math.round(
-                (stepIndex / steps.length) * 100
-            )}% completed`;
+            const completionPercentage = `${percent}% completed`;
             if (activeStep.progress_bar.percent_text_layout === 'top') {
                 progressBarElements.splice(0, 0, completionPercentage);
             } else if (
@@ -386,8 +395,8 @@ export default function Form({
             progressBarElements = [
                 <MuiProgress
                     key='progress'
-                    curStep={stepIndex}
-                    maxStep={steps.length}
+                    curStep={curDepth}
+                    maxStep={maxDepth + 1}
                     progressBar={activeStep.progress_bar}
                 />
             ];
@@ -422,8 +431,7 @@ export default function Form({
                         fields: allFields,
                         submitFields: formattedFields,
                         stepName: activeStep.key,
-                        stepNumber: stepIndex,
-                        lastStep: stepIndex === steps.length - 1,
+                        lastStep: activeStep.next_conditions.length === 0,
                         setValues: updateFieldValues,
                         setOptions: updateFieldOptions(steps)
                     });
@@ -477,7 +485,7 @@ export default function Form({
             )}
             {activeStep.text_fields.map((field, i) => (
                 <div
-                    key={i.toString() + ':' + stepIndex.toString()}
+                    key={i.toString() + ':' + stepKey.toString()}
                     css={{
                         gridColumnStart: field.column_index + 1,
                         gridRowStart: field.row_index + 1,

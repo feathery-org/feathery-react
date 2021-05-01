@@ -35,7 +35,7 @@ const formatStepFields = (step, fieldValues, fileObj) => {
 
 const formatAllStepFields = (steps, fieldValues, fileObj) => {
     let formattedFields = {};
-    steps.forEach((step) => {
+    Object.values(steps).forEach((step) => {
         const stepFields = formatStepFields(step, fieldValues, fileObj);
         formattedFields = { ...formattedFields, ...stepFields };
     });
@@ -106,7 +106,7 @@ const getABVariant = (stepRes) => {
 
 const getDefaultFieldValues = (steps) => {
     const fieldValues = {};
-    steps.forEach((step) => {
+    Object.values(steps).forEach((step) => {
         step.servar_fields.forEach((field) => {
             let val = '';
             switch (field.servar.type) {
@@ -135,77 +135,83 @@ const getDefaultFieldValues = (steps) => {
     return fieldValues;
 };
 
-const _conditionMatch = (condition, fieldValues) => {
-    const fieldKey = condition.key;
-    if (fieldKey in fieldValues) {
-        const fieldVal = fieldValues[fieldKey];
-        if (condition.type === 'multiselect') {
-            return fieldVal.includes(condition.value);
-        }
-        return condition.value === fieldVal;
-    }
-    return false;
+const prevStepKey = (prevConditions, seenStepKeys) => {
+    let prevKey = null;
+    prevConditions.forEach((cond) => {
+        if (seenStepKeys.has(cond.previous_step_key))
+            prevKey = cond.previous_step_key;
+    });
+    return prevKey;
 };
 
-const _customConditionMatch = (condition, fieldValues) => {
-    const fieldKey = condition.key;
-    if (fieldKey in fieldValues) {
-        const fieldVal = fieldValues[fieldKey];
-        return condition.value === fieldVal;
-    } else return false;
-};
-
-const setConditionalIndex = (
-    curIndex,
-    fieldValues,
+const nextStepKey = (
+    nextConditions,
     steps,
+    fieldValues,
     file,
     client,
     onLoad,
     updateFieldValues,
     updateFieldOptions
 ) => {
-    while (curIndex < steps.length) {
-        const curStep = steps[curIndex];
+    let newKey, defaultKey;
+    nextConditions.forEach((cond) => {
+        if (cond.default) defaultKey = cond.next_step_key;
+        else {
+            const userVal = fieldValues[cond.key];
+            if (!userVal) return;
 
-        if (typeof onLoad === 'function') {
-            const formattedFields = formatAllStepFields(
-                steps,
-                fieldValues,
-                file
-            );
-            onLoad({
-                fields: formattedFields,
-                stepName: curStep.key,
-                stepNumber: curIndex,
-                lastStep: curIndex === steps.length - 1,
-                setValues: (userVals) =>
-                    (fieldValues = updateFieldValues(userVals, fieldValues)),
-                setOptions: updateFieldOptions(steps)
-            });
-        }
-
-        const curConds = curStep.conditions;
-        const curCustomConds = curStep.custom_conditions;
-        if (curConds.length > 0 || curCustomConds.length > 0) {
-            let show = true;
-            curConds.forEach(
-                (condition) => (show &= _conditionMatch(condition, fieldValues))
-            );
-            curCustomConds.forEach(
-                (condition) =>
-                    (show &= _customConditionMatch(condition, fieldValues))
-            );
-            if (!show) {
-                // register that step was skipped due to condition
-                client.registerEvent(curIndex, 'conditional_skip');
-                curIndex++;
-                continue;
+            if (Array.isArray(userVal)) {
+                if (userVal.includes(cond.value)) newKey = cond.next_step_key;
+            } else {
+                if (userVal === cond.value) newKey = cond.next_step_key;
             }
         }
-        break;
+    });
+    newKey = newKey || defaultKey;
+    if (!newKey) return null;
+
+    client.registerEvent(newKey, 'load');
+    if (typeof onLoad === 'function') {
+        const formattedFields = formatAllStepFields(steps, fieldValues, file);
+        onLoad({
+            fields: formattedFields,
+            stepName: newKey,
+            lastStep: steps[newKey].next_conditions.length === 0,
+            setValues: updateFieldValues,
+            setOptions: updateFieldOptions(steps)
+        });
     }
-    return curIndex;
+    return newKey;
+};
+
+const getOrigin = (steps) => {
+    let originKey;
+    Object.values(steps).forEach((step) => {
+        if (step.origin) originKey = step.key;
+    });
+    return originKey;
+};
+
+const recurseDepth = (steps, startKey, endKey = null) => {
+    const seenStepKeys = new Set();
+    const stepQueue = [[steps[startKey], 0]];
+    let maxDepth = 0;
+    while (stepQueue.length > 0) {
+        const [step, depth] = stepQueue.shift();
+        if (seenStepKeys.has(step.key)) continue;
+        seenStepKeys.add(step.key);
+
+        if (step.key === endKey) return depth;
+        maxDepth = depth;
+
+        step.next_conditions.forEach((condition) => {
+            const nextStep = steps[condition.next_step_key];
+            if (endKey || condition.default)
+                stepQueue.push([nextStep, depth + 1]);
+        });
+    }
+    return maxDepth;
 };
 
 export {
@@ -215,5 +221,8 @@ export {
     calculateDimensionsHelper,
     getABVariant,
     getDefaultFieldValues,
-    setConditionalIndex
+    nextStepKey,
+    prevStepKey,
+    getOrigin,
+    recurseDepth
 };
