@@ -60,7 +60,7 @@ export default function Form({
     });
     const [curDepth, setCurDepth] = useState(displaySteps ? 1 : 0);
     const [maxDepth, setMaxDepth] = useState(
-        displaySteps ? displaySteps.length : 0
+        displaySteps ? Object.keys(displaySteps).length : 0
     );
 
     let activeStep = steps ? steps[stepKey] : null;
