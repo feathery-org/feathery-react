@@ -58,8 +58,10 @@ export default function Form({
         rows: [],
         columns: []
     });
-    const [curDepth, setCurDepth] = useState(0);
-    const [maxDepth, setMaxDepth] = useState(1);
+    const [curDepth, setCurDepth] = useState(displaySteps ? 1 : 0);
+    const [maxDepth, setMaxDepth] = useState(
+        displaySteps ? displaySteps.length : 0
+    );
 
     let activeStep = steps ? steps[stepKey] : null;
 
@@ -262,6 +264,7 @@ export default function Form({
         });
     };
 
+    let linkStep = '';
     const submit = (action) => {
         if (!action) return;
 
@@ -303,6 +306,7 @@ export default function Form({
 
             const newStepKey = nextStepKey(
                 activeStep.next_conditions,
+                linkStep,
                 steps,
                 fieldValues,
                 acceptedFile,
@@ -442,7 +446,7 @@ export default function Form({
                     });
                     form.reportValidity();
                 }
-                if (form.checkValidity()) submit('next');
+                if (form.checkValidity()) submit('next', form.linkStep);
             }}
             style={{
                 backgroundColor: `#${activeStep.default_background_color}`,
@@ -542,8 +546,11 @@ export default function Form({
                                     : undefined
                             }
                             onClick={() => {
-                                if (!displaySteps && field.link !== 'next')
-                                    submit(field.link);
+                                if (!displaySteps) {
+                                    if (field.link === 'next')
+                                        linkStep = field.link_step;
+                                    else submit(field.link);
+                                }
                             }}
                             dangerouslySetInnerHTML={{
                                 __html: field.text
@@ -560,9 +567,10 @@ export default function Form({
                                 fontFamily: field.font_family,
                                 fontSize: `${field.font_size}px`
                             }}
-                        >
-                            {field.text}
-                        </div>
+                            dangerouslySetInnerHTML={{
+                                __html: field.text
+                            }}
+                        />
                     )}
                 </div>
             ))}

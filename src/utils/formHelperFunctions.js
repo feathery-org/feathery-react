@@ -146,6 +146,7 @@ const prevStepKey = (prevConditions, seenStepKeys) => {
 
 const nextStepKey = (
     nextConditions,
+    nextStepKey,
     steps,
     fieldValues,
     file,
@@ -168,7 +169,7 @@ const nextStepKey = (
             }
         }
     });
-    newKey = newKey || defaultKey;
+    newKey = nextStepKey || newKey || defaultKey;
     if (!newKey) return null;
 
     client.registerEvent(newKey, 'load');
