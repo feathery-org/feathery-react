@@ -339,28 +339,14 @@ export default function Form({
         if (!servar.required) continue;
         const value = fieldValues[servar.key];
         switch (servar.type) {
-            case 'email':
-                if (value === '') isFilled = false;
-                break;
-            case 'text_area':
-                if (value === '') isFilled = false;
-                break;
-            case 'text_field':
-                if (value === '') isFilled = false;
-                break;
             case 'select':
                 if (!value) isFilled = false;
-                break;
-            case 'dropdown':
-                if (value === '') isFilled = false;
                 break;
             case 'file_upload':
                 if (acceptedFile === null) isFilled = false;
                 break;
-            case 'url':
-                if (value === '') isFilled = false;
-                break;
             default:
+                if (value === '') isFilled = false;
                 break;
         }
     }

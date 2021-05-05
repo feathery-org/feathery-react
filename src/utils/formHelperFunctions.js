@@ -117,7 +117,7 @@ const getDefaultFieldValues = (steps) => {
                     val = [];
                     break;
                 case 'integer_field':
-                    val = 0;
+                    val = '';
                     break;
                 case 'hex_color':
                     val = '000000';
