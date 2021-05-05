@@ -269,12 +269,6 @@ export default function Form({
         if (!action) return;
 
         if (['next', 'skip'].includes(action)) {
-            const allFields = formatAllStepFields(
-                steps,
-                fieldValues,
-                acceptedFile
-            );
-
             if (action === 'next') {
                 const formattedFields = formatStepFields(
                     activeStep,
@@ -284,6 +278,11 @@ export default function Form({
 
                 // Execute user-provided onSubmit function if present
                 if (typeof onSubmit === 'function') {
+                    const allFields = formatAllStepFields(
+                        steps,
+                        fieldValues,
+                        acceptedFile
+                    );
                     onSubmit({
                         fields: allFields,
                         submitFields: formattedFields,
@@ -446,7 +445,7 @@ export default function Form({
                     });
                     form.reportValidity();
                 }
-                if (form.checkValidity()) submit('next', form.linkStep);
+                if (form.checkValidity()) submit('next');
             }}
             style={{
                 backgroundColor: `#${activeStep.default_background_color}`,
@@ -547,9 +546,11 @@ export default function Form({
                             }
                             onClick={() => {
                                 if (!displaySteps) {
-                                    if (field.link === 'next')
-                                        linkStep = field.link_step;
-                                    else submit(field.link);
+                                    if (field.link !== 'next') {
+                                        if (field.link === 'skip')
+                                            linkStep = field.link_step;
+                                        submit(field.link);
+                                    }
                                 }
                             }}
                             dangerouslySetInnerHTML={{
@@ -672,11 +673,8 @@ export default function Form({
                                         fontSize: `${field.font_size}px`
                                     }}
                                     css={{
-                                        '&::placeholder': {
-                                            color: `#${metadata.placeholder_color} !important`,
-                                            fontStyle: metadata.placeholder_italic
-                                                ? 'italic !important'
-                                                : 'normal !important'
+                                        '&:focus': {
+                                            boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
                                         }
                                     }}
                                     as='select'
@@ -686,7 +684,17 @@ export default function Form({
                                     onChange={handleChange}
                                     custom
                                 >
-                                    <option key='' value='' disabled>
+                                    <option
+                                        key=''
+                                        value=''
+                                        disabled
+                                        style={{
+                                            color: `#${metadata.placeholder_color}`,
+                                            fontStyle: metadata.placeholder_italic
+                                                ? 'italic'
+                                                : 'normal'
+                                        }}
+                                    >
                                         {metadata.placeholder || 'Select...'}
                                     </option>
                                     {servar.metadata.options.map((option) => (
