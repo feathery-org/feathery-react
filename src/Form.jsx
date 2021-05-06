@@ -269,6 +269,7 @@ export default function Form({
         if (!action) return;
 
         if (['next', 'skip'].includes(action)) {
+            let newFieldVals = fieldValues;
             if (action === 'next') {
                 const formattedFields = formatStepFields(
                     activeStep,
@@ -288,7 +289,11 @@ export default function Form({
                         submitFields: formattedFields,
                         stepName: activeStep.key,
                         lastStep: activeStep.next_conditions.length === 0,
-                        setValues: updateFieldValues,
+                        setValues: (userVals) =>
+                            (newFieldVals = updateFieldValues(
+                                userVals,
+                                newFieldVals
+                            )),
                         setOptions: updateFieldOptions(steps)
                     });
                 }
@@ -307,7 +312,7 @@ export default function Form({
                 activeStep.next_conditions,
                 linkStep,
                 steps,
-                fieldValues,
+                newFieldVals,
                 acceptedFile,
                 client,
                 onLoad,
