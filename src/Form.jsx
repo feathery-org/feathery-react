@@ -15,7 +15,6 @@ import {
     getABVariant,
     getDefaultFieldValues,
     nextStepKey,
-    prevStepKey,
     getOrigin,
     recurseDepth
 } from './utils/formHelperFunctions';
@@ -264,75 +263,66 @@ export default function Form({
         });
     };
 
-    let linkStep = '';
-    const submit = (action) => {
-        if (!action) return;
+    let elementKey = '';
+    const submit = (submitData, elementType, elementKey) => {
+        let newFieldVals = fieldValues;
+        if (submitData) {
+            const formattedFields = formatStepFields(
+                activeStep,
+                fieldValues,
+                acceptedFile
+            );
 
-        if (['next', 'skip'].includes(action)) {
-            let newFieldVals = fieldValues;
-            if (action === 'next') {
-                const formattedFields = formatStepFields(
-                    activeStep,
+            // Execute user-provided onSubmit function if present
+            if (typeof onSubmit === 'function') {
+                const allFields = formatAllStepFields(
+                    steps,
                     fieldValues,
                     acceptedFile
                 );
-
-                // Execute user-provided onSubmit function if present
-                if (typeof onSubmit === 'function') {
-                    const allFields = formatAllStepFields(
-                        steps,
-                        fieldValues,
-                        acceptedFile
-                    );
-                    onSubmit({
-                        fields: allFields,
-                        submitFields: formattedFields,
-                        stepName: activeStep.key,
-                        lastStep: activeStep.next_conditions.length === 0,
-                        setValues: (userVals) =>
-                            (newFieldVals = updateFieldValues(
-                                userVals,
-                                newFieldVals
-                            )),
-                        setOptions: updateFieldOptions(steps)
-                    });
-                }
-
-                const featheryFields = Object.entries(formattedFields)
-                    .filter(([key, val]) => val.type !== 'file_upload')
-                    .map(([key, val]) => {
-                        return { key, [val.type]: val.value };
-                    });
-                client.submitStep(featheryFields);
-
-                client.registerEvent(stepKey, 'complete');
-            } else client.registerEvent(stepKey, 'user_skip');
-
-            const newStepKey = nextStepKey(
-                activeStep.next_conditions,
-                linkStep,
-                steps,
-                newFieldVals,
-                acceptedFile,
-                client,
-                onLoad,
-                updateFieldValues,
-                updateFieldOptions
-            );
-            if (!newStepKey) {
-                setFinishConfig({
-                    finished: true,
-                    redirectURL: activeStep.redirect_url
+                onSubmit({
+                    fields: allFields,
+                    submitFields: formattedFields,
+                    stepName: activeStep.key,
+                    lastStep: activeStep.next_conditions.length === 0,
+                    setValues: (userVals) =>
+                        (newFieldVals = updateFieldValues(
+                            userVals,
+                            newFieldVals
+                        )),
+                    setOptions: updateFieldOptions(steps)
                 });
-            } else {
-                updateNewStepKey(newStepKey);
             }
-        } else if (action === 'back') {
-            const newKey = prevStepKey(
-                activeStep.previous_conditions,
-                seenStepKeys
-            );
-            if (newKey) updateNewStepKey(newKey);
+
+            const featheryFields = Object.entries(formattedFields)
+                .filter(([key, val]) => val.type !== 'file_upload')
+                .map(([key, val]) => {
+                    return { key, [val.type]: val.value };
+                });
+            client.submitStep(featheryFields);
+
+            client.registerEvent(stepKey, 'complete');
+        }
+
+        const newStepKey = nextStepKey(
+            activeStep.next_conditions,
+            elementType,
+            elementKey,
+            steps,
+            newFieldVals,
+            acceptedFile,
+            client,
+            onLoad,
+            updateFieldValues,
+            updateFieldOptions
+        );
+        if (!newStepKey) {
+            setFinishConfig({
+                finished: true,
+                redirectURL: activeStep.redirect_url
+            });
+        } else {
+            updateNewStepKey(newStepKey);
         }
     };
 
@@ -436,7 +426,7 @@ export default function Form({
                     });
                     form.reportValidity();
                 }
-                if (form.checkValidity()) submit('next');
+                if (form.checkValidity()) submit(true, 'button', elementKey);
             }}
             style={{
                 backgroundColor: `#${activeStep.default_background_color}`,
@@ -529,19 +519,19 @@ export default function Form({
                                       }
                                     : {}
                             }}
-                            disabled={field.link === 'next' && !isFilled}
+                            disabled={
+                                field.link === 'none' ||
+                                (field.link === 'submit' && !isFilled)
+                            }
                             type={
-                                !displaySteps && field.link === 'next'
+                                !displaySteps && field.link === 'submit'
                                     ? 'submit'
                                     : undefined
                             }
                             onClick={() => {
-                                if (!displaySteps) {
-                                    if (field.link !== 'next') {
-                                        if (field.link === 'skip')
-                                            linkStep = field.link_step;
-                                        submit(field.link);
-                                    }
+                                elementKey = field.text;
+                                if (!displaySteps && field.link === 'skip') {
+                                    submit(false, 'button', elementKey);
                                 }
                             }}
                             dangerouslySetInnerHTML={{

@@ -135,18 +135,10 @@ const getDefaultFieldValues = (steps) => {
     return fieldValues;
 };
 
-const prevStepKey = (prevConditions, seenStepKeys) => {
-    let prevKey = null;
-    prevConditions.forEach((cond) => {
-        if (seenStepKeys.has(cond.previous_step_key))
-            prevKey = cond.previous_step_key;
-    });
-    return prevKey;
-};
-
 const nextStepKey = (
     nextConditions,
-    nextStepKey,
+    elementType,
+    elementKey,
     steps,
     fieldValues,
     file,
@@ -156,20 +148,27 @@ const nextStepKey = (
     updateFieldOptions
 ) => {
     let newKey, defaultKey;
-    nextConditions.forEach((cond) => {
-        if (cond.default) defaultKey = cond.next_step_key;
-        else {
-            const userVal = fieldValues[cond.key];
-            if (!userVal) return;
+    nextConditions
+        .filter(
+            (cond) =>
+                cond.element_type === elementType &&
+                cond.element_key === elementKey
+        )
+        .forEach((cond) => {
+            if (!cond.key) defaultKey = cond.next_step_key;
+            else {
+                const userVal = fieldValues[cond.key];
+                if (!userVal) return null;
 
-            if (Array.isArray(userVal)) {
-                if (userVal.includes(cond.value)) newKey = cond.next_step_key;
-            } else {
-                if (userVal === cond.value) newKey = cond.next_step_key;
+                if (Array.isArray(userVal)) {
+                    if (userVal.includes(cond.value))
+                        newKey = cond.next_step_key;
+                } else {
+                    if (userVal === cond.value) newKey = cond.next_step_key;
+                }
             }
-        }
-    });
-    newKey = nextStepKey || newKey || defaultKey;
+        });
+    newKey = newKey || defaultKey;
     if (!newKey) return null;
 
     client.registerEvent(newKey, 'load');
@@ -223,7 +222,6 @@ export {
     getABVariant,
     getDefaultFieldValues,
     nextStepKey,
-    prevStepKey,
     getOrigin,
     recurseDepth
 };

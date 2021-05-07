@@ -15,7 +15,7 @@ export default class Client {
         const params = encodeGetParams({
             form_key: this.formKey
         });
-        const url = `${CDN_URL}api/panel/v2/?${params}`;
+        const url = `${CDN_URL}api/panel/v3/?${params}`;
         const options = {
             cache: 'no-store',
             headers: { Authorization: 'Token ' + apiKey }
