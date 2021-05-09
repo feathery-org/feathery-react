@@ -207,13 +207,15 @@ export default function Form({
         const target = e.target;
         let value = target.type === 'checkbox' ? target.checked : target.value;
         const key = target.id;
+        let newValues = null;
         activeStep.servar_fields.forEach((field) => {
             const servar = field.servar;
             if (servar.key !== key) return;
 
             if (servar.type === 'integer_field') value = parseInt(value);
-            updateFieldValues({ [servar.key]: value });
+            newValues = updateFieldValues({ [servar.key]: value });
         });
+        return newValues;
     };
 
     const handleOtherStateChange = (oldOtherVal) => (e) => {
@@ -230,12 +232,13 @@ export default function Form({
         } else {
             if (curFieldVal === oldOtherVal) curFieldVal = curOtherVal;
         }
-        updateFieldValues({ [target.id]: curFieldVal });
+        return updateFieldValues({ [target.id]: curFieldVal });
     };
 
     const handleMultiselectChange = (servarKey) => (e) => {
         const target = e.target;
         const opt = target.name;
+        let newValues = null;
         activeStep.servar_fields.forEach((field) => {
             const servar = field.servar;
             if (servar.key !== servarKey) return;
@@ -243,16 +246,21 @@ export default function Form({
             let val = fieldValues[servar.key];
             if (target.checked) val.push(opt);
             else val = val.filter((val) => val !== opt);
-            updateFieldValues({ [servar.key]: val });
+            newValues = updateFieldValues({ [servar.key]: val });
         });
+        return newValues;
     };
 
     const handleColorChange = (servarKey) => (color) => {
+        let newValues = null;
         activeStep.servar_fields.forEach((field) => {
             const servar = field.servar;
             if (servar.key !== servarKey) return;
-            updateFieldValues({ [servar.key]: color.hex.substr(1, 6) });
+            newValues = updateFieldValues({
+                [servar.key]: color.hex.substr(1, 6)
+            });
         });
+        return newValues;
     };
 
     const handleColorPickerClick = (servarKey) => () => {
@@ -264,8 +272,14 @@ export default function Form({
     };
 
     let elementKey = '';
-    const submit = (submitData, elementType, elementKey) => {
-        let newFieldVals = fieldValues;
+    const submit = (
+        submitData,
+        elementType,
+        elementKey,
+        trigger,
+        newValues = null
+    ) => {
+        let newFieldVals = newValues || fieldValues;
         if (submitData) {
             const formattedFields = formatStepFields(
                 activeStep,
@@ -308,6 +322,7 @@ export default function Form({
             activeStep.next_conditions,
             elementType,
             elementKey,
+            trigger,
             steps,
             newFieldVals,
             acceptedFile,
@@ -317,10 +332,12 @@ export default function Form({
             updateFieldOptions
         );
         if (!newStepKey) {
-            setFinishConfig({
-                finished: true,
-                redirectURL: activeStep.redirect_url
-            });
+            if (elementType === 'button') {
+                setFinishConfig({
+                    finished: true,
+                    redirectURL: activeStep.redirect_url
+                });
+            }
         } else {
             updateNewStepKey(newStepKey);
         }
@@ -426,7 +443,8 @@ export default function Form({
                     });
                     form.reportValidity();
                 }
-                if (form.checkValidity()) submit(true, 'button', elementKey);
+                if (form.checkValidity())
+                    submit(true, 'button', elementKey, 'click');
             }}
             style={{
                 backgroundColor: `#${activeStep.default_background_color}`,
@@ -531,7 +549,12 @@ export default function Form({
                             onClick={() => {
                                 elementKey = field.text;
                                 if (!displaySteps && field.link === 'skip') {
-                                    submit(false, 'button', elementKey);
+                                    submit(
+                                        false,
+                                        'button',
+                                        elementKey,
+                                        'click'
+                                    );
                                 }
                             }}
                             dangerouslySetInnerHTML={{
@@ -576,28 +599,36 @@ export default function Form({
                     }
                 }
 
+                const fieldLabel = servar.name ? (
+                    <label
+                        htmlFor={servar.key}
+                        style={{
+                            marginBottom: '10px'
+                        }}
+                    >
+                        {servar.name}
+                    </label>
+                ) : null;
+                const onClick = () =>
+                    submit(false, 'field', servar.key, 'click');
+                const onChange = (newValues) =>
+                    submit(false, 'field', servar.key, 'change', newValues);
+
                 let controlElement;
                 switch (servar.type) {
                     case 'file_upload':
                         controlElement = (
                             <>
-                                {servar.name && (
-                                    <label
-                                        htmlFor={servar.key}
-                                        style={{
-                                            marginBottom: '10px'
-                                        }}
-                                    >
-                                        {servar.name}
-                                    </label>
-                                )}
+                                {fieldLabel}
                                 <ReactForm.File
                                     id={servar.key}
                                     accept='image/*'
                                     required={servar.required}
                                     onChange={(e) => {
                                         setAcceptedFile(e.target.files[0]);
+                                        onChange();
                                     }}
+                                    onClick={onClick}
                                     style={{
                                         cursor: 'pointer'
                                     }}
@@ -608,21 +639,15 @@ export default function Form({
                     case 'checkbox':
                         controlElement = (
                             <>
-                                {servar.name && (
-                                    <label
-                                        htmlFor={servar.key}
-                                        style={{
-                                            marginBottom: '10px'
-                                        }}
-                                    >
-                                        {servar.name}
-                                    </label>
-                                )}
+                                {fieldLabel}
                                 <ReactForm.Check
                                     type='checkbox'
                                     id={servar.key}
                                     checked={fieldVal}
-                                    onChange={handleChange}
+                                    onChange={(e) => {
+                                        onChange(handleChange(e));
+                                    }}
+                                    onClick={onClick}
                                     style={{
                                         display: 'flex',
                                         alignItems: 'center'
@@ -634,16 +659,7 @@ export default function Form({
                     case 'dropdown':
                         controlElement = (
                             <>
-                                {servar.name && (
-                                    <label
-                                        htmlFor={servar.key}
-                                        style={{
-                                            marginBottom: '10px'
-                                        }}
-                                    >
-                                        {servar.name}
-                                    </label>
-                                )}
+                                {fieldLabel}
                                 <ReactForm.Control
                                     style={{
                                         height: `${field.field_height}${field.field_height_unit}`,
@@ -662,7 +678,10 @@ export default function Form({
                                     id={servar.key}
                                     value={fieldVal}
                                     required={servar.required}
-                                    onChange={handleChange}
+                                    onChange={(e) => {
+                                        onChange(handleChange(e));
+                                    }}
+                                    onClick={onClick}
                                     custom
                                 >
                                     <option
@@ -689,16 +708,7 @@ export default function Form({
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
                                 <>
-                                    {servar.name && (
-                                        <label
-                                            htmlFor={servar.key}
-                                            style={{
-                                                marginBottom: '10px'
-                                            }}
-                                        >
-                                            {servar.name}
-                                        </label>
-                                    )}
+                                    {fieldLabel}
                                     <ReactForm.Control
                                         type='email'
                                         pattern="^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$"
@@ -724,7 +734,10 @@ export default function Form({
                                         id={servar.key}
                                         value={fieldVal}
                                         required={servar.required}
-                                        onChange={handleChange}
+                                        onChange={(e) => {
+                                            onChange(handleChange(e));
+                                        }}
+                                        onClick={onClick}
                                         placeholder={metadata.placeholder || ''}
                                     />
                                 </>
@@ -733,23 +746,17 @@ export default function Form({
                                     servar={servar}
                                     field={field}
                                     type='email'
-                                    onChange={handleChange}
+                                    onChange={(e) => {
+                                        onChange(handleChange(e));
+                                    }}
+                                    onClick={onClick}
                                 />
                             );
                         break;
                     case 'multiselect':
                         controlElement = (
                             <>
-                                {servar.name && (
-                                    <label
-                                        htmlFor={servar.key}
-                                        style={{
-                                            marginBottom: '10px'
-                                        }}
-                                    >
-                                        {servar.name}
-                                    </label>
-                                )}
+                                {fieldLabel}
                                 {servar.metadata.options.map((opt) => {
                                     return (
                                         <ReactForm.Check
@@ -759,9 +766,13 @@ export default function Form({
                                             key={opt}
                                             label={opt}
                                             checked={fieldVal.includes(opt)}
-                                            onChange={handleMultiselectChange(
-                                                servar.key
-                                            )}
+                                            onChange={(e) => {
+                                                const newValues = handleMultiselectChange(
+                                                    servar.key
+                                                )(e);
+                                                onChange(newValues);
+                                            }}
+                                            onClick={onClick}
                                             style={{
                                                 display: 'flex',
                                                 alignItems: 'center',
@@ -786,9 +797,13 @@ export default function Form({
                                             checked={fieldVal.includes(
                                                 otherVal
                                             )}
-                                            onChange={handleMultiselectChange(
-                                                servar.key
-                                            )}
+                                            onChange={(e) => {
+                                                const newValues = handleMultiselectChange(
+                                                    servar.key
+                                                )(e);
+                                                onChange(newValues);
+                                            }}
+                                            onClick={onClick}
                                             style={{
                                                 display: 'flex',
                                                 alignItems: 'center'
@@ -818,9 +833,13 @@ export default function Form({
                                             }}
                                             id={servar.key}
                                             value={otherVal}
-                                            onChange={handleOtherStateChange(
-                                                otherVal
-                                            )}
+                                            onChange={(e) => {
+                                                const newValues = handleOtherStateChange(
+                                                    otherVal
+                                                )(e);
+                                                onChange(newValues);
+                                            }}
+                                            onClick={onClick}
                                         />
                                     </div>
                                 )}
@@ -830,16 +849,7 @@ export default function Form({
                     case 'select':
                         controlElement = (
                             <>
-                                {servar.name && (
-                                    <label
-                                        htmlFor={servar.key}
-                                        style={{
-                                            marginBottom: '10px'
-                                        }}
-                                    >
-                                        {servar.name}
-                                    </label>
-                                )}
+                                {fieldLabel}
                                 {servar.metadata.options.map((opt) => {
                                     return (
                                         <ReactForm.Check
@@ -848,7 +858,10 @@ export default function Form({
                                             label={opt}
                                             checked={fieldVal === opt}
                                             required={servar.required}
-                                            onChange={handleChange}
+                                            onChange={(e) => {
+                                                onChange(handleChange(e));
+                                            }}
+                                            onClick={onClick}
                                             value={opt}
                                             key={opt}
                                             style={{
@@ -871,7 +884,10 @@ export default function Form({
                                             id={servar.key}
                                             label='Other'
                                             checked={fieldVal === otherVal}
-                                            onChange={handleChange}
+                                            onChange={(e) => {
+                                                onChange(handleChange(e));
+                                            }}
+                                            onClick={onClick}
                                             value={otherVal}
                                             key={otherVal}
                                             style={{
@@ -903,9 +919,13 @@ export default function Form({
                                             }}
                                             id={servar.key}
                                             value={otherVal}
-                                            onChange={handleOtherStateChange(
-                                                otherVal
-                                            )}
+                                            onChange={(e) => {
+                                                const newValues = handleOtherStateChange(
+                                                    otherVal
+                                                )(e);
+                                                onChange(newValues);
+                                            }}
+                                            onClick={onClick}
                                         />
                                     </div>
                                 )}
@@ -916,16 +936,7 @@ export default function Form({
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
                                 <>
-                                    {servar.name && (
-                                        <label
-                                            htmlFor={servar.key}
-                                            style={{
-                                                marginBottom: '10px'
-                                            }}
-                                        >
-                                            {servar.name}
-                                        </label>
-                                    )}
+                                    {fieldLabel}
                                     <ReactForm.Control
                                         type='number'
                                         style={{
@@ -950,7 +961,10 @@ export default function Form({
                                         id={servar.key}
                                         value={fieldVal}
                                         required={servar.required}
-                                        onChange={handleChange}
+                                        onChange={(e) => {
+                                            onChange(handleChange(e));
+                                        }}
+                                        onClick={onClick}
                                         placeholder={metadata.placeholder || ''}
                                     />
                                 </>
@@ -959,23 +973,17 @@ export default function Form({
                                     servar={servar}
                                     field={field}
                                     type='number'
-                                    onChange={handleChange}
+                                    onChange={(e) => {
+                                        onChange(handleChange(e));
+                                    }}
+                                    onClick={onClick}
                                 />
                             );
                         break;
                     case 'hex_color':
                         controlElement = (
                             <>
-                                {servar.name && (
-                                    <label
-                                        htmlFor={servar.key}
-                                        style={{
-                                            marginBottom: '10px'
-                                        }}
-                                    >
-                                        {servar.name}
-                                    </label>
-                                )}
+                                {fieldLabel}
                                 <div
                                     css={{
                                         width: '36px',
@@ -984,7 +992,10 @@ export default function Form({
                                         cursor: 'pointer',
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
-                                    onClick={handleColorPickerClick(servar.key)}
+                                    onClick={(e) => {
+                                        onClick(e);
+                                        handleColorPickerClick(servar.key)();
+                                    }}
                                 />
                                 {displayColorPicker[servar.key] ? (
                                     <div
@@ -1007,9 +1018,12 @@ export default function Form({
                                         />
                                         <SketchPicker
                                             color={`#${fieldVal}`}
-                                            onChange={handleColorChange(
-                                                servar.key
-                                            )}
+                                            onChange={(color) => {
+                                                const newValues = handleColorChange(
+                                                    servar.key
+                                                )(color);
+                                                onChange(newValues);
+                                            }}
                                         />
                                     </div>
                                 ) : null}
@@ -1020,22 +1034,16 @@ export default function Form({
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
                                 <>
-                                    {servar.name && (
-                                        <label
-                                            htmlFor={servar.key}
-                                            style={{
-                                                marginBottom: '10px'
-                                            }}
-                                        >
-                                            {servar.name}
-                                        </label>
-                                    )}
+                                    {fieldLabel}
                                     <ReactForm.Control
                                         as='textarea'
                                         rows={metadata.num_rows}
                                         id={servar.key}
                                         value={fieldVal}
-                                        onChange={handleChange}
+                                        onChange={(e) => {
+                                            onChange(handleChange(e));
+                                        }}
+                                        onClick={onClick}
                                         placeholder={metadata.placeholder || ''}
                                         required={servar.required}
                                         style={{
@@ -1064,7 +1072,10 @@ export default function Form({
                                     servar={servar}
                                     field={field}
                                     type='text'
-                                    onChange={handleChange}
+                                    onChange={(e) => {
+                                        onChange(handleChange(e));
+                                    }}
+                                    onClick={onClick}
                                     multiline
                                 />
                             );
@@ -1073,16 +1084,7 @@ export default function Form({
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
                                 <>
-                                    {servar.name && (
-                                        <label
-                                            htmlFor={servar.key}
-                                            style={{
-                                                marginBottom: '10px'
-                                            }}
-                                        >
-                                            {servar.name}
-                                        </label>
-                                    )}
+                                    {fieldLabel}
                                     <ReactForm.Control
                                         type='url'
                                         style={{
@@ -1107,7 +1109,10 @@ export default function Form({
                                         id={servar.key}
                                         value={fieldVal}
                                         required={servar.required}
-                                        onChange={handleChange}
+                                        onChange={(e) => {
+                                            onChange(handleChange(e));
+                                        }}
+                                        onClick={onClick}
                                         placeholder={metadata.placeholder || ''}
                                     />
                                 </>
@@ -1116,7 +1121,10 @@ export default function Form({
                                     servar={servar}
                                     field={field}
                                     type='url'
-                                    onChange={handleChange}
+                                    onChange={(e) => {
+                                        onChange(handleChange(e));
+                                    }}
+                                    onClick={onClick}
                                 />
                             );
                         break;
@@ -1124,16 +1132,7 @@ export default function Form({
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
                                 <>
-                                    {servar.name && (
-                                        <label
-                                            htmlFor={servar.key}
-                                            style={{
-                                                marginBottom: '10px'
-                                            }}
-                                        >
-                                            {servar.name}
-                                        </label>
-                                    )}
+                                    {fieldLabel}
                                     <ReactForm.Control
                                         type='text'
                                         style={{
@@ -1158,7 +1157,10 @@ export default function Form({
                                         id={servar.key}
                                         value={fieldVal || ''}
                                         required={servar.required}
-                                        onChange={handleChange}
+                                        onChange={(e) => {
+                                            onChange(handleChange(e));
+                                        }}
+                                        onClick={onClick}
                                         placeholder={metadata.placeholder || ''}
                                     />
                                 </>
@@ -1167,7 +1169,10 @@ export default function Form({
                                     servar={servar}
                                     field={field}
                                     type='text'
-                                    onChange={handleChange}
+                                    onChange={(e) => {
+                                        onChange(handleChange(e));
+                                    }}
+                                    onClick={onClick}
                                 />
                             );
                 }

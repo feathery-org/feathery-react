@@ -139,6 +139,7 @@ const nextStepKey = (
     nextConditions,
     elementType,
     elementKey,
+    trigger,
     steps,
     fieldValues,
     file,
@@ -155,17 +156,23 @@ const nextStepKey = (
                 cond.element_key === elementKey
         )
         .forEach((cond) => {
-            if (!cond.key) defaultKey = cond.next_step_key;
-            else {
-                const userVal = fieldValues[cond.key];
-                if (!userVal) return null;
+            if (cond.trigger !== trigger) return;
 
-                if (Array.isArray(userVal)) {
-                    if (userVal.includes(cond.value))
-                        newKey = cond.next_step_key;
-                } else {
-                    if (userVal === cond.value) newKey = cond.next_step_key;
-                }
+            if (cond.rules.length === 0) defaultKey = cond.next_step_key;
+            else {
+                let rulesMet = true;
+                cond.rules.forEach((rule) => {
+                    const ruleVal = rule.value || '';
+                    const userVal = fieldValues[rule.key] || '';
+                    let equal;
+                    if (Array.isArray(userVal))
+                        equal = userVal.includes(ruleVal);
+                    else equal = userVal === ruleVal;
+                    rulesMet &=
+                        (equal && rule.comparison === 'equal') ||
+                        (!equal && rule.comparison === 'not_equal');
+                });
+                if (rulesMet) newKey = cond.next_step_key;
             }
         });
     newKey = newKey || defaultKey;
