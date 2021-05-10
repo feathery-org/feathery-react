@@ -366,30 +366,32 @@ export default function Form({
 
     let progressBarElements = null;
     if (activeStep.progress_bar) {
+        const pb = activeStep.progress_bar;
         if (activeStep.component_type === 'bootstrap') {
-            const percent = Math.round((100 * curDepth) / (maxDepth + 1));
+            const percent =
+                pb.progress || Math.round((100 * curDepth) / (maxDepth + 1));
             progressBarElements = [
                 <ProgressBar
                     key='progress'
                     style={{
                         height: '0.4rem',
-                        width: `${activeStep.progress_bar.bar_width}%`,
+                        width: `${pb.bar_width}%`,
                         maxWidth: '100%'
                     }}
                     css={{
                         '.progress-bar': {
                             margin: '0 0 0 0 !important',
-                            backgroundColor: `#${activeStep.progress_bar.bar_color} !important`
+                            backgroundColor: `#${pb.bar_color} !important`
                         }
                     }}
                     now={percent}
                 />
             ];
             const completionPercentage = `${percent}% completed`;
-            if (activeStep.progress_bar.percent_text_layout === 'top') {
+            if (pb.percent_text_layout === 'top') {
                 progressBarElements.splice(0, 0, completionPercentage);
             } else if (
-                activeStep.progress_bar.percent_text_layout === 'bottom'
+                pb.percent_text_layout === 'bottom'
             ) {
                 progressBarElements.splice(1, 0, completionPercentage);
             }
@@ -399,7 +401,7 @@ export default function Form({
                     key='progress'
                     curStep={curDepth}
                     maxStep={maxDepth + 1}
-                    progressBar={activeStep.progress_bar}
+                    progressBar={pb}
                 />
             ];
         }
