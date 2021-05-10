@@ -26,6 +26,7 @@ import './bootstrap-iso.css';
 export default function Form({
     // Public API
     formKey,
+    onChange = null,
     onLoad = null,
     onSubmit = null,
     onValidate = null,
@@ -611,8 +612,28 @@ export default function Form({
                 ) : null;
                 const onClick = () =>
                     submit(false, 'field', servar.key, 'click');
-                const onChange = (newValues) =>
+                const fieldOnChange = (newValues) => {
+                    if (typeof onChange === 'function') {
+                        const formattedFields = formatAllStepFields(
+                            steps,
+                            newValues,
+                            acceptedFile
+                        );
+                        onChange({
+                            changeKey: servar.key,
+                            fields: formattedFields,
+                            stepName: activeStep.key,
+                            lastStep: activeStep.next_conditions.length === 0,
+                            setValues: (userVals) =>
+                                (newValues = updateFieldValues(
+                                    userVals,
+                                    newValues
+                                )),
+                            setOptions: updateFieldOptions(steps)
+                        });
+                    }
                     submit(false, 'field', servar.key, 'change', newValues);
+                };
 
                 let controlElement;
                 switch (servar.type) {
@@ -626,7 +647,7 @@ export default function Form({
                                     required={servar.required}
                                     onChange={(e) => {
                                         setAcceptedFile(e.target.files[0]);
-                                        onChange();
+                                        fieldOnChange();
                                     }}
                                     onClick={onClick}
                                     style={{
@@ -645,7 +666,7 @@ export default function Form({
                                     id={servar.key}
                                     checked={fieldVal}
                                     onChange={(e) => {
-                                        onChange(handleChange(e));
+                                        fieldOnChange(handleChange(e));
                                     }}
                                     onClick={onClick}
                                     style={{
@@ -679,7 +700,7 @@ export default function Form({
                                     value={fieldVal}
                                     required={servar.required}
                                     onChange={(e) => {
-                                        onChange(handleChange(e));
+                                        fieldOnChange(handleChange(e));
                                     }}
                                     onClick={onClick}
                                     custom
@@ -735,7 +756,7 @@ export default function Form({
                                         value={fieldVal}
                                         required={servar.required}
                                         onChange={(e) => {
-                                            onChange(handleChange(e));
+                                            fieldOnChange(handleChange(e));
                                         }}
                                         onClick={onClick}
                                         placeholder={metadata.placeholder || ''}
@@ -747,7 +768,7 @@ export default function Form({
                                     field={field}
                                     type='email'
                                     onChange={(e) => {
-                                        onChange(handleChange(e));
+                                        fieldOnChange(handleChange(e));
                                     }}
                                     onClick={onClick}
                                 />
@@ -770,7 +791,7 @@ export default function Form({
                                                 const newValues = handleMultiselectChange(
                                                     servar.key
                                                 )(e);
-                                                onChange(newValues);
+                                                fieldOnChange(newValues);
                                             }}
                                             onClick={onClick}
                                             style={{
@@ -801,7 +822,7 @@ export default function Form({
                                                 const newValues = handleMultiselectChange(
                                                     servar.key
                                                 )(e);
-                                                onChange(newValues);
+                                                fieldOnChange(newValues);
                                             }}
                                             onClick={onClick}
                                             style={{
@@ -837,7 +858,7 @@ export default function Form({
                                                 const newValues = handleOtherStateChange(
                                                     otherVal
                                                 )(e);
-                                                onChange(newValues);
+                                                fieldOnChange(newValues);
                                             }}
                                             onClick={onClick}
                                         />
@@ -859,7 +880,7 @@ export default function Form({
                                             checked={fieldVal === opt}
                                             required={servar.required}
                                             onChange={(e) => {
-                                                onChange(handleChange(e));
+                                                fieldOnChange(handleChange(e));
                                             }}
                                             onClick={onClick}
                                             value={opt}
@@ -885,7 +906,7 @@ export default function Form({
                                             label='Other'
                                             checked={fieldVal === otherVal}
                                             onChange={(e) => {
-                                                onChange(handleChange(e));
+                                                fieldOnChange(handleChange(e));
                                             }}
                                             onClick={onClick}
                                             value={otherVal}
@@ -923,7 +944,7 @@ export default function Form({
                                                 const newValues = handleOtherStateChange(
                                                     otherVal
                                                 )(e);
-                                                onChange(newValues);
+                                                fieldOnChange(newValues);
                                             }}
                                             onClick={onClick}
                                         />
@@ -962,7 +983,7 @@ export default function Form({
                                         value={fieldVal}
                                         required={servar.required}
                                         onChange={(e) => {
-                                            onChange(handleChange(e));
+                                            fieldOnChange(handleChange(e));
                                         }}
                                         onClick={onClick}
                                         placeholder={metadata.placeholder || ''}
@@ -974,7 +995,7 @@ export default function Form({
                                     field={field}
                                     type='number'
                                     onChange={(e) => {
-                                        onChange(handleChange(e));
+                                        fieldOnChange(handleChange(e));
                                     }}
                                     onClick={onClick}
                                 />
@@ -1022,7 +1043,7 @@ export default function Form({
                                                 const newValues = handleColorChange(
                                                     servar.key
                                                 )(color);
-                                                onChange(newValues);
+                                                fieldOnChange(newValues);
                                             }}
                                         />
                                     </div>
@@ -1041,7 +1062,7 @@ export default function Form({
                                         id={servar.key}
                                         value={fieldVal}
                                         onChange={(e) => {
-                                            onChange(handleChange(e));
+                                            fieldOnChange(handleChange(e));
                                         }}
                                         onClick={onClick}
                                         placeholder={metadata.placeholder || ''}
@@ -1073,7 +1094,7 @@ export default function Form({
                                     field={field}
                                     type='text'
                                     onChange={(e) => {
-                                        onChange(handleChange(e));
+                                        fieldOnChange(handleChange(e));
                                     }}
                                     onClick={onClick}
                                     multiline
@@ -1110,7 +1131,7 @@ export default function Form({
                                         value={fieldVal}
                                         required={servar.required}
                                         onChange={(e) => {
-                                            onChange(handleChange(e));
+                                            fieldOnChange(handleChange(e));
                                         }}
                                         onClick={onClick}
                                         placeholder={metadata.placeholder || ''}
@@ -1122,7 +1143,7 @@ export default function Form({
                                     field={field}
                                     type='url'
                                     onChange={(e) => {
-                                        onChange(handleChange(e));
+                                        fieldOnChange(handleChange(e));
                                     }}
                                     onClick={onClick}
                                 />
@@ -1158,7 +1179,7 @@ export default function Form({
                                         value={fieldVal || ''}
                                         required={servar.required}
                                         onChange={(e) => {
-                                            onChange(handleChange(e));
+                                            fieldOnChange(handleChange(e));
                                         }}
                                         onClick={onClick}
                                         placeholder={metadata.placeholder || ''}
@@ -1170,7 +1191,7 @@ export default function Form({
                                     field={field}
                                     type='text'
                                     onChange={(e) => {
-                                        onChange(handleChange(e));
+                                        fieldOnChange(handleChange(e));
                                     }}
                                     onClick={onClick}
                                 />
