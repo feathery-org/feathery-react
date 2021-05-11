@@ -41,14 +41,14 @@ export default class Client {
         });
     }
 
-    async fetchFormValues() {
+    async fetchSession() {
         await initUserPromise;
         const { apiKey, userKey } = initInfo();
         const params = encodeGetParams({
             form_key: this.formKey,
             ...(userKey ? { fuser_key: userKey } : {})
         });
-        const url = `${API_URL}api/panel/values/?${params}`;
+        const url = `${API_URL}api/panel/session/?${params}`;
         const options = {
             cache: 'no-store',
             headers: { Authorization: 'Token ' + apiKey }

@@ -102,6 +102,43 @@ function Form({
         setSteps(JSON.parse(JSON.stringify(stepData)));
     };
 
+    const getNewStepKey = (
+        newKey,
+        stepsArg = null,
+        fieldValuesArg = null,
+        clientArg = null
+    ) => {
+        stepsArg = stepsArg || steps;
+        fieldValuesArg = fieldValuesArg || fieldValues;
+        clientArg = clientArg || client;
+
+        const depth = recurseDepth(stepsArg, getOrigin(stepsArg), newKey);
+        setCurDepth(depth);
+        setMaxDepth(depth + recurseDepth(stepsArg, newKey));
+        calculateDimensions(stepsArg[newKey]);
+
+        if (!displaySteps) {
+            if (typeof onLoad === 'function') {
+                const formattedFields = formatAllStepFields(
+                    stepsArg,
+                    fieldValuesArg,
+                    acceptedFile
+                );
+                onLoad({
+                    fields: formattedFields,
+                    stepName: newKey,
+                    lastStep: stepsArg[newKey].next_conditions.length === 0,
+                    setValues: (userVals) =>
+                        updateFieldValues(userVals, fieldValuesArg),
+                    setOptions: updateFieldOptions(stepsArg)
+                });
+            }
+            clientArg.registerEvent(newKey, 'load');
+        }
+
+        setStepKey(newKey);
+    };
+
     useEffect(() => {
         if (displaySteps === null) {
             if (client === null) {
@@ -117,20 +154,6 @@ function Form({
                             data[step.key] = step;
                         });
                         setSteps(data);
-
-                        let newKey;
-                        const hashKey = location.hash.substr(1);
-                        if (hashKey in data) newKey = hashKey;
-                        else {
-                            newKey = getOrigin(data);
-                            history.replace(
-                                location.pathname +
-                                    location.search +
-                                    `#${newKey}`
-                            );
-                        }
-                        setStepKey(newKey);
-
                         return data;
                     })
                     .catch((error) => console.log(error));
@@ -139,78 +162,75 @@ function Form({
                 // goes to Feathery origin, while the previous
                 // request goes to our CDN
                 clientInstance
-                    .fetchFormValues()
-                    .then((vals) => {
+                    .fetchSession()
+                    .then((session) => {
                         fetchPromise.then((data) => {
-                            updateFieldValues(
-                                vals,
+                            const newValues = updateFieldValues(
+                                session.field_values,
                                 getDefaultFieldValues(data)
+                            );
+                            const newKey =
+                                session.current_step_key || getOrigin(data);
+                            history.replace(
+                                location.pathname +
+                                    location.search +
+                                    `#${newKey}`
+                            );
+                            getNewStepKey(
+                                newKey,
+                                data,
+                                newValues,
+                                clientInstance
                             );
                         });
                     })
                     .catch((error) => {
                         // Use default values if origin fails
                         fetchPromise.then((data) => {
-                            updateFieldValues(
+                            const newValues = updateFieldValues(
                                 fieldValues,
                                 getDefaultFieldValues(data)
+                            );
+                            const newKey = getOrigin(data);
+                            history.replace(
+                                location.pathname +
+                                    location.search +
+                                    `#${newKey}`
+                            );
+                            getNewStepKey(
+                                newKey,
+                                data,
+                                newValues,
+                                clientInstance
                             );
                         });
                         console.log(error);
                     });
             }
         } else if (displaySteps !== steps || displayStepKey !== stepKey) {
-            updateFieldValues(getDefaultFieldValues(displaySteps));
+            const fieldVals = updateFieldValues(
+                getDefaultFieldValues(displaySteps)
+            );
             setSteps(displaySteps);
-            setStepKey(displayStepKey);
-            calculateDimensions(displaySteps[displayStepKey]);
+            getNewStepKey(displayStepKey, displaySteps, fieldVals);
         }
     }, [
         client,
         displayStepKey,
         displaySteps,
-        calculateDimensions,
         setClient,
         setSteps,
-        setStepKey,
+        getNewStepKey,
         getDefaultFieldValues,
         updateFieldValues
     ]);
 
     useEffect(() => {
-        if (!steps) return;
-
-        const depth = recurseDepth(steps, getOrigin(steps), stepKey);
-        setCurDepth(depth);
-        setMaxDepth(depth + recurseDepth(steps, stepKey));
-        calculateDimensions(activeStep);
-
-        if (!displaySteps) {
-            if (typeof onLoad === 'function') {
-                const formattedFields = formatAllStepFields(
-                    steps,
-                    fieldValues,
-                    acceptedFile
-                );
-                onLoad({
-                    fields: formattedFields,
-                    stepName: stepKey,
-                    lastStep: activeStep.next_conditions.length === 0,
-                    setValues: (userVals) =>
-                        updateFieldValues(userVals, fieldValues),
-                    setOptions: updateFieldOptions(steps)
-                });
-            }
-            client.registerEvent(stepKey, 'load');
-        }
-    }, [stepKey, displaySteps]);
-
-    useEffect(() => {
         return history.listen(() => {
             const hashKey = location.hash.substr(1);
-            if (hashKey in steps) setStepKey(hashKey);
+            if (hashKey in steps) getNewStepKey(hashKey);
         });
-    }, [steps, setStepKey]);
+    }, [steps, getNewStepKey]);
 
     if (!activeStep) return null;
     if (finishConfig.finished) {
@@ -355,7 +375,7 @@ function Form({
                 location.pathname + location.search + `#${newStepKey}`;
             if (elementType === 'button') history.push(newURL);
             else history.replace(newURL);
-            setStepKey(newStepKey);
+            getNewStepKey(newStepKey, steps, newFieldVals);
         }
     };
 
