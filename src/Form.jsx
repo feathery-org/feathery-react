@@ -4,6 +4,7 @@ import Button from 'react-bootstrap/Button';
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
+import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 
 import { MuiField, MuiProgress } from './components/MaterialUI';
 import Client from './utils/client';
@@ -23,7 +24,7 @@ import './bootstrap-iso.css';
 
 // apiKey and userKey are required if displayStep === null
 // totalSteps is required if displayStep !== null
-export default function Form({
+function Form({
     // Public API
     formKey,
     onChange = null,
@@ -41,10 +42,10 @@ export default function Form({
     setFormDimensions = () => {}
 }) {
     const [client, setClient] = useState(null);
+    const history = useHistory();
 
     const [steps, setSteps] = useState(null);
     const [stepKey, setStepKey] = useState(displayStepKey);
-    const [seenStepKeys, setSeenStepKeys] = useState(new Set());
     const [fieldValues, setFieldValues] = useState(initialValues);
 
     const [finishConfig, setFinishConfig] = useState({
@@ -63,7 +64,7 @@ export default function Form({
         displaySteps ? Object.keys(displaySteps).length : 0
     );
 
-    let activeStep = steps ? steps[stepKey] : null;
+    const activeStep = steps ? steps[stepKey] : null;
 
     const calculateDimensions = calculateDimensionsHelper(
         dimensions,
@@ -101,19 +102,6 @@ export default function Form({
         setSteps(JSON.parse(JSON.stringify(stepData)));
     };
 
-    const updateNewStepKey = (newStepKey, data = null) => {
-        data = data || steps;
-        activeStep = data[newStepKey];
-
-        calculateDimensions(activeStep);
-        setStepKey(newStepKey);
-        setSeenStepKeys(new Set([...seenStepKeys, newStepKey]));
-
-        const depth = recurseDepth(data, getOrigin(data), newStepKey);
-        setCurDepth(depth);
-        setMaxDepth(depth + recurseDepth(data, newStepKey));
-    };
-
     useEffect(() => {
         if (displaySteps === null) {
             if (client === null) {
@@ -128,18 +116,22 @@ export default function Form({
                         getABVariant(stepsResponse).forEach((step) => {
                             data[step.key] = step;
                         });
-                        updateFieldValues(
-                            fieldValues,
-                            getDefaultFieldValues(data)
-                        );
-
                         setSteps(data);
-                        const originKey = getOrigin(data);
-                        updateNewStepKey(originKey, data);
 
-                        // register that initial form step was loaded
-                        clientInstance.registerEvent(originKey, 'load');
-                        return [data, originKey];
+                        let newKey;
+                        const hashKey = location.hash.substr(1);
+                        if (hashKey in data) newKey = hashKey;
+                        else {
+                            newKey = getOrigin(data);
+                            history.replace(
+                                location.pathname +
+                                    location.search +
+                                    `#${newKey}`
+                            );
+                        }
+                        setStepKey(newKey);
+
+                        return data;
                     })
                     .catch((error) => console.log(error));
 
@@ -149,35 +141,23 @@ export default function Form({
                 clientInstance
                     .fetchFormValues()
                     .then((vals) => {
-                        fetchPromise.then(([data, originKey]) => {
-                            const newFieldValues = updateFieldValues(
+                        fetchPromise.then((data) => {
+                            updateFieldValues(
                                 vals,
                                 getDefaultFieldValues(data)
                             );
-
-                            if (typeof onLoad === 'function') {
-                                const formattedFields = formatAllStepFields(
-                                    data,
-                                    newFieldValues,
-                                    acceptedFile
-                                );
-                                onLoad({
-                                    fields: formattedFields,
-                                    stepName: originKey,
-                                    lastStep:
-                                        data[originKey].next_conditions
-                                            .length === 0,
-                                    setValues: (userVals) =>
-                                        updateFieldValues(
-                                            userVals,
-                                            newFieldValues
-                                        ),
-                                    setOptions: updateFieldOptions(steps)
-                                });
-                            }
                         });
                     })
-                    .catch((error) => console.log(error));
+                    .catch((error) => {
+                        // Use default values if origin fails
+                        fetchPromise.then((data) => {
+                            updateFieldValues(
+                                fieldValues,
+                                getDefaultFieldValues(data)
+                            );
+                        });
+                        console.log(error);
+                    });
             }
         } else if (displaySteps !== steps || displayStepKey !== stepKey) {
             updateFieldValues(getDefaultFieldValues(displaySteps));
@@ -197,6 +177,42 @@ export default function Form({
         updateFieldValues
     ]);
 
+    useEffect(() => {
+        if (!steps) return;
+
+        const depth = recurseDepth(steps, getOrigin(steps), stepKey);
+        setCurDepth(depth);
+        setMaxDepth(depth + recurseDepth(steps, stepKey));
+        calculateDimensions(activeStep);
+
+        if (!displaySteps) {
+            if (typeof onLoad === 'function') {
+                const formattedFields = formatAllStepFields(
+                    steps,
+                    fieldValues,
+                    acceptedFile
+                );
+                onLoad({
+                    fields: formattedFields,
+                    stepName: stepKey,
+                    lastStep: activeStep.next_conditions.length === 0,
+                    setValues: (userVals) =>
+                        updateFieldValues(userVals, fieldValues),
+                    setOptions: updateFieldOptions(steps)
+                });
+            }
+            client.registerEvent(stepKey, 'load');
+        }
+    }, [stepKey, displaySteps]);
+
+    useEffect(() => {
+        return history.listen(() => {
+            const hashKey = location.hash.substr(1);
+            if (hashKey in steps) setStepKey(hashKey);
+        });
+    }, [steps, setStepKey]);
+
+    if (!activeStep) return null;
     if (finishConfig.finished) {
         if (finishConfig.redirectURL) {
             window.location.href = finishConfig.redirectURL;
@@ -325,12 +341,7 @@ export default function Form({
             elementKey,
             trigger,
             steps,
-            newFieldVals,
-            acceptedFile,
-            client,
-            onLoad,
-            updateFieldValues,
-            updateFieldOptions
+            newFieldVals
         );
         if (!newStepKey) {
             if (elementType === 'button') {
@@ -340,11 +351,13 @@ export default function Form({
                 });
             }
         } else {
-            updateNewStepKey(newStepKey);
+            const newURL =
+                location.pathname + location.search + `#${newStepKey}`;
+            if (elementType === 'button') history.push(newURL);
+            else history.replace(newURL);
+            setStepKey(newStepKey);
         }
     };
-
-    if (!activeStep) return null;
 
     let isFilled = true;
     for (const field of activeStep.servar_fields) {
@@ -390,9 +403,7 @@ export default function Form({
             const completionPercentage = `${percent}% completed`;
             if (pb.percent_text_layout === 'top') {
                 progressBarElements.splice(0, 0, completionPercentage);
-            } else if (
-                pb.percent_text_layout === 'bottom'
-            ) {
+            } else if (pb.percent_text_layout === 'bottom') {
                 progressBarElements.splice(1, 0, completionPercentage);
             }
         } else {
@@ -1226,5 +1237,15 @@ export default function Form({
                 );
             })}
         </ReactForm>
+    );
+}
+
+export default function FormWithRouter(props) {
+    return (
+        <BrowserRouter>
+            <Route path='/'>
+                <Form {...props} />
+            </Route>
+        </BrowserRouter>
     );
 }

@@ -141,12 +141,7 @@ const nextStepKey = (
     elementKey,
     trigger,
     steps,
-    fieldValues,
-    file,
-    client,
-    onLoad,
-    updateFieldValues,
-    updateFieldOptions
+    fieldValues
 ) => {
     let newKey, defaultKey;
     nextConditions
@@ -175,21 +170,7 @@ const nextStepKey = (
                 if (rulesMet) newKey = cond.next_step_key;
             }
         });
-    newKey = newKey || defaultKey;
-    if (!newKey) return null;
-
-    client.registerEvent(newKey, 'load');
-    if (typeof onLoad === 'function') {
-        const formattedFields = formatAllStepFields(steps, fieldValues, file);
-        onLoad({
-            fields: formattedFields,
-            stepName: newKey,
-            lastStep: steps[newKey].next_conditions.length === 0,
-            setValues: updateFieldValues,
-            setOptions: updateFieldOptions(steps)
-        });
-    }
-    return newKey;
+    return newKey || defaultKey;
 };
 
 const getOrigin = (steps) => {
