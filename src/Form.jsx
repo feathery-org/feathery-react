@@ -531,7 +531,7 @@ function Form({
                         paddingTop: `${field.padding_top}px`,
                         display: 'flex',
                         flexDirection: 'column',
-                        alignItems: field.layout,
+                        textAlign: field.layout,
                         justifyContent: field.vertical_layout
                     }}
                 >
