@@ -22,6 +22,12 @@ import {
 
 import './bootstrap-iso.css';
 
+const buttonAlignmentMap = {
+    left: 'flex-start',
+    center: 'center',
+    right: 'flex-end'
+};
+
 // apiKey and userKey are required if displayStep === null
 // totalSteps is required if displayStep !== null
 function Form({
@@ -531,6 +537,7 @@ function Form({
                         paddingTop: `${field.padding_top}px`,
                         display: 'flex',
                         flexDirection: 'column',
+                        alignItems: buttonAlignmentMap[field.layout],
                         textAlign: field.layout,
                         justifyContent: field.vertical_layout
                     }}
