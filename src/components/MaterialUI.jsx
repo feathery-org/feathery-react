@@ -54,8 +54,18 @@ function MuiProgress({ curStep, maxStep, progressBar }) {
     );
 }
 
-function MuiField({ servar, field, type, onChange, onClick, multiline = false }) {
+function MuiField({
+    field,
+    type,
+    fieldValue,
+    onChange,
+    onClick,
+    pattern,
+    multiline = false
+}) {
+    const servar = field.servar;
     const rows = multiline ? field.metadata.num_rows : null;
+    const inputProps = pattern ? { pattern } : {};
     return (
         <TextField
             label={servar.name}
@@ -100,8 +110,9 @@ function MuiField({ servar, field, type, onChange, onClick, multiline = false })
                     fontSize: `${field.font_size}px`
                 }
             }}
+            inputProps={inputProps}
             id={servar.key}
-            value={servar.value}
+            value={fieldValue || ''}
             required={servar.required}
             onChange={onChange}
             onClick={onClick}

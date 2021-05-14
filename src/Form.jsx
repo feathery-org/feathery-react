@@ -6,6 +6,7 @@ import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 
+import { BootstrapField } from './components/Bootstrap';
 import { MuiField, MuiProgress } from './components/MaterialUI';
 import Client from './utils/client';
 import {
@@ -17,10 +18,12 @@ import {
     getDefaultFieldValues,
     nextStepKey,
     getOrigin,
-    recurseDepth
+    recurseDepth,
+    states
 } from './utils/formHelperFunctions';
 
 import './bootstrap-iso.css';
+import GooglePlaces from './components/GooglePlaces';
 
 const buttonAlignmentMap = {
     left: 'flex-start',
@@ -69,6 +72,7 @@ function Form({
     const [maxDepth, setMaxDepth] = useState(
         displaySteps ? Object.keys(displaySteps).length : 0
     );
+    const [googleKey, setGoogleKey] = useState('');
 
     const activeStep = steps ? steps[stepKey] : null;
 
@@ -170,6 +174,7 @@ function Form({
                 clientInstance
                     .fetchSession()
                     .then((session) => {
+                        setGoogleKey(session.google_api_key);
                         fetchPromise.then((data) => {
                             const newValues = updateFieldValues(
                                 session.field_values,
@@ -383,6 +388,26 @@ function Form({
             else history.replace(newURL);
             getNewStepKey(newStepKey, steps, newFieldVals);
         }
+    };
+
+    const fieldOnChange = (fieldKey, newValues) => {
+        if (typeof onChange === 'function') {
+            const formattedFields = formatAllStepFields(
+                steps,
+                newValues,
+                acceptedFile
+            );
+            onChange({
+                changeKey: fieldKey,
+                fields: formattedFields,
+                stepName: activeStep.key,
+                lastStep: activeStep.next_conditions.length === 0,
+                setValues: (userVals) =>
+                    (newValues = updateFieldValues(userVals, newValues)),
+                setOptions: updateFieldOptions(steps)
+            });
+        }
+        submit(false, 'field', fieldKey, 'change', newValues);
     };
 
     let isFilled = true;
@@ -652,28 +677,6 @@ function Form({
                 ) : null;
                 const onClick = () =>
                     submit(false, 'field', servar.key, 'click');
-                const fieldOnChange = (newValues) => {
-                    if (typeof onChange === 'function') {
-                        const formattedFields = formatAllStepFields(
-                            steps,
-                            newValues,
-                            acceptedFile
-                        );
-                        onChange({
-                            changeKey: servar.key,
-                            fields: formattedFields,
-                            stepName: activeStep.key,
-                            lastStep: activeStep.next_conditions.length === 0,
-                            setValues: (userVals) =>
-                                (newValues = updateFieldValues(
-                                    userVals,
-                                    newValues
-                                )),
-                            setOptions: updateFieldOptions(steps)
-                        });
-                    }
-                    submit(false, 'field', servar.key, 'change', newValues);
-                };
 
                 let controlElement;
                 switch (servar.type) {
@@ -687,7 +690,7 @@ function Form({
                                     required={servar.required}
                                     onChange={(e) => {
                                         setAcceptedFile(e.target.files[0]);
-                                        fieldOnChange();
+                                        fieldOnChange(servar.key, fieldValues);
                                     }}
                                     onClick={onClick}
                                     style={{
@@ -706,7 +709,10 @@ function Form({
                                     id={servar.key}
                                     checked={fieldVal}
                                     onChange={(e) => {
-                                        fieldOnChange(handleChange(e));
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleChange(e)
+                                        );
                                     }}
                                     onClick={onClick}
                                     style={{
@@ -740,7 +746,10 @@ function Form({
                                     value={fieldVal}
                                     required={servar.required}
                                     onChange={(e) => {
-                                        fieldOnChange(handleChange(e));
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleChange(e)
+                                        );
                                     }}
                                     onClick={onClick}
                                     custom
@@ -759,7 +768,62 @@ function Form({
                                         {metadata.placeholder || 'Select...'}
                                     </option>
                                     {servar.metadata.options.map((option) => (
-                                        <option key={option}>{option}</option>
+                                        <option key={option} value={option}>
+                                            {option}
+                                        </option>
+                                    ))}
+                                </ReactForm.Control>
+                            </>
+                        );
+                        break;
+                    case 'gmap_state':
+                        controlElement = (
+                            <>
+                                {fieldLabel}
+                                <ReactForm.Control
+                                    style={{
+                                        height: `${field.field_height}${field.field_height_unit}`,
+                                        width: `${field.field_width}${field.field_width_unit}`,
+                                        maxWidth: '100%',
+                                        backgroundColor: `#${field.background_color}`,
+                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                        fontSize: `${field.font_size}px`
+                                    }}
+                                    css={{
+                                        '&:focus': {
+                                            boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
+                                        }
+                                    }}
+                                    as='select'
+                                    id={servar.key}
+                                    value={fieldVal}
+                                    required={servar.required}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleChange(e)
+                                        );
+                                    }}
+                                    onClick={onClick}
+                                    custom
+                                >
+                                    <option
+                                        key=''
+                                        value=''
+                                        disabled
+                                        style={{
+                                            color: `#${metadata.placeholder_color}`,
+                                            fontStyle: metadata.placeholder_italic
+                                                ? 'italic'
+                                                : 'normal'
+                                        }}
+                                    >
+                                        {metadata.placeholder || 'State'}
+                                    </option>
+                                    {states.map((state) => (
+                                        <option key={state} value={state}>
+                                            {state}
+                                        </option>
                                     ))}
                                 </ReactForm.Control>
                             </>
@@ -768,49 +832,33 @@ function Form({
                     case 'email':
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
-                                <>
-                                    {fieldLabel}
-                                    <ReactForm.Control
-                                        type='email'
-                                        pattern="^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$"
-                                        style={{
-                                            height: `${field.field_height}${field.field_height_unit}`,
-                                            width: `${field.field_width}${field.field_width_unit}`,
-                                            maxWidth: '100%',
-                                            backgroundColor: `#${field.background_color}`,
-                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                        }}
-                                        css={{
-                                            '&::placeholder': {
-                                                color: `#${metadata.placeholder_color} !important`,
-                                                fontSize: `${field.font_size}px`,
-                                                fontStyle: metadata.placeholder_italic
-                                                    ? 'italic !important'
-                                                    : 'normal !important'
-                                            },
-                                            '&:focus': {
-                                                boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
-                                            }
-                                        }}
-                                        id={servar.key}
-                                        value={fieldVal}
-                                        required={servar.required}
-                                        onChange={(e) => {
-                                            fieldOnChange(handleChange(e));
-                                        }}
-                                        onClick={onClick}
-                                        placeholder={metadata.placeholder || ''}
-                                    />
-                                </>
-                            ) : (
-                                <MuiField
-                                    servar={servar}
+                                <BootstrapField
+                                    label={fieldLabel}
                                     field={field}
                                     type='email'
+                                    fieldValue={fieldVal}
                                     onChange={(e) => {
-                                        fieldOnChange(handleChange(e));
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleChange(e)
+                                        );
                                     }}
                                     onClick={onClick}
+                                    pattern="^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$"
+                                />
+                            ) : (
+                                <MuiField
+                                    field={field}
+                                    type='email'
+                                    fieldValue={fieldVal}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleChange(e)
+                                        );
+                                    }}
+                                    onClick={onClick}
+                                    pattern="^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$"
                                 />
                             );
                         break;
@@ -831,7 +879,10 @@ function Form({
                                                 const newValues = handleMultiselectChange(
                                                     servar.key
                                                 )(e);
-                                                fieldOnChange(newValues);
+                                                fieldOnChange(
+                                                    servar.key,
+                                                    newValues
+                                                );
                                             }}
                                             onClick={onClick}
                                             style={{
@@ -862,7 +913,10 @@ function Form({
                                                 const newValues = handleMultiselectChange(
                                                     servar.key
                                                 )(e);
-                                                fieldOnChange(newValues);
+                                                fieldOnChange(
+                                                    servar.key,
+                                                    newValues
+                                                );
                                             }}
                                             onClick={onClick}
                                             style={{
@@ -898,7 +952,10 @@ function Form({
                                                 const newValues = handleOtherStateChange(
                                                     otherVal
                                                 )(e);
-                                                fieldOnChange(newValues);
+                                                fieldOnChange(
+                                                    servar.key,
+                                                    newValues
+                                                );
                                             }}
                                             onClick={onClick}
                                         />
@@ -920,7 +977,10 @@ function Form({
                                             checked={fieldVal === opt}
                                             required={servar.required}
                                             onChange={(e) => {
-                                                fieldOnChange(handleChange(e));
+                                                fieldOnChange(
+                                                    servar.key,
+                                                    handleChange(e)
+                                                );
                                             }}
                                             onClick={onClick}
                                             value={opt}
@@ -946,7 +1006,10 @@ function Form({
                                             label='Other'
                                             checked={fieldVal === otherVal}
                                             onChange={(e) => {
-                                                fieldOnChange(handleChange(e));
+                                                fieldOnChange(
+                                                    servar.key,
+                                                    handleChange(e)
+                                                );
                                             }}
                                             onClick={onClick}
                                             value={otherVal}
@@ -984,7 +1047,10 @@ function Form({
                                                 const newValues = handleOtherStateChange(
                                                     otherVal
                                                 )(e);
-                                                fieldOnChange(newValues);
+                                                fieldOnChange(
+                                                    servar.key,
+                                                    newValues
+                                                );
                                             }}
                                             onClick={onClick}
                                         />
@@ -996,46 +1062,29 @@ function Form({
                     case 'integer_field':
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
-                                <>
-                                    {fieldLabel}
-                                    <ReactForm.Control
-                                        type='number'
-                                        style={{
-                                            height: `${field.field_height}${field.field_height_unit}`,
-                                            width: `${field.field_width}${field.field_width_unit}`,
-                                            maxWidth: '100%',
-                                            backgroundColor: `#${field.background_color}`,
-                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                        }}
-                                        css={{
-                                            '&::placeholder': {
-                                                color: `#${metadata.placeholder_color} !important`,
-                                                fontSize: `${field.font_size}px`,
-                                                fontStyle: metadata.placeholder_italic
-                                                    ? 'italic !important'
-                                                    : 'normal !important'
-                                            },
-                                            '&:focus': {
-                                                boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
-                                            }
-                                        }}
-                                        id={servar.key}
-                                        value={fieldVal}
-                                        required={servar.required}
-                                        onChange={(e) => {
-                                            fieldOnChange(handleChange(e));
-                                        }}
-                                        onClick={onClick}
-                                        placeholder={metadata.placeholder || ''}
-                                    />
-                                </>
-                            ) : (
-                                <MuiField
-                                    servar={servar}
+                                <BootstrapField
+                                    label={fieldLabel}
                                     field={field}
                                     type='number'
+                                    fieldValue={fieldVal}
                                     onChange={(e) => {
-                                        fieldOnChange(handleChange(e));
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleChange(e)
+                                        );
+                                    }}
+                                    onClick={onClick}
+                                />
+                            ) : (
+                                <MuiField
+                                    field={field}
+                                    type='number'
+                                    fieldValue={fieldVal}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleChange(e)
+                                        );
                                     }}
                                     onClick={onClick}
                                 />
@@ -1083,7 +1132,10 @@ function Form({
                                                 const newValues = handleColorChange(
                                                     servar.key
                                                 )(color);
-                                                fieldOnChange(newValues);
+                                                fieldOnChange(
+                                                    servar.key,
+                                                    newValues
+                                                );
                                             }}
                                         />
                                     </div>
@@ -1094,47 +1146,30 @@ function Form({
                     case 'text_area':
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
-                                <>
-                                    {fieldLabel}
-                                    <ReactForm.Control
-                                        as='textarea'
-                                        rows={metadata.num_rows}
-                                        id={servar.key}
-                                        value={fieldVal}
-                                        onChange={(e) => {
-                                            fieldOnChange(handleChange(e));
-                                        }}
-                                        onClick={onClick}
-                                        placeholder={metadata.placeholder || ''}
-                                        required={servar.required}
-                                        style={{
-                                            resize: 'none',
-                                            width: `${field.field_width}${field.field_width_unit}`,
-                                            maxWidth: '100%',
-                                            backgroundColor: `#${field.background_color}`,
-                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                        }}
-                                        css={{
-                                            '&::placeholder': {
-                                                color: `#${metadata.placeholder_color} !important`,
-                                                fontSize: `${field.font_size}px`,
-                                                fontStyle: metadata.placeholder_italic
-                                                    ? 'italic !important'
-                                                    : 'normal !important'
-                                            },
-                                            '&:focus': {
-                                                boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
-                                            }
-                                        }}
-                                    />
-                                </>
+                                <BootstrapField
+                                    label={fieldLabel}
+                                    field={field}
+                                    type='textarea'
+                                    fieldValue={fieldVal}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleChange(e)
+                                        );
+                                    }}
+                                    onClick={onClick}
+                                    rows={metadata.num_rows}
+                                />
                             ) : (
                                 <MuiField
-                                    servar={servar}
                                     field={field}
                                     type='text'
+                                    fieldValue={fieldVal}
                                     onChange={(e) => {
-                                        fieldOnChange(handleChange(e));
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleChange(e)
+                                        );
                                     }}
                                     onClick={onClick}
                                     multiline
@@ -1144,46 +1179,29 @@ function Form({
                     case 'url':
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
-                                <>
-                                    {fieldLabel}
-                                    <ReactForm.Control
-                                        type='url'
-                                        style={{
-                                            height: `${field.field_height}${field.field_height_unit}`,
-                                            width: `${field.field_width}${field.field_width_unit}`,
-                                            maxWidth: '100%',
-                                            backgroundColor: `#${field.background_color}`,
-                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                        }}
-                                        css={{
-                                            '&::placeholder': {
-                                                color: `#${metadata.placeholder_color} !important`,
-                                                fontSize: `${field.font_size}px`,
-                                                fontStyle: metadata.placeholder_italic
-                                                    ? 'italic !important'
-                                                    : 'normal !important'
-                                            },
-                                            '&:focus': {
-                                                boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
-                                            }
-                                        }}
-                                        id={servar.key}
-                                        value={fieldVal}
-                                        required={servar.required}
-                                        onChange={(e) => {
-                                            fieldOnChange(handleChange(e));
-                                        }}
-                                        onClick={onClick}
-                                        placeholder={metadata.placeholder || ''}
-                                    />
-                                </>
-                            ) : (
-                                <MuiField
-                                    servar={servar}
+                                <BootstrapField
+                                    label={fieldLabel}
                                     field={field}
                                     type='url'
+                                    fieldValue={fieldVal}
                                     onChange={(e) => {
-                                        fieldOnChange(handleChange(e));
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleChange(e)
+                                        );
+                                    }}
+                                    onClick={onClick}
+                                />
+                            ) : (
+                                <MuiField
+                                    field={field}
+                                    type='url'
+                                    fieldValue={fieldVal}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleChange(e)
+                                        );
                                     }}
                                     onClick={onClick}
                                 />
@@ -1192,46 +1210,29 @@ function Form({
                     default:
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
-                                <>
-                                    {fieldLabel}
-                                    <ReactForm.Control
-                                        type='text'
-                                        style={{
-                                            height: `${field.field_height}${field.field_height_unit}`,
-                                            width: `${field.field_width}${field.field_width_unit}`,
-                                            maxWidth: '100%',
-                                            backgroundColor: `#${field.background_color}`,
-                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
-                                        }}
-                                        css={{
-                                            '&::placeholder': {
-                                                color: `#${metadata.placeholder_color} !important`,
-                                                fontSize: `${field.font_size}px`,
-                                                fontStyle: metadata.placeholder_italic
-                                                    ? 'italic !important'
-                                                    : 'normal !important'
-                                            },
-                                            '&:focus': {
-                                                boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
-                                            }
-                                        }}
-                                        id={servar.key}
-                                        value={fieldVal || ''}
-                                        required={servar.required}
-                                        onChange={(e) => {
-                                            fieldOnChange(handleChange(e));
-                                        }}
-                                        onClick={onClick}
-                                        placeholder={metadata.placeholder || ''}
-                                    />
-                                </>
-                            ) : (
-                                <MuiField
-                                    servar={servar}
+                                <BootstrapField
+                                    label={fieldLabel}
                                     field={field}
                                     type='text'
+                                    fieldValue={fieldVal}
                                     onChange={(e) => {
-                                        fieldOnChange(handleChange(e));
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleChange(e)
+                                        );
+                                    }}
+                                    onClick={onClick}
+                                />
+                            ) : (
+                                <MuiField
+                                    field={field}
+                                    type='text'
+                                    fieldValue={fieldVal}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleChange(e)
+                                        );
                                     }}
                                     onClick={onClick}
                                 />
@@ -1257,12 +1258,21 @@ function Form({
                             justifyContent: field.vertical_layout,
                             width: '100%'
                         }}
-                        key={i}
+                        key={servar.key}
                     >
                         {controlElement}
                     </div>
                 );
             })}
+            {!displaySteps && (
+                <GooglePlaces
+                    googleKey={googleKey}
+                    activeStep={activeStep}
+                    steps={steps}
+                    setFieldValues={setFieldValues}
+                    onChange={fieldOnChange}
+                />
+            )}
         </ReactForm>
     );
 }
