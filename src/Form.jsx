@@ -391,6 +391,7 @@ function Form({
     };
 
     const fieldOnChange = (fieldKey, newValues) => {
+        if (displaySteps) return;
         if (typeof onChange === 'function') {
             const formattedFields = formatAllStepFields(
                 steps,
