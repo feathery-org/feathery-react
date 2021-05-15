@@ -248,9 +248,7 @@ const recurseDepth = (steps, startKey, endKey = null) => {
         maxDepth = depth;
 
         step.next_conditions.forEach((condition) => {
-            const nextStep = steps[condition.next_step_key];
-            if (endKey || condition.default)
-                stepQueue.push([nextStep, depth + 1]);
+            stepQueue.push([steps[condition.next_step_key], depth + 1]);
         });
     }
     return maxDepth;

@@ -266,6 +266,19 @@ function Form({
         return newValues;
     };
 
+    const handleButtonGroupChange = (e) => {
+        const fieldKey = e.target.id;
+
+        let newValues = null;
+        activeStep.servar_fields.forEach((field) => {
+            const servar = field.servar;
+            if (servar.key !== fieldKey) return;
+
+            newValues = updateFieldValues({ [servar.key]: e.target.key });
+        });
+        return newValues;
+    };
+
     const handleOtherStateChange = (oldOtherVal) => (e) => {
         const target = e.target;
         const curOtherVal = target.value;
@@ -537,6 +550,8 @@ function Form({
                         justifyContent: activeStep.progress_bar.vertical_layout,
                         paddingBottom: `${activeStep.progress_bar.padding_bottom}px`,
                         paddingTop: `${activeStep.progress_bar.padding_top}px`,
+                        paddingLeft: `${activeStep.progress_bar.padding_left}px`,
+                        paddingRight: `${activeStep.progress_bar.padding_right}px`,
                         color: `#${activeStep.progress_bar.font_color}`,
                         fontStyle: activeStep.progress_bar.font_italic
                             ? 'italic'
@@ -561,6 +576,8 @@ function Form({
                         gridRowEnd: field.row_index_end + 2,
                         paddingBottom: `${field.padding_bottom}px`,
                         paddingTop: `${field.padding_top}px`,
+                        paddingLeft: `${field.padding_left}px`,
+                        paddingRight: `${field.padding_right}px`,
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: buttonAlignmentMap[field.layout],
@@ -646,10 +663,25 @@ function Form({
                     )}
                 </div>
             ))}
-            {activeStep.servar_fields.map((field, i) => {
+            {activeStep.servar_fields.map((field) => {
                 const servar = field.servar;
                 const fieldVal = fieldValues[servar.key];
                 const metadata = field.metadata;
+
+                const hover = {};
+                const select = {};
+                if (field.hover_border_color)
+                    hover.borderColor = `#${field.hover_border_color} !important`;
+                if (field.hover_background_color)
+                    hover.backgroundColor = `#${field.hover_background_color} !important`;
+                if (field.hover_font_color)
+                    hover.color = `#${field.hover_font_color} !important`;
+                if (field.selected_border_color)
+                    select.borderColor = `#${field.selected_border_color} !important`;
+                if (field.selected_background_color)
+                    select.backgroundColor = `#${field.selected_background_color} !important`;
+                if (field.selected_font_color)
+                    select.color = `#${field.selected_font_color} !important`;
 
                 let otherVal = '';
                 if (servar.metadata.other) {
@@ -701,6 +733,61 @@ function Form({
                             </>
                         );
                         break;
+                    case 'button_group':
+                        controlElement = (
+                            <>
+                                {fieldLabel}
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        flexWrap: 'wrap',
+                                        width: '100%'
+                                    }}
+                                >
+                                    {servar.metadata.options.map((opt) => {
+                                        return (
+                                            <div
+                                                id={servar.key}
+                                                onClick={(e) => {
+                                                    handleButtonGroupChange(e);
+                                                    onClick();
+                                                }}
+                                                key={opt}
+                                                style={{
+                                                    display: 'flex',
+                                                    justifyContent: 'center',
+                                                    alignItems: 'center',
+                                                    cursor: 'pointer',
+                                                    height: `${field.field_height}${field.field_height_unit}`,
+                                                    width: `${field.field_width}${field.field_width_unit}`,
+                                                    backgroundColor: `#${field.background_color}`,
+                                                    border: `${field.border_width}px solid`,
+                                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                                    marginBottom: `${field.padding_bottom}px`,
+                                                    marginTop: `${field.padding_top}px`,
+                                                    marginLeft: `${field.padding_left}px`,
+                                                    marginRight: `${field.padding_right}px`
+                                                }}
+                                                css={{
+                                                    '&:active': {
+                                                        boxShadow:
+                                                            'none !important',
+                                                        ...select
+                                                    },
+                                                    '&:hover': hover,
+                                                    ...(fieldVal === opt
+                                                        ? select
+                                                        : {})
+                                                }}
+                                            >
+                                                {opt}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        );
+                        break;
                     case 'checkbox':
                         controlElement = (
                             <>
@@ -734,13 +821,16 @@ function Form({
                                         width: `${field.field_width}${field.field_width_unit}`,
                                         maxWidth: '100%',
                                         backgroundColor: `#${field.background_color}`,
+                                        border: `${field.border_width}px solid`,
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                                         fontSize: `${field.font_size}px`
                                     }}
                                     css={{
                                         '&:focus': {
-                                            boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
-                                        }
+                                            boxShadow: 'none !important',
+                                            ...select
+                                        },
+                                        '&:hover': hover
                                     }}
                                     as='select'
                                     id={servar.key}
@@ -787,13 +877,16 @@ function Form({
                                         width: `${field.field_width}${field.field_width_unit}`,
                                         maxWidth: '100%',
                                         backgroundColor: `#${field.background_color}`,
+                                        border: `${field.border_width}px solid`,
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                                         fontSize: `${field.font_size}px`
                                     }}
                                     css={{
                                         '&:focus': {
-                                            boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
-                                        }
+                                            boxShadow: 'none !important',
+                                            ...select
+                                        },
+                                        '&:hover': hover
                                     }}
                                     as='select'
                                     id={servar.key}
@@ -836,6 +929,8 @@ function Form({
                                 <BootstrapField
                                     label={fieldLabel}
                                     field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
                                     type='email'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
@@ -850,6 +945,8 @@ function Form({
                             ) : (
                                 <MuiField
                                     field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
                                     type='email'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
@@ -933,6 +1030,7 @@ function Form({
                                                     field.font_size + 4
                                                 }px`,
                                                 backgroundColor: `#${field.background_color}`,
+                                                border: `${field.border_width}px solid`,
                                                 borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                                                 color: `#${field.font_color}`,
                                                 fontStyle: field.font_italic
@@ -944,8 +1042,11 @@ function Form({
                                             }}
                                             css={{
                                                 '&:focus': {
-                                                    boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
-                                                }
+                                                    boxShadow:
+                                                        'none !important',
+                                                    ...select
+                                                },
+                                                '&:hover': hover
                                             }}
                                             id={servar.key}
                                             value={otherVal}
@@ -1028,6 +1129,7 @@ function Form({
                                                     field.font_size + 4
                                                 }px`,
                                                 backgroundColor: `#${field.background_color}`,
+                                                border: `${field.border_width}px solid`,
                                                 borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                                                 color: `#${field.font_color}`,
                                                 fontStyle: field.font_italic
@@ -1039,8 +1141,11 @@ function Form({
                                             }}
                                             css={{
                                                 '&:focus': {
-                                                    boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
-                                                }
+                                                    boxShadow:
+                                                        'none !important',
+                                                    ...select
+                                                },
+                                                '&:hover': hover
                                             }}
                                             id={servar.key}
                                             value={otherVal}
@@ -1066,6 +1171,8 @@ function Form({
                                 <BootstrapField
                                     label={fieldLabel}
                                     field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
                                     type='number'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
@@ -1079,6 +1186,8 @@ function Form({
                             ) : (
                                 <MuiField
                                     field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
                                     type='number'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
@@ -1101,6 +1210,7 @@ function Form({
                                         height: '36px',
                                         background: `#${fieldVal}`,
                                         cursor: 'pointer',
+                                        border: `${field.border_width}px solid`,
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                                     }}
                                     onClick={(e) => {
@@ -1150,6 +1260,8 @@ function Form({
                                 <BootstrapField
                                     label={fieldLabel}
                                     field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
                                     type='textarea'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
@@ -1164,6 +1276,8 @@ function Form({
                             ) : (
                                 <MuiField
                                     field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
                                     type='text'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
@@ -1183,6 +1297,8 @@ function Form({
                                 <BootstrapField
                                     label={fieldLabel}
                                     field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
                                     type='url'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
@@ -1196,6 +1312,8 @@ function Form({
                             ) : (
                                 <MuiField
                                     field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
                                     type='url'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
@@ -1214,6 +1332,8 @@ function Form({
                                 <BootstrapField
                                     label={fieldLabel}
                                     field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
                                     type='text'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
@@ -1227,6 +1347,8 @@ function Form({
                             ) : (
                                 <MuiField
                                     field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
                                     type='text'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
@@ -1246,8 +1368,6 @@ function Form({
                             gridRowStart: field.row_index + 1,
                             gridColumnEnd: field.column_index_end + 2,
                             gridRowEnd: field.row_index_end + 2,
-                            paddingBottom: `${field.padding_bottom}px`,
-                            paddingTop: `${field.padding_top}px`,
                             alignItems: field.layout,
                             color: `#${field.font_color}`,
                             fontStyle: field.font_italic ? 'italic' : 'normal',
@@ -1257,7 +1377,15 @@ function Form({
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: field.vertical_layout,
-                            width: '100%'
+                            width: '100%',
+                            ...(servar.type !== 'button_group'
+                                ? {
+                                      paddingBottom: `${field.padding_bottom}px`,
+                                      paddingTop: `${field.padding_top}px`,
+                                      paddingLeft: `${field.padding_left}px`,
+                                      paddingRight: `${field.padding_right}px`
+                                  }
+                                : {})
                         }}
                         key={servar.key}
                     >

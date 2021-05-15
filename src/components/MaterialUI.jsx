@@ -56,6 +56,8 @@ function MuiProgress({ curStep, maxStep, progressBar }) {
 
 function MuiField({
     field,
+    selectStyle,
+    hoverStyle,
     type,
     fieldValue,
     onChange,
@@ -66,6 +68,8 @@ function MuiField({
     const servar = field.servar;
     const rows = multiline ? field.metadata.num_rows : null;
     const inputProps = pattern ? { pattern } : {};
+    if (selectStyle.selected_border_color)
+        selectStyle.color = selectStyle.selected_border_color;
     return (
         <TextField
             label={servar.name}
@@ -75,7 +79,8 @@ function MuiField({
                 width: `${field.field_width}${field.field_width_unit}`,
                 maxWidth: '100%',
                 backgroundColor: `#${field.background_color}`,
-                borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                border: `${field.border_width}px solid`,
+                borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
             }}
             css={{
                 '&::placeholder': {
@@ -85,9 +90,8 @@ function MuiField({
                         ? 'italic !important'
                         : 'normal !important'
                 },
-                '& label.Mui-focused': {
-                    color: `#${field.focus_color} !important`
-                },
+                '&:hover': hoverStyle,
+                '& label.Mui-focused': selectStyle,
                 '& .MuiInput-underline:after': {
                     borderBottomColor: `#${field.focus_color} !important`
                 }

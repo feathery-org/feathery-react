@@ -4,6 +4,8 @@ import React from 'react';
 export function BootstrapField({
     label,
     field,
+    selectStyle,
+    hoverStyle,
     type,
     fieldValue,
     onChange,
@@ -29,6 +31,7 @@ export function BootstrapField({
                     width: `${field.field_width}${field.field_width_unit}`,
                     maxWidth: '100%',
                     backgroundColor: `#${field.background_color}`,
+                    border: `${field.border_width}px solid`,
                     borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
                 }}
                 css={{
@@ -40,8 +43,10 @@ export function BootstrapField({
                             : 'normal !important'
                     },
                     '&:focus': {
-                        boxShadow: `0 0 0 0.2rem #${field.focus_color} !important`
-                    }
+                        boxShadow: 'none !important',
+                        ...selectStyle
+                    },
+                    '&:hover': hoverStyle
                 }}
                 id={servar.key}
                 value={fieldValue || ''}
