@@ -274,7 +274,7 @@ function Form({
             const servar = field.servar;
             if (servar.key !== fieldKey) return;
 
-            newValues = updateFieldValues({ [servar.key]: e.target.key });
+            newValues = updateFieldValues({ [servar.key]: e.target.textContent });
         });
         return newValues;
     };
@@ -344,7 +344,7 @@ function Form({
         if (submitData) {
             const formattedFields = formatStepFields(
                 activeStep,
-                fieldValues,
+                newFieldVals,
                 acceptedFile
             );
 
@@ -352,7 +352,7 @@ function Form({
             if (typeof onSubmit === 'function') {
                 const allFields = formatAllStepFields(
                     steps,
-                    fieldValues,
+                    newFieldVals,
                     acceptedFile
                 );
                 onSubmit({
@@ -388,7 +388,7 @@ function Form({
             newFieldVals
         );
         if (!newStepKey) {
-            if (elementType === 'button') {
+            if (submitData || elementType === 'button') {
                 setFinishConfig({
                     finished: true,
                     redirectURL: activeStep.redirect_url
@@ -708,8 +708,14 @@ function Form({
                         {servar.name}
                     </label>
                 ) : null;
-                const onClick = () =>
-                    submit(false, 'field', servar.key, 'click');
+                const onClick = (submitData = false, fieldValues = null) =>
+                    submit(
+                        submitData,
+                        'field',
+                        servar.key,
+                        'click',
+                        fieldValues
+                    );
 
                 let controlElement;
                 switch (servar.type) {
@@ -749,8 +755,10 @@ function Form({
                                             <div
                                                 id={servar.key}
                                                 onClick={(e) => {
-                                                    handleButtonGroupChange(e);
-                                                    onClick();
+                                                    const vals = handleButtonGroupChange(
+                                                        e
+                                                    );
+                                                    onClick(true, vals);
                                                 }}
                                                 key={opt}
                                                 style={{
