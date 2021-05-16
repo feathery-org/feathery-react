@@ -340,6 +340,8 @@ function Form({
         trigger,
         newValues = null
     ) => {
+        if (displaySteps) return;
+
         let newFieldVals = newValues || fieldValues;
         if (submitData) {
             const formattedFields = formatStepFields(
@@ -404,7 +406,6 @@ function Form({
     };
 
     const fieldOnChange = (fieldKey, newValues) => {
-        if (displaySteps) return;
         if (typeof onChange === 'function') {
             const formattedFields = formatAllStepFields(
                 steps,
@@ -632,7 +633,7 @@ function Form({
                             }
                             onClick={() => {
                                 elementKey = field.text;
-                                if (!displaySteps && field.link === 'skip') {
+                                if (field.link === 'skip') {
                                     submit(
                                         false,
                                         'button',
