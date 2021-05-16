@@ -274,7 +274,9 @@ function Form({
             const servar = field.servar;
             if (servar.key !== fieldKey) return;
 
-            newValues = updateFieldValues({ [servar.key]: e.target.textContent });
+            newValues = updateFieldValues({
+                [servar.key]: e.target.textContent
+            });
         });
         return newValues;
     };
@@ -567,9 +569,30 @@ function Form({
                     {progressBarElements}
                 </div>
             )}
+            {activeStep.images.map((image, i) => (
+                <div
+                    key={`image-${i}`}
+                    css={{
+                        gridColumnStart: image.column_index + 1,
+                        gridRowStart: image.row_index + 1,
+                        gridColumnEnd: image.column_index_end + 2,
+                        gridRowEnd: image.row_index_end + 2,
+                        paddingBottom: `${image.padding_bottom}px`,
+                        paddingTop: `${image.padding_top}px`,
+                        paddingLeft: `${image.padding_left}px`,
+                        paddingRight: `${image.padding_right}px`,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: image.layout,
+                        justifyContent: image.vertical_layout
+                    }}
+                >
+                    <img src={image.source_url} alt='Form Image' />
+                </div>
+            ))}
             {activeStep.text_fields.map((field, i) => (
                 <div
-                    key={i.toString() + ':' + stepKey.toString()}
+                    key={`text-${i}`}
                     css={{
                         gridColumnStart: field.column_index + 1,
                         gridRowStart: field.row_index + 1,
