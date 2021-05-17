@@ -611,6 +611,7 @@ function Form({
                 >
                     {field.is_button ? (
                         <Button
+                            key={field.text}
                             style={{
                                 cursor: field.link ? 'pointer' : 'default',
                                 color: `#${field.font_color}`,
@@ -671,6 +672,7 @@ function Form({
                         />
                     ) : (
                         <div
+                            key={field.text}
                             css={{
                                 color: `#${field.font_color}`,
                                 fontStyle: field.font_italic
@@ -732,7 +734,7 @@ function Form({
                         {servar.name}
                     </label>
                 ) : null;
-                const onClick = (submitData = false, fieldValues = null) =>
+                const onClick = (e, submitData = false, fieldValues = null) =>
                     submit(
                         submitData,
                         'field',
@@ -782,7 +784,7 @@ function Form({
                                                     const vals = handleButtonGroupChange(
                                                         e
                                                     );
-                                                    onClick(true, vals);
+                                                    onClick(e, true, vals);
                                                 }}
                                                 key={opt}
                                                 style={{
