@@ -798,14 +798,11 @@ function Form({
                                                     marginBottom: `${field.padding_bottom}px`,
                                                     marginTop: `${field.padding_top}px`,
                                                     marginLeft: `${field.padding_left}px`,
-                                                    marginRight: `${field.padding_right}px`
+                                                    marginRight: `${field.padding_right}px`,
+                                                    boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`
                                                 }}
                                                 css={{
-                                                    '&:active': {
-                                                        boxShadow:
-                                                            'none !important',
-                                                        ...select
-                                                    },
+                                                    '&:active': select,
                                                     '&:hover': hover,
                                                     ...(fieldVal === opt
                                                         ? select
@@ -855,11 +852,12 @@ function Form({
                                         backgroundColor: `#${field.background_color}`,
                                         border: `${field.border_width}px solid`,
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                        fontSize: `${field.font_size}px`
+                                        fontSize: `${field.font_size}px`,
+                                        boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`
                                     }}
                                     css={{
                                         '&:focus': {
-                                            boxShadow: 'none !important',
+                                            boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color} !important`,
                                             ...select
                                         },
                                         '&:hover': hover
@@ -911,11 +909,12 @@ function Form({
                                         backgroundColor: `#${field.background_color}`,
                                         border: `${field.border_width}px solid`,
                                         borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                        fontSize: `${field.font_size}px`
+                                        fontSize: `${field.font_size}px`,
+                                        boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`
                                     }}
                                     css={{
                                         '&:focus': {
-                                            boxShadow: 'none !important',
+                                            boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color} !important`,
                                             ...select
                                         },
                                         '&:hover': hover
@@ -1064,6 +1063,7 @@ function Form({
                                                 backgroundColor: `#${field.background_color}`,
                                                 border: `${field.border_width}px solid`,
                                                 borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
                                                 color: `#${field.font_color}`,
                                                 fontStyle: field.font_italic
                                                     ? 'italic'
@@ -1074,8 +1074,7 @@ function Form({
                                             }}
                                             css={{
                                                 '&:focus': {
-                                                    boxShadow:
-                                                        'none !important',
+                                                    boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color} !important`,
                                                     ...select
                                                 },
                                                 '&:hover': hover
@@ -1163,6 +1162,7 @@ function Form({
                                                 backgroundColor: `#${field.background_color}`,
                                                 border: `${field.border_width}px solid`,
                                                 borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
                                                 color: `#${field.font_color}`,
                                                 fontStyle: field.font_italic
                                                     ? 'italic'
@@ -1173,8 +1173,7 @@ function Form({
                                             }}
                                             css={{
                                                 '&:focus': {
-                                                    boxShadow:
-                                                        'none !important',
+                                                    boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color} !important`,
                                                     ...select
                                                 },
                                                 '&:hover': hover

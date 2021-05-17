@@ -81,6 +81,7 @@ function MuiField({
                 backgroundColor: `#${field.background_color}`,
                 border: `${field.border_width}px solid`,
                 borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`
             }}
             css={{
                 '&::placeholder': {

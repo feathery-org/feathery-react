@@ -32,7 +32,8 @@ export function BootstrapField({
                     maxWidth: '100%',
                     backgroundColor: `#${field.background_color}`,
                     border: `${field.border_width}px solid`,
-                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                    boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`
                 }}
                 css={{
                     '&::placeholder': {
@@ -43,7 +44,7 @@ export function BootstrapField({
                             : 'normal !important'
                     },
                     '&:focus': {
-                        boxShadow: 'none !important',
+                        boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color} !important`,
                         ...selectStyle
                     },
                     '&:hover': hoverStyle
