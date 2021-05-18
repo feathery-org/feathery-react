@@ -374,15 +374,7 @@ function Form({
         if (displaySteps) return;
 
         let newFieldVals = newValues || fieldValues;
-        const newStepKey = nextStepKey(
-            activeStep.next_conditions,
-            elementType,
-            elementKey,
-            trigger,
-            steps,
-            newFieldVals
-        );
-
+        let newStepKey;
         if (submitData) {
             const formattedFields = formatStepFields(
                 activeStep,
@@ -396,6 +388,14 @@ function Form({
                     steps,
                     newFieldVals,
                     acceptedFile
+                );
+                newStepKey = nextStepKey(
+                    activeStep.next_conditions,
+                    elementType,
+                    elementKey,
+                    trigger,
+                    steps,
+                    newFieldVals
                 );
                 onSubmit({
                     fields: allFields,
@@ -421,6 +421,14 @@ function Form({
             client.registerEvent(stepKey, 'complete');
         }
 
+        newStepKey = nextStepKey(
+            activeStep.next_conditions,
+            elementType,
+            elementKey,
+            trigger,
+            steps,
+            newFieldVals
+        );
         if (!newStepKey) {
             if (submitData || elementType === 'button') {
                 setFinishConfig({
