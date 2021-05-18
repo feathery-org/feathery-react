@@ -1293,39 +1293,30 @@ function Form({
                         );
                         break;
                     case 'integer_field':
-                        controlElement =
-                            activeStep.component_type === 'bootstrap' ? (
-                                <BootstrapField
-                                    label={fieldLabel}
-                                    field={field}
-                                    selectStyle={select}
-                                    hoverStyle={hover}
-                                    type='number'
-                                    fieldValue={fieldVal}
-                                    onChange={(e) => {
-                                        fieldOnChange(
-                                            servar.key,
-                                            handleChange(e)
-                                        );
-                                    }}
-                                    onClick={onClick}
-                                />
-                            ) : (
-                                <MuiField
-                                    field={field}
-                                    selectStyle={select}
-                                    hoverStyle={hover}
-                                    type='number'
-                                    fieldValue={fieldVal}
-                                    onChange={(e) => {
-                                        fieldOnChange(
-                                            servar.key,
-                                            handleChange(e)
-                                        );
-                                    }}
-                                    onClick={onClick}
-                                />
-                            );
+                        controlElement = (
+                            <MaskedBootstrapField
+                                key={servar.key}
+                                mask={Number}
+                                scale={0}
+                                signed={false}
+                                thousandsSeparator=','
+                                unmask
+                                value={fieldVal}
+                                onClick={onClick}
+                                onAccept={(value) => {
+                                    fieldOnChange(
+                                        servar.key,
+                                        handleValueChange(value, servar.key)
+                                    );
+                                }}
+                                inputRef={(el) => (fieldRefs[servar.key] = el)}
+                                label={fieldLabel}
+                                field={field}
+                                selectStyle={select}
+                                hoverStyle={hover}
+                                type='text'
+                            />
+                        );
                         break;
                     case 'hex_color':
                         controlElement = (
