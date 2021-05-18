@@ -548,12 +548,20 @@ function Form({
                 );
                 Object.entries(formattedFields).map(
                     ([fieldKey, { value, type }]) => {
-                        if (type === 'phone_number' && value.length !== 10) {
-                            const element = form.elements[fieldKey];
-                            if (element)
+                        const element = form.elements[fieldKey];
+                        if (element) {
+                            if (
+                                type === 'phone_number' &&
+                                value.length !== 10
+                            ) {
                                 element.setCustomValidity(
-                                    'Please fill out the phone number'
+                                    'Invalid phone number'
                                 );
+                            } else if (type === 'ssn' && value.length !== 9) {
+                                element.setCustomValidity(
+                                    'Invalid social security number'
+                                );
+                            }
                         }
                     }
                 );
@@ -1054,6 +1062,30 @@ function Form({
                             <MaskedBootstrapField
                                 key={servar.key}
                                 mask='+1 (000) 000-0000'
+                                unmask
+                                value={fieldVal}
+                                onClick={onClick}
+                                onAccept={(value) => {
+                                    fieldRefs[servar.key].setCustomValidity('');
+                                    fieldOnChange(
+                                        servar.key,
+                                        handleValueChange(value, servar.key)
+                                    );
+                                }}
+                                inputRef={(el) => (fieldRefs[servar.key] = el)}
+                                label={fieldLabel}
+                                field={field}
+                                selectStyle={select}
+                                hoverStyle={hover}
+                                type='text'
+                            />
+                        );
+                        break;
+                    case 'ssn':
+                        controlElement = (
+                            <MaskedBootstrapField
+                                key={servar.key}
+                                mask='000 - 00 - 0000'
                                 unmask
                                 value={fieldVal}
                                 onClick={onClick}
