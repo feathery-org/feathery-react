@@ -57,6 +57,7 @@ function Form({
     const [stepKey, setStepKey] = useState(displayStepKey);
     const [fieldValues, setFieldValues] = useState(initialValues);
     const fieldRefs = useRef({}).current;
+    const [otherSelect, setOtherSelect] = useState({});
 
     const [finishConfig, setFinishConfig] = useState({
         finished: false,
@@ -1080,7 +1081,7 @@ function Form({
                                     return (
                                         <ReactForm.Check
                                             type='checkbox'
-                                            id={servar.key}
+                                            id={`${servar.key}-${opt}`}
                                             name={opt}
                                             key={opt}
                                             label={opt}
@@ -1112,7 +1113,7 @@ function Form({
                                     >
                                         <ReactForm.Check
                                             type='checkbox'
-                                            id={servar.key}
+                                            id={`${servar.key}-`}
                                             name={otherVal}
                                             key={otherVal}
                                             label='Other'
@@ -1161,7 +1162,7 @@ function Form({
                                                 '&:hover': hover
                                             }}
                                             id={servar.key}
-                                            value={otherVal}
+                                            value={otherVal || ''}
                                             onChange={(e) => {
                                                 const newValues = handleOtherStateChange(
                                                     otherVal
@@ -1186,14 +1187,17 @@ function Form({
                                     return (
                                         <ReactForm.Check
                                             type='radio'
-                                            id={servar.key}
+                                            id={`${servar.key}-${opt}`}
                                             label={opt}
                                             checked={fieldVal === opt}
                                             required={servar.required}
                                             onChange={(e) => {
                                                 fieldOnChange(
                                                     servar.key,
-                                                    handleChange(e)
+                                                    handleValueChange(
+                                                        e.target.value,
+                                                        servar.key
+                                                    )
                                                 );
                                             }}
                                             onClick={onClick}
@@ -1216,17 +1220,28 @@ function Form({
                                     >
                                         <ReactForm.Check
                                             type='radio'
-                                            id={servar.key}
+                                            id={`${servar.key}-`}
                                             label='Other'
-                                            checked={fieldVal === otherVal}
+                                            checked={
+                                                (otherSelect[servar.key] ||
+                                                    fieldVal) &&
+                                                fieldVal === otherVal
+                                            }
                                             onChange={(e) => {
+                                                setOtherSelect({
+                                                    ...otherSelect,
+                                                    [servar.key]: true
+                                                });
                                                 fieldOnChange(
                                                     servar.key,
-                                                    handleChange(e)
+                                                    handleValueChange(
+                                                        e.target.value,
+                                                        servar.key
+                                                    )
                                                 );
                                             }}
                                             onClick={onClick}
-                                            value={otherVal}
+                                            value={otherVal || ''}
                                             key={otherVal}
                                             style={{
                                                 display: 'flex',
@@ -1260,7 +1275,7 @@ function Form({
                                                 '&:hover': hover
                                             }}
                                             id={servar.key}
-                                            value={otherVal}
+                                            value={otherVal || ''}
                                             onChange={(e) => {
                                                 const newValues = handleOtherStateChange(
                                                     otherVal
