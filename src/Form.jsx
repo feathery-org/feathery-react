@@ -123,9 +123,13 @@ function Form({
         fieldValuesArg = fieldValuesArg || fieldValues;
         clientArg = clientArg || client;
 
-        const depth = recurseDepth(stepsArg, getOrigin(stepsArg), newKey);
-        setCurDepth(depth);
-        setMaxDepth(depth + recurseDepth(stepsArg, newKey));
+        const [curDepth, maxDepth] = recurseDepth(
+            stepsArg,
+            getOrigin(stepsArg),
+            newKey
+        );
+        setCurDepth(curDepth);
+        setMaxDepth(maxDepth);
         calculateDimensions(stepsArg[newKey]);
 
         if (!displaySteps) {

@@ -235,23 +235,24 @@ const getOrigin = (steps) => {
     return originKey;
 };
 
-const recurseDepth = (steps, startKey, endKey = null) => {
+const recurseDepth = (steps, originKey, curKey) => {
     const seenStepKeys = new Set();
-    const stepQueue = [[steps[startKey], 0]];
+    const stepQueue = [[steps[originKey], 0]];
+    let curDepth = 0;
     let maxDepth = 0;
     while (stepQueue.length > 0) {
         const [step, depth] = stepQueue.shift();
         if (seenStepKeys.has(step.key)) continue;
         seenStepKeys.add(step.key);
 
-        if (step.key === endKey) return depth;
+        if (step.key === curKey) curDepth = depth;
         maxDepth = depth;
 
         step.next_conditions.forEach((condition) => {
             stepQueue.push([steps[condition.next_step_key], depth + 1]);
         });
     }
-    return maxDepth;
+    return [curDepth, maxDepth];
 };
 
 export {
