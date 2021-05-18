@@ -63,11 +63,16 @@ function MuiField({
     onChange,
     onClick,
     pattern,
-    multiline = false
+    multiline = false,
+    props
 }) {
     const servar = field.servar;
     const rows = multiline ? field.metadata.num_rows : null;
     const inputProps = pattern ? { pattern } : {};
+    if (props.inputRef) {
+        inputProps.inputRef = props.inputRef;
+        delete props.inputRef;
+    }
     if (selectStyle.selected_border_color)
         selectStyle.color = selectStyle.selected_border_color;
     return (
@@ -124,6 +129,7 @@ function MuiField({
             placeholder={field.metadata.placeholder || ''}
             multiline={multiline}
             rows={rows}
+            {...props}
         />
     );
 }
