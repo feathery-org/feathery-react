@@ -1,7 +1,8 @@
 import ReactForm from 'react-bootstrap/Form';
 import React from 'react';
+import { IMaskMixin } from 'react-imask';
 
-export function BootstrapField({
+function BootstrapField({
     label,
     field,
     selectStyle,
@@ -11,20 +12,26 @@ export function BootstrapField({
     onChange,
     onClick,
     pattern,
-    rows
+    rows,
+    ...props
 }) {
     const metadata = field.metadata;
     const servar = field.servar;
 
-    let props;
-    if (rows) props = { rows, as: type };
-    else props = { type };
+    if (rows) props = { ...props, rows, as: type };
+    else props = { ...props, type };
 
+    if (props.inputRef) {
+        props.ref = props.inputRef;
+        delete props.inputRef;
+    } else {
+        props.value = fieldValue || '';
+    }
     return (
         <>
             {label}
             <ReactForm.Control
-                {...props}
+                key={servar.key}
                 pattern={pattern}
                 style={{
                     height: `${field.field_height}${field.field_height_unit}`,
@@ -50,12 +57,18 @@ export function BootstrapField({
                     '&:hover': hoverStyle
                 }}
                 id={servar.key}
-                value={fieldValue || ''}
                 required={servar.required}
                 onChange={onChange}
                 onClick={onClick}
                 placeholder={metadata.placeholder || ''}
+                {...props}
             />
         </>
     );
 }
+
+const MaskedBootstrapField = IMaskMixin((props) => (
+    <BootstrapField {...props} />
+));
+
+export { BootstrapField, MaskedBootstrapField };

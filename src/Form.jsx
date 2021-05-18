@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 import Button from 'react-bootstrap/Button';
 import ProgressBar from 'react-bootstrap/ProgressBar';
@@ -6,7 +6,7 @@ import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 
-import { BootstrapField } from './components/Bootstrap';
+import { BootstrapField, MaskedBootstrapField } from './components/Bootstrap';
 import { MuiField, MuiProgress } from './components/MaterialUI';
 import Client from './utils/client';
 import {
@@ -56,6 +56,7 @@ function Form({
     const [steps, setSteps] = useState(null);
     const [stepKey, setStepKey] = useState(displayStepKey);
     const [fieldValues, setFieldValues] = useState(initialValues);
+    const fieldRefs = useRef({}).current;
 
     const [finishConfig, setFinishConfig] = useState({
         finished: false,
@@ -255,13 +256,41 @@ function Form({
         const target = e.target;
         let value = target.type === 'checkbox' ? target.checked : target.value;
         const key = target.id;
-        let newValues = null;
+        const updateValues = {};
+        let clearGMaps = false;
         activeStep.servar_fields.forEach((field) => {
             const servar = field.servar;
             if (servar.key !== key) return;
 
             if (servar.type === 'integer_field') value = parseInt(value);
-            newValues = updateFieldValues({ [servar.key]: value });
+            else if (servar.type === 'gmap_line_1' && !value) clearGMaps = true;
+            updateValues[servar.key] = value;
+        });
+        if (clearGMaps) {
+            activeStep.servar_fields.forEach((field) => {
+                const servar = field.servar;
+                if (
+                    [
+                        'gmap_line_2',
+                        'gmap_city',
+                        'gmap_state',
+                        'gmap_zip'
+                    ].includes(servar.type)
+                ) {
+                    updateValues[servar.key] = '';
+                }
+            });
+        }
+        return updateFieldValues(updateValues);
+    };
+
+    const handleValueChange = (val, key) => {
+        let newValues = null;
+        activeStep.servar_fields.forEach((field) => {
+            const servar = field.servar;
+            if (servar.key !== key) return;
+
+            newValues = updateFieldValues({ [servar.key]: val });
         });
         return newValues;
     };
@@ -498,15 +527,27 @@ function Form({
                 event.stopPropagation();
 
                 const form = event.currentTarget;
+                const formattedFields = formatStepFields(
+                    activeStep,
+                    fieldValues,
+                    acceptedFile
+                );
+                Object.entries(formattedFields).map(
+                    ([fieldKey, { value, type }]) => {
+                        if (type === 'phone_number' && value.length !== 10) {
+                            const element = form.elements[fieldKey];
+                            if (element)
+                                element.setCustomValidity(
+                                    'Please fill out the phone number'
+                                );
+                        }
+                    }
+                );
+
                 // Execute user-provided checkValidity function if present
                 if (typeof onValidate === 'function') {
                     const allFields = formatAllStepFields(
                         steps,
-                        fieldValues,
-                        acceptedFile
-                    );
-                    const formattedFields = formatStepFields(
-                        activeStep,
                         fieldValues,
                         acceptedFile
                     );
@@ -523,8 +564,9 @@ function Form({
                         const element = form.elements[fieldKey];
                         if (element) element.setCustomValidity(message);
                     });
-                    form.reportValidity();
                 }
+                form.reportValidity();
+
                 if (form.checkValidity())
                     submit(true, 'button', elementKey, 'click');
             }}
@@ -992,6 +1034,30 @@ function Form({
                                     pattern="^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$"
                                 />
                             );
+                        break;
+                    case 'phone_number':
+                        controlElement = (
+                            <MaskedBootstrapField
+                                key={servar.key}
+                                mask='+1 (000) 000-0000'
+                                unmask
+                                value={fieldVal}
+                                onClick={onClick}
+                                onAccept={(value) => {
+                                    fieldRefs[servar.key].setCustomValidity('');
+                                    fieldOnChange(
+                                        servar.key,
+                                        handleValueChange(value, servar.key)
+                                    );
+                                }}
+                                inputRef={(el) => (fieldRefs[servar.key] = el)}
+                                label={fieldLabel}
+                                field={field}
+                                selectStyle={select}
+                                hoverStyle={hover}
+                                type='text'
+                            />
+                        );
                         break;
                     case 'multiselect':
                         controlElement = (
