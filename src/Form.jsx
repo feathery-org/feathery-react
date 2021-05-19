@@ -1172,7 +1172,8 @@ function Form({
                                             style={{
                                                 marginLeft: '5px',
                                                 height: `${
-                                                    field.font_size + 4
+                                                    parseInt(field.font_size) +
+                                                    4
                                                 }px`,
                                                 backgroundColor: `#${field.background_color}`,
                                                 border: `${field.border_width}px solid`,
@@ -1285,7 +1286,8 @@ function Form({
                                             style={{
                                                 marginLeft: '5px',
                                                 height: `${
-                                                    field.font_size + 4
+                                                    parseInt(field.font_size) +
+                                                    4
                                                 }px`,
                                                 backgroundColor: `#${field.background_color}`,
                                                 border: `${field.border_width}px solid`,
