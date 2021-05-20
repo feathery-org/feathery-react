@@ -69,7 +69,7 @@ function MuiField({
     const servar = field.servar;
     const rows = multiline ? field.metadata.num_rows : null;
     const inputProps = pattern ? { pattern } : {};
-    if (props.inputRef) {
+    if (props && props.inputRef) {
         inputProps.inputRef = props.inputRef;
         delete props.inputRef;
     }
