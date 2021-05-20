@@ -1339,7 +1339,7 @@ function Form({
                                 signed={false}
                                 thousandsSeparator=','
                                 unmask
-                                value={fieldVal}
+                                value={fieldVal.toString()}
                                 onClick={onClick}
                                 onAccept={(value) => {
                                     fieldOnChange(
