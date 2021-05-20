@@ -1206,6 +1206,8 @@ function Form({
                                                 );
                                             }}
                                             onClick={onClick}
+                                            maxLength={servar.max_length}
+                                            minLength={servar.min_length}
                                         />
                                     </div>
                                 )}
@@ -1320,6 +1322,8 @@ function Form({
                                                 );
                                             }}
                                             onClick={onClick}
+                                            maxLength={servar.max_length}
+                                            minLength={servar.min_length}
                                         />
                                     </div>
                                 )}

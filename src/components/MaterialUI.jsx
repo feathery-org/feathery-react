@@ -73,6 +73,8 @@ function MuiField({
         inputProps.inputRef = props.inputRef;
         delete props.inputRef;
     }
+    inputProps.maxLength = servar.max_length;
+    inputProps.minLength = servar.min_length;
     if (selectStyle.selected_border_color)
         selectStyle.color = selectStyle.selected_border_color;
     return (

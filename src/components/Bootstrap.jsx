@@ -56,6 +56,8 @@ function BootstrapField({
                     },
                     '&:hover': hoverStyle
                 }}
+                maxLength={servar.max_length}
+                minLength={servar.min_length}
                 id={servar.key}
                 required={servar.required}
                 onChange={onChange}
