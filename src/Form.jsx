@@ -837,7 +837,9 @@ function Form({
                                     style={{
                                         display: 'flex',
                                         flexWrap: 'wrap',
-                                        width: '100%'
+                                        width: '100%',
+                                        alignItems: field.layout,
+                                        justifyContent: field.vertical_layout
                                     }}
                                 >
                                     {servar.metadata.options.map((opt) => {
@@ -1330,7 +1332,7 @@ function Form({
                             </>
                         );
                         break;
-                    case 'integer_field':
+                  case 'integer_field':
                         controlElement = (
                             <MaskedBootstrapField
                                 key={servar.key}
