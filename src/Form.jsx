@@ -30,6 +30,7 @@ const buttonAlignmentMap = {
     center: 'center',
     right: 'flex-end'
 };
+const textVariablePattern = /{{.*?}}/g;
 
 // apiKey and userKey are required if displayStep === null
 // totalSteps is required if displayStep !== null
@@ -144,8 +145,10 @@ function Form({
                     fields: formattedFields,
                     stepName: newKey,
                     lastStep: stepsArg[newKey].next_conditions.length === 0,
-                    setValues: (userVals) =>
-                        updateFieldValues(userVals, fieldValuesArg),
+                    setValues: (userVals) => {
+                        updateFieldValues(userVals, fieldValuesArg);
+                        clientArg.submitCustom(userVals);
+                    },
                     setOptions: updateFieldOptions(stepsArg)
                 });
             }
@@ -407,11 +410,13 @@ function Form({
                     submitFields: formattedFields,
                     stepName: activeStep.key,
                     lastStep: !newStepKey,
-                    setValues: (userVals) =>
-                        (newFieldVals = updateFieldValues(
+                    setValues: (userVals) => {
+                        newFieldVals = updateFieldValues(
                             userVals,
                             newFieldVals
-                        )),
+                        );
+                        client.submitCustom(userVals);
+                    },
                     setOptions: updateFieldOptions(steps)
                 });
             }
@@ -462,8 +467,10 @@ function Form({
                 fields: formattedFields,
                 stepName: activeStep.key,
                 lastStep: activeStep.next_conditions.length === 0,
-                setValues: (userVals) =>
-                    (newValues = updateFieldValues(userVals, newValues)),
+                setValues: (userVals) => {
+                    newValues = updateFieldValues(userVals, newValues);
+                    client.submitCustom(userVals);
+                },
                 setOptions: updateFieldOptions(steps)
             });
         }
@@ -578,7 +585,10 @@ function Form({
                         submitFields: formattedFields,
                         stepName: activeStep.key,
                         lastStep: activeStep.next_conditions.length === 0,
-                        setValues: updateFieldValues,
+                        setValues: (userVals) => {
+                            updateFieldValues(userVals);
+                            client.submitCustom(userVals);
+                        },
                         setOptions: updateFieldOptions(steps)
                     });
                     errors.forEach((err) => {
@@ -654,105 +664,117 @@ function Form({
                     <img src={image.source_url} alt='Form Image' />
                 </div>
             ))}
-            {activeStep.text_fields.map((field, i) => (
-                <div
-                    key={`text-${i}`}
-                    css={{
-                        gridColumnStart: field.column_index + 1,
-                        gridRowStart: field.row_index + 1,
-                        gridColumnEnd: field.column_index_end + 2,
-                        gridRowEnd: field.row_index_end + 2,
-                        paddingBottom: `${field.padding_bottom}px`,
-                        paddingTop: `${field.padding_top}px`,
-                        paddingLeft: `${field.padding_left}px`,
-                        paddingRight: `${field.padding_right}px`,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: buttonAlignmentMap[field.layout],
-                        textAlign: field.layout,
-                        justifyContent: field.vertical_layout
-                    }}
-                >
-                    {field.is_button ? (
-                        <Button
-                            key={field.text}
-                            style={{
-                                cursor: field.link ? 'pointer' : 'default',
-                                color: `#${field.font_color}`,
-                                fontStyle: field.font_italic
-                                    ? 'italic'
-                                    : 'normal',
-                                fontWeight: field.font_weight,
-                                fontFamily: field.font_family,
-                                fontSize: `${field.font_size}px`,
-                                borderRadius: `${field.border_radius}px`,
-                                borderColor: `#${field.border_color}`,
-                                backgroundColor: `#${field.button_color}`,
-                                boxShadow: 'none',
-                                height: `${field.button_height}${field.button_height_unit}`,
-                                width: `${field.button_width}${field.button_width_unit}`,
-                                maxWidth: '100%'
-                            }}
-                            css={{
-                                '&:disabled': { cursor: 'default !important' },
-                                '&:hover:enabled': field.link
-                                    ? {
-                                          backgroundColor: `${adjustColor(
-                                              field.button_color,
-                                              -30
-                                          )} !important`,
-                                          borderColor: `${adjustColor(
-                                              field.button_color,
-                                              -30
-                                          )} !important`,
-                                          transition:
-                                              'background 0.3s !important'
-                                      }
-                                    : {}
-                            }}
-                            disabled={
-                                field.link === 'none' ||
-                                (field.link === 'submit' && !isFilled)
-                            }
-                            type={
-                                !displaySteps && field.link === 'submit'
-                                    ? 'submit'
-                                    : undefined
-                            }
-                            onClick={() => {
-                                elementKey = field.text;
-                                if (field.link === 'skip') {
-                                    submit(
-                                        false,
-                                        'button',
-                                        elementKey,
-                                        'click'
-                                    );
+            {activeStep.text_fields.map((field, i) => {
+                // replace placeholder variables and populate newlines
+                field.text = field.text
+                    .replace(textVariablePattern, (pattern) => {
+                        const pStr = pattern.slice(2, -2);
+                        if (pStr in fieldValues) return fieldValues[pStr];
+                        else return pattern;
+                    })
+                    .replace(/\n/g, '<br />');
+                return (
+                    <div
+                        key={`text-${i}`}
+                        css={{
+                            gridColumnStart: field.column_index + 1,
+                            gridRowStart: field.row_index + 1,
+                            gridColumnEnd: field.column_index_end + 2,
+                            gridRowEnd: field.row_index_end + 2,
+                            paddingBottom: `${field.padding_bottom}px`,
+                            paddingTop: `${field.padding_top}px`,
+                            paddingLeft: `${field.padding_left}px`,
+                            paddingRight: `${field.padding_right}px`,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: buttonAlignmentMap[field.layout],
+                            textAlign: field.layout,
+                            justifyContent: field.vertical_layout
+                        }}
+                    >
+                        {field.is_button ? (
+                            <Button
+                                key={field.text}
+                                style={{
+                                    cursor: field.link ? 'pointer' : 'default',
+                                    color: `#${field.font_color}`,
+                                    fontStyle: field.font_italic
+                                        ? 'italic'
+                                        : 'normal',
+                                    fontWeight: field.font_weight,
+                                    fontFamily: field.font_family,
+                                    fontSize: `${field.font_size}px`,
+                                    borderRadius: `${field.border_radius}px`,
+                                    borderColor: `#${field.border_color}`,
+                                    backgroundColor: `#${field.button_color}`,
+                                    boxShadow: 'none',
+                                    height: `${field.button_height}${field.button_height_unit}`,
+                                    width: `${field.button_width}${field.button_width_unit}`,
+                                    maxWidth: '100%'
+                                }}
+                                css={{
+                                    '&:disabled': {
+                                        cursor: 'default !important'
+                                    },
+                                    '&:hover:enabled': field.link
+                                        ? {
+                                              backgroundColor: `${adjustColor(
+                                                  field.button_color,
+                                                  -30
+                                              )} !important`,
+                                              borderColor: `${adjustColor(
+                                                  field.button_color,
+                                                  -30
+                                              )} !important`,
+                                              transition:
+                                                  'background 0.3s !important'
+                                          }
+                                        : {}
+                                }}
+                                disabled={
+                                    field.link === 'none' ||
+                                    (field.link === 'submit' && !isFilled)
                                 }
-                            }}
-                            dangerouslySetInnerHTML={{
-                                __html: field.text
-                            }}
-                        />
-                    ) : (
-                        <div
-                            key={field.text}
-                            css={{
-                                color: `#${field.font_color}`,
-                                fontStyle: field.font_italic
-                                    ? 'italic'
-                                    : 'normal',
-                                fontWeight: field.font_weight,
-                                fontFamily: field.font_family,
-                                fontSize: `${field.font_size}px`
-                            }}
-                            dangerouslySetInnerHTML={{
-                                __html: field.text
-                            }}
-                        />
-                    )}
-                </div>
-            ))}
+                                type={
+                                    !displaySteps && field.link === 'submit'
+                                        ? 'submit'
+                                        : undefined
+                                }
+                                onClick={() => {
+                                    elementKey = field.text;
+                                    if (field.link === 'skip') {
+                                        submit(
+                                            false,
+                                            'button',
+                                            elementKey,
+                                            'click'
+                                        );
+                                    }
+                                }}
+                                dangerouslySetInnerHTML={{
+                                    __html: field.text
+                                }}
+                            />
+                        ) : (
+                            <div
+                                key={field.text}
+                                css={{
+                                    color: `#${field.font_color}`,
+                                    fontStyle: field.font_italic
+                                        ? 'italic'
+                                        : 'normal',
+                                    fontWeight: field.font_weight,
+                                    fontFamily: field.font_family,
+                                    fontSize: `${field.font_size}px`
+                                }}
+                                dangerouslySetInnerHTML={{
+                                    __html: field.text
+                                }}
+                            />
+                        )}
+                    </div>
+                );
+            })}
             {activeStep.servar_fields.map((field) => {
                 const servar = field.servar;
                 const fieldVal = fieldValues[servar.key];
@@ -1332,7 +1354,7 @@ function Form({
                             </>
                         );
                         break;
-                  case 'integer_field':
+                    case 'integer_field':
                         controlElement = (
                             <MaskedBootstrapField
                                 key={servar.key}

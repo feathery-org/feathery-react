@@ -74,6 +74,40 @@ export default class Client {
         });
     }
 
+    submitCustom(customKeyValues) {
+        const { userKey, apiKey } = initInfo();
+        const url = `${API_URL}api/panel/custom/submit/`;
+        const data = {
+            ...(userKey ? { fuser_key: userKey } : {}),
+            custom_key_values: customKeyValues,
+            form_key: this.formKey
+        };
+        const options = {
+            cache: 'no-store',
+            headers: {
+                Authorization: 'Token ' + apiKey,
+                'Content-Type': 'application/json'
+            },
+            method: 'POST',
+            body: JSON.stringify(data)
+        };
+        fetch(url, options).then((response) => {
+            const { status } = response;
+            switch (status) {
+                case 200:
+                    return;
+                case 201:
+                    return;
+                case 401:
+                    throw new errors.APIKeyError('Invalid API key');
+                case 404:
+                    throw new errors.UserKeyError('Invalid user key');
+                default:
+                    throw new errors.FetchError('Unknown error');
+            }
+        });
+    }
+
     // servars = [{key: <servarKey>, <type>: <value>}]
     submitStep(servars) {
         const { userKey, apiKey } = initInfo();
