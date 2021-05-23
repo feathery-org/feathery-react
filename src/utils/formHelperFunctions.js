@@ -55,6 +55,8 @@ const states = [
     'Wyoming'
 ];
 
+const textVariablePattern = /{{.*?}}/g;
+
 function adjustColor(color, amount) {
     return (
         '#' +
@@ -96,11 +98,77 @@ const formatAllStepFields = (steps, fieldValues, fileObj) => {
     return formattedFields;
 };
 
-const calculateDimensionsHelper = (
+const under = (field, step) => {
+    return field.row_index < step.repeat_row_start;
+};
+
+const over = (field, step) => {
+    return field.row_index_end > step.repeat_row_end;
+};
+
+const setRepeatInstances = (step, attribute, numRepeats) => {
+    const rs = step.repeat_row_start;
+    const re = step.repeat_row_end;
+    const newInstances = [];
+    step[attribute].forEach((instance) => {
+        if (under(instance, step)) {
+            newInstances.push(instance);
+        } else if (over(instance, step)) {
+            instance.row_index += (re - rs + 1) * (numRepeats - 1);
+            instance.row_index_end += (re - rs + 1) * (numRepeats - 1);
+            newInstances.push(instance);
+        } else {
+            for (let i = 0; i < numRepeats; i++) {
+                newInstances.push({
+                    ...instance,
+                    row_index: instance.row_index + (re - rs + 1) * i,
+                    row_index_end: instance.row_index_end + (re - rs + 1) * i,
+                    repeat: i
+                });
+            }
+        }
+    });
+    step[attribute] = newInstances;
+};
+
+const calculateDimensions = (
+    inputStep,
+    steps,
+    fieldValues,
     dimensions,
     setDimensions,
     setFormDimensions
-) => (inputStep) => {
+) => {
+    const rs = inputStep.repeat_row_start;
+    const re = inputStep.repeat_row_end;
+    if (rs && re) {
+        let numRepeats = 1;
+        inputStep.text_fields.forEach((field) => {
+            if (under(field, inputStep) || over(field, inputStep)) return;
+            const matches = field.text.match(textVariablePattern);
+            if (matches) {
+                matches.forEach((match) => {
+                    const pStr = match.slice(2, -2);
+                    if (Array.isArray(fieldValues[pStr])) {
+                        numRepeats = Math.max(
+                            numRepeats,
+                            fieldValues[pStr].length
+                        );
+                    }
+                });
+            }
+        });
+
+        setRepeatInstances(inputStep, 'text_fields', numRepeats);
+        setRepeatInstances(inputStep, 'images', numRepeats);
+        setRepeatInstances(inputStep, 'servar_fields', numRepeats);
+
+        const repeatRows = inputStep.grid_rows.slice(rs, re + 1);
+        for (let i = 0; i < numRepeats - 1; i++) {
+            inputStep.grid_rows.splice(rs, 0, ...repeatRows);
+        }
+    }
+
     const gridTemplateRows = inputStep.grid_rows.map(
         (row) => `minmax(${row},min-content)`
     );
@@ -259,11 +327,12 @@ export {
     adjustColor,
     formatAllStepFields,
     formatStepFields,
-    calculateDimensionsHelper,
+    calculateDimensions,
     getABVariant,
     getDefaultFieldValues,
     nextStepKey,
     getOrigin,
     recurseDepth,
-    states
+    states,
+    textVariablePattern
 };

@@ -11,7 +11,7 @@ import { MuiField, MuiProgress } from './components/MaterialUI';
 import Client from './utils/client';
 import {
     adjustColor,
-    calculateDimensionsHelper,
+    calculateDimensions,
     formatAllStepFields,
     formatStepFields,
     getABVariant,
@@ -19,7 +19,8 @@ import {
     nextStepKey,
     getOrigin,
     recurseDepth,
-    states
+    states,
+    textVariablePattern
 } from './utils/formHelperFunctions';
 
 import './bootstrap-iso.css';
@@ -30,7 +31,6 @@ const buttonAlignmentMap = {
     center: 'center',
     right: 'flex-end'
 };
-const textVariablePattern = /{{.*?}}/g;
 
 // apiKey and userKey are required if displayStep === null
 // totalSteps is required if displayStep !== null
@@ -55,7 +55,9 @@ function Form({
     const history = useHistory();
 
     const [steps, setSteps] = useState(null);
-    const [stepKey, setStepKey] = useState(displayStepKey);
+    const [activeStep, setActiveStep] = useState(
+        steps ? steps[displayStepKey] : null
+    );
     const [fieldValues, setFieldValues] = useState(initialValues);
     const fieldRefs = useRef({}).current;
     const [otherSelect, setOtherSelect] = useState({});
@@ -76,14 +78,6 @@ function Form({
         displaySteps ? Object.keys(displaySteps).length : 0
     );
     const [googleKey, setGoogleKey] = useState('');
-
-    const activeStep = steps ? steps[stepKey] : null;
-
-    const calculateDimensions = calculateDimensionsHelper(
-        dimensions,
-        setDimensions,
-        setFormDimensions
-    );
 
     const updateFieldValues = (newFieldValues, baseFieldValues = null) => {
         let newValues;
@@ -115,7 +109,7 @@ function Form({
         setSteps(JSON.parse(JSON.stringify(stepData)));
     };
 
-    const getNewStepKey = (
+    const getNewStep = (
         newKey,
         stepsArg = null,
         fieldValuesArg = null,
@@ -132,7 +126,6 @@ function Form({
         );
         setCurDepth(curDepth);
         setMaxDepth(maxDepth);
-        calculateDimensions(stepsArg[newKey]);
 
         if (!displaySteps) {
             if (typeof onLoad === 'function') {
@@ -155,7 +148,16 @@ function Form({
             clientArg.registerEvent(newKey, 'load');
         }
 
-        setStepKey(newKey);
+        const newStep = JSON.parse(JSON.stringify(stepsArg[newKey]));
+        calculateDimensions(
+            newStep,
+            stepsArg,
+            fieldValuesArg,
+            dimensions,
+            setDimensions,
+            setFormDimensions
+        );
+        setActiveStep(newStep);
     };
 
     useEffect(() => {
@@ -196,12 +198,7 @@ function Form({
                                     location.search +
                                     `#${newKey}`
                             );
-                            getNewStepKey(
-                                newKey,
-                                data,
-                                newValues,
-                                clientInstance
-                            );
+                            getNewStep(newKey, data, newValues, clientInstance);
                         });
                     })
                     .catch((error) => {
@@ -217,30 +214,30 @@ function Form({
                                     location.search +
                                     `#${newKey}`
                             );
-                            getNewStepKey(
-                                newKey,
-                                data,
-                                newValues,
-                                clientInstance
-                            );
+                            getNewStep(newKey, data, newValues, clientInstance);
                         });
                         console.log(error);
                     });
             }
-        } else if (displaySteps !== steps || displayStepKey !== stepKey) {
+        } else if (
+            !activeStep ||
+            displaySteps !== steps ||
+            displayStepKey !== activeStep.key
+        ) {
             const fieldVals = updateFieldValues(
                 getDefaultFieldValues(displaySteps)
             );
             setSteps(displaySteps);
-            getNewStepKey(displayStepKey, displaySteps, fieldVals);
+            getNewStep(displayStepKey, displaySteps, fieldVals);
         }
     }, [
         client,
         displayStepKey,
         displaySteps,
+        activeStep,
         setClient,
         setSteps,
-        getNewStepKey,
+        getNewStep,
         getDefaultFieldValues,
         updateFieldValues
     ]);
@@ -248,9 +245,9 @@ function Form({
     useEffect(() => {
         return history.listen(() => {
             const hashKey = location.hash.substr(1);
-            if (hashKey in steps) getNewStepKey(hashKey);
+            if (hashKey in steps) getNewStep(hashKey);
         });
-    }, [steps, getNewStepKey]);
+    }, [steps, getNewStep]);
 
     if (!activeStep) return null;
     if (finishConfig.finished) {
@@ -372,11 +369,13 @@ function Form({
     };
 
     let elementKey = '';
+    let repeat = 0;
     const submit = (
         submitData,
         elementType,
         elementKey,
         trigger,
+        repeat = 0,
         newValues = null
     ) => {
         if (displaySteps) return;
@@ -406,8 +405,9 @@ function Form({
                     newFieldVals
                 );
                 onSubmit({
-                    fields: allFields,
                     submitFields: formattedFields,
+                    repeatIndex: repeat,
+                    fields: allFields,
                     stepName: activeStep.key,
                     lastStep: !newStepKey,
                     setValues: (userVals) => {
@@ -428,7 +428,7 @@ function Form({
                 });
             client.submitStep(featheryFields);
 
-            client.registerEvent(stepKey, 'complete');
+            client.registerEvent(activeStep.key, 'complete');
         }
 
         newStepKey = nextStepKey(
@@ -451,7 +451,7 @@ function Form({
                 location.pathname + location.search + `#${newStepKey}`;
             if (elementType === 'button') history.push(newURL);
             else history.replace(newURL);
-            getNewStepKey(newStepKey, steps, newFieldVals);
+            getNewStep(newStepKey, steps, newFieldVals);
         }
     };
 
@@ -581,8 +581,9 @@ function Form({
                         acceptedFile
                     );
                     const errors = onValidate({
-                        fields: allFields,
                         submitFields: formattedFields,
+                        repeatIndex: repeat,
+                        fields: allFields,
                         stepName: activeStep.key,
                         lastStep: activeStep.next_conditions.length === 0,
                         setValues: (userVals) => {
@@ -600,7 +601,7 @@ function Form({
                 form.reportValidity();
 
                 if (form.checkValidity())
-                    submit(true, 'button', elementKey, 'click');
+                    submit(true, 'button', elementKey, 'click', repeat);
             }}
             style={{
                 backgroundColor: `#${activeStep.default_background_color}`,
@@ -669,8 +670,21 @@ function Form({
                 field.text = field.text
                     .replace(textVariablePattern, (pattern) => {
                         const pStr = pattern.slice(2, -2);
-                        if (pStr in fieldValues) return fieldValues[pStr];
-                        else return pattern;
+                        if (pStr in fieldValues) {
+                            const pVal = fieldValues[pStr];
+                            if (Array.isArray(pVal)) {
+                                if (pVal.length === 0) {
+                                    return pattern;
+                                } else if (
+                                    isNaN(field.repeat) ||
+                                    field.repeat >= pVal.length
+                                ) {
+                                    return pVal[0];
+                                } else {
+                                    return pVal[field.repeat];
+                                }
+                            } else return pVal;
+                        } else return pattern;
                     })
                     .replace(/\n/g, '<br />');
                 return (
@@ -742,12 +756,14 @@ function Form({
                                 }
                                 onClick={() => {
                                     elementKey = field.text;
+                                    repeat = field.repeat || 0;
                                     if (field.link === 'skip') {
                                         submit(
                                             false,
                                             'button',
                                             elementKey,
-                                            'click'
+                                            'click',
+                                            repeat
                                         );
                                     }
                                 }}
@@ -826,7 +842,8 @@ function Form({
                         'field',
                         servar.key,
                         'click',
-                        fieldValues
+                        fieldValues,
+                        field.repeat || 0
                     );
 
                 let controlElement;
