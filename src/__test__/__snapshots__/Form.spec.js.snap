@@ -1,0 +1,74 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Form renders a basic form 1`] = `
+<form
+  className=""
+  onSubmit={[Function]}
+  style={
+    Object {
+      "backgroundColor": "#FFFFFF",
+      "display": "grid",
+      "gridTemplateColumns": "100%",
+      "gridTemplateRows": "minmax(500px,min-content)",
+      "justifyContent": "center",
+      "maxWidth": "100%",
+      "width": "500px",
+    }
+  }
+>
+  <div
+    style={
+      Object {
+        "alignItems": undefined,
+        "color": "#undefined",
+        "display": "flex",
+        "flexDirection": "column",
+        "fontFamily": undefined,
+        "fontSize": "undefinedpx",
+        "fontStyle": "normal",
+        "fontWeight": undefined,
+        "gridColumnEnd": NaN,
+        "gridColumnStart": NaN,
+        "gridRowEnd": NaN,
+        "gridRowStart": NaN,
+        "justifyContent": undefined,
+        "paddingBottom": "undefinedpx",
+        "paddingLeft": "undefinedpx",
+        "paddingRight": "undefinedpx",
+        "paddingTop": "undefinedpx",
+        "width": "100%",
+      }
+    }
+  >
+    <label
+      htmlFor="key1"
+      style={
+        Object {
+          "marginBottom": "10px",
+        }
+      }
+    >
+      Checkbox 1
+    </label>
+    <div
+      className="form-check"
+      style={
+        Object {
+          "alignItems": "center",
+          "display": "flex",
+        }
+      }
+    >
+      <input
+        checked={false}
+        className="form-check-input position-static"
+        disabled={false}
+        id="key1"
+        onChange={[Function]}
+        onClick={[Function]}
+        type="checkbox"
+      />
+    </div>
+  </div>
+</form>
+`;
