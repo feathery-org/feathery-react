@@ -427,9 +427,8 @@ function Form({
                     return { key, [val.type]: val.value };
                 });
             client.submitStep(featheryFields);
-
-            client.registerEvent(activeStep.key, 'complete');
         }
+        client.registerEvent(activeStep.key, submitData ? 'complete' : 'skip');
 
         newStepKey = nextStepKey(
             activeStep.next_conditions,
