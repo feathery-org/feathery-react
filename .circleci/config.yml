@@ -43,14 +43,6 @@ jobs:
           at: .
       - run: yarn build
 
-  # Publish the package to the npm registry
-  publish:
-    <<: *defaults
-    steps:
-      - attach_workspace:
-          at: .
-      - run: echo 'Publishing...'
-
 workflows:
   version: 2.1
   pipeline:
@@ -62,15 +54,3 @@ workflows:
       - build:
           requires:
             - setup
-      - approve:
-          type: approval
-          requires:
-            - test
-            - build
-          filters:
-            branches:
-              only:
-                - master
-      - publish:
-          requires:
-            - approve
