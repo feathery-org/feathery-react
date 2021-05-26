@@ -2,7 +2,7 @@
 
 exports[`Form renders a basic form 1`] = `
 <form
-  className=""
+  className="form-class"
   onSubmit={[Function]}
   style={
     Object {
@@ -19,19 +19,19 @@ exports[`Form renders a basic form 1`] = `
   <div
     style={
       Object {
-        "alignItems": undefined,
-        "color": "#undefined",
+        "alignItems": "center",
+        "color": "#000000",
         "display": "flex",
         "flexDirection": "column",
-        "fontFamily": undefined,
-        "fontSize": "undefinedpx",
+        "fontFamily": "monospace",
+        "fontSize": "12px",
         "fontStyle": "normal",
-        "fontWeight": undefined,
-        "gridColumnEnd": NaN,
-        "gridColumnStart": NaN,
-        "gridRowEnd": NaN,
-        "gridRowStart": NaN,
-        "justifyContent": undefined,
+        "fontWeight": 400,
+        "gridColumnEnd": 2,
+        "gridColumnStart": 1,
+        "gridRowEnd": 2,
+        "gridRowStart": 1,
+        "justifyContent": "center",
         "paddingBottom": "undefinedpx",
         "paddingLeft": "undefinedpx",
         "paddingRight": "undefinedpx",

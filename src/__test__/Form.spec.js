@@ -6,6 +6,7 @@ describe('Form', () => {
     it('renders a basic form', async () => {
         // Arrange
         const formKey = 'formKey';
+        const className = 'form-class';
         const displaySteps = {
             step1: {
                 key: 'step1',
@@ -15,6 +16,17 @@ describe('Form', () => {
                 images: [],
                 servar_fields: [
                     {
+                        column_index: 0,
+                        row_index: 0,
+                        column_index_end: 0,
+                        row_index_end: 0,
+                        layout: 'center',
+                        vertical_layout: 'center',
+                        font_color: '000000',
+                        font_italic: false,
+                        font_weight: 400,
+                        font_family: 'monospace',
+                        font_size: 12,
                         servar: {
                             key: 'key1',
                             type: 'checkbox',
@@ -31,13 +43,16 @@ describe('Form', () => {
         const displayStepKey = 'step1';
         const props = {
             formKey,
+            className,
             displaySteps,
             displayStepKey
         };
 
         // Act
         let form;
-        act(() => (form = create(<Form {...props} />)));
+        act(() => {
+            form = create(<Form {...props} />);
+        });
         const tree = form.toJSON();
 
         // Assert

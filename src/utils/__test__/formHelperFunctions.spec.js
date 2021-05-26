@@ -309,6 +309,94 @@ describe('formHelperFunctions', () => {
                 newDimensions.rows
             );
         });
+
+        it('handles repeating elements', () => {
+            // Arrange
+            const inputStep = {
+                repeat_row_start: 1,
+                repeat_row_end: 1,
+                text_fields: [
+                    {
+                        text: 'Repeated text field {{foobar}}',
+                        row_index: 1,
+                        row_index_end: 1,
+                        column_index: 2
+                    }
+                ],
+                servar_fields: [],
+                images: [],
+                grid_rows: ['50px', '150px', '50px'],
+                grid_columns: ['150px', '50%'],
+                progress_bar: {
+                    column_index: 0
+                }
+            };
+            const fieldValues = {
+                foobar: ['Hello', 'World', "I'm BMO"]
+            };
+            const dimensions = {
+                width: 500,
+                columns: ['100%'],
+                rows: ['minmax(50px,min-content)']
+            };
+            const newDimensions = {
+                width: null,
+                columns: ['150px', '50%'],
+                rows: [
+                    'minmax(50px,min-content)',
+                    'minmax(150px,min-content)',
+                    'minmax(150px,min-content)',
+                    'minmax(150px,min-content)',
+                    'minmax(50px,min-content)'
+                ]
+            };
+            window.innerWidth = 1024;
+            const setDimensions = jest.fn();
+            const setFormDimensions = jest.fn();
+
+            // Act
+            calculateDimensions(
+                inputStep,
+                null,
+                fieldValues,
+                dimensions,
+                setDimensions,
+                setFormDimensions
+            );
+
+            // Assert
+            expect(inputStep.text_fields).toEqual([
+                {
+                    text: 'Repeated text field {{foobar}}',
+                    column_index: 2,
+                    repeat: 0,
+                    row_index: 1,
+                    row_index_end: 1
+                },
+                {
+                    text: 'Repeated text field {{foobar}}',
+                    column_index: 2,
+                    repeat: 1,
+                    row_index: 2,
+                    row_index_end: 2
+                },
+                {
+                    text: 'Repeated text field {{foobar}}',
+                    column_index: 2,
+                    repeat: 2,
+                    row_index: 3,
+                    row_index_end: 3
+                }
+            ]);
+            expect(inputStep.images).toEqual([]);
+            expect(inputStep.servar_fields).toEqual([]);
+            expect(setDimensions).toHaveBeenCalledWith(newDimensions);
+            expect(setFormDimensions).toHaveBeenCalledWith(
+                newDimensions.width,
+                newDimensions.columns,
+                newDimensions.rows
+            );
+        });
     });
 
     describe('getABVariant', () => {
