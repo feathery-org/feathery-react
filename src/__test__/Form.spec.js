@@ -27,6 +27,10 @@ describe('Form', () => {
                         font_weight: 400,
                         font_family: 'monospace',
                         font_size: 12,
+                        padding_top: 8,
+                        padding_right: 8,
+                        padding_bottom: 8,
+                        padding_left: 8,
                         servar: {
                             key: 'key1',
                             type: 'checkbox',

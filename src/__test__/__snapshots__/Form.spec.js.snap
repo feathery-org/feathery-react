@@ -32,10 +32,10 @@ exports[`Form renders a basic form 1`] = `
         "gridRowEnd": 2,
         "gridRowStart": 1,
         "justifyContent": "center",
-        "paddingBottom": "undefinedpx",
-        "paddingLeft": "undefinedpx",
-        "paddingRight": "undefinedpx",
-        "paddingTop": "undefinedpx",
+        "paddingBottom": "8px",
+        "paddingLeft": "8px",
+        "paddingRight": "8px",
+        "paddingTop": "8px",
         "width": "100%",
       }
     }
