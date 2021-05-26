@@ -6,23 +6,27 @@ defaults: &defaults
     - image: cimg/node:14.17
 
 jobs:
+  # Checkout the repository
+  # Pull node_modules from the CircleCI cache or install directly
+  # Persist all the files for later use
   setup:
     <<: *defaults
     steps:
       - checkout
       - restore_cache:
           keys:
-          - package-dependencies-{{ checksum "package-lock.json" }}
+          - package-dependencies-{{ checksum "yarn.lock" }}
           - package-dependencies-
       - run: yarn install
       - save_cache:
           paths:
             - node_modules
-          key: package-dependencies-{{ checksum "package-lock.json" }}
+          key: package-dependencies-{{ checksum "yarn.lock" }}
       - persist_to_workspace:
           root: ~/feathery-react
           paths: .
 
+  # Execute unit tests
   test:
     <<: *defaults
     steps:
@@ -31,6 +35,7 @@ jobs:
       - run: yarn test:lint
       - run: yarn test
 
+  # Build the package
   build:
     <<: *defaults
     steps:
@@ -38,12 +43,14 @@ jobs:
           at: .
       - run: yarn build
 
+  # Persist the package as a CircleCI artifact
   persist:
     <<: *defaults
     steps:
       - store_artifacts:
           path: .
 
+  # Publish the package to the npm registry
   publish:
     <<: *defaults
     steps:
