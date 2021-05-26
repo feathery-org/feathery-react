@@ -74,14 +74,16 @@ workflows:
           requires:
             - test
             - build
-          # filters:
-          #   branches:
-          #     only:
-          #       - master
+          filters:
+            branches:
+              only:
+                - master
       - approve:
           type: approval
           requires:
-            - persist
+            - test
+            - build
       - publish:
           requires:
+            - persist
             - approve
