@@ -473,7 +473,7 @@ function Form({
                 setOptions: updateFieldOptions(steps)
             });
         }
-        submit(false, 'field', fieldKey, 'change', newValues);
+        submit(false, 'field', fieldKey, 'change', 0, newValues);
     };
 
     let isFilled = true;
