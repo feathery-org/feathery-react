@@ -11,12 +11,7 @@
   },
   "scripts": {
     "build": "webpack --mode production",
-    "prepare": "run-s build",
-    "test": "run-s test:lint",
-    "test:build": "run-s build",
-    "test:lint": "eslint .",
-    "predeploy": "cd example && yarn install && yarn run build",
-    "deploy": "gh-pages -d example/build"
+    "test:lint": "eslint ."
   },
   "peerDependencies": {
     "react": "^16.13.1",

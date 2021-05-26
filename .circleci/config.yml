@@ -47,6 +47,8 @@ jobs:
   persist:
     <<: *defaults
     steps:
+      - attach_workspace:
+          at: .
       - store_artifacts:
           path: .
 
@@ -54,6 +56,8 @@ jobs:
   publish:
     <<: *defaults
     steps:
+      - attach_workspace:
+          at: .
       - run: echo 'Publishing...'
 
 workflows:
@@ -71,6 +75,10 @@ workflows:
           requires:
             - test
             - build
+          # filters:
+          #   branches:
+          #     only:
+          #       - master
       - approve:
           type: approval
           requires:
