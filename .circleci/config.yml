@@ -1,28 +1,48 @@
+version: 2.1
+
 defaults: &defaults
+  working_directory: ~/feathery-react
   docker:
     - image: cimg/node:14.17
 
-version: 2.1
 jobs:
-  test:
+  setup:
     <<: *defaults
     steps:
       - checkout
+      - restore_cache:
+          keys:
+          - package-dependencies-{{ checksum "package-lock.json" }}
+          - package-dependencies-
       - run: yarn install
+      - save_cache:
+          paths:
+            - node_modules
+          key: package-dependencies-{{ checksum "package-lock.json" }}
+      - persist_to_workspace:
+          root: ~/feathery-react
+          paths: .
+
+  test:
+    <<: *defaults
+    steps:
+      - attach_workspace:
+          at: .
       - run: yarn test:lint
       - run: yarn test
 
   build:
     <<: *defaults
     steps:
-      - run: yarn install
+      - attach_workspace:
+          at: .
       - run: yarn build
 
   persist:
     <<: *defaults
     steps:
       - store_artifacts:
-          path: ~/dist
+          path: .
 
   publish:
     <<: *defaults
@@ -33,8 +53,13 @@ workflows:
   version: 2.1
   pipeline:
     jobs:
-      - test
-      - build
+      - setup
+      - test:
+          requires:
+            - setup
+      - build:
+          requires:
+            - setup
       - persist:
           requires:
             - test
