@@ -33,7 +33,6 @@ jobs:
       - attach_workspace:
           at: .
       - run: yarn test:lint
-      - run: yarn test
 
   # Build the package
   build:
