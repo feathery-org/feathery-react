@@ -32,7 +32,8 @@ jobs:
     steps:
       - attach_workspace:
           at: .
-      - run: yarn test:lint
+      - run: yarn lint
+      - run: yarn test
 
   # Build the package
   build:
@@ -41,15 +42,6 @@ jobs:
       - attach_workspace:
           at: .
       - run: yarn build
-
-  # Persist the package as a CircleCI artifact
-  persist:
-    <<: *defaults
-    steps:
-      - attach_workspace:
-          at: .
-      - store_artifacts:
-          path: .
 
   # Publish the package to the npm registry
   publish:
@@ -70,14 +62,6 @@ workflows:
       - build:
           requires:
             - setup
-      - persist:
-          requires:
-            - test
-            - build
-          filters:
-            branches:
-              only:
-                - master
       - approve:
           type: approval
           requires:
@@ -89,5 +73,4 @@ workflows:
                 - master
       - publish:
           requires:
-            - persist
             - approve
