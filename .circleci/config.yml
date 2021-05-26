@@ -1,0 +1,52 @@
+defaults: &defaults
+  docker:
+    - image: cimg/node:14.17
+
+version: 2.1
+jobs:
+  test:
+    <<: *defaults
+    steps:
+      - checkout
+      - run: yarn install
+      - run: yarn test:lint
+      - run: yarn test
+
+  build:
+    <<: *defaults
+    steps:
+      - run: yarn install
+      - run: yarn build
+
+  persist:
+    <<: *defaults
+    steps:
+      - store_artifacts:
+          path: ~/dist
+
+  publish:
+    <<: *defaults
+    steps:
+      - run: echo 'Publishing...'
+
+workflows:
+  version: 2.1
+  pipeline:
+    jobs:
+      - test
+      - build
+      - persist:
+          requires:
+            - test
+            - build
+          filters:
+            branches:
+              only:
+                - master
+      - approve:
+          type: approval
+          requires:
+            - persist
+      - publish:
+          requires:
+            - approve
