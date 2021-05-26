@@ -1,0 +1,56 @@
+version: 2.1
+
+defaults: &defaults
+  working_directory: ~/feathery-react
+  docker:
+    - image: cimg/node:14.17
+
+jobs:
+  # Checkout the repository
+  # Pull node_modules from the CircleCI cache or install directly
+  # Persist all the files for later use
+  setup:
+    <<: *defaults
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+          - package-dependencies-{{ checksum "yarn.lock" }}
+          - package-dependencies-
+      - run: yarn install
+      - save_cache:
+          paths:
+            - node_modules
+          key: package-dependencies-{{ checksum "yarn.lock" }}
+      - persist_to_workspace:
+          root: ~/feathery-react
+          paths: .
+
+  # Execute unit tests
+  test:
+    <<: *defaults
+    steps:
+      - attach_workspace:
+          at: .
+      - run: yarn lint
+      - run: yarn test
+
+  # Build the package
+  build:
+    <<: *defaults
+    steps:
+      - attach_workspace:
+          at: .
+      - run: yarn build
+
+workflows:
+  version: 2.1
+  pipeline:
+    jobs:
+      - setup
+      - test:
+          requires:
+            - setup
+      - build:
+          requires:
+            - setup
