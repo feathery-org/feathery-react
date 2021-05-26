@@ -71,10 +71,6 @@ workflows:
           requires:
             - test
             - build
-          filters:
-            branches:
-              only:
-                - master
       - approve:
           type: approval
           requires:
