@@ -841,8 +841,8 @@ function Form({
                         'field',
                         servar.key,
                         'click',
-                        fieldValues,
-                        field.repeat || 0
+                        field.repeat || 0,
+                        fieldValues
                     );
 
                 let controlElement;
@@ -1531,7 +1531,7 @@ function Form({
                                     mask={
                                         servar.metadata.only_alpha
                                             ? /^[a-z0-9]*$/i
-                                            : undefined
+                                            : /.*/
                                     }
                                     unmask
                                     value={fieldVal}
