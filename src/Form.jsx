@@ -1525,20 +1525,24 @@ function Form({
                     default:
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
-                                <BootstrapField
+                                <MaskedBootstrapField
+                                    key={servar.key}
+                                    mask={servar.metadata.only_alpha ? /^[a-z0-9]*$/i : undefined}
+                                    unmask
+                                    value={fieldVal}
+                                    onClick={onClick}
+                                    onAccept={(value) => {
+                                        fieldOnChange(
+                                            servar.key,
+                                            handleValueChange(value, servar.key)
+                                        );
+                                    }}
+                                    inputRef={(el) => (fieldRefs[servar.key] = el)}
                                     label={fieldLabel}
                                     field={field}
                                     selectStyle={select}
                                     hoverStyle={hover}
                                     type='text'
-                                    fieldValue={fieldVal}
-                                    onChange={(e) => {
-                                        fieldOnChange(
-                                            servar.key,
-                                            handleChange(e)
-                                        );
-                                    }}
-                                    onClick={onClick}
                                 />
                             ) : (
                                 <MuiField
