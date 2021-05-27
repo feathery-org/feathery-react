@@ -1526,8 +1526,13 @@ function Form({
                         controlElement =
                             activeStep.component_type === 'bootstrap' ? (
                                 <MaskedBootstrapField
+                                    id={servar.key}
                                     key={servar.key}
-                                    mask={servar.metadata.only_alpha ? /^[a-z0-9]*$/i : undefined}
+                                    mask={
+                                        servar.metadata.only_alpha
+                                            ? /^[a-z0-9]*$/i
+                                            : undefined
+                                    }
                                     unmask
                                     value={fieldVal}
                                     onClick={onClick}
@@ -1537,7 +1542,9 @@ function Form({
                                             handleValueChange(value, servar.key)
                                         );
                                     }}
-                                    inputRef={(el) => (fieldRefs[servar.key] = el)}
+                                    inputRef={(el) =>
+                                        (fieldRefs[servar.key] = el)
+                                    }
                                     label={fieldLabel}
                                     field={field}
                                     selectStyle={select}
