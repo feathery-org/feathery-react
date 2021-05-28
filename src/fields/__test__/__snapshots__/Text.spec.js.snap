@@ -4,7 +4,7 @@ exports[`Text renders a plaintext text block 1`] = `
 <div
   dangerouslySetInnerHTML={
     Object {
-      "__html": "<div>Hello World!</div>",
+      "__html": "<span>Hello World!</span>",
     }
   }
 />
@@ -14,7 +14,7 @@ exports[`Text renders a text block with custom styles 1`] = `
 <div
   dangerouslySetInnerHTML={
     Object {
-      "__html": "<div><strong style=\\"font-family: sans-serif;font-size: 48px\\"><em>Hello World!</em></strong></div>",
+      "__html": "<span style=\\"font-size: 48px; font-family: sans-serif; color: rgb(0, 0, 0); font-weight: 700; font-style: italic;\\">Hello World!</span>",
     }
   }
 />
@@ -24,7 +24,7 @@ exports[`Text renders an empty text block 1`] = `
 <div
   dangerouslySetInnerHTML={
     Object {
-      "__html": "<div><br/></div>",
+      "__html": "<span><br></span>",
     }
   }
 />

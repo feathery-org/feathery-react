@@ -54,7 +54,8 @@ describe('Text', () => {
                         {
                             insert: 'Hello World!',
                             attributes: {
-                                bold: true,
+                                weight: 700,
+                                color: '#000000',
                                 italic: true,
                                 size: '48px',
                                 font: 'sans',

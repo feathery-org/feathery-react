@@ -1,35 +1,4 @@
 import React from 'react';
-import { QuillDeltaToHtmlConverter } from 'quill-delta-to-html';
-
-/**
- * Construct a subset of Quill parser config options from the provide deltas.
- * Some config values for parsing the Quill deltas can be derived from the deltas themselves.
- * In this case, we can configure which font sizes and font families to support.
- * @param {Object[]} ops List of Quill deltas
- * @returns Object
- */
-function constructConfigFromDeltas(ops) {
-    const fontFamilies = {};
-    const fontSizes = {};
-
-    ops.forEach((op) => {
-        const fontFamily = op.attributes?.font;
-        const fontSize = op.attributes?.size;
-
-        if (fontFamily) {
-            fontFamilies[fontFamily] = `font-family: ${op.attributes.fontFull}`;
-        }
-
-        if (fontSize) {
-            fontSizes[fontSize] = `font-size: ${fontSize}`;
-        }
-    });
-
-    return {
-        fontFamilies,
-        fontSizes
-    };
-}
 
 /**
  * Disambiguation: this is NOT a text "field" that receives input.
@@ -37,19 +6,59 @@ function constructConfigFromDeltas(ops) {
  */
 function Text({ text }) {
     const { text_formatted: formattedText } = text;
-    const constructedConfig = constructConfigFromDeltas(formattedText.ops);
-    const config = {
-        paragraphTag: 'div',
-        inlineStyles: {
-            size: constructedConfig.fontSizes,
-            font: constructedConfig.fontFamilies
-        }
-    };
 
-    const parser = new QuillDeltaToHtmlConverter(formattedText.ops, config);
-    const html = parser.convert();
+    // TODO: Make this in React
+    const nodes = formattedText.ops
+        .map((op) => {
+            const attrs = op.attributes;
 
-    return <div dangerouslySetInnerHTML={{ __html: html }} />;
+            const node = document.createElement(attrs?.link ? 'a' : 'span');
+            node.innerHTML = op.insert.replace(/\n/g, '<br>');
+
+            if (attrs) {
+                if (attrs.size) {
+                    node.style.fontSize = attrs.size;
+                }
+
+                if (attrs.font) {
+                    node.style.fontFamily = attrs.fontFull.replace(/"/g, "'");
+                }
+
+                if (attrs.color) {
+                    node.style.color = attrs.color;
+                }
+
+                if (attrs.weight) {
+                    node.style.fontWeight = attrs.weight;
+                }
+
+                if (attrs.italic) {
+                    node.style.fontStyle = 'italic';
+                }
+
+                if (attrs.link) {
+                    node.href = attrs.link;
+                }
+
+                const lines = [];
+                if (attrs.strike) {
+                    lines.push('line-through');
+                }
+
+                if (attrs.underline) {
+                    lines.push('underline');
+                }
+
+                if (lines.length > 0) {
+                    node.style.textDecoration = lines.join(' ');
+                }
+            }
+
+            return node.outerHTML;
+        })
+        .join('');
+
+    return <div dangerouslySetInnerHTML={{ __html: nodes }} />;
 }
 
 export default Text;
