@@ -1,48 +1,35 @@
 import React from 'react';
 import { QuillDeltaToHtmlConverter } from 'quill-delta-to-html';
 
-const fontFamilies = {
-    'system-font':
-        'font-family: 1em / 1.5 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans", sans-serif',
-    actor: "font-family: 'Actor', sans-serif",
-    arial: 'font-family: Arial, sans-serif',
-    calistoga: 'font-family: calistoga, serif',
-    caslon: 'font-family: adobe-caslon-pro, serif',
-    'chronicle-display': 'font-family: Chronicle Display, serif',
-    'circular-std': "font-family: 'Circular std', sans-serif",
-    'ff-sero-std': "font-family: 'FF Sero Std', sans-serif",
-    gotham:
-        'font-family: Gotham,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen,Ubuntu,Cantarell,Droid Sans,Helvetica Neue,sans-serif',
-    'open-sans': 'font-family: Open Sans, sans-serif',
-    overpass: 'font-family: Overpass, sans-serif',
-    'source-sans-pro': "font-family: 'Source Sans Pro', sans-serif"
-};
-const fontSizes = [
-    '8px',
-    '9px',
-    '10px',
-    '12px',
-    '14px',
-    '16px',
-    '20px',
-    '24px',
-    '32px',
-    '42px',
-    '54px',
-    '68px',
-    '84px',
-    '98px'
-];
-const config = {
-    paragraphTag: 'div',
-    inlineStyles: {
-        size: fontSizes.reduce(
-            (sizes, size) => ({ [size]: `font-size: ${size}`, ...sizes }),
-            {}
-        ),
-        font: fontFamilies
-    }
-};
+/**
+ * Construct a subset of Quill parser config options from the provide deltas.
+ * Some config values for parsing the Quill deltas can be derived from the deltas themselves.
+ * In this case, we can configure which font sizes and font families to support.
+ * @param {Object[]} ops List of Quill deltas
+ * @returns Object
+ */
+function constructConfigFromDeltas(ops) {
+    const fontFamilies = {};
+    const fontSizes = {};
+
+    ops.forEach((op) => {
+        const fontFamily = op.attributes?.font;
+        const fontSize = op.attributes?.size;
+
+        if (fontFamily) {
+            fontFamilies[fontFamily] = `font-family: ${op.attributes.fontFull}`;
+        }
+
+        if (fontSize) {
+            fontSizes[fontSize] = `font-size: ${fontSize}`;
+        }
+    });
+
+    return {
+        fontFamilies,
+        fontSizes
+    };
+}
 
 /**
  * Disambiguation: this is NOT a text "field" that receives input.
@@ -50,6 +37,15 @@ const config = {
  */
 function Text({ text }) {
     const { text_formatted: formattedText } = text;
+    const constructedConfig = constructConfigFromDeltas(formattedText.ops);
+    const config = {
+        paragraphTag: 'div',
+        inlineStyles: {
+            size: constructedConfig.fontSizes,
+            font: constructedConfig.fontFamilies
+        }
+    };
+
     const parser = new QuillDeltaToHtmlConverter(formattedText.ops, config);
     const html = parser.convert();
 

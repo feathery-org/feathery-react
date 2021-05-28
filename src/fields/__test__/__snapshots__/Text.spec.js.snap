@@ -1,0 +1,31 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Text renders a plaintext text block 1`] = `
+<div
+  dangerouslySetInnerHTML={
+    Object {
+      "__html": "<div>Hello World!</div>",
+    }
+  }
+/>
+`;
+
+exports[`Text renders a text block with custom styles 1`] = `
+<div
+  dangerouslySetInnerHTML={
+    Object {
+      "__html": "<div><strong style=\\"font-family: sans-serif;font-size: 48px\\"><em>Hello World!</em></strong></div>",
+    }
+  }
+/>
+`;
+
+exports[`Text renders an empty text block 1`] = `
+<div
+  dangerouslySetInnerHTML={
+    Object {
+      "__html": "<div><br/></div>",
+    }
+  }
+/>
+`;
