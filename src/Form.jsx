@@ -25,6 +25,7 @@ import {
 
 import './bootstrap-iso.css';
 import GooglePlaces from './components/GooglePlaces';
+import Text from './fields/Text';
 
 const buttonAlignmentMap = {
     left: 'flex-start',
@@ -782,21 +783,7 @@ function Form({
                                 }}
                             />
                         ) : (
-                            <div
-                                key={field.text}
-                                css={{
-                                    color: `#${field.font_color}`,
-                                    fontStyle: field.font_italic
-                                        ? 'italic'
-                                        : 'normal',
-                                    fontWeight: field.font_weight,
-                                    fontFamily: field.font_family,
-                                    fontSize: `${field.font_size}px`
-                                }}
-                                dangerouslySetInnerHTML={{
-                                    __html: field.text
-                                }}
-                            />
+                            <Text text={field} />
                         )}
                     </div>
                 );
