@@ -146,10 +146,12 @@ describe('client', () => {
             const formKey = 'formKey';
             const stepKey = 'stepKey';
             const event = { eventStuff: 'eventStuff' };
+            const nextStepKey = '';
             const client = new Client(formKey);
             const body = {
                 form_key: formKey,
                 step_key: stepKey,
+                next_step_key: nextStepKey,
                 event,
                 fuser_key: 'userKey'
             };
@@ -158,7 +160,11 @@ describe('client', () => {
 
             // Act
             await initUserPromise;
-            const response = await client.registerEvent(stepKey, event);
+            const response = await client.registerEvent({
+                stepKey,
+                nextStepKey,
+                event
+            });
 
             // Assert
             expect(global.fetch).toHaveBeenCalledWith(

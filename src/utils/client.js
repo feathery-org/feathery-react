@@ -149,13 +149,14 @@ export default class Client {
         });
     }
 
-    registerEvent(stepKey, event) {
+    registerEvent({ stepKey, nextStepKey = '', event }) {
         initUserPromise.then(() => {
             const { userKey, apiKey } = initInfo();
             const url = `${API_URL}api/event/`;
             const data = {
                 form_key: this.formKey,
                 step_key: stepKey,
+                next_step_key: nextStepKey,
                 event,
                 ...(userKey ? { fuser_key: userKey } : {})
             };

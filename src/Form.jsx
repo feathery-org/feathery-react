@@ -164,7 +164,10 @@ function Form({
                     integrationData: null
                 });
             }
-            clientArg.registerEvent(newKey, 'load');
+            clientArg.registerEvent({
+                stepKey: newKey,
+                event: 'load'
+            });
         }
 
         setActiveStep(newStep);
@@ -457,7 +460,6 @@ function Form({
                 });
             client.submitStep(featheryFields);
         }
-        client.registerEvent(activeStep.key, submitData ? 'complete' : 'skip');
 
         newStepKey = nextStepKey(
             activeStep.next_conditions,
@@ -465,6 +467,13 @@ function Form({
             steps,
             newFieldVals
         );
+
+        client.registerEvent({
+            stepKey: activeStep.key,
+            nextStepKey: newStepKey ?? '',
+            event: submitData ? 'complete' : 'skip'
+        });
+
         if (!newStepKey) {
             if (
                 submitData ||
