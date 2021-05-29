@@ -107,6 +107,17 @@ function Form({
             });
         });
         setSteps(JSON.parse(JSON.stringify(stepData)));
+
+        activeStep.servar_fields.forEach((field) => {
+            const servar = field.servar;
+            if (
+                servar.metadata.allow_custom_options &&
+                servar.key in newFieldOptions
+            ) {
+                servar.metadata.options = newFieldOptions[servar.key];
+            }
+        });
+        setActiveStep(JSON.parse(JSON.stringify(activeStep)));
     };
 
     const getNewStep = (
