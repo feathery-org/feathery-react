@@ -6,11 +6,13 @@ describe('Text', () => {
     it('renders an empty text block', async () => {
         // Arrange
         const props = {
-            text: {
-                text_formatted: {
-                    ops: [{ insert: '\n' }]
-                }
-            }
+            field: { text_formatted: [{ insert: '\n' }] },
+            fieldValues: {},
+            isFilled: false,
+            displaySteps: [],
+            submit: () => {},
+            setElementKey: () => {},
+            setRepeat: () => {}
         };
 
         // Act
@@ -27,11 +29,13 @@ describe('Text', () => {
     it('renders a plaintext text block', async () => {
         // Arrange
         const props = {
-            text: {
-                text_formatted: {
-                    ops: [{ insert: 'Hello World!' }]
-                }
-            }
+            field: { text_formatted: [{ insert: 'Hello World!' }] },
+            fieldValues: {},
+            isFilled: false,
+            displaySteps: [],
+            submit: () => {},
+            setElementKey: () => {},
+            setRepeat: () => {}
         };
 
         // Act
@@ -48,23 +52,28 @@ describe('Text', () => {
     it('renders a text block with custom styles', async () => {
         // Arrange
         const props = {
-            text: {
-                text_formatted: {
-                    ops: [
-                        {
-                            insert: 'Hello World!',
-                            attributes: {
-                                weight: 700,
-                                color: '#000000',
-                                italic: true,
-                                size: '48px',
-                                font: 'sans',
-                                fontFull: 'sans-serif'
-                            }
+            field: {
+                text_formatted: [
+                    {
+                        insert: 'Hello World!',
+                        attributes: {
+                            weight: 700,
+                            color: '#000000FF',
+                            size: '48px',
+                            font: 'sans-serif',
+                            italic: true,
+                            strike: false,
+                            underline: false
                         }
-                    ]
-                }
-            }
+                    }
+                ]
+            },
+            fieldValues: {},
+            isFilled: false,
+            displaySteps: [],
+            submit: () => {},
+            setElementKey: () => {},
+            setRepeat: () => {}
         };
 
         // Act
