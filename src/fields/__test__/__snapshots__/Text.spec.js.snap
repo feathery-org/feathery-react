@@ -1,0 +1,43 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Text renders a plaintext text block 1`] = `
+<div
+  className="css-fi6myt-Text"
+>
+  <div
+    dangerouslySetInnerHTML={
+      Object {
+        "__html": "<span>Hello World!</span>",
+      }
+    }
+  />
+</div>
+`;
+
+exports[`Text renders a text block with custom styles 1`] = `
+<div
+  className="css-fi6myt-Text"
+>
+  <div
+    dangerouslySetInnerHTML={
+      Object {
+        "__html": "<span style=\\"font-weight: 700; font-style: italic;\\">Hello World!</span>",
+      }
+    }
+  />
+</div>
+`;
+
+exports[`Text renders an empty text block 1`] = `
+<div
+  className="css-fi6myt-Text"
+>
+  <div
+    dangerouslySetInnerHTML={
+      Object {
+        "__html": "<span><br></span>",
+      }
+    }
+  />
+</div>
+`;
