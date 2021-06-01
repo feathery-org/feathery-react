@@ -405,6 +405,10 @@ function Form({
                     }
                 }
             );
+            // do validation check before running user submission function
+            // so user does not access invalid data
+            formRef.current.reportValidity();
+            if (!formRef.current.checkValidity()) return;
 
             // Execute user-provided onSubmit function if present
             if (typeof onSubmit === 'function') {
@@ -444,6 +448,7 @@ function Form({
                     }
                 });
             }
+            // do validation check in case user has manually invalidated the step
             formRef.current.reportValidity();
             if (!formRef.current.checkValidity()) return;
 
