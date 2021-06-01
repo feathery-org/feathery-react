@@ -60,6 +60,7 @@
     "@emotion/react": "^11.1.5",
     "@fingerprintjs/fingerprintjs": "^3.1.0",
     "@material-ui/core": "^4.11.3",
+    "quill-delta": "^4.2.2",
     "react-bootstrap": "^1.4.0",
     "react-color": "^2.19.3",
     "react-imask": "^6.0.7",

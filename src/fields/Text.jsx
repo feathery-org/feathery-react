@@ -1,5 +1,7 @@
 import React from 'react';
 import Button from 'react-bootstrap/Button';
+import Delta from 'quill-delta';
+
 import { adjustColor, textVariablePattern } from '../utils/formHelperFunctions';
 
 const buttonAlignmentMap = {
@@ -15,84 +17,120 @@ const buttonAlignmentMap = {
 function Text({
     field,
     fieldValues,
+    conditions,
     isFilled,
     displaySteps,
     submit,
     setElementKey,
     setRepeat
 }) {
+    const elementKey = field.text;
+    const repeat = field.repeat || 0;
+
+    let delta = new Delta(field.text_formatted);
+    if (!field.is_button) {
+        conditions.forEach((cond) => {
+            if (
+                cond.element_type === 'text' &&
+                cond.element_key === elementKey
+            ) {
+                const start = cond.metadata.start || 0;
+                const end = cond.metadata.end || field.text.length;
+                delta = delta.compose(
+                    new Delta()
+                        .retain(start)
+                        .retain(end - start, { start, end })
+                );
+            }
+        });
+    }
+
     // TODO (jake): Make this in React
-    const nodes = field.text_formatted
-        .map((op) => {
-            const attrs = op.attributes;
-            const node = document.createElement(attrs?.link ? 'a' : 'span');
+    const nodes = delta.map((op, i) => {
+        // replace placeholder variables and populate newlines
+        const text = op.insert.replace(textVariablePattern, (pattern) => {
+            const pStr = pattern.slice(2, -2);
+            if (pStr in fieldValues) {
+                const pVal = fieldValues[pStr];
+                if (Array.isArray(pVal)) {
+                    if (pVal.length === 0) {
+                        return pattern;
+                    } else if (
+                        isNaN(field.repeat) ||
+                        field.repeat >= pVal.length
+                    ) {
+                        return pVal[0];
+                    } else {
+                        return pVal[field.repeat];
+                    }
+                } else return pVal;
+            } else return pattern;
+        });
+        const styles = { whiteSpace: 'pre-wrap' };
+        let onClick = () => {};
 
-            // replace placeholder variables and populate newlines
-            node.innerHTML = op.insert
-                .replace(textVariablePattern, (pattern) => {
-                    const pStr = pattern.slice(2, -2);
-                    if (pStr in fieldValues) {
-                        const pVal = fieldValues[pStr];
-                        if (Array.isArray(pVal)) {
-                            if (pVal.length === 0) {
-                                return pattern;
-                            } else if (
-                                isNaN(field.repeat) ||
-                                field.repeat >= pVal.length
-                            ) {
-                                return pVal[0];
-                            } else {
-                                return pVal[field.repeat];
-                            }
-                        } else return pVal;
-                    } else return pattern;
-                })
-                .replace(/\n/g, '<br>');
-
-            if (attrs) {
-                if (attrs.size) {
-                    node.style.fontSize = `${attrs.size}px`;
-                }
-
-                if (attrs.family) {
-                    node.style.fontFamily = attrs.family.replace(/"/g, "'");
-                }
-
-                if (attrs.color) {
-                    node.style.color = `#${attrs.color}`;
-                }
-
-                if (attrs.weight) {
-                    node.style.fontWeight = attrs.weight;
-                }
-
-                if (attrs.italic) {
-                    node.style.fontStyle = 'italic';
-                }
-
-                if (attrs.link) {
-                    node.href = attrs.link;
-                }
-
-                const lines = [];
-                if (attrs.strike) {
-                    lines.push('line-through');
-                }
-
-                if (attrs.underline) {
-                    lines.push('underline');
-                }
-
-                if (lines.length > 0) {
-                    node.style.textDecoration = lines.join(' ');
-                }
+        const attrs = op.attributes;
+        if (attrs) {
+            if (attrs.start && attrs.end) {
+                styles.cursor = 'pointer';
+                onClick = () => {
+                    setElementKey(elementKey);
+                    setRepeat(repeat);
+                    submit(
+                        false,
+                        {
+                            elementType: 'text',
+                            elementKey: elementKey,
+                            trigger: 'click',
+                            start: attrs.start,
+                            end: attrs.end
+                        },
+                        repeat
+                    );
+                };
             }
 
-            return node.outerHTML;
-        })
-        .join('');
+            if (attrs.size) {
+                styles.fontSize = `${attrs.size}px`;
+            }
 
-    setElementKey('b');
+            if (attrs.family) {
+                styles.fontFamily = attrs.family.replace(/"/g, "'");
+            }
+
+            if (attrs.color) {
+                styles.color = `#${attrs.color}`;
+            }
+
+            if (attrs.weight) {
+                styles.fontWeight = attrs.weight;
+            }
+
+            if (attrs.italic) {
+                styles.fontStyle = 'italic';
+            }
+
+            const lines = [];
+            if (attrs.strike) {
+                lines.push('line-through');
+            }
+
+            if (attrs.underline) {
+                lines.push('underline');
+            }
+
+            if (lines.length > 0) {
+                styles.textDecoration = lines.join(' ');
+            }
+        }
+
+        return (
+            <span key={i} style={styles} onClick={onClick}>
+                {text}
+            </span>
+        );
+    });
+
     return (
         <div
             css={{
@@ -113,8 +151,11 @@ function Text({
         >
             {field.is_button ? (
                 <Button
-                    key={field.text}
+                    key={elementKey}
                     style={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
                         cursor: field.link ? 'pointer' : 'default',
                         borderRadius: `${field.border_radius}px`,
                         borderColor: `#${field.border_color}`,
@@ -152,26 +193,25 @@ function Text({
                             : undefined
                     }
                     onClick={() => {
-                        const newElementKey = field.text;
-                        const newRepeat = field.repeat || 0;
-                        setElementKey(field.text);
-                        setRepeat(newRepeat);
+                        setElementKey(elementKey);
+                        setRepeat(repeat);
                         if (field.link === 'skip') {
                             submit(
                                 false,
-                                'button',
-                                newElementKey,
-                                'click',
-                                newRepeat
+                                {
+                                    elementType: 'button',
+                                    elementKey: elementKey,
+                                    trigger: 'click'
+                                },
+                                repeat
                             );
                         }
                     }}
-                    dangerouslySetInnerHTML={{
-                        __html: nodes
-                    }}
-                />
+                >
+                    {nodes}
+                </Button>
             ) : (
-                <div dangerouslySetInnerHTML={{ __html: nodes }} />
+                <div>{nodes}</div>
             )}
         </div>
     );
