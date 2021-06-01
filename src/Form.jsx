@@ -32,7 +32,6 @@ function Form({
     onChange = null,
     onLoad = null,
     onSubmit = null,
-    onValidate = null,
     initialValues = {},
     style = {},
     className = '',
@@ -51,7 +50,6 @@ function Form({
         steps ? steps[displayStepKey] : null
     );
     const [fieldValues, setFieldValues] = useState(initialValues);
-    const fieldRefs = useRef({}).current;
     const [otherSelect, setOtherSelect] = useState({});
 
     const [finishConfig, setFinishConfig] = useState({
@@ -70,6 +68,9 @@ function Form({
         displaySteps ? Object.keys(displaySteps).length : 0
     );
     const [googleKey, setGoogleKey] = useState('');
+
+    const fieldRefs = useRef({}).current;
+    const formRef = useRef(null);
 
     const updateFieldValues = (newFieldValues, baseFieldValues = null) => {
         let newValues;
@@ -373,7 +374,12 @@ function Form({
 
     let elementKey = '';
     let repeat = 0;
-    const submit = (submitData, metadata, repeat = 0, newValues = null) => {
+    const submit = async (
+        submitData,
+        metadata,
+        repeat = 0,
+        newValues = null
+    ) => {
         if (displaySteps) return;
 
         let newFieldVals = newValues || fieldValues;
@@ -383,6 +389,21 @@ function Form({
                 activeStep,
                 newFieldVals,
                 acceptedFile
+            );
+
+            Object.entries(formattedFields).map(
+                ([fieldKey, { value, type }]) => {
+                    const element = formRef.current.elements[fieldKey];
+                    if (element) {
+                        if (type === 'phone_number' && value.length !== 10) {
+                            element.setCustomValidity('Invalid phone number');
+                        } else if (type === 'ssn' && value.length !== 9) {
+                            element.setCustomValidity(
+                                'Invalid social security number'
+                            );
+                        }
+                    }
+                }
             );
 
             // Execute user-provided onSubmit function if present
@@ -398,7 +419,7 @@ function Form({
                     steps,
                     newFieldVals
                 );
-                onSubmit({
+                await onSubmit({
                     submitFields: formattedFields,
                     repeatIndex: repeat,
                     fields: allFields,
@@ -411,9 +432,20 @@ function Form({
                         );
                         client.submitCustom(userVals);
                     },
-                    setOptions: updateFieldOptions(steps)
+                    setOptions: updateFieldOptions(steps),
+                    setErrors: (errors) => {
+                        Object.entries(errors).forEach(
+                            ([fieldKey, message]) => {
+                                const element =
+                                    formRef.current.elements[fieldKey];
+                                if (element) element.setCustomValidity(message);
+                            }
+                        );
+                    }
                 });
             }
+            formRef.current.reportValidity();
+            if (!formRef.current.checkValidity()) return;
 
             const featheryFields = Object.entries(formattedFields)
                 .filter(([key, val]) => val.type !== 'file_upload')
@@ -543,69 +575,15 @@ function Form({
                     ? `bootstrap-iso ${className}`
                     : className
             }
-            onSubmit={(event) => {
+            ref={formRef}
+            onSubmit={async (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-
-                const form = event.currentTarget;
-                const formattedFields = formatStepFields(
-                    activeStep,
-                    fieldValues,
-                    acceptedFile
+                await submit(
+                    true,
+                    { elementType: 'button', elementKey, trigger: 'click' },
+                    repeat
                 );
-                Object.entries(formattedFields).map(
-                    ([fieldKey, { value, type }]) => {
-                        const element = form.elements[fieldKey];
-                        if (element) {
-                            if (
-                                type === 'phone_number' &&
-                                value.length !== 10
-                            ) {
-                                element.setCustomValidity(
-                                    'Invalid phone number'
-                                );
-                            } else if (type === 'ssn' && value.length !== 9) {
-                                element.setCustomValidity(
-                                    'Invalid social security number'
-                                );
-                            }
-                        }
-                    }
-                );
-
-                // Execute user-provided checkValidity function if present
-                if (typeof onValidate === 'function') {
-                    const allFields = formatAllStepFields(
-                        steps,
-                        fieldValues,
-                        acceptedFile
-                    );
-                    const errors = onValidate({
-                        submitFields: formattedFields,
-                        repeatIndex: repeat,
-                        fields: allFields,
-                        stepName: activeStep.key,
-                        lastStep: activeStep.next_conditions.length === 0,
-                        setValues: (userVals) => {
-                            updateFieldValues(userVals);
-                            client.submitCustom(userVals);
-                        },
-                        setOptions: updateFieldOptions(steps)
-                    });
-                    errors.forEach((err) => {
-                        const [fieldKey, message] = err;
-                        const element = form.elements[fieldKey];
-                        if (element) element.setCustomValidity(message);
-                    });
-                }
-                form.reportValidity();
-
-                if (form.checkValidity())
-                    submit(
-                        true,
-                        { elementType: 'button', elementKey, trigger: 'click' },
-                        repeat
-                    );
             }}
             style={{
                 backgroundColor: `#${activeStep.default_background_color}`,
