@@ -373,14 +373,7 @@ function Form({
 
     let elementKey = '';
     let repeat = 0;
-    const submit = (
-        submitData,
-        elementType,
-        elementKey,
-        trigger,
-        repeat = 0,
-        newValues = null
-    ) => {
+    const submit = (submitData, metadata, repeat = 0, newValues = null) => {
         if (displaySteps) return;
 
         let newFieldVals = newValues || fieldValues;
@@ -401,9 +394,7 @@ function Form({
                 );
                 newStepKey = nextStepKey(
                     activeStep.next_conditions,
-                    elementType,
-                    elementKey,
-                    trigger,
+                    metadata,
                     steps,
                     newFieldVals
                 );
@@ -435,14 +426,15 @@ function Form({
 
         newStepKey = nextStepKey(
             activeStep.next_conditions,
-            elementType,
-            elementKey,
-            trigger,
+            metadata,
             steps,
             newFieldVals
         );
         if (!newStepKey) {
-            if (submitData || elementType === 'button') {
+            if (
+                submitData ||
+                ['button', 'text'].includes(metadata.elementType)
+            ) {
                 setFinishConfig({
                     finished: true,
                     redirectURL: activeStep.redirect_url
@@ -451,7 +443,8 @@ function Form({
         } else {
             const newURL =
                 location.pathname + location.search + `#${newStepKey}`;
-            if (elementType === 'button') history.push(newURL);
+            if (['button', 'text'].includes(metadata.elementType))
+                history.push(newURL);
             else history.replace(newURL);
             getNewStep(newStepKey, steps, newFieldVals);
         }
@@ -476,7 +469,12 @@ function Form({
                 setOptions: updateFieldOptions(steps)
             });
         }
-        submit(false, 'field', fieldKey, 'change', 0, newValues);
+        submit(
+            false,
+            { elementType: 'field', elementKey: fieldKey, trigger: 'change' },
+            0,
+            newValues
+        );
     };
 
     let isFilled = true;
@@ -603,7 +601,11 @@ function Form({
                 form.reportValidity();
 
                 if (form.checkValidity())
-                    submit(true, 'button', elementKey, 'click', repeat);
+                    submit(
+                        true,
+                        { elementType: 'button', elementKey, trigger: 'click' },
+                        repeat
+                    );
             }}
             style={{
                 backgroundColor: `#${activeStep.default_background_color}`,
@@ -669,9 +671,10 @@ function Form({
             ))}
             {activeStep.text_fields.map((field, i) => (
                 <Text
+                    key={`text-${i}`}
                     field={field}
                     fieldValues={fieldValues}
-                    key={`text-${i}`}
+                    conditions={activeStep.next_conditions}
                     displaySteps={displaySteps}
                     submit={submit}
                     isFilled={isFilled}
@@ -731,9 +734,11 @@ function Form({
                 const onClick = (e, submitData = false, fieldValues = null) =>
                     submit(
                         submitData,
-                        'field',
-                        servar.key,
-                        'click',
+                        {
+                            elementType: 'field',
+                            elementKey: servar.key,
+                            trigger: 'click'
+                        },
                         field.repeat || 0,
                         fieldValues
                     );

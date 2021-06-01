@@ -468,17 +468,17 @@ describe('formHelperFunctions', () => {
                     element_key: elementKey,
                     trigger,
                     rules: [],
-                    next_step_key: nextKey
+                    next_step_key: nextKey,
+                    metadata: {}
                 }
             ];
 
             // Act
-            const actual = nextStepKey(
-                conditions,
+            const actual = nextStepKey(conditions, {
                 elementType,
                 elementKey,
                 trigger
-            );
+            });
 
             // Assert
             expect(actual).toEqual(nextKey);
@@ -502,7 +502,8 @@ describe('formHelperFunctions', () => {
                             comparison: 'equal'
                         }
                     ],
-                    next_step_key: nextKey
+                    next_step_key: nextKey,
+                    metadata: {}
                 }
             ];
             const fieldValues = {
@@ -512,9 +513,11 @@ describe('formHelperFunctions', () => {
             // Act
             const actual = nextStepKey(
                 conditions,
-                elementType,
-                elementKey,
-                trigger,
+                {
+                    elementType,
+                    elementKey,
+                    trigger
+                },
                 null,
                 fieldValues
             );
@@ -541,7 +544,8 @@ describe('formHelperFunctions', () => {
                             comparison: 'equal'
                         }
                     ],
-                    next_step_key: nextKey
+                    next_step_key: nextKey,
+                    metadata: {}
                 }
             ];
             const fieldValues = {
@@ -551,9 +555,11 @@ describe('formHelperFunctions', () => {
             // Act
             const actual = nextStepKey(
                 conditions,
-                elementType,
-                elementKey,
-                trigger,
+                {
+                    elementType,
+                    elementKey,
+                    trigger
+                },
                 null,
                 fieldValues
             );
@@ -585,7 +591,8 @@ describe('formHelperFunctions', () => {
                             comparison: 'not_equal'
                         }
                     ],
-                    next_step_key: nextKey
+                    next_step_key: nextKey,
+                    metadata: {}
                 }
             ];
             const fieldValues = {
@@ -595,9 +602,11 @@ describe('formHelperFunctions', () => {
             // Act
             const actual = nextStepKey(
                 conditions,
-                elementType,
-                elementKey,
-                trigger,
+                {
+                    elementType,
+                    elementKey,
+                    trigger
+                },
                 null,
                 fieldValues
             );

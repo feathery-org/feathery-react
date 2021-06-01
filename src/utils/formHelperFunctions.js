@@ -257,23 +257,21 @@ const getDefaultFieldValues = (steps) => {
     return fieldValues;
 };
 
-const nextStepKey = (
-    nextConditions,
-    elementType,
-    elementKey,
-    trigger,
-    steps,
-    fieldValues
-) => {
+const nextStepKey = (nextConditions, metadata, steps, fieldValues) => {
     let newKey, defaultKey;
     nextConditions
         .filter(
             (cond) =>
-                cond.element_type === elementType &&
-                cond.element_key === elementKey
+                cond.element_type === metadata.elementType &&
+                cond.element_key === metadata.elementKey
         )
         .forEach((cond) => {
-            if (cond.trigger !== trigger) return;
+            if (cond.trigger !== metadata.trigger) return;
+            if (
+                cond.metadata.start !== metadata.start ||
+                cond.metadata.end !== metadata.end
+            )
+                return;
 
             if (cond.rules.length === 0) defaultKey = cond.next_step_key;
             else {

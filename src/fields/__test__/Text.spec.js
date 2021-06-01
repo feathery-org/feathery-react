@@ -8,6 +8,7 @@ describe('Text', () => {
         const props = {
             field: { text_formatted: [{ insert: '\n' }] },
             fieldValues: {},
+            conditions: [],
             isFilled: false,
             displaySteps: [],
             submit: () => {},
@@ -31,6 +32,7 @@ describe('Text', () => {
         const props = {
             field: { text_formatted: [{ insert: 'Hello World!' }] },
             fieldValues: {},
+            conditions: [],
             isFilled: false,
             displaySteps: [],
             submit: () => {},
@@ -69,6 +71,7 @@ describe('Text', () => {
                 ]
             },
             fieldValues: {},
+            conditions: [],
             isFilled: false,
             displaySteps: [],
             submit: () => {},
