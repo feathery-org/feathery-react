@@ -9,6 +9,7 @@ node_modules
 # builds
 build
 dist
+umd
 .rpt2_cache
 
 # misc

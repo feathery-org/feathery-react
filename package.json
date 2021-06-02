@@ -6,11 +6,14 @@
   "license": "MIT",
   "repository": "https://github.com/feathery-org/feathery-react",
   "main": "dist/index.js",
+  "jsdelivr": "umd/index.js",
   "engines": {
     "node": ">=10"
   },
   "scripts": {
-    "build": "webpack --mode production",
+    "build": "yarn build:node && yarn build:umd",
+    "build:node": "webpack --mode production --config webpack.node.js",
+    "build:umd": "webpack --mode production --config webpack.umd.js",
     "test": "jest --coverage",
     "lint": "eslint ."
   },
@@ -53,7 +56,8 @@
     "webpack-node-externals": "^2.5.2"
   },
   "files": [
-    "dist"
+    "dist",
+    "umd"
   ],
   "dependencies": {
     "@emotion/babel-preset-css-prop": "^11.0.0",

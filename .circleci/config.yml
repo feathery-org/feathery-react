@@ -35,13 +35,21 @@ jobs:
       - run: yarn lint
       - run: yarn test
 
-  # Build the package
-  build:
+  # Build the Node-ready package
+  build-node:
     <<: *defaults
     steps:
       - attach_workspace:
           at: .
-      - run: yarn build
+      - run: yarn build:node
+
+  # Build the <script />-ready package
+  build-umd:
+    <<: *defaults
+    steps:
+      - attach_workspace:
+          at: .
+      - run: yarn build:umd
 
 workflows:
   version: 2.1
@@ -51,6 +59,9 @@ workflows:
       - test:
           requires:
             - setup
-      - build:
+      - build-node:
+          requires:
+            - setup
+      - build-umd:
           requires:
             - setup
