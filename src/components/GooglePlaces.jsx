@@ -95,7 +95,7 @@ export default function GooglePlaces({
 
         // Fire Event when a suggested name is selected
         autocomplete.addListener('place_changed', handlePlaceSelect);
-    }, [googleLoad, searchFieldKey, setFieldValues]);
+    }, [googleLoad, activeStep, searchFieldKey, setFieldValues]);
 
     return searchFieldKey && googleKey ? (
         <Script
