@@ -87,7 +87,9 @@ function Form({
         return newValues;
     };
 
-    const updateFieldOptions = (stepData) => (newFieldOptions) => {
+    const updateFieldOptions = (stepData, activeStepData) => (
+        newFieldOptions
+    ) => {
         Object.values(stepData).forEach((step) => {
             step.servar_fields.forEach((field) => {
                 const servar = field.servar;
@@ -101,7 +103,8 @@ function Form({
         });
         setSteps(JSON.parse(JSON.stringify(stepData)));
 
-        activeStep.servar_fields.forEach((field) => {
+        const newActiveStep = activeStepData || activeStep;
+        newActiveStep.servar_fields.forEach((field) => {
             const servar = field.servar;
             if (
                 servar.metadata.allow_custom_options &&
@@ -110,10 +113,10 @@ function Form({
                 servar.metadata.options = newFieldOptions[servar.key];
             }
         });
-        setActiveStep(JSON.parse(JSON.stringify(activeStep)));
+        setActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
     };
 
-    const getNewStep = (
+    const getNewStep = async (
         newKey,
         stepsArg = null,
         fieldValuesArg = null,
@@ -131,27 +134,6 @@ function Form({
         setCurDepth(curDepth);
         setMaxDepth(maxDepth);
 
-        if (!displaySteps) {
-            if (typeof onLoad === 'function') {
-                const formattedFields = formatAllStepFields(
-                    stepsArg,
-                    fieldValuesArg,
-                    acceptedFile
-                );
-                onLoad({
-                    fields: formattedFields,
-                    stepName: newKey,
-                    lastStep: stepsArg[newKey].next_conditions.length === 0,
-                    setValues: (userVals) => {
-                        updateFieldValues(userVals, fieldValuesArg);
-                        clientArg.submitCustom(userVals);
-                    },
-                    setOptions: updateFieldOptions(stepsArg)
-                });
-            }
-            clientArg.registerEvent(newKey, 'load');
-        }
-
         const newStep = JSON.parse(JSON.stringify(stepsArg[newKey]));
         calculateDimensions(
             newStep,
@@ -161,6 +143,28 @@ function Form({
             setDimensions,
             setFormDimensions
         );
+
+        if (!displaySteps) {
+            if (typeof onLoad === 'function') {
+                const formattedFields = formatAllStepFields(
+                    stepsArg,
+                    fieldValuesArg,
+                    acceptedFile
+                );
+                await onLoad({
+                    fields: formattedFields,
+                    stepName: newKey,
+                    lastStep: stepsArg[newKey].next_conditions.length === 0,
+                    setValues: (userVals) => {
+                        updateFieldValues(userVals, fieldValuesArg);
+                        clientArg.submitCustom(userVals);
+                    },
+                    setOptions: updateFieldOptions(stepsArg, newStep)
+                });
+            }
+            clientArg.registerEvent(newKey, 'load');
+        }
+
         setActiveStep(newStep);
     };
 
@@ -190,7 +194,7 @@ function Form({
                     .fetchSession()
                     .then((session) => {
                         setGoogleKey(session.google_api_key);
-                        fetchPromise.then((data) => {
+                        fetchPromise.then(async (data) => {
                             const newValues = updateFieldValues(
                                 session.field_values,
                                 getDefaultFieldValues(data)
@@ -207,7 +211,7 @@ function Form({
                     })
                     .catch((error) => {
                         // Use default values if origin fails
-                        fetchPromise.then((data) => {
+                        fetchPromise.then(async (data) => {
                             const newValues = updateFieldValues(
                                 fieldValues,
                                 getDefaultFieldValues(data)
@@ -247,9 +251,9 @@ function Form({
     ]);
 
     useEffect(() => {
-        return history.listen(() => {
+        return history.listen(async () => {
             const hashKey = location.hash.substr(1);
-            if (hashKey in steps) getNewStep(hashKey);
+            if (hashKey in steps) await getNewStep(hashKey);
         });
     }, [steps, getNewStep]);
 
@@ -483,7 +487,7 @@ function Form({
             if (['button', 'text'].includes(metadata.elementType))
                 history.push(newURL);
             else history.replace(newURL);
-            getNewStep(newStepKey, steps, newFieldVals);
+            await getNewStep(newStepKey, steps, newFieldVals);
         }
     };
 
