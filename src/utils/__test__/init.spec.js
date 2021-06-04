@@ -9,7 +9,7 @@ describe('init', () => {
             const expected = { apiKey, userKey };
 
             // Act
-            init(apiKey, userKey);
+            init(apiKey, { userKey: userKey });
             const actual = initInfo();
 
             // Assert

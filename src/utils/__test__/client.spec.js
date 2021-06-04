@@ -12,7 +12,12 @@ describe('client', () => {
             // Arrange
             const formKey = 'formKey';
             const client = new Client(formKey);
-            initInfo.mockReturnValue({ apiKey: 'apiKey', userKey: 'userKey' });
+            initInfo.mockReturnValue({
+                apiKey: 'apiKey',
+                userKey: 'userKey',
+                sessions: {},
+                forms: {}
+            });
             global.fetch = jest.fn().mockResolvedValue({
                 status: 200,
                 json: jest.fn().mockResolvedValue('json')
@@ -26,6 +31,7 @@ describe('client', () => {
                 'https://cdn.feathery.tech/api/panel/v3/?form_key=formKey',
                 {
                     cache: 'no-store',
+                    importance: 'high',
                     headers: { Authorization: 'Token apiKey' }
                 }
             );
@@ -38,7 +44,12 @@ describe('client', () => {
             // Arrange
             const formKey = 'formKey';
             const client = new Client(formKey);
-            initInfo.mockReturnValue({ apiKey: 'apiKey', userKey: 'userKey' });
+            initInfo.mockReturnValue({
+                apiKey: 'apiKey',
+                userKey: 'userKey',
+                sessions: {},
+                forms: {}
+            });
             global.fetch = jest.fn().mockResolvedValue({
                 status: 200,
                 json: jest.fn().mockResolvedValue('json')
@@ -52,6 +63,7 @@ describe('client', () => {
                 'https://api.feathery.tech/api/panel/session/?form_key=formKey&fuser_key=userKey',
                 {
                     cache: 'no-store',
+                    importance: 'high',
                     headers: { Authorization: 'Token apiKey' }
                 }
             );
