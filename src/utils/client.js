@@ -21,7 +21,7 @@ export default class Client {
         const options = {
             cache: 'no-store',
             importance: 'high',
-            headers: { Authorization: 'Token ' + apiKey },
+            headers: { Authorization: 'Token ' + apiKey }
         };
         return fetch(url, options).then((response) => {
             const { status } = response;

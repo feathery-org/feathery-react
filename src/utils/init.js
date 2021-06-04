@@ -7,37 +7,53 @@ import * as errors from './error';
 
 const fpPromise = FingerprintJS.load();
 let initUserPromise = Promise.resolve();
-let initialized = false;
-const initState = { apiKey: null, userKey: null, forms: {}, sessions: {} };
+const defaultOptions = { userKey: null, formKeys: [], tracking: 'cookie' };
+const initState = {
+    initialized: false,
+    apiKey: null,
+    userKey: null,
+    forms: {},
+    sessions: {}
+};
 
-function init(apiKey, userKey = null, formKeys = []) {
-    if (initialized) return; // can only be initialized one time per load
-    initialized = true;
+function init(apiKey, options = {}) {
+    options = { ...defaultOptions, ...options };
+
+    if (initState.initialized) return; // can only be initialized one time per load
+    initState.initialized = true;
 
     if (!apiKey || typeof apiKey !== 'string') {
         throw new errors.APIKeyError('Invalid API Key');
     }
-    if (userKey && typeof userKey !== 'string') {
+    if (options.userKey && typeof options.userKey !== 'string') {
         throw new errors.UserKeyError('Invalid User Key');
     }
 
     initState.apiKey = apiKey;
-    initState.userKey = userKey;
-    if (!initState.userKey) {
-        initUserPromise = fpPromise
-            .then((fp) => fp.get())
-            .then((result) => {
-                initState.userKey = result.visitorId;
-                if (!initState.userKey) initState.userKey = uuidv4();
-                // must call after userKey loads
-                _fetchFormData(formKeys);
+    initState.userKey = options.userKey;
+    if (initState.userKey) _fetchFormData(options.formKeys);
+    else {
+        if (options.tracking === 'fingerprint') {
+            initUserPromise = fpPromise
+                .then((fp) => fp.get())
+                .then((result) => {
+                    initState.userKey = result.visitorId;
+                    _fetchFormData(options.formKeys);
+                });
+        } else if (options.tracking === 'cookie') {
+            document.cookie.split(/; */).map((c) => {
+                const [key, v] = c.split('=', 2);
+                if (key === 'feathery-user-id') initState.userKey = v;
             });
-    } else {
-        // must call after userKey loads
-        _fetchFormData(formKeys);
+
+            if (!initState.userKey) initState.userKey = uuidv4();
+            document.cookie = `feathery-user-id=${initState.userKey}; max-age=31536000`;
+            _fetchFormData(options.formKeys);
+        }
     }
 }
 
+// must be called after userKey loads
 function _fetchFormData(formKeys) {
     formKeys.forEach((key) => {
         const formClient = new Client(key);

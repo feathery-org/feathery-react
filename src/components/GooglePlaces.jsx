@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import Script from 'react-load-script';
 
+const mapFieldTypes = new Set([
+    'gmap_line_1',
+    'gmap_line_2',
+    'gmap_city',
+    'gmap_state',
+    'gmap_zip'
+]);
+
 export default function GooglePlaces({
     googleKey,
     activeStep,
@@ -76,6 +84,8 @@ export default function GooglePlaces({
                         if (servar.type in addressMap) {
                             addrFieldValues[servar.key] =
                                 addressMap[servar.type];
+                        } else if (mapFieldTypes.has(servar.type)) {
+                            addrFieldValues[servar.key] = '';
                         }
                     });
                 });
