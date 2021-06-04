@@ -1,3 +1,5 @@
+import Client from './client';
+
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -6,9 +8,9 @@ import * as errors from './error';
 const fpPromise = FingerprintJS.load();
 let initUserPromise = Promise.resolve();
 let initialized = false;
-const initState = { apiKey: null, userKey: null };
+const initState = { apiKey: null, userKey: null, forms: {}, sessions: {} };
 
-function init(apiKey, userKey = null) {
+function init(apiKey, userKey = null, formKeys = []) {
     if (initialized) return; // can only be initialized one time per load
     initialized = true;
 
@@ -27,8 +29,25 @@ function init(apiKey, userKey = null) {
             .then((result) => {
                 initState.userKey = result.visitorId;
                 if (!initState.userKey) initState.userKey = uuidv4();
+                // must call after userKey loads
+                _fetchFormData(formKeys);
             });
+    } else {
+        // must call after userKey loads
+        _fetchFormData(formKeys);
     }
+}
+
+function _fetchFormData(formKeys) {
+    formKeys.forEach((key) => {
+        const formClient = new Client(key);
+        formClient.fetchForm().then((stepsResponse) => {
+            initState.forms[key] = stepsResponse;
+        });
+        formClient.fetchSession().then((session) => {
+            initState.sessions[key] = session;
+        });
+    });
 }
 
 function initInfo() {

@@ -11,14 +11,17 @@ export default class Client {
     }
 
     async fetchForm() {
-        const { apiKey } = initInfo();
+        const { apiKey, forms } = initInfo();
+        if (this.formKey in forms) return Promise.resolve(forms[this.formKey]);
+
         const params = encodeGetParams({
             form_key: this.formKey
         });
         const url = `${CDN_URL}api/panel/v3/?${params}`;
         const options = {
             cache: 'no-store',
-            headers: { Authorization: 'Token ' + apiKey }
+            importance: 'high',
+            headers: { Authorization: 'Token ' + apiKey },
         };
         return fetch(url, options).then((response) => {
             const { status } = response;
@@ -43,7 +46,10 @@ export default class Client {
 
     async fetchSession() {
         await initUserPromise;
-        const { apiKey, userKey } = initInfo();
+        const { apiKey, userKey, sessions } = initInfo();
+        if (this.formKey in sessions)
+            return Promise.resolve(sessions[this.formKey]);
+
         const params = encodeGetParams({
             form_key: this.formKey,
             ...(userKey ? { fuser_key: userKey } : {})
@@ -51,6 +57,7 @@ export default class Client {
         const url = `${API_URL}api/panel/session/?${params}`;
         const options = {
             cache: 'no-store',
+            importance: 'high',
             headers: { Authorization: 'Token ' + apiKey }
         };
         return fetch(url, options).then((response) => {
