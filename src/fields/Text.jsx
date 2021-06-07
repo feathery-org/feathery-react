@@ -80,7 +80,7 @@ function Text({
                         false,
                         {
                             elementType: 'text',
-                            elementKey: elementKey,
+                            elementKeys: [elementKey],
                             trigger: 'click',
                             start: attrs.start,
                             end: attrs.end
@@ -200,7 +200,7 @@ function Text({
                                 false,
                                 {
                                     elementType: 'button',
-                                    elementKey: elementKey,
+                                    elementKeys: [elementKey],
                                     trigger: 'click'
                                 },
                                 repeat
