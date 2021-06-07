@@ -14,17 +14,19 @@ export default function GooglePlaces({
     activeStep,
     steps,
     setFieldValues,
-    onChange
+    onChange,
+    setNoChange
 }) {
     const [googleLoad, setGoogleLoad] = useState(false);
     const [searchFieldKey, setSearchFieldKey] = useState('');
 
     useEffect(() => {
-        activeStep.servar_fields.forEach((field) => {
-            const servar = field.servar;
-            if (servar.type === 'gmap_line_1') setSearchFieldKey(servar.key);
+        const searchField = activeStep.servar_fields.find((field) => {
+            return field.servar.type === 'gmap_line_1';
         });
-    }, [activeStep, setSearchFieldKey]);
+
+        setSearchFieldKey(searchField ? searchField.servar.key : '');
+    }, [activeStep]);
 
     useEffect(() => {
         if (!googleLoad || !searchFieldKey) return;
@@ -92,20 +94,22 @@ export default function GooglePlaces({
 
                 if (Object.keys(addrFieldValues).length > 0) {
                     let newValues;
+                    // We set noChange to true to suppress onChange events from individual fields (because GMaps updates mutliple fields)
+                    // Note: Re-rendering of form happens immediately after setting noChange and fieldValues
+                    setNoChange(true);
                     setFieldValues((fieldValues) => {
                         newValues = { ...fieldValues, ...addrFieldValues };
                         return newValues;
                     });
-                    Object.keys(addrFieldValues).forEach((fieldKey) => {
-                        onChange(fieldKey, newValues);
-                    });
+                    setNoChange(false);
+                    onChange(Object.keys(addrFieldValues), newValues);
                 }
             }
         };
 
         // Fire Event when a suggested name is selected
         autocomplete.addListener('place_changed', handlePlaceSelect);
-    }, [googleLoad, activeStep, searchFieldKey, setFieldValues]);
+    }, [googleLoad, searchFieldKey]);
 
     return searchFieldKey && googleKey ? (
         <Script

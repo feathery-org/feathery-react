@@ -263,7 +263,7 @@ const nextStepKey = (nextConditions, metadata, steps, fieldValues) => {
         .filter(
             (cond) =>
                 cond.element_type === metadata.elementType &&
-                cond.element_key === metadata.elementKey
+                metadata.elementKeys.includes(cond.element_key)
         )
         .forEach((cond) => {
             if (cond.trigger !== metadata.trigger) return;

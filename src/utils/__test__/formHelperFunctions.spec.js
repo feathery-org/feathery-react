@@ -461,11 +461,11 @@ describe('formHelperFunctions', () => {
             const nextKey = 'abcdef';
             const trigger = 'trigger';
             const elementType = 'type';
-            const elementKey = 'key';
+            const elementKeys = ['key'];
             const conditions = [
                 {
                     element_type: elementType,
-                    element_key: elementKey,
+                    element_key: elementKeys[0],
                     trigger,
                     rules: [],
                     next_step_key: nextKey,
@@ -476,7 +476,7 @@ describe('formHelperFunctions', () => {
             // Act
             const actual = nextStepKey(conditions, {
                 elementType,
-                elementKey,
+                elementKeys,
                 trigger
             });
 
@@ -489,11 +489,11 @@ describe('formHelperFunctions', () => {
             const nextKey = 'abcdef';
             const trigger = 'trigger';
             const elementType = 'type';
-            const elementKey = 'key';
+            const elementKeys = ['key'];
             const conditions = [
                 {
                     element_type: elementType,
-                    element_key: elementKey,
+                    element_key: elementKeys[0],
                     trigger,
                     rules: [
                         {
@@ -515,7 +515,7 @@ describe('formHelperFunctions', () => {
                 conditions,
                 {
                     elementType,
-                    elementKey,
+                    elementKeys,
                     trigger
                 },
                 null,
@@ -531,11 +531,11 @@ describe('formHelperFunctions', () => {
             const nextKey = 'abcdef';
             const trigger = 'trigger';
             const elementType = 'type';
-            const elementKey = 'key';
+            const elementKeys = ['key'];
             const conditions = [
                 {
                     element_type: elementType,
-                    element_key: elementKey,
+                    element_key: elementKeys[0],
                     trigger,
                     rules: [
                         {
@@ -557,7 +557,7 @@ describe('formHelperFunctions', () => {
                 conditions,
                 {
                     elementType,
-                    elementKey,
+                    elementKeys,
                     trigger
                 },
                 null,
@@ -573,11 +573,11 @@ describe('formHelperFunctions', () => {
             const nextKey = 'abcdef';
             const trigger = 'trigger';
             const elementType = 'type';
-            const elementKey = 'key';
+            const elementKeys = ['key'];
             const conditions = [
                 {
                     element_type: elementType,
-                    element_key: elementKey,
+                    element_key: elementKeys[0],
                     trigger,
                     rules: [
                         {
@@ -604,7 +604,7 @@ describe('formHelperFunctions', () => {
                 conditions,
                 {
                     elementType,
-                    elementKey,
+                    elementKeys,
                     trigger
                 },
                 null,
