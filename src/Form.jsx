@@ -504,6 +504,14 @@ function Form({
             return;
         }
 
+        // For each field that changed, reset its validity
+        fieldKeys.forEach((fieldKey) => {
+            const element = formRef.current.elements[fieldKey];
+            if (element) {
+                element.setCustomValidity('');
+            }
+        });
+
         if (typeof onChange === 'function') {
             const formattedFields = formatAllStepFields(
                 steps,
