@@ -102,7 +102,14 @@ export default function GooglePlaces({
                         return newValues;
                     });
                     setNoChange(false);
-                    onChange(Object.keys(addrFieldValues), newValues);
+                    onChange(
+                        Object.keys(addrFieldValues),
+                        newValues,
+                        'googleMaps',
+                        {
+                            googleMapsAddress: addressObject
+                        }
+                    );
                 }
             }
         };

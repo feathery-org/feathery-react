@@ -160,7 +160,8 @@ function Form({
                         updateFieldValues(userVals, fieldValuesArg);
                         clientArg.submitCustom(userVals);
                     },
-                    setOptions: updateFieldOptions(stepsArg, newStep)
+                    setOptions: updateFieldOptions(stepsArg, newStep),
+                    integrationData: null
                 });
             }
             clientArg.registerEvent(newKey, 'load');
@@ -450,7 +451,8 @@ function Form({
                                 if (element) element.setCustomValidity(message);
                             }
                         );
-                    }
+                    },
+                    integrationData: null
                 });
             }
             // do validation check in case user has manually invalidated the step
@@ -492,7 +494,12 @@ function Form({
         }
     };
 
-    const fieldOnChange = (fieldKeys, newValues) => {
+    const fieldOnChange = (
+        fieldKeys,
+        newValues,
+        trigger = 'field',
+        integrationData = null
+    ) => {
         if (noChange) {
             return;
         }
@@ -505,6 +512,8 @@ function Form({
             );
             onChange({
                 changeKeys: fieldKeys,
+                trigger,
+                integrationData,
                 fields: formattedFields,
                 stepName: activeStep.key,
                 lastStep: activeStep.next_conditions.length === 0,
@@ -512,7 +521,7 @@ function Form({
                     newValues = updateFieldValues(userVals, newValues);
                     client.submitCustom(userVals);
                 },
-                setOptions: updateFieldOptions(steps)
+                setOptions: updateFieldOptions(steps),
             });
         }
         submit(
