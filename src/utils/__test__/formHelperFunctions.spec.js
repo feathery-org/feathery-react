@@ -178,13 +178,14 @@ describe('formHelperFunctions', () => {
                         text: 'First text field {{foobar}}',
                         row_index: 1,
                         row_index_end: 1,
-                        column_index: 2
+                        column_index: 2,
+                        column_index_end: 2
                     }
                 ],
                 servar_fields: [],
                 images: [],
                 grid_rows: ['50px', '150px', '50px'],
-                grid_columns: ['150px', '50px', '40px'],
+                grid_columns: ['150px', '50px', '20px'],
                 progress_bar: {
                     column_index: 0
                 }
@@ -198,8 +199,8 @@ describe('formHelperFunctions', () => {
                 rows: ['minmax(50px,min-content)']
             };
             const newDimensions = {
-                width: 200,
-                columns: ['75%', '5%', '20%'],
+                width: 40,
+                columns: ['25%', '25%', '50%'],
                 rows: [
                     'minmax(50px,min-content)',
                     'minmax(150px,min-content)',
@@ -225,6 +226,7 @@ describe('formHelperFunctions', () => {
                 {
                     text: 'First text field {{foobar}}',
                     column_index: 2,
+                    column_index_end: 2,
                     row_index: 1,
                     row_index_end: 1
                 }

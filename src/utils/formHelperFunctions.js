@@ -178,14 +178,34 @@ const calculateDimensions = (
         gridTemplateColumns = inputStep.grid_columns;
     } else {
         const seenColumns = new Set();
-        if (inputStep.progress_bar)
-            seenColumns.add(inputStep.progress_bar.column_index);
-        inputStep.text_fields.map((field) =>
-            seenColumns.add(field.column_index)
-        );
-        inputStep.servar_fields.map((field) =>
-            seenColumns.add(field.column_index)
-        );
+        if (inputStep.progress_bar) {
+            const s = inputStep.progress_bar.column_index;
+            const e = inputStep.progress_bar.column_index_end;
+            for (let i = s; i <= e; i++) {
+                seenColumns.add(i);
+            }
+        }
+        inputStep.text_fields.map((field) => {
+            const s = field.column_index;
+            const e = field.column_index_end;
+            for (let i = s; i <= e; i++) {
+                seenColumns.add(i);
+            }
+        });
+        inputStep.servar_fields.map((field) => {
+            const s = field.column_index;
+            const e = field.column_index_end;
+            for (let i = s; i <= e; i++) {
+                seenColumns.add(i);
+            }
+        });
+        inputStep.images.map((image) => {
+            const s = image.column_index;
+            const e = image.column_index_end;
+            for (let i = s; i <= e; i++) {
+                seenColumns.add(i);
+            }
+        });
         gridTemplateColumns = inputStep.grid_columns.map((c, index) =>
             seenColumns.has(index) ? c : '10px'
         );
