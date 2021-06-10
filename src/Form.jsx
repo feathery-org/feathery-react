@@ -371,8 +371,6 @@ function Form({
         });
     };
 
-    let elementKey = '';
-    let repeat = 0;
     const submit = async (
         submitData,
         metadata,
@@ -600,19 +598,6 @@ function Form({
                     : className
             }
             ref={formRef}
-            onSubmit={async (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                await submit(
-                    true,
-                    {
-                        elementType: 'button',
-                        elementKeys: [elementKey],
-                        trigger: 'click'
-                    },
-                    repeat
-                );
-            }}
             style={{
                 backgroundColor: `#${activeStep.default_background_color}`,
                 display: 'grid',
@@ -684,12 +669,6 @@ function Form({
                     displaySteps={displaySteps}
                     submit={submit}
                     isFilled={isFilled}
-                    setElementKey={(newKey) => {
-                        elementKey = newKey;
-                    }}
-                    setRepeat={(newRepeat) => {
-                        repeat = newRepeat;
-                    }}
                 />
             ))}
             {activeStep.servar_fields.map((field) => {

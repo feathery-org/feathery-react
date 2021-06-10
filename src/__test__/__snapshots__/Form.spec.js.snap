@@ -3,7 +3,6 @@
 exports[`Form renders a basic form 1`] = `
 <form
   className="form-class"
-  onSubmit={[Function]}
   style={
     Object {
       "backgroundColor": "#FFFFFF",
