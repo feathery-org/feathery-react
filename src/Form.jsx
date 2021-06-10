@@ -299,15 +299,8 @@ function Form({
         return updateFieldValues(updateValues);
     };
 
-    const handleValueChange = (val, key) => {
-        let newValues = null;
-        activeStep.servar_fields.forEach((field) => {
-            const servar = field.servar;
-            if (servar.key !== key) return;
-
-            newValues = updateFieldValues({ [servar.key]: val });
-        });
-        return newValues;
+    const handleValueChange = (value, id) => {
+        return handleChange({ target: { type: '', value, id } });
     };
 
     const handleButtonGroupChange = (e) => {
@@ -529,7 +522,7 @@ function Form({
                     newValues = updateFieldValues(userVals, newValues);
                     client.submitCustom(userVals);
                 },
-                setOptions: updateFieldOptions(steps),
+                setOptions: updateFieldOptions(steps)
             });
         }
         submit(

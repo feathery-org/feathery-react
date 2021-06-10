@@ -18,23 +18,19 @@ export default function GooglePlaces({
     setNoChange
 }) {
     const [googleLoad, setGoogleLoad] = useState(false);
-    const [searchFieldKey, setSearchFieldKey] = useState('');
 
     useEffect(() => {
+        if (!googleLoad) return;
+
         const searchField = activeStep.servar_fields.find((field) => {
             return field.servar.type === 'gmap_line_1';
         });
-
-        setSearchFieldKey(searchField ? searchField.servar.key : '');
-    }, [activeStep]);
-
-    useEffect(() => {
-        if (!googleLoad || !searchFieldKey) return;
+        if (!searchField) return;
 
         // Initialize Google Autocomplete
         /* global google */
         const autocomplete = new google.maps.places.Autocomplete(
-            document.getElementById(searchFieldKey),
+            document.getElementById(searchField.servar.key),
             {
                 componentRestrictions: { country: 'us' },
                 fields: ['address_components'],
@@ -116,9 +112,9 @@ export default function GooglePlaces({
 
         // Fire Event when a suggested name is selected
         autocomplete.addListener('place_changed', handlePlaceSelect);
-    }, [googleLoad, searchFieldKey]);
+    }, [googleLoad, activeStep.key]);
 
-    return searchFieldKey && googleKey ? (
+    return googleKey ? (
         <Script
             url={`https://maps.googleapis.com/maps/api/js?key=${googleKey}&libraries=places`}
             onLoad={() => setGoogleLoad(true)}
