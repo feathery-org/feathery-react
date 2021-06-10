@@ -2,7 +2,7 @@
 
 exports[`Text renders a plaintext text block 1`] = `
 <div
-  className="css-fi6myt-Text"
+  className="css-1yvl1gu-TextElement"
 >
   <div>
     <span
@@ -21,7 +21,7 @@ exports[`Text renders a plaintext text block 1`] = `
 
 exports[`Text renders a text block with custom styles 1`] = `
 <div
-  className="css-fi6myt-Text"
+  className="css-1yvl1gu-TextElement"
 >
   <div>
     <span
@@ -44,7 +44,7 @@ exports[`Text renders a text block with custom styles 1`] = `
 
 exports[`Text renders an empty text block 1`] = `
 <div
-  className="css-fi6myt-Text"
+  className="css-1yvl1gu-TextElement"
 >
   <div>
     <span

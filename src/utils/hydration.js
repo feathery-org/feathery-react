@@ -13,13 +13,32 @@ function calculateRepeatedRowCount({ step, values }) {
     // Filter out all the text fields that don't belong to the repeated row
     // Then track all the instances of text variables in the text field
     // Calculate the count of repeat rows based on if the corresponding values for the text variables are arrays
-    step.text_fields
+    step.texts
         .filter(
             (textField) =>
                 textField.row_index >= step.repeat_row_start &&
                 textField.row_index_end <= step.repeat_row_end
         )
         .map((textField) => textField.text.match(TEXT_VARIABLE_PATTERN))
+        .filter((matches) => matches !== null)
+        .forEach((matches) => {
+            matches.forEach((match) => {
+                const property = match.slice(2, -2);
+                const value = values[property];
+
+                if (Array.isArray(value)) {
+                    count = Math.max(count, value.length);
+                }
+            });
+        });
+
+    step.buttons
+        .filter(
+            (btnField) =>
+                btnField.row_index >= step.repeat_row_start &&
+                btnField.row_index_end <= step.repeat_row_end
+        )
+        .map((btnField) => btnField.text.match(TEXT_VARIABLE_PATTERN))
         .filter((matches) => matches !== null)
         .forEach((matches) => {
             matches.forEach((match) => {
@@ -108,7 +127,8 @@ function injectRepeatedRows({ step, repeatedRowCount }) {
         progress_bar: progressBar,
         grid_rows: gridRows,
         servar_fields: step.servar_fields.flatMap(unfold),
-        text_fields: step.text_fields.flatMap(unfold),
+        texts: step.texts.flatMap(unfold),
+        buttons: step.buttons.flatMap(unfold),
         images: step.images.flatMap(unfold)
     };
 }
@@ -138,13 +158,23 @@ function calculateDimensions(step) {
                 seenColumns.add(i);
             }
         }
-        step.text_fields.map((field) => {
+
+        step.texts.map((field) => {
             const s = field.column_index;
             const e = field.column_index_end;
             for (let i = s; i <= e; i++) {
                 seenColumns.add(i);
             }
         });
+
+        step.buttons.map((field) => {
+            const s = field.column_index;
+            const e = field.column_index_end;
+            for (let i = s; i <= e; i++) {
+                seenColumns.add(i);
+            }
+        });
+
         step.servar_fields.map((field) => {
             const s = field.column_index;
             const e = field.column_index_end;

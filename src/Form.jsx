@@ -32,7 +32,12 @@ import {
 } from './utils/hydration';
 
 import GooglePlaces from './components/GooglePlaces';
-import { MultiFileUploader, RichFileUploader, Text } from './fields';
+import {
+    MultiFileUploader,
+    RichFileUploader,
+    TextElement,
+    ButtonElement
+} from './fields';
 import { initInfo } from './utils/init';
 
 import './bootstrap-iso.css';
@@ -796,18 +801,27 @@ function Form({
                     />
                 </div>
             ))}
-            {activeStep.text_fields.map((field, i) => (
-                <Text
+            {activeStep.texts.map((field, i) => (
+                <TextElement
                     key={`text-${i}`}
                     field={field}
                     fieldValues={fieldValues}
                     conditions={activeStep.next_conditions}
+                    submit={submit}
+                />
+            ))}
+            {activeStep.buttons.map((field, i) => (
+                <ButtonElement
+                    key={`text-${i}`}
+                    field={field}
+                    fieldValues={fieldValues}
                     displaySteps={displaySteps}
                     submit={submit}
                     addRepeatedRow={addRepeatedRow}
                     removeRepeatedRow={removeRepeatedRow}
                 />
             ))}
+
             {activeStep.servar_fields
                 .sort((first, second) => {
                     if (first.row_index > second.row_index) return 1;

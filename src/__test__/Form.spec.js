@@ -14,7 +14,8 @@ describe('Form', () => {
                 repeat_row_end: null,
                 origin: true,
                 default_background_color: 'FFFFFF',
-                text_fields: [],
+                texts: [],
+                buttons: [],
                 images: [],
                 servar_fields: [
                     {
