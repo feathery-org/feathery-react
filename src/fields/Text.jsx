@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Button from 'react-bootstrap/Button';
+import Spinner from 'react-bootstrap/Spinner';
 import Delta from 'quill-delta';
 
 import { adjustColor, textVariablePattern } from '../utils/formHelperFunctions';
@@ -20,10 +21,10 @@ function Text({
     conditions,
     isFilled,
     displaySteps,
-    submit,
-    setElementKey,
-    setRepeat
+    submit
 }) {
+    const [showSpinner, setShowSpinner] = useState(false);
+
     const elementKey = field.text;
     const repeat = field.repeat || 0;
 
@@ -74,8 +75,6 @@ function Text({
             if (attrs.start && attrs.end) {
                 styles.cursor = 'pointer';
                 onClick = () => {
-                    setElementKey(elementKey);
-                    setRepeat(repeat);
                     submit(
                         false,
                         {
@@ -187,28 +186,41 @@ function Text({
                         field.link === 'none' ||
                         (field.link === 'submit' && !isFilled)
                     }
-                    type={
-                        !displaySteps && field.link === 'submit'
-                            ? 'submit'
-                            : undefined
-                    }
-                    onClick={() => {
-                        setElementKey(elementKey);
-                        setRepeat(repeat);
-                        if (field.link === 'skip') {
-                            submit(
-                                false,
-                                {
-                                    elementType: 'button',
-                                    elementKeys: [elementKey],
-                                    trigger: 'click'
-                                },
-                                repeat
-                            );
-                        }
+                    onClick={async () => {
+                        if (displaySteps || field.link === 'none') return;
+                        if (field.link === 'submit') setShowSpinner(true);
+                        await submit(
+                            field.link === 'submit',
+                            {
+                                elementType: 'button',
+                                elementKeys: [elementKey],
+                                trigger: 'click'
+                            },
+                            repeat
+                        ).then(() => setShowSpinner(false));
                     }}
                 >
-                    {nodes}
+                    <div style={{ display: 'flex', position: 'relative' }}>
+                        {nodes}
+                        {showSpinner && (
+                            <Spinner
+                                animation='border'
+                                style={{
+                                    color: 'white',
+                                    position: 'absolute',
+                                    right: `-${field.button_height}${field.button_height_unit}`,
+                                    width: `${field.button_height / 2}${
+                                        field.button_height_unit
+                                    }`,
+                                    height: `${field.button_height / 2}${
+                                        field.button_height_unit
+                                    }`,
+                                    border: '0.2em solid currentColor',
+                                    borderRightColor: 'transparent'
+                                }}
+                            />
+                        )}
+                    </div>
                 </Button>
             ) : (
                 <div>{nodes}</div>
