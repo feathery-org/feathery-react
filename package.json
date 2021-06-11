@@ -14,6 +14,7 @@
     "build": "npm-run-all -p build:node build:umd",
     "build:node": "webpack --mode production --config webpack.node.js",
     "build:umd": "webpack --mode production --config webpack.umd.js",
+    "dev": "webpack --mode development --config webpack.development.js --watch",
     "prepublishOnly": "yarn build",
     "test": "jest --coverage",
     "lint": "eslint ."
