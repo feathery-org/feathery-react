@@ -251,7 +251,8 @@ const getDefaultFieldValues = (steps) => {
             let val = '';
             switch (field.servar.type) {
                 case 'checkbox':
-                    val = false;
+                    // eslint-disable-next-line camelcase
+                    val = !!field.servar.metadata?.always_checked;
                     break;
                 case 'multiselect':
                     val = [];
