@@ -81,6 +81,20 @@ export default class Client {
         });
     }
 
+    async fetchFile(fileURL) {
+        return fetch(fileURL).then((response) => {
+            const { status } = response;
+            switch (status) {
+                case 200:
+                    return response.blob();
+                default:
+                    return Promise.reject(
+                        new errors.FetchError('Invalid file URL')
+                    );
+            }
+        });
+    }
+
     submitCustom(customKeyValues) {
         const { userKey, apiKey } = initInfo();
         const url = `${API_URL}api/panel/custom/submit/`;
@@ -115,8 +129,7 @@ export default class Client {
         });
     }
 
-    // servars = [{key: <servarKey>, <type>: <value>}]
-    submitStep(servars) {
+    _submitJSONData(servars) {
         const { userKey, apiKey } = initInfo();
         const url = `${API_URL}api/panel/step/submit/`;
         const data = {
@@ -147,6 +160,50 @@ export default class Client {
                     throw new errors.FetchError('Unknown error');
             }
         });
+    }
+
+    _submitFileData(servars) {
+        const { userKey, apiKey } = initInfo();
+        const url = `${API_URL}api/panel/step/submit/file/${userKey}/`;
+
+        const formData = new FormData();
+        servars.forEach((servar) => {
+            formData.append(servar.key, servar.file_upload);
+        });
+
+        const options = {
+            cache: 'no-store',
+            headers: {
+                Authorization: 'Token ' + apiKey
+            },
+            method: 'POST',
+            body: formData
+        };
+        fetch(url, options).then((response) => {
+            const { status } = response;
+            switch (status) {
+                case 200:
+                    return;
+                case 201:
+                    return;
+                case 401:
+                    throw new errors.APIKeyError('Invalid API key');
+                case 404:
+                    throw new errors.UserKeyError('Invalid user key');
+                default:
+                    throw new errors.FetchError('Unknown error');
+            }
+        });
+    }
+
+    // servars = [{key: <servarKey>, <type>: <value>}]
+    submitStep(servars) {
+        const jsonServars = servars.filter(
+            (servar) => !('file_upload' in servar)
+        );
+        this._submitJSONData(jsonServars);
+        const fileServars = servars.filter((servar) => 'file_upload' in servar);
+        if (fileServars.length > 0) this._submitFileData(fileServars);
     }
 
     registerEvent({ stepKey, nextStepKey = '', event }) {

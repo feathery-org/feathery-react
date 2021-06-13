@@ -74,14 +74,12 @@ function adjustColor(color, amount) {
     );
 }
 
-const formatStepFields = (step, fieldValues, fileObj) => {
+const formatStepFields = (step, fieldValues) => {
     const formattedFields = {};
     step.servar_fields.forEach((field) => {
         const servar = field.servar;
-        let value = fieldValues[servar.key];
-        if (servar.type === 'file_upload') value = fileObj;
         formattedFields[servar.key] = {
-            value,
+            value: fieldValues[servar.key],
             type: servar.type,
             displayText: servar.name
         };
@@ -89,10 +87,10 @@ const formatStepFields = (step, fieldValues, fileObj) => {
     return formattedFields;
 };
 
-const formatAllStepFields = (steps, fieldValues, fileObj) => {
+const formatAllStepFields = (steps, fieldValues) => {
     let formattedFields = {};
     Object.values(steps).forEach((step) => {
-        const stepFields = formatStepFields(step, fieldValues, fileObj);
+        const stepFields = formatStepFields(step, fieldValues);
         formattedFields = { ...formattedFields, ...stepFields };
     });
     return formattedFields;
@@ -257,9 +255,6 @@ const getDefaultFieldValues = (steps) => {
                     break;
                 case 'multiselect':
                     val = [];
-                    break;
-                case 'integer_field':
-                    val = '';
                     break;
                 case 'hex_color':
                     val = '000000';
