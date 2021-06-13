@@ -18,14 +18,12 @@ export default function GooglePlaces({
     setNoChange
 }) {
     const [googleLoad, setGoogleLoad] = useState(false);
+    const searchField = activeStep.servar_fields.find((field) => {
+        return field.servar.type === 'gmap_line_1';
+    });
 
     useEffect(() => {
-        if (!googleLoad) return;
-
-        const searchField = activeStep.servar_fields.find((field) => {
-            return field.servar.type === 'gmap_line_1';
-        });
-        if (!searchField) return;
+        if (!googleLoad || !searchField) return;
 
         // Initialize Google Autocomplete
         /* global google */
@@ -114,7 +112,7 @@ export default function GooglePlaces({
         autocomplete.addListener('place_changed', handlePlaceSelect);
     }, [googleLoad, activeStep.key]);
 
-    return googleKey ? (
+    return searchField && googleKey ? (
         <Script
             url={`https://maps.googleapis.com/maps/api/js?key=${googleKey}&libraries=places`}
             onLoad={() => setGoogleLoad(true)}
