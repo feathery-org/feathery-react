@@ -296,6 +296,12 @@ function Form({
 
             if (servar.type === 'integer_field') value = parseInt(value);
             else if (servar.type === 'gmap_line_1' && !value) clearGMaps = true;
+            else if (
+                servar.type === 'checkbox' &&
+                // eslint-disable-next-line camelcase
+                servar.metadata?.always_checked
+            )
+                value = true;
             updateValues[servar.key] = value;
         });
         if (clearGMaps) {
@@ -553,6 +559,10 @@ function Form({
                 break;
             case 'file_upload':
                 if (!value) isFilled = false;
+                break;
+            case 'checkbox':
+                // eslint-disable-next-line camelcase
+                if (!value && servar.metadata?.must_check) isFilled = false;
                 break;
             default:
                 if (value === '') isFilled = false;
