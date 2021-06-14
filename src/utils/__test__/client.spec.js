@@ -116,7 +116,7 @@ describe('client', () => {
                     type: 'type1'
                 }
             ];
-            const body = { fuser_key: 'userKey', servars };
+            const body = { fuser_key: 'userKey', servars, panel_key: formKey };
             initInfo.mockReturnValue({ apiKey: 'apiKey', userKey: 'userKey' });
             global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
