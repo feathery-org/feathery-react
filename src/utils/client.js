@@ -134,7 +134,8 @@ export default class Client {
         const url = `${API_URL}api/panel/step/submit/`;
         const data = {
             ...(userKey ? { fuser_key: userKey } : {}),
-            servars
+            servars,
+            panel_key: this.formKey
         };
         const options = {
             cache: 'no-store',
