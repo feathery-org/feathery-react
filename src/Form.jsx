@@ -23,6 +23,7 @@ import {
 import './bootstrap-iso.css';
 import GooglePlaces from './components/GooglePlaces';
 import Text from './fields/Text';
+import { initInfo } from './utils/init';
 
 // apiKey and userKey are required if displayStep === null
 // totalSteps is required if displayStep !== null
@@ -156,9 +157,11 @@ function Form({
                     stepsArg,
                     fieldValuesArg
                 );
+                const { userKey } = initInfo();
                 await onLoad({
                     fields: formattedFields,
                     stepName: newKey,
+                    userId: userKey,
                     lastStep: stepsArg[newKey].next_conditions.length === 0,
                     setValues: (userVals) => {
                         updateFieldValues(userVals, fieldValuesArg);
@@ -435,11 +438,13 @@ function Form({
                     steps,
                     newFieldVals
                 );
+                const { userKey } = initInfo();
                 await onSubmit({
                     submitFields: formattedFields,
                     repeatIndex: repeat,
                     fields: allFields,
                     stepName: activeStep.key,
+                    userId: userKey,
                     lastStep: !newStepKey,
                     setValues: (userVals) => {
                         newFieldVals = updateFieldValues(
@@ -526,12 +531,14 @@ function Form({
 
         if (typeof onChange === 'function') {
             const formattedFields = formatAllStepFields(steps, newValues);
+            const { userKey } = initInfo();
             onChange({
                 changeKeys: fieldKeys,
                 trigger,
                 integrationData,
                 fields: formattedFields,
                 stepName: activeStep.key,
+                userId: userKey,
                 lastStep: activeStep.next_conditions.length === 0,
                 setValues: (userVals) => {
                     newValues = updateFieldValues(userVals, newValues);
