@@ -67,6 +67,11 @@ export default function GooglePlaces({
                             addressMap.gmap_city = component.long_name;
                             break;
                         }
+                        case 'sublocality_level_1': {
+                            addressMap.gmap_city =
+                                addressMap.gmap_city || component.long_name;
+                            break;
+                        }
                         case 'administrative_area_level_1': {
                             addressMap.gmap_state = component.long_name;
                             break;
