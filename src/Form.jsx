@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
+import TagManager from 'react-gtm-module'
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 
 import { BootstrapField, MaskedBootstrapField } from './components/Bootstrap';
@@ -20,10 +21,11 @@ import {
     states
 } from './utils/formHelperFunctions';
 
-import './bootstrap-iso.css';
 import GooglePlaces from './components/GooglePlaces';
 import Text from './fields/Text';
 import { initInfo } from './utils/init';
+
+import './bootstrap-iso.css';
 
 // apiKey and userKey are required if displayStep === null
 // totalSteps is required if displayStep !== null
@@ -67,7 +69,7 @@ function Form({
     const [maxDepth, setMaxDepth] = useState(
         displaySteps ? Object.keys(displaySteps).length : 0
     );
-    const [googleKey, setGoogleKey] = useState('');
+    const [integrations, setIntegrations] = useState({});
     const [noChange, setNoChange] = useState(false);
 
     const fieldRefs = useRef({}).current;
@@ -215,7 +217,10 @@ function Form({
                             }
                         );
 
-                        setGoogleKey(session.google_api_key);
+                        setIntegrations(session.integrations);
+                        const gtm = session.integrations['google-tag-manager'];
+                        if (gtm) TagManager.initialize({ gtmId: gtm });
+
                         fetchPromise.then(async (data) => {
                             const newValues = updateFieldValues(
                                 session.field_values,
@@ -1558,7 +1563,7 @@ function Form({
                 })}
             {!displaySteps && (
                 <GooglePlaces
-                    googleKey={googleKey}
+                    googleKey={integrations['google-maps']}
                     activeStep={activeStep}
                     steps={steps}
                     setFieldValues={setFieldValues}
