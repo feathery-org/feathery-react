@@ -207,15 +207,13 @@ export default class Client {
         if (fileServars.length > 0) this._submitFileData(fileServars);
     }
 
-    registerEvent({ stepKey, nextStepKey = '', event }) {
+    registerEvent(eventData) {
         initUserPromise.then(() => {
             const { userKey, apiKey } = initInfo();
             const url = `${API_URL}api/event/`;
             const data = {
                 form_key: this.formKey,
-                step_key: stepKey,
-                next_step_key: nextStepKey,
-                event,
+                ...eventData,
                 ...(userKey ? { fuser_key: userKey } : {})
             };
             const options = {

@@ -161,8 +161,8 @@ describe('client', () => {
             // Act
             await initUserPromise;
             const response = await client.registerEvent({
-                stepKey,
-                nextStepKey,
+                step_key: stepKey,
+                next_step_key: nextStepKey,
                 event
             });
 

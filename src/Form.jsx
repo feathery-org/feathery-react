@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
-import TagManager from 'react-gtm-module'
+import TagManager from 'react-gtm-module';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 
 import { BootstrapField, MaskedBootstrapField } from './components/Bootstrap';
@@ -71,6 +71,7 @@ function Form({
     );
     const [integrations, setIntegrations] = useState({});
     const [noChange, setNoChange] = useState(false);
+    const [stepSequence, setStepSequence] = useState([]);
 
     const fieldRefs = useRef({}).current;
     const formRef = useRef(null);
@@ -173,10 +174,7 @@ function Form({
                     integrationData: null
                 });
             }
-            clientArg.registerEvent({
-                stepKey: newKey,
-                event: 'load'
-            });
+            clientArg.registerEvent({ step_key: newKey, event: 'load' });
         }
 
         setActiveStep(newStep);
@@ -217,6 +215,7 @@ function Form({
                             }
                         );
 
+                        setStepSequence(session.step_sequence);
                         setIntegrations(session.integrations);
                         const gtm = session.integrations['google-tag-manager'];
                         if (gtm) TagManager.initialize({ gtmId: gtm });
@@ -411,7 +410,6 @@ function Form({
         if (displaySteps) return;
 
         let newFieldVals = newValues || fieldValues;
-        let newStepKey;
         if (submitData) {
             const formattedFields = formatStepFields(activeStep, newFieldVals);
 
@@ -437,11 +435,12 @@ function Form({
             // Execute user-provided onSubmit function if present
             if (typeof onSubmit === 'function') {
                 const allFields = formatAllStepFields(steps, newFieldVals);
-                newStepKey = nextStepKey(
+                const { newStepKey } = nextStepKey(
                     activeStep.next_conditions,
                     metadata,
                     steps,
-                    newFieldVals
+                    newFieldVals,
+                    stepSequence
                 );
                 const { userKey } = initInfo();
                 await onSubmit({
@@ -483,18 +482,24 @@ function Form({
             client.submitStep(featheryFields);
         }
 
-        newStepKey = nextStepKey(
+        const { newStepKey, newSequence } = nextStepKey(
             activeStep.next_conditions,
             metadata,
             steps,
-            newFieldVals
+            newFieldVals,
+            stepSequence
         );
 
-        client.registerEvent({
-            stepKey: activeStep.key,
-            nextStepKey: newStepKey ?? '',
+        const eventData = {
+            step_key: activeStep.key,
+            next_step_key: newStepKey ?? '',
             event: submitData ? 'complete' : 'skip'
-        });
+        };
+        if (newSequence !== stepSequence) {
+            setStepSequence(newSequence);
+            eventData.step_sequence = newSequence;
+        }
+        client.registerEvent(eventData);
 
         if (!newStepKey) {
             if (

@@ -273,8 +273,17 @@ const getDefaultFieldValues = (steps) => {
     return fieldValues;
 };
 
-const nextStepKey = (nextConditions, metadata, steps, fieldValues) => {
+const nextStepKey = (
+    nextConditions,
+    metadata,
+    steps,
+    fieldValues,
+    stepSequence
+) => {
     let newKey, defaultKey;
+    let sequenceValues = [];
+    const inSequence = {};
+    const notInSequence = [];
     nextConditions
         .filter(
             (cond) =>
@@ -282,8 +291,8 @@ const nextStepKey = (nextConditions, metadata, steps, fieldValues) => {
                 metadata.elementKeys.includes(cond.element_key)
         )
         .forEach((cond) => {
-            if (cond.trigger !== metadata.trigger) return;
             if (
+                cond.trigger !== metadata.trigger ||
                 cond.metadata.start !== metadata.start ||
                 cond.metadata.end !== metadata.end
             )
@@ -293,20 +302,52 @@ const nextStepKey = (nextConditions, metadata, steps, fieldValues) => {
             else {
                 let rulesMet = true;
                 cond.rules.forEach((rule) => {
-                    const ruleVal = rule.value || '';
                     const userVal = fieldValues[rule.key] || '';
-                    let equal;
-                    if (Array.isArray(userVal))
-                        equal = userVal.includes(ruleVal);
-                    else equal = userVal === ruleVal;
-                    rulesMet &=
-                        (equal && rule.comparison === 'equal') ||
-                        (!equal && rule.comparison === 'not_equal');
+                    const ruleVal = rule.value || '';
+                    if (Array.isArray(userVal)) {
+                        rulesMet = false;
+                        const equal =
+                            userVal.includes(ruleVal) &&
+                            rule.comparison === 'equal';
+                        const notEqual =
+                            !userVal.includes(ruleVal) &&
+                            rule.comparison === 'not_equal';
+                        if (equal || notEqual) {
+                            if (equal) inSequence[ruleVal] = cond.next_step_key;
+                            else if (notEqual)
+                                notInSequence.push(cond.next_step_key);
+
+                            if (sequenceValues.length === 0)
+                                sequenceValues = userVal;
+                        }
+                    } else {
+                        const equal = userVal === ruleVal;
+                        rulesMet &=
+                            (equal && rule.comparison === 'equal') ||
+                            (!equal && rule.comparison === 'not_equal');
+                    }
                 });
                 if (rulesMet) newKey = cond.next_step_key;
             }
         });
-    return newKey || defaultKey;
+
+    // order and compose new sequence
+    let newSequence = sequenceValues
+        .map((val) => inSequence[val])
+        .filter(Boolean);
+    newSequence = [...newSequence, ...notInSequence];
+
+    let newStepKey = newKey || defaultKey;
+    // Don't propagate array rules if an equality rule matches or there are no array rules
+    if (newSequence.length === 0 || newStepKey) newSequence = stepSequence;
+
+    if (newStepKey === newSequence[0]) {
+        newSequence = newSequence.slice(1);
+    } else if (!newStepKey && newSequence.length > 0) {
+        newStepKey = newSequence[0];
+        newSequence = newSequence.slice(1);
+    }
+    return { newStepKey, newSequence };
 };
 
 const getOrigin = (steps) => {
