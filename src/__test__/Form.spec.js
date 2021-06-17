@@ -10,6 +10,8 @@ describe('Form', () => {
         const displaySteps = {
             step1: {
                 key: 'step1',
+                repeat_row_start: null,
+                repeat_row_end: null,
                 origin: true,
                 default_background_color: 'FFFFFF',
                 text_fields: [],

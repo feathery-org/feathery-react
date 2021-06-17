@@ -1,6 +1,7 @@
 import ReactForm from 'react-bootstrap/Form';
 import React from 'react';
 import { IMaskMixin } from 'react-imask';
+import { reactFriendlyKey } from '../utils/formHelperFunctions';
 
 function BootstrapField({
     label,
@@ -31,7 +32,7 @@ function BootstrapField({
         <>
             {label}
             <ReactForm.Control
-                key={servar.key}
+                key={reactFriendlyKey(field)}
                 pattern={pattern}
                 style={{
                     height: `${field.field_height}${field.field_height_unit}`,

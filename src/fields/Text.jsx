@@ -3,7 +3,8 @@ import Button from 'react-bootstrap/Button';
 import Spinner from 'react-bootstrap/Spinner';
 import Delta from 'quill-delta';
 
-import { adjustColor, textVariablePattern } from '../utils/formHelperFunctions';
+import { adjustColor } from '../utils/formHelperFunctions';
+import { TEXT_VARIABLE_PATTERN } from '../utils/hydration';
 
 const buttonAlignmentMap = {
     left: 'flex-start',
@@ -21,6 +22,8 @@ function Text({
     conditions,
     isFilled,
     displaySteps,
+    addRepeatedRow,
+    removeRepeatedRow,
     submit
 }) {
     const [showSpinner, setShowSpinner] = useState(false);
@@ -49,7 +52,7 @@ function Text({
     // TODO (jake): Make this in React
     const nodes = delta.map((op, i) => {
         // replace placeholder variables and populate newlines
-        const text = op.insert.replace(textVariablePattern, (pattern) => {
+        const text = op.insert.replace(TEXT_VARIABLE_PATTERN, (pattern) => {
             const pStr = pattern.slice(2, -2);
             if (pStr in fieldValues) {
                 const pVal = fieldValues[pStr];
@@ -130,6 +133,37 @@ function Text({
         );
     });
 
+    async function buttonOnClick() {
+        if (displaySteps || field.link === 'none') {
+            return;
+        }
+
+        if (field.link === 'add_repeated_row') {
+            addRepeatedRow();
+            return;
+        }
+
+        if (field.link === 'remove_repeated_row') {
+            removeRepeatedRow(field.repeat);
+            return;
+        }
+
+        if (field.link === 'submit') {
+            setShowSpinner(true);
+        }
+
+        await submit(
+            field.link === 'submit',
+            {
+                elementType: 'button',
+                elementKeys: [elementKey],
+                trigger: 'click'
+            },
+            repeat
+        );
+        setShowSpinner(false);
+    }
+
     return (
         <div
             css={{
@@ -186,19 +220,7 @@ function Text({
                         field.link === 'none' ||
                         (field.link === 'submit' && !isFilled)
                     }
-                    onClick={async () => {
-                        if (displaySteps || field.link === 'none') return;
-                        if (field.link === 'submit') setShowSpinner(true);
-                        await submit(
-                            field.link === 'submit',
-                            {
-                                elementType: 'button',
-                                elementKeys: [elementKey],
-                                trigger: 'click'
-                            },
-                            repeat
-                        ).then(() => setShowSpinner(false));
-                    }}
+                    onClick={buttonOnClick}
                 >
                     <div style={{ display: 'flex', position: 'relative' }}>
                         {nodes}
