@@ -145,14 +145,6 @@ function Form({
         setMaxDepth(maxDepth);
 
         const newStep = JSON.parse(JSON.stringify(stepsArg[newKey]));
-        calculateDimensions(
-            newStep,
-            stepsArg,
-            fieldValuesArg,
-            dimensions,
-            setDimensions,
-            setFormDimensions
-        );
 
         if (!displaySteps) {
             if (typeof onLoad === 'function') {
@@ -161,23 +153,44 @@ function Form({
                     fieldValuesArg
                 );
                 const { userKey } = initInfo();
+                let newValues;
+
                 await onLoad({
                     fields: formattedFields,
                     stepName: newKey,
                     userId: userKey,
                     lastStep: stepsArg[newKey].next_conditions.length === 0,
                     setValues: (userVals) => {
-                        updateFieldValues(userVals, fieldValuesArg);
+                        newValues = updateFieldValues(userVals, fieldValuesArg);
                         clientArg.submitCustom(userVals);
                     },
                     setOptions: updateFieldOptions(stepsArg, newStep),
                     integrationData: null
                 });
-            }
-            clientArg.registerEvent({ step_key: newKey, event: 'load' });
-        }
 
-        setActiveStep(newStep);
+                calculateDimensions(
+                    newStep,
+                    stepsArg,
+                    newValues,
+                    dimensions,
+                    setDimensions,
+                    setFormDimensions
+                );
+                setActiveStep(newStep);
+            }
+
+            clientArg.registerEvent({ step_key: newKey, event: 'load' });
+        } else {
+            calculateDimensions(
+                newStep,
+                stepsArg,
+                fieldValuesArg,
+                dimensions,
+                setDimensions,
+                setFormDimensions
+            );
+            setActiveStep(newStep);
+        }
     };
 
     useEffect(() => {
@@ -469,19 +482,47 @@ function Form({
                     },
                     integrationData: null
                 });
+
+                // do validation check in case user has manually invalidated the step
+                formRef.current.reportValidity();
+                if (!formRef.current.checkValidity()) return;
+
+                submitFormattedFields(formattedFields);
+                calculateNextStepAndRedirect({
+                    metadata,
+                    newFieldVals,
+                    submitData
+                });
+            } else {
+                submitFormattedFields(formattedFields);
+                calculateNextStepAndRedirect({
+                    metadata,
+                    newFieldVals,
+                    submitData
+                });
             }
-            // do validation check in case user has manually invalidated the step
-            formRef.current.reportValidity();
-            if (!formRef.current.checkValidity()) return;
-
-            const featheryFields = Object.entries(formattedFields).map(
-                ([key, val]) => {
-                    return { key, [val.type]: val.value };
-                }
-            );
-            client.submitStep(featheryFields);
+        } else {
+            calculateNextStepAndRedirect({
+                metadata,
+                newFieldVals,
+                submitData
+            });
         }
+    };
 
+    function submitFormattedFields(fields) {
+        const featheryFields = Object.entries(fields).map(([key, val]) => ({
+            key,
+            [val.type]: val.value
+        }));
+        client.submitStep(featheryFields);
+    }
+
+    async function calculateNextStepAndRedirect({
+        metadata,
+        newFieldVals,
+        submitData
+    }) {
         const { newStepKey, newSequence } = nextStepKey(
             activeStep.next_conditions,
             metadata,
@@ -519,7 +560,7 @@ function Form({
             else history.replace(newURL);
             await getNewStep(newStepKey, steps, newFieldVals);
         }
-    };
+    }
 
     const fieldOnChange = (
         fieldKeys,
