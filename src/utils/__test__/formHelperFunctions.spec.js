@@ -476,14 +476,21 @@ describe('formHelperFunctions', () => {
             ];
 
             // Act
-            const actual = nextStepKey(conditions, {
-                elementType,
-                elementKeys,
-                trigger
-            });
+            const { newStepKey, newSequence } = nextStepKey(
+                conditions,
+                {
+                    elementType,
+                    elementKeys,
+                    trigger
+                },
+                null,
+                {},
+                [nextKey]
+            );
 
             // Assert
-            expect(actual).toEqual(nextKey);
+            expect(newStepKey).toEqual(nextKey);
+            expect(newSequence).toEqual([]);
         });
 
         it('returns the next step for a single condition rule', () => {
@@ -513,7 +520,7 @@ describe('formHelperFunctions', () => {
             };
 
             // Act
-            const actual = nextStepKey(
+            const { newStepKey } = nextStepKey(
                 conditions,
                 {
                     elementType,
@@ -521,11 +528,12 @@ describe('formHelperFunctions', () => {
                     trigger
                 },
                 null,
-                fieldValues
+                fieldValues,
+                []
             );
 
             // Assert
-            expect(actual).toEqual(nextKey);
+            expect(newStepKey).toEqual(nextKey);
         });
 
         it('returns the next step for a single array-based condition rule', () => {
@@ -555,7 +563,7 @@ describe('formHelperFunctions', () => {
             };
 
             // Act
-            const actual = nextStepKey(
+            const { newStepKey, newSequence } = nextStepKey(
                 conditions,
                 {
                     elementType,
@@ -563,11 +571,13 @@ describe('formHelperFunctions', () => {
                     trigger
                 },
                 null,
-                fieldValues
+                fieldValues,
+                []
             );
 
             // Assert
-            expect(actual).toEqual(nextKey);
+            expect(newStepKey).toEqual(nextKey);
+            expect(newSequence).toEqual([]);
         });
 
         it('returns the next step for multiple condition rules', () => {
@@ -602,7 +612,7 @@ describe('formHelperFunctions', () => {
             };
 
             // Act
-            const actual = nextStepKey(
+            const { newStepKey } = nextStepKey(
                 conditions,
                 {
                     elementType,
@@ -610,11 +620,12 @@ describe('formHelperFunctions', () => {
                     trigger
                 },
                 null,
-                fieldValues
+                fieldValues,
+                []
             );
 
             // Assert
-            expect(actual).toEqual(nextKey);
+            expect(newStepKey).toEqual(nextKey);
         });
     });
 
