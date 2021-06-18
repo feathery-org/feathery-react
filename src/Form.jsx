@@ -178,6 +178,7 @@ function Form({
                 );
                 setActiveStep(newStep);
             }
+            clientArg.registerEvent({ step_key: newKey, event: 'load' });
         } else {
             calculateDimensions(
                 newStep,
@@ -189,7 +190,6 @@ function Form({
             );
             setActiveStep(newStep);
         }
-        clientArg.registerEvent({ step_key: newKey, event: 'load' });
     };
 
     useEffect(() => {
