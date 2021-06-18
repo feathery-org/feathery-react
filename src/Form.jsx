@@ -178,8 +178,6 @@ function Form({
                 );
                 setActiveStep(newStep);
             }
-
-            clientArg.registerEvent({ step_key: newKey, event: 'load' });
         } else {
             calculateDimensions(
                 newStep,
@@ -191,6 +189,7 @@ function Form({
             );
             setActiveStep(newStep);
         }
+        clientArg.registerEvent({ step_key: newKey, event: 'load' });
     };
 
     useEffect(() => {
@@ -485,14 +484,15 @@ function Form({
 
                 // do validation check in case user has manually invalidated the step
                 formRef.current.reportValidity();
-                if (!formRef.current.checkValidity()) return;
-
-                submitFormattedFields(formattedFields);
-                calculateNextStepAndRedirect({
-                    metadata,
-                    newFieldVals,
-                    submitData
-                });
+                if (formRef.current.checkValidity()) {
+                    // async execution after user's onSubmit
+                    submitFormattedFields(formattedFields);
+                    calculateNextStepAndRedirect({
+                        metadata,
+                        newFieldVals,
+                        submitData
+                    });
+                }
             } else {
                 submitFormattedFields(formattedFields);
                 calculateNextStepAndRedirect({
@@ -518,7 +518,7 @@ function Form({
         client.submitStep(featheryFields);
     }
 
-    async function calculateNextStepAndRedirect({
+    function calculateNextStepAndRedirect({
         metadata,
         newFieldVals,
         submitData
@@ -558,7 +558,7 @@ function Form({
             if (['button', 'text'].includes(metadata.elementType))
                 history.push(newURL);
             else history.replace(newURL);
-            await getNewStep(newStepKey, steps, newFieldVals);
+            getNewStep(newStepKey, steps, newFieldVals);
         }
     }
 
