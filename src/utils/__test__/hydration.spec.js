@@ -139,14 +139,14 @@ describe('hydration', () => {
     });
 
     describe('calculateRepeatedRowCount', () => {
-        it('calculates zero rows', () => {
+        it('calculates one row', () => {
             // Arrange
             const step = {
                 text_fields: [],
                 servar_fields: []
             };
             const values = {};
-            const expected = 0;
+            const expected = 1;
 
             // Act
             const actual = calculateRepeatedRowCount({ step, values });
