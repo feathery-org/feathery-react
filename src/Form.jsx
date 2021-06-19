@@ -109,6 +109,12 @@ function Form({
     }, [dimensions]);
 
     function addRepeatedRow() {
+        if (
+            isNaN(activeStep.repeat_row_start) ||
+            isNaN(activeStep.repeat_row_end)
+        )
+            return;
+
         // Collect a list of all repeated fields
         const repeatedServarFields = rawActiveStep.servar_fields.filter(
             (field) => field.servar.repeated
@@ -128,6 +134,8 @@ function Form({
     }
 
     function removeRepeatedRow(repeatRowIndex) {
+        if (isNaN(repeatRowIndex)) return;
+
         // Collect a list of all repeated fields
         const repeatedServarFields = rawActiveStep.servar_fields.filter(
             (field) => field.servar.repeated
