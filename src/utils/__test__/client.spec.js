@@ -1,4 +1,4 @@
-import Client from '../client';
+import Client, { API_URL, CDN_URL } from '../client';
 import { initInfo, initUserPromise } from '../init';
 
 jest.mock('../init', () => ({
@@ -28,7 +28,7 @@ describe('client', () => {
 
             // Assert
             expect(global.fetch).toHaveBeenCalledWith(
-                'https://cdn.feathery.tech/api/panel/v3/?form_key=formKey',
+                `${CDN_URL}api/panel/v3/?form_key=formKey`,
                 {
                     cache: 'no-store',
                     importance: 'high',
@@ -60,7 +60,7 @@ describe('client', () => {
 
             // Assert
             expect(global.fetch).toHaveBeenCalledWith(
-                'https://api.feathery.tech/api/panel/session/?form_key=formKey&fuser_key=userKey',
+                `${API_URL}api/panel/session/?form_key=formKey&fuser_key=userKey`,
                 {
                     cache: 'no-store',
                     importance: 'high',
@@ -90,7 +90,7 @@ describe('client', () => {
 
             // Assert
             expect(global.fetch).toHaveBeenCalledWith(
-                'https://api.feathery.tech/api/panel/custom/submit/',
+                `${API_URL}api/panel/custom/submit/`,
                 {
                     cache: 'no-store',
                     headers: {
@@ -125,7 +125,7 @@ describe('client', () => {
 
             // Assert
             expect(global.fetch).toHaveBeenCalledWith(
-                'https://api.feathery.tech/api/panel/step/submit/',
+                `${API_URL}api/panel/step/submit/`,
                 {
                     cache: 'no-store',
                     headers: {
@@ -167,18 +167,15 @@ describe('client', () => {
             });
 
             // Assert
-            expect(global.fetch).toHaveBeenCalledWith(
-                'https://api.feathery.tech/api/event/',
-                {
-                    cache: 'no-store',
-                    headers: {
-                        Authorization: 'Token apiKey',
-                        'Content-Type': 'application/json'
-                    },
-                    method: 'POST',
-                    body: JSON.stringify(body)
-                }
-            );
+            expect(global.fetch).toHaveBeenCalledWith(`${API_URL}api/event/`, {
+                cache: 'no-store',
+                headers: {
+                    Authorization: 'Token apiKey',
+                    'Content-Type': 'application/json'
+                },
+                method: 'POST',
+                body: JSON.stringify(body)
+            });
             expect(response).toEqual(undefined);
         });
     });

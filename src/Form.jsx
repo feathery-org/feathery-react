@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import ReactForm from 'react-bootstrap/Form';
@@ -10,7 +10,6 @@ import { BootstrapField, MaskedBootstrapField } from './components/Bootstrap';
 import { MuiField, MuiProgress } from './components/MaterialUI';
 import Client from './utils/client';
 import {
-    calculateDimensions,
     formatAllStepFields,
     formatStepFields,
     getABVariant,
@@ -18,8 +17,18 @@ import {
     nextStepKey,
     getOrigin,
     recurseDepth,
-    states
+    states,
+    reactFriendlyKey,
+    getFieldValue,
+    getElementsFromKey,
+    getDefaultFieldValue
 } from './utils/formHelperFunctions';
+import { justInsert, justRemove } from './utils/array';
+import {
+    calculateDimensions,
+    calculateRepeatedRowCount,
+    injectRepeatedRows
+} from './utils/hydration';
 
 import GooglePlaces from './components/GooglePlaces';
 import Text from './fields/Text';
@@ -49,7 +58,7 @@ function Form({
     const history = useHistory();
 
     const [steps, setSteps] = useState(null);
-    const [activeStep, setActiveStep] = useState(
+    const [rawActiveStep, setRawActiveStep] = useState(
         steps ? steps[displayStepKey] : null
     );
     const [fieldValues, setFieldValues] = useState(initialValues);
@@ -60,11 +69,6 @@ function Form({
         redirectURL: null
     });
     const [displayColorPicker, setDisplayColorPicker] = useState({});
-    const [dimensions, setDimensions] = useState({
-        width: null,
-        rows: [],
-        columns: []
-    });
     const [curDepth, setCurDepth] = useState(displaySteps ? 1 : 0);
     const [maxDepth, setMaxDepth] = useState(
         displaySteps ? Object.keys(displaySteps).length : 0
@@ -75,6 +79,72 @@ function Form({
 
     const fieldRefs = useRef({}).current;
     const formRef = useRef(null);
+
+    const repeatedRowCount = useMemo(
+        () =>
+            calculateRepeatedRowCount({
+                step: rawActiveStep,
+                values: fieldValues
+            }),
+        [rawActiveStep, fieldValues]
+    );
+
+    // Create the fully-hydrated activeStep by injecting repeated rows
+    // Note: Other hydration transformations can also be included here
+    const activeStep = useMemo(() => {
+        return injectRepeatedRows({ step: rawActiveStep, repeatedRowCount });
+    }, [rawActiveStep, repeatedRowCount]);
+
+    // When the active step changes, recalculate the dimensions of the new step
+    const dimensions = useMemo(() => calculateDimensions(activeStep), [
+        activeStep
+    ]);
+
+    useEffect(() => {
+        setFormDimensions(
+            dimensions.width,
+            dimensions.columns,
+            dimensions.rows
+        );
+    }, [dimensions]);
+
+    function addRepeatedRow() {
+        // Collect a list of all repeated fields
+        const repeatedServarFields = rawActiveStep.servar_fields.filter(
+            (field) => field.servar.repeated
+        );
+
+        // Update the values by appending a default value for each field
+        const updatedValues = {};
+        repeatedServarFields.forEach((field) => {
+            const { servar } = field;
+            updatedValues[servar.key] = [
+                ...fieldValues[servar.key],
+                getDefaultFieldValue(field)
+            ];
+        });
+
+        updateFieldValues(updatedValues);
+    }
+
+    function removeRepeatedRow(repeatRowIndex) {
+        // Collect a list of all repeated fields
+        const repeatedServarFields = rawActiveStep.servar_fields.filter(
+            (field) => field.servar.repeated
+        );
+
+        // Update the values by removing the specified index from each field
+        const updatedValues = {};
+        repeatedServarFields.forEach((field) => {
+            const { servar } = field;
+            updatedValues[servar.key] = justRemove(
+                fieldValues[servar.key],
+                repeatRowIndex
+            );
+        });
+
+        updateFieldValues(updatedValues);
+    }
 
     const updateFieldValues = (newFieldValues, baseFieldValues = null) => {
         let newValues;
@@ -113,7 +183,7 @@ function Form({
         });
         setSteps(JSON.parse(JSON.stringify(stepData)));
 
-        const newActiveStep = activeStepData || activeStep;
+        const newActiveStep = activeStepData || rawActiveStep;
         newActiveStep.servar_fields.forEach((field) => {
             const servar = field.servar;
             if (
@@ -123,7 +193,7 @@ function Form({
                 servar.metadata.options = newFieldOptions[servar.key];
             }
         });
-        setActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
+        setRawActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
     };
 
     const getNewStep = async (
@@ -141,11 +211,11 @@ function Form({
             getOrigin(stepsArg),
             newKey
         );
+
         setCurDepth(curDepth);
         setMaxDepth(maxDepth);
 
         const newStep = JSON.parse(JSON.stringify(stepsArg[newKey]));
-
         if (!displaySteps) {
             if (typeof onLoad === 'function') {
                 const formattedFields = formatAllStepFields(
@@ -153,7 +223,6 @@ function Form({
                     fieldValuesArg
                 );
                 const { userKey } = initInfo();
-                let newValues;
 
                 await onLoad({
                     fields: formattedFields,
@@ -161,34 +230,20 @@ function Form({
                     userId: userKey,
                     lastStep: stepsArg[newKey].next_conditions.length === 0,
                     setValues: (userVals) => {
-                        newValues = updateFieldValues(userVals, fieldValuesArg);
+                        updateFieldValues(userVals, fieldValuesArg);
                         clientArg.submitCustom(userVals);
                     },
-                    setOptions: updateFieldOptions(stepsArg, newStep),
+                    setOptions: updateFieldOptions(stepsArg, activeStep),
                     integrationData: null
                 });
-
-                calculateDimensions(
-                    newStep,
-                    stepsArg,
-                    newValues,
-                    dimensions,
-                    setDimensions,
-                    setFormDimensions
-                );
-                setActiveStep(newStep);
+                setRawActiveStep(newStep);
+            } else {
+                setRawActiveStep(newStep);
             }
+
             clientArg.registerEvent({ step_key: newKey, event: 'load' });
         } else {
-            calculateDimensions(
-                newStep,
-                stepsArg,
-                fieldValuesArg,
-                dimensions,
-                setDimensions,
-                setFormDimensions
-            );
-            setActiveStep(newStep);
+            setRawActiveStep(newStep);
         }
     };
 
@@ -303,7 +358,8 @@ function Form({
         return null;
     }
 
-    const handleChange = (e) => {
+    // Note: If index is provided, handleChange assumes the field is a repeated field
+    const handleChange = (e, index = null) => {
         const target = e.target;
         let value = target.type === 'checkbox' ? target.checked : target.value;
         const key = target.id;
@@ -321,7 +377,10 @@ function Form({
                 servar.metadata?.always_checked
             )
                 value = true;
-            updateValues[servar.key] = value;
+            updateValues[servar.key] =
+                index === null
+                    ? value
+                    : justInsert(fieldValues[servar.key], value, index);
         });
         if (clearGMaps) {
             activeStep.servar_fields.forEach((field) => {
@@ -334,15 +393,19 @@ function Form({
                         'gmap_zip'
                     ].includes(servar.type)
                 ) {
-                    updateValues[servar.key] = '';
+                    updateValues[servar.key] =
+                        index === null
+                            ? ''
+                            : justInsert(fieldValues[servar.key], '', index);
                 }
             });
         }
+
         return updateFieldValues(updateValues);
     };
 
-    const handleValueChange = (value, id) => {
-        return handleChange({ target: { type: '', value, id } });
+    const handleValueChange = (value, id, index = null) => {
+        return handleChange({ target: { type: '', value, id } }, index);
     };
 
     const handleButtonGroupChange = (e) => {
@@ -385,10 +448,19 @@ function Form({
             const servar = field.servar;
             if (servar.key !== servarKey) return;
 
-            let val = fieldValues[servar.key];
-            if (target.checked) val.push(opt);
-            else val = val.filter((val) => val !== opt);
-            newValues = updateFieldValues({ [servar.key]: val });
+            const fieldValue = getFieldValue(field, fieldValues);
+            const { value } = fieldValue;
+            const newValue = target.checked
+                ? [...value, opt]
+                : value.filter((v) => v !== opt);
+            if (fieldValue.repeated) {
+                const { valueList, index } = fieldValue;
+                newValues = updateFieldValues({
+                    [servar.key]: justInsert(valueList, newValue, index)
+                });
+            } else {
+                newValues = updateFieldValues({ [servar.key]: newValue });
+            }
         });
         return newValues;
     };
@@ -427,16 +499,16 @@ function Form({
 
             Object.entries(formattedFields).map(
                 ([fieldKey, { value, type }]) => {
-                    const element = formRef.current.elements[fieldKey];
-                    if (element) {
+                    const elements = getElementsFromKey({ formRef, fieldKey });
+                    elements.forEach((e) => {
                         if (type === 'phone_number' && value.length !== 10) {
-                            element.setCustomValidity('Invalid phone number');
+                            e.setCustomValidity('Invalid phone number');
                         } else if (type === 'ssn' && value.length !== 9) {
-                            element.setCustomValidity(
+                            e.setCustomValidity(
                                 'Invalid social security number'
                             );
                         }
-                    }
+                    });
                 }
             );
             // do validation check before running user submission function
@@ -471,13 +543,24 @@ function Form({
                     },
                     setOptions: updateFieldOptions(steps),
                     setErrors: (errors) => {
-                        Object.entries(errors).forEach(
-                            ([fieldKey, message]) => {
-                                const element =
-                                    formRef.current.elements[fieldKey];
-                                if (element) element.setCustomValidity(message);
+                        Object.entries(errors).forEach(([fieldKey, error]) => {
+                            let index = 0;
+                            let message = error;
+                            const elements = getElementsFromKey({
+                                formRef,
+                                fieldKey
+                            });
+
+                            // If the user provided an object for an error then use the specified index and message
+                            // This allows users to specify an error on an element in a repeated row
+                            if (typeof error === 'object') {
+                                index = error.index;
+                                message = error.message;
                             }
-                        );
+
+                            const element = elements[index];
+                            if (element) element.setCustomValidity(message);
+                        });
                     },
                     integrationData: null
                 });
@@ -574,10 +657,10 @@ function Form({
 
         // For each field that changed, reset its validity
         fieldKeys.forEach((fieldKey) => {
-            const element = formRef.current.elements[fieldKey];
-            if (element) {
-                element.setCustomValidity('');
-            }
+            const elements = getElementsFromKey({ formRef, fieldKey });
+            elements.forEach((e) => {
+                e.setCustomValidity('');
+            });
         });
 
         if (typeof onChange === 'function') {
@@ -747,6 +830,8 @@ function Form({
                     conditions={activeStep.next_conditions}
                     displaySteps={displaySteps}
                     submit={submit}
+                    addRepeatedRow={addRepeatedRow}
+                    removeRepeatedRow={removeRepeatedRow}
                     isFilled={isFilled}
                 />
             ))}
@@ -756,9 +841,13 @@ function Form({
                     else if (first.row_index < second.row_index) return -1;
                     else return 0;
                 })
-                .map((field) => {
+                .map((field) => ({ field, index: field.repeat ?? null }))
+                .map(({ field, index }) => {
                     const servar = field.servar;
-                    const fieldVal = fieldValues[servar.key];
+                    const { value: fieldVal } = getFieldValue(
+                        field,
+                        fieldValues
+                    );
                     const metadata = field.metadata;
 
                     const hover = {};
@@ -824,14 +913,15 @@ function Form({
                                 <>
                                     {fieldLabel}
                                     <ReactForm.File
-                                        id={servar.key}
+                                        id={reactFriendlyKey(field)}
                                         required={servar.required}
                                         onChange={(e) => {
                                             fieldOnChange(
                                                 [servar.key],
                                                 handleValueChange(
                                                     e.target.files[0],
-                                                    servar.key
+                                                    servar.key,
+                                                    index
                                                 )
                                             );
                                         }}
@@ -912,7 +1002,7 @@ function Form({
                                         onChange={(e) => {
                                             fieldOnChange(
                                                 [servar.key],
-                                                handleChange(e)
+                                                handleChange(e, index)
                                             );
                                         }}
                                         onClick={onClick}
@@ -953,7 +1043,7 @@ function Form({
                                         onChange={(e) => {
                                             fieldOnChange(
                                                 [servar.key],
-                                                handleChange(e)
+                                                handleChange(e, index)
                                             );
                                         }}
                                         onClick={onClick}
@@ -1016,7 +1106,7 @@ function Form({
                                         onChange={(e) => {
                                             fieldOnChange(
                                                 [servar.key],
-                                                handleChange(e)
+                                                handleChange(e, index)
                                             );
                                         }}
                                         onClick={onClick}
@@ -1057,7 +1147,7 @@ function Form({
                                         onChange={(e) => {
                                             fieldOnChange(
                                                 [servar.key],
-                                                handleChange(e)
+                                                handleChange(e, index)
                                             );
                                         }}
                                         onClick={onClick}
@@ -1073,7 +1163,7 @@ function Form({
                                         onChange={(e) => {
                                             fieldOnChange(
                                                 [servar.key],
-                                                handleChange(e)
+                                                handleChange(e, index)
                                             );
                                         }}
                                         onClick={onClick}
@@ -1084,7 +1174,7 @@ function Form({
                         case 'phone_number':
                             controlElement = (
                                 <MaskedBootstrapField
-                                    key={servar.key}
+                                    key={reactFriendlyKey(field)}
                                     mask='+1 (000) 000-0000'
                                     unmask
                                     value={fieldVal}
@@ -1095,7 +1185,11 @@ function Form({
                                         );
                                         fieldOnChange(
                                             [servar.key],
-                                            handleValueChange(value, servar.key)
+                                            handleValueChange(
+                                                value,
+                                                servar.key,
+                                                index
+                                            )
                                         );
                                     }}
                                     inputRef={(el) =>
@@ -1112,7 +1206,7 @@ function Form({
                         case 'ssn':
                             controlElement = (
                                 <MaskedBootstrapField
-                                    key={servar.key}
+                                    key={reactFriendlyKey(field)}
                                     mask='000 - 00 - 0000'
                                     unmask
                                     value={fieldVal}
@@ -1123,7 +1217,11 @@ function Form({
                                         );
                                         fieldOnChange(
                                             [servar.key],
-                                            handleValueChange(value, servar.key)
+                                            handleValueChange(
+                                                value,
+                                                servar.key,
+                                                index
+                                            )
                                         );
                                     }}
                                     inputRef={(el) =>
@@ -1266,7 +1364,8 @@ function Form({
                                                         [servar.key],
                                                         handleValueChange(
                                                             e.target.value,
-                                                            servar.key
+                                                            servar.key,
+                                                            index
                                                         )
                                                     );
                                                 }}
@@ -1306,7 +1405,8 @@ function Form({
                                                         [servar.key],
                                                         handleValueChange(
                                                             e.target.value,
-                                                            servar.key
+                                                            servar.key,
+                                                            index
                                                         )
                                                     );
                                                 }}
@@ -1371,7 +1471,7 @@ function Form({
                         case 'integer_field':
                             controlElement = (
                                 <MaskedBootstrapField
-                                    key={servar.key}
+                                    key={reactFriendlyKey(field)}
                                     mask={Number}
                                     scale={0}
                                     signed={false}
@@ -1382,7 +1482,11 @@ function Form({
                                     onAccept={(value) => {
                                         fieldOnChange(
                                             [servar.key],
-                                            handleValueChange(value, servar.key)
+                                            handleValueChange(
+                                                value,
+                                                servar.key,
+                                                index
+                                            )
                                         );
                                     }}
                                     inputRef={(el) =>
@@ -1465,7 +1569,7 @@ function Form({
                                         onChange={(e) => {
                                             fieldOnChange(
                                                 [servar.key],
-                                                handleChange(e)
+                                                handleChange(e, index)
                                             );
                                         }}
                                         onClick={onClick}
@@ -1481,7 +1585,7 @@ function Form({
                                         onChange={(e) => {
                                             fieldOnChange(
                                                 [servar.key],
-                                                handleChange(e)
+                                                handleChange(e, index)
                                             );
                                         }}
                                         onClick={onClick}
@@ -1502,7 +1606,7 @@ function Form({
                                         onChange={(e) => {
                                             fieldOnChange(
                                                 [servar.key],
-                                                handleChange(e)
+                                                handleChange(e, index)
                                             );
                                         }}
                                         onClick={onClick}
@@ -1517,7 +1621,7 @@ function Form({
                                         onChange={(e) => {
                                             fieldOnChange(
                                                 [servar.key],
-                                                handleChange(e)
+                                                handleChange(e, index)
                                             );
                                         }}
                                         onClick={onClick}
@@ -1529,7 +1633,7 @@ function Form({
                                 activeStep.component_type === 'bootstrap' ? (
                                     <MaskedBootstrapField
                                         id={servar.key}
-                                        key={servar.key}
+                                        key={reactFriendlyKey(field)}
                                         mask={
                                             servar.metadata.only_alpha
                                                 ? /^[a-z0-9]*$/i
@@ -1543,7 +1647,8 @@ function Form({
                                                 [servar.key],
                                                 handleValueChange(
                                                     value,
-                                                    servar.key
+                                                    servar.key,
+                                                    index
                                                 )
                                             );
                                         }}
@@ -1566,7 +1671,7 @@ function Form({
                                         onChange={(e) => {
                                             fieldOnChange(
                                                 [servar.key],
-                                                handleChange(e)
+                                                handleChange(e, index)
                                             );
                                         }}
                                         onClick={onClick}
@@ -1601,7 +1706,7 @@ function Form({
                                       }
                                     : {})
                             }}
-                            key={servar.key}
+                            key={reactFriendlyKey(field)}
                         >
                             {controlElement}
                         </div>

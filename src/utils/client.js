@@ -2,8 +2,14 @@ import * as errors from './error';
 import { initInfo, initUserPromise } from './init';
 import encodeGetParams from './string';
 
-const API_URL = 'https://api.feathery.tech/';
-const CDN_URL = 'https://cdn.feathery.tech/';
+// Convenience boolean for urls - manually change for testing
+const isLocal = false;
+export const API_URL = isLocal
+    ? 'http://localhost:8006/'
+    : 'https://api.feathery.tech/';
+export const CDN_URL = isLocal
+    ? 'http://localhost:8006/'
+    : 'https://cdn.feathery.tech/';
 
 export default class Client {
     constructor(formKey) {
