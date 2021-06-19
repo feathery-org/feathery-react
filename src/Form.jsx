@@ -817,7 +817,9 @@ function Form({
                         gridRowStart: image.row_index + 1,
                         gridColumnEnd: image.column_index_end + 2,
                         gridRowEnd: image.row_index_end + 2,
-                        display: 'flex'
+                        display: 'flex',
+                        alignItems: image.vertical_layout,
+                        justifyContent: image.layout
                     }}
                 >
                     <img
@@ -828,9 +830,6 @@ function Form({
                             paddingTop: `${image.padding_top}px`,
                             paddingLeft: `${image.padding_left}px`,
                             paddingRight: `${image.padding_right}px`,
-                            flexDirection: 'column',
-                            alignItems: image.layout,
-                            justifyContent: image.vertical_layout,
                             width: `${image.image_width}${image.image_width_unit}`,
                             objectFit: 'contain'
                         }}
