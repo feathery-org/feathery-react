@@ -330,13 +330,13 @@ function Form({
             }
         } else if (
             !activeStep ||
-            displaySteps !== steps ||
+            JSON.stringify(displaySteps) !== JSON.stringify(steps) ||
             displayStepKey !== activeStep.key
         ) {
             const fieldVals = updateFieldValues(
                 getDefaultFieldValues(displaySteps)
             );
-            setSteps(displaySteps);
+            setSteps(JSON.parse(JSON.stringify(displaySteps)));
             getNewStep(displayStepKey, displaySteps, fieldVals);
         }
     }, [
