@@ -4,7 +4,7 @@ const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
  * Calculates the initial number of repeated rows to display given field values (some which may be arrays).
  */
 function calculateRepeatedRowCount({ step, values }) {
-    let count = 0;
+    let count = 1;
 
     if (step === null) {
         return count;
