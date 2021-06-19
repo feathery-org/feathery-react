@@ -816,7 +816,8 @@ function Form({
                         gridColumnStart: image.column_index + 1,
                         gridRowStart: image.row_index + 1,
                         gridColumnEnd: image.column_index_end + 2,
-                        gridRowEnd: image.row_index_end + 2
+                        gridRowEnd: image.row_index_end + 2,
+                        display: 'flex'
                     }}
                 >
                     <img
@@ -827,11 +828,11 @@ function Form({
                             paddingTop: `${image.padding_top}px`,
                             paddingLeft: `${image.padding_left}px`,
                             paddingRight: `${image.padding_right}px`,
-                            display: 'flex',
                             flexDirection: 'column',
                             alignItems: image.layout,
                             justifyContent: image.vertical_layout,
-                            width: `${image.image_width}${image.image_width_unit}`
+                            width: `${image.image_width}${image.image_width_unit}`,
+                            objectFit: 'contain'
                         }}
                     />
                 </div>
