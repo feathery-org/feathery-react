@@ -201,7 +201,11 @@ const nextStepKey = (
 
     if (newStepKey === newSequence[0]) {
         newSequence = newSequence.slice(1);
-    } else if (!newStepKey && newSequence.length > 0) {
+    } else if (
+        !newStepKey &&
+        newSequence.length > 0 &&
+        ['button', 'text'].includes(metadata.elementType)
+    ) {
         newStepKey = newSequence[0];
         newSequence = newSequence.slice(1);
     }

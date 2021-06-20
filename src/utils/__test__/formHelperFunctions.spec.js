@@ -261,7 +261,7 @@ describe('formHelperFunctions', () => {
             // Arrange
             const nextKey = 'abcdef';
             const trigger = 'trigger';
-            const elementType = 'type';
+            const elementType = 'button';
             const elementKeys = ['key'];
             const conditions = [
                 {
@@ -304,7 +304,7 @@ describe('formHelperFunctions', () => {
             // Arrange
             const nextKey = 'abcdef';
             const trigger = 'trigger';
-            const elementType = 'type';
+            const elementType = 'button';
             const elementKeys = ['key'];
             const conditions = [
                 {
