@@ -238,7 +238,10 @@ function Form({
                     userId: userKey,
                     lastStep: stepsArg[newKey].next_conditions.length === 0,
                     setValues: (userVals) => {
-                        updateFieldValues(userVals, fieldValuesArg);
+                        fieldValuesArg = updateFieldValues(
+                            userVals,
+                            fieldValuesArg
+                        );
                         clientArg.submitCustom(userVals);
                     },
                     setOptions: updateFieldOptions(stepsArg, activeStep),
