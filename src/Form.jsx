@@ -31,7 +31,7 @@ import {
 } from './utils/hydration';
 
 import GooglePlaces from './components/GooglePlaces';
-import Text from './fields/Text';
+import { MultiFileUploader, RichFileUploader, Text } from './fields';
 import { initInfo } from './utils/init';
 
 import './bootstrap-iso.css';
@@ -948,6 +948,42 @@ function Form({
                                         }}
                                     />
                                 </>
+                            );
+                            break;
+                        case 'rich_file_upload':
+                            controlElement = (
+                                <RichFileUploader
+                                    field={field}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            [servar.key],
+                                            handleValueChange(
+                                                e.target.files[0],
+                                                servar.key,
+                                                index
+                                            )
+                                        );
+                                    }}
+                                    onClick={onClick}
+                                />
+                            );
+                            break;
+                        case 'multi_rich_file_upload':
+                            controlElement = (
+                                <MultiFileUploader
+                                    field={field}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            [servar.key],
+                                            handleValueChange(
+                                                e.target.files,
+                                                servar.key,
+                                                index
+                                            )
+                                        );
+                                    }}
+                                    onClick={onClick}
+                                />
                             );
                             break;
                         case 'button_group':
