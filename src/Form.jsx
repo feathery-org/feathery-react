@@ -182,10 +182,7 @@ function Form({
         Object.values(stepData).forEach((step) => {
             step.servar_fields.forEach((field) => {
                 const servar = field.servar;
-                if (
-                    servar.metadata.allow_custom_options &&
-                    servar.key in newFieldOptions
-                ) {
+                if (servar.key in newFieldOptions) {
                     servar.metadata.options = newFieldOptions[servar.key];
                 }
             });
@@ -195,10 +192,7 @@ function Form({
         const newActiveStep = activeStepData || rawActiveStep;
         newActiveStep.servar_fields.forEach((field) => {
             const servar = field.servar;
-            if (
-                servar.metadata.allow_custom_options &&
-                servar.key in newFieldOptions
-            ) {
+            if (servar.key in newFieldOptions) {
                 servar.metadata.options = newFieldOptions[servar.key];
             }
         });
@@ -245,7 +239,7 @@ function Form({
                         );
                         clientArg.submitCustom(userVals);
                     },
-                    setOptions: updateFieldOptions(stepsArg, activeStep),
+                    setOptions: updateFieldOptions(stepsArg, newStep),
                     integrationData: null
                 });
                 setRawActiveStep(newStep);
