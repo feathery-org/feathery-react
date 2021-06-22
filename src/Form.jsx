@@ -512,6 +512,8 @@ function Form({
                 ([fieldKey, { value, type }]) => {
                     const elements = getElementsFromKey({ formRef, fieldKey });
                     elements.forEach((e) => {
+                        e.setCustomValidity('');
+
                         if (type === 'phone_number' && value.length !== 10) {
                             e.setCustomValidity('Invalid phone number');
                         } else if (type === 'ssn' && value.length !== 9) {
@@ -665,14 +667,6 @@ function Form({
         if (noChange) {
             return;
         }
-
-        // For each field that changed, reset its validity
-        fieldKeys.forEach((fieldKey) => {
-            const elements = getElementsFromKey({ formRef, fieldKey });
-            elements.forEach((e) => {
-                e.setCustomValidity('');
-            });
-        });
 
         if (typeof onChange === 'function') {
             const formattedFields = formatAllStepFields(steps, newValues);
