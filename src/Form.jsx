@@ -636,19 +636,20 @@ function Form({
             setStepSequence(newSequence);
             eventData.step_sequence = newSequence;
         }
-        client.registerEvent(eventData);
 
         if (!newStepKey) {
             if (
                 submitData ||
                 ['button', 'text'].includes(metadata.elementType)
             ) {
+                client.registerEvent(eventData);
                 setFinishConfig({
                     finished: true,
                     redirectURL: activeStep.redirect_url
                 });
             }
         } else {
+            client.registerEvent(eventData);
             const newURL =
                 location.pathname + location.search + `#${newStepKey}`;
             if (['button', 'text'].includes(metadata.elementType))
@@ -1483,7 +1484,17 @@ function Form({
                             controlElement = (
                                 <MaskedBootstrapField
                                     key={reactFriendlyKey(field)}
-                                    mask={Number}
+                                    mask={
+                                        servar.format === 'currency'
+                                            ? '$num'
+                                            : 'num'
+                                    }
+                                    blocks={{
+                                        num: {
+                                            mask: Number,
+                                            thousandsSeparator: ','
+                                        }
+                                    }}
                                     scale={0}
                                     signed={false}
                                     thousandsSeparator=','
