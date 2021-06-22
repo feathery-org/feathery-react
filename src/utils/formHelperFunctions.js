@@ -267,6 +267,43 @@ function getFieldValue(field, values) {
 }
 
 /**
+ * Returns the error message for a field value if it's invalid.
+ * Returns an empty string if it's valid.
+ */
+function getFieldError(value, servar) {
+    // Check if value is missing when it's required
+    if (servar.required) {
+        let missingVal = false;
+        switch (servar.type) {
+            case 'select':
+                if (!value) missingVal = true;
+                break;
+            case 'file_upload':
+                if (!value) missingVal = true;
+                break;
+            case 'checkbox':
+                // eslint-disable-next-line camelcase
+                if (!value && servar.metadata?.must_check) missingVal = true;
+                break;
+            default:
+                if (value === '') missingVal = true;
+                break;
+        }
+        if (missingVal) return 'This is a required field';
+    }
+
+    // Check if value is badly formatted
+    if (servar.type === 'phone_number' && value.length !== 10) {
+        return 'Invalid phone number';
+    } else if (servar.type === 'ssn' && value.length !== 9) {
+        return 'Invalid social security number';
+    }
+
+    // No error
+    return '';
+}
+
+/**
  * Returns the list of DOM nodes corresponding to the field with the provided key.
  */
 function getElementsFromKey({ formRef, fieldKey }) {
@@ -291,6 +328,7 @@ export {
     recurseDepth,
     reactFriendlyKey,
     getFieldValue,
+    getFieldError,
     getElementsFromKey,
     states
 };

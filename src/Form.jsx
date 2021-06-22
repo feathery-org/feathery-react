@@ -21,7 +21,8 @@ import {
     reactFriendlyKey,
     getFieldValue,
     getElementsFromKey,
-    getDefaultFieldValue
+    getDefaultFieldValue,
+    getFieldError
 } from './utils/formHelperFunctions';
 import { justInsert, justRemove } from './utils/array';
 import {
@@ -506,24 +507,17 @@ function Form({
 
         let newFieldVals = newValues || fieldValues;
         if (submitData) {
+            const servarMap = {};
+            activeStep.servar_fields.forEach(
+                (field) => (servarMap[field.servar.key] = field.servar)
+            );
             const formattedFields = formatStepFields(activeStep, newFieldVals);
 
-            Object.entries(formattedFields).map(
-                ([fieldKey, { value, type }]) => {
-                    const elements = getElementsFromKey({ formRef, fieldKey });
-                    elements.forEach((e) => {
-                        e.setCustomValidity('');
-
-                        if (type === 'phone_number' && value.length !== 10) {
-                            e.setCustomValidity('Invalid phone number');
-                        } else if (type === 'ssn' && value.length !== 9) {
-                            e.setCustomValidity(
-                                'Invalid social security number'
-                            );
-                        }
-                    });
-                }
-            );
+            Object.entries(formattedFields).map(([fieldKey, { value }]) => {
+                const err = getFieldError(value, servarMap[fieldKey]);
+                const elements = getElementsFromKey({ formRef, fieldKey });
+                elements.forEach((e) => e.setCustomValidity(err));
+            });
             // do validation check before running user submission function
             // so user does not access invalid data
             formRef.current.reportValidity();
@@ -695,28 +689,6 @@ function Form({
         );
     };
 
-    let isFilled = true;
-    for (const field of activeStep.servar_fields) {
-        const servar = field.servar;
-        if (!servar.required) continue;
-        const value = fieldValues[servar.key];
-        switch (servar.type) {
-            case 'select':
-                if (!value) isFilled = false;
-                break;
-            case 'file_upload':
-                if (!value) isFilled = false;
-                break;
-            case 'checkbox':
-                // eslint-disable-next-line camelcase
-                if (!value && servar.metadata?.must_check) isFilled = false;
-                break;
-            default:
-                if (value === '') isFilled = false;
-                break;
-        }
-    }
-
     let progressBarElements = null;
     if (activeStep.progress_bar) {
         const pb = activeStep.progress_bar;
@@ -844,7 +816,6 @@ function Form({
                     submit={submit}
                     addRepeatedRow={addRepeatedRow}
                     removeRepeatedRow={removeRepeatedRow}
-                    isFilled={isFilled}
                 />
             ))}
             {activeStep.servar_fields

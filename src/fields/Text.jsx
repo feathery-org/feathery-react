@@ -20,7 +20,6 @@ function Text({
     field,
     fieldValues,
     conditions,
-    isFilled,
     displaySteps,
     addRepeatedRow,
     removeRepeatedRow,
@@ -216,10 +215,7 @@ function Text({
                               }
                             : {}
                     }}
-                    disabled={
-                        field.link === 'none' ||
-                        (field.link === 'submit' && !isFilled)
-                    }
+                    disabled={field.link === 'none'}
                     onClick={buttonOnClick}
                 >
                     <div style={{ display: 'flex', position: 'relative' }}>
