@@ -968,7 +968,7 @@ function Form({
                                 />
                             );
                             break;
-                        case 'multi_rich_file_upload':
+                        case 'rich_multi_file_upload':
                             controlElement = (
                                 <MultiFileUploader
                                     field={field}

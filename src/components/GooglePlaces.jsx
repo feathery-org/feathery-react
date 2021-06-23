@@ -98,7 +98,7 @@ export default function GooglePlaces({
 
                 if (Object.keys(addrFieldValues).length > 0) {
                     let newValues;
-                    // We set noChange to true to suppress onChange events from individual fields (because GMaps updates mutliple fields)
+                    // We set noChange to true to suppress onChange events from individual fields (because GMaps updates multiple fields)
                     // Note: Re-rendering of form happens immediately after setting noChange and fieldValues
                     setNoChange(true);
                     setFieldValues((fieldValues) => {

@@ -3,7 +3,7 @@ import { create, act } from 'react-test-renderer';
 import { MultiFileUploader } from '..';
 
 describe('MultiFileUploader', () => {
-    it('renders a basic mutli-file upload component', () => {
+    it('renders a basic multi-file upload component', () => {
         // Arrange
         const props = {
             field: {

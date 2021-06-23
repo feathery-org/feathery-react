@@ -179,8 +179,8 @@ export default class Client {
                 formData.append(servar.key, servar.file_upload);
             } else if (servar.rich_file_upload) {
                 formData.append(servar.key, servar.rich_file_upload);
-            } else if (servar.multi_rich_file_upload) {
-                formData.append(servar.key, servar.mutli_file_upload);
+            } else if (servar.rich_multi_file_upload) {
+                formData.append(servar.key, servar.rich_multi_file_upload);
             }
         });
 
@@ -212,7 +212,7 @@ export default class Client {
     // servars = [{key: <servarKey>, <type>: <value>}]
     submitStep(servars) {
         const isFileServar = (servar) =>
-            ['file_upload', 'rich_file_upload', 'multi_rich_file_upload'].some(
+            ['file_upload', 'rich_file_upload', 'rich_multi_file_upload'].some(
                 (type) => type in servar
             );
         const jsonServars = servars.filter((servar) => !isFileServar(servar));

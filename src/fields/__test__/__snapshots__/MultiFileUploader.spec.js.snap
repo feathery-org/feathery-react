@@ -1,6 +1,6 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`MultiFileUploader renders a basic mutli-file upload component 1`] = `
+exports[`MultiFileUploader renders a basic multi-file upload component 1`] = `
 <div
   style={
     Object {
