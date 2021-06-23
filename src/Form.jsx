@@ -230,6 +230,7 @@ function Form({
                 await onLoad({
                     fields: formattedFields,
                     stepName: newKey,
+                    previousStepName: activeStep?.key,
                     userId: userKey,
                     lastStep: stepsArg[newKey].next_conditions.length === 0,
                     setValues: (userVals) => {
