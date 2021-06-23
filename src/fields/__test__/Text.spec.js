@@ -1,6 +1,6 @@
 import React from 'react';
 import { create, act } from 'react-test-renderer';
-import Text from '../Text';
+import { Text } from '../';
 
 describe('Text', () => {
     it('renders an empty text block', async () => {

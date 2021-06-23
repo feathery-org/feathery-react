@@ -175,7 +175,13 @@ export default class Client {
 
         const formData = new FormData();
         servars.forEach((servar) => {
-            formData.append(servar.key, servar.file_upload);
+            if (servar.file_upload) {
+                formData.append(servar.key, servar.file_upload);
+            } else if (servar.rich_file_upload) {
+                formData.append(servar.key, servar.rich_file_upload);
+            } else if (servar.rich_multi_file_upload) {
+                formData.append(servar.key, servar.rich_multi_file_upload);
+            }
         });
 
         const options = {
@@ -205,11 +211,13 @@ export default class Client {
 
     // servars = [{key: <servarKey>, <type>: <value>}]
     submitStep(servars) {
-        const jsonServars = servars.filter(
-            (servar) => !('file_upload' in servar)
-        );
+        const isFileServar = (servar) =>
+            ['file_upload', 'rich_file_upload', 'rich_multi_file_upload'].some(
+                (type) => type in servar
+            );
+        const jsonServars = servars.filter((servar) => !isFileServar(servar));
         this._submitJSONData(jsonServars);
-        const fileServars = servars.filter((servar) => 'file_upload' in servar);
+        const fileServars = servars.filter(isFileServar);
         if (fileServars.length > 0) this._submitFileData(fileServars);
     }
 

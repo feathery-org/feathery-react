@@ -1,0 +1,74 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`MultiFileUploader renders a basic multi-file upload component 1`] = `
+<div
+  style={
+    Object {
+      "display": "flex",
+      "flexWrap": "wrap",
+    }
+  }
+>
+  <div
+    id="key"
+    onClick={[Function]}
+    style={
+      Object {
+        "alignItems": "center",
+        "border": "1px solid lightgrey",
+        "borderRadius": "4px",
+        "cursor": "pointer",
+        "display": "flex",
+        "flexDirection": "column",
+        "height": "50%",
+        "justifyContent": "space-between",
+        "maxHeight": "100%",
+        "overflow": "hidden",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "paddingRight": "0px",
+        "paddingTop": "0px",
+        "position": "relative",
+        "width": "50px",
+      }
+    }
+  >
+    <img
+      className="img-fluid"
+      src="https://feathery.tech"
+      style={
+        Object {
+          "maxHeight": "100%",
+          "maxWidth": "100%",
+          "minHeight": 0,
+        }
+      }
+    />
+    <div
+      style={
+        Object {
+          "background": "#000000",
+          "paddingBottom": "0px",
+          "paddingLeft": "0px",
+          "paddingRight": "0px",
+          "paddingTop": "0px",
+        }
+      }
+    >
+      Upload file...
+    </div>
+    <input
+      accept="image/*"
+      multiple={true}
+      onChange={[Function]}
+      required={true}
+      style={
+        Object {
+          "display": "none",
+        }
+      }
+      type="file"
+    />
+  </div>
+</div>
+`;
