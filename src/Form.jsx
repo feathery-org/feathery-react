@@ -278,16 +278,6 @@ function Form({
                 clientInstance
                     .fetchSession()
                     .then((session) => {
-                        Object.entries(session.file_urls).forEach(
-                            ([fileKey, fileURL]) => {
-                                clientInstance
-                                    .fetchFile(fileURL)
-                                    .then((fileData) => {
-                                        setFileFieldValue(fileKey, fileData);
-                                    });
-                            }
-                        );
-
                         setStepSequence(session.step_sequence);
                         setIntegrations(session.integrations);
                         const gtm = session.integrations['google-tag-manager'];
@@ -297,6 +287,11 @@ function Form({
                             const newValues = updateFieldValues(
                                 session.field_values,
                                 getDefaultFieldValues(data)
+                            );
+                            Object.entries(session.file_values).forEach(
+                                ([fileKey, fileOrFiles]) => {
+                                    setFileFieldValue(fileKey, fileOrFiles);
+                                }
                             );
                             const newKey =
                                 session.current_step_key || getOrigin(data);
@@ -925,6 +920,7 @@ function Form({
                                         );
                                     }}
                                     onClick={onClick}
+                                    initialFile={fieldVal}
                                 />
                             );
                             break;
@@ -943,6 +939,7 @@ function Form({
                                         );
                                     }}
                                     onClick={onClick}
+                                    initialFiles={fieldVal}
                                 />
                             );
                             break;

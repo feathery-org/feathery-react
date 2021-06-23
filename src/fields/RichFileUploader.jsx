@@ -1,11 +1,16 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Image } from 'react-bootstrap';
 import { IconContext } from 'react-icons';
 import { FiX } from 'react-icons/fi';
 import { reactFriendlyKey } from '../utils/formHelperFunctions';
 import { THUMBNAIL_TYPE, getThumbnailType } from '../utils/image';
 
-function RichFileUploader({ field, onChange, onClick: customOnClick }) {
+function RichFileUploader({
+    field,
+    onChange: customOnChange,
+    onClick: customOnClick,
+    initialFile
+}) {
     const { servar, metadata } = field;
     const showIcon = metadata.icon_url !== '';
     const showLabel = servar.name !== '';
@@ -14,47 +19,51 @@ function RichFileUploader({ field, onChange, onClick: customOnClick }) {
     const [filename, setFilename] = useState('');
     const fileInput = useRef();
 
-    const files = useMemo(() => fileInput.current?.files ?? [], [
-        fileInput.current?.files?.[0]?.name
-    ]);
+    const [file, setFile] = useState(initialFile);
 
     // When a file is uploaded, we convert it to a thumbnail
     useEffect(() => {
         (async () => {
-            const file = files[0];
             const thumbnailType = getThumbnailType(file);
-
             if (thumbnailType === THUMBNAIL_TYPE.IMAGE) {
-                const url = file
-                    ? await new Promise((resolve) => {
-                          const reader = new FileReader();
+                const url = await new Promise((resolve) => {
+                    const reader = new FileReader();
 
-                          reader.addEventListener('load', function (event) {
-                              resolve(event.target.result);
-                          });
+                    reader.addEventListener('load', function (event) {
+                        resolve(event.target.result);
+                    });
 
-                          reader.readAsDataURL(file);
-                      })
-                    : '';
+                    reader.readAsDataURL(file);
+                });
 
                 setFilename('');
                 setThumbnail(url);
+            } else if (thumbnailType === THUMBNAIL_TYPE.URL) {
+                setThumbnail(file.url);
+                setFilename('');
             } else {
                 setThumbnail('');
                 setFilename(file?.name);
             }
         })();
-    }, [files]);
+    }, [file]);
 
     function onClick(event) {
         fileInput.current.click();
         customOnClick(event);
     }
 
+    function onChange(event) {
+        const file = event.target.files[0];
+        setFile(file);
+
+        customOnChange({ target: { files: file ? [file] : [] } });
+    }
+
     function onClear() {
         fileInput.current.value = '';
-        setThumbnail('');
-        setFilename('');
+        setFile(undefined);
+        customOnChange({ target: { files: [] } });
     }
 
     return (
@@ -70,7 +79,7 @@ function RichFileUploader({ field, onChange, onClick: customOnClick }) {
                     maxHeight: '100%',
                     display: 'flex',
                     justifyContent:
-                        files.length === 0 && showLabel && showIcon
+                        !file && showLabel && showIcon
                             ? 'space-between'
                             : 'center',
                     alignItems: 'center',
@@ -78,23 +87,21 @@ function RichFileUploader({ field, onChange, onClick: customOnClick }) {
                     border: '1px solid lightgrey',
                     borderRadius: '4px',
                     paddingTop: `${
-                        files.length === 0 ? metadata.uploader_padding_top : 0
+                        !file ? metadata.uploader_padding_top : 0
                     }px`,
                     paddingBottom: `${
-                        files.length === 0
-                            ? metadata.uploader_padding_bottom
-                            : 0
+                        !file ? metadata.uploader_padding_bottom : 0
                     }px`,
                     paddingLeft: `${
-                        files.length === 0 ? metadata.uploader_padding_left : 0
+                        !file ? metadata.uploader_padding_left : 0
                     }px`,
                     paddingRight: `${
-                        files.length === 0 ? metadata.uploader_padding_right : 0
+                        !file ? metadata.uploader_padding_right : 0
                     }px`,
                     overflow: 'hidden'
                 }}
             >
-                {showIcon && files.length === 0 && (
+                {showIcon && !file && (
                     <Image
                         src={metadata.icon_url}
                         fluid
@@ -105,7 +112,7 @@ function RichFileUploader({ field, onChange, onClick: customOnClick }) {
                         }}
                     />
                 )}
-                {showLabel && files.length === 0 && (
+                {showLabel && !file && (
                     <div
                         style={{
                             paddingTop: `${metadata.cta_padding_top}px`,
@@ -139,7 +146,7 @@ function RichFileUploader({ field, onChange, onClick: customOnClick }) {
                         {filename}
                     </div>
                 )}
-                {files.length > 0 && (
+                {file && (
                     <div
                         style={{
                             position: 'absolute',
@@ -165,7 +172,6 @@ function RichFileUploader({ field, onChange, onClick: customOnClick }) {
                 <input
                     ref={fileInput}
                     type='file'
-                    required={servar.required}
                     onChange={onChange}
                     accept={servar.metadata.file_types}
                     style={{ display: 'none' }}
