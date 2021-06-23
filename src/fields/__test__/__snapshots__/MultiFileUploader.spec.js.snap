@@ -22,6 +22,7 @@ exports[`MultiFileUploader renders a basic multi-file upload component 1`] = `
         "flexDirection": "column",
         "height": "50%",
         "justifyContent": "space-between",
+        "margin": "0 6px 6px 0",
         "maxHeight": "100%",
         "overflow": "hidden",
         "paddingBottom": "0px",
@@ -61,7 +62,6 @@ exports[`MultiFileUploader renders a basic multi-file upload component 1`] = `
       accept="image/*"
       multiple={true}
       onChange={[Function]}
-      required={true}
       style={
         Object {
           "display": "none",

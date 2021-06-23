@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Image } from 'react-bootstrap';
 import { IconContext } from 'react-icons';
 import { FiX } from 'react-icons/fi';
@@ -9,19 +9,19 @@ import { THUMBNAIL_TYPE, getThumbnailType } from '../utils/image';
 async function getThumbnailData(file) {
     const thumbnailType = getThumbnailType(file);
     if (thumbnailType === THUMBNAIL_TYPE.IMAGE) {
-        const url = file
-            ? await new Promise((resolve) => {
-                  const reader = new FileReader();
+        const url = await new Promise((resolve) => {
+            const reader = new FileReader();
 
-                  reader.addEventListener('load', (event) => {
-                      resolve(event.target.result);
-                  });
+            reader.addEventListener('load', (event) => {
+                resolve(event.target.result);
+            });
 
-                  reader.readAsDataURL(file);
-              })
-            : '';
+            reader.readAsDataURL(file);
+        });
 
         return { filename: file.name, thumbnail: url };
+    } else if (thumbnailType === THUMBNAIL_TYPE.URL) {
+        return { filename: '', thumbnail: file.url };
     } else {
         return { filename: file.name, thumbnail: '' };
     }
@@ -30,7 +30,8 @@ async function getThumbnailData(file) {
 function MultiFileUploader({
     field,
     onChange: customOnChange,
-    onClick: customOnClick
+    onClick: customOnClick,
+    initialFiles = []
 }) {
     const { servar, metadata } = field;
     const showIcon = metadata.icon_url !== '';
@@ -41,6 +42,17 @@ function MultiFileUploader({
     // Thumbnails data can be evaluated only when we add files (for performance)
     const [rawFiles, setRawFiles] = useState([]);
     const [thumbnailsData, setThumbnailsData] = useState([]);
+
+    useEffect(() => {
+        (async () => {
+            const initialThumbnailsData = await Promise.all(
+                initialFiles.map(getThumbnailData)
+            );
+
+            setRawFiles(initialFiles);
+            setThumbnailsData(initialThumbnailsData);
+        })();
+    }, []);
 
     // Reference the hidden multi-select element
     const fileInput = useRef();
@@ -68,8 +80,12 @@ function MultiFileUploader({
 
     function onClear(index) {
         return () => {
-            setRawFiles(justRemove(rawFiles, index));
+            const newRawFiles = justRemove(rawFiles, index);
+            setRawFiles(newRawFiles);
             setThumbnailsData(justRemove(thumbnailsData, index));
+
+            // Simulate the onChange event from a multi-select
+            customOnChange({ target: { files: newRawFiles } });
         };
     }
 
@@ -82,7 +98,7 @@ function MultiFileUploader({
                         position: 'relative',
                         height: `${field.field_height}${field.field_height_unit}`,
                         width: `${field.field_width}${field.field_width_unit}`,
-                        margin: '0 10px 10px 0',
+                        margin: '0 6px 6px 0',
                         maxHeight: '100%',
                         border: '1px solid lightgrey',
                         borderRadius: '4px',
@@ -147,7 +163,8 @@ function MultiFileUploader({
                     paddingBottom: `${metadata.uploader_padding_bottom}px`,
                     paddingLeft: `${metadata.uploader_padding_left}px`,
                     paddingRight: `${metadata.uploader_padding_right}px`,
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    margin: '0 6px 6px 0'
                 }}
             >
                 {showIcon && (
@@ -177,7 +194,6 @@ function MultiFileUploader({
                 <input
                     ref={fileInput}
                     type='file'
-                    required={servar.required}
                     multiple
                     onChange={onChange}
                     accept={servar.metadata.file_types}

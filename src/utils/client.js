@@ -87,20 +87,6 @@ export default class Client {
         });
     }
 
-    async fetchFile(fileURL) {
-        return fetch(fileURL).then((response) => {
-            const { status } = response;
-            switch (status) {
-                case 200:
-                    return response.blob();
-                default:
-                    return Promise.reject(
-                        new errors.FetchError('Invalid file URL')
-                    );
-            }
-        });
-    }
-
     submitCustom(customKeyValues) {
         const { userKey, apiKey } = initInfo();
         const url = `${API_URL}api/panel/custom/submit/`;
@@ -173,14 +159,38 @@ export default class Client {
         const { userKey, apiKey } = initInfo();
         const url = `${API_URL}api/panel/step/submit/file/${userKey}/`;
 
+        const getFileValue = (servar) => {
+            let fileValue;
+            if ('file_upload' in servar) {
+                fileValue = servar.file_upload;
+            } else if ('rich_file_upload' in servar) {
+                fileValue = servar.rich_file_upload;
+            } else if ('rich_multi_file_upload' in servar) {
+                fileValue = servar.rich_multi_file_upload;
+            }
+
+            if (!fileValue) {
+                return fileValue;
+            }
+
+            const resolveFile = (file) =>
+                file instanceof File ? file : file.path;
+            return Array.isArray(fileValue)
+                ? fileValue.map(resolveFile)
+                : resolveFile(fileValue);
+        };
+
         const formData = new FormData();
         servars.forEach((servar) => {
-            if (servar.file_upload) {
-                formData.append(servar.key, servar.file_upload);
-            } else if (servar.rich_file_upload) {
-                formData.append(servar.key, servar.rich_file_upload);
-            } else if (servar.rich_multi_file_upload) {
-                formData.append(servar.key, servar.rich_multi_file_upload);
+            const fileValue = getFileValue(servar);
+            if (fileValue) {
+                if (Array.isArray(fileValue)) {
+                    fileValue.forEach((file) =>
+                        formData.append(servar.key, file)
+                    );
+                } else {
+                    formData.append(servar.key, fileValue);
+                }
             }
         });
 

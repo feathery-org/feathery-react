@@ -52,8 +52,7 @@ exports[`RichFileUploader renders a basic file upload component 1`] = `
   
   <input
     accept="image/*"
-    onChange={[MockFunction]}
-    required={true}
+    onChange={[Function]}
     style={
       Object {
         "display": "none",
