@@ -82,6 +82,7 @@ function Form({
     const [integrations, setIntegrations] = useState({});
     const [noChange, setNoChange] = useState(false);
     const [stepSequence, setStepSequence] = useState([]);
+    const [sequenceIndex, setSequenceIndex] = useState(0);
 
     const fieldRefs = useRef({}).current;
     const formRef = useRef(null);
@@ -253,7 +254,13 @@ function Form({
                 setRawActiveStep(newStep);
             }
 
-            clientArg.registerEvent({ step_key: newKey, event: 'load' });
+            const eventData = { step_key: newKey, event: 'load' };
+            if (stepSequence.includes(newKey)) {
+                const newSequenceIndex = stepSequence.indexOf(newKey) + 1;
+                setSequenceIndex(newSequenceIndex);
+                eventData.current_sequence_index = newSequenceIndex;
+            }
+            clientArg.registerEvent(eventData);
         } else {
             setRawActiveStep(newStep);
         }
@@ -285,6 +292,7 @@ function Form({
                     .fetchSession()
                     .then((session) => {
                         setStepSequence(session.step_sequence);
+                        setSequenceIndex(session.current_sequence_index);
                         setIntegrations(session.integrations);
                         const gtm = session.integrations['google-tag-manager'];
                         if (gtm) TagManager.initialize({ gtmId: gtm });
@@ -526,7 +534,8 @@ function Form({
                     metadata,
                     steps,
                     newFieldVals,
-                    stepSequence
+                    stepSequence,
+                    sequenceIndex
                 );
                 const { userKey } = initInfo();
                 await onSubmit({
@@ -608,23 +617,25 @@ function Form({
         newFieldVals,
         submitData
     }) {
-        const { newStepKey, newSequence } = nextStepKey(
+        const { newStepKey, newSequence, newSequenceIndex } = nextStepKey(
             activeStep.next_conditions,
             metadata,
             steps,
             newFieldVals,
-            stepSequence
+            stepSequence,
+            sequenceIndex
         );
+
+        setSequenceIndex(newSequenceIndex);
+        setStepSequence(newSequence);
 
         const eventData = {
             step_key: activeStep.key,
             next_step_key: newStepKey ?? '',
-            event: submitData ? 'complete' : 'skip'
+            event: submitData ? 'complete' : 'skip',
+            current_sequence_index: newSequenceIndex,
+            step_sequence: newSequence
         };
-        if (newSequence !== stepSequence) {
-            setStepSequence(newSequence);
-            eventData.step_sequence = newSequence;
-        }
 
         if (!newStepKey) {
             if (
