@@ -64,16 +64,22 @@ function ButtonElement({
             setShowSpinner(true);
         }
 
-        await submit(
-            field.link === 'submit',
-            {
-                elementType: 'button',
-                elementKeys: [elementKey],
-                trigger: 'click'
-            },
-            repeat
-        );
-        setShowSpinner(false);
+        // Perform the submit callback
+        // Note: We only need to set the spinner if the submit request failed
+        // If the request succeeded then the button unmounts and calling setShowSpinner is an error
+        try {
+            await submit(
+                field.link === 'submit',
+                {
+                    elementType: 'button',
+                    elementKeys: [elementKey],
+                    trigger: 'click'
+                },
+                repeat
+            );
+        } catch {
+            setShowSpinner(false);
+        }
     }
 
     return (

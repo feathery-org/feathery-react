@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import { Image } from 'react-bootstrap';
 import { IconContext } from 'react-icons';
 import { FiX } from 'react-icons/fi';
@@ -40,19 +40,10 @@ function MultiFileUploader({
     // Maintain separate lists of raw files and thumbnails data
     // Raw files are useful to bubble up through onChange
     // Thumbnails data can be evaluated only when we add files (for performance)
-    const [rawFiles, setRawFiles] = useState([]);
-    const [thumbnailsData, setThumbnailsData] = useState([]);
-
-    useEffect(() => {
-        (async () => {
-            const initialThumbnailsData = await Promise.all(
-                initialFiles.map(getThumbnailData)
-            );
-
-            setRawFiles(initialFiles);
-            setThumbnailsData(initialThumbnailsData);
-        })();
-    }, []);
+    const [rawFiles, setRawFiles] = useState(initialFiles);
+    const [thumbnailsData, setThumbnailsData] = useState(
+        initialFiles.map((file) => ({ filename: '', thumbnail: file.url }))
+    );
 
     // Reference the hidden multi-select element
     const fileInput = useRef();
