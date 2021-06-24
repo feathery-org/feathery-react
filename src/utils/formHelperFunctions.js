@@ -318,6 +318,12 @@ function getElementsFromKey({ formRef, fieldKey }) {
     return elements.filter((e) => e);
 }
 
+const alignmentMap = {
+    left: 'flex-start',
+    center: 'center',
+    right: 'flex-end'
+};
+
 export {
     adjustColor,
     formatAllStepFields,
@@ -332,5 +338,6 @@ export {
     getFieldValue,
     getFieldError,
     getElementsFromKey,
-    states
+    states,
+    alignmentMap
 };

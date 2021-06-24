@@ -1,6 +1,6 @@
 import React from 'react';
 import { create, act } from 'react-test-renderer';
-import { Text } from '../';
+import TextElement from '../TextElement';
 
 describe('Text', () => {
     it('renders an empty text block', async () => {
@@ -9,7 +9,6 @@ describe('Text', () => {
             field: { text_formatted: [{ insert: '\n' }] },
             fieldValues: {},
             conditions: [],
-            isFilled: false,
             displaySteps: [],
             submit: () => {},
             setElementKey: () => {},
@@ -19,7 +18,7 @@ describe('Text', () => {
         // Act
         let text;
         act(() => {
-            text = create(<Text {...props} />);
+            text = create(<TextElement {...props} />);
         });
         const tree = text.toJSON();
 
@@ -33,7 +32,6 @@ describe('Text', () => {
             field: { text_formatted: [{ insert: 'Hello World!' }] },
             fieldValues: {},
             conditions: [],
-            isFilled: false,
             displaySteps: [],
             submit: () => {},
             setElementKey: () => {},
@@ -43,7 +41,7 @@ describe('Text', () => {
         // Act
         let text;
         act(() => {
-            text = create(<Text {...props} />);
+            text = create(<TextElement {...props} />);
         });
         const tree = text.toJSON();
 
@@ -72,7 +70,6 @@ describe('Text', () => {
             },
             fieldValues: {},
             conditions: [],
-            isFilled: false,
             displaySteps: [],
             submit: () => {},
             setElementKey: () => {},
@@ -82,7 +79,7 @@ describe('Text', () => {
         // Act
         let text;
         act(() => {
-            text = create(<Text {...props} />);
+            text = create(<TextElement {...props} />);
         });
         const tree = text.toJSON();
 

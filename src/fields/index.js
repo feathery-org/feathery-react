@@ -1,5 +1,6 @@
 import MultiFileUploader from './MultiFileUploader';
 import RichFileUploader from './RichFileUploader';
-import Text from './Text';
+import TextElement from './TextElement';
+import ButtonElement from './ButtonElement';
 
-export { MultiFileUploader, RichFileUploader, Text };
+export { MultiFileUploader, RichFileUploader, TextElement, ButtonElement };

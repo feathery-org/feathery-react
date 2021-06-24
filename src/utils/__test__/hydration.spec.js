@@ -7,9 +7,18 @@ describe('hydration', () => {
             const inputStep = {
                 repeat_row_start: 2,
                 repeat_row_end: 3,
-                text_fields: [
+                texts: [
                     {
                         text: 'First text field {{foobar}}',
+                        row_index: 1,
+                        row_index_end: 1,
+                        column_index: 2,
+                        column_index_end: 2
+                    }
+                ],
+                buttons: [
+                    {
+                        text: 'First button field {{foobar}}',
                         row_index: 1,
                         row_index_end: 1,
                         column_index: 2,
@@ -47,7 +56,8 @@ describe('hydration', () => {
             const inputStep = {
                 repeat_row_start: 2,
                 repeat_row_end: 3,
-                text_fields: [],
+                texts: [],
+                buttons: [],
                 servar_fields: [
                     {
                         text: 'First servar field {{foobar}}',
@@ -86,7 +96,7 @@ describe('hydration', () => {
             const inputStep = {
                 repeat_row_start: 1,
                 repeat_row_end: 1,
-                text_fields: [
+                texts: [
                     {
                         text: 'Repeated text field {{foobar}}',
                         column_index: 2,
@@ -103,6 +113,29 @@ describe('hydration', () => {
                     },
                     {
                         text: 'Repeated text field {{foobar}}',
+                        column_index: 2,
+                        repeat: 2,
+                        row_index: 3,
+                        row_index_end: 3
+                    }
+                ],
+                buttons: [
+                    {
+                        text: 'Repeated button field {{foobar}}',
+                        column_index: 2,
+                        repeat: 0,
+                        row_index: 1,
+                        row_index_end: 1
+                    },
+                    {
+                        text: 'Repeated button field {{foobar}}',
+                        column_index: 2,
+                        repeat: 1,
+                        row_index: 2,
+                        row_index_end: 2
+                    },
+                    {
+                        text: 'Repeated button field {{foobar}}',
                         column_index: 2,
                         repeat: 2,
                         row_index: 3,
@@ -142,7 +175,8 @@ describe('hydration', () => {
         it('calculates one row', () => {
             // Arrange
             const step = {
-                text_fields: [],
+                texts: [],
+                buttons: [],
                 servar_fields: []
             };
             const values = {};
@@ -160,7 +194,14 @@ describe('hydration', () => {
             const step = {
                 repeat_row_start: 0,
                 repeat_row_end: 0,
-                text_fields: [
+                texts: [
+                    {
+                        row_index: 0,
+                        row_index_end: 0,
+                        text: '{{foobar}}'
+                    }
+                ],
+                buttons: [
                     {
                         row_index: 0,
                         row_index_end: 0,
@@ -186,7 +227,8 @@ describe('hydration', () => {
             const step = {
                 repeat_row_start: 0,
                 repeat_row_end: 0,
-                text_fields: [],
+                texts: [],
+                buttons: [],
                 servar_fields: [
                     {
                         servar: {
@@ -213,7 +255,14 @@ describe('hydration', () => {
             const step = {
                 repeat_row_start: 0,
                 repeat_row_end: 0,
-                text_fields: [
+                texts: [
+                    {
+                        row_index: 0,
+                        row_index_end: 0,
+                        text: '{{foobar}}'
+                    }
+                ],
+                buttons: [
                     {
                         row_index: 0,
                         row_index_end: 0,

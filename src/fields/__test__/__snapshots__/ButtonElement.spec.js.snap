@@ -1,0 +1,150 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ButtonElement renders a button with custom styles 1`] = `
+<div
+  className="css-zga5aq-ButtonElement"
+>
+  <button
+    className="css-1vn53o3-ButtonElement btn btn-primary"
+    disabled={false}
+    onClick={[Function]}
+    style={
+      Object {
+        "alignItems": "center",
+        "backgroundColor": "#2954af",
+        "borderColor": "#2954af",
+        "borderRadius": "undefinedpx",
+        "boxShadow": "none",
+        "cursor": "pointer",
+        "display": "flex",
+        "height": "undefinedundefined",
+        "justifyContent": "center",
+        "maxWidth": "100%",
+        "width": "undefinedundefined",
+      }
+    }
+    type="button"
+  >
+    <div
+      style={
+        Object {
+          "display": "flex",
+          "position": "relative",
+        }
+      }
+    >
+      <span
+        onClick={[Function]}
+        style={
+          Object {
+            "color": "##000000FF",
+            "fontSize": "48pxpx",
+            "fontStyle": "italic",
+            "fontWeight": 700,
+            "whiteSpace": "pre-wrap",
+          }
+        }
+      >
+        Hello World!
+      </span>
+    </div>
+  </button>
+</div>
+`;
+
+exports[`ButtonElement renders a button with plain text 1`] = `
+<div
+  className="css-zga5aq-ButtonElement"
+>
+  <button
+    className="css-1vn53o3-ButtonElement btn btn-primary"
+    disabled={false}
+    onClick={[Function]}
+    style={
+      Object {
+        "alignItems": "center",
+        "backgroundColor": "#2954af",
+        "borderColor": "#2954af",
+        "borderRadius": "undefinedpx",
+        "boxShadow": "none",
+        "cursor": "pointer",
+        "display": "flex",
+        "height": "undefinedundefined",
+        "justifyContent": "center",
+        "maxWidth": "100%",
+        "width": "undefinedundefined",
+      }
+    }
+    type="button"
+  >
+    <div
+      style={
+        Object {
+          "display": "flex",
+          "position": "relative",
+        }
+      }
+    >
+      <span
+        onClick={[Function]}
+        style={
+          Object {
+            "whiteSpace": "pre-wrap",
+          }
+        }
+      >
+        Hello World!
+      </span>
+    </div>
+  </button>
+</div>
+`;
+
+exports[`ButtonElement renders an empty Button element 1`] = `
+<div
+  className="css-zga5aq-ButtonElement"
+>
+  <button
+    className="css-1vn53o3-ButtonElement btn btn-primary"
+    disabled={false}
+    onClick={[Function]}
+    style={
+      Object {
+        "alignItems": "center",
+        "backgroundColor": "#2954af",
+        "borderColor": "#2954af",
+        "borderRadius": "undefinedpx",
+        "boxShadow": "none",
+        "cursor": "pointer",
+        "display": "flex",
+        "height": "undefinedundefined",
+        "justifyContent": "center",
+        "maxWidth": "100%",
+        "width": "undefinedundefined",
+      }
+    }
+    type="button"
+  >
+    <div
+      style={
+        Object {
+          "display": "flex",
+          "position": "relative",
+        }
+      }
+    >
+      <span
+        onClick={[Function]}
+        style={
+          Object {
+            "whiteSpace": "pre-wrap",
+          }
+        }
+      >
+        
+
+      </span>
+    </div>
+  </button>
+</div>
+`;
