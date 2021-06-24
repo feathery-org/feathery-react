@@ -138,9 +138,11 @@ const nextStepKey = (
     metadata,
     steps,
     fieldValues,
-    stepSequence
+    stepSequence,
+    sequenceIndex
 ) => {
-    let newKey, defaultKey;
+    let newKey;
+    let defaultKey = null;
     let sequenceValues = [];
     const inSequence = {};
     const notInSequence = [];
@@ -199,19 +201,26 @@ const nextStepKey = (
 
     let newStepKey = newKey || defaultKey;
     // Don't propagate array rules if an equality rule matches or there are no array rules
-    if (newSequence.length === 0 || newStepKey) newSequence = stepSequence;
+    if (newSequence.length > 0 && !newStepKey) {
+        stepSequence = newSequence;
+        sequenceIndex = 0;
+    }
 
-    if (newStepKey === newSequence[0]) {
-        newSequence = newSequence.slice(1);
+    if (stepSequence.includes(newStepKey)) {
+        sequenceIndex = stepSequence.indexOf(newStepKey) + 1;
     } else if (
         !newStepKey &&
-        newSequence.length > 0 &&
+        stepSequence.length > sequenceIndex &&
         ['button', 'text'].includes(metadata.elementType)
     ) {
-        newStepKey = newSequence[0];
-        newSequence = newSequence.slice(1);
+        newStepKey = stepSequence[sequenceIndex];
+        sequenceIndex++;
     }
-    return { newStepKey, newSequence };
+    return {
+        newStepKey,
+        newSequence: stepSequence,
+        newSequenceIndex: sequenceIndex
+    };
 };
 
 const getOrigin = (steps) => {
