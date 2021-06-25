@@ -758,6 +758,7 @@ function Form({
             {children}
             {activeStep.progress_bar && (
                 <div
+                    key='progress-bar'
                     css={{
                         gridColumnStart:
                             activeStep.progress_bar.column_index + 1,
@@ -787,7 +788,7 @@ function Form({
             )}
             {activeStep.images.map((image, i) => (
                 <div
-                    key={`image-${i}`}
+                    key={`${activeStep.key}-image-${i}`}
                     style={{
                         gridColumnStart: image.column_index + 1,
                         gridRowStart: image.row_index + 1,
@@ -814,7 +815,7 @@ function Form({
             ))}
             {activeStep.texts.map((field, i) => (
                 <TextElement
-                    key={`text-${i}`}
+                    key={`${activeStep.key}-text-${i}`}
                     field={field}
                     fieldValues={fieldValues}
                     conditions={activeStep.next_conditions}
@@ -823,7 +824,7 @@ function Form({
             ))}
             {activeStep.buttons.map((field, i) => (
                 <ButtonElement
-                    key={`text-${i}`}
+                    key={`${activeStep.key}-button-${i}`}
                     field={field}
                     fieldValues={fieldValues}
                     displaySteps={displaySteps}

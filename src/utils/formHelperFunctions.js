@@ -200,21 +200,31 @@ const nextStepKey = (
     newSequence = [...newSequence, ...notInSequence];
 
     let newStepKey = newKey || defaultKey;
-    // Don't propagate array rules if an equality rule matches or there are no array rules
-    if (newSequence.length > 0 && !newStepKey) {
-        stepSequence = newSequence;
-        sequenceIndex = 0;
-    }
+    if (newSequence.length === 1 && stepSequence.length > 0 && !newStepKey) {
+        // Go back in dynamic sequence
+        if (sequenceIndex <= 1) newStepKey = newSequence[0];
+        else {
+            sequenceIndex--;
+            newStepKey = stepSequence[sequenceIndex - 1];
+        }
+    } else {
+        // Go forward in dynamic sequence
+        if (newSequence.length > 0 && !newStepKey) {
+            // Propagate new array rules since they exist
+            stepSequence = newSequence;
+            sequenceIndex = 0;
+        }
 
-    if (stepSequence.includes(newStepKey)) {
-        sequenceIndex = stepSequence.indexOf(newStepKey) + 1;
-    } else if (
-        !newStepKey &&
-        stepSequence.length > sequenceIndex &&
-        ['button', 'text'].includes(metadata.elementType)
-    ) {
-        newStepKey = stepSequence[sequenceIndex];
-        sequenceIndex++;
+        if (stepSequence.includes(newStepKey)) {
+            sequenceIndex = stepSequence.indexOf(newStepKey) + 1;
+        } else if (
+            !newStepKey &&
+            stepSequence.length > sequenceIndex &&
+            ['button', 'text'].includes(metadata.elementType)
+        ) {
+            newStepKey = stepSequence[sequenceIndex];
+            sequenceIndex++;
+        }
     }
     return {
         newStepKey,
