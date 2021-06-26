@@ -652,7 +652,7 @@ function Form({
             client.registerEvent(eventData);
             const newURL =
                 location.pathname + location.search + `#${newStepKey}`;
-            if (['button', 'text'].includes(metadata.elementType))
+            if (submitData || ['button', 'text'].includes(metadata.elementType))
                 history.push(newURL);
             else history.replace(newURL);
             getNewStep(newStepKey, steps, newFieldVals);
