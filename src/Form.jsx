@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 
-import { PinInput, PinInputField } from '@chakra-ui/pin-input';
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
@@ -18,7 +17,6 @@ import {
     nextStepKey,
     getOrigin,
     recurseDepth,
-    states,
     reactFriendlyKey,
     getFieldValue,
     getElementsFromKey,
@@ -34,7 +32,13 @@ import {
 
 import GooglePlaces from './components/GooglePlaces';
 import {
+    ButtonGroup,
+    CheckboxGroup,
+    Dropdown,
+    GMapsStateDropdown,
     MultiFileUploader,
+    PinInput,
+    RadioButtonGroup,
     RichFileUploader,
     TextElement,
     ButtonElement
@@ -69,7 +73,6 @@ function Form({
         steps ? steps[displayStepKey] : null
     );
     const [fieldValues, setFieldValues] = useState(initialValues);
-    const [otherSelect, setOtherSelect] = useState({});
 
     const [finishConfig, setFinishConfig] = useState({
         finished: false,
@@ -424,21 +427,6 @@ function Form({
         return handleChange({ target: { type: '', value, id } }, index);
     };
 
-    const handleButtonGroupChange = (e) => {
-        const fieldKey = e.target.id;
-
-        let newValues = null;
-        activeStep.servar_fields.forEach((field) => {
-            const servar = field.servar;
-            if (servar.key !== fieldKey) return;
-
-            newValues = updateFieldValues({
-                [servar.key]: e.target.textContent
-            });
-        });
-        return newValues;
-    };
-
     const handleOtherStateChange = (oldOtherVal) => (e) => {
         const target = e.target;
         const curOtherVal = target.value;
@@ -454,31 +442,6 @@ function Form({
             if (curFieldVal === oldOtherVal) curFieldVal = curOtherVal;
         }
         return updateFieldValues({ [target.id]: curFieldVal });
-    };
-
-    const handleMultiselectChange = (servarKey) => (e) => {
-        const target = e.target;
-        const opt = target.name;
-        let newValues = null;
-        activeStep.servar_fields.forEach((field) => {
-            const servar = field.servar;
-            if (servar.key !== servarKey) return;
-
-            const fieldValue = getFieldValue(field, fieldValues);
-            const { value } = fieldValue;
-            const newValue = target.checked
-                ? [...value, opt]
-                : value.filter((v) => v !== opt);
-            if (fieldValue.repeated) {
-                const { valueList, index } = fieldValue;
-                newValues = updateFieldValues({
-                    [servar.key]: justInsert(valueList, newValue, index)
-                });
-            } else {
-                newValues = updateFieldValues({ [servar.key]: newValue });
-            }
-        });
-        return newValues;
     };
 
     const handleColorChange = (servarKey) => (color) => {
@@ -973,60 +936,16 @@ function Form({
                             break;
                         case 'button_group':
                             controlElement = (
-                                <>
-                                    {fieldLabel}
-                                    <div
-                                        style={{
-                                            display: 'flex',
-                                            flexWrap: 'wrap',
-                                            width: '100%',
-                                            alignItems: field.layout,
-                                            justifyContent:
-                                                field.vertical_layout
-                                        }}
-                                    >
-                                        {servar.metadata.options.map((opt) => {
-                                            return (
-                                                <div
-                                                    id={servar.key}
-                                                    onClick={(e) => {
-                                                        const vals = handleButtonGroupChange(
-                                                            e
-                                                        );
-                                                        onClick(e, true, vals);
-                                                    }}
-                                                    key={opt}
-                                                    style={{
-                                                        display: 'flex',
-                                                        justifyContent:
-                                                            'center',
-                                                        alignItems: 'center',
-                                                        cursor: 'pointer',
-                                                        height: `${field.field_height}${field.field_height_unit}`,
-                                                        width: `${field.field_width}${field.field_width_unit}`,
-                                                        backgroundColor: `#${field.background_color}`,
-                                                        border: `${field.border_width}px solid`,
-                                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                                        marginBottom: `${field.padding_bottom}px`,
-                                                        marginTop: `${field.padding_top}px`,
-                                                        marginLeft: `${field.padding_left}px`,
-                                                        marginRight: `${field.padding_right}px`,
-                                                        boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`
-                                                    }}
-                                                    css={{
-                                                        '&:active': select,
-                                                        '&:hover': hover,
-                                                        ...(fieldVal === opt
-                                                            ? select
-                                                            : {})
-                                                    }}
-                                                >
-                                                    {opt}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </>
+                                <ButtonGroup
+                                    field={field}
+                                    fieldLabel={fieldLabel}
+                                    fieldVal={fieldVal}
+                                    step={activeStep}
+                                    onClick={onClick}
+                                    updateFieldValues={updateFieldValues}
+                                    selectCSS={select}
+                                    hoverCSS={hover}
+                                />
                             );
                             break;
                         case 'checkbox':
@@ -1054,122 +973,38 @@ function Form({
                             break;
                         case 'dropdown':
                             controlElement = (
-                                <>
-                                    {fieldLabel}
-                                    <ReactForm.Control
-                                        style={{
-                                            height: `${field.field_height}${field.field_height_unit}`,
-                                            width: `${field.field_width}${field.field_width_unit}`,
-                                            maxWidth: '100%',
-                                            backgroundColor: `#${field.background_color}`,
-                                            border: `${field.border_width}px solid`,
-                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                            fontSize: `${field.font_size}px`,
-                                            boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`
-                                        }}
-                                        css={{
-                                            '&:focus': {
-                                                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color} !important`,
-                                                ...select
-                                            },
-                                            '&:hover': hover
-                                        }}
-                                        as='select'
-                                        id={servar.key}
-                                        value={fieldVal}
-                                        required={servar.required}
-                                        onChange={(e) => {
-                                            fieldOnChange(
-                                                [servar.key],
-                                                handleChange(e, index)
-                                            );
-                                        }}
-                                        onClick={onClick}
-                                        custom
-                                    >
-                                        <option
-                                            key=''
-                                            value=''
-                                            disabled
-                                            style={{
-                                                color: `#${metadata.placeholder_color}`,
-                                                fontStyle: metadata.placeholder_italic
-                                                    ? 'italic'
-                                                    : 'normal'
-                                            }}
-                                        >
-                                            {metadata.placeholder ||
-                                                'Select...'}
-                                        </option>
-                                        {servar.metadata.options.map(
-                                            (option) => (
-                                                <option
-                                                    key={option}
-                                                    value={option}
-                                                >
-                                                    {option}
-                                                </option>
-                                            )
-                                        )}
-                                    </ReactForm.Control>
-                                </>
+                                <Dropdown
+                                    field={field}
+                                    fieldLabel={fieldLabel}
+                                    fieldVal={fieldVal}
+                                    onClick={onClick}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            [servar.key],
+                                            handleChange(e, index)
+                                        );
+                                    }}
+                                    selectCSS={select}
+                                    hoverCSS={hover}
+                                />
                             );
                             break;
                         case 'gmap_state':
                             controlElement = (
-                                <>
-                                    {fieldLabel}
-                                    <ReactForm.Control
-                                        style={{
-                                            height: `${field.field_height}${field.field_height_unit}`,
-                                            width: `${field.field_width}${field.field_width_unit}`,
-                                            maxWidth: '100%',
-                                            backgroundColor: `#${field.background_color}`,
-                                            border: `${field.border_width}px solid`,
-                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                            fontSize: `${field.font_size}px`,
-                                            boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`
-                                        }}
-                                        css={{
-                                            '&:focus': {
-                                                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color} !important`,
-                                                ...select
-                                            },
-                                            '&:hover': hover
-                                        }}
-                                        as='select'
-                                        id={servar.key}
-                                        value={fieldVal}
-                                        required={servar.required}
-                                        onChange={(e) => {
-                                            fieldOnChange(
-                                                [servar.key],
-                                                handleChange(e, index)
-                                            );
-                                        }}
-                                        onClick={onClick}
-                                        custom
-                                    >
-                                        <option
-                                            key=''
-                                            value=''
-                                            disabled
-                                            style={{
-                                                color: `#${metadata.placeholder_color}`,
-                                                fontStyle: metadata.placeholder_italic
-                                                    ? 'italic'
-                                                    : 'normal'
-                                            }}
-                                        >
-                                            {metadata.placeholder || 'State'}
-                                        </option>
-                                        {states.map((state) => (
-                                            <option key={state} value={state}>
-                                                {state}
-                                            </option>
-                                        ))}
-                                    </ReactForm.Control>
-                                </>
+                                <GMapsStateDropdown
+                                    field={field}
+                                    fieldLabel={fieldLabel}
+                                    fieldVal={fieldVal}
+                                    onClick={onClick}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            [servar.key],
+                                            handleChange(e, index)
+                                        );
+                                    }}
+                                    selectCSS={select}
+                                    hoverCSS={hover}
+                                />
                             );
                             break;
                         case 'email':
@@ -1211,57 +1046,24 @@ function Form({
                             break;
                         case 'pin_input':
                             controlElement = (
-                                <div
-                                    style={{
-                                        display: 'flex',
-                                        flexDirection: 'row'
+                                <PinInput
+                                    field={field}
+                                    fieldLabel={fieldLabel}
+                                    fieldVal={fieldVal}
+                                    onClick={onClick}
+                                    onChange={(val) => {
+                                        fieldOnChange(
+                                            [servar.key],
+                                            handleValueChange(
+                                                val,
+                                                servar.key,
+                                                index
+                                            )
+                                        );
                                     }}
-                                >
-                                    {fieldLabel}
-                                    <PinInput
-                                        id={servar.key}
-                                        value={fieldVal}
-                                        onChange={(val) => {
-                                            fieldOnChange(
-                                                [servar.key],
-                                                handleValueChange(
-                                                    val,
-                                                    servar.key,
-                                                    index
-                                                )
-                                            );
-                                        }}
-                                        onClick={onClick}
-                                        otp
-                                    >
-                                        {Array(servar.max_length)
-                                            .fill(0)
-                                            .map((_, i) => (
-                                                <PinInputField
-                                                    key={`pin-${i}`}
-                                                    style={{
-                                                        textAlign: 'center',
-                                                        marginLeft: '8px',
-                                                        borderRadius: '12px',
-                                                        outline: 'none',
-                                                        height: `${field.field_height}${field.field_height_unit}`,
-                                                        width: `${field.field_width}${field.field_width_unit}`,
-                                                        backgroundColor: `#${field.background_color}`,
-                                                        border: `${field.border_width}px solid`,
-                                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                                        boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
-                                                        fontSize: `${field.font_size}px`,
-                                                        color: `#${field.font_color}`
-                                                    }}
-                                                    css={{
-                                                        '&::placeholder': {
-                                                            color: `#${field.font_color} !important`
-                                                        }
-                                                    }}
-                                                />
-                                            ))}
-                                    </PinInput>
-                                </div>
+                                    selectCSS={select}
+                                    hoverCSS={hover}
+                                />
                             );
                             break;
                         case 'phone_number':
@@ -1330,235 +1132,48 @@ function Form({
                             break;
                         case 'multiselect':
                             controlElement = (
-                                <>
-                                    {fieldLabel}
-                                    {servar.metadata.options.map((opt) => {
-                                        return (
-                                            <ReactForm.Check
-                                                type='checkbox'
-                                                id={`${servar.key}-${opt}`}
-                                                name={opt}
-                                                key={opt}
-                                                label={opt}
-                                                checked={fieldVal.includes(opt)}
-                                                onChange={(e) => {
-                                                    const newValues = handleMultiselectChange(
-                                                        servar.key
-                                                    )(e);
-                                                    fieldOnChange(
-                                                        [servar.key],
-                                                        newValues
-                                                    );
-                                                }}
-                                                onClick={onClick}
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    marginBottom: '5px'
-                                                }}
-                                            />
-                                        );
-                                    })}
-                                    {servar.metadata.other && (
-                                        <div
-                                            style={{
-                                                display: 'flex',
-                                                alignItems: 'center'
-                                            }}
-                                        >
-                                            <ReactForm.Check
-                                                type='checkbox'
-                                                id={`${servar.key}-`}
-                                                name={otherVal}
-                                                key={otherVal}
-                                                label='Other'
-                                                checked={fieldVal.includes(
-                                                    otherVal
-                                                )}
-                                                onChange={(e) => {
-                                                    const newValues = handleMultiselectChange(
-                                                        servar.key
-                                                    )(e);
-                                                    fieldOnChange(
-                                                        [servar.key],
-                                                        newValues
-                                                    );
-                                                }}
-                                                onClick={onClick}
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center'
-                                                }}
-                                            />
-                                            <ReactForm.Control
-                                                type='text'
-                                                style={{
-                                                    marginLeft: '5px',
-                                                    height: `${
-                                                        parseInt(
-                                                            field.font_size
-                                                        ) + 4
-                                                    }px`,
-                                                    backgroundColor: `#${field.background_color}`,
-                                                    border: `${field.border_width}px solid`,
-                                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                                    boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
-                                                    color: `#${field.font_color}`,
-                                                    fontStyle: field.font_italic
-                                                        ? 'italic'
-                                                        : 'normal',
-                                                    fontWeight:
-                                                        field.font_weight,
-                                                    fontFamily:
-                                                        field.font_family,
-                                                    fontSize: `${field.font_size}px`
-                                                }}
-                                                css={{
-                                                    '&:focus': {
-                                                        boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color} !important`,
-                                                        ...select
-                                                    },
-                                                    '&:hover': hover
-                                                }}
-                                                id={servar.key}
-                                                value={otherVal || ''}
-                                                onChange={(e) => {
-                                                    const newValues = handleOtherStateChange(
-                                                        otherVal
-                                                    )(e);
-                                                    fieldOnChange(
-                                                        [servar.key],
-                                                        newValues
-                                                    );
-                                                }}
-                                                onClick={onClick}
-                                                maxLength={servar.max_length}
-                                                minLength={servar.min_length}
-                                            />
-                                        </div>
-                                    )}
-                                </>
+                                <CheckboxGroup
+                                    field={field}
+                                    fieldLabel={fieldLabel}
+                                    fieldVal={fieldVal}
+                                    otherVal={otherVal}
+                                    step={activeStep}
+                                    fieldValues={fieldValues}
+                                    updateFieldValues={updateFieldValues}
+                                    fieldOnChange={fieldOnChange}
+                                    handleOtherStateChange={
+                                        handleOtherStateChange
+                                    }
+                                    onClick={onClick}
+                                    selectCSS={select}
+                                    hoverCSS={hover}
+                                />
                             );
                             break;
                         case 'select':
                             controlElement = (
-                                <>
-                                    {fieldLabel}
-                                    {servar.metadata.options.map((opt) => {
-                                        return (
-                                            <ReactForm.Check
-                                                type='radio'
-                                                id={`${servar.key}-${opt}`}
-                                                label={opt}
-                                                checked={fieldVal === opt}
-                                                required={servar.required}
-                                                onChange={(e) => {
-                                                    fieldOnChange(
-                                                        [servar.key],
-                                                        handleValueChange(
-                                                            e.target.value,
-                                                            servar.key,
-                                                            index
-                                                        )
-                                                    );
-                                                }}
-                                                onClick={onClick}
-                                                value={opt}
-                                                key={opt}
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    marginBottom: '5px'
-                                                }}
-                                            />
+                                <RadioButtonGroup
+                                    field={field}
+                                    fieldLabel={fieldLabel}
+                                    fieldVal={fieldVal}
+                                    otherVal={otherVal}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            [servar.key],
+                                            handleValueChange(
+                                                e.target.value,
+                                                servar.key,
+                                                index
+                                            )
                                         );
-                                    })}
-                                    {servar.metadata.other && (
-                                        <div
-                                            style={{
-                                                display: 'flex',
-                                                alignItems: 'center'
-                                            }}
-                                        >
-                                            <ReactForm.Check
-                                                type='radio'
-                                                id={`${servar.key}-`}
-                                                label='Other'
-                                                checked={
-                                                    (otherSelect[servar.key] ||
-                                                        fieldVal) &&
-                                                    fieldVal === otherVal
-                                                }
-                                                onChange={(e) => {
-                                                    setOtherSelect({
-                                                        ...otherSelect,
-                                                        [servar.key]: true
-                                                    });
-                                                    fieldOnChange(
-                                                        [servar.key],
-                                                        handleValueChange(
-                                                            e.target.value,
-                                                            servar.key,
-                                                            index
-                                                        )
-                                                    );
-                                                }}
-                                                onClick={onClick}
-                                                value={otherVal || ''}
-                                                key={otherVal}
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center'
-                                                }}
-                                            />
-                                            <ReactForm.Control
-                                                type='text'
-                                                style={{
-                                                    marginLeft: '5px',
-                                                    height: `${
-                                                        parseInt(
-                                                            field.font_size
-                                                        ) + 4
-                                                    }px`,
-                                                    backgroundColor: `#${field.background_color}`,
-                                                    border: `${field.border_width}px solid`,
-                                                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                                    boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
-                                                    color: `#${field.font_color}`,
-                                                    fontStyle: field.font_italic
-                                                        ? 'italic'
-                                                        : 'normal',
-                                                    fontWeight:
-                                                        field.font_weight,
-                                                    fontFamily:
-                                                        field.font_family,
-                                                    fontSize: `${field.font_size}px`
-                                                }}
-                                                css={{
-                                                    '&:focus': {
-                                                        boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color} !important`,
-                                                        ...select
-                                                    },
-                                                    '&:hover': hover
-                                                }}
-                                                id={servar.key}
-                                                value={otherVal || ''}
-                                                onChange={(e) => {
-                                                    const newValues = handleOtherStateChange(
-                                                        otherVal
-                                                    )(e);
-                                                    fieldOnChange(
-                                                        [servar.key],
-                                                        newValues
-                                                    );
-                                                }}
-                                                onClick={onClick}
-                                                maxLength={servar.max_length}
-                                                minLength={servar.min_length}
-                                            />
-                                        </div>
-                                    )}
-                                </>
+                                    }}
+                                    handleOtherStateChange={
+                                        handleOtherStateChange
+                                    }
+                                    onClick={onClick}
+                                    selectCSS={select}
+                                    hoverCSS={hover}
+                                />
                             );
                             break;
                         case 'integer_field':
