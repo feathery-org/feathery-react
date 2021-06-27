@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 
+import { PinInput, PinInputField } from '@chakra-ui/pin-input';
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
@@ -1207,6 +1208,61 @@ function Form({
                                         pattern="^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$"
                                     />
                                 );
+                            break;
+                        case 'pin_input':
+                            controlElement = (
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        flexDirection: 'row'
+                                    }}
+                                >
+                                    {fieldLabel}
+                                    <PinInput
+                                        id={servar.key}
+                                        value={fieldVal}
+                                        onChange={(val) => {
+                                            fieldOnChange(
+                                                [servar.key],
+                                                handleValueChange(
+                                                    val,
+                                                    servar.key,
+                                                    index
+                                                )
+                                            );
+                                        }}
+                                        onClick={onClick}
+                                        otp
+                                    >
+                                        {Array(servar.max_length)
+                                            .fill(0)
+                                            .map((_, i) => (
+                                                <PinInputField
+                                                    key={`pin-${i}`}
+                                                    style={{
+                                                        textAlign: 'center',
+                                                        marginLeft: '8px',
+                                                        borderRadius: '12px',
+                                                        outline: 'none',
+                                                        height: `${field.field_height}${field.field_height_unit}`,
+                                                        width: `${field.field_width}${field.field_width_unit}`,
+                                                        backgroundColor: `#${field.background_color}`,
+                                                        border: `${field.border_width}px solid`,
+                                                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                                        boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
+                                                        fontSize: `${field.font_size}px`,
+                                                        color: `#${field.font_color}`
+                                                    }}
+                                                    css={{
+                                                        '&::placeholder': {
+                                                            color: `#${field.font_color} !important`
+                                                        }
+                                                    }}
+                                                />
+                                            ))}
+                                    </PinInput>
+                                </div>
+                            );
                             break;
                         case 'phone_number':
                             controlElement = (
