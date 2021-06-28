@@ -5,6 +5,8 @@ import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
 import TagManager from 'react-gtm-module';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
+import firebase from 'firebase/app';
+import 'firebase/auth';
 
 import { BootstrapField, MaskedBootstrapField } from './components/Bootstrap';
 import { MuiField, MuiProgress } from './components/MaterialUI';
@@ -19,7 +21,7 @@ import {
     recurseDepth,
     reactFriendlyKey,
     getFieldValue,
-    getElementsFromKey,
+    setFormElementError,
     getDefaultFieldValue,
     getFieldError,
     shouldElementHide
@@ -210,6 +212,26 @@ function Form({
         setRawActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
     };
 
+    const initializeIntegrations = (integrations) => {
+        setIntegrations(integrations);
+
+        const gtm = integrations['google-tag-manager'];
+        if (gtm) TagManager.initialize({ gtmId: gtm });
+
+        const fb = integrations.firebase;
+        if (fb) {
+            firebase.initializeApp({
+                apiKey: fb.api_key,
+                authDomain: `${fb.metadata.project_id}.firebaseapp.com`,
+                databaseURL: `https://${fb.metadata.project_id}.firebaseio.com`,
+                projectId: fb.metadata.project_id,
+                storageBucket: `${fb.metadata.project_id}.appspot.com`,
+                messagingSenderId: fb.metadata.sender_id,
+                appId: fb.metadata.app_id
+            });
+        }
+    };
+
     const getNewStep = async (
         newKey,
         stepsArg = null,
@@ -263,6 +285,23 @@ function Form({
                 setRawActiveStep(newStep);
             }
 
+            newStep.servar_fields.forEach((field) => {
+                const servar = field.servar;
+                if (
+                    servar.type === 'phone_number' &&
+                    servar.metadata.send_sms_code
+                ) {
+                    newStep.buttons.forEach((button) => {
+                        if (button.link === 'submit') {
+                            window.firebaseRecaptchaVerifier = new firebase.auth.RecaptchaVerifier(
+                                button.id,
+                                { size: 'invisible' }
+                            );
+                        }
+                    });
+                }
+            });
+
             const eventData = { step_key: newKey, event: 'load' };
             if (stepSequence.includes(newKey)) {
                 const newSequenceIndex = stepSequence.indexOf(newKey) + 1;
@@ -302,9 +341,7 @@ function Form({
                     .then((session) => {
                         setStepSequence(session.step_sequence);
                         setSequenceIndex(session.current_sequence_index);
-                        setIntegrations(session.integrations);
-                        const gtm = session.integrations['google-tag-manager'];
-                        if (gtm) TagManager.initialize({ gtmId: gtm });
+                        initializeIntegrations(session.integrations);
 
                         fetchPromise.then(async (data) => {
                             const newValues = updateFieldValues(
@@ -486,9 +523,14 @@ function Form({
             const formattedFields = formatStepFields(activeStep, newFieldVals);
 
             Object.entries(formattedFields).map(([fieldKey, { value }]) => {
-                const err = getFieldError(value, servarMap[fieldKey]);
-                const elements = getElementsFromKey({ formRef, fieldKey });
-                elements.forEach((e) => e.setCustomValidity(err));
+                const servar = servarMap[fieldKey];
+                const err = getFieldError(value, servar);
+                setFormElementError({
+                    formRef,
+                    fieldKey,
+                    message: err,
+                    servarType: servar.type
+                });
             });
             // do validation check before running user submission function
             // so user does not access invalid data
@@ -524,22 +566,20 @@ function Form({
                     setOptions: updateFieldOptions(steps),
                     setErrors: (errors) => {
                         Object.entries(errors).forEach(([fieldKey, error]) => {
-                            let index = 0;
+                            let index = null;
                             let message = error;
-                            const elements = getElementsFromKey({
-                                formRef,
-                                fieldKey
-                            });
-
                             // If the user provided an object for an error then use the specified index and message
                             // This allows users to specify an error on an element in a repeated row
                             if (typeof error === 'object') {
                                 index = error.index;
                                 message = error.message;
                             }
-
-                            const element = elements[index];
-                            if (element) element.setCustomValidity(message);
+                            setFormElementError({
+                                formRef,
+                                fieldKey,
+                                message,
+                                index
+                            });
                         });
                     },
                     integrationData: null
@@ -549,49 +589,167 @@ function Form({
                 formRef.current.reportValidity();
                 if (formRef.current.checkValidity()) {
                     // async execution after user's onSubmit
-                    submitFormattedFields(formattedFields);
-                    calculateNextStepAndRedirect({
+                    return handleActionSubmitRedirect(
+                        formattedFields,
                         metadata,
                         newFieldVals,
                         submitData
-                    });
-
-                    return true;
+                    );
                 }
             } else {
-                submitFormattedFields(formattedFields);
-                calculateNextStepAndRedirect({
+                return handleActionSubmitRedirect(
+                    formattedFields,
                     metadata,
                     newFieldVals,
                     submitData
-                });
-
-                return true;
+                );
             }
         } else {
-            calculateNextStepAndRedirect({
+            return handleRedirect({
                 metadata,
                 newFieldVals,
                 submitData
             });
-
-            return true;
         }
     };
 
-    function submitFormattedFields(fields) {
-        const featheryFields = Object.entries(fields).map(([key, val]) => ({
-            key,
-            [val.type]: val.value
-        }));
-        client.submitStep(featheryFields);
-    }
-
-    function calculateNextStepAndRedirect({
+    async function handleActionSubmitRedirect(
+        formattedFields,
         metadata,
         newFieldVals,
         submitData
+    ) {
+        let defaultRedirect = true;
+        // Perform actions
+        for (let i = 0; i < activeStep.servar_fields.length; i++) {
+            const servar = activeStep.servar_fields[i].servar;
+            if (
+                servar.type === 'phone_number' &&
+                servar.metadata.send_sms_code
+            ) {
+                defaultRedirect = false;
+                return await firebase
+                    .auth()
+                    .signInWithPhoneNumber(
+                        `+1${newFieldVals[servar.key]}`,
+                        window.firebaseRecaptchaVerifier
+                    )
+                    .then((confirmationResult) => {
+                        // SMS sent
+                        window.firebaseConfirmationResult = confirmationResult;
+                        window.firebasePhoneNumber = newFieldVals[servar.key];
+                        return handleSubmitRedirect({
+                            metadata,
+                            newFieldVals,
+                            submitData,
+                            formattedFields
+                        });
+                    })
+                    .catch((error) => {
+                        // Error; SMS not sent. Reset Recaptcha
+                        window.firebaseRecaptchaVerifier
+                            .render()
+                            .then(function (widgetId) {
+                                // eslint-disable-next-line no-undef
+                                grecaptcha.reset(widgetId);
+                            });
+                        setFormElementError({
+                            formRef,
+                            fieldKey: servar.key,
+                            message: error.message
+                        });
+                        formRef.current.reportValidity();
+                    });
+            } else if (
+                servar.type === 'pin_input' &&
+                servar.metadata.verify_sms_code
+            ) {
+                defaultRedirect = false;
+                const fcr = window.firebaseConfirmationResult;
+                if (fcr) {
+                    return await fcr
+                        .confirm(newFieldVals[servar.key])
+                        .then(async (result) => {
+                            // User signed in successfully.
+                            await client
+                                .submitAuthInfo(
+                                    result.user.uid,
+                                    window.firebasePhoneNumber
+                                )
+                                .then((session) => {
+                                    updateFieldValues(
+                                        session.field_values,
+                                        newFieldVals
+                                    );
+                                    Object.entries(session.file_values).forEach(
+                                        ([fileKey, fileOrFiles]) => {
+                                            setFileFieldValue(
+                                                fileKey,
+                                                fileOrFiles
+                                            );
+                                        }
+                                    );
+                                });
+                            return handleSubmitRedirect({
+                                metadata,
+                                newFieldVals,
+                                submitData,
+                                formattedFields
+                            });
+                        })
+                        .catch(() => {
+                            // User couldn't sign in (bad verification code?)
+                            setFormElementError({
+                                formRef,
+                                fieldKey: servar.key,
+                                message: 'Invalid code',
+                                servarType: servar.type
+                            });
+                            formRef.current.reportValidity();
+                        });
+                } else {
+                    setFormElementError({
+                        formRef,
+                        fieldKey: servar.key,
+                        message: 'Please refresh and try again.',
+                        servarType: servar.type
+                    });
+                    formRef.current.reportValidity();
+                }
+            }
+        }
+        if (defaultRedirect) {
+            return handleSubmitRedirect({
+                metadata,
+                newFieldVals,
+                submitData,
+                formattedFields
+            });
+        }
+    }
+
+    function handleSubmitRedirect({
+        metadata,
+        newFieldVals,
+        submitData,
+        formattedFields
     }) {
+        const featheryFields = Object.entries(formattedFields).map(
+            ([key, val]) => ({
+                key,
+                [val.type]: val.value
+            })
+        );
+        client.submitStep(featheryFields);
+
+        return handleRedirect({
+            metadata,
+            newFieldVals,
+            submitData
+        });
+    }
+
+    function handleRedirect({ metadata, newFieldVals, submitData }) {
         const { newStepKey, newSequence, newSequenceIndex } = nextStepKey(
             activeStep.next_conditions,
             metadata,
@@ -622,6 +780,7 @@ function Form({
                     finished: true,
                     redirectURL: activeStep.redirect_url
                 });
+                return true;
             }
         } else {
             client.registerEvent(eventData);
@@ -631,6 +790,7 @@ function Form({
                 history.push(newURL);
             else history.replace(newURL);
             getNewStep(newStepKey, steps, newFieldVals);
+            return true;
         }
     }
 

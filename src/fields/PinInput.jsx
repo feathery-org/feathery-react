@@ -1,5 +1,6 @@
 import React from 'react';
 import { PinInput, PinInputField } from '@chakra-ui/pin-input';
+import { reactFriendlyKey } from "../utils/formHelperFunctions";
 
 function FeatheryPinInput({
     field,
@@ -13,6 +14,7 @@ function FeatheryPinInput({
     const servar = field.servar;
     return (
         <div
+            key={reactFriendlyKey(field)}
             style={{
                 display: 'flex',
                 flexDirection: 'row'
