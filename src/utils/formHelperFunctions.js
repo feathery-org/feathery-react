@@ -242,6 +242,9 @@ const getOrigin = (steps) => {
 };
 
 const recurseDepth = (steps, originKey, curKey) => {
+    // We may pass in a displaySteps draft that doesn't have an origin specified
+    if (!originKey) return [0, 0];
+
     const seenStepKeys = new Set();
     const stepQueue = [[steps[originKey], 0]];
     let curDepth = 0;
