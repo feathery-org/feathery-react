@@ -67,6 +67,10 @@ function MultiFileUploader({
 
         // Simulate the onChange event from a multi-select
         customOnChange({ target: { files: newRawFiles } });
+
+        // Wipe the value of the upload element so we can upload multiple copies of the same file
+        // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
+        fileInput.current.value = [];
     }
 
     function onClear(index) {
