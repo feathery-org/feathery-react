@@ -219,11 +219,15 @@ function Form({
         fieldValuesArg = fieldValuesArg || fieldValues;
         clientArg = clientArg || client;
 
-        const [curDepth, maxDepth] = recurseDepth(
-            stepsArg,
-            getOrigin(stepsArg),
-            newKey
-        );
+        let curDepth = 0;
+        let maxDepth = 0;
+        if (!displaySteps) {
+            [curDepth, maxDepth] = recurseDepth(
+                stepsArg,
+                getOrigin(stepsArg),
+                newKey
+            );
+        }
 
         setCurDepth(curDepth);
         setMaxDepth(maxDepth);
