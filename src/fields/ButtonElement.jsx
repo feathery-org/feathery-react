@@ -68,7 +68,7 @@ function ButtonElement({
         // Note: We only need to set the spinner if the submit request failed
         // If the request succeeded then the button unmounts and calling setShowSpinner is an error
         try {
-            await submit(
+            const success = await submit(
                 field.link === 'submit',
                 {
                     elementType: 'button',
@@ -77,6 +77,11 @@ function ButtonElement({
                 },
                 repeat
             );
+
+            // If the submit failed we want to throw here to turn off the spinner
+            if (!success) {
+                throw new Error();
+            }
         } catch {
             setShowSpinner(false);
         }

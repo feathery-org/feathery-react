@@ -554,6 +554,8 @@ function Form({
                         newFieldVals,
                         submitData
                     });
+
+                    return true;
                 }
             } else {
                 submitFormattedFields(formattedFields);
@@ -562,6 +564,8 @@ function Form({
                     newFieldVals,
                     submitData
                 });
+
+                return true;
             }
         } else {
             calculateNextStepAndRedirect({
@@ -569,6 +573,8 @@ function Form({
                 newFieldVals,
                 submitData
             });
+
+            return true;
         }
     };
 
