@@ -340,6 +340,39 @@ function getElementsFromKey({ formRef, fieldKey }) {
     return elements.filter((e) => e);
 }
 
+/**
+ * Determines if the provided element should be hidden based on its "hide-if" rule.
+ */
+function shouldElementHide({ fields, values, element }) {
+    // eslint-disable-next-line camelcase
+    const hideIf = element.hide_if;
+
+    if (!hideIf?.servar || !hideIf?.comparison) {
+        return false;
+    }
+
+    // Get the target value (taking repeated fields into account)
+    const targets = fields.filter((field) => field.servar.id === hideIf.servar);
+    const target = targets[element.repeat ?? 0];
+
+    // If the field we're based on isn't there, don't hide
+    if (!target) {
+        return false;
+    }
+
+    const { value } = getFieldValue(target, values);
+
+    // If the hideIf value is an empty string, we want to match on the "empty" value of a field
+    // This could be null, undefined, an empty array, or an empty string
+    // Otherwise, just match the hideIf value
+    const matchValues =
+        hideIf.value === '' ? [null, undefined, [], ''] : [hideIf.value];
+
+    return hideIf.comparison === 'equal'
+        ? matchValues.includes(value)
+        : !matchValues.includes(value);
+}
+
 const alignmentMap = {
     left: 'flex-start',
     center: 'center',
@@ -360,6 +393,7 @@ export {
     getFieldValue,
     getFieldError,
     getElementsFromKey,
+    shouldElementHide,
     states,
     alignmentMap
 };

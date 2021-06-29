@@ -21,7 +21,8 @@ import {
     getFieldValue,
     getElementsFromKey,
     getDefaultFieldValue,
-    getFieldError
+    getFieldError,
+    shouldElementHide
 } from './utils/formHelperFunctions';
 import { justInsert, justRemove } from './utils/array';
 import {
@@ -730,85 +731,132 @@ function Form({
             }}
         >
             {children}
-            {activeStep.progress_bar && (
-                <div
-                    key='progress-bar'
-                    css={{
-                        gridColumnStart:
-                            activeStep.progress_bar.column_index + 1,
-                        gridRowStart: activeStep.progress_bar.row_index + 1,
-                        gridColumnEnd:
-                            activeStep.progress_bar.column_index_end + 2,
-                        gridRowEnd: activeStep.progress_bar.row_index_end + 2,
-                        alignItems: activeStep.progress_bar.layout,
-                        justifyContent: activeStep.progress_bar.vertical_layout,
-                        paddingBottom: `${activeStep.progress_bar.padding_bottom}px`,
-                        paddingTop: `${activeStep.progress_bar.padding_top}px`,
-                        paddingLeft: `${activeStep.progress_bar.padding_left}px`,
-                        paddingRight: `${activeStep.progress_bar.padding_right}px`,
-                        color: `#${activeStep.progress_bar.font_color}`,
-                        fontStyle: activeStep.progress_bar.font_italic
-                            ? 'italic'
-                            : 'normal',
-                        fontWeight: activeStep.progress_bar.font_weight,
-                        fontFamily: activeStep.progress_bar.font_family,
-                        fontSize: `${activeStep.progress_bar.font_size}px`,
-                        display: 'flex',
-                        flexDirection: 'column'
-                    }}
-                >
-                    {progressBarElements}
-                </div>
-            )}
-            {activeStep.images.map((image, i) => (
-                <div
-                    key={`${activeStep.key}-image-${i}`}
-                    style={{
-                        gridColumnStart: image.column_index + 1,
-                        gridRowStart: image.row_index + 1,
-                        gridColumnEnd: image.column_index_end + 2,
-                        gridRowEnd: image.row_index_end + 2,
-                        display: 'flex',
-                        alignItems: image.vertical_layout,
-                        justifyContent: image.layout
-                    }}
-                >
-                    <img
-                        src={image.source_url}
-                        alt='Form Image'
-                        style={{
-                            paddingBottom: `${image.padding_bottom}px`,
-                            paddingTop: `${image.padding_top}px`,
-                            paddingLeft: `${image.padding_left}px`,
-                            paddingRight: `${image.padding_right}px`,
-                            width: `${image.image_width}${image.image_width_unit}`,
-                            objectFit: 'contain'
+            {activeStep.progress_bar &&
+                (displaySteps ||
+                    !shouldElementHide({
+                        fields: activeStep.servar_fields,
+                        values: fieldValues,
+                        element: activeStep.progress_bar
+                    })) && (
+                    <div
+                        key='progress-bar'
+                        css={{
+                            gridColumnStart:
+                                activeStep.progress_bar.column_index + 1,
+                            gridRowStart: activeStep.progress_bar.row_index + 1,
+                            gridColumnEnd:
+                                activeStep.progress_bar.column_index_end + 2,
+                            gridRowEnd:
+                                activeStep.progress_bar.row_index_end + 2,
+                            alignItems: activeStep.progress_bar.layout,
+                            justifyContent:
+                                activeStep.progress_bar.vertical_layout,
+                            paddingBottom: `${activeStep.progress_bar.padding_bottom}px`,
+                            paddingTop: `${activeStep.progress_bar.padding_top}px`,
+                            paddingLeft: `${activeStep.progress_bar.padding_left}px`,
+                            paddingRight: `${activeStep.progress_bar.padding_right}px`,
+                            color: `#${activeStep.progress_bar.font_color}`,
+                            fontStyle: activeStep.progress_bar.font_italic
+                                ? 'italic'
+                                : 'normal',
+                            fontWeight: activeStep.progress_bar.font_weight,
+                            fontFamily: activeStep.progress_bar.font_family,
+                            fontSize: `${activeStep.progress_bar.font_size}px`,
+                            display: 'flex',
+                            flexDirection: 'column'
                         }}
+                    >
+                        {progressBarElements}
+                    </div>
+                )}
+            {activeStep.images
+                .filter(
+                    (image) =>
+                        displaySteps ||
+                        !shouldElementHide({
+                            fields: activeStep.servar_fields,
+                            values: fieldValues,
+                            element: image
+                        })
+                )
+                .map((image, i) => (
+                    <div
+                        key={`${activeStep.key}-image-${i}`}
+                        style={{
+                            gridColumnStart: image.column_index + 1,
+                            gridRowStart: image.row_index + 1,
+                            gridColumnEnd: image.column_index_end + 2,
+                            gridRowEnd: image.row_index_end + 2,
+                            display: 'flex',
+                            alignItems: image.vertical_layout,
+                            justifyContent: image.layout
+                        }}
+                    >
+                        <img
+                            src={image.source_url}
+                            alt='Form Image'
+                            style={{
+                                paddingBottom: `${image.padding_bottom}px`,
+                                paddingTop: `${image.padding_top}px`,
+                                paddingLeft: `${image.padding_left}px`,
+                                paddingRight: `${image.padding_right}px`,
+                                width: `${image.image_width}${image.image_width_unit}`,
+                                objectFit: 'contain'
+                            }}
+                        />
+                    </div>
+                ))}
+            {activeStep.texts
+                .filter(
+                    (text) =>
+                        displaySteps ||
+                        !shouldElementHide({
+                            fields: activeStep.servar_fields,
+                            values: fieldValues,
+                            element: text
+                        })
+                )
+                .map((field, i) => (
+                    <TextElement
+                        key={`${activeStep.key}-text-${i}`}
+                        field={field}
+                        fieldValues={fieldValues}
+                        conditions={activeStep.next_conditions}
+                        submit={submit}
                     />
-                </div>
-            ))}
-            {activeStep.texts.map((field, i) => (
-                <TextElement
-                    key={`${activeStep.key}-text-${i}`}
-                    field={field}
-                    fieldValues={fieldValues}
-                    conditions={activeStep.next_conditions}
-                    submit={submit}
-                />
-            ))}
-            {activeStep.buttons.map((field, i) => (
-                <ButtonElement
-                    key={`${activeStep.key}-button-${i}`}
-                    field={field}
-                    fieldValues={fieldValues}
-                    displaySteps={displaySteps}
-                    submit={submit}
-                    addRepeatedRow={addRepeatedRow}
-                    removeRepeatedRow={removeRepeatedRow}
-                />
-            ))}
+                ))}
+            {activeStep.buttons
+                .filter(
+                    (button) =>
+                        displaySteps ||
+                        !shouldElementHide({
+                            fields: activeStep.servar_fields,
+                            values: fieldValues,
+                            element: button
+                        })
+                )
+                .map((field, i) => (
+                    <ButtonElement
+                        key={`${activeStep.key}-button-${i}`}
+                        field={field}
+                        fieldValues={fieldValues}
+                        displaySteps={displaySteps}
+                        submit={submit}
+                        addRepeatedRow={addRepeatedRow}
+                        removeRepeatedRow={removeRepeatedRow}
+                    />
+                ))}
 
             {activeStep.servar_fields
+                .filter(
+                    (field) =>
+                        displaySteps ||
+                        !shouldElementHide({
+                            fields: activeStep.servar_fields,
+                            values: fieldValues,
+                            element: field
+                        })
+                )
                 .sort((first, second) => {
                     if (first.row_index > second.row_index) return 1;
                     else if (first.row_index < second.row_index) return -1;
