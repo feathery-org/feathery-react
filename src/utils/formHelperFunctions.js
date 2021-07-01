@@ -321,6 +321,11 @@ function getFieldError(value, servar) {
         return 'Invalid phone number';
     } else if (servar.type === 'ssn' && value.length !== 9) {
         return 'Invalid social security number';
+    } else if (
+        servar.type === 'pin_input' &&
+        value.length !== servar.max_length
+    ) {
+        return 'Please enter a full code';
     }
 
     // No error
@@ -330,14 +335,22 @@ function getFieldError(value, servar) {
 /**
  * Returns the list of DOM nodes corresponding to the field with the provided key.
  */
-function getElementsFromKey({ formRef, fieldKey }) {
+function setFormElementError({
+    formRef,
+    fieldKey,
+    message,
+    index = null,
+    servarType = ''
+}) {
+    if (servarType === 'pin_input') fieldKey = `${fieldKey}-0`;
     const singleOrList = formRef.current.elements[fieldKey];
-    const elements =
+    let elements =
         singleOrList instanceof RadioNodeList
             ? Array.from(singleOrList)
             : [singleOrList];
-
-    return elements.filter((e) => e);
+    elements = elements.filter((e) => e);
+    if (index) elements = [elements[index]];
+    elements.forEach((e) => e.setCustomValidity(message));
 }
 
 /**
@@ -392,8 +405,8 @@ export {
     reactFriendlyKey,
     getFieldValue,
     getFieldError,
-    getElementsFromKey,
     shouldElementHide,
+    setFormElementError,
     states,
     alignmentMap
 };

@@ -34,6 +34,7 @@ function TextElement({ field, fieldValues, conditions, submit }) {
 
     return (
         <div
+            key={field.id}
             css={{
                 gridColumnStart: field.column_index + 1,
                 gridRowStart: field.row_index + 1,

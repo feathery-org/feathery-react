@@ -87,6 +87,47 @@ export default class Client {
         });
     }
 
+    submitAuthInfo(authId, authPhone) {
+        const { apiKey, userKey } = initInfo();
+
+        const data = {
+            form_key: this.formKey,
+            panel_key: this.formKey,
+            auth_id: authId,
+            auth_phone: authPhone,
+            ...(userKey ? { fuser_key: userKey } : {})
+        };
+        const url = `${API_URL}api/panel/update_auth/`;
+        const options = {
+            cache: 'no-store',
+            headers: {
+                Authorization: 'Token ' + apiKey,
+                'Content-Type': 'application/json'
+            },
+            method: 'PATCH',
+            body: JSON.stringify(data)
+        };
+        return fetch(url, options).then((response) => {
+            const { status } = response;
+            switch (status) {
+                case 200:
+                    return response.json();
+                case 401:
+                    return Promise.reject(
+                        new errors.APIKeyError('Invalid API key')
+                    );
+                case 404:
+                    return Promise.reject(
+                        new errors.FormKeyError('Invalid form or user key')
+                    );
+                default:
+                    return Promise.reject(
+                        new errors.FetchError('Unknown error')
+                    );
+            }
+        });
+    }
+
     submitCustom(customKeyValues) {
         const { userKey, apiKey } = initInfo();
         const url = `${API_URL}api/panel/custom/submit/`;
