@@ -333,7 +333,7 @@ function getFieldError(value, servar) {
 }
 
 /**
- * Returns the list of DOM nodes corresponding to the field with the provided key.
+ * Set an error on a particular form DOM node(s).
  */
 function setFormElementError({
     formRef,
@@ -349,7 +349,7 @@ function setFormElementError({
             ? Array.from(singleOrList)
             : [singleOrList];
     elements = elements.filter((e) => e);
-    if (index) elements = [elements[index]];
+    if (index !== null) elements = [elements[index]];
     elements.forEach((e) => e.setCustomValidity(message));
 }
 

@@ -291,14 +291,13 @@ function Form({
                     servar.type === 'phone_number' &&
                     servar.metadata.send_sms_code
                 ) {
-                    newStep.buttons.forEach((button) => {
-                        if (button.link === 'submit') {
-                            window.firebaseRecaptchaVerifier = new firebase.auth.RecaptchaVerifier(
-                                button.id,
-                                { size: 'invisible' }
-                            );
-                        }
-                    });
+                    const b = newStep.buttons.find((b) => b.link === 'submit');
+                    if (b) {
+                        window.firebaseRecaptchaVerifier = new firebase.auth.RecaptchaVerifier(
+                            b.id,
+                            { size: 'invisible' }
+                        );
+                    }
                 }
             });
 
