@@ -7,11 +7,19 @@ import * as errors from './error';
 
 const fpPromise = FingerprintJS.load();
 let initUserPromise = Promise.resolve();
-const defaultOptions = { userKey: null, formKeys: [], tracking: 'cookie' };
+const defaultOptions = {
+    userKey: null,
+    formKeys: [],
+    tracking: 'cookie',
+    authId: '',
+    authPhoneNumber: ''
+};
 const initState = {
     initialized: false,
-    apiKey: null,
-    userKey: null,
+    apiKey: '',
+    userKey: '',
+    authId: '',
+    authPhoneNumber: '',
     forms: {},
     sessions: {}
 };
@@ -68,9 +76,8 @@ function _fetchFormData(formKeys) {
 
 function initInfo() {
     const { apiKey } = initState;
-    if (apiKey === null)
-        throw new errors.APIKeyError('API key has not been set');
+    if (apiKey === '') throw new errors.APIKeyError('API key has not been set');
     return initState;
 }
 
-export { init, initInfo, initUserPromise };
+export { init, initInfo, initState, initUserPromise };

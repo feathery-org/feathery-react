@@ -46,7 +46,7 @@ import {
     TextElement,
     ButtonElement
 } from './fields';
-import { initInfo } from './utils/init';
+import { initInfo, initState } from './utils/init';
 
 import './bootstrap-iso.css';
 
@@ -690,6 +690,10 @@ function Form({
                                         }
                                     );
                                 });
+                            initState.authId = result.user.uid;
+                            initState.authPhoneNumber =
+                                window.firebasePhoneNumber;
+
                             return handleSubmitRedirect({
                                 metadata,
                                 newFieldVals,
