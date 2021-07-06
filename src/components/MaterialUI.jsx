@@ -131,6 +131,7 @@ function MuiField({
             placeholder={field.metadata.placeholder || ''}
             multiline={multiline}
             rows={rows}
+            autocomplete={servar.metadata.autocomplete || 'on'}
             {...props}
         />
     );
