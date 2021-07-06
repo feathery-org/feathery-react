@@ -66,7 +66,7 @@ function BootstrapField({
                 onChange={onChange}
                 onClick={onClick}
                 placeholder={metadata.placeholder || ''}
-                autocomplete={servar.metadata.autocomplete || 'on'}
+                autoComplete={servar.metadata.autocomplete || 'on'}
                 {...props}
             />
         </>

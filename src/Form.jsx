@@ -553,8 +553,21 @@ function Form({
             formRef.current.reportValidity();
             if (!formRef.current.checkValidity()) return;
 
+            const res = await handleActions(
+                formattedFields,
+                metadata,
+                newFieldVals
+            );
+            if (!res) return;
+            newFieldVals = res.newFieldVals;
+
             // Execute user-provided onSubmit function if present
             if (typeof onSubmit === 'function') {
+                const integrationData = {};
+                if (res.authId) {
+                    integrationData.firebaseAuthId = res.authId;
+                }
+
                 const allFields = formatAllStepFields(steps, newFieldVals);
                 const { newStepKey } = nextStepKey(
                     activeStep.next_conditions,
@@ -598,27 +611,27 @@ function Form({
                             });
                         });
                     },
-                    integrationData: null
+                    integrationData
                 });
 
                 // do validation check in case user has manually invalidated the step
                 formRef.current.reportValidity();
                 if (formRef.current.checkValidity()) {
                     // async execution after user's onSubmit
-                    return handleActionSubmitRedirect(
-                        formattedFields,
+                    return handleSubmitRedirect({
                         metadata,
                         newFieldVals,
-                        submitData
-                    );
+                        submitData,
+                        formattedFields
+                    });
                 }
             } else {
-                return handleActionSubmitRedirect(
-                    formattedFields,
+                return handleSubmitRedirect({
                     metadata,
                     newFieldVals,
-                    submitData
-                );
+                    submitData,
+                    formattedFields
+                });
             }
         } else {
             return handleRedirect({
@@ -629,21 +642,13 @@ function Form({
         }
     };
 
-    async function handleActionSubmitRedirect(
-        formattedFields,
-        metadata,
-        newFieldVals,
-        submitData
-    ) {
-        let defaultRedirect = true;
-        // Perform actions
+    async function handleActions(formattedFields, metadata, newFieldVals) {
         for (let i = 0; i < activeStep.servar_fields.length; i++) {
             const servar = activeStep.servar_fields[i].servar;
             if (
                 servar.type === 'phone_number' &&
                 servar.metadata.send_sms_code
             ) {
-                defaultRedirect = false;
                 return await firebase
                     .auth()
                     .signInWithPhoneNumber(
@@ -654,12 +659,7 @@ function Form({
                         // SMS sent
                         window.firebaseConfirmationResult = confirmationResult;
                         window.firebasePhoneNumber = newFieldVals[servar.key];
-                        return handleSubmitRedirect({
-                            metadata,
-                            newFieldVals,
-                            submitData,
-                            formattedFields
-                        });
+                        return { newFieldVals };
                     })
                     .catch((error) => {
                         // Error; SMS not sent. Reset Recaptcha
@@ -680,23 +680,23 @@ function Form({
                 servar.type === 'pin_input' &&
                 servar.metadata.verify_sms_code
             ) {
-                defaultRedirect = false;
                 const fcr = window.firebaseConfirmationResult;
                 if (fcr) {
                     return await fcr
                         .confirm(newFieldVals[servar.key])
                         .then(async (result) => {
                             // User signed in successfully.
-                            await client
+                            return await client
                                 .submitAuthInfo(
                                     result.user.uid,
                                     window.firebasePhoneNumber
                                 )
                                 .then((session) => {
-                                    updateFieldValues(
-                                        session.field_values,
-                                        newFieldVals
-                                    );
+                                    const authId = result.user.uid;
+                                    initState.authId = authId;
+                                    initState.authPhoneNumber =
+                                        window.firebasePhoneNumber;
+
                                     Object.entries(session.file_values).forEach(
                                         ([fileKey, fileOrFiles]) => {
                                             setFileFieldValue(
@@ -705,17 +705,12 @@ function Form({
                                             );
                                         }
                                     );
+                                    newFieldVals = updateFieldValues(
+                                        session.field_values,
+                                        newFieldVals
+                                    );
+                                    return { newFieldVals, authId };
                                 });
-                            initState.authId = result.user.uid;
-                            initState.authPhoneNumber =
-                                window.firebasePhoneNumber;
-
-                            return handleSubmitRedirect({
-                                metadata,
-                                newFieldVals,
-                                submitData,
-                                formattedFields
-                            });
                         })
                         .catch(() => {
                             // User couldn't sign in (bad verification code?)
@@ -735,17 +730,11 @@ function Form({
                         servarType: servar.type
                     });
                     formRef.current.reportValidity();
+                    return;
                 }
             }
         }
-        if (defaultRedirect) {
-            return handleSubmitRedirect({
-                metadata,
-                newFieldVals,
-                submitData,
-                formattedFields
-            });
-        }
+        return { newFieldVals };
     }
 
     function handleSubmitRedirect({
