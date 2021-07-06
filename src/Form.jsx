@@ -1395,14 +1395,15 @@ function Form({
                                     fieldLabel={fieldLabel}
                                     fieldVal={fieldVal}
                                     otherVal={otherVal}
-                                    onChange={(e) => {
+                                    onChange={(e, newVals = null) => {
                                         fieldOnChange(
                                             [servar.key],
-                                            handleValueChange(
-                                                e.target.value,
-                                                servar.key,
-                                                index
-                                            )
+                                            newVals ||
+                                                handleValueChange(
+                                                    e.target.value,
+                                                    servar.key,
+                                                    index
+                                                )
                                         );
                                     }}
                                     handleOtherStateChange={

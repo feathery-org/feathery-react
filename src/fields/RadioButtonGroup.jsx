@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState } from 'react';
 import ReactForm from 'react-bootstrap/Form';
 
 function RadioButtonGroup({
@@ -96,7 +96,7 @@ function RadioButtonGroup({
                             const newValues = handleOtherStateChange(otherVal)(
                                 e
                             );
-                            fieldOnChange([servar.key], newValues);
+                            onChange(e, newValues);
                         }}
                         onClick={onClick}
                         maxLength={servar.max_length}
