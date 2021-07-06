@@ -242,34 +242,36 @@ function Form({
         fieldValuesArg = fieldValuesArg || fieldValues;
         clientArg = clientArg || client;
 
-        let newStep;
-        while (true) {
-            newStep = JSON.parse(JSON.stringify(stepsArg[newKey]));
-            const loadCond = newStep.next_conditions.find(
-                (cond) =>
-                    cond.trigger === 'load' &&
-                    cond.element_type === 'step' &&
-                    cond.rules.find((r) => r.comparison === 'not_authenticated')
-            );
-            if (
-                loadCond &&
-                !initState.authId &&
-                !window.firebaseConfirmationResult
-            )
-                newKey = loadCond.next_step_key;
-            else break;
-        }
-
+        let newStep = stepsArg[newKey];
         let curDepth = 0;
         let maxDepth = 0;
         if (!displaySteps) {
+            while (true) {
+                const loadCond = newStep.next_conditions.find(
+                    (cond) =>
+                        cond.trigger === 'load' &&
+                        cond.element_type === 'step' &&
+                        cond.rules.find(
+                            (r) => r.comparison === 'not_authenticated'
+                        )
+                );
+                if (
+                    loadCond &&
+                    !initState.authId &&
+                    !window.firebaseConfirmationResult
+                ) {
+                    newKey = loadCond.next_step_key;
+                    newStep = stepsArg[newKey];
+                } else break;
+            }
+
             [curDepth, maxDepth] = recurseDepth(
                 stepsArg,
                 getOrigin(stepsArg),
                 newKey
             );
         }
-
+        newStep = JSON.parse(JSON.stringify(newStep));
         setCurDepth(curDepth);
         setMaxDepth(maxDepth);
 
