@@ -23,11 +23,14 @@ export default class Client {
         const params = encodeGetParams({
             form_key: this.formKey
         });
-        const url = `${CDN_URL}api/panel/v3/?${params}`;
+        const url = `${CDN_URL}api/panel/v4/?${params}`;
         const options = {
             cache: 'no-store',
             importance: 'high',
-            headers: { Authorization: 'Token ' + apiKey }
+            headers: {
+                Authorization: 'Token ' + apiKey,
+                'Accept-Encoding': 'gzip'
+            }
         };
         return fetch(url, options).then((response) => {
             const { status } = response;

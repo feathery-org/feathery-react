@@ -28,11 +28,14 @@ describe('client', () => {
 
             // Assert
             expect(global.fetch).toHaveBeenCalledWith(
-                `${CDN_URL}api/panel/v3/?form_key=formKey`,
+                `${CDN_URL}api/panel/v4/?form_key=formKey`,
                 {
                     cache: 'no-store',
                     importance: 'high',
-                    headers: { Authorization: 'Token apiKey' }
+                    headers: {
+                        Authorization: 'Token apiKey',
+                        'Accept-Encoding': 'gzip'
+                    }
                 }
             );
             expect(response).toEqual('json');
