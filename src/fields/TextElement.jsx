@@ -31,26 +31,25 @@ function TextElement({ field, fieldValues, conditions, submit }) {
         repeat,
         elementKey
     });
+    const style = {
+        gridColumnStart: field.column_index + 1,
+        gridRowStart: field.row_index + 1,
+        gridColumnEnd: field.column_index_end + 2,
+        gridRowEnd: field.row_index_end + 2,
+        paddingBottom: `${field.padding_bottom}px`,
+        paddingTop: `${field.padding_top}px`,
+        paddingLeft: `${field.padding_left}px`,
+        paddingRight: `${field.padding_right}px`,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: alignmentMap[field.layout],
+        textAlign: field.layout,
+        justifyContent: field.vertical_layout
+    };
+    if (field.border_color) style.border = `1px solid #${field.border_color}`;
 
     return (
-        <div
-            key={field.id}
-            css={{
-                gridColumnStart: field.column_index + 1,
-                gridRowStart: field.row_index + 1,
-                gridColumnEnd: field.column_index_end + 2,
-                gridRowEnd: field.row_index_end + 2,
-                paddingBottom: `${field.padding_bottom}px`,
-                paddingTop: `${field.padding_top}px`,
-                paddingLeft: `${field.padding_left}px`,
-                paddingRight: `${field.padding_right}px`,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: alignmentMap[field.layout],
-                textAlign: field.layout,
-                justifyContent: field.vertical_layout
-            }}
-        >
+        <div key={field.id} css={style}>
             <div>{nodes}</div>
         </div>
     );
