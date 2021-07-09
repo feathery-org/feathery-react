@@ -1,5 +1,5 @@
 import * as errors from './error';
-import { initInfo, initUserPromise } from './init';
+import { initInfo, initState, initUserPromise } from './init';
 import encodeGetParams from './string';
 
 // Convenience boolean for urls - manually change for testing
@@ -90,7 +90,7 @@ export default class Client {
         });
     }
 
-    submitAuthInfo(authId, authPhone) {
+    submitAuthInfo({ authId, authPhone = '', authEmail = '' }) {
         const { apiKey, userKey } = initInfo();
 
         const data = {
@@ -98,6 +98,7 @@ export default class Client {
             panel_key: this.formKey,
             auth_id: authId,
             auth_phone: authPhone,
+            auth_email: authEmail,
             ...(userKey ? { fuser_key: userKey } : {})
         };
         const url = `${API_URL}api/panel/update_auth/`;
@@ -114,6 +115,9 @@ export default class Client {
             const { status } = response;
             switch (status) {
                 case 200:
+                    initState.authId = authId;
+                    if (authPhone) initState.authPhoneNumber = authPhone;
+                    if (authEmail) initState.authEmail = authEmail;
                     return response.json();
                 case 401:
                     return Promise.reject(

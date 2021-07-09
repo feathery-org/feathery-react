@@ -55,6 +55,10 @@ const states = [
     'Wyoming'
 ];
 
+const phonePattern = /^\d{10}$/;
+const emailPattern = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:.[a-zA-Z0-9-]+)+$/;
+const methodPatternMap = { email: emailPattern, phone: phonePattern };
+
 function adjustColor(color, amount) {
     return (
         '#' +
@@ -183,10 +187,20 @@ const nextStepKey = (
                                 sequenceValues = userVal;
                         }
                     } else {
-                        const equal = userVal === ruleVal;
-                        rulesMet &=
-                            (equal && rule.comparison === 'equal') ||
-                            (!equal && rule.comparison === 'not_equal');
+                        let ruleMet;
+                        if (rule.comparison === 'is_type') {
+                            ruleMet =
+                                (ruleVal === 'email' &&
+                                    emailPattern.test(userVal)) ||
+                                (ruleVal === 'phone' &&
+                                    phonePattern.test(userVal));
+                        } else {
+                            const equal = userVal === ruleVal;
+                            ruleMet =
+                                (equal && rule.comparison === 'equal') ||
+                                (!equal && rule.comparison === 'not_equal');
+                        }
+                        rulesMet &= ruleMet;
                     }
                 });
                 if (rulesMet) newKey = cond.next_step_key;
@@ -317,7 +331,7 @@ function getFieldError(value, servar) {
     }
 
     // Check if value is badly formatted
-    if (servar.type === 'phone_number' && value.length !== 10) {
+    if (servar.type === 'phone_number' && !phonePattern.test(value)) {
         return 'Invalid phone number';
     } else if (servar.type === 'ssn' && value.length !== 9) {
         return 'Invalid social security number';
@@ -326,6 +340,12 @@ function getFieldError(value, servar) {
         value.length !== servar.max_length
     ) {
         return 'Please enter a full code';
+    } else if (servar.type === 'login') {
+        let validFormat = false;
+        servar.metadata.login_methods.forEach((method) => {
+            validFormat = validFormat || methodPatternMap[method].test(value);
+        });
+        if (!validFormat) return 'Please enter a valid login';
     }
 
     // No error
@@ -408,5 +428,7 @@ export {
     shouldElementHide,
     setFormElementError,
     states,
-    alignmentMap
+    alignmentMap,
+    phonePattern,
+    emailPattern
 };
