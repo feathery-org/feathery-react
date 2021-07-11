@@ -242,7 +242,7 @@ function Form({
         setIntegrations(integrations);
 
         const gtm = integrations['google-tag-manager'];
-        if (gtm) TagManager.initialize({ gtmId: gtm });
+        if (gtm) TagManager.initialize({ gtmId: gtm.api_key });
 
         const fb = integrations.firebase;
         if (fb) {
