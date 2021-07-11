@@ -24,7 +24,9 @@ import {
     setFormElementError,
     getDefaultFieldValue,
     getFieldError,
-    shouldElementHide
+    shouldElementHide,
+    phonePattern,
+    emailPattern
 } from './utils/formHelperFunctions';
 import { justInsert, justRemove } from './utils/array';
 import {
@@ -106,8 +108,27 @@ function Form({
     // Create the fully-hydrated activeStep by injecting repeated rows
     // Note: Other hydration transformations can also be included here
     const activeStep = useMemo(() => {
+        if (displaySteps) return rawActiveStep;
         return injectRepeatedRows({ step: rawActiveStep, repeatedRowCount });
     }, [rawActiveStep, repeatedRowCount]);
+
+    useEffect(() => {
+        if (!activeStep) return;
+        const f = activeStep.servar_fields.find((field) => {
+            const servar = field.servar;
+            return (
+                servar.type === 'login' &&
+                servar.metadata.login_methods.includes('phone')
+            );
+        });
+        const b = activeStep.buttons.find((b) => b.link === 'submit');
+        if (f && b && !window.firebaseRecaptchaVerifier) {
+            window.firebaseRecaptchaVerifier = new firebase.auth.RecaptchaVerifier(
+                b.id,
+                { size: 'invisible' }
+            );
+        }
+    }, [activeStep]);
 
     // When the active step changes, recalculate the dimensions of the new step
     const dimensions = useMemo(() => calculateDimensions(activeStep), [
@@ -183,10 +204,15 @@ function Form({
         return newValues;
     };
 
-    const setFileFieldValue = (fileKey, file) => {
-        setFieldValues((fieldValues) => {
-            return { ...fieldValues, [fileKey]: file };
-        });
+    const updateSessionValues = (session, fieldVals) => {
+        Object.entries(session.file_values).forEach(
+            ([fileKey, fileOrFiles]) => {
+                setFieldValues((fieldValues) => {
+                    return { ...fieldValues, [fileKey]: fileOrFiles };
+                });
+            }
+        );
+        return updateFieldValues(session.field_values, fieldVals);
     };
 
     const updateFieldOptions = (stepData, activeStepData) => (
@@ -212,7 +238,7 @@ function Form({
         setRawActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
     };
 
-    const initializeIntegrations = (integrations) => {
+    const initializeIntegrations = async (integrations, clientArg) => {
         setIntegrations(integrations);
 
         const gtm = integrations['google-tag-manager'];
@@ -229,6 +255,29 @@ function Form({
                 messagingSenderId: fb.metadata.sender_id,
                 appId: fb.metadata.app_id
             });
+
+            if (firebase.auth().isSignInWithEmailLink(window.location.href)) {
+                const email = window.localStorage.getItem(
+                    'featheryFirebaseEmail'
+                );
+                if (email) {
+                    return await firebase
+                        .auth()
+                        .signInWithEmailLink(email, window.location.href)
+                        .then(async (result) => {
+                            const authId = result.user.uid;
+                            console.log(authId);
+                            return await clientArg
+                                .submitAuthInfo({
+                                    authId,
+                                    authEmail: email
+                                })
+                                .then((session) => {
+                                    return session;
+                                });
+                        });
+                }
+            }
         }
     };
 
@@ -247,19 +296,22 @@ function Form({
         let maxDepth = 0;
         if (!displaySteps) {
             while (true) {
-                const loadCond = newStep.next_conditions.find(
-                    (cond) =>
-                        cond.trigger === 'load' &&
-                        cond.element_type === 'step' &&
+                const loadCond = newStep.next_conditions.find((cond) => {
+                    if (cond.trigger !== 'load' || cond.element_type !== 'step')
+                        return false;
+                    const notAuth =
                         cond.rules.find(
                             (r) => r.comparison === 'not_authenticated'
-                        )
-                );
-                if (
-                    loadCond &&
-                    !initState.authId &&
-                    !window.firebaseConfirmationResult
-                ) {
+                        ) &&
+                        !initState.authId &&
+                        !window.firebaseConfirmationResult;
+                    const auth =
+                        cond.rules.find(
+                            (r) => r.comparison === 'authenticated'
+                        ) && initState.authId;
+                    return notAuth || auth;
+                });
+                if (loadCond) {
                     newKey = loadCond.next_step_key;
                     newStep = stepsArg[newKey];
                 } else break;
@@ -283,6 +335,10 @@ function Form({
                 );
                 const { userKey } = initInfo();
 
+                const integrationData = {};
+                if (initState.authId) {
+                    integrationData.firebaseAuthId = initState.authId;
+                }
                 await onLoad({
                     fields: formattedFields,
                     stepName: newKey,
@@ -297,28 +353,12 @@ function Form({
                         clientArg.submitCustom(userVals);
                     },
                     setOptions: updateFieldOptions(stepsArg, newStep),
-                    integrationData: null
+                    integrationData
                 });
                 setRawActiveStep(newStep);
             } else {
                 setRawActiveStep(newStep);
             }
-
-            newStep.servar_fields.forEach((field) => {
-                const servar = field.servar;
-                if (
-                    servar.type === 'phone_number' &&
-                    servar.metadata.send_sms_code
-                ) {
-                    const b = newStep.buttons.find((b) => b.link === 'submit');
-                    if (b) {
-                        window.firebaseRecaptchaVerifier = new firebase.auth.RecaptchaVerifier(
-                            b.id,
-                            { size: 'invisible' }
-                        );
-                    }
-                }
-            });
 
             const eventData = { step_key: newKey, event: 'load' };
             if (stepSequence.includes(newKey)) {
@@ -356,20 +396,19 @@ function Form({
                 // request goes to our CDN
                 clientInstance
                     .fetchSession()
-                    .then((session) => {
+                    .then(async (session) => {
                         setStepSequence(session.step_sequence);
                         setSequenceIndex(session.current_sequence_index);
-                        initializeIntegrations(session.integrations);
+                        const newSession = await initializeIntegrations(
+                            session.integrations,
+                            clientInstance
+                        );
+                        if (newSession) session = newSession;
 
                         fetchPromise.then(async (data) => {
-                            const newValues = updateFieldValues(
-                                session.field_values,
+                            const newValues = updateSessionValues(
+                                session,
                                 getDefaultFieldValues(data)
-                            );
-                            Object.entries(session.file_values).forEach(
-                                ([fileKey, fileOrFiles]) => {
-                                    setFileFieldValue(fileKey, fileOrFiles);
-                                }
                             );
                             const newKey =
                                 session.current_step_key || getOrigin(data);
@@ -647,37 +686,71 @@ function Form({
     async function handleActions(formattedFields, metadata, newFieldVals) {
         for (let i = 0; i < activeStep.servar_fields.length; i++) {
             const servar = activeStep.servar_fields[i].servar;
-            if (
-                servar.type === 'phone_number' &&
-                servar.metadata.send_sms_code
-            ) {
-                return await firebase
-                    .auth()
-                    .signInWithPhoneNumber(
-                        `+1${newFieldVals[servar.key]}`,
-                        window.firebaseRecaptchaVerifier
-                    )
-                    .then((confirmationResult) => {
-                        // SMS sent
-                        window.firebaseConfirmationResult = confirmationResult;
-                        window.firebasePhoneNumber = newFieldVals[servar.key];
-                        return { newFieldVals };
-                    })
-                    .catch((error) => {
-                        // Error; SMS not sent. Reset Recaptcha
-                        window.firebaseRecaptchaVerifier
-                            .render()
-                            .then(function (widgetId) {
-                                // eslint-disable-next-line no-undef
-                                grecaptcha.reset(widgetId);
+            const fieldVal = newFieldVals[servar.key];
+            const methods = servar.metadata.login_methods;
+            if (servar.type === 'login') {
+                if (methods.includes('phone') && phonePattern.test(fieldVal)) {
+                    return await firebase
+                        .auth()
+                        .signInWithPhoneNumber(
+                            `+1${fieldVal}`,
+                            window.firebaseRecaptchaVerifier
+                        )
+                        .then((confirmationResult) => {
+                            // SMS sent
+                            window.firebaseConfirmationResult = confirmationResult;
+                            window.firebasePhoneNumber = fieldVal;
+                            return { newFieldVals };
+                        })
+                        .catch((error) => {
+                            // Error; SMS not sent. Reset Recaptcha
+                            window.firebaseRecaptchaVerifier
+                                .render()
+                                .then(function (widgetId) {
+                                    // eslint-disable-next-line no-undef
+                                    grecaptcha.reset(widgetId);
+                                });
+                            setFormElementError({
+                                formRef,
+                                fieldKey: servar.key,
+                                message: error.message
                             });
-                        setFormElementError({
-                            formRef,
-                            fieldKey: servar.key,
-                            message: error.message
+                            formRef.current.reportValidity();
                         });
-                        formRef.current.reportValidity();
+                } else if (
+                    methods.includes('email') &&
+                    emailPattern.test(fieldVal)
+                ) {
+                    return await firebase
+                        .auth()
+                        .sendSignInLinkToEmail(fieldVal, {
+                            url: window.location.href,
+                            handleCodeInApp: true
+                        })
+                        .then(() => {
+                            window.localStorage.setItem(
+                                'featheryFirebaseEmail',
+                                fieldVal
+                            );
+                            return { newFieldVals };
+                        })
+                        .catch((error) => {
+                            setFormElementError({
+                                formRef,
+                                fieldKey: servar.key,
+                                message: error.message
+                            });
+                            formRef.current.reportValidity();
+                        });
+                } else {
+                    setFormElementError({
+                        formRef,
+                        fieldKey: servar.key,
+                        message: 'Invalid login'
                     });
+                    formRef.current.reportValidity();
+                    return;
+                }
             } else if (
                 servar.type === 'pin_input' &&
                 servar.metadata.verify_sms_code
@@ -685,30 +758,18 @@ function Form({
                 const fcr = window.firebaseConfirmationResult;
                 if (fcr) {
                     return await fcr
-                        .confirm(newFieldVals[servar.key])
+                        .confirm(fieldVal)
                         .then(async (result) => {
                             // User signed in successfully.
+                            const authId = result.user.uid;
                             return await client
-                                .submitAuthInfo(
-                                    result.user.uid,
-                                    window.firebasePhoneNumber
-                                )
+                                .submitAuthInfo({
+                                    authId,
+                                    authPhone: window.firebasePhoneNumber
+                                })
                                 .then((session) => {
-                                    const authId = result.user.uid;
-                                    initState.authId = authId;
-                                    initState.authPhoneNumber =
-                                        window.firebasePhoneNumber;
-
-                                    Object.entries(session.file_values).forEach(
-                                        ([fileKey, fileOrFiles]) => {
-                                            setFileFieldValue(
-                                                fileKey,
-                                                fileOrFiles
-                                            );
-                                        }
-                                    );
-                                    newFieldVals = updateFieldValues(
-                                        session.field_values,
+                                    newFieldVals = updateSessionValues(
+                                        session,
                                         newFieldVals
                                     );
                                     return { newFieldVals, authId };
@@ -1253,7 +1314,7 @@ function Form({
                                             );
                                         }}
                                         onClick={onClick}
-                                        pattern="^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$"
+                                        pattern={emailPattern}
                                     />
                                 ) : (
                                     <MuiField
@@ -1269,7 +1330,7 @@ function Form({
                                             );
                                         }}
                                         onClick={onClick}
-                                        pattern="^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$"
+                                        pattern={emailPattern}
                                     />
                                 );
                             break;
@@ -1295,6 +1356,46 @@ function Form({
                                 />
                             );
                             break;
+                        case 'login':
+                            controlElement = (
+                                <MaskedBootstrapField
+                                    key={reactFriendlyKey(field)}
+                                    mask={servar.metadata.login_methods.map(
+                                        (method) => {
+                                            return {
+                                                method,
+                                                mask:
+                                                    method === 'phone'
+                                                        ? '(000) 000-0000'
+                                                        : /.+/
+                                            };
+                                        }
+                                    )}
+                                    unmask
+                                    value={fieldVal}
+                                    onClick={onClick}
+                                    onAccept={(value) => {
+                                        if (value === fieldVal) return;
+                                        fieldOnChange(
+                                            [servar.key],
+                                            handleValueChange(
+                                                value,
+                                                servar.key,
+                                                index
+                                            )
+                                        );
+                                    }}
+                                    inputRef={(el) =>
+                                        (fieldRefs[servar.key] = el)
+                                    }
+                                    label={fieldLabel}
+                                    field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
+                                    type='text'
+                                />
+                            );
+                            break;
                         case 'phone_number':
                             controlElement = (
                                 <MaskedBootstrapField
@@ -1304,9 +1405,6 @@ function Form({
                                     value={fieldVal}
                                     onClick={onClick}
                                     onAccept={(value) => {
-                                        fieldRefs[servar.key].setCustomValidity(
-                                            ''
-                                        );
                                         fieldOnChange(
                                             [servar.key],
                                             handleValueChange(
@@ -1336,9 +1434,6 @@ function Form({
                                     value={fieldVal}
                                     onClick={onClick}
                                     onAccept={(value) => {
-                                        fieldRefs[servar.key].setCustomValidity(
-                                            ''
-                                        );
                                         fieldOnChange(
                                             [servar.key],
                                             handleValueChange(

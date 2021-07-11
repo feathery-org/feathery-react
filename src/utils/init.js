@@ -10,15 +10,14 @@ let initUserPromise = Promise.resolve();
 const defaultOptions = {
     userKey: null,
     formKeys: [],
-    tracking: 'cookie',
-    authId: '',
-    authPhoneNumber: ''
+    tracking: 'cookie'
 };
 const initState = {
     initialized: false,
     apiKey: '',
     userKey: '',
     authId: '',
+    authEmail: '',
     authPhoneNumber: '',
     forms: {},
     sessions: {}

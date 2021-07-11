@@ -32,7 +32,6 @@ function BootstrapField({
         <>
             {label}
             <ReactForm.Control
-                key={reactFriendlyKey(field)}
                 pattern={pattern}
                 style={{
                     height: `${field.field_height}${field.field_height_unit}`,
