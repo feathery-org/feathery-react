@@ -266,7 +266,6 @@ function Form({
                         .signInWithEmailLink(email, window.location.href)
                         .then(async (result) => {
                             const authId = result.user.uid;
-                            console.log(authId);
                             return await clientArg
                                 .submitAuthInfo({
                                     authId,
@@ -812,16 +811,24 @@ function Form({
                 [val.type]: val.value
             })
         );
-        client.submitStep(featheryFields);
+        let submitPromise = null;
+        if (featheryFields.length > 0)
+            submitPromise = client.submitStep(featheryFields);
 
         return handleRedirect({
             metadata,
             newFieldVals,
-            submitData
+            submitData,
+            submitPromise
         });
     }
 
-    function handleRedirect({ metadata, newFieldVals, submitData }) {
+    function handleRedirect({
+        metadata,
+        newFieldVals,
+        submitData,
+        submitPromise = null
+    }) {
         const { newStepKey, newSequence, newSequenceIndex } = nextStepKey(
             activeStep.next_conditions,
             metadata,
@@ -847,7 +854,8 @@ function Form({
                 submitData ||
                 ['button', 'text'].includes(metadata.elementType)
             ) {
-                client.registerEvent(eventData);
+                eventData.completed = true;
+                client.registerEvent(eventData, submitPromise);
                 setFinishConfig({
                     finished: true,
                     redirectURL: activeStep.redirect_url
@@ -855,13 +863,12 @@ function Form({
                 return true;
             }
         } else {
-            client.registerEvent(eventData);
+            client.registerEvent(eventData, submitPromise);
             const newURL =
                 location.pathname + location.search + `#${newStepKey}`;
             if (submitData || ['button', 'text'].includes(metadata.elementType))
                 history.push(newURL);
             else history.replace(newURL);
-            getNewStep(newStepKey, steps, newFieldVals);
             return true;
         }
     }

@@ -109,7 +109,7 @@ describe('client', () => {
     });
 
     describe('submitStep', () => {
-        it('fetches on step submission', () => {
+        it('fetches on step submission', async () => {
             // Arrange
             const formKey = 'formKey';
             const client = new Client(formKey);
@@ -124,7 +124,7 @@ describe('client', () => {
             global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
             // Act
-            const response = client.submitStep(servars);
+            const response = await client.submitStep(servars);
 
             // Assert
             expect(global.fetch).toHaveBeenCalledWith(
