@@ -1,20 +1,13 @@
 export class APIKeyError extends Error {
-    constructor(message) {
-        super(message);
+    constructor() {
+        super('Invalid API Key');
         this.name = 'APIKeyError';
     }
 }
 
-export class FormKeyError extends Error {
-    constructor(message) {
-        super(message);
-        this.name = 'FormKeyError';
-    }
-}
-
 export class UserKeyError extends Error {
-    constructor(message) {
-        super(message);
+    constructor() {
+        super('Invalid User Key');
         this.name = 'UserKeyError';
     }
 }

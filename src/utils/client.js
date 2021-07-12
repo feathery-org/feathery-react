@@ -16,6 +16,25 @@ export default class Client {
         this.formKey = formKey;
     }
 
+    _checkResponseSuccess(response) {
+        switch (response.status) {
+            case 200:
+                return;
+            case 201:
+                return;
+            case 400:
+                throw new errors.FetchError('Invalid parameters');
+            case 401:
+                throw new errors.FetchError('Invalid API key');
+            case 404:
+                throw new errors.FetchError("Can't find object");
+            case 500:
+                throw new errors.FetchError('Internal server error');
+            default:
+                throw new errors.FetchError('Unknown error');
+        }
+    }
+
     async fetchForm() {
         const { apiKey, forms } = initInfo();
         if (this.formKey in forms) return Promise.resolve(forms[this.formKey]);
@@ -33,23 +52,8 @@ export default class Client {
             }
         };
         return fetch(url, options).then((response) => {
-            const { status } = response;
-            switch (status) {
-                case 200:
-                    return response.json();
-                case 401:
-                    return Promise.reject(
-                        new errors.APIKeyError('Invalid API key')
-                    );
-                case 404:
-                    return Promise.reject(
-                        new errors.FormKeyError('Invalid form key')
-                    );
-                default:
-                    return Promise.reject(
-                        new errors.FetchError('Unknown error')
-                    );
-            }
+            this._checkResponseSuccess(response);
+            return response.json();
         });
     }
 
@@ -70,23 +74,8 @@ export default class Client {
             headers: { Authorization: 'Token ' + apiKey }
         };
         return fetch(url, options).then((response) => {
-            const { status } = response;
-            switch (status) {
-                case 200:
-                    return response.json();
-                case 401:
-                    return Promise.reject(
-                        new errors.APIKeyError('Invalid API key')
-                    );
-                case 404:
-                    return Promise.reject(
-                        new errors.FormKeyError('Invalid form key')
-                    );
-                default:
-                    return Promise.reject(
-                        new errors.FetchError('Unknown error')
-                    );
-            }
+            this._checkResponseSuccess(response);
+            return response.json();
         });
     }
 
@@ -112,26 +101,11 @@ export default class Client {
             body: JSON.stringify(data)
         };
         return fetch(url, options).then((response) => {
-            const { status } = response;
-            switch (status) {
-                case 200:
-                    initState.authId = authId;
-                    if (authPhone) initState.authPhoneNumber = authPhone;
-                    if (authEmail) initState.authEmail = authEmail;
-                    return response.json();
-                case 401:
-                    return Promise.reject(
-                        new errors.APIKeyError('Invalid API key')
-                    );
-                case 404:
-                    return Promise.reject(
-                        new errors.FormKeyError('Invalid form or user key')
-                    );
-                default:
-                    return Promise.reject(
-                        new errors.FetchError('Unknown error')
-                    );
-            }
+            this._checkResponseSuccess(response);
+            initState.authId = authId;
+            if (authPhone) initState.authPhoneNumber = authPhone;
+            if (authEmail) initState.authEmail = authEmail;
+            return response.json();
         });
     }
 
@@ -153,19 +127,7 @@ export default class Client {
             body: JSON.stringify(data)
         };
         fetch(url, options).then((response) => {
-            const { status } = response;
-            switch (status) {
-                case 200:
-                    return;
-                case 201:
-                    return;
-                case 401:
-                    throw new errors.APIKeyError('Invalid API key');
-                case 404:
-                    throw new errors.UserKeyError('Invalid user key');
-                default:
-                    throw new errors.FetchError('Unknown error');
-            }
+            this._checkResponseSuccess(response);
         });
     }
 
@@ -186,20 +148,8 @@ export default class Client {
             method: 'POST',
             body: JSON.stringify(data)
         };
-        fetch(url, options).then((response) => {
-            const { status } = response;
-            switch (status) {
-                case 200:
-                    return;
-                case 201:
-                    return;
-                case 401:
-                    throw new errors.APIKeyError('Invalid API key');
-                case 404:
-                    throw new errors.UserKeyError('Invalid user key');
-                default:
-                    throw new errors.FetchError('Unknown error');
-            }
+        return fetch(url, options).then((response) => {
+            this._checkResponseSuccess(response);
         });
     }
 
@@ -250,36 +200,26 @@ export default class Client {
             method: 'POST',
             body: formData
         };
-        fetch(url, options).then((response) => {
-            const { status } = response;
-            switch (status) {
-                case 200:
-                    return;
-                case 201:
-                    return;
-                case 401:
-                    throw new errors.APIKeyError('Invalid API key');
-                case 404:
-                    throw new errors.UserKeyError('Invalid user key');
-                default:
-                    throw new errors.FetchError('Unknown error');
-            }
+        return fetch(url, options).then((response) => {
+            this._checkResponseSuccess(response);
         });
     }
 
     // servars = [{key: <servarKey>, <type>: <value>}]
-    submitStep(servars) {
+    async submitStep(servars) {
         const isFileServar = (servar) =>
             ['file_upload', 'rich_file_upload', 'rich_multi_file_upload'].some(
                 (type) => type in servar
             );
         const jsonServars = servars.filter((servar) => !isFileServar(servar));
-        this._submitJSONData(jsonServars);
+        const jsonPromise = this._submitJSONData(jsonServars);
         const fileServars = servars.filter(isFileServar);
-        if (fileServars.length > 0) this._submitFileData(fileServars);
+
+        if (fileServars.length > 0) await this._submitFileData(fileServars);
+        await jsonPromise;
     }
 
-    registerEvent(eventData) {
+    registerEvent(eventData, promise = null) {
         initUserPromise.then(() => {
             const { userKey, apiKey } = initInfo();
             const url = `${API_URL}api/event/`;
@@ -297,21 +237,17 @@ export default class Client {
                 method: 'POST',
                 body: JSON.stringify(data)
             };
-            fetch(url, options).then((response) => {
-                const { status } = response;
-                switch (status) {
-                    case 200:
-                        return;
-                    case 201:
-                        return;
-                    case 401:
-                        throw new errors.APIKeyError('Invalid API key');
-                    case 404:
-                        throw new errors.UserKeyError('Invalid user key');
-                    default:
-                        throw new errors.FetchError('Unknown error');
-                }
-            });
+            if (promise) {
+                promise.then(() => {
+                    fetch(url, options).then((response) => {
+                        this._checkResponseSuccess(response);
+                    });
+                });
+            } else {
+                fetch(url, options).then((response) => {
+                    this._checkResponseSuccess(response);
+                });
+            }
         });
     }
 }

@@ -33,7 +33,7 @@ function init(apiKey, options = {}) {
         throw new errors.APIKeyError('Invalid API Key');
     }
     if (options.userKey && typeof options.userKey !== 'string') {
-        throw new errors.UserKeyError('Invalid User Key');
+        throw new errors.UserKeyError();
     }
 
     initState.apiKey = apiKey;
