@@ -113,7 +113,7 @@ function Form({
     }, [rawActiveStep, repeatedRowCount]);
 
     useEffect(() => {
-        if (!activeStep) return;
+        if (displaySteps || !activeStep) return;
         const f = activeStep.servar_fields.find((field) => {
             const servar = field.servar;
             return (
@@ -321,12 +321,8 @@ function Form({
                 getOrigin(stepsArg),
                 newKey
             );
-        }
-        newStep = JSON.parse(JSON.stringify(newStep));
-        setCurDepth(curDepth);
-        setMaxDepth(maxDepth);
+            newStep = JSON.parse(JSON.stringify(newStep));
 
-        if (!displaySteps) {
             if (typeof onLoad === 'function') {
                 const formattedFields = formatAllStepFields(
                     stepsArg,
@@ -369,6 +365,9 @@ function Form({
         } else {
             setRawActiveStep(newStep);
         }
+
+        setCurDepth(curDepth);
+        setMaxDepth(maxDepth);
     };
 
     useEffect(() => {
