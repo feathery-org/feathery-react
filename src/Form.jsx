@@ -650,6 +650,9 @@ function Form({
                             });
                         });
                     },
+                    triggerKey: metadata.elementKeys[0],
+                    triggerType: metadata.elementType,
+                    triggerAction: metadata.trigger,
                     integrationData
                 });
 
