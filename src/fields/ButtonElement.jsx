@@ -12,7 +12,8 @@ function ButtonElement({
     displaySteps,
     addRepeatedRow,
     removeRepeatedRow,
-    submit
+    submit,
+    setSubmitRef
 }) {
     const [showSpinner, setShowSpinner] = useState(false);
 
@@ -84,6 +85,7 @@ function ButtonElement({
             setShowSpinner(false);
         }
     }
+    if (field.link === 'submit') setSubmitRef(buttonOnClick);
 
     const halfHeight = Math.round(field.button_height / 2);
     return (
