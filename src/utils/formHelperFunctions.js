@@ -124,6 +124,8 @@ function getDefaultFieldValue(field) {
             return null;
         case 'rich_multi_file_upload':
             return [];
+        case 'rich_file_upload':
+            return undefined;
         default:
             return '';
     }

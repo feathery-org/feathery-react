@@ -144,7 +144,7 @@ function Form({
         );
     }, [dimensions]);
 
-    function addRepeatedRow() {
+    function addRepeatedRow(fieldValuesArg = fieldValues) {
         if (
             isNaN(activeStep.repeat_row_start) ||
             isNaN(activeStep.repeat_row_end)
@@ -161,15 +161,15 @@ function Form({
         repeatedServarFields.forEach((field) => {
             const { servar } = field;
             updatedValues[servar.key] = [
-                ...fieldValues[servar.key],
+                ...fieldValuesArg[servar.key],
                 getDefaultFieldValue(field)
             ];
         });
 
-        updateFieldValues(updatedValues);
+        return updateFieldValues(updatedValues);
     }
 
-    function removeRepeatedRow(repeatRowIndex) {
+    function removeRepeatedRow(repeatRowIndex, fieldValuesArg = fieldValues) {
         if (isNaN(repeatRowIndex)) return;
 
         // Collect a list of all repeated fields
@@ -181,13 +181,19 @@ function Form({
         const updatedValues = {};
         repeatedServarFields.forEach((field) => {
             const { servar } = field;
-            updatedValues[servar.key] = justRemove(
-                fieldValues[servar.key],
+            const newRepeatedValues = justRemove(
+                fieldValuesArg[servar.key],
                 repeatRowIndex
             );
+            const defaultValue = getDefaultFieldValue(field);
+            updatedValues[servar.key] =
+                newRepeatedValues.length === 0
+                    ? [defaultValue]
+                    : newRepeatedValues;
         });
 
-        updateFieldValues(updatedValues);
+        const values = updateFieldValues(updatedValues);
+        return values;
     }
 
     const updateFieldValues = (newFieldValues, baseFieldValues = null) => {
@@ -484,9 +490,27 @@ function Form({
         const key = target.id;
         const updateValues = {};
         let clearGMaps = false;
+        let repeatRowOperation;
+
         activeStep.servar_fields.forEach((field) => {
             const servar = field.servar;
             if (servar.key !== key) return;
+
+            if (servar.repeat_trigger === 'set_value') {
+                const defaultValue = getDefaultFieldValue(field);
+                const { value: previousValue } = getFieldValue(
+                    field,
+                    fieldValues
+                );
+
+                // Add a repeated row if the value went from unset to set
+                if (previousValue === defaultValue && value !== defaultValue)
+                    repeatRowOperation = 'add';
+
+                // Remove a repeated row if the value went from set to unset
+                if (previousValue !== defaultValue && value === defaultValue)
+                    repeatRowOperation = 'remove';
+            }
 
             if (servar.type === 'integer_field') value = parseInt(value);
             else if (servar.type === 'gmap_line_1' && !value) clearGMaps = true;
@@ -520,7 +544,14 @@ function Form({
             });
         }
 
-        return updateFieldValues(updateValues);
+        let newValues = updateFieldValues(updateValues);
+        if (repeatRowOperation === 'add') {
+            newValues = addRepeatedRow(newValues);
+        } else if (repeatRowOperation === 'remove') {
+            newValues = removeRepeatedRow(index, newValues);
+        }
+
+        return newValues;
     };
 
     const handleValueChange = (value, id, index = null) => {
