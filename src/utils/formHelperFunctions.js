@@ -56,7 +56,10 @@ const states = [
 ];
 
 const phonePattern = /^\d{10}$/;
-const emailPattern = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:.[a-zA-Z0-9-]+)+$/;
+const emailPatternStr =
+    "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:.[a-zA-Z0-9-]+)+$";
+const emailPattern = new RegExp(emailPatternStr);
+
 const methodPatternMap = { email: emailPattern, phone: phonePattern };
 
 function adjustColor(color, amount) {
@@ -430,5 +433,6 @@ export {
     states,
     alignmentMap,
     phonePattern,
-    emailPattern
+    emailPattern,
+    emailPatternStr
 };

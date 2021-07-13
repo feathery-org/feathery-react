@@ -26,7 +26,8 @@ import {
     getFieldError,
     shouldElementHide,
     phonePattern,
-    emailPattern
+    emailPattern,
+    emailPatternStr
 } from './utils/formHelperFunctions';
 import { justInsert, justRemove } from './utils/array';
 import {
@@ -1323,7 +1324,7 @@ function Form({
                                             );
                                         }}
                                         onClick={onClick}
-                                        pattern={emailPattern}
+                                        pattern={emailPatternStr}
                                     />
                                 ) : (
                                     <MuiField
@@ -1339,7 +1340,7 @@ function Form({
                                             );
                                         }}
                                         onClick={onClick}
-                                        pattern={emailPattern}
+                                        pattern={emailPatternStr}
                                     />
                                 );
                             break;
