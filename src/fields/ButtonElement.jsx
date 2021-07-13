@@ -85,6 +85,7 @@ function ButtonElement({
         }
     }
 
+    const halfHeight = Math.round(field.button_height / 2);
     return (
         <div
             css={{
@@ -152,12 +153,8 @@ function ButtonElement({
                                 color: 'white',
                                 position: 'absolute',
                                 right: `-${field.button_height}${field.button_height_unit}`,
-                                width: `${field.button_height / 2}${
-                                    field.button_height_unit
-                                }`,
-                                height: `${field.button_height / 2}${
-                                    field.button_height_unit
-                                }`,
+                                width: `${halfHeight}${field.button_height_unit}`,
+                                height: `${halfHeight}${field.button_height_unit}`,
                                 border: '0.2em solid currentColor',
                                 borderRightColor: 'transparent'
                             }}
