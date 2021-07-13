@@ -23,7 +23,7 @@ function FeatheryPinInput({
             {fieldLabel}
             <PinInput
                 id={servar.key}
-                value={fieldVal}
+                defaultValue={fieldVal}
                 onChange={onChange}
                 onClick={onClick}
                 otp
