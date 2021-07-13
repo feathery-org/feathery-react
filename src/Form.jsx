@@ -94,7 +94,7 @@ function Form({
     const [stepSequence, setStepSequence] = useState([]);
     const [sequenceIndex, setSequenceIndex] = useState(0);
 
-    const fieldRefs = useRef({}).current;
+    const submitRef = useRef(null);
     const formRef = useRef(null);
 
     const repeatedRowCount = useMemo(
@@ -123,13 +123,13 @@ function Form({
             );
         });
         const b = activeStep.buttons.find((b) => b.link === 'submit');
-        if (f && b && !window.firebaseRecaptchaVerifier) {
+        if (f && b) {
             window.firebaseRecaptchaVerifier = new firebase.auth.RecaptchaVerifier(
                 b.id,
                 { size: 'invisible' }
             );
         }
-    }, [activeStep]);
+    }, [activeStep?.key]);
 
     // When the active step changes, recalculate the dimensions of the new step
     const dimensions = useMemo(() => calculateDimensions(activeStep), [
@@ -973,6 +973,12 @@ function Form({
                 width: dimensions.width ? `${dimensions.width}px` : '100%',
                 ...style
             }}
+            onSubmit={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // eslint-disable-next-line no-unused-expressions
+                submitRef?.current();
+            }}
         >
             {children}
             {activeStep.progress_bar &&
@@ -1088,6 +1094,7 @@ function Form({
                         submit={submit}
                         addRepeatedRow={addRepeatedRow}
                         removeRepeatedRow={removeRepeatedRow}
+                        setSubmitRef={(newRef) => (submitRef.current = newRef)}
                     />
                 ))}
 
@@ -1397,9 +1404,6 @@ function Form({
                                             )
                                         );
                                     }}
-                                    inputRef={(el) =>
-                                        (fieldRefs[servar.key] = el)
-                                    }
                                     label={fieldLabel}
                                     field={field}
                                     selectStyle={select}
@@ -1426,9 +1430,6 @@ function Form({
                                             )
                                         );
                                     }}
-                                    inputRef={(el) =>
-                                        (fieldRefs[servar.key] = el)
-                                    }
                                     label={fieldLabel}
                                     field={field}
                                     selectStyle={select}
@@ -1455,9 +1456,6 @@ function Form({
                                             )
                                         );
                                     }}
-                                    inputRef={(el) =>
-                                        (fieldRefs[servar.key] = el)
-                                    }
                                     label={fieldLabel}
                                     field={field}
                                     selectStyle={select}
@@ -1544,9 +1542,6 @@ function Form({
                                             )
                                         );
                                     }}
-                                    inputRef={(el) =>
-                                        (fieldRefs[servar.key] = el)
-                                    }
                                     label={fieldLabel}
                                     field={field}
                                     selectStyle={select}
@@ -1707,9 +1702,6 @@ function Form({
                                                 )
                                             );
                                         }}
-                                        inputRef={(el) =>
-                                            (fieldRefs[servar.key] = el)
-                                        }
                                         label={fieldLabel}
                                         field={field}
                                         selectStyle={select}
