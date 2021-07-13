@@ -461,11 +461,13 @@ function Form({
     ]);
 
     useEffect(() => {
-        return history.listen(async () => {
-            const hashKey = location.hash.substr(1);
-            if (hashKey in steps) await getNewStep(hashKey);
-        });
-    }, [steps, getNewStep]);
+        return steps
+            ? history.listen(async () => {
+                  const hashKey = location.hash.substr(1);
+                  if (hashKey in steps) await getNewStep(hashKey);
+              })
+            : undefined;
+    }, [steps]);
 
     if (!activeStep) return null;
     if (finishConfig.finished) {
