@@ -153,34 +153,33 @@ export default class Client {
         });
     }
 
+    _getFileValue(servar) {
+        let fileValue;
+        if ('file_upload' in servar) {
+            fileValue = servar.file_upload;
+        } else if ('rich_file_upload' in servar) {
+            fileValue = servar.rich_file_upload;
+        } else if ('rich_multi_file_upload' in servar) {
+            fileValue = servar.rich_multi_file_upload;
+        }
+
+        if (!fileValue) {
+            return null;
+        }
+
+        const resolveFile = (file) => (file instanceof File ? file : file.path);
+        return Array.isArray(fileValue)
+            ? fileValue.map(resolveFile)
+            : resolveFile(fileValue);
+    }
+
     _submitFileData(servars) {
         const { userKey, apiKey } = initInfo();
         const url = `${API_URL}api/panel/step/submit/file/${userKey}/`;
 
-        const getFileValue = (servar) => {
-            let fileValue;
-            if ('file_upload' in servar) {
-                fileValue = servar.file_upload;
-            } else if ('rich_file_upload' in servar) {
-                fileValue = servar.rich_file_upload;
-            } else if ('rich_multi_file_upload' in servar) {
-                fileValue = servar.rich_multi_file_upload;
-            }
-
-            if (!fileValue) {
-                return fileValue;
-            }
-
-            const resolveFile = (file) =>
-                file instanceof File ? file : file.path;
-            return Array.isArray(fileValue)
-                ? fileValue.map(resolveFile)
-                : resolveFile(fileValue);
-        };
-
         const formData = new FormData();
         servars.forEach((servar) => {
-            const fileValue = getFileValue(servar);
+            const fileValue = this._getFileValue(servar);
             if (fileValue) {
                 if (Array.isArray(fileValue)) {
                     fileValue.forEach((file) =>

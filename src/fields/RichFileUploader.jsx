@@ -19,7 +19,8 @@ function RichFileUploader({
     const [filename, setFilename] = useState('');
     const fileInput = useRef();
 
-    const [file, setFile] = useState(undefined);
+    // Set file state to the initialFile AND update file state whenever initialFile changes
+    const [file, setFile] = useState(initialFile);
     useEffect(() => setFile(initialFile), [initialFile]);
 
     // When a file is uploaded, we convert it to a thumbnail
@@ -63,7 +64,7 @@ function RichFileUploader({
 
     function onClear() {
         fileInput.current.value = '';
-        setFile(undefined);
+        setFile(null);
         customOnChange({ target: { files: [] } });
     }
 

@@ -125,7 +125,7 @@ function getDefaultFieldValue(field) {
         case 'rich_multi_file_upload':
             return [];
         case 'rich_file_upload':
-            return undefined;
+            return null;
         default:
             return '';
     }
@@ -300,7 +300,7 @@ function getFieldValue(field, values) {
         ? {
               repeated: true,
               index: repeat,
-              value: values[servar.key][repeat],
+              value: values[servar.key][repeat] ?? getDefaultFieldValue(field),
               valueList: values[servar.key]
           }
         : {

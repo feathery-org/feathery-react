@@ -212,14 +212,13 @@ function Form({
     };
 
     const updateSessionValues = (session, fieldVals) => {
-        Object.entries(session.file_values).forEach(
-            ([fileKey, fileOrFiles]) => {
-                setFieldValues((fieldValues) => {
-                    return { ...fieldValues, [fileKey]: fileOrFiles };
-                });
-            }
+        return updateFieldValues(
+            {
+                ...session.field_values,
+                ...session.file_values
+            },
+            fieldVals
         );
-        return updateFieldValues(session.field_values, fieldVals);
     };
 
     const updateFieldOptions = (stepData, activeStepData) => (
@@ -494,7 +493,7 @@ function Form({
 
         activeStep.servar_fields.forEach((field) => {
             const servar = field.servar;
-            if (servar.key !== key) return;
+            if (servar.key !== key || (index && field.repeat !== index)) return;
 
             if (servar.repeat_trigger === 'set_value') {
                 const defaultValue = getDefaultFieldValue(field);
@@ -842,10 +841,16 @@ function Form({
         formattedFields
     }) {
         const featheryFields = Object.entries(formattedFields).map(
-            ([key, val]) => ({
-                key,
-                [val.type]: val.value
-            })
+            ([key, val]) => {
+                let newVal = val.value;
+                newVal = Array.isArray(newVal)
+                    ? newVal.filter((v) => v || v === 0)
+                    : newVal;
+                return {
+                    key,
+                    [val.type]: newVal
+                };
+            }
         );
         let submitPromise = null;
         if (featheryFields.length > 0)
