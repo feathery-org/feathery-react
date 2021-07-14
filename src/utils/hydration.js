@@ -1,3 +1,5 @@
+import { getDefaultFieldValue } from './formHelperFunctions';
+
 const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 
 /**
@@ -56,7 +58,19 @@ function calculateRepeatedRowCount({ step, values }) {
     step.servar_fields
         .filter((field) => field.servar.repeated)
         .forEach((field) => {
-            count = Math.max(count, values[field.servar.key].length);
+            // We need to append a trailing row if the field is a repeat trigger
+            // But don't append if a trailing value already exists
+            const value = values[field.servar.key];
+            const trailingValueExists =
+                value[value.length - 1] === getDefaultFieldValue(field);
+            const repeatTriggerExists =
+                field.servar.repeat_trigger === 'set_value';
+
+            count = Math.max(
+                count,
+                values[field.servar.key].length +
+                    Number(!trailingValueExists && repeatTriggerExists)
+            );
         });
 
     return count;
