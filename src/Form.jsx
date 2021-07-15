@@ -904,6 +904,8 @@ function Form({
                 return true;
             }
         } else {
+            if (steps[newStepKey].next_conditions.length === 0)
+                eventData.completed = true;
             client.registerEvent(eventData, submitPromise);
             const newURL =
                 location.pathname + location.search + `#${newStepKey}`;
