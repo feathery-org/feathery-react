@@ -5,8 +5,6 @@ import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
 import TagManager from 'react-gtm-module';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
-import firebase from 'firebase/app';
-import 'firebase/auth';
 
 import { BootstrapField, MaskedBootstrapField } from './components/Bootstrap';
 import { MuiField, MuiProgress } from './components/MaterialUI';
@@ -93,6 +91,8 @@ function Form({
     const [noChange, setNoChange] = useState(false);
     const [stepSequence, setStepSequence] = useState([]);
     const [sequenceIndex, setSequenceIndex] = useState(0);
+
+    const [firebase, setFirebase] = useState(null);
 
     const submitRef = useRef(null);
     const formRef = useRef(null);
@@ -192,8 +192,7 @@ function Form({
                     : newRepeatedValues;
         });
 
-        const values = updateFieldValues(updatedValues);
-        return values;
+        return updateFieldValues(updatedValues);
     }
 
     const updateFieldValues = (newFieldValues, baseFieldValues = null) => {
@@ -252,6 +251,14 @@ function Form({
 
         const fb = integrations.firebase;
         if (fb) {
+            const fbp = import(
+                /* webpackIgnore: true */ 'https://cdn.skypack.dev/@firebase/app'
+            );
+            await import(
+                /* webpackIgnore: true */ 'https://cdn.skypack.dev/@firebase/auth'
+            );
+            const firebase = (await fbp).firebase;
+            setFirebase(firebase);
             firebase.initializeApp({
                 apiKey: fb.api_key,
                 authDomain: `${fb.metadata.project_id}.firebaseapp.com`,
