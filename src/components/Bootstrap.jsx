@@ -1,7 +1,6 @@
 import ReactForm from 'react-bootstrap/Form';
 import React from 'react';
 import { IMaskMixin } from 'react-imask';
-import { reactFriendlyKey } from '../utils/formHelperFunctions';
 
 function BootstrapField({
     label,
