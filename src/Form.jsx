@@ -1,3 +1,5 @@
+import $script from 'scriptjs';
+
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 
 import ProgressBar from 'react-bootstrap/ProgressBar';
@@ -243,6 +245,12 @@ function Form({
         setRawActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
     };
 
+    function dynamicImport(dependency) {
+        return new Promise((resolve) => {
+            $script(dependency, resolve);
+        });
+    }
+
     const initializeIntegrations = async (integrations, clientArg) => {
         setIntegrations(integrations);
 
@@ -251,13 +259,13 @@ function Form({
 
         const fb = integrations.firebase;
         if (fb) {
-            const fbp = import(
-                /* webpackIgnore: true */ 'https://cdn.skypack.dev/@firebase/app'
+            await dynamicImport(
+                'https://www.gstatic.com/firebasejs/8.7.1/firebase-app.js'
             );
-            await import(
-                /* webpackIgnore: true */ 'https://cdn.skypack.dev/@firebase/auth'
+            await dynamicImport(
+                'https://www.gstatic.com/firebasejs/8.7.1/firebase-auth.js'
             );
-            const firebase = (await fbp).firebase;
+            const firebase = global.firebase;
             setFirebase(firebase);
             firebase.initializeApp({
                 apiKey: fb.api_key,

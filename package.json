@@ -78,6 +78,7 @@
     "react-imask": "^6.0.7",
     "react-load-script": "^0.0.6",
     "react-router-dom": "^5.2.0",
+    "scriptjs": "^2.5.9",
     "uuid": "^8.3.2"
   },
   "babel": {
