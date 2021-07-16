@@ -37,7 +37,10 @@ function init(apiKey, options = {}) {
     }
 
     initState.apiKey = apiKey;
-    initState.userKey = options.userKey;
+    ['authId', 'authEmail', 'authPhoneNumber', 'userKey'].forEach((key) => {
+        if (options[key]) initState[key] = options[key];
+    });
+
     if (initState.userKey) _fetchFormData(options.formKeys);
     else {
         if (options.tracking === 'fingerprint') {
