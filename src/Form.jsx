@@ -1,5 +1,3 @@
-import $script from 'scriptjs';
-
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 
 import ProgressBar from 'react-bootstrap/ProgressBar';
@@ -7,6 +5,7 @@ import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
 import TagManager from 'react-gtm-module';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
+import $script from 'scriptjs';
 
 import { BootstrapField, MaskedBootstrapField } from './components/Bootstrap';
 import { MuiField, MuiProgress } from './components/MaterialUI';
@@ -259,12 +258,11 @@ function Form({
 
         const fb = integrations.firebase;
         if (fb) {
-            await dynamicImport(
-                'https://www.gstatic.com/firebasejs/8.7.1/firebase-app.js'
-            );
-            await dynamicImport(
+            // Bring in Firebase dependencies dynamically if this form uses Firebase
+            await dynamicImport([
+                'https://www.gstatic.com/firebasejs/8.7.1/firebase-app.js',
                 'https://www.gstatic.com/firebasejs/8.7.1/firebase-auth.js'
-            );
+            ]);
             const firebase = global.firebase;
             setFirebase(firebase);
             firebase.initializeApp({
