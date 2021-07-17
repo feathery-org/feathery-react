@@ -254,7 +254,16 @@ function Form({
         setIntegrations(integrations);
 
         const gtm = integrations['google-tag-manager'];
-        if (gtm) TagManager.initialize({ gtmId: gtm.api_key });
+        if (gtm) {
+            TagManager.initialized = true;
+            TagManager.initialize({
+                gtmId: gtm.api_key,
+                dataLayer: {
+                    userId: initInfo().userKey,
+                    formId: clientArg.formKey
+                }
+            });
+        }
 
         const fb = integrations.firebase;
         if (fb) {
@@ -299,17 +308,8 @@ function Form({
         }
     };
 
-    const getNewStep = async (
-        newKey,
-        stepsArg = null,
-        fieldValuesArg = null,
-        clientArg = null
-    ) => {
-        stepsArg = stepsArg || steps;
-        fieldValuesArg = fieldValuesArg || fieldValues;
-        clientArg = clientArg || client;
-
-        let newStep = stepsArg[newKey];
+    const getNewStep = async (newKey) => {
+        let newStep = steps[newKey];
         let curDepth = 0;
         let maxDepth = 0;
         if (!displaySteps) {
@@ -331,22 +331,28 @@ function Form({
                 });
                 if (loadCond) {
                     newKey = loadCond.next_step_key;
-                    newStep = stepsArg[newKey];
+                    newStep = steps[newKey];
                 } else break;
             }
 
             [curDepth, maxDepth] = recurseDepth(
-                stepsArg,
-                getOrigin(stepsArg),
+                steps,
+                getOrigin(steps),
                 newKey
             );
             newStep = JSON.parse(JSON.stringify(newStep));
 
+            if (TagManager.initialized) {
+                TagManager.dataLayer({
+                    dataLayer: {
+                        stepId: newKey,
+                        event: 'FeatheryStepLoad'
+                    }
+                });
+            }
+
             if (typeof onLoad === 'function') {
-                const formattedFields = formatAllStepFields(
-                    stepsArg,
-                    fieldValuesArg
-                );
+                const formattedFields = formatAllStepFields(steps, fieldValues);
                 const { userKey } = initInfo();
 
                 const integrationData = {};
@@ -358,15 +364,12 @@ function Form({
                     stepName: newKey,
                     previousStepName: activeStep?.key,
                     userId: userKey,
-                    lastStep: stepsArg[newKey].next_conditions.length === 0,
+                    lastStep: steps[newKey].next_conditions.length === 0,
                     setValues: (userVals) => {
-                        fieldValuesArg = updateFieldValues(
-                            userVals,
-                            fieldValuesArg
-                        );
-                        clientArg.submitCustom(userVals);
+                        updateFieldValues(userVals, fieldValues);
+                        client.submitCustom(userVals);
                     },
-                    setOptions: updateFieldOptions(stepsArg, newStep),
+                    setOptions: updateFieldOptions(steps, newStep),
                     integrationData
                 });
                 setRawActiveStep(newStep);
@@ -380,7 +383,7 @@ function Form({
                 setSequenceIndex(newSequenceIndex);
                 eventData.current_sequence_index = newSequenceIndex;
             }
-            clientArg.registerEvent(eventData);
+            client.registerEvent(eventData);
         } else {
             setRawActiveStep(newStep);
         }
@@ -423,7 +426,7 @@ function Form({
                         if (newSession) session = newSession;
 
                         fetchPromise.then(async (data) => {
-                            const newValues = updateSessionValues(
+                            updateSessionValues(
                                 session,
                                 getDefaultFieldValues(data)
                             );
@@ -434,13 +437,12 @@ function Form({
                                     location.search +
                                     `#${newKey}`
                             );
-                            getNewStep(newKey, data, newValues, clientInstance);
                         });
                     })
                     .catch((error) => {
                         // Use default values if origin fails
                         fetchPromise.then(async (data) => {
-                            const newValues = updateFieldValues(
+                            updateFieldValues(
                                 fieldValues,
                                 getDefaultFieldValues(data)
                             );
@@ -450,7 +452,6 @@ function Form({
                                     location.search +
                                     `#${newKey}`
                             );
-                            getNewStep(newKey, data, newValues, clientInstance);
                         });
                         console.log(error);
                     });
@@ -868,6 +869,14 @@ function Form({
         let submitPromise = null;
         if (featheryFields.length > 0)
             submitPromise = client.submitStep(featheryFields);
+        if (TagManager.initialized) {
+            TagManager.dataLayer({
+                dataLayer: {
+                    stepId: activeStep.key,
+                    event: 'FeatheryStepSubmit'
+                }
+            });
+        }
 
         return handleRedirect({
             metadata,
