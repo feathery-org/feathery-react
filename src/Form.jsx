@@ -799,7 +799,7 @@ function Form({
                             setFormElementError({
                                 formRef,
                                 fieldKey: servar.key,
-                                message: error.message
+                                message: error.message,
                             });
                             formRef.current.reportValidity();
                         });
@@ -1260,6 +1260,7 @@ function Form({
                                     <SignatureCanvas
                                         penColor='black'
                                         canvasProps={{
+                                            id: servar.key,
                                             width: field.field_width,
                                             height: field.field_height,
                                             style: {

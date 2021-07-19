@@ -79,13 +79,32 @@ function adjustColor(color, amount) {
     );
 }
 
+const dataURLToFile = (dataURL, name) => {
+    const arr = dataURL.split(',');
+    const mime = arr[0].match(/:(.*?);/)[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+
+    while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+
+    return new File([u8arr], name, { type: mime });
+};
+
 const formatStepFields = (step, fieldValues, signatureRef) => {
     const formattedFields = {};
     step.servar_fields.forEach((field) => {
         const servar = field.servar;
         let value;
         if (servar.type === 'signature') {
-            value = signatureRef[servar.key].toDataURL('image/png');
+            value = signatureRef
+                ? dataURLToFile(
+                      signatureRef[servar.key].toDataURL('image/png'),
+                      `${servar.key}.png`
+                  )
+                : '';
         } else value = fieldValues[servar.key];
         formattedFields[servar.key] = {
             value,
@@ -333,7 +352,7 @@ function getFieldError(value, servar, signatureRef) {
                 missingVal = !value && servar.metadata?.must_check;
                 break;
             case 'signature':
-                missingVal = !signatureRef[servar.key].isEmpty();
+                missingVal = signatureRef[servar.key].isEmpty();
                 break;
             default:
                 missingVal = value === '';
@@ -381,6 +400,7 @@ function setFormElementError({
             ? Array.from(singleOrList)
             : [singleOrList];
     elements = elements.filter((e) => e);
+
     if (index !== null) elements = [elements[index]];
     elements.forEach((e) => e.setCustomValidity(message));
 }

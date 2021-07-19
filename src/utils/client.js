@@ -161,6 +161,8 @@ export default class Client {
             fileValue = servar.rich_file_upload;
         } else if ('rich_multi_file_upload' in servar) {
             fileValue = servar.rich_multi_file_upload;
+        } else if ('signature' in servar) {
+            fileValue = servar.signature;
         }
 
         if (!fileValue) {
@@ -207,9 +209,12 @@ export default class Client {
     // servars = [{key: <servarKey>, <type>: <value>}]
     async submitStep(servars) {
         const isFileServar = (servar) =>
-            ['file_upload', 'rich_file_upload', 'rich_multi_file_upload'].some(
-                (type) => type in servar
-            );
+            [
+                'file_upload',
+                'rich_file_upload',
+                'rich_multi_file_upload',
+                'signature'
+            ].some((type) => type in servar);
         const jsonServars = servars.filter((servar) => !isFileServar(servar));
         const jsonPromise = this._submitJSONData(jsonServars);
         const fileServars = servars.filter(isFileServar);
