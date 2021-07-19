@@ -79,12 +79,16 @@ function adjustColor(color, amount) {
     );
 }
 
-const formatStepFields = (step, fieldValues) => {
+const formatStepFields = (step, fieldValues, signatureRef) => {
     const formattedFields = {};
     step.servar_fields.forEach((field) => {
         const servar = field.servar;
+        let value;
+        if (servar.type === 'signature') {
+            value = signatureRef[servar.key].toDataURL('image/png');
+        } else value = fieldValues[servar.key];
         formattedFields[servar.key] = {
-            value: fieldValues[servar.key],
+            value,
             type: servar.type,
             displayText: servar.name
         };
@@ -313,23 +317,26 @@ function getFieldValue(field, values) {
  * Returns the error message for a field value if it's invalid.
  * Returns an empty string if it's valid.
  */
-function getFieldError(value, servar) {
+function getFieldError(value, servar, signatureRef) {
     // Check if value is missing when it's required
     if (servar.required) {
-        let missingVal = false;
+        let missingVal;
         switch (servar.type) {
             case 'select':
-                if (!value) missingVal = true;
+                missingVal = !value;
                 break;
             case 'file_upload':
-                if (!value) missingVal = true;
+                missingVal = !value;
                 break;
             case 'checkbox':
                 // eslint-disable-next-line camelcase
-                if (!value && servar.metadata?.must_check) missingVal = true;
+                missingVal = !value && servar.metadata?.must_check;
+                break;
+            case 'signature':
+                missingVal = !signatureRef[servar.key].isEmpty();
                 break;
             default:
-                if (value === '') missingVal = true;
+                missingVal = value === '';
                 break;
         }
         if (missingVal) return 'This is a required field';
