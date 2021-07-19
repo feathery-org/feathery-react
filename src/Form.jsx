@@ -5,6 +5,7 @@ import ReactForm from 'react-bootstrap/Form';
 import { SketchPicker } from 'react-color';
 import TagManager from 'react-gtm-module';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
+import SignatureCanvas from 'react-signature-canvas';
 import $script from 'scriptjs';
 
 import { BootstrapField, MaskedBootstrapField } from './components/Bootstrap';
@@ -97,6 +98,7 @@ function Form({
 
     const submitRef = useRef(null);
     const formRef = useRef(null);
+    const signatureRef = useRef({}).current;
 
     const repeatedRowCount = useMemo(
         () =>
@@ -308,8 +310,11 @@ function Form({
         }
     };
 
-    const getNewStep = async (newKey) => {
-        let newStep = steps[newKey];
+    const getNewStep = async (newKey, stepsArg, fieldValsArg) => {
+        stepsArg = stepsArg || steps;
+        fieldValsArg = fieldValsArg || fieldValues;
+
+        let newStep = stepsArg[newKey];
         let curDepth = 0;
         let maxDepth = 0;
         if (!displaySteps) {
@@ -331,13 +336,13 @@ function Form({
                 });
                 if (loadCond) {
                     newKey = loadCond.next_step_key;
-                    newStep = steps[newKey];
+                    newStep = stepsArg[newKey];
                 } else break;
             }
 
             [curDepth, maxDepth] = recurseDepth(
-                steps,
-                getOrigin(steps),
+                stepsArg,
+                getOrigin(stepsArg),
                 newKey
             );
             newStep = JSON.parse(JSON.stringify(newStep));
@@ -352,7 +357,10 @@ function Form({
             }
 
             if (typeof onLoad === 'function') {
-                const formattedFields = formatAllStepFields(steps, fieldValues);
+                const formattedFields = formatAllStepFields(
+                    stepsArg,
+                    fieldValsArg
+                );
                 const { userKey } = initInfo();
 
                 const integrationData = {};
@@ -364,12 +372,12 @@ function Form({
                     stepName: newKey,
                     previousStepName: activeStep?.key,
                     userId: userKey,
-                    lastStep: steps[newKey].next_conditions.length === 0,
+                    lastStep: stepsArg[newKey].next_conditions.length === 0,
                     setValues: (userVals) => {
-                        updateFieldValues(userVals, fieldValues);
+                        updateFieldValues(userVals, fieldValsArg);
                         client.submitCustom(userVals);
                     },
-                    setOptions: updateFieldOptions(steps, newStep),
+                    setOptions: updateFieldOptions(stepsArg, newStep),
                     integrationData
                 });
                 setRawActiveStep(newStep);
@@ -480,6 +488,7 @@ function Form({
     ]);
 
     useEffect(() => {
+        if (displaySteps) return;
         return steps
             ? history.listen(async () => {
                   const hashKey = location.hash.substr(1);
@@ -622,11 +631,15 @@ function Form({
             activeStep.servar_fields.forEach(
                 (field) => (servarMap[field.servar.key] = field.servar)
             );
-            const formattedFields = formatStepFields(activeStep, newFieldVals);
+            const formattedFields = formatStepFields(
+                activeStep,
+                newFieldVals,
+                signatureRef
+            );
 
             Object.entries(formattedFields).map(([fieldKey, { value }]) => {
                 const servar = servarMap[fieldKey];
-                const err = getFieldError(value, servar);
+                const err = getFieldError(value, servar, signatureRef);
                 setFormElementError({
                     formRef,
                     fieldKey,
@@ -1240,6 +1253,30 @@ function Form({
 
                     let controlElement;
                     switch (servar.type) {
+                        case 'signature':
+                            controlElement = (
+                                <>
+                                    {fieldLabel}
+                                    <SignatureCanvas
+                                        penColor='black'
+                                        canvasProps={{
+                                            width: field.field_width,
+                                            height: field.field_height,
+                                            style: {
+                                                backgroundColor: `#${field.background_color}`,
+                                                borderWidth: `${field.border_width}px`,
+                                                borderStyle: 'solid',
+                                                borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`
+                                            }
+                                        }}
+                                        ref={(ref) => {
+                                            signatureRef[servar.key] = ref;
+                                        }}
+                                    />
+                                </>
+                            );
+                            break;
                         case 'file_upload':
                             controlElement = (
                                 <>
