@@ -78,6 +78,7 @@ function Form({
     const [rawActiveStep, setRawActiveStep] = useState(
         steps ? steps[displayStepKey] : null
     );
+    const [stepKey, setStepKey] = useState('');
     const [fieldValues, setFieldValues] = useState(initialValues);
 
     const [finishConfig, setFinishConfig] = useState({
@@ -492,10 +493,14 @@ function Form({
         return steps
             ? history.listen(async () => {
                   const hashKey = location.hash.substr(1);
-                  if (hashKey in steps) await getNewStep(hashKey);
+                  if (hashKey in steps) setStepKey(hashKey);
               })
             : undefined;
     }, [steps]);
+
+    useEffect(() => {
+        if (stepKey) getNewStep(stepKey);
+    }, [stepKey]);
 
     if (!activeStep) return null;
     if (finishConfig.finished) {
