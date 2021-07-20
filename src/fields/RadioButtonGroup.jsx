@@ -15,6 +15,8 @@ function RadioButtonGroup({
     const [otherSelect, setOtherSelect] = useState({});
 
     const servar = field.servar;
+    const otherChecked =
+        (otherSelect[servar.key] || fieldVal) && fieldVal === otherVal;
     return (
         <>
             {fieldLabel}
@@ -49,10 +51,7 @@ function RadioButtonGroup({
                         type='radio'
                         id={`${servar.key}-`}
                         label='Other'
-                        checked={
-                            (otherSelect[servar.key] || fieldVal) &&
-                            fieldVal === otherVal
-                        }
+                        checked={otherChecked}
                         onChange={(e) => {
                             setOtherSelect({
                                 ...otherSelect,
@@ -101,6 +100,7 @@ function RadioButtonGroup({
                         onClick={onClick}
                         maxLength={servar.max_length}
                         minLength={servar.min_length}
+                        required={otherChecked}
                     />
                 </div>
             )}

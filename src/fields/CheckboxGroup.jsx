@@ -49,6 +49,7 @@ function CheckboxGroup({
     hoverCSS
 }) {
     const servar = field.servar;
+    const otherChecked = fieldVal.includes(otherVal);
     return (
         <>
             {fieldLabel}
@@ -93,7 +94,7 @@ function CheckboxGroup({
                         name={otherVal}
                         key={otherVal}
                         label='Other'
-                        checked={fieldVal.includes(otherVal)}
+                        checked={otherChecked}
                         onChange={(e) => {
                             const newValues = handleCheckboxGroupChange(
                                 e,
@@ -143,6 +144,7 @@ function CheckboxGroup({
                         onClick={onClick}
                         maxLength={servar.max_length}
                         minLength={servar.min_length}
+                        required={otherChecked}
                     />
                 </div>
             )}
