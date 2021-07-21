@@ -61,7 +61,7 @@ function ButtonElement({
             return;
         }
 
-        if (field.link === 'submit') {
+        if (field.link === 'submit' && field.show_spinner_on_submit) {
             setShowSpinner(true);
         }
 
