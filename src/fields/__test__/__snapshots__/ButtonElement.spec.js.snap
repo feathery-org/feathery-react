@@ -5,7 +5,7 @@ exports[`ButtonElement renders a button with custom styles 1`] = `
   className="css-zga5aq-ButtonElement"
 >
   <button
-    className="css-1vn53o3-ButtonElement btn btn-primary"
+    className="css-xtp43x-ButtonElement btn btn-primary"
     disabled={false}
     onClick={[Function]}
     style={
@@ -57,7 +57,7 @@ exports[`ButtonElement renders a button with plain text 1`] = `
   className="css-zga5aq-ButtonElement"
 >
   <button
-    className="css-1vn53o3-ButtonElement btn btn-primary"
+    className="css-xtp43x-ButtonElement btn btn-primary"
     disabled={false}
     onClick={[Function]}
     style={
@@ -105,7 +105,7 @@ exports[`ButtonElement renders an empty Button element 1`] = `
   className="css-zga5aq-ButtonElement"
 >
   <button
-    className="css-1vn53o3-ButtonElement btn btn-primary"
+    className="css-xtp43x-ButtonElement btn btn-primary"
     disabled={false}
     onClick={[Function]}
     style={

@@ -22,7 +22,20 @@ function ButtonElement({
 
     const delta = new Delta(field.text_formatted);
 
-    const hoverStyles = {};
+    const hoverStyles =
+        field.link === 'none'
+            ? {}
+            : {
+                  backgroundColor: `${adjustColor(
+                      field.button_color,
+                      -30
+                  )} !important`,
+                  borderColor: `${adjustColor(
+                      field.button_color,
+                      -30
+                  )} !important`,
+                  transition: 'background 0.3s !important'
+              };
     const selectedStyles = {};
     if (field.hover_border_color)
         hoverStyles.borderColor = `#${field.hover_border_color} !important`;
@@ -124,24 +137,10 @@ function ButtonElement({
                 }}
                 css={{
                     '&:active': selectedStyles,
-                    '&:hover': hoverStyles,
+                    '&:hover:enabled': hoverStyles,
                     '&:disabled': {
                         cursor: 'default !important'
-                    },
-                    '&:hover:enabled':
-                        field.link !== 'none'
-                            ? {
-                                  backgroundColor: `${adjustColor(
-                                      field.button_color,
-                                      -30
-                                  )} !important`,
-                                  borderColor: `${adjustColor(
-                                      field.button_color,
-                                      -30
-                                  )} !important`,
-                                  transition: 'background 0.3s !important'
-                              }
-                            : {}
+                    }
                 }}
                 disabled={field.link === 'none'}
                 onClick={buttonOnClick}
