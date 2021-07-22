@@ -53,13 +53,13 @@ function CheckboxGroup({
     return (
         <>
             {fieldLabel}
-            {servar.metadata.options.map((opt) => {
+            {servar.metadata.options.map((opt, i) => {
                 return (
                     <ReactForm.Check
                         type='checkbox'
                         id={`${servar.key}-${opt}`}
+                        key={`${servar.key}-${i}`}
                         name={opt}
-                        key={opt}
                         label={opt}
                         checked={fieldVal.includes(opt)}
                         onChange={(e) => {
@@ -91,8 +91,8 @@ function CheckboxGroup({
                     <ReactForm.Check
                         type='checkbox'
                         id={`${servar.key}-`}
+                        key={`${servar.key}-`}
                         name={otherVal}
-                        key={otherVal}
                         label='Other'
                         checked={otherChecked}
                         onChange={(e) => {
