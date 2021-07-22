@@ -20,18 +20,18 @@ function RadioButtonGroup({
     return (
         <>
             {fieldLabel}
-            {servar.metadata.options.map((opt) => {
+            {servar.metadata.options.map((opt, i) => {
                 return (
                     <ReactForm.Check
                         type='radio'
                         id={`${servar.key}-${opt}`}
+                        key={`${servar.key}-${i}`}
                         label={opt}
                         checked={fieldVal === opt}
                         required={servar.required}
                         onChange={onChange}
                         onClick={onClick}
                         value={opt}
-                        key={opt}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -50,6 +50,7 @@ function RadioButtonGroup({
                     <ReactForm.Check
                         type='radio'
                         id={`${servar.key}-`}
+                        key={`${servar.key}-`}
                         label='Other'
                         checked={otherChecked}
                         onChange={(e) => {
@@ -61,7 +62,6 @@ function RadioButtonGroup({
                         }}
                         onClick={onClick}
                         value={otherVal || ''}
-                        key={otherVal}
                         style={{
                             display: 'flex',
                             alignItems: 'center'

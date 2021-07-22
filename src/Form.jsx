@@ -1570,6 +1570,7 @@ function Form({
                         case 'multiselect':
                             controlElement = (
                                 <CheckboxGroup
+                                    key={reactFriendlyKey(field)}
                                     field={field}
                                     fieldLabel={fieldLabel}
                                     fieldVal={fieldVal}
@@ -1590,6 +1591,7 @@ function Form({
                         case 'select':
                             controlElement = (
                                 <RadioButtonGroup
+                                    key={reactFriendlyKey(field)}
                                     field={field}
                                     fieldLabel={fieldLabel}
                                     fieldVal={fieldVal}
