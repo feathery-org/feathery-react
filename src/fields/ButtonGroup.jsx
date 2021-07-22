@@ -61,6 +61,7 @@ function ButtonGroup({
                                 backgroundColor: `#${field.background_color}`,
                                 border: `${field.border_width}px solid`,
                                 borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                borderRadius: `${field.border_radius}px`,
                                 marginBottom: `${field.padding_bottom}px`,
                                 marginTop: `${field.padding_top}px`,
                                 marginLeft: `${field.padding_left}px`,

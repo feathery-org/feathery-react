@@ -1273,6 +1273,7 @@ function Form({
                                                 borderWidth: `${field.border_width}px`,
                                                 borderStyle: 'solid',
                                                 borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                                borderRadius: `${field.border_radius}px`,
                                                 boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`
                                             }
                                         }}
@@ -1666,7 +1667,8 @@ function Form({
                                             background: `#${fieldVal}`,
                                             cursor: 'pointer',
                                             border: `${field.border_width}px solid`,
-                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`
+                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                                            borderRadius: `${field.border_radius}px`
                                         }}
                                         onClick={(e) => {
                                             onClick(e);
