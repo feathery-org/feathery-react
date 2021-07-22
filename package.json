@@ -71,7 +71,7 @@
     "@fingerprintjs/fingerprintjs": "^3.1.0",
     "@material-ui/core": "^4.11.3",
     "quill-delta": "^4.2.2",
-    "react-bootstrap": "^1.4.0",
+    "react-bootstrap": "^1.6.1",
     "react-color": "^2.19.3",
     "react-gtm-module": "^2.0.11",
     "react-icons": "^4.2.0",

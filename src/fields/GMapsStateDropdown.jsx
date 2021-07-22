@@ -23,8 +23,17 @@ function GMapsStateDropdown({
                     backgroundColor: `#${field.background_color}`,
                     border: `${field.border_width}px solid`,
                     borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
+                    borderRadius: `${field.border_radius}px`,
                     fontSize: `${field.font_size}px`,
-                    boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`
+                    boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
+                    color: `#${
+                        fieldVal
+                            ? field.font_color
+                            : field.metadata.placeholder_color
+                    }`,
+                    fontStyle: field.metadata.placeholder_italic
+                        ? 'italic'
+                        : 'normal'
                 }}
                 css={{
                     '&:focus': {
@@ -39,7 +48,6 @@ function GMapsStateDropdown({
                 required={servar.required}
                 onChange={onChange}
                 onClick={onClick}
-                custom
             >
                 <option
                     key=''
