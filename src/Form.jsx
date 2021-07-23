@@ -289,19 +289,20 @@ function Form({
             });
 
             if (firebase.auth().isSignInWithEmailLink(window.location.href)) {
-                const email = window.localStorage.getItem(
+                const authEmail = window.localStorage.getItem(
                     'featheryFirebaseEmail'
                 );
-                if (email) {
+                if (authEmail) {
                     return await firebase
                         .auth()
-                        .signInWithEmailLink(email, window.location.href)
+                        .signInWithEmailLink(authEmail, window.location.href)
                         .then(async (result) => {
-                            const authId = result.user.uid;
+                            const authToken = await result.user.getIdToken();
                             return await clientArg
                                 .submitAuthInfo({
-                                    authId,
-                                    authEmail: email
+                                    authId: result.user.uid,
+                                    authToken,
+                                    authEmail
                                 })
                                 .then((session) => {
                                     return session;
@@ -368,6 +369,9 @@ function Form({
                 const integrationData = {};
                 if (initState.authId) {
                     integrationData.firebaseAuthId = initState.authId;
+                }
+                if (initState.authToken) {
+                    integrationData.firebaseAuthToken = initState.authToken;
                 }
                 await onLoad({
                     fields: formattedFields,
@@ -834,9 +838,11 @@ function Form({
                         .then(async (result) => {
                             // User signed in successfully.
                             const authId = result.user.uid;
+                            const authToken = await result.user.getIdToken();
                             return await client
                                 .submitAuthInfo({
                                     authId,
+                                    authToken,
                                     authPhone: window.firebasePhoneNumber
                                 })
                                 .then((session) => {
