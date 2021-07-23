@@ -8,11 +8,11 @@ import { alignmentMap } from '../utils/formHelperFunctions';
  * It just models a block of text in a form.
  */
 function TextElement({ field, fieldValues, conditions, submit }) {
-    const elementKey = field.text;
+    const elementID = field.id;
     let delta = new Delta(field.text_formatted);
 
     conditions.forEach((cond) => {
-        if (cond.element_type === 'text' && cond.element_key === elementKey) {
+        if (cond.element_type === 'text' && cond.element_id === elementID) {
             const start = cond.metadata.start || 0;
             const end = cond.metadata.end || field.text.length;
             delta = delta.compose(
@@ -28,7 +28,7 @@ function TextElement({ field, fieldValues, conditions, submit }) {
         field,
         submit,
         repeat,
-        elementKey
+        elementID
     });
     const style = {
         gridColumnStart: field.column_index + 1,

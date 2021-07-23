@@ -83,31 +83,34 @@ export default function GooglePlaces({
                     }
                 });
 
-                const addrFieldValues = {};
+                const keyIDMap = {};
+                const addrValues = {};
                 Object.values(steps).forEach((step) => {
                     step.servar_fields.forEach((field) => {
                         const servar = field.servar;
                         if (servar.type in addressMap) {
-                            addrFieldValues[servar.key] =
-                                addressMap[servar.type];
+                            addrValues[servar.key] = addressMap[servar.type];
+                            keyIDMap[servar.key] = field.id;
                         } else if (mapFieldTypes.has(servar.type)) {
-                            addrFieldValues[servar.key] = '';
+                            addrValues[servar.key] = '';
+                            keyIDMap[servar.key] = field.id;
                         }
                     });
                 });
 
-                if (Object.keys(addrFieldValues).length > 0) {
+                if (Object.keys(addrValues).length > 0) {
                     let newValues;
                     // We set noChange to true to suppress onChange events from individual fields (because GMaps updates multiple fields)
                     // Note: Re-rendering of form happens immediately after setting noChange and fieldValues
                     setNoChange(true);
                     setFieldValues((fieldValues) => {
-                        newValues = { ...fieldValues, ...addrFieldValues };
+                        newValues = { ...fieldValues, ...addrValues };
                         return newValues;
                     });
                     setNoChange(false);
                     onChange(
-                        Object.keys(addrFieldValues),
+                        Object.values(keyIDMap),
+                        Object.keys(keyIDMap),
                         newValues,
                         'googleMaps',
                         {

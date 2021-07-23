@@ -165,6 +165,17 @@ const getDefaultFieldValues = (steps) => {
     return fieldValues;
 };
 
+const lookupElementKey = (step, elementID, elementType) => {
+    if (elementType === 'button') {
+        return step.buttons.filter((button) => button.id === elementID)[0].text;
+    } else if (elementType === 'text') {
+        return step.texts.filter((text) => text.id === elementID)[0].text;
+    } else if (elementType === 'field') {
+        return step.servar_fields.filter((field) => field.id === elementID)[0]
+            .servar.key;
+    } else return '';
+};
+
 const nextStepKey = (
     nextConditions,
     metadata,
@@ -182,7 +193,7 @@ const nextStepKey = (
         .filter(
             (cond) =>
                 cond.element_type === metadata.elementType &&
-                metadata.elementKeys.includes(cond.element_key)
+                metadata.elementIDs.includes(cond.element_id)
         )
         .forEach((cond) => {
             if (
@@ -451,6 +462,7 @@ export {
     getABVariant,
     getDefaultFieldValue,
     getDefaultFieldValues,
+    lookupElementKey,
     nextStepKey,
     getOrigin,
     recurseDepth,

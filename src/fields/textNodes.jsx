@@ -8,7 +8,7 @@ const generateNodes = ({
     field,
     submit,
     repeat,
-    elementKey
+    elementID
 }) => {
     return delta.map((op, i) => {
         // replace placeholder variables and populate newlines
@@ -42,7 +42,7 @@ const generateNodes = ({
                         false,
                         {
                             elementType: 'text',
-                            elementKeys: [elementKey],
+                            elementIDs: [elementID],
                             trigger: 'click',
                             start: attrs.start,
                             end: attrs.end
