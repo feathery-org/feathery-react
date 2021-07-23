@@ -79,7 +79,7 @@ export default class Client {
         });
     }
 
-    submitAuthInfo({ authId, authPhone = '', authEmail = '' }) {
+    submitAuthInfo({ authId, authToken = '', authPhone = '', authEmail = '' }) {
         const { apiKey, userKey } = initInfo();
 
         const data = {
@@ -103,6 +103,7 @@ export default class Client {
         return fetch(url, options).then((response) => {
             this._checkResponseSuccess(response);
             initState.authId = authId;
+            if (authToken) initState.authToken = authToken;
             if (authPhone) initState.authPhoneNumber = authPhone;
             if (authEmail) initState.authEmail = authEmail;
             return response.json();
