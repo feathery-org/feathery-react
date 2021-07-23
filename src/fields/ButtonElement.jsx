@@ -17,11 +17,6 @@ function ButtonElement({
 }) {
     const [showSpinner, setShowSpinner] = useState(false);
 
-    const elementKey = field.text;
-    const repeat = field.repeat || 0;
-
-    const delta = new Delta(field.text_formatted);
-
     const hoverStyles =
         field.link === 'none'
             ? {}
@@ -50,6 +45,9 @@ function ButtonElement({
     if (field.selected_font_color)
         selectedStyles.color = `#${field.selected_font_color} !important`;
 
+    const elementKey = field.text;
+    const repeat = field.repeat || 0;
+    const delta = new Delta(field.text_formatted);
     const nodes = generateNodes({
         delta,
         fieldValues,
@@ -147,6 +145,16 @@ function ButtonElement({
             >
                 <div style={{ display: 'flex', position: 'relative' }}>
                     {nodes}
+                    {field.image_url && (
+                        <img
+                            src={field.image_url}
+                            style={{
+                                objectFit: 'contain',
+                                width: '100%',
+                                height: '100%'
+                            }}
+                        />
+                    )}
                     {showSpinner && (
                         <Spinner
                             animation='border'
