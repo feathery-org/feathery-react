@@ -9,8 +9,6 @@ import { alignmentMap } from '../utils/formHelperFunctions';
  */
 function TextElement({ field, fieldValues, conditions, submit }) {
     const elementKey = field.text;
-    const repeat = field.repeat || 0;
-
     let delta = new Delta(field.text_formatted);
 
     conditions.forEach((cond) => {
@@ -23,6 +21,7 @@ function TextElement({ field, fieldValues, conditions, submit }) {
         }
     });
 
+    const repeat = field.repeat || 0;
     const nodes = generateNodes({
         delta,
         fieldValues,
