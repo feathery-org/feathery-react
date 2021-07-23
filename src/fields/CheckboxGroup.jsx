@@ -70,7 +70,7 @@ function CheckboxGroup({
                                 fieldValues,
                                 updateFieldValues
                             );
-                            fieldOnChange([servar.key], newValues);
+                            fieldOnChange([field.id], [servar.key], newValues);
                         }}
                         onClick={onClick}
                         style={{
@@ -103,7 +103,7 @@ function CheckboxGroup({
                                 fieldValues,
                                 updateFieldValues
                             );
-                            fieldOnChange([servar.key], newValues);
+                            fieldOnChange([field.id], [servar.key], newValues);
                         }}
                         onClick={onClick}
                         style={{
@@ -140,7 +140,7 @@ function CheckboxGroup({
                             const newValues = handleOtherStateChange(otherVal)(
                                 e
                             );
-                            fieldOnChange([servar.key], newValues);
+                            fieldOnChange([field.id], [servar.key], newValues);
                         }}
                         onClick={onClick}
                         maxLength={servar.max_length}

@@ -45,7 +45,7 @@ function ButtonElement({
     if (field.selected_font_color)
         selectedStyles.color = `#${field.selected_font_color} !important`;
 
-    const elementKey = field.text;
+    const elementID = field.id;
     const repeat = field.repeat || 0;
     const delta = new Delta(field.text_formatted);
     const nodes = generateNodes({
@@ -54,7 +54,7 @@ function ButtonElement({
         field,
         submit,
         repeat,
-        elementKey
+        elementID
     });
 
     async function buttonOnClick() {
@@ -84,7 +84,7 @@ function ButtonElement({
                 field.link === 'submit',
                 {
                     elementType: 'button',
-                    elementKeys: [elementKey],
+                    elementIDs: [elementID],
                     trigger: 'click'
                 },
                 repeat
