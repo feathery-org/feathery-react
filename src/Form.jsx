@@ -9,7 +9,6 @@ import SignatureCanvas from 'react-signature-canvas';
 import $script from 'scriptjs';
 
 import { BootstrapField, MaskedBootstrapField } from './components/Bootstrap';
-import { MuiField, MuiProgress } from './components/MaterialUI';
 import Client from './utils/client';
 import {
     formatAllStepFields,
@@ -1012,51 +1011,36 @@ function Form({
     let progressBarElements = null;
     if (activeStep.progress_bar) {
         const pb = activeStep.progress_bar;
-        if (activeStep.component_type === 'bootstrap') {
-            const percent =
-                pb.progress || Math.round((100 * curDepth) / (maxDepth + 1));
-            progressBarElements = [
-                <ProgressBar
-                    key='progress'
-                    style={{
-                        height: '0.4rem',
-                        width: `${pb.bar_width}%`,
-                        maxWidth: '100%'
-                    }}
-                    css={{
-                        '.progress-bar': {
-                            margin: '0 0 0 0 !important',
-                            backgroundColor: `#${pb.bar_color} !important`
-                        }
-                    }}
-                    now={percent}
-                />
-            ];
-            const completionPercentage = `${percent}% completed`;
-            if (pb.percent_text_layout === 'top') {
-                progressBarElements.splice(0, 0, completionPercentage);
-            } else if (pb.percent_text_layout === 'bottom') {
-                progressBarElements.splice(1, 0, completionPercentage);
-            }
-        } else {
-            progressBarElements = [
-                <MuiProgress
-                    key='progress'
-                    curStep={curDepth}
-                    maxStep={maxDepth + 1}
-                    progressBar={pb}
-                />
-            ];
+        const percent =
+            pb.progress || Math.round((100 * curDepth) / (maxDepth + 1));
+        progressBarElements = [
+            <ProgressBar
+                key='progress'
+                style={{
+                    height: '0.4rem',
+                    width: `${pb.bar_width}%`,
+                    maxWidth: '100%'
+                }}
+                css={{
+                    '.progress-bar': {
+                        margin: '0 0 0 0 !important',
+                        backgroundColor: `#${pb.bar_color} !important`
+                    }
+                }}
+                now={percent}
+            />
+        ];
+        const completionPercentage = `${percent}% completed`;
+        if (pb.percent_text_layout === 'top') {
+            progressBarElements.splice(0, 0, completionPercentage);
+        } else if (pb.percent_text_layout === 'bottom') {
+            progressBarElements.splice(1, 0, completionPercentage);
         }
     }
 
     return (
         <ReactForm
-            className={
-                activeStep.component_type === 'bootstrap'
-                    ? `bootstrap-iso ${className}`
-                    : className
-            }
+            className={`bootstrap-iso ${className}`}
             ref={formRef}
             style={{
                 backgroundColor: `#${activeStep.default_background_color}`,
@@ -1444,43 +1428,25 @@ function Form({
                             );
                             break;
                         case 'email':
-                            controlElement =
-                                activeStep.component_type === 'bootstrap' ? (
-                                    <BootstrapField
-                                        label={fieldLabel}
-                                        field={field}
-                                        selectStyle={select}
-                                        hoverStyle={hover}
-                                        type='email'
-                                        fieldValue={fieldVal}
-                                        onChange={(e) => {
-                                            fieldOnChange(
-                                                [field.id],
-                                                [servar.key],
-                                                handleChange(e, index)
-                                            );
-                                        }}
-                                        onClick={onClick}
-                                        pattern={emailPatternStr}
-                                    />
-                                ) : (
-                                    <MuiField
-                                        field={field}
-                                        selectStyle={select}
-                                        hoverStyle={hover}
-                                        type='email'
-                                        fieldValue={fieldVal}
-                                        onChange={(e) => {
-                                            fieldOnChange(
-                                                [field.id],
-                                                [servar.key],
-                                                handleChange(e, index)
-                                            );
-                                        }}
-                                        onClick={onClick}
-                                        pattern={emailPatternStr}
-                                    />
-                                );
+                            controlElement = (
+                                <BootstrapField
+                                    label={fieldLabel}
+                                    field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
+                                    type='email'
+                                    fieldValue={fieldVal}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            [field.id],
+                                            [servar.key],
+                                            handleChange(e, index)
+                                        );
+                                    }}
+                                    onClick={onClick}
+                                    pattern={emailPatternStr}
+                                />
+                            );
                             break;
                         case 'pin_input':
                             controlElement = (
@@ -1521,6 +1487,7 @@ function Form({
                                         }
                                     )}
                                     unmask
+                                    fieldValue={fieldVal}
                                     value={fieldVal}
                                     onClick={onClick}
                                     onAccept={(value) => {
@@ -1549,6 +1516,7 @@ function Form({
                                     key={reactFriendlyKey(field)}
                                     mask='+1 (000) 000-0000'
                                     unmask
+                                    fieldValue={fieldVal}
                                     value={fieldVal}
                                     onClick={onClick}
                                     onAccept={(value) => {
@@ -1576,6 +1544,7 @@ function Form({
                                     key={reactFriendlyKey(field)}
                                     mask='000 - 00 - 0000'
                                     unmask
+                                    fieldValue={fieldVal}
                                     value={fieldVal}
                                     onClick={onClick}
                                     onAccept={(value) => {
@@ -1666,6 +1635,7 @@ function Form({
                                     signed={false}
                                     thousandsSeparator=','
                                     unmask
+                                    fieldValue={fieldVal}
                                     value={fieldVal.toString()}
                                     onClick={onClick}
                                     onAccept={(value) => {
@@ -1746,129 +1716,78 @@ function Form({
                             );
                             break;
                         case 'text_area':
-                            controlElement =
-                                activeStep.component_type === 'bootstrap' ? (
-                                    <BootstrapField
-                                        label={fieldLabel}
-                                        field={field}
-                                        selectStyle={select}
-                                        hoverStyle={hover}
-                                        type='textarea'
-                                        fieldValue={fieldVal}
-                                        onChange={(e) => {
-                                            fieldOnChange(
-                                                [field.id],
-                                                [servar.key],
-                                                handleChange(e, index)
-                                            );
-                                        }}
-                                        onClick={onClick}
-                                        rows={metadata.num_rows}
-                                    />
-                                ) : (
-                                    <MuiField
-                                        field={field}
-                                        selectStyle={select}
-                                        hoverStyle={hover}
-                                        type='text'
-                                        fieldValue={fieldVal}
-                                        onChange={(e) => {
-                                            fieldOnChange(
-                                                [field.id],
-                                                [servar.key],
-                                                handleChange(e, index)
-                                            );
-                                        }}
-                                        onClick={onClick}
-                                        multiline
-                                    />
-                                );
+                            controlElement = (
+                                <BootstrapField
+                                    label={fieldLabel}
+                                    field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
+                                    type='textarea'
+                                    fieldValue={fieldVal}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            [field.id],
+                                            [servar.key],
+                                            handleChange(e, index)
+                                        );
+                                    }}
+                                    onClick={onClick}
+                                    rows={metadata.num_rows}
+                                />
+                            );
                             break;
                         case 'url':
-                            controlElement =
-                                activeStep.component_type === 'bootstrap' ? (
-                                    <BootstrapField
-                                        label={fieldLabel}
-                                        field={field}
-                                        selectStyle={select}
-                                        hoverStyle={hover}
-                                        type='url'
-                                        fieldValue={fieldVal}
-                                        onChange={(e) => {
-                                            fieldOnChange(
-                                                [field.id],
-                                                [servar.key],
-                                                handleChange(e, index)
-                                            );
-                                        }}
-                                        onClick={onClick}
-                                    />
-                                ) : (
-                                    <MuiField
-                                        field={field}
-                                        selectStyle={select}
-                                        hoverStyle={hover}
-                                        type='url'
-                                        fieldValue={fieldVal}
-                                        onChange={(e) => {
-                                            fieldOnChange(
-                                                [field.id],
-                                                [servar.key],
-                                                handleChange(e, index)
-                                            );
-                                        }}
-                                        onClick={onClick}
-                                    />
-                                );
+                            controlElement = (
+                                <BootstrapField
+                                    label={fieldLabel}
+                                    field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
+                                    type='url'
+                                    fieldValue={fieldVal}
+                                    onChange={(e) => {
+                                        fieldOnChange(
+                                            [field.id],
+                                            [servar.key],
+                                            handleChange(e, index)
+                                        );
+                                    }}
+                                    onClick={onClick}
+                                />
+                            );
                             break;
                         default:
-                            controlElement =
-                                activeStep.component_type === 'bootstrap' ? (
-                                    <MaskedBootstrapField
-                                        id={servar.key}
-                                        key={reactFriendlyKey(field)}
-                                        mask={
-                                            servar.metadata.only_alpha
-                                                ? /^[a-z0-9]*$/i
-                                                : /.*/
-                                        }
-                                        unmask
-                                        value={fieldVal}
-                                        onClick={onClick}
-                                        onAccept={(value) => {
-                                            fieldOnChange(
-                                                [field.id],
-                                                [servar.key],
-                                                handleValueChange(
-                                                    value,
-                                                    servar.key,
-                                                    index
-                                                )
-                                            );
-                                        }}
-                                        label={fieldLabel}
-                                        field={field}
-                                        selectStyle={select}
-                                        hoverStyle={hover}
-                                        type='text'
-                                    />
-                                ) : (
-                                    <MuiField
-                                        field={field}
-                                        selectStyle={select}
-                                        hoverStyle={hover}
-                                        type='text'
-                                        fieldValue={fieldVal}
-                                        onChange={(e) => {
-                                            fieldOnChange(
-                                                [field.id],
-                                                [servar.key],
-                                                handleChange(e, index)
-                                            );
-                                        }}
-                                        onClick={onClick}
-                                    />
-                                );
+                            controlElement = (
+                                <MaskedBootstrapField
+                                    id={servar.key}
+                                    key={reactFriendlyKey(field)}
+                                    mask={
+                                        servar.metadata.only_alpha
+                                            ? /^[a-z0-9]*$/i
+                                            : /.*/
+                                    }
+                                    unmask
+                                    fieldValue={fieldVal}
+                                    value={fieldVal}
+                                    onClick={onClick}
+                                    onAccept={(value) => {
+                                        fieldOnChange(
+                                            [field.id],
+                                            [servar.key],
+                                            handleValueChange(
+                                                value,
+                                                servar.key,
+                                                index
+                                            )
+                                        );
+                                    }}
+                                    label={fieldLabel}
+                                    field={field}
+                                    selectStyle={select}
+                                    hoverStyle={hover}
+                                    type='text'
+                                />
+                            );
                     }
                     return (
                         <div
