@@ -35,13 +35,13 @@ function BootstrapField({
         const minFontSize = Math.min(field.font_size, 10);
         placeholderCSS = {
             top: 0,
-            marginTop: `${minFontSize}px`,
+            marginTop: `${minFontSize / 2}px`,
             fontSize: `${minFontSize}px`
         };
         if (metadata.selected_placeholder_color) {
             placeholderActiveCSS.color = `#${metadata.selected_placeholder_color}`;
         }
-        inputPlaceholderCSS.paddingTop = `${field.field_height / 2}${
+        inputPlaceholderCSS.paddingTop = `${field.field_height / 3}${
             field.field_height_unit
         }`;
     }
@@ -49,7 +49,14 @@ function BootstrapField({
     return (
         <>
             {label}
-            <div style={{ position: 'relative' }}>
+            <div
+                style={{
+                    position: 'relative',
+                    height: `${field.field_height}${field.field_height_unit}`,
+                    width: `${field.field_width}${field.field_width_unit}`,
+                    maxWidth: '100%'
+                }}
+            >
                 <ReactForm.Control
                     pattern={pattern}
                     style={{
