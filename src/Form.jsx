@@ -8,7 +8,11 @@ import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import $script from 'scriptjs';
 
-import { BootstrapField, MaskedBootstrapField } from './components/Bootstrap';
+import {
+    BootstrapField,
+    MaskedBootstrapField,
+    getMaskProps
+} from './components/Bootstrap';
 import Client from './utils/client';
 import {
     formatAllStepFields,
@@ -100,6 +104,7 @@ function Form({
     const submitRef = useRef(null);
     const formRef = useRef(null);
     const signatureRef = useRef({}).current;
+    const maskedRef = useRef({}).current;
 
     const repeatedRowCount = useMemo(
         () =>
@@ -1471,101 +1476,6 @@ function Form({
                                 />
                             );
                             break;
-                        case 'login':
-                            controlElement = (
-                                <MaskedBootstrapField
-                                    key={reactFriendlyKey(field)}
-                                    mask={servar.metadata.login_methods.map(
-                                        (method) => {
-                                            return {
-                                                method,
-                                                mask:
-                                                    method === 'phone'
-                                                        ? '(000) 000-0000'
-                                                        : /.+/
-                                            };
-                                        }
-                                    )}
-                                    unmask
-                                    fieldValue={fieldVal}
-                                    value={fieldVal}
-                                    onClick={onClick}
-                                    onAccept={(value) => {
-                                        if (value === fieldVal) return;
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            handleValueChange(
-                                                value,
-                                                servar.key,
-                                                index
-                                            )
-                                        );
-                                    }}
-                                    label={fieldLabel}
-                                    field={field}
-                                    selectStyle={select}
-                                    hoverStyle={hover}
-                                    type='text'
-                                />
-                            );
-                            break;
-                        case 'phone_number':
-                            controlElement = (
-                                <MaskedBootstrapField
-                                    key={reactFriendlyKey(field)}
-                                    mask='+1 (000) 000-0000'
-                                    unmask
-                                    fieldValue={fieldVal}
-                                    value={fieldVal}
-                                    onClick={onClick}
-                                    onAccept={(value) => {
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            handleValueChange(
-                                                value,
-                                                servar.key,
-                                                index
-                                            )
-                                        );
-                                    }}
-                                    label={fieldLabel}
-                                    field={field}
-                                    selectStyle={select}
-                                    hoverStyle={hover}
-                                    type='text'
-                                />
-                            );
-                            break;
-                        case 'ssn':
-                            controlElement = (
-                                <MaskedBootstrapField
-                                    key={reactFriendlyKey(field)}
-                                    mask='000 - 00 - 0000'
-                                    unmask
-                                    fieldValue={fieldVal}
-                                    value={fieldVal}
-                                    onClick={onClick}
-                                    onAccept={(value) => {
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            handleValueChange(
-                                                value,
-                                                servar.key,
-                                                index
-                                            )
-                                        );
-                                    }}
-                                    label={fieldLabel}
-                                    field={field}
-                                    selectStyle={select}
-                                    hoverStyle={hover}
-                                    type='text'
-                                />
-                            );
-                            break;
                         case 'multiselect':
                             controlElement = (
                                 <CheckboxGroup
@@ -1613,47 +1523,6 @@ function Form({
                                     onClick={onClick}
                                     selectCSS={select}
                                     hoverCSS={hover}
-                                />
-                            );
-                            break;
-                        case 'integer_field':
-                            controlElement = (
-                                <MaskedBootstrapField
-                                    key={reactFriendlyKey(field)}
-                                    mask={
-                                        servar.format === 'currency'
-                                            ? '$num'
-                                            : 'num'
-                                    }
-                                    blocks={{
-                                        num: {
-                                            mask: Number,
-                                            thousandsSeparator: ','
-                                        }
-                                    }}
-                                    scale={0}
-                                    signed={false}
-                                    thousandsSeparator=','
-                                    unmask
-                                    fieldValue={fieldVal}
-                                    value={fieldVal.toString()}
-                                    onClick={onClick}
-                                    onAccept={(value) => {
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            handleValueChange(
-                                                value,
-                                                servar.key,
-                                                index
-                                            )
-                                        );
-                                    }}
-                                    label={fieldLabel}
-                                    field={field}
-                                    selectStyle={select}
-                                    hoverStyle={hover}
-                                    type='text'
                                 />
                             );
                             break;
@@ -1759,16 +1628,10 @@ function Form({
                         default:
                             controlElement = (
                                 <MaskedBootstrapField
-                                    id={servar.key}
                                     key={reactFriendlyKey(field)}
-                                    mask={
-                                        servar.metadata.only_alpha
-                                            ? /^[a-z0-9]*$/i
-                                            : /.*/
-                                    }
+                                    {...getMaskProps(servar, fieldVal)}
                                     unmask
                                     fieldValue={fieldVal}
-                                    value={fieldVal}
                                     onClick={onClick}
                                     onAccept={(value) => {
                                         fieldOnChange(
@@ -1786,6 +1649,10 @@ function Form({
                                     selectStyle={select}
                                     hoverStyle={hover}
                                     type='text'
+                                    ref={(r) => (maskedRef[servar.key] = r)}
+                                    fieldMask={
+                                        maskedRef[servar.key]?.maskRef?._value
+                                    }
                                 />
                             );
                     }

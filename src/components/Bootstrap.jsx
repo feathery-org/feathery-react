@@ -8,6 +8,7 @@ function BootstrapField({
     selectStyle,
     hoverStyle,
     type,
+    fieldMask,
     fieldValue,
     onChange,
     onClick,
@@ -58,6 +59,7 @@ function BootstrapField({
                 }}
             >
                 <ReactForm.Control
+                    id={servar.key}
                     pattern={pattern}
                     style={{
                         height: `${field.field_height}${field.field_height_unit}`,
@@ -81,11 +83,11 @@ function BootstrapField({
                     }}
                     maxLength={servar.max_length}
                     minLength={servar.min_length}
-                    id={servar.key}
                     required={servar.required}
                     onChange={onChange}
                     onClick={onClick}
                     autoComplete={servar.metadata.autocomplete || 'on'}
+                    placeholder=''
                     {...props}
                 />
                 <span
@@ -102,7 +104,7 @@ function BootstrapField({
                         fontStyle: metadata.placeholder_italic
                             ? 'italic'
                             : 'normal',
-                        ...(fieldValue ? placeholderCSS : {}),
+                        ...(fieldValue || fieldMask ? placeholderCSS : {}),
                         'input:focus + &': {
                             ...placeholderCSS,
                             ...placeholderActiveCSS
@@ -116,8 +118,45 @@ function BootstrapField({
     );
 }
 
+function getMaskProps(servar, value) {
+    switch (servar.type) {
+        case 'login':
+            return {
+                mask: servar.metadata.login_methods.map((method) => {
+                    return {
+                        method,
+                        mask: method === 'phone' ? '(000) 000-0000' : /.+/
+                    };
+                }),
+                value
+            };
+        case 'phone_number':
+            return { mask: '+1 (000) 000-0000', value };
+        case 'ssn':
+            return { mask: '000 - 00 - 0000', value };
+        case 'integer_field':
+            return {
+                mask: servar.format === 'currency' ? '$num' : 'num',
+                blocks: {
+                    num: {
+                        mask: Number,
+                        thousandsSeparator: ',',
+                        scale: 0,
+                        signed: false
+                    }
+                },
+                value: value.toString()
+            };
+        default:
+            return {
+                mask: servar.metadata.only_alpha ? /^[a-z0-9]*$/i : /.*/,
+                value
+            };
+    }
+}
+
 const MaskedBootstrapField = IMaskMixin((props) => (
     <BootstrapField {...props} />
 ));
 
-export { BootstrapField, MaskedBootstrapField };
+export { BootstrapField, MaskedBootstrapField, getMaskProps };
