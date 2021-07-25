@@ -1024,7 +1024,8 @@ function Form({
                 style={{
                     height: '0.4rem',
                     width: `${pb.bar_width}%`,
-                    maxWidth: '100%'
+                    maxWidth: '100%',
+                    borderRadius: 0
                 }}
                 css={{
                     '.progress-bar': {
