@@ -4,7 +4,9 @@ exports[`Text renders a plaintext text block 1`] = `
 <div
   className="css-1yvl1gu-TextElement"
 >
-  <div>
+  <div
+    style={Object {}}
+  >
     <span
       onClick={[Function]}
       style={
@@ -23,7 +25,9 @@ exports[`Text renders a text block with custom styles 1`] = `
 <div
   className="css-1yvl1gu-TextElement"
 >
-  <div>
+  <div
+    style={Object {}}
+  >
     <span
       onClick={[Function]}
       style={
@@ -46,7 +50,9 @@ exports[`Text renders an empty text block 1`] = `
 <div
   className="css-1yvl1gu-TextElement"
 >
-  <div>
+  <div
+    style={Object {}}
+  >
     <span
       onClick={[Function]}
       style={

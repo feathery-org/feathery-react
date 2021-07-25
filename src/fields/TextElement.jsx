@@ -30,7 +30,7 @@ function TextElement({ field, fieldValues, conditions, submit }) {
         repeat,
         elementID
     });
-    const style = {
+    const containerStyle = {
         gridColumnStart: field.column_index + 1,
         gridRowStart: field.row_index + 1,
         gridColumnEnd: field.column_index_end + 2,
@@ -45,11 +45,15 @@ function TextElement({ field, fieldValues, conditions, submit }) {
         textAlign: field.layout,
         justifyContent: field.vertical_layout
     };
-    if (field.border_color) style.border = `1px solid #${field.border_color}`;
+    if (field.border_color)
+        containerStyle.border = `1px solid #${field.border_color}`;
+    const textStyle = field.line_height
+        ? { lineHeight: `${field.line_height}px` }
+        : {};
 
     return (
-        <div key={field.id} css={style}>
-            <div>{nodes}</div>
+        <div key={field.id} css={containerStyle}>
+            <div style={textStyle}>{nodes}</div>
         </div>
     );
 }
