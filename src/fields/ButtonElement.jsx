@@ -36,14 +36,10 @@ function ButtonElement({
         hoverStyles.borderColor = `#${field.hover_border_color} !important`;
     if (field.hover_background_color)
         hoverStyles.backgroundColor = `#${field.hover_background_color} !important`;
-    if (field.hover_font_color)
-        hoverStyles.color = `#${field.hover_font_color} !important`;
     if (field.selected_border_color)
         selectedStyles.borderColor = `#${field.selected_border_color} !important`;
     if (field.selected_background_color)
         selectedStyles.backgroundColor = `#${field.selected_background_color} !important`;
-    if (field.selected_font_color)
-        selectedStyles.color = `#${field.selected_font_color} !important`;
 
     const elementID = field.id;
     const repeat = field.repeat || 0;
