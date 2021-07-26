@@ -28,6 +28,7 @@ import {
     setFormElementError,
     getDefaultFieldValue,
     getFieldError,
+    getInlineError,
     shouldElementHide,
     phonePattern,
     emailPattern,
@@ -98,6 +99,8 @@ function Form({
     const [noChange, setNoChange] = useState(false);
     const [stepSequence, setStepSequence] = useState([]);
     const [sequenceIndex, setSequenceIndex] = useState(0);
+    const [errType, setErrType] = useState('html5');
+    const [inlineErrors, setInlineErrors] = useState({});
 
     const [firebase, setFirebase] = useState(null);
 
@@ -425,6 +428,7 @@ function Form({
                             data[step.key] = step;
                         });
                         setSteps(data);
+                        setErrType(stepsResponse.error_type || 'html5');
                         return data;
                     })
                     .catch((error) => console.log(error));
@@ -651,34 +655,62 @@ function Form({
                 signatureRef
             );
 
+            const newInlineErrors = {};
             Object.entries(formattedFields).map(([fieldKey, { value }]) => {
                 const servar = servarMap[fieldKey];
                 const err = getFieldError(value, servar, signatureRef);
-                setFormElementError({
-                    formRef,
-                    fieldKey,
-                    message: err,
-                    servarType: servar.type
-                });
+                if (errType === 'html5') {
+                    setFormElementError({
+                        formRef,
+                        fieldKey,
+                        message: err,
+                        servarType: servar.type
+                    });
+                } else if (errType === 'inline') {
+                    newInlineErrors[fieldKey] = { message: err };
+                }
             });
             // do validation check before running user submission function
             // so user does not access invalid data
-            formRef.current.reportValidity();
-            if (!formRef.current.checkValidity()) return;
+            if (errType === 'html5') {
+                formRef.current.reportValidity();
+                if (!formRef.current.checkValidity()) return;
+            } else if (errType === 'inline') {
+                setInlineErrors(newInlineErrors);
+                const invalid = Object.values(newInlineErrors).find(
+                    (data) => data.message
+                );
+                if (invalid) return;
+            }
 
-            const res = await handleActions(
-                formattedFields,
-                metadata,
-                newFieldVals
-            );
-            if (!res) return;
-            newFieldVals = res.newFieldVals;
+            let authId, errorMessage, errorField;
+            ({
+                newFieldVals,
+                authId,
+                errorMessage,
+                errorField
+            } = await handleActions(formattedFields, metadata, newFieldVals));
+            if (errorMessage && errorField) {
+                if (errType === 'html5') {
+                    setFormElementError({
+                        formRef,
+                        fieldKey: errorField.key,
+                        message: errorMessage,
+                        servarType: errorField.type
+                    });
+                    formRef.current.reportValidity();
+                } else if (errType === 'inline') {
+                    newInlineErrors[errorField.key] = { message: errorMessage };
+                    setInlineErrors(newInlineErrors);
+                }
+                return;
+            }
 
             // Execute user-provided onSubmit function if present
             if (typeof onSubmit === 'function') {
                 const integrationData = {};
-                if (res.authId) {
-                    integrationData.firebaseAuthId = res.authId;
+                if (authId) {
+                    integrationData.firebaseAuthId = authId;
                 }
 
                 const allFields = formatAllStepFields(steps, newFieldVals);
@@ -717,12 +749,16 @@ function Form({
                                 index = error.index;
                                 message = error.message;
                             }
-                            setFormElementError({
-                                formRef,
-                                fieldKey,
-                                message,
-                                index
-                            });
+                            if (errType === 'html5') {
+                                setFormElementError({
+                                    formRef,
+                                    fieldKey,
+                                    message,
+                                    index
+                                });
+                            } else {
+                                newInlineErrors[fieldKey] = { message, index };
+                            }
                         });
                     },
                     triggerKey: lookupElementKey(
@@ -736,16 +772,24 @@ function Form({
                 });
 
                 // do validation check in case user has manually invalidated the step
-                formRef.current.reportValidity();
-                if (formRef.current.checkValidity()) {
-                    // async execution after user's onSubmit
-                    return handleSubmitRedirect({
-                        metadata,
-                        newFieldVals,
-                        submitData,
-                        formattedFields
-                    });
+                if (errType === 'html5') {
+                    formRef.current.reportValidity();
+                    if (!formRef.current.checkValidity()) return;
+                } else if (errType === 'inline') {
+                    setInlineErrors(newInlineErrors);
+                    const invalid = Object.values(newInlineErrors).find(
+                        (data) => data.message
+                    );
+                    if (invalid) return;
                 }
+
+                // async execution after user's onSubmit
+                return handleSubmitRedirect({
+                    metadata,
+                    newFieldVals,
+                    submitData,
+                    formattedFields
+                });
             } else {
                 return handleSubmitRedirect({
                     metadata,
@@ -790,12 +834,10 @@ function Form({
                                     // eslint-disable-next-line no-undef
                                     grecaptcha.reset(widgetId);
                                 });
-                            setFormElementError({
-                                formRef,
-                                fieldKey: servar.key,
-                                message: error.message
-                            });
-                            formRef.current.reportValidity();
+                            return {
+                                errorMessage: error.message,
+                                errorField: servar
+                            };
                         });
                 } else if (
                     methods.includes('email') &&
@@ -815,21 +857,16 @@ function Form({
                             return { newFieldVals };
                         })
                         .catch((error) => {
-                            setFormElementError({
-                                formRef,
-                                fieldKey: servar.key,
-                                message: error.message
-                            });
-                            formRef.current.reportValidity();
+                            return {
+                                errorMessage: error.message,
+                                errorField: servar
+                            };
                         });
                 } else {
-                    setFormElementError({
-                        formRef,
-                        fieldKey: servar.key,
-                        message: 'Invalid login'
-                    });
-                    formRef.current.reportValidity();
-                    return;
+                    return {
+                        errorMessage: 'Invalid login',
+                        errorField: servar
+                    };
                 }
             } else if (
                 servar.type === 'pin_input' &&
@@ -859,23 +896,16 @@ function Form({
                         })
                         .catch(() => {
                             // User couldn't sign in (bad verification code?)
-                            setFormElementError({
-                                formRef,
-                                fieldKey: servar.key,
-                                message: 'Invalid code',
-                                servarType: servar.type
-                            });
-                            formRef.current.reportValidity();
+                            return {
+                                errorMessage: 'Invalid code',
+                                errorField: servar
+                            };
                         });
                 } else {
-                    setFormElementError({
-                        formRef,
-                        fieldKey: servar.key,
-                        message: 'Please refresh and try again.',
-                        servarType: servar.type
-                    });
-                    formRef.current.reportValidity();
-                    return;
+                    return {
+                        errorMessage: 'Please refresh and try again',
+                        errorField: servar
+                    };
                 }
             }
         }
@@ -1263,6 +1293,10 @@ function Form({
                             fieldValues
                         );
 
+                    const inlineErr =
+                        errType === 'inline' &&
+                        getInlineError(field, inlineErrors);
+
                     let controlElement;
                     switch (servar.type) {
                         case 'signature':
@@ -1411,6 +1445,7 @@ function Form({
                                     }}
                                     selectCSS={select}
                                     hoverCSS={hover}
+                                    inlineError={inlineErr}
                                 />
                             );
                             break;
@@ -1430,6 +1465,7 @@ function Form({
                                     }}
                                     selectCSS={select}
                                     hoverCSS={hover}
+                                    inlineError={inlineErr}
                                 />
                             );
                             break;
@@ -1451,6 +1487,7 @@ function Form({
                                     }}
                                     onClick={onClick}
                                     pattern={emailPatternStr}
+                                    inlineError={inlineErr}
                                 />
                             );
                             break;
@@ -1474,13 +1511,13 @@ function Form({
                                     }}
                                     selectCSS={select}
                                     hoverCSS={hover}
+                                    inlineError={inlineErr}
                                 />
                             );
                             break;
                         case 'multiselect':
                             controlElement = (
                                 <CheckboxGroup
-                                    key={reactFriendlyKey(field)}
                                     field={field}
                                     fieldLabel={fieldLabel}
                                     fieldVal={fieldVal}
@@ -1501,7 +1538,6 @@ function Form({
                         case 'select':
                             controlElement = (
                                 <RadioButtonGroup
-                                    key={reactFriendlyKey(field)}
                                     field={field}
                                     fieldLabel={fieldLabel}
                                     fieldVal={fieldVal}
@@ -1537,7 +1573,7 @@ function Form({
                                             height: '36px',
                                             background: `#${fieldVal}`,
                                             cursor: 'pointer',
-                                            border: `${field.border_width}px solid`,
+                                            borderWidth: `${field.border_width}px`,
                                             borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                                             borderRadius: `${field.border_radius}px`
                                         }}
@@ -1603,6 +1639,7 @@ function Form({
                                     }}
                                     onClick={onClick}
                                     rows={metadata.num_rows}
+                                    inlineError={inlineErr}
                                 />
                             );
                             break;
@@ -1623,13 +1660,13 @@ function Form({
                                         );
                                     }}
                                     onClick={onClick}
+                                    inlineError={inlineErr}
                                 />
                             );
                             break;
                         default:
                             controlElement = (
                                 <MaskedBootstrapField
-                                    key={reactFriendlyKey(field)}
                                     {...getMaskProps(servar, fieldVal)}
                                     unmask
                                     fieldValue={fieldVal}
@@ -1654,6 +1691,7 @@ function Form({
                                     fieldMask={
                                         maskedRef[servar.key]?.maskRef?._value
                                     }
+                                    inlineError={inlineErr}
                                 />
                             );
                     }
@@ -1688,6 +1726,19 @@ function Form({
                             key={reactFriendlyKey(field)}
                         >
                             {controlElement}
+                            {inlineErr && (
+                                <span
+                                    style={{
+                                        alignSelf: 'flex-start',
+                                        fontFamily: field.font_family,
+                                        fontSize: `${field.font_size}px`,
+                                        marginTop: '3px',
+                                        color: '#F42525'
+                                    }}
+                                >
+                                    {inlineErr}
+                                </span>
+                            )}
                         </div>
                     );
                 })}

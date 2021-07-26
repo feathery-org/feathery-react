@@ -14,6 +14,7 @@ function BootstrapField({
     onClick,
     pattern,
     rows,
+    inlineError,
     ...props
 }) {
     const metadata = field.metadata;
@@ -47,6 +48,9 @@ function BootstrapField({
         }`;
     }
 
+    const borderColor = inlineError
+        ? '#F42525'
+        : `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`;
     return (
         <>
             {label}
@@ -62,12 +66,12 @@ function BootstrapField({
                     id={servar.key}
                     pattern={pattern}
                     style={{
+                        maxWidth: '100%',
+                        borderColor,
+                        borderWidth: `${field.border_width}px`,
                         height: `${field.field_height}${field.field_height_unit}`,
                         width: `${field.field_width}${field.field_width_unit}`,
-                        maxWidth: '100%',
                         backgroundColor: `#${field.background_color}`,
-                        border: `${field.border_width}px solid`,
-                        borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                         borderRadius: `${field.border_radius}px`,
                         boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
                         fontSize: `${field.font_size}px`,

@@ -59,7 +59,7 @@ function ButtonGroup({
                                 height: `${field.field_height}${field.field_height_unit}`,
                                 width: `${field.field_width}${field.field_width_unit}`,
                                 backgroundColor: `#${field.background_color}`,
-                                border: `${field.border_width}px solid`,
+                                borderWidth: `${field.border_width}px`,
                                 borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                                 borderRadius: `${field.border_radius}px`,
                                 marginBottom: `${field.padding_bottom}px`,
