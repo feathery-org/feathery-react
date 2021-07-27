@@ -149,11 +149,7 @@ function Form({
     ]);
 
     useEffect(() => {
-        setFormDimensions(
-            dimensions.width,
-            dimensions.columns,
-            dimensions.rows
-        );
+        setFormDimensions(dimensions);
     }, [dimensions]);
 
     function addRepeatedRow(fieldValuesArg = fieldValues) {
@@ -1080,13 +1076,18 @@ function Form({
             ref={formRef}
             style={{
                 backgroundColor: `#${activeStep.default_background_color}`,
-                display: 'grid',
-                justifyContent: 'center',
                 maxWidth: '100%',
-                gridTemplateColumns: dimensions.columns.join(' '),
-                gridTemplateRows: dimensions.rows.join(' '),
-                width: dimensions.width ? `${dimensions.width}px` : '100%',
+                display: 'grid',
+                gridTemplateRows: dimensions.relativeRows.join(' '),
                 ...style
+            }}
+            css={{
+                width: dimensions.definiteWidth,
+                gridTemplateColumns: dimensions.relativeColumns.join(' '),
+                [`@media (min-width: ${dimensions.definiteWidth})`]: {
+                    width: dimensions.relativeWidth,
+                    gridTemplateColumns: activeStep.grid_columns.join(' ')
+                }
             }}
             onSubmit={(e) => {
                 e.preventDefault();
