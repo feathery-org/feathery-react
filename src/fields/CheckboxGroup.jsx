@@ -117,7 +117,7 @@ function CheckboxGroup({
                             marginLeft: '5px',
                             height: `${parseInt(field.font_size) + 4}px`,
                             backgroundColor: `#${field.background_color}`,
-                            border: `${field.border_width}px solid`,
+                            borderWidth: `${field.border_width}px`,
                             borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                             borderRadius: `${field.border_radius}px`,
                             boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,

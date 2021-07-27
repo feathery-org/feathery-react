@@ -375,6 +375,8 @@ function getFieldError(value, servar, signatureRef) {
     // Check if value is badly formatted
     if (servar.type === 'phone_number' && !phonePattern.test(value)) {
         return 'Invalid phone number';
+    } else if (servar.type === 'email' && !emailPattern.test(value)) {
+        return 'Invalid email format';
     } else if (servar.type === 'ssn' && value.length !== 9) {
         return 'Invalid social security number';
     } else if (
@@ -414,6 +416,18 @@ function setFormElementError({
 
     if (index !== null) elements = [elements[index]];
     elements.forEach((e) => e.setCustomValidity(message));
+}
+
+/**
+ * Return inline error object
+ * @param field
+ * @param inlineErrors
+ */
+function getInlineError(field, inlineErrors) {
+    const data = inlineErrors[field.servar.key];
+    if (!data) return;
+    if (Number.isInteger(data.index) && data.index !== field.repeat) return;
+    return data.message;
 }
 
 /**
@@ -469,6 +483,7 @@ export {
     reactFriendlyKey,
     getFieldValue,
     getFieldError,
+    getInlineError,
     shouldElementHide,
     setFormElementError,
     states,

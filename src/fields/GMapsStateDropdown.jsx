@@ -9,20 +9,24 @@ function GMapsStateDropdown({
     onClick,
     onChange,
     selectCSS,
-    hoverCSS
+    hoverCSS,
+    inlineError
 }) {
+    const borderColor = inlineError
+        ? '#F42525'
+        : `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`;
     const servar = field.servar;
     return (
         <>
             {fieldLabel}
             <ReactForm.Control
                 style={{
+                    borderColor,
+                    borderWidth: `${field.border_width}px`,
                     height: `${field.field_height}${field.field_height_unit}`,
                     width: `${field.field_width}${field.field_width_unit}`,
                     maxWidth: '100%',
                     backgroundColor: `#${field.background_color}`,
-                    border: `${field.border_width}px solid`,
-                    borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
                     borderRadius: `${field.border_radius}px`,
                     fontSize: `${field.font_size}px`,
                     boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
