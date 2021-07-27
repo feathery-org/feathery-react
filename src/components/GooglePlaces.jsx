@@ -85,7 +85,8 @@ export default function GooglePlaces({
 
                 const keyIDMap = {};
                 const addrValues = {};
-                Object.values(steps).forEach((step) => {
+
+                const trackMapFields = (step) => {
                     step.servar_fields.forEach((field) => {
                         const servar = field.servar;
                         if (servar.type in addressMap) {
@@ -96,7 +97,10 @@ export default function GooglePlaces({
                             keyIDMap[servar.key] = field.id;
                         }
                     });
-                });
+                };
+                Object.values(steps).forEach((step) => trackMapFields(step));
+                // register current step field IDs if possible
+                trackMapFields(activeStep);
 
                 if (Object.keys(addrValues).length > 0) {
                     let newValues;
