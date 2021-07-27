@@ -2,56 +2,7 @@ import { calculateDimensions, calculateRepeatedRowCount } from '../hydration';
 
 describe('hydration', () => {
     describe('calculateDimensions', () => {
-        it('calculates dimensions on a mobile screen', () => {
-            // Arrange
-            const inputStep = {
-                repeat_row_start: 2,
-                repeat_row_end: 3,
-                texts: [
-                    {
-                        text: 'First text field {{foobar}}',
-                        row_index: 1,
-                        row_index_end: 1,
-                        column_index: 2,
-                        column_index_end: 2
-                    }
-                ],
-                buttons: [
-                    {
-                        text: 'First button field {{foobar}}',
-                        row_index: 1,
-                        row_index_end: 1,
-                        column_index: 2,
-                        column_index_end: 2
-                    }
-                ],
-                servar_fields: [],
-                images: [],
-                grid_rows: ['50px', '150px', '50px'],
-                grid_columns: ['150px', '50px', '20px'],
-                progress_bar: {
-                    column_index: 0
-                }
-            };
-            window.innerWidth = 500;
-            const expected = {
-                width: 40,
-                columns: ['25%', '25%', '50%'],
-                rows: [
-                    'minmax(50px,min-content)',
-                    'minmax(150px,min-content)',
-                    'minmax(50px,min-content)'
-                ]
-            };
-
-            // Act
-            const actual = calculateDimensions(inputStep);
-
-            // Assert
-            expect(actual).toMatchObject(expected);
-        });
-
-        it('calculates dimensions on a desktop screen', () => {
+        it('calculates dimensions', () => {
             // Arrange
             const inputStep = {
                 repeat_row_start: 2,
@@ -68,16 +19,16 @@ describe('hydration', () => {
                 ],
                 images: [],
                 grid_rows: ['50px', '150px', '50px'],
-                grid_columns: ['150px', '50%'],
+                grid_columns: ['150px', '1fr'],
                 progress_bar: {
                     column_index: 0
                 }
             };
-            window.innerWidth = 1024;
             const expected = {
-                width: null,
-                columns: ['150px', '50%'],
-                rows: [
+                definiteWidth: '150px',
+                relativeWidth: '100%',
+                relativeColumns: ['100%', 0],
+                relativeRows: [
                     'minmax(50px,min-content)',
                     'minmax(150px,min-content)',
                     'minmax(50px,min-content)'
@@ -150,11 +101,11 @@ describe('hydration', () => {
                     column_index: 0
                 }
             };
-            window.innerWidth = 1024;
             const expected = {
-                width: null,
-                columns: ['150px', '50%'],
-                rows: [
+                definiteWidth: '150px',
+                relativeWidth: '100%',
+                relativeColumns: ['100%', 0],
+                relativeRows: [
                     'minmax(50px,min-content)',
                     'minmax(150px,min-content)',
                     'minmax(150px,min-content)',

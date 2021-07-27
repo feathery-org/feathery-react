@@ -153,79 +153,36 @@ function injectRepeatedRows({ step, repeatedRowCount }) {
  */
 function calculateDimensions(step) {
     if (step === null) {
-        return { width: null, rows: [], columns: [] };
+        return {
+            relativeWidth: 0,
+            definiteWidth: 0,
+            relativeColumns: [],
+            relativeRows: []
+        };
     }
 
-    const gridTemplateRows = step.grid_rows.map(
+    let hasRelativeColumn = false;
+    let definiteWidth = 0;
+    step.grid_columns.forEach((column) => {
+        if (column.slice(-2) === 'px') definiteWidth += parseFloat(column);
+        else hasRelativeColumn = true;
+    });
+
+    const relativeColumns = step.grid_columns.map((column) => {
+        return column.slice(-2) === 'px'
+            ? `${(100 * parseFloat(column)) / definiteWidth}%`
+            : 0;
+    });
+    const relativeRows = step.grid_rows.map(
         (row) => `minmax(${row},min-content)`
     );
-
-    let gridTemplateColumns;
-    if (window.innerWidth >= 768) {
-        gridTemplateColumns = step.grid_columns;
-    } else {
-        const seenColumns = new Set();
-        if (step.progress_bar) {
-            const s = step.progress_bar.column_index;
-            const e = step.progress_bar.column_index_end;
-            for (let i = s; i <= e; i++) {
-                seenColumns.add(i);
-            }
-        }
-
-        step.texts.map((field) => {
-            const s = field.column_index;
-            const e = field.column_index_end;
-            for (let i = s; i <= e; i++) {
-                seenColumns.add(i);
-            }
-        });
-
-        step.buttons.map((field) => {
-            const s = field.column_index;
-            const e = field.column_index_end;
-            for (let i = s; i <= e; i++) {
-                seenColumns.add(i);
-            }
-        });
-
-        step.servar_fields.map((field) => {
-            const s = field.column_index;
-            const e = field.column_index_end;
-            for (let i = s; i <= e; i++) {
-                seenColumns.add(i);
-            }
-        });
-        step.images.map((image) => {
-            const s = image.column_index;
-            const e = image.column_index_end;
-            for (let i = s; i <= e; i++) {
-                seenColumns.add(i);
-            }
-        });
-        gridTemplateColumns = step.grid_columns.map((c, index) =>
-            seenColumns.has(index) ? c : '10px'
-        );
-    }
-
-    let definiteWidth = 0;
-    gridTemplateColumns.forEach((column) => {
-        if (definiteWidth !== null && column.slice(-2) === 'px') {
-            definiteWidth += parseFloat(column);
-        } else {
-            definiteWidth = null;
-        }
-    });
-    if (definiteWidth) {
-        gridTemplateColumns = gridTemplateColumns.map(
-            (c) => `${(100 * parseFloat(c)) / definiteWidth}%`
-        );
-    }
+    definiteWidth = `${definiteWidth}px`;
 
     return {
-        width: definiteWidth,
-        columns: gridTemplateColumns,
-        rows: gridTemplateRows
+        relativeWidth: hasRelativeColumn ? '100%' : definiteWidth,
+        definiteWidth,
+        relativeColumns,
+        relativeRows
     };
 }
 
