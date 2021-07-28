@@ -3,8 +3,8 @@ import { Image } from 'react-bootstrap';
 import { IconContext } from 'react-icons';
 import { FiX } from 'react-icons/fi';
 import { justRemove } from '../utils/array';
-import { reactFriendlyKey } from '../utils/formHelperFunctions';
 import { THUMBNAIL_TYPE, getThumbnailType } from '../utils/image';
+import { marginStyleFromField } from '../utils/styles';
 
 async function getThumbnailData(file) {
     const thumbnailType = getThumbnailType(file);
@@ -85,7 +85,13 @@ function MultiFileUploader({
     }
 
     return (
-        <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+        <div
+            style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                ...marginStyleFromField(field)
+            }}
+        >
             {thumbnailsData.map(({ filename, thumbnail }, index) => (
                 <div
                     key={index}

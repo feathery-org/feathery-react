@@ -46,7 +46,6 @@ import {
     ButtonGroup,
     CheckboxGroup,
     Dropdown,
-    GMapsStateDropdown,
     MultiFileUploader,
     PinInput,
     RadioButtonGroup,
@@ -57,9 +56,8 @@ import {
 import { initInfo, initState } from './utils/init';
 
 import './bootstrap-iso.css';
+import { borderStyleFromField, marginStyleFromField } from './utils/styles';
 
-// apiKey and userKey are required if displayStep === null
-// totalSteps is required if displayStep !== null
 function Form({
     // Public API
     formKey,
@@ -69,20 +67,13 @@ function Form({
     initialValues = {},
     style = {},
     className = '',
-    children,
-
-    // Internal
-    displaySteps = null,
-    displayStepKey = '',
-    setFormDimensions = () => {}
+    children
 }) {
     const [client, setClient] = useState(null);
     const history = useHistory();
 
     const [steps, setSteps] = useState(null);
-    const [rawActiveStep, setRawActiveStep] = useState(
-        steps ? steps[displayStepKey] : null
-    );
+    const [rawActiveStep, setRawActiveStep] = useState(null);
     const [stepKey, setStepKey] = useState('');
     const [fieldValues, setFieldValues] = useState(initialValues);
 
@@ -91,10 +82,8 @@ function Form({
         redirectURL: null
     });
     const [displayColorPicker, setDisplayColorPicker] = useState({});
-    const [curDepth, setCurDepth] = useState(displaySteps ? 1 : 0);
-    const [maxDepth, setMaxDepth] = useState(
-        displaySteps ? Object.keys(displaySteps).length : 0
-    );
+    const [curDepth, setCurDepth] = useState(0);
+    const [maxDepth, setMaxDepth] = useState(0);
     const [integrations, setIntegrations] = useState({});
     const [noChange, setNoChange] = useState(false);
     const [stepSequence, setStepSequence] = useState([]);
@@ -121,12 +110,11 @@ function Form({
     // Create the fully-hydrated activeStep by injecting repeated rows
     // Note: Other hydration transformations can also be included here
     const activeStep = useMemo(() => {
-        if (displaySteps) return rawActiveStep;
         return injectRepeatedRows({ step: rawActiveStep, repeatedRowCount });
     }, [rawActiveStep, repeatedRowCount]);
 
     useEffect(() => {
-        if (displaySteps || !activeStep) return;
+        if (!activeStep) return;
         const f = activeStep.servar_fields.find((field) => {
             const servar = field.servar;
             return (
@@ -147,10 +135,6 @@ function Form({
     const dimensions = useMemo(() => calculateDimensions(activeStep), [
         activeStep
     ]);
-
-    useEffect(() => {
-        setFormDimensions(dimensions);
-    }, [dimensions]);
 
     function addRepeatedRow(fieldValuesArg = fieldValues) {
         if (
@@ -321,174 +305,145 @@ function Form({
         fieldValsArg = fieldValsArg || fieldValues;
 
         let newStep = stepsArg[newKey];
-        let curDepth = 0;
-        let maxDepth = 0;
-        if (!displaySteps) {
-            while (true) {
-                const loadCond = newStep.next_conditions.find((cond) => {
-                    if (cond.trigger !== 'load' || cond.element_type !== 'step')
-                        return false;
-                    const notAuth =
-                        cond.rules.find(
-                            (r) => r.comparison === 'not_authenticated'
-                        ) &&
-                        !initState.authId &&
-                        !window.firebaseConfirmationResult;
-                    const auth =
-                        cond.rules.find(
-                            (r) => r.comparison === 'authenticated'
-                        ) && initState.authId;
-                    return notAuth || auth;
-                });
-                if (loadCond) {
-                    newKey = loadCond.next_step_key;
-                    newStep = stepsArg[newKey];
-                } else break;
-            }
+        while (true) {
+            const loadCond = newStep.next_conditions.find((cond) => {
+                if (cond.trigger !== 'load' || cond.element_type !== 'step')
+                    return false;
+                const notAuth =
+                    cond.rules.find(
+                        (r) => r.comparison === 'not_authenticated'
+                    ) &&
+                    !initState.authId &&
+                    !window.firebaseConfirmationResult;
+                const auth =
+                    cond.rules.find((r) => r.comparison === 'authenticated') &&
+                    initState.authId;
+                return notAuth || auth;
+            });
+            if (loadCond) {
+                newKey = loadCond.next_step_key;
+                newStep = stepsArg[newKey];
+            } else break;
+        }
+        newStep = JSON.parse(JSON.stringify(newStep));
 
-            [curDepth, maxDepth] = recurseDepth(
-                stepsArg,
-                getOrigin(stepsArg),
-                newKey
-            );
-            newStep = JSON.parse(JSON.stringify(newStep));
+        const [curDepth, maxDepth] = recurseDepth(
+            stepsArg,
+            getOrigin(stepsArg),
+            newKey
+        );
+        setCurDepth(curDepth);
+        setMaxDepth(maxDepth);
 
-            if (TagManager.initialized) {
-                TagManager.dataLayer({
-                    dataLayer: {
-                        stepId: newKey,
-                        event: 'FeatheryStepLoad'
-                    }
-                });
-            }
-
-            if (typeof onLoad === 'function') {
-                const formattedFields = formatAllStepFields(
-                    stepsArg,
-                    fieldValsArg
-                );
-                const { userKey } = initInfo();
-
-                const integrationData = {};
-                if (initState.authId) {
-                    integrationData.firebaseAuthId = initState.authId;
+        if (TagManager.initialized) {
+            TagManager.dataLayer({
+                dataLayer: {
+                    stepId: newKey,
+                    event: 'FeatheryStepLoad'
                 }
-                if (initState.authToken) {
-                    integrationData.firebaseAuthToken = initState.authToken;
-                }
-                await onLoad({
-                    fields: formattedFields,
-                    stepName: newKey,
-                    previousStepName: activeStep?.key,
-                    userId: userKey,
-                    lastStep: stepsArg[newKey].next_conditions.length === 0,
-                    setValues: (userVals) => {
-                        updateFieldValues(userVals, fieldValsArg);
-                        client.submitCustom(userVals);
-                    },
-                    setOptions: updateFieldOptions(stepsArg, newStep),
-                    integrationData
-                });
-                setRawActiveStep(newStep);
-            } else {
-                setRawActiveStep(newStep);
-            }
+            });
+        }
 
-            const eventData = { step_key: newKey, event: 'load' };
-            if (stepSequence.includes(newKey)) {
-                const newSequenceIndex = stepSequence.indexOf(newKey) + 1;
-                setSequenceIndex(newSequenceIndex);
-                eventData.current_sequence_index = newSequenceIndex;
+        if (typeof onLoad === 'function') {
+            const formattedFields = formatAllStepFields(stepsArg, fieldValsArg);
+            const { userKey } = initInfo();
+
+            const integrationData = {};
+            if (initState.authId) {
+                integrationData.firebaseAuthId = initState.authId;
             }
-            client.registerEvent(eventData);
+            if (initState.authToken) {
+                integrationData.firebaseAuthToken = initState.authToken;
+            }
+            await onLoad({
+                fields: formattedFields,
+                stepName: newKey,
+                previousStepName: activeStep?.key,
+                userId: userKey,
+                lastStep: stepsArg[newKey].next_conditions.length === 0,
+                setValues: (userVals) => {
+                    updateFieldValues(userVals, fieldValsArg);
+                    client.submitCustom(userVals);
+                },
+                setOptions: updateFieldOptions(stepsArg, newStep),
+                integrationData
+            });
+            setRawActiveStep(newStep);
         } else {
             setRawActiveStep(newStep);
         }
 
-        setCurDepth(curDepth);
-        setMaxDepth(maxDepth);
+        const eventData = { step_key: newKey, event: 'load' };
+        if (stepSequence.includes(newKey)) {
+            const newSequenceIndex = stepSequence.indexOf(newKey) + 1;
+            setSequenceIndex(newSequenceIndex);
+            eventData.current_sequence_index = newSequenceIndex;
+        }
+        client.registerEvent(eventData);
     };
 
     useEffect(() => {
-        if (displaySteps === null) {
-            if (client === null) {
-                const clientInstance = new Client(formKey);
-                setClient(clientInstance);
+        if (client === null) {
+            const clientInstance = new Client(formKey);
+            setClient(clientInstance);
 
-                // render form without values first for speed
-                const fetchPromise = clientInstance
-                    .fetchForm()
-                    .then((stepsResponse) => {
-                        const data = {};
-                        getABVariant(stepsResponse).forEach((step) => {
-                            data[step.key] = step;
-                        });
-                        setSteps(data);
-                        setErrType(stepsResponse.error_type || 'html5');
-                        return data;
-                    })
-                    .catch((error) => console.log(error));
-
-                // fetch values separately because this request
-                // goes to Feathery origin, while the previous
-                // request goes to our CDN
-                clientInstance
-                    .fetchSession()
-                    .then(async (session) => {
-                        setStepSequence(session.step_sequence);
-                        setSequenceIndex(session.current_sequence_index);
-                        const newSession = await initializeIntegrations(
-                            session.integrations,
-                            clientInstance
-                        );
-                        if (newSession) session = newSession;
-
-                        fetchPromise.then(async (data) => {
-                            updateSessionValues(
-                                session,
-                                getDefaultFieldValues(data)
-                            );
-                            const newKey =
-                                session.current_step_key || getOrigin(data);
-                            history.replace(
-                                location.pathname +
-                                    location.search +
-                                    `#${newKey}`
-                            );
-                        });
-                    })
-                    .catch((error) => {
-                        // Use default values if origin fails
-                        fetchPromise.then(async (data) => {
-                            updateFieldValues(
-                                fieldValues,
-                                getDefaultFieldValues(data)
-                            );
-                            const newKey = getOrigin(data);
-                            history.replace(
-                                location.pathname +
-                                    location.search +
-                                    `#${newKey}`
-                            );
-                        });
-                        console.log(error);
+            // render form without values first for speed
+            const fetchPromise = clientInstance
+                .fetchForm()
+                .then((stepsResponse) => {
+                    const data = {};
+                    getABVariant(stepsResponse).forEach((step) => {
+                        data[step.key] = step;
                     });
-            }
-        } else if (
-            !activeStep ||
-            displaySteps !== steps ||
-            displayStepKey !== activeStep.key
-        ) {
-            const fieldVals = updateFieldValues(
-                getDefaultFieldValues(displaySteps)
-            );
-            setSteps(displaySteps);
-            getNewStep(displayStepKey, displaySteps, fieldVals);
+                    setSteps(data);
+                    setErrType(stepsResponse.error_type || 'html5');
+                    return data;
+                })
+                .catch((error) => console.log(error));
+
+            // fetch values separately because this request
+            // goes to Feathery origin, while the previous
+            // request goes to our CDN
+            clientInstance
+                .fetchSession()
+                .then(async (session) => {
+                    setStepSequence(session.step_sequence);
+                    setSequenceIndex(session.current_sequence_index);
+                    const newSession = await initializeIntegrations(
+                        session.integrations,
+                        clientInstance
+                    );
+                    if (newSession) session = newSession;
+
+                    fetchPromise.then(async (data) => {
+                        updateSessionValues(
+                            session,
+                            getDefaultFieldValues(data)
+                        );
+                        const newKey =
+                            session.current_step_key || getOrigin(data);
+                        history.replace(
+                            location.pathname + location.search + `#${newKey}`
+                        );
+                    });
+                })
+                .catch((error) => {
+                    // Use default values if origin fails
+                    fetchPromise.then(async (data) => {
+                        updateFieldValues(
+                            fieldValues,
+                            getDefaultFieldValues(data)
+                        );
+                        const newKey = getOrigin(data);
+                        history.replace(
+                            location.pathname + location.search + `#${newKey}`
+                        );
+                    });
+                    console.log(error);
+                });
         }
     }, [
         client,
-        displayStepKey,
-        displaySteps,
         activeStep,
         setClient,
         setSteps,
@@ -498,7 +453,6 @@ function Form({
     ]);
 
     useEffect(() => {
-        if (displaySteps) return;
         return steps
             ? history.listen(async () => {
                   const hashKey = location.hash.substr(1);
@@ -637,8 +591,6 @@ function Form({
         repeat = 0,
         newValues = null
     ) => {
-        if (displaySteps) return;
-
         let newFieldVals = newValues || fieldValues;
         if (submitData) {
             const servarMap = {};
@@ -1051,7 +1003,8 @@ function Form({
                     height: '0.4rem',
                     width: `${pb.bar_width}%`,
                     maxWidth: '100%',
-                    borderRadius: 0
+                    borderRadius: 0,
+                    ...marginStyleFromField(pb)
                 }}
                 css={{
                     '.progress-bar': {
@@ -1098,12 +1051,11 @@ function Form({
         >
             {children}
             {activeStep.progress_bar &&
-                (displaySteps ||
-                    !shouldElementHide({
-                        fields: activeStep.servar_fields,
-                        values: fieldValues,
-                        element: activeStep.progress_bar
-                    })) && (
+                !shouldElementHide({
+                    fields: activeStep.servar_fields,
+                    values: fieldValues,
+                    element: activeStep.progress_bar
+                }) && (
                     <div
                         key='progress-bar'
                         css={{
@@ -1117,10 +1069,6 @@ function Form({
                             alignItems: activeStep.progress_bar.layout,
                             justifyContent:
                                 activeStep.progress_bar.vertical_layout,
-                            paddingBottom: `${activeStep.progress_bar.padding_bottom}px`,
-                            paddingTop: `${activeStep.progress_bar.padding_top}px`,
-                            paddingLeft: `${activeStep.progress_bar.padding_left}px`,
-                            paddingRight: `${activeStep.progress_bar.padding_right}px`,
                             color: `#${activeStep.progress_bar.font_color}`,
                             fontStyle: activeStep.progress_bar.font_italic
                                 ? 'italic'
@@ -1138,7 +1086,6 @@ function Form({
             {activeStep.images
                 .filter(
                     (image) =>
-                        displaySteps ||
                         !shouldElementHide({
                             fields: activeStep.servar_fields,
                             values: fieldValues,
@@ -1162,12 +1109,9 @@ function Form({
                             src={image.source_url}
                             alt='Form Image'
                             style={{
-                                paddingBottom: `${image.padding_bottom}px`,
-                                paddingTop: `${image.padding_top}px`,
-                                paddingLeft: `${image.padding_left}px`,
-                                paddingRight: `${image.padding_right}px`,
                                 width: `${image.image_width}${image.image_width_unit}`,
-                                objectFit: 'contain'
+                                objectFit: 'contain',
+                                ...marginStyleFromField(image)
                             }}
                         />
                     </div>
@@ -1175,7 +1119,6 @@ function Form({
             {activeStep.texts
                 .filter(
                     (text) =>
-                        displaySteps ||
                         !shouldElementHide({
                             fields: activeStep.servar_fields,
                             values: fieldValues,
@@ -1194,7 +1137,6 @@ function Form({
             {activeStep.buttons
                 .filter(
                     (button) =>
-                        displaySteps ||
                         !shouldElementHide({
                             fields: activeStep.servar_fields,
                             values: fieldValues,
@@ -1206,7 +1148,6 @@ function Form({
                         key={`${activeStep.key}-button-${i}`}
                         field={field}
                         fieldValues={fieldValues}
-                        displaySteps={displaySteps}
                         submit={submit}
                         addRepeatedRow={addRepeatedRow}
                         removeRepeatedRow={removeRepeatedRow}
@@ -1217,7 +1158,6 @@ function Form({
             {activeStep.servar_fields
                 .filter(
                     (field) =>
-                        displaySteps ||
                         !shouldElementHide({
                             fields: activeStep.servar_fields,
                             values: fieldValues,
@@ -1237,21 +1177,6 @@ function Form({
                         fieldValues
                     );
                     const metadata = field.metadata;
-
-                    const hover = {};
-                    const select = {};
-                    if (field.hover_border_color)
-                        hover.borderColor = `#${field.hover_border_color} !important`;
-                    if (field.hover_background_color)
-                        hover.backgroundColor = `#${field.hover_background_color} !important`;
-                    if (field.hover_font_color)
-                        hover.color = `#${field.hover_font_color} !important`;
-                    if (field.selected_border_color)
-                        select.borderColor = `#${field.selected_border_color} !important`;
-                    if (field.selected_background_color)
-                        select.backgroundColor = `#${field.selected_background_color} !important`;
-                    if (field.selected_font_color)
-                        select.color = `#${field.selected_font_color} !important`;
 
                     let otherVal = '';
                     if (servar.metadata.other) {
@@ -1297,12 +1222,29 @@ function Form({
                     const inlineErr =
                         errType === 'inline' &&
                         getInlineError(field, inlineErrors);
+                    field.borderRadius = `${field.corner_top_left_radius}px ${field.corner_top_right_radius}px ${field.corner_bottom_right_radius}px ${field.corner_bottom_left_radius}px`;
+                    const hover = borderStyleFromField(field, 'hover_');
+                    if (field.hover_background_color)
+                        hover.backgroundColor = `#${field.hover_background_color} !important`;
+                    if (field.hover_font_color)
+                        hover.color = `#${field.hover_font_color} !important`;
+                    const select = borderStyleFromField(field, 'selected_');
+                    if (field.selected_background_color)
+                        select.backgroundColor = `#${field.selected_background_color} !important`;
+                    if (field.selected_font_color)
+                        select.color = `#${field.selected_font_color} !important`;
 
                     let controlElement;
                     switch (servar.type) {
                         case 'signature':
                             controlElement = (
-                                <>
+                                <div
+                                    style={{
+                                        width: `${field.field_width}px`,
+                                        maxWidth: '100%',
+                                        ...marginStyleFromField(field)
+                                    }}
+                                >
                                     {fieldLabel}
                                     <SignatureCanvas
                                         penColor='black'
@@ -1312,23 +1254,22 @@ function Form({
                                             height: field.field_height,
                                             style: {
                                                 backgroundColor: `#${field.background_color}`,
-                                                borderWidth: `${field.border_width}px`,
-                                                borderStyle: 'solid',
-                                                borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                                borderRadius: `${field.border_radius}px`,
-                                                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`
+                                                borderRadius:
+                                                    field.borderRadius,
+                                                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
+                                                ...borderStyleFromField(field)
                                             }
                                         }}
                                         ref={(ref) => {
                                             signatureRef[servar.key] = ref;
                                         }}
                                     />
-                                </>
+                                </div>
                             );
                             break;
                         case 'file_upload':
                             controlElement = (
-                                <>
+                                <div style={marginStyleFromField(field)}>
                                     {fieldLabel}
                                     <ReactForm.File
                                         id={servar.key}
@@ -1349,7 +1290,7 @@ function Form({
                                             cursor: 'pointer'
                                         }}
                                     />
-                                </>
+                                </div>
                             );
                             break;
                         case 'rich_file_upload':
@@ -1408,7 +1349,7 @@ function Form({
                             break;
                         case 'checkbox':
                             controlElement = (
-                                <>
+                                <div style={marginStyleFromField(field)}>
                                     {fieldLabel}
                                     <ReactForm.Check
                                         type='checkbox'
@@ -1427,7 +1368,7 @@ function Form({
                                             alignItems: 'center'
                                         }}
                                     />
-                                </>
+                                </div>
                             );
                             break;
                         case 'dropdown':
@@ -1452,7 +1393,7 @@ function Form({
                             break;
                         case 'gmap_state':
                             controlElement = (
-                                <GMapsStateDropdown
+                                <Dropdown
                                     field={field}
                                     fieldLabel={fieldLabel}
                                     fieldVal={fieldVal}
@@ -1467,6 +1408,7 @@ function Form({
                                     selectCSS={select}
                                     hoverCSS={hover}
                                     inlineError={inlineErr}
+                                    type='states'
                                 />
                             );
                             break;
@@ -1566,7 +1508,7 @@ function Form({
                             break;
                         case 'hex_color':
                             controlElement = (
-                                <>
+                                <div style={marginStyleFromField(field)}>
                                     {fieldLabel}
                                     <div
                                         css={{
@@ -1574,9 +1516,8 @@ function Form({
                                             height: '36px',
                                             background: `#${fieldVal}`,
                                             cursor: 'pointer',
-                                            borderWidth: `${field.border_width}px`,
-                                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                            borderRadius: `${field.border_radius}px`
+                                            ...borderStyleFromField(field),
+                                            borderRadius: field.borderRadius
                                         }}
                                         onClick={(e) => {
                                             onClick(e);
@@ -1619,7 +1560,7 @@ function Form({
                                             />
                                         </div>
                                     ) : null}
-                                </>
+                                </div>
                             );
                             break;
                         case 'text_area':
@@ -1714,15 +1655,7 @@ function Form({
                                 display: 'flex',
                                 flexDirection: 'column',
                                 justifyContent: field.vertical_layout,
-                                width: '100%',
-                                ...(servar.type !== 'button_group'
-                                    ? {
-                                          paddingBottom: `${field.padding_bottom}px`,
-                                          paddingTop: `${field.padding_top}px`,
-                                          paddingLeft: `${field.padding_left}px`,
-                                          paddingRight: `${field.padding_right}px`
-                                      }
-                                    : {})
+                                width: '100%'
                             }}
                             key={reactFriendlyKey(field)}
                         >
@@ -1743,7 +1676,7 @@ function Form({
                         </div>
                     );
                 })}
-            {!displaySteps && (
+            {
                 <GooglePlaces
                     googleKey={integrations['google-maps']}
                     activeStep={activeStep}
@@ -1752,7 +1685,7 @@ function Form({
                     onChange={fieldOnChange}
                     setNoChange={setNoChange}
                 />
-            )}
+            }
         </ReactForm>
     );
 }

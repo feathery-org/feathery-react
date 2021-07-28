@@ -4,6 +4,7 @@ import { IconContext } from 'react-icons';
 import { FiX } from 'react-icons/fi';
 import { reactFriendlyKey } from '../utils/formHelperFunctions';
 import { THUMBNAIL_TYPE, getThumbnailType } from '../utils/image';
+import { marginStyleFromField } from '../utils/styles';
 
 function RichFileUploader({
     field,
@@ -69,117 +70,110 @@ function RichFileUploader({
     }
 
     return (
-        <>
-            <div
-                id={reactFriendlyKey(field)}
-                onClick={onClick}
-                style={{
-                    position: 'relative',
-                    cursor: 'pointer',
-                    height: `${field.field_height}${field.field_height_unit}`,
-                    width: `${field.field_width}${field.field_width_unit}`,
-                    maxHeight: '100%',
-                    display: 'flex',
-                    justifyContent:
-                        !file && showLabel && showIcon
-                            ? 'space-between'
-                            : 'center',
-                    alignItems: 'center',
-                    flexDirection: 'column',
-                    border: '1px solid lightgrey',
-                    borderRadius: '4px',
-                    paddingTop: `${
-                        !file ? metadata.uploader_padding_top : 0
-                    }px`,
-                    paddingBottom: `${
-                        !file ? metadata.uploader_padding_bottom : 0
-                    }px`,
-                    paddingLeft: `${
-                        !file ? metadata.uploader_padding_left : 0
-                    }px`,
-                    paddingRight: `${
-                        !file ? metadata.uploader_padding_right : 0
-                    }px`,
-                    overflow: 'hidden'
-                }}
-            >
-                {showIcon && !file && (
-                    <Image
-                        src={metadata.icon_url}
-                        fluid
-                        style={{
-                            maxWidth: '100%',
-                            maxHeight: '100%',
-                            minHeight: 0
-                        }}
-                    />
-                )}
-                {showLabel && !file && (
-                    <div
-                        style={{
-                            paddingTop: `${metadata.cta_padding_top}px`,
-                            paddingBottom: `${metadata.cta_padding_bottom}px`,
-                            paddingLeft: `${metadata.cta_padding_left}px`,
-                            paddingRight: `${metadata.cta_padding_right}px`,
-                            background: `#${field.background_color}`
-                        }}
-                    >
-                        {servar.name}
-                    </div>
-                )}
-                {thumbnail && (
-                    <Image
-                        src={thumbnail}
-                        style={{
-                            maxWidth: '100%',
-                            maxHeight: '100%'
-                        }}
-                    />
-                )}
-                {filename && (
-                    <div
-                        style={{
-                            color: 'black',
-                            height: '100%',
-                            display: 'flex',
-                            alignItems: 'center'
-                        }}
-                    >
-                        {filename}
-                    </div>
-                )}
-                {file && servar.repeat_trigger !== 'set_value' && (
-                    <div
-                        style={{
-                            position: 'absolute',
-                            top: '4px',
-                            right: '4px',
-                            color: 'white',
-                            background: '#AAA',
-                            height: '16px',
-                            width: '16px',
-                            borderRadius: '50%',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center'
-                        }}
-                        onClick={onClear}
-                    >
-                        <IconContext.Provider value={{ className: 'clear' }}>
-                            <FiX size='12px' />
-                        </IconContext.Provider>
-                    </div>
-                )}
-                <input
-                    ref={fileInput}
-                    type='file'
-                    onChange={onChange}
-                    accept={servar.metadata.file_types}
-                    style={{ display: 'none' }}
+        <div
+            id={reactFriendlyKey(field)}
+            onClick={onClick}
+            style={{
+                position: 'relative',
+                cursor: 'pointer',
+                height: `${field.field_height}${field.field_height_unit}`,
+                width: `${field.field_width}${field.field_width_unit}`,
+                maxHeight: '100%',
+                display: 'flex',
+                justifyContent:
+                    !file && showLabel && showIcon ? 'space-between' : 'center',
+                alignItems: 'center',
+                flexDirection: 'column',
+                border: '1px solid lightgrey',
+                borderRadius: '4px',
+                paddingTop: `${!file ? metadata.uploader_padding_top : 0}px`,
+                paddingBottom: `${
+                    !file ? metadata.uploader_padding_bottom : 0
+                }px`,
+                paddingLeft: `${!file ? metadata.uploader_padding_left : 0}px`,
+                paddingRight: `${
+                    !file ? metadata.uploader_padding_right : 0
+                }px`,
+                overflow: 'hidden',
+                ...marginStyleFromField(field)
+            }}
+        >
+            {showIcon && !file && (
+                <Image
+                    src={metadata.icon_url}
+                    fluid
+                    style={{
+                        maxWidth: '100%',
+                        maxHeight: '100%',
+                        minHeight: 0
+                    }}
                 />
-            </div>
-        </>
+            )}
+            {showLabel && !file && (
+                <div
+                    style={{
+                        paddingTop: `${metadata.cta_padding_top}px`,
+                        paddingBottom: `${metadata.cta_padding_bottom}px`,
+                        paddingLeft: `${metadata.cta_padding_left}px`,
+                        paddingRight: `${metadata.cta_padding_right}px`,
+                        background: `#${field.background_color}`
+                    }}
+                >
+                    {servar.name}
+                </div>
+            )}
+            {thumbnail && (
+                <Image
+                    src={thumbnail}
+                    style={{
+                        maxWidth: '100%',
+                        maxHeight: '100%'
+                    }}
+                />
+            )}
+            {filename && (
+                <div
+                    style={{
+                        color: 'black',
+                        height: '100%',
+                        display: 'flex',
+                        alignItems: 'center'
+                    }}
+                >
+                    {filename}
+                </div>
+            )}
+            {file && servar.repeat_trigger !== 'set_value' && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        top: '4px',
+                        right: '4px',
+                        color: 'white',
+                        background: '#AAA',
+                        height: '16px',
+                        width: '16px',
+                        borderRadius: '50%',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                    }}
+                    onClick={onClear}
+                >
+                    <IconContext.Provider value={{ className: 'clear' }}>
+                        <FiX size='12px' />
+                    </IconContext.Provider>
+                </div>
+            )}
+            <input
+                ref={fileInput}
+                type='file'
+                onChange={onChange}
+                accept={servar.metadata.file_types}
+                style={{ display: 'none' }}
+            />
+        </div>
     );
 }
 

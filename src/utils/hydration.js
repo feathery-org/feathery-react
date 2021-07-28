@@ -173,8 +173,8 @@ function calculateDimensions(step) {
             ? `${(100 * parseFloat(column)) / definiteWidth}%`
             : 0;
     });
-    const relativeRows = step.grid_rows.map(
-        (row) => `minmax(${row},min-content)`
+    const relativeRows = step.grid_rows.map((row) =>
+        row === 'min-content' ? row : `minmax(${row},min-content)`
     );
     definiteWidth = `${definiteWidth}px`;
 

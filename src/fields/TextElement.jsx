@@ -2,6 +2,7 @@ import React from 'react';
 import Delta from 'quill-delta';
 import generateNodes from './textNodes';
 import { alignmentMap } from '../utils/formHelperFunctions';
+import { marginStyleFromField } from '../utils/styles';
 
 /**
  * Disambiguation: this is NOT a text "field" that receives input.
@@ -35,10 +36,6 @@ function TextElement({ field, fieldValues, conditions, submit }) {
         gridRowStart: field.row_index + 1,
         gridColumnEnd: field.column_index_end + 2,
         gridRowEnd: field.row_index_end + 2,
-        paddingBottom: `${field.padding_bottom}px`,
-        paddingTop: `${field.padding_top}px`,
-        paddingLeft: `${field.padding_left}px`,
-        paddingRight: `${field.padding_right}px`,
         display: 'flex',
         flexDirection: 'column',
         alignItems: alignmentMap[field.layout],
@@ -47,9 +44,8 @@ function TextElement({ field, fieldValues, conditions, submit }) {
     };
     if (field.border_color)
         containerStyle.border = `1px solid #${field.border_color}`;
-    const textStyle = field.line_height
-        ? { lineHeight: `${field.line_height}px` }
-        : {};
+    const textStyle = marginStyleFromField(field);
+    if (field.line_height) textStyle.lineHeight = `${field.line_height}px`;
 
     return (
         <div key={field.id} css={containerStyle}>

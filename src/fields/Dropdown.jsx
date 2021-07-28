@@ -1,5 +1,7 @@
 import React from 'react';
 import ReactForm from 'react-bootstrap/Form';
+import { states } from '../utils/formHelperFunctions';
+import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
 
 function Dropdown({
     field,
@@ -9,24 +11,47 @@ function Dropdown({
     onChange,
     selectCSS,
     hoverCSS,
-    inlineError
+    inlineError,
+    type = 'default'
 }) {
-    const borderColor = inlineError
-        ? '#F42525'
-        : `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`;
     const servar = field.servar;
+
+    let placeholder, options;
+    if (type === 'states') {
+        placeholder = 'State';
+        options = states.map((state) => (
+            <option key={state} value={state}>
+                {state}
+            </option>
+        ));
+    } else {
+        placeholder = 'Select...';
+        options = servar.metadata.options.map((option) => (
+            <option key={option} value={option}>
+                {option}
+            </option>
+        ));
+    }
+
+    const borderStyle = borderStyleFromField(field);
+    if (inlineError) borderStyle.borderColor = '#F42525';
     return (
-        <>
+        <div
+            style={{
+                width: `${field.field_width}${field.field_width_unit}`,
+                maxWidth: '100%',
+                ...marginStyleFromField(field)
+            }}
+        >
             {fieldLabel}
             <ReactForm.Control
                 style={{
-                    borderColor,
-                    borderWidth: `${field.border_width}px`,
+                    ...borderStyle,
+                    borderRadius: field.borderRadius,
                     height: `${field.field_height}${field.field_height_unit}`,
                     width: `${field.field_width}${field.field_width_unit}`,
                     maxWidth: '100%',
                     backgroundColor: `#${field.background_color}`,
-                    borderRadius: `${field.border_radius}px`,
                     fontSize: `${field.font_size}px`,
                     boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
                     color: `#${
@@ -43,8 +68,7 @@ function Dropdown({
                     backgroundImage:
                         "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='black'/></svg>\")",
                     backgroundRepeat: 'no-repeat',
-                    backgroundPositionX: '90%',
-                    backgroundPositionY: 'center'
+                    backgroundPosition: 'right 10px center'
                 }}
                 css={{
                     '&:focus': {
@@ -61,15 +85,11 @@ function Dropdown({
                 onClick={onClick}
             >
                 <option key='' value='' disabled>
-                    {field.metadata.placeholder || 'Select...'}
+                    {field.metadata.placeholder || placeholder}
                 </option>
-                {servar.metadata.options.map((option) => (
-                    <option key={option} value={option}>
-                        {option}
-                    </option>
-                ))}
+                {options}
             </ReactForm.Control>
-        </>
+        </div>
     );
 }
 

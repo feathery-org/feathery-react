@@ -5,41 +5,17 @@ import Delta from 'quill-delta';
 
 import { adjustColor, alignmentMap } from '../utils/formHelperFunctions';
 import generateNodes from './textNodes';
+import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
 
 function ButtonElement({
     field,
     fieldValues,
-    displaySteps,
     addRepeatedRow,
     removeRepeatedRow,
     submit,
     setSubmitRef
 }) {
     const [showSpinner, setShowSpinner] = useState(false);
-
-    const hoverStyles =
-        field.link === 'none'
-            ? {}
-            : {
-                  backgroundColor: `${adjustColor(
-                      field.button_color,
-                      -30
-                  )} !important`,
-                  borderColor: `${adjustColor(
-                      field.button_color,
-                      -30
-                  )} !important`,
-                  transition: 'background 0.3s !important'
-              };
-    const selectedStyles = {};
-    if (field.hover_border_color)
-        hoverStyles.borderColor = `#${field.hover_border_color} !important`;
-    if (field.hover_background_color)
-        hoverStyles.backgroundColor = `#${field.hover_background_color} !important`;
-    if (field.selected_border_color)
-        selectedStyles.borderColor = `#${field.selected_border_color} !important`;
-    if (field.selected_background_color)
-        selectedStyles.backgroundColor = `#${field.selected_background_color} !important`;
 
     const elementID = field.id;
     const repeat = field.repeat || 0;
@@ -54,7 +30,7 @@ function ButtonElement({
     });
 
     async function buttonOnClick() {
-        if (displaySteps || field.link === 'none') {
+        if (field.link === 'none') {
             return;
         }
 
@@ -94,6 +70,25 @@ function ButtonElement({
     }
     if (field.link === 'submit') setSubmitRef(buttonOnClick);
 
+    let hoverStyles = borderStyleFromField(field, 'hover_');
+    if (field.link !== 'none') {
+        hoverStyles = {
+            backgroundColor: `${adjustColor(
+                field.button_color,
+                -30
+            )} !important`,
+            borderColor: `${adjustColor(field.button_color, -30)} !important`,
+            transition: 'background 0.3s !important',
+            ...hoverStyles
+        };
+    }
+    if (field.hover_background_color)
+        hoverStyles.backgroundColor = `#${field.hover_background_color} !important`;
+    const selectedStyles = borderStyleFromField(field, 'selected_');
+    if (field.selected_background_color)
+        selectedStyles.backgroundColor = `#${field.selected_background_color} !important`;
+
+    const borderRadius = `${field.corner_top_left_radius}px ${field.corner_top_right_radius}px ${field.corner_bottom_right_radius}px ${field.corner_bottom_left_radius}px`;
     const halfHeight = Math.round(field.button_height / 2);
     return (
         <div
@@ -102,10 +97,6 @@ function ButtonElement({
                 gridRowStart: field.row_index + 1,
                 gridColumnEnd: field.column_index_end + 2,
                 gridRowEnd: field.row_index_end + 2,
-                paddingBottom: `${field.padding_bottom}px`,
-                paddingTop: `${field.padding_top}px`,
-                paddingLeft: `${field.padding_left}px`,
-                paddingRight: `${field.padding_right}px`,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: alignmentMap[field.layout],
@@ -121,13 +112,14 @@ function ButtonElement({
                     justifyContent: 'center',
                     alignItems: 'center',
                     cursor: field.link === 'none' ? 'default' : 'pointer',
-                    borderRadius: `${field.border_radius}px`,
-                    borderColor: `#${field.border_color}`,
                     backgroundColor: `#${field.button_color}`,
                     boxShadow: 'none',
                     height: `${field.button_height}${field.button_height_unit}`,
                     width: `${field.button_width}${field.button_width_unit}`,
-                    maxWidth: '100%'
+                    maxWidth: '100%',
+                    borderRadius,
+                    ...borderStyleFromField(field),
+                    ...marginStyleFromField(field)
                 }}
                 css={{
                     '&:active': selectedStyles,

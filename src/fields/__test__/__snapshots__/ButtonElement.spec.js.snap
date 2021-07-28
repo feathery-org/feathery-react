@@ -2,7 +2,7 @@
 
 exports[`ButtonElement renders a button with custom styles 1`] = `
 <div
-  className="css-zga5aq-ButtonElement"
+  className="css-lxt9uh-ButtonElement"
 >
   <button
     className="css-xtp43x-ButtonElement btn btn-primary"
@@ -12,13 +12,16 @@ exports[`ButtonElement renders a button with custom styles 1`] = `
       Object {
         "alignItems": "center",
         "backgroundColor": "#2954af",
-        "borderColor": "#2954af",
-        "borderRadius": "undefinedpx",
+        "borderRadius": "undefinedpx undefinedpx undefinedpx undefinedpx",
         "boxShadow": "none",
         "cursor": "pointer",
         "display": "flex",
         "height": "undefinedundefined",
         "justifyContent": "center",
+        "marginBottom": "undefinedpx",
+        "marginLeft": "undefinedpx",
+        "marginRight": "undefinedpx",
+        "marginTop": "undefinedpx",
         "maxWidth": "100%",
         "width": "undefinedundefined",
       }
@@ -54,7 +57,7 @@ exports[`ButtonElement renders a button with custom styles 1`] = `
 
 exports[`ButtonElement renders a button with plain text 1`] = `
 <div
-  className="css-zga5aq-ButtonElement"
+  className="css-lxt9uh-ButtonElement"
 >
   <button
     className="css-xtp43x-ButtonElement btn btn-primary"
@@ -64,13 +67,16 @@ exports[`ButtonElement renders a button with plain text 1`] = `
       Object {
         "alignItems": "center",
         "backgroundColor": "#2954af",
-        "borderColor": "#2954af",
-        "borderRadius": "undefinedpx",
+        "borderRadius": "undefinedpx undefinedpx undefinedpx undefinedpx",
         "boxShadow": "none",
         "cursor": "pointer",
         "display": "flex",
         "height": "undefinedundefined",
         "justifyContent": "center",
+        "marginBottom": "undefinedpx",
+        "marginLeft": "undefinedpx",
+        "marginRight": "undefinedpx",
+        "marginTop": "undefinedpx",
         "maxWidth": "100%",
         "width": "undefinedundefined",
       }
@@ -102,7 +108,7 @@ exports[`ButtonElement renders a button with plain text 1`] = `
 
 exports[`ButtonElement renders an empty Button element 1`] = `
 <div
-  className="css-zga5aq-ButtonElement"
+  className="css-lxt9uh-ButtonElement"
 >
   <button
     className="css-xtp43x-ButtonElement btn btn-primary"
@@ -112,13 +118,19 @@ exports[`ButtonElement renders an empty Button element 1`] = `
       Object {
         "alignItems": "center",
         "backgroundColor": "#2954af",
-        "borderColor": "#2954af",
-        "borderRadius": "undefinedpx",
+        "borderColor": "#2954af #2954af #2954af #2954af ",
+        "borderRadius": "undefinedpx undefinedpx undefinedpx undefinedpx",
+        "borderStyle": "undefined undefined undefined undefined ",
+        "borderWidth": "undefinedpx undefinedpx undefinedpx undefinedpx ",
         "boxShadow": "none",
         "cursor": "pointer",
         "display": "flex",
         "height": "undefinedundefined",
         "justifyContent": "center",
+        "marginBottom": "undefinedpx",
+        "marginLeft": "undefinedpx",
+        "marginRight": "undefinedpx",
+        "marginTop": "undefinedpx",
         "maxWidth": "100%",
         "width": "undefinedundefined",
       }
