@@ -139,7 +139,7 @@ function MultiFileUploader({
                 </div>
             ))}
             <div
-                id={reactFriendlyKey(field)}
+                id={servar.key}
                 onClick={onClick}
                 style={{
                     position: 'relative',

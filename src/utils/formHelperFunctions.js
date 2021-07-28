@@ -406,7 +406,8 @@ function setFormElementError({
     index = null,
     servarType = ''
 }) {
-    if (servarType === 'pin_input') fieldKey = `${fieldKey}-0`;
+    if (['pin_input', 'select', 'multiselect'].includes(servarType))
+        fieldKey = `${fieldKey}-0`;
     const singleOrList = formRef.current.elements[fieldKey];
     let elements =
         singleOrList instanceof RadioNodeList

@@ -1331,7 +1331,7 @@ function Form({
                                 <>
                                     {fieldLabel}
                                     <ReactForm.File
-                                        id={reactFriendlyKey(field)}
+                                        id={servar.key}
                                         required={servar.required}
                                         onChange={(e) => {
                                             fieldOnChange(

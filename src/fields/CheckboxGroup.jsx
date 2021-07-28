@@ -57,7 +57,7 @@ function CheckboxGroup({
                 return (
                     <ReactForm.Check
                         type='checkbox'
-                        id={`${servar.key}-${opt}`}
+                        id={`${servar.key}-${i}`}
                         key={`${servar.key}-${i}`}
                         name={opt}
                         label={opt}

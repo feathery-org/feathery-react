@@ -24,7 +24,7 @@ function RadioButtonGroup({
                 return (
                     <ReactForm.Check
                         type='radio'
-                        id={`${servar.key}-${opt}`}
+                        id={`${servar.key}-${i}`}
                         key={`${servar.key}-${i}`}
                         label={opt}
                         checked={fieldVal === opt}
