@@ -1,4 +1,5 @@
 import React from 'react';
+import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
 
 const handleButtonGroupChange = (e, step, updateFieldValues) => {
     const fieldKey = e.target.id;
@@ -59,14 +60,10 @@ function ButtonGroup({
                                 height: `${field.field_height}${field.field_height_unit}`,
                                 width: `${field.field_width}${field.field_width_unit}`,
                                 backgroundColor: `#${field.background_color}`,
-                                borderWidth: `${field.border_width}px`,
-                                borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                                borderRadius: `${field.border_radius}px`,
-                                marginBottom: `${field.padding_bottom}px`,
-                                marginTop: `${field.padding_top}px`,
-                                marginLeft: `${field.padding_left}px`,
-                                marginRight: `${field.padding_right}px`,
-                                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`
+                                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
+                                borderRadius: field.borderRadius,
+                                ...borderStyleFromField(field),
+                                ...marginStyleFromField(field)
                             }}
                             css={{
                                 '&:active': selectCSS,

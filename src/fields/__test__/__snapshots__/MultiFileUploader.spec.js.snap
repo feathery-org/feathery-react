@@ -6,6 +6,10 @@ exports[`MultiFileUploader renders a basic multi-file upload component 1`] = `
     Object {
       "display": "flex",
       "flexWrap": "wrap",
+      "marginBottom": "undefinedpx",
+      "marginLeft": "undefinedpx",
+      "marginRight": "undefinedpx",
+      "marginTop": "undefinedpx",
     }
   }
 >
@@ -79,6 +83,10 @@ exports[`MultiFileUploader renders a multi-file upload component with initial fi
     Object {
       "display": "flex",
       "flexWrap": "wrap",
+      "marginBottom": "undefinedpx",
+      "marginLeft": "undefinedpx",
+      "marginRight": "undefinedpx",
+      "marginTop": "undefinedpx",
     }
   }
 >

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import ReactForm from 'react-bootstrap/Form';
+import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
 
 function RadioButtonGroup({
     field,
@@ -18,7 +19,7 @@ function RadioButtonGroup({
     const otherChecked =
         (otherSelect[servar.key] || fieldVal) && fieldVal === otherVal;
     return (
-        <>
+        <div style={marginStyleFromField(field)}>
             {fieldLabel}
             {servar.metadata.options.map((opt, i) => {
                 return (
@@ -73,15 +74,14 @@ function RadioButtonGroup({
                             marginLeft: '5px',
                             height: `${parseInt(field.font_size) + 4}px`,
                             backgroundColor: `#${field.background_color}`,
-                            borderWidth: `${field.border_width}px`,
-                            borderColor: `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`,
-                            borderRadius: `${field.border_radius}px`,
                             boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
                             color: `#${field.font_color}`,
                             fontStyle: field.font_italic ? 'italic' : 'normal',
                             fontWeight: field.font_weight,
                             fontFamily: field.font_family,
-                            fontSize: `${field.font_size}px`
+                            fontSize: `${field.font_size}px`,
+                            borderRadius: field.borderRadius,
+                            ...borderStyleFromField(field)
                         }}
                         css={{
                             '&:focus': {
@@ -105,7 +105,7 @@ function RadioButtonGroup({
                     />
                 </div>
             )}
-        </>
+        </div>
     );
 }
 

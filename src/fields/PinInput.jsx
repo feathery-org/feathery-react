@@ -1,6 +1,7 @@
 import React from 'react';
 import { PinInput, PinInputField } from '@chakra-ui/pin-input';
 import { reactFriendlyKey } from '../utils/formHelperFunctions';
+import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
 
 function FeatheryPinInput({
     field,
@@ -12,16 +13,16 @@ function FeatheryPinInput({
     hoverCSS,
     inlineError
 }) {
-    const borderColor = inlineError
-        ? '#F42525'
-        : `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`;
     const servar = field.servar;
+    const borderStyle = borderStyleFromField(field);
+    if (inlineError) borderStyle.borderColor = '#F42525';
     return (
         <div
             key={reactFriendlyKey(field)}
             style={{
                 display: 'flex',
-                flexDirection: 'row'
+                flexDirection: 'row',
+                ...marginStyleFromField(field)
             }}
         >
             {fieldLabel}
@@ -38,18 +39,17 @@ function FeatheryPinInput({
                         <PinInputField
                             key={`pin-${i}`}
                             style={{
-                                borderColor,
-                                borderWidth: `${field.border_width}px`,
                                 textAlign: 'center',
                                 marginLeft: '8px',
                                 outline: 'none',
                                 height: `${field.field_height}${field.field_height_unit}`,
                                 width: `${field.field_width}${field.field_width_unit}`,
                                 backgroundColor: `#${field.background_color}`,
-                                borderRadius: `${field.border_radius}px`,
                                 boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
                                 fontSize: `${field.font_size}px`,
-                                color: `#${field.font_color}`
+                                color: `#${field.font_color}`,
+                                borderRadius: field.borderRadius,
+                                ...borderStyle
                             }}
                             css={{
                                 '&::placeholder': {

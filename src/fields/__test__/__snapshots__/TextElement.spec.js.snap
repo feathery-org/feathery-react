@@ -2,10 +2,17 @@
 
 exports[`Text renders a plaintext text block 1`] = `
 <div
-  className="css-1yvl1gu-TextElement"
+  className="css-kevpsq-TextElement"
 >
   <div
-    style={Object {}}
+    style={
+      Object {
+        "marginBottom": "undefinedpx",
+        "marginLeft": "undefinedpx",
+        "marginRight": "undefinedpx",
+        "marginTop": "undefinedpx",
+      }
+    }
   >
     <span
       onClick={[Function]}
@@ -23,10 +30,17 @@ exports[`Text renders a plaintext text block 1`] = `
 
 exports[`Text renders a text block with custom styles 1`] = `
 <div
-  className="css-1yvl1gu-TextElement"
+  className="css-kevpsq-TextElement"
 >
   <div
-    style={Object {}}
+    style={
+      Object {
+        "marginBottom": "undefinedpx",
+        "marginLeft": "undefinedpx",
+        "marginRight": "undefinedpx",
+        "marginTop": "undefinedpx",
+      }
+    }
   >
     <span
       onClick={[Function]}
@@ -48,10 +62,17 @@ exports[`Text renders a text block with custom styles 1`] = `
 
 exports[`Text renders an empty text block 1`] = `
 <div
-  className="css-1yvl1gu-TextElement"
+  className="css-kevpsq-TextElement"
 >
   <div
-    style={Object {}}
+    style={
+      Object {
+        "marginBottom": "undefinedpx",
+        "marginLeft": "undefinedpx",
+        "marginRight": "undefinedpx",
+        "marginTop": "undefinedpx",
+      }
+    }
   >
     <span
       onClick={[Function]}

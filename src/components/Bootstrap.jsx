@@ -1,6 +1,7 @@
 import ReactForm from 'react-bootstrap/Form';
 import React from 'react';
 import { IMaskMixin } from 'react-imask';
+import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
 
 function BootstrapField({
     label,
@@ -48,11 +49,16 @@ function BootstrapField({
         }`;
     }
 
-    const borderColor = inlineError
-        ? '#F42525'
-        : `#${field.border_top_color} #${field.border_right_color} #${field.border_bottom_color} #${field.border_left_color}`;
+    const borderStyle = borderStyleFromField(field);
+    if (inlineError) borderStyle.borderColor = '#F42525';
     return (
-        <>
+        <div
+            style={{
+                width: `${field.field_width}${field.field_width_unit}`,
+                maxWidth: '100%',
+                ...marginStyleFromField(field)
+            }}
+        >
             {label}
             <div
                 style={{
@@ -67,15 +73,14 @@ function BootstrapField({
                     pattern={pattern}
                     style={{
                         maxWidth: '100%',
-                        borderColor,
-                        borderWidth: `${field.border_width}px`,
                         height: `${field.field_height}${field.field_height_unit}`,
                         width: `${field.field_width}${field.field_width_unit}`,
                         backgroundColor: `#${field.background_color}`,
-                        borderRadius: `${field.border_radius}px`,
                         boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
                         fontSize: `${field.font_size}px`,
                         color: `#${field.font_color}`,
+                        borderRadius: field.borderRadius,
+                        ...borderStyle,
                         ...inputPlaceholderCSS
                     }}
                     css={{
@@ -118,7 +123,7 @@ function BootstrapField({
                     {metadata.placeholder || ''}
                 </span>
             </div>
-        </>
+        </div>
     );
 }
 

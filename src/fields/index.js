@@ -1,7 +1,6 @@
 import ButtonGroup from './ButtonGroup';
 import CheckboxGroup from './CheckboxGroup';
 import Dropdown from './Dropdown';
-import GMapsStateDropdown from './GMapsStateDropdown';
 import MultiFileUploader from './MultiFileUploader';
 import PinInput from './PinInput';
 import RadioButtonGroup from './RadioButtonGroup';
@@ -13,7 +12,6 @@ export {
     ButtonGroup,
     CheckboxGroup,
     Dropdown,
-    GMapsStateDropdown,
     MultiFileUploader,
     PinInput,
     RadioButtonGroup,
