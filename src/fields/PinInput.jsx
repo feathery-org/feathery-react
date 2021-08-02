@@ -42,21 +42,21 @@ function FeatheryPinInput({
                                 textAlign: 'center',
                                 marginLeft: '8px',
                                 outline: 'none',
-                                height: `${field.field_height}${field.field_height_unit}`,
-                                width: `${field.field_width}${field.field_width_unit}`,
-                                backgroundColor: `#${field.background_color}`,
-                                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
-                                fontSize: `${field.font_size}px`,
-                                color: `#${field.font_color}`,
+                                height: `${field.styles.field_height}${field.styles.field_height_unit}`,
+                                width: `${field.styles.field_width}${field.styles.field_width_unit}`,
+                                backgroundColor: `#${field.styles.background_color}`,
+                                boxShadow: `${field.styles.shadow_x_offset}px ${field.styles.shadow_y_offset}px ${field.styles.shadow_blur_radius}px #${field.styles.shadow_color}`,
+                                fontSize: `${field.styles.font_size}px`,
+                                color: `#${field.styles.font_color}`,
                                 borderRadius: field.borderRadius,
                                 ...borderStyle
                             }}
                             css={{
                                 '&::placeholder': {
-                                    color: `#${field.font_color} !important`
+                                    color: `#${field.styles.font_color} !important`
                                 },
                                 '&:focus': {
-                                    boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color} !important`,
+                                    boxShadow: `${field.styles.shadow_x_offset}px ${field.styles.shadow_y_offset}px ${field.styles.shadow_blur_radius}px #${field.styles.shadow_color} !important`,
                                     ...selectCSS
                                 },
                                 '&:hover': hoverCSS

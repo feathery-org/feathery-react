@@ -992,8 +992,8 @@ function Form({
     };
 
     let progressBarElements = null;
-    if (activeStep.progress_bar) {
-        const pb = activeStep.progress_bar;
+    const pb = activeStep.progress_bar;
+    if (pb) {
         const percent =
             pb.progress || Math.round((100 * curDepth) / (maxDepth + 1));
         progressBarElements = [
@@ -1001,7 +1001,7 @@ function Form({
                 key='progress'
                 style={{
                     height: '0.4rem',
-                    width: `${pb.bar_width}%`,
+                    width: `${pb.styles.bar_width}%`,
                     maxWidth: '100%',
                     borderRadius: 0,
                     ...marginStyleFromField(pb)
@@ -1009,16 +1009,16 @@ function Form({
                 css={{
                     '.progress-bar': {
                         margin: '0 0 0 0 !important',
-                        backgroundColor: `#${pb.bar_color} !important`
+                        backgroundColor: `#${pb.styles.bar_color} !important`
                     }
                 }}
                 now={percent}
             />
         ];
         const completionPercentage = `${percent}% completed`;
-        if (pb.percent_text_layout === 'top') {
+        if (pb.styles.percent_text_layout === 'top') {
             progressBarElements.splice(0, 0, completionPercentage);
-        } else if (pb.percent_text_layout === 'bottom') {
+        } else if (pb.styles.percent_text_layout === 'bottom') {
             progressBarElements.splice(1, 0, completionPercentage);
         }
     }
@@ -1050,32 +1050,28 @@ function Form({
             }}
         >
             {children}
-            {activeStep.progress_bar &&
+            {pb &&
                 !shouldElementHide({
                     fields: activeStep.servar_fields,
                     values: fieldValues,
-                    element: activeStep.progress_bar
+                    element: pb
                 }) && (
                     <div
                         key='progress-bar'
                         css={{
-                            gridColumnStart:
-                                activeStep.progress_bar.column_index + 1,
-                            gridRowStart: activeStep.progress_bar.row_index + 1,
-                            gridColumnEnd:
-                                activeStep.progress_bar.column_index_end + 2,
-                            gridRowEnd:
-                                activeStep.progress_bar.row_index_end + 2,
-                            alignItems: activeStep.progress_bar.layout,
-                            justifyContent:
-                                activeStep.progress_bar.vertical_layout,
-                            color: `#${activeStep.progress_bar.font_color}`,
-                            fontStyle: activeStep.progress_bar.font_italic
+                            gridColumnStart: pb.column_index + 1,
+                            gridRowStart: pb.row_index + 1,
+                            gridColumnEnd: pb.column_index_end + 2,
+                            gridRowEnd: pb.row_index_end + 2,
+                            alignItems: pb.styles.layout,
+                            justifyContent: pb.styles.vertical_layout,
+                            color: `#${pb.styles.font_color}`,
+                            fontStyle: pb.styles.font_italic
                                 ? 'italic'
                                 : 'normal',
-                            fontWeight: activeStep.progress_bar.font_weight,
-                            fontFamily: activeStep.progress_bar.font_family,
-                            fontSize: `${activeStep.progress_bar.font_size}px`,
+                            fontWeight: pb.styles.font_weight,
+                            fontFamily: pb.styles.font_family,
+                            fontSize: `${pb.styles.font_size}px`,
                             display: 'flex',
                             flexDirection: 'column'
                         }}
@@ -1101,15 +1097,15 @@ function Form({
                             gridColumnEnd: image.column_index_end + 2,
                             gridRowEnd: image.row_index_end + 2,
                             display: 'flex',
-                            alignItems: image.vertical_layout,
-                            justifyContent: image.layout
+                            alignItems: image.styles.vertical_layout,
+                            justifyContent: image.styles.layout
                         }}
                     >
                         <img
                             src={image.source_url}
                             alt='Form Image'
                             style={{
-                                width: `${image.image_width}${image.image_width_unit}`,
+                                width: `${image.styles.image_width}${image.styles.image_width_unit}`,
                                 objectFit: 'contain',
                                 ...marginStyleFromField(image)
                             }}
@@ -1176,7 +1172,7 @@ function Form({
                         field,
                         fieldValues
                     );
-                    const metadata = field.metadata;
+                    const styles = field.styles;
 
                     let otherVal = '';
                     if (servar.metadata.other) {
@@ -1222,17 +1218,17 @@ function Form({
                     const inlineErr =
                         errType === 'inline' &&
                         getInlineError(field, inlineErrors);
-                    field.borderRadius = `${field.corner_top_left_radius}px ${field.corner_top_right_radius}px ${field.corner_bottom_right_radius}px ${field.corner_bottom_left_radius}px`;
+                    field.borderRadius = `${styles.corner_top_left_radius}px ${styles.corner_top_right_radius}px ${styles.corner_bottom_right_radius}px ${styles.corner_bottom_left_radius}px`;
                     const hover = borderStyleFromField(field, 'hover_');
-                    if (field.hover_background_color)
-                        hover.backgroundColor = `#${field.hover_background_color} !important`;
-                    if (field.hover_font_color)
-                        hover.color = `#${field.hover_font_color} !important`;
+                    if (styles.hover_background_color)
+                        hover.backgroundColor = `#${styles.hover_background_color} !important`;
+                    if (styles.hover_font_color)
+                        hover.color = `#${styles.hover_font_color} !important`;
                     const select = borderStyleFromField(field, 'selected_');
-                    if (field.selected_background_color)
-                        select.backgroundColor = `#${field.selected_background_color} !important`;
-                    if (field.selected_font_color)
-                        select.color = `#${field.selected_font_color} !important`;
+                    if (styles.selected_background_color)
+                        select.backgroundColor = `#${styles.selected_background_color} !important`;
+                    if (styles.selected_font_color)
+                        select.color = `#${styles.selected_font_color} !important`;
 
                     let controlElement;
                     switch (servar.type) {
@@ -1240,7 +1236,7 @@ function Form({
                             controlElement = (
                                 <div
                                     style={{
-                                        width: `${field.field_width}px`,
+                                        width: `${styles.field_width}px`,
                                         maxWidth: '100%',
                                         ...marginStyleFromField(field)
                                     }}
@@ -1250,13 +1246,13 @@ function Form({
                                         penColor='black'
                                         canvasProps={{
                                             id: servar.key,
-                                            width: field.field_width,
-                                            height: field.field_height,
+                                            width: styles.field_width,
+                                            height: styles.field_height,
                                             style: {
-                                                backgroundColor: `#${field.background_color}`,
+                                                backgroundColor: `#${styles.background_color}`,
                                                 borderRadius:
                                                     field.borderRadius,
-                                                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
+                                                boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color}`,
                                                 ...borderStyleFromField(field)
                                             }
                                         }}
@@ -1580,7 +1576,7 @@ function Form({
                                         );
                                     }}
                                     onClick={onClick}
-                                    rows={metadata.num_rows}
+                                    rows={styles.num_rows}
                                     inlineError={inlineErr}
                                 />
                             );
@@ -1644,17 +1640,17 @@ function Form({
                                 gridRowStart: field.row_index + 1,
                                 gridColumnEnd: field.column_index_end + 2,
                                 gridRowEnd: field.row_index_end + 2,
-                                alignItems: field.layout,
-                                color: `#${field.font_color}`,
-                                fontStyle: field.font_italic
+                                alignItems: field.styles.layout,
+                                color: `#${field.styles.font_color}`,
+                                fontStyle: field.styles.font_italic
                                     ? 'italic'
                                     : 'normal',
-                                fontWeight: field.font_weight,
-                                fontFamily: field.font_family,
-                                fontSize: `${field.font_size}px`,
+                                fontWeight: field.styles.font_weight,
+                                fontFamily: field.styles.font_family,
+                                fontSize: `${field.styles.font_size}px`,
                                 display: 'flex',
                                 flexDirection: 'column',
-                                justifyContent: field.vertical_layout,
+                                justifyContent: field.styles.vertical_layout,
                                 width: '100%'
                             }}
                             key={reactFriendlyKey(field)}
@@ -1664,8 +1660,8 @@ function Form({
                                 <span
                                     style={{
                                         alignSelf: 'flex-start',
-                                        fontFamily: field.font_family,
-                                        fontSize: `${field.font_size}px`,
+                                        fontFamily: field.styles.font_family,
+                                        fontSize: `${field.styles.font_size}px`,
                                         marginTop: '3px',
                                         color: '#F42525'
                                     }}

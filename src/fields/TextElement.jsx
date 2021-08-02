@@ -38,14 +38,15 @@ function TextElement({ field, fieldValues, conditions, submit }) {
         gridRowEnd: field.row_index_end + 2,
         display: 'flex',
         flexDirection: 'column',
-        alignItems: alignmentMap[field.layout],
-        textAlign: field.layout,
-        justifyContent: field.vertical_layout
+        alignItems: alignmentMap[field.styles.layout],
+        textAlign: field.styles.layout,
+        justifyContent: field.styles.vertical_layout
     };
-    if (field.border_color)
-        containerStyle.border = `1px solid #${field.border_color}`;
+    if (field.styles.border_color)
+        containerStyle.border = `1px solid #${field.styles.border_color}`;
     const textStyle = marginStyleFromField(field);
-    if (field.line_height) textStyle.lineHeight = `${field.line_height}px`;
+    if (field.styles.line_height)
+        textStyle.lineHeight = `${field.styles.line_height}px`;
 
     return (
         <div key={field.id} css={containerStyle}>

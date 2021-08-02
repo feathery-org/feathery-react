@@ -44,7 +44,7 @@ function ButtonElement({
             return;
         }
 
-        if (field.link === 'submit' && field.show_spinner_on_submit) {
+        if (field.link === 'submit' && field.styles.show_spinner_on_submit) {
             setShowSpinner(true);
         }
 
@@ -74,22 +74,22 @@ function ButtonElement({
     if (field.link !== 'none') {
         hoverStyles = {
             backgroundColor: `${adjustColor(
-                field.button_color,
+                field.styles.button_color,
                 -30
             )} !important`,
-            borderColor: `${adjustColor(field.button_color, -30)} !important`,
+            borderColor: `${adjustColor(field.styles.button_color, -30)} !important`,
             transition: 'background 0.3s !important',
             ...hoverStyles
         };
     }
-    if (field.hover_background_color)
-        hoverStyles.backgroundColor = `#${field.hover_background_color} !important`;
+    if (field.styles.hover_background_color)
+        hoverStyles.backgroundColor = `#${field.styles.hover_background_color} !important`;
     const selectedStyles = borderStyleFromField(field, 'selected_');
-    if (field.selected_background_color)
-        selectedStyles.backgroundColor = `#${field.selected_background_color} !important`;
+    if (field.styles.selected_background_color)
+        selectedStyles.backgroundColor = `#${field.styles.selected_background_color} !important`;
 
-    const borderRadius = `${field.corner_top_left_radius}px ${field.corner_top_right_radius}px ${field.corner_bottom_right_radius}px ${field.corner_bottom_left_radius}px`;
-    const halfHeight = Math.round(field.button_height / 2);
+    const borderRadius = `${field.styles.corner_top_left_radius}px ${field.styles.corner_top_right_radius}px ${field.styles.corner_bottom_right_radius}px ${field.styles.corner_bottom_left_radius}px`;
+    const halfHeight = Math.round(field.styles.button_height / 2);
     return (
         <div
             css={{
@@ -99,9 +99,9 @@ function ButtonElement({
                 gridRowEnd: field.row_index_end + 2,
                 display: 'flex',
                 flexDirection: 'column',
-                alignItems: alignmentMap[field.layout],
-                textAlign: field.layout,
-                justifyContent: field.vertical_layout
+                alignItems: alignmentMap[field.styles.layout],
+                textAlign: field.styles.layout,
+                justifyContent: field.styles.vertical_layout
             }}
         >
             <Button
@@ -112,10 +112,10 @@ function ButtonElement({
                     justifyContent: 'center',
                     alignItems: 'center',
                     cursor: field.link === 'none' ? 'default' : 'pointer',
-                    backgroundColor: `#${field.button_color}`,
+                    backgroundColor: `#${field.styles.button_color}`,
                     boxShadow: 'none',
-                    height: `${field.button_height}${field.button_height_unit}`,
-                    width: `${field.button_width}${field.button_width_unit}`,
+                    height: `${field.styles.button_height}${field.styles.button_height_unit}`,
+                    width: `${field.styles.button_width}${field.styles.button_width_unit}`,
                     maxWidth: '100%',
                     borderRadius,
                     ...borderStyleFromField(field),
@@ -149,9 +149,9 @@ function ButtonElement({
                             style={{
                                 color: 'white',
                                 position: 'absolute',
-                                right: `-${field.button_height}${field.button_height_unit}`,
-                                width: `${halfHeight}${field.button_height_unit}`,
-                                height: `${halfHeight}${field.button_height_unit}`,
+                                right: `-${field.styles.button_height}${field.styles.button_height_unit}`,
+                                width: `${halfHeight}${field.styles.button_height_unit}`,
+                                height: `${halfHeight}${field.styles.button_height_unit}`,
                                 border: '0.2em solid currentColor',
                                 borderRightColor: 'transparent'
                             }}

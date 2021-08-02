@@ -33,8 +33,8 @@ function MultiFileUploader({
     onClick: customOnClick,
     initialFiles = []
 }) {
-    const { servar, metadata } = field;
-    const showIcon = metadata.icon_url !== '';
+    const { servar, styles } = field;
+    const showIcon = styles.icon_url !== '';
     const showLabel = servar.name !== '';
 
     // Maintain separate lists of raw files and thumbnails data
@@ -97,8 +97,8 @@ function MultiFileUploader({
                     key={index}
                     style={{
                         position: 'relative',
-                        height: `${field.field_height}${field.field_height_unit}`,
-                        width: `${field.field_width}${field.field_width_unit}`,
+                        height: `${styles.field_height}${styles.field_height_unit}`,
+                        width: `${styles.field_width}${styles.field_width_unit}`,
                         margin: '0 6px 6px 0',
                         maxHeight: '100%',
                         border: '1px solid lightgrey',
@@ -150,8 +150,8 @@ function MultiFileUploader({
                 style={{
                     position: 'relative',
                     cursor: 'pointer',
-                    height: `${field.field_height}${field.field_height_unit}`,
-                    width: `${field.field_width}${field.field_width_unit}`,
+                    height: `${styles.field_height}${styles.field_height_unit}`,
+                    width: `${styles.field_width}${styles.field_width_unit}`,
                     maxHeight: '100%',
                     display: 'flex',
                     justifyContent:
@@ -160,17 +160,17 @@ function MultiFileUploader({
                     flexDirection: 'column',
                     border: '1px solid lightgrey',
                     borderRadius: '4px',
-                    paddingTop: `${metadata.uploader_padding_top}px`,
-                    paddingBottom: `${metadata.uploader_padding_bottom}px`,
-                    paddingLeft: `${metadata.uploader_padding_left}px`,
-                    paddingRight: `${metadata.uploader_padding_right}px`,
+                    paddingTop: `${styles.uploader_padding_top}px`,
+                    paddingBottom: `${styles.uploader_padding_bottom}px`,
+                    paddingLeft: `${styles.uploader_padding_left}px`,
+                    paddingRight: `${styles.uploader_padding_right}px`,
                     overflow: 'hidden',
                     margin: '0 6px 6px 0'
                 }}
             >
                 {showIcon && (
                     <Image
-                        src={metadata.icon_url}
+                        src={styles.icon_url}
                         fluid
                         style={{
                             maxWidth: '100%',
@@ -182,11 +182,11 @@ function MultiFileUploader({
                 {showLabel && (
                     <div
                         style={{
-                            paddingTop: `${metadata.cta_padding_top}px`,
-                            paddingBottom: `${metadata.cta_padding_bottom}px`,
-                            paddingLeft: `${metadata.cta_padding_left}px`,
-                            paddingRight: `${metadata.cta_padding_right}px`,
-                            background: `#${field.background_color}`
+                            paddingTop: `${styles.cta_padding_top}px`,
+                            paddingBottom: `${styles.cta_padding_bottom}px`,
+                            paddingLeft: `${styles.cta_padding_left}px`,
+                            paddingRight: `${styles.cta_padding_right}px`,
+                            background: `#${styles.background_color}`
                         }}
                     >
                         {servar.name}
