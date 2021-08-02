@@ -631,13 +631,12 @@ function Form({
                 if (invalid) return;
             }
 
-            let authId, errorMessage, errorField;
-            ({
-                newFieldVals,
-                authId,
-                errorMessage,
-                errorField
-            } = await handleActions(formattedFields, metadata, newFieldVals));
+            let errorMessage, errorField;
+            ({ newFieldVals, errorMessage, errorField } = await handleActions(
+                formattedFields,
+                metadata,
+                newFieldVals
+            ));
             if (errorMessage && errorField) {
                 if (errType === 'html5') {
                     setFormElementError({
@@ -657,8 +656,11 @@ function Form({
             // Execute user-provided onSubmit function if present
             if (typeof onSubmit === 'function') {
                 const integrationData = {};
-                if (authId) {
-                    integrationData.firebaseAuthId = authId;
+                if (initState.authId) {
+                    integrationData.firebaseAuthId = initState.authId;
+                }
+                if (initState.authToken) {
+                    integrationData.firebaseAuthToken = initState.authToken;
                 }
 
                 const allFields = formatAllStepFields(steps, newFieldVals);
@@ -826,12 +828,10 @@ function Form({
                         .confirm(fieldVal)
                         .then(async (result) => {
                             // User signed in successfully.
-                            const authId = result.user.uid;
-                            const authToken = await result.user.getIdToken();
                             return await client
                                 .submitAuthInfo({
-                                    authId,
-                                    authToken,
+                                    authId: result.user.uid,
+                                    authToken: await result.user.getIdToken(),
                                     authPhone: window.firebasePhoneNumber
                                 })
                                 .then((session) => {
@@ -839,7 +839,7 @@ function Form({
                                         session,
                                         newFieldVals
                                     );
-                                    return { newFieldVals, authId };
+                                    return { newFieldVals };
                                 });
                         })
                         .catch(() => {
