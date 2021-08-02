@@ -35,8 +35,8 @@ function ButtonGroup({
                     display: 'flex',
                     flexWrap: 'wrap',
                     width: '100%',
-                    alignItems: field.layout,
-                    justifyContent: field.vertical_layout
+                    alignItems: field.styles.layout,
+                    justifyContent: field.styles.vertical_layout
                 }}
             >
                 {servar.metadata.options.map((opt) => {
@@ -57,10 +57,10 @@ function ButtonGroup({
                                 justifyContent: 'center',
                                 alignItems: 'center',
                                 cursor: 'pointer',
-                                height: `${field.field_height}${field.field_height_unit}`,
-                                width: `${field.field_width}${field.field_width_unit}`,
-                                backgroundColor: `#${field.background_color}`,
-                                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
+                                height: `${field.styles.field_height}${field.styles.field_height_unit}`,
+                                width: `${field.styles.field_width}${field.styles.field_width_unit}`,
+                                backgroundColor: `#${field.styles.background_color}`,
+                                boxShadow: `${field.styles.shadow_x_offset}px ${field.styles.shadow_y_offset}px ${field.styles.shadow_blur_radius}px #${field.styles.shadow_color}`,
                                 borderRadius: field.borderRadius,
                                 ...borderStyleFromField(field),
                                 ...marginStyleFromField(field)

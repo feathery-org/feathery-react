@@ -14,7 +14,7 @@ function Dropdown({
     inlineError,
     type = 'default'
 }) {
-    const servar = field.servar;
+    const { servar, styles } = field;
 
     let placeholder, options;
     if (type === 'states') {
@@ -38,7 +38,7 @@ function Dropdown({
     return (
         <div
             style={{
-                width: `${field.field_width}${field.field_width_unit}`,
+                width: `${styles.field_width}${styles.field_width_unit}`,
                 maxWidth: '100%',
                 ...marginStyleFromField(field)
             }}
@@ -48,20 +48,16 @@ function Dropdown({
                 style={{
                     ...borderStyle,
                     borderRadius: field.borderRadius,
-                    height: `${field.field_height}${field.field_height_unit}`,
-                    width: `${field.field_width}${field.field_width_unit}`,
+                    height: `${styles.field_height}${styles.field_height_unit}`,
+                    width: `${styles.field_width}${styles.field_width_unit}`,
                     maxWidth: '100%',
-                    backgroundColor: `#${field.background_color}`,
-                    fontSize: `${field.font_size}px`,
-                    boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
+                    backgroundColor: `#${styles.background_color}`,
+                    fontSize: `${styles.font_size}px`,
+                    boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color}`,
                     color: `#${
-                        fieldVal
-                            ? field.font_color
-                            : field.metadata.placeholder_color
+                        fieldVal ? styles.font_color : styles.placeholder_color
                     }`,
-                    fontStyle: field.metadata.placeholder_italic
-                        ? 'italic'
-                        : 'normal',
+                    fontStyle: styles.placeholder_italic ? 'italic' : 'normal',
                     appearance: 'none',
                     WebkitAppearance: 'none',
                     MozAppearance: 'none',
@@ -72,7 +68,7 @@ function Dropdown({
                 }}
                 css={{
                     '&:focus': {
-                        boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color} !important`,
+                        boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color} !important`,
                         ...selectCSS
                     },
                     '&:hover': hoverCSS
@@ -85,7 +81,7 @@ function Dropdown({
                 onClick={onClick}
             >
                 <option key='' value='' disabled>
-                    {field.metadata.placeholder || placeholder}
+                    {styles.placeholder || placeholder}
                 </option>
                 {options}
             </ReactForm.Control>

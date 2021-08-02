@@ -116,20 +116,22 @@ function CheckboxGroup({
                         type='text'
                         style={{
                             marginLeft: '5px',
-                            height: `${parseInt(field.font_size) + 4}px`,
-                            backgroundColor: `#${field.background_color}`,
-                            boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
-                            color: `#${field.font_color}`,
-                            fontStyle: field.font_italic ? 'italic' : 'normal',
-                            fontWeight: field.font_weight,
-                            fontFamily: field.font_family,
-                            fontSize: `${field.font_size}px`,
+                            height: `${parseInt(field.styles.font_size) + 4}px`,
+                            backgroundColor: `#${field.styles.background_color}`,
+                            boxShadow: `${field.styles.shadow_x_offset}px ${field.styles.shadow_y_offset}px ${field.styles.shadow_blur_radius}px #${field.styles.shadow_color}`,
+                            color: `#${field.styles.font_color}`,
+                            fontStyle: field.styles.font_italic
+                                ? 'italic'
+                                : 'normal',
+                            fontWeight: field.styles.font_weight,
+                            fontFamily: field.styles.font_family,
+                            fontSize: `${field.styles.font_size}px`,
                             borderRadius: field.borderRadius,
                             ...borderStyleFromField(field)
                         }}
                         css={{
                             '&:focus': {
-                                boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color} !important`,
+                                boxShadow: `${field.styles.shadow_x_offset}px ${field.styles.shadow_y_offset}px ${field.styles.shadow_blur_radius}px #${field.styles.shadow_color} !important`,
                                 ...selectCSS
                             },
                             '&:hover': hoverCSS

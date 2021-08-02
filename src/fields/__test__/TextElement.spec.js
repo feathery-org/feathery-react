@@ -6,7 +6,7 @@ describe('Text', () => {
     it('renders an empty text block', async () => {
         // Arrange
         const props = {
-            field: { text_formatted: [{ insert: '\n' }] },
+            field: { text_formatted: [{ insert: '\n' }], styles: {} },
             fieldValues: {},
             conditions: [],
             displaySteps: [],
@@ -29,7 +29,7 @@ describe('Text', () => {
     it('renders a plaintext text block', async () => {
         // Arrange
         const props = {
-            field: { text_formatted: [{ insert: 'Hello World!' }] },
+            field: { text_formatted: [{ insert: 'Hello World!' }], styles: {} },
             fieldValues: {},
             conditions: [],
             displaySteps: [],
@@ -66,7 +66,8 @@ describe('Text', () => {
                             underline: false
                         }
                     }
-                ]
+                ],
+                styles: {}
             },
             fieldValues: {},
             conditions: [],

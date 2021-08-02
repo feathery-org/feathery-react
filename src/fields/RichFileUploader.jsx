@@ -12,8 +12,8 @@ function RichFileUploader({
     onClick: customOnClick,
     initialFile
 }) {
-    const { servar, metadata } = field;
-    const showIcon = metadata.icon_url !== '';
+    const { servar, styles } = field;
+    const showIcon = styles.icon_url !== '';
     const showLabel = servar.name !== '';
 
     const [thumbnail, setThumbnail] = useState('');
@@ -76,8 +76,8 @@ function RichFileUploader({
             style={{
                 position: 'relative',
                 cursor: 'pointer',
-                height: `${field.field_height}${field.field_height_unit}`,
-                width: `${field.field_width}${field.field_width_unit}`,
+                height: `${styles.field_height}${styles.field_height_unit}`,
+                width: `${styles.field_width}${styles.field_width_unit}`,
                 maxHeight: '100%',
                 display: 'flex',
                 justifyContent:
@@ -86,13 +86,13 @@ function RichFileUploader({
                 flexDirection: 'column',
                 border: '1px solid lightgrey',
                 borderRadius: '4px',
-                paddingTop: `${!file ? metadata.uploader_padding_top : 0}px`,
+                paddingTop: `${!file ? styles.uploader_padding_top : 0}px`,
                 paddingBottom: `${
-                    !file ? metadata.uploader_padding_bottom : 0
+                    !file ? styles.uploader_padding_bottom : 0
                 }px`,
-                paddingLeft: `${!file ? metadata.uploader_padding_left : 0}px`,
+                paddingLeft: `${!file ? styles.uploader_padding_left : 0}px`,
                 paddingRight: `${
-                    !file ? metadata.uploader_padding_right : 0
+                    !file ? styles.uploader_padding_right : 0
                 }px`,
                 overflow: 'hidden',
                 ...marginStyleFromField(field)
@@ -100,7 +100,7 @@ function RichFileUploader({
         >
             {showIcon && !file && (
                 <Image
-                    src={metadata.icon_url}
+                    src={styles.icon_url}
                     fluid
                     style={{
                         maxWidth: '100%',
@@ -112,11 +112,11 @@ function RichFileUploader({
             {showLabel && !file && (
                 <div
                     style={{
-                        paddingTop: `${metadata.cta_padding_top}px`,
-                        paddingBottom: `${metadata.cta_padding_bottom}px`,
-                        paddingLeft: `${metadata.cta_padding_left}px`,
-                        paddingRight: `${metadata.cta_padding_right}px`,
-                        background: `#${field.background_color}`
+                        paddingTop: `${styles.cta_padding_top}px`,
+                        paddingBottom: `${styles.cta_padding_bottom}px`,
+                        paddingLeft: `${styles.cta_padding_left}px`,
+                        paddingRight: `${styles.cta_padding_right}px`,
+                        background: `#${styles.background_color}`
                     }}
                 >
                     {servar.name}

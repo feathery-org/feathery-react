@@ -7,20 +7,12 @@ describe('RichFileUploader', () => {
         // Arrange
         const props = {
             field: {
-                field_height: '50',
-                field_height_unit: '%',
-                field_width: '50',
-                field_width_unit: 'px',
-                background_color: '000000',
-                servar: {
-                    key: 'key',
-                    name: 'Upload file...',
-                    required: true,
-                    metadata: {
-                        file_types: 'image/*'
-                    }
-                },
-                metadata: {
+                styles: {
+                    field_height: '50',
+                    field_height_unit: '%',
+                    field_width: '50',
+                    field_width_unit: 'px',
+                    background_color: '000000',
                     icon_url: 'https://feathery.tech',
                     uploader_padding_top: '0',
                     uploader_padding_bottom: '0',
@@ -30,6 +22,14 @@ describe('RichFileUploader', () => {
                     cta_padding_bottom: '0',
                     cta_padding_left: '0',
                     cta_padding_right: '0'
+                },
+                servar: {
+                    key: 'key',
+                    name: 'Upload file...',
+                    required: true,
+                    metadata: {
+                        file_types: 'image/*'
+                    }
                 }
             },
             onChange: jest.fn(),

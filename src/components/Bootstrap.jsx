@@ -18,8 +18,7 @@ function BootstrapField({
     inlineError,
     ...props
 }) {
-    const metadata = field.metadata;
-    const servar = field.servar;
+    const { servar, styles } = field;
 
     if (rows) {
         props.rows = rows;
@@ -34,18 +33,18 @@ function BootstrapField({
     let placeholderCSS = { display: 'none' };
     const placeholderActiveCSS = {};
     const inputPlaceholderCSS = {};
-    if (metadata.placeholder_transition === 'shrink_top') {
-        const minFontSize = Math.min(field.font_size, 10);
+    if (styles.placeholder_transition === 'shrink_top') {
+        const minFontSize = Math.min(styles.font_size, 10);
         placeholderCSS = {
             top: 0,
             marginTop: `${minFontSize / 2}px`,
             fontSize: `${minFontSize}px`
         };
-        if (metadata.selected_placeholder_color) {
-            placeholderActiveCSS.color = `#${metadata.selected_placeholder_color}`;
+        if (styles.selected_placeholder_color) {
+            placeholderActiveCSS.color = `#${styles.selected_placeholder_color}`;
         }
-        inputPlaceholderCSS.paddingTop = `${field.field_height / 3}${
-            field.field_height_unit
+        inputPlaceholderCSS.paddingTop = `${styles.field_height / 3}${
+            styles.field_height_unit
         }`;
     }
 
@@ -54,7 +53,7 @@ function BootstrapField({
     return (
         <div
             style={{
-                width: `${field.field_width}${field.field_width_unit}`,
+                width: `${styles.field_width}${styles.field_width_unit}`,
                 maxWidth: '100%',
                 ...marginStyleFromField(field)
             }}
@@ -63,8 +62,8 @@ function BootstrapField({
             <div
                 style={{
                     position: 'relative',
-                    height: `${field.field_height}${field.field_height_unit}`,
-                    width: `${field.field_width}${field.field_width_unit}`,
+                    height: `${styles.field_height}${styles.field_height_unit}`,
+                    width: `${styles.field_width}${styles.field_width_unit}`,
                     maxWidth: '100%'
                 }}
             >
@@ -73,19 +72,19 @@ function BootstrapField({
                     pattern={pattern}
                     style={{
                         maxWidth: '100%',
-                        height: `${field.field_height}${field.field_height_unit}`,
-                        width: `${field.field_width}${field.field_width_unit}`,
-                        backgroundColor: `#${field.background_color}`,
-                        boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color}`,
-                        fontSize: `${field.font_size}px`,
-                        color: `#${field.font_color}`,
+                        height: `${styles.field_height}${styles.field_height_unit}`,
+                        width: `${styles.field_width}${styles.field_width_unit}`,
+                        backgroundColor: `#${styles.background_color}`,
+                        boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color}`,
+                        fontSize: `${styles.font_size}px`,
+                        color: `#${styles.font_color}`,
                         borderRadius: field.borderRadius,
                         ...borderStyle,
                         ...inputPlaceholderCSS
                     }}
                     css={{
                         '&:focus': {
-                            boxShadow: `${field.shadow_x_offset}px ${field.shadow_y_offset}px ${field.shadow_blur_radius}px #${field.shadow_color} !important`,
+                            boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color} !important`,
                             ...selectStyle
                         },
                         '&:hover': hoverStyle
@@ -105,12 +104,12 @@ function BootstrapField({
                         pointerEvents: 'none',
                         left: '13px',
                         top: '50%',
-                        marginTop: `-${field.font_size / 2}px`,
+                        marginTop: `-${styles.font_size / 2}px`,
                         transition: '0.2s ease all',
-                        color: `#${metadata.placeholder_color}`,
-                        fontSize: `${field.font_size}px`,
-                        lineHeight: `${field.font_size}px`,
-                        fontStyle: metadata.placeholder_italic
+                        color: `#${styles.placeholder_color}`,
+                        fontSize: `${styles.font_size}px`,
+                        lineHeight: `${styles.font_size}px`,
+                        fontStyle: styles.placeholder_italic
                             ? 'italic'
                             : 'normal',
                         ...(fieldValue || fieldMask ? placeholderCSS : {}),
@@ -120,7 +119,7 @@ function BootstrapField({
                         }
                     }}
                 >
-                    {metadata.placeholder || ''}
+                    {styles.placeholder || ''}
                 </span>
             </div>
         </div>
