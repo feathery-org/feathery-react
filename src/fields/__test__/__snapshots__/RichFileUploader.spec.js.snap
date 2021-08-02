@@ -13,7 +13,7 @@ exports[`RichFileUploader renders a basic file upload component 1`] = `
       "display": "flex",
       "flexDirection": "column",
       "height": "50%",
-      "justifyContent": "space-between",
+      "justifyContent": "center",
       "marginBottom": "undefinedpx",
       "marginLeft": "undefinedpx",
       "marginRight": "undefinedpx",
@@ -29,31 +29,58 @@ exports[`RichFileUploader renders a basic file upload component 1`] = `
     }
   }
 >
-  <img
-    className="img-fluid"
-    src="https://feathery.tech"
-    style={
-      Object {
-        "maxHeight": "100%",
-        "maxWidth": "100%",
-        "minHeight": 0,
-      }
-    }
-  />
+  
+  
   <div
+    onClick={[Function]}
     style={
       Object {
-        "background": "#000000",
-        "paddingBottom": "0px",
-        "paddingLeft": "0px",
-        "paddingRight": "0px",
-        "paddingTop": "0px",
+        "alignItems": "center",
+        "background": "#AAA",
+        "borderRadius": "50%",
+        "color": "white",
+        "cursor": "pointer",
+        "display": "flex",
+        "height": "16px",
+        "justifyContent": "center",
+        "position": "absolute",
+        "right": "4px",
+        "top": "4px",
+        "width": "16px",
       }
     }
   >
-    Upload file...
+    <svg
+      className="clear"
+      fill="none"
+      height="12px"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      style={
+        Object {
+          "color": undefined,
+        }
+      }
+      viewBox="0 0 24 24"
+      width="12px"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <line
+        x1="18"
+        x2="6"
+        y1="6"
+        y2="18"
+      />
+      <line
+        x1="6"
+        x2="18"
+        y1="6"
+        y2="18"
+      />
+    </svg>
   </div>
-  
   <input
     accept="image/*"
     onChange={[Function]}
