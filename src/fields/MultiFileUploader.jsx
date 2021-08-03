@@ -42,7 +42,9 @@ function MultiFileUploader({
     // When the user uploads files to the multi-file upload, we just append to the existing set
     // By default the input element would just replace all the uploaded files (we don't want that)
     async function onChange(event) {
-        const uploadedFiles = Array.from(event.target.files);
+        const uploadedFiles = Array.from(event.target.files).map((file) =>
+            Promise.resolve(file)
+        );
         const newThumbnailData = await Promise.all(
             uploadedFiles.map(getThumbnailData)
         );

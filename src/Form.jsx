@@ -1284,11 +1284,14 @@ function Form({
                                         id={servar.key}
                                         required={servar.required}
                                         onChange={(e) => {
+                                            const file = e.target.files[0];
                                             fieldOnChange(
                                                 [field.id],
                                                 [servar.key],
                                                 handleValueChange(
-                                                    e.target.files[0],
+                                                    file
+                                                        ? Promise.resolve(file)
+                                                        : file,
                                                     servar.key,
                                                     index
                                                 )
