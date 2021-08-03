@@ -1,31 +1,11 @@
-import React, { useRef, useState } from 'react';
-import { Image } from 'react-bootstrap';
-import { IconContext } from 'react-icons';
+import React, { useEffect, useRef, useState } from 'react';
+
 import { FiX } from 'react-icons/fi';
+import { IconContext } from 'react-icons';
+import { Image } from 'react-bootstrap';
+import { getThumbnailData } from '../utils/image';
 import { justRemove } from '../utils/array';
-import { THUMBNAIL_TYPE, getThumbnailType } from '../utils/image';
 import { marginStyleFromField } from '../utils/styles';
-
-async function getThumbnailData(file) {
-    const thumbnailType = getThumbnailType(file);
-    if (thumbnailType === THUMBNAIL_TYPE.IMAGE) {
-        const url = await new Promise((resolve) => {
-            const reader = new FileReader();
-
-            reader.addEventListener('load', (event) => {
-                resolve(event.target.result);
-            });
-
-            reader.readAsDataURL(file);
-        });
-
-        return { filename: file.name, thumbnail: url };
-    } else if (thumbnailType === THUMBNAIL_TYPE.URL) {
-        return { filename: '', thumbnail: file.url };
-    } else {
-        return { filename: file.name, thumbnail: '' };
-    }
-}
 
 function MultiFileUploader({
     field,
@@ -42,8 +22,14 @@ function MultiFileUploader({
     // Thumbnails data can be evaluated only when we add files (for performance)
     const [rawFiles, setRawFiles] = useState(initialFiles);
     const [thumbnailsData, setThumbnailsData] = useState(
-        initialFiles.map((file) => ({ filename: '', thumbnail: file.url }))
+        initialFiles.map(() => ({ filename: '', thumbnail: '' }))
     );
+    useEffect(() => {
+        (async () => {
+            const data = await Promise.all(initialFiles.map(getThumbnailData));
+            setThumbnailsData(data);
+        })();
+    }, [initialFiles]);
 
     // Reference the hidden multi-select element
     const fileInput = useRef();

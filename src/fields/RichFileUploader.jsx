@@ -1,16 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Image } from 'react-bootstrap';
-import { IconContext } from 'react-icons';
+
 import { FiX } from 'react-icons/fi';
-import { reactFriendlyKey } from '../utils/formHelperFunctions';
-import { THUMBNAIL_TYPE, getThumbnailType } from '../utils/image';
+import { IconContext } from 'react-icons';
+import { Image } from 'react-bootstrap';
+import { getThumbnailData } from '../utils/image';
 import { marginStyleFromField } from '../utils/styles';
+import { reactFriendlyKey } from '../utils/formHelperFunctions';
 
 function RichFileUploader({
     field,
     onChange: customOnChange,
     onClick: customOnClick,
-    initialFile
+    initialFile = Promise.resolve()
 }) {
     const { servar, styles } = field;
     const showIcon = styles.icon_url !== '';
@@ -27,27 +28,9 @@ function RichFileUploader({
     // When a file is uploaded, we convert it to a thumbnail
     useEffect(() => {
         (async () => {
-            const thumbnailType = getThumbnailType(file);
-            if (thumbnailType === THUMBNAIL_TYPE.IMAGE) {
-                const url = await new Promise((resolve) => {
-                    const reader = new FileReader();
-
-                    reader.addEventListener('load', function (event) {
-                        resolve(event.target.result);
-                    });
-
-                    reader.readAsDataURL(file);
-                });
-
-                setFilename('');
-                setThumbnail(url);
-            } else if (thumbnailType === THUMBNAIL_TYPE.URL) {
-                setThumbnail(file.url);
-                setFilename('');
-            } else {
-                setThumbnail('');
-                setFilename(file?.name);
-            }
+            const { filename, thumbnail } = await getThumbnailData(file);
+            setFilename(filename);
+            setThumbnail(thumbnail);
         })();
     }, [file]);
 
@@ -91,9 +74,7 @@ function RichFileUploader({
                     !file ? styles.uploader_padding_bottom : 0
                 }px`,
                 paddingLeft: `${!file ? styles.uploader_padding_left : 0}px`,
-                paddingRight: `${
-                    !file ? styles.uploader_padding_right : 0
-                }px`,
+                paddingRight: `${!file ? styles.uploader_padding_right : 0}px`,
                 overflow: 'hidden',
                 ...marginStyleFromField(field)
             }}

@@ -1,5 +1,5 @@
-import { initInfo } from './init';
 import getRandomBoolean from './random';
+import { initInfo } from './init';
 
 const states = [
     'Alabama',
@@ -464,6 +464,24 @@ function shouldElementHide({ fields, values, element }) {
         : !matchValues.includes(value);
 }
 
+function objectMap(obj, transform) {
+    return Object.entries(obj).reduce((newObj, [key, val]) => {
+        return { ...newObj, [key]: transform(val) };
+    }, {});
+}
+
+/**
+ * If a user's file is already uploaded, Feathery backend returns S3 details: { path, url }
+ * We convert this information into Promises that resolve to the file
+ */
+async function fetchS3File(url) {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new File([blob], decodeURI(url.split('?')[0].split('/').slice(-1)), {
+        type: blob.type
+    });
+}
+
 const alignmentMap = {
     left: 'flex-start',
     center: 'center',
@@ -487,6 +505,8 @@ export {
     getInlineError,
     shouldElementHide,
     setFormElementError,
+    objectMap,
+    fetchS3File,
     states,
     alignmentMap,
     phonePattern,

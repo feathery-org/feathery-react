@@ -1,48 +1,13 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
-
-import ProgressBar from 'react-bootstrap/ProgressBar';
-import ReactForm from 'react-bootstrap/Form';
-import { SketchPicker } from 'react-color';
-import TagManager from 'react-gtm-module';
-import { BrowserRouter, Route, useHistory } from 'react-router-dom';
-import SignatureCanvas from 'react-signature-canvas';
-import $script from 'scriptjs';
+import './bootstrap-iso.css';
 
 import {
     BootstrapField,
     MaskedBootstrapField,
     getMaskProps
 } from './components/Bootstrap';
-import Client from './utils/client';
+import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import {
-    formatAllStepFields,
-    formatStepFields,
-    getABVariant,
-    getDefaultFieldValues,
-    lookupElementKey,
-    nextStepKey,
-    getOrigin,
-    recurseDepth,
-    reactFriendlyKey,
-    getFieldValue,
-    setFormElementError,
-    getDefaultFieldValue,
-    getFieldError,
-    getInlineError,
-    shouldElementHide,
-    phonePattern,
-    emailPattern,
-    emailPatternStr
-} from './utils/formHelperFunctions';
-import { justInsert, justRemove } from './utils/array';
-import {
-    calculateDimensions,
-    calculateRepeatedRowCount,
-    injectRepeatedRows
-} from './utils/hydration';
-
-import GooglePlaces from './components/GooglePlaces';
-import {
+    ButtonElement,
     ButtonGroup,
     CheckboxGroup,
     Dropdown,
@@ -50,13 +15,48 @@ import {
     PinInput,
     RadioButtonGroup,
     RichFileUploader,
-    TextElement,
-    ButtonElement
+    TextElement
 } from './fields';
-import { initInfo, initState } from './utils/init';
-
-import './bootstrap-iso.css';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { borderStyleFromField, marginStyleFromField } from './utils/styles';
+import {
+    calculateDimensions,
+    calculateRepeatedRowCount,
+    injectRepeatedRows
+} from './utils/hydration';
+import {
+    emailPattern,
+    emailPatternStr,
+    fetchS3File,
+    formatAllStepFields,
+    formatStepFields,
+    getABVariant,
+    getDefaultFieldValue,
+    getDefaultFieldValues,
+    getFieldError,
+    getFieldValue,
+    getInlineError,
+    getOrigin,
+    lookupElementKey,
+    nextStepKey,
+    objectMap,
+    phonePattern,
+    reactFriendlyKey,
+    recurseDepth,
+    setFormElementError,
+    shouldElementHide
+} from './utils/formHelperFunctions';
+import { initInfo, initState } from './utils/init';
+import { justInsert, justRemove } from './utils/array';
+
+import $script from 'scriptjs';
+import Client from './utils/client';
+import GooglePlaces from './components/GooglePlaces';
+import ProgressBar from 'react-bootstrap/ProgressBar';
+import ReactForm from 'react-bootstrap/Form';
+import SignatureCanvas from 'react-signature-canvas';
+import { SketchPicker } from 'react-color';
+import TagManager from 'react-gtm-module';
 
 function Form({
     // Public API
@@ -76,6 +76,7 @@ function Form({
     const [rawActiveStep, setRawActiveStep] = useState(null);
     const [stepKey, setStepKey] = useState('');
     const [fieldValues, setFieldValues] = useState(initialValues);
+    const [filePathMap, setFilePathMap] = useState({});
 
     const [finishConfig, setFinishConfig] = useState({
         finished: false,
@@ -202,15 +203,27 @@ function Form({
         return newValues;
     };
 
-    const updateSessionValues = (session, fieldVals) => {
+    function updateSessionValues(session, fieldVals) {
+        // Convert files of the format { url, path } to Promise<File>
+        const filePromises = objectMap(session.file_values, (fileOrFiles) =>
+            Array.isArray(fileOrFiles)
+                ? fileOrFiles.map((f) => fetchS3File(f.url))
+                : fetchS3File(fileOrFiles.url)
+        );
+
+        // Create a map of servar keys to S3 paths so we know which files have been uploaded already
+        const newFilePathMap = objectMap(session.file_values, (fileOrFiles) =>
+            Array.isArray(fileOrFiles)
+                ? fileOrFiles.map((f) => f.path)
+                : fileOrFiles
+        );
+
+        setFilePathMap({ ...filePathMap, ...newFilePathMap });
         return updateFieldValues(
-            {
-                ...session.field_values,
-                ...session.file_values
-            },
+            { ...session.field_values, ...filePromises },
             fieldVals
         );
-    };
+    }
 
     const updateFieldOptions = (stepData, activeStepData) => (
         newFieldOptions
@@ -880,7 +893,7 @@ function Form({
         );
         let submitPromise = null;
         if (featheryFields.length > 0)
-            submitPromise = client.submitStep(featheryFields);
+            submitPromise = client.submitStep(featheryFields, filePathMap);
         if (TagManager.initialized) {
             TagManager.dataLayer({
                 dataLayer: {

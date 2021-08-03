@@ -1,5 +1,7 @@
 import * as errors from './error';
+
 import { initInfo, initState, initUserPromise } from './init';
+
 import encodeGetParams from './string';
 
 // Convenience boolean for urls - manually change for testing
@@ -154,7 +156,7 @@ export default class Client {
         });
     }
 
-    _getFileValue(servar) {
+    _getFileValue(servar, filePathMap) {
         let fileValue;
         if ('file_upload' in servar) {
             fileValue = servar.file_upload;
@@ -170,19 +172,25 @@ export default class Client {
             return null;
         }
 
-        const resolveFile = (file) => (file instanceof File ? file : file.path);
+        const resolveFile = (file, index = null) => {
+            const path =
+                index === null
+                    ? filePathMap[servar.key]
+                    : filePathMap[servar.key][index];
+            return path ?? file;
+        };
         return Array.isArray(fileValue)
             ? fileValue.map(resolveFile)
             : resolveFile(fileValue);
     }
 
-    _submitFileData(servars) {
+    _submitFileData(servars, filePathMap) {
         const { userKey, apiKey } = initInfo();
         const url = `${API_URL}api/panel/step/submit/file/${userKey}/`;
 
         const formData = new FormData();
         servars.forEach((servar) => {
-            const fileValue = this._getFileValue(servar);
+            const fileValue = this._getFileValue(servar, filePathMap);
             if (fileValue) {
                 if (Array.isArray(fileValue)) {
                     fileValue.forEach((file) =>
@@ -208,7 +216,7 @@ export default class Client {
     }
 
     // servars = [{key: <servarKey>, <type>: <value>}]
-    async submitStep(servars) {
+    async submitStep(servars, filePathMap) {
         const isFileServar = (servar) =>
             [
                 'file_upload',
@@ -220,7 +228,8 @@ export default class Client {
         const jsonPromise = this._submitJSONData(jsonServars);
         const fileServars = servars.filter(isFileServar);
 
-        if (fileServars.length > 0) await this._submitFileData(fileServars);
+        if (fileServars.length > 0)
+            await this._submitFileData(fileServars, filePathMap);
         await jsonPromise;
     }
 
