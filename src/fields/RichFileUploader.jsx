@@ -41,9 +41,10 @@ function RichFileUploader({
 
     function onChange(event) {
         const file = event.target.files[0];
-        setFile(file);
+        const filePromise = Promise.resolve(file);
+        setFile(filePromise);
 
-        customOnChange({ target: { files: file ? [file] : [] } });
+        customOnChange({ target: { files: file ? [filePromise] : [] } });
     }
 
     function onClear() {
