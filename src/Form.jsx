@@ -1014,10 +1014,8 @@ function Form({
                 key='progress'
                 style={{
                     height: '0.4rem',
-                    width: `${pb.styles.bar_width}%`,
-                    maxWidth: '100%',
-                    borderRadius: 0,
-                    ...marginStyleFromField(pb)
+                    width: '100%',
+                    borderRadius: 0
                 }}
                 css={{
                     '.progress-bar': {
@@ -1028,7 +1026,11 @@ function Form({
                 now={percent}
             />
         ];
-        const completionPercentage = `${percent}% completed`;
+        const completionPercentage = (
+            <div
+                style={{ width: '100%', textAlign: 'center' }}
+            >{`${percent}% completed`}</div>
+        );
         if (pb.styles.percent_text_layout === 'top') {
             progressBarElements.splice(0, 0, completionPercentage);
         } else if (pb.styles.percent_text_layout === 'bottom') {
@@ -1089,7 +1091,18 @@ function Form({
                             flexDirection: 'column'
                         }}
                     >
-                        {progressBarElements}
+                        <div
+                            style={{
+                                display: 'flex',
+                                justifyContent: pb.styles.vertical_layout,
+                                alignItems: pb.styles.layout,
+                                flexDirection: 'column',
+                                width: `${pb.styles.bar_width}%`,
+                                ...marginStyleFromField(pb)
+                            }}
+                        >
+                            {progressBarElements}
+                        </div>
                     </div>
                 )}
             {activeStep.images
