@@ -77,7 +77,10 @@ function ButtonElement({
                 field.styles.button_color,
                 -30
             )} !important`,
-            borderColor: `${adjustColor(field.styles.button_color, -30)} !important`,
+            borderColor: `${adjustColor(
+                field.styles.button_color,
+                -30
+            )} !important`,
             transition: 'background 0.3s !important',
             ...hoverStyles
         };
@@ -150,6 +153,10 @@ function ButtonElement({
                                 color: 'white',
                                 position: 'absolute',
                                 right: `-${field.styles.button_height}${field.styles.button_height_unit}`,
+                                top: '50%',
+                                bottom: '50%',
+                                marginTop: 'auto',
+                                marginBottom: 'auto',
                                 width: `${halfHeight}${field.styles.button_height_unit}`,
                                 height: `${halfHeight}${field.styles.button_height_unit}`,
                                 border: '0.2em solid currentColor',

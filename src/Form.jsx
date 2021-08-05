@@ -739,7 +739,9 @@ function Form({
                     formRef.current.reportValidity();
                     if (!formRef.current.checkValidity()) return;
                 } else if (errType === 'inline') {
-                    setInlineErrors(newInlineErrors);
+                    setInlineErrors(
+                        JSON.parse(JSON.stringify(newInlineErrors))
+                    );
                     const invalid = Object.values(newInlineErrors).find(
                         (data) => data.message
                     );
@@ -1672,19 +1674,6 @@ function Form({
                             key={reactFriendlyKey(field)}
                         >
                             {controlElement}
-                            {inlineErr && (
-                                <span
-                                    style={{
-                                        alignSelf: 'flex-start',
-                                        fontFamily: field.styles.font_family,
-                                        fontSize: `${field.styles.font_size}px`,
-                                        marginTop: '3px',
-                                        color: '#F42525'
-                                    }}
-                                >
-                                    {inlineErr}
-                                </span>
-                            )}
                         </div>
                     );
                 })}
