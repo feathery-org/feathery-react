@@ -85,6 +85,19 @@ function Dropdown({
                 </option>
                 {options}
             </ReactForm.Control>
+            {inlineError && (
+                <span
+                    style={{
+                        alignSelf: 'flex-start',
+                        fontFamily: field.styles.font_family,
+                        fontSize: `${field.styles.font_size}px`,
+                        marginTop: '3px',
+                        color: '#F42525'
+                    }}
+                >
+                    {inlineError}
+                </span>
+            )}
         </div>
     );
 }
