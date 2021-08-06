@@ -32,6 +32,7 @@ function FeatheryPinInput({
                 onChange={onChange}
                 onClick={onClick}
                 numInputs={servar.max_length}
+                isInputNum={true}
                 inputStyle={{
                     textAlign: 'center',
                     marginLeft: '8px',
