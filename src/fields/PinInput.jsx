@@ -31,7 +31,6 @@ function FeatheryPinInput({
                 defaultValue={fieldVal}
                 onChange={onChange}
                 onClick={onClick}
-                otp
             >
                 {Array(servar.max_length)
                     .fill(0)
