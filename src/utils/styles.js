@@ -1,10 +1,10 @@
-function borderStyleFromField(field, p = '') {
+function borderStyleFromField(field, p = '', important = true) {
     // If color isn't defined on one of the sides, that means there's no border
     if (!field.styles[`${p}border_top_color`]) {
         return {};
     }
 
-    const i = p ? '!important' : '';
+    const i = p && important ? '!important' : '';
 
     const borderColor = `#${field.styles[`${p}border_top_color`]} #${
         field.styles[`${p}border_right_color`]

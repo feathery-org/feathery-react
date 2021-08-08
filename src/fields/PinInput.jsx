@@ -20,9 +20,8 @@ function SingleOtpInput({
     onBlur,
     onClick,
     field,
-    selectCSS,
     hoverCSS,
-    borderStyle
+    inlineError
 }) {
     const input = useRef(null);
 
@@ -37,6 +36,12 @@ function SingleOtpInput({
         }
     }, [focus, input]);
 
+    const borderStyle = borderStyleFromField(
+        field,
+        focus ? 'selected_' : '',
+        false
+    );
+    if (inlineError) borderStyle.borderColor = '#F42525';
     return (
         <div style={{ display: 'flex', alignItems: 'center' }}>
             <input
@@ -63,8 +68,7 @@ function SingleOtpInput({
                         color: `#${field.styles.font_color} !important`
                     },
                     '&:focus': {
-                        boxShadow: `${field.styles.shadow_x_offset}px ${field.styles.shadow_y_offset}px ${field.styles.shadow_blur_radius}px #${field.styles.shadow_color} !important`,
-                        ...selectCSS
+                        boxShadow: `${field.styles.shadow_x_offset}px ${field.styles.shadow_y_offset}px ${field.styles.shadow_blur_radius}px #${field.styles.shadow_color} !important`
                     },
                     '&:hover': hoverCSS
                 }}
@@ -84,15 +88,7 @@ function SingleOtpInput({
     );
 }
 
-function OtpInput({
-    onChange,
-    onClick,
-    value,
-    field,
-    hoverCSS,
-    selectCSS,
-    borderStyle
-}) {
+function OtpInput({ onChange, onClick, value, field, hoverCSS, inlineError }) {
     const [activeInput, setActiveInput] = useState(0);
     const [rawValue, setRawValue] = useState(value.toString().split(''));
 
@@ -215,9 +211,8 @@ function OtpInput({
                     onBlur={() => setActiveInput(-1)}
                     onClick={onClick}
                     field={field}
-                    selectCSS={selectCSS}
                     hoverCSS={hoverCSS}
-                    borderStyle={borderStyle}
+                    inlineError={inlineError}
                 />
             );
         }
@@ -244,12 +239,9 @@ function FeatheryPinInput({
     fieldVal,
     onClick,
     onChange,
-    selectCSS,
     hoverCSS,
     inlineError
 }) {
-    const borderStyle = borderStyleFromField(field);
-    if (inlineError) borderStyle.borderColor = '#F42525';
     return (
         <div style={{ display: 'flex' }}>
             {fieldLabel}
@@ -259,8 +251,7 @@ function FeatheryPinInput({
                 onChange={onChange}
                 onClick={onClick}
                 hoverCSS={hoverCSS}
-                selectCSS={selectCSS}
-                borderStyle={borderStyle}
+                inlineError={inlineError}
             />
             {inlineError && (
                 <span
