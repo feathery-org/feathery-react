@@ -1479,7 +1479,6 @@ function Form({
                                             )
                                         );
                                     }}
-                                    selectCSS={select}
                                     hoverCSS={hover}
                                     inlineError={inlineErr}
                                 />
