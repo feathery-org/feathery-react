@@ -8,7 +8,7 @@ import { marginStyleFromField } from '../utils/styles';
  * Disambiguation: this is NOT a text "field" that receives input.
  * It just models a block of text in a form.
  */
-function TextElement({ field, fieldValues, conditions, submit }) {
+function TextElement({ field, values, conditions, submit }) {
     const elementID = field.id;
     let delta = new Delta(field.text_formatted);
 
@@ -25,7 +25,7 @@ function TextElement({ field, fieldValues, conditions, submit }) {
     const repeat = field.repeat || 0;
     const nodes = generateNodes({
         delta,
-        fieldValues,
+        values,
         field,
         submit,
         repeat,

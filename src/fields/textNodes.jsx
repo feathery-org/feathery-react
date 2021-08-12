@@ -2,22 +2,15 @@ import React from 'react';
 import { TEXT_VARIABLE_PATTERN } from '../utils/hydration';
 
 // TODO (jake): Make this in React
-const generateNodes = ({
-    delta,
-    fieldValues,
-    field,
-    submit,
-    repeat,
-    elementID
-}) => {
+const generateNodes = ({ delta, values, field, submit, repeat, elementID }) => {
     return delta
         .filter((op) => op.insert)
         .map((op, i) => {
             // replace placeholder variables and populate newlines
             const text = op.insert.replace(TEXT_VARIABLE_PATTERN, (pattern) => {
                 const pStr = pattern.slice(2, -2);
-                if (pStr in fieldValues) {
-                    const pVal = fieldValues[pStr];
+                if (pStr in values) {
+                    const pVal = values[pStr];
                     if (Array.isArray(pVal)) {
                         if (pVal.length === 0) {
                             return pattern;

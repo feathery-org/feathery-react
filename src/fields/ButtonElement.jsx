@@ -7,14 +7,7 @@ import Delta from 'quill-delta';
 import Spinner from 'react-bootstrap/Spinner';
 import generateNodes from './textNodes';
 
-function ButtonElement({
-    field,
-    fieldValues,
-    addRepeatedRow,
-    removeRepeatedRow,
-    submit,
-    setSubmitRef
-}) {
+function ButtonElement({ field, values, submit, onRepeatClick, setSubmitRef }) {
     const [showSpinner, setShowSpinner] = useState(false);
 
     const elementID = field.id;
@@ -22,7 +15,7 @@ function ButtonElement({
     const delta = new Delta(field.text_formatted);
     const nodes = generateNodes({
         delta,
-        fieldValues,
+        values,
         field,
         submit,
         repeat,
@@ -34,13 +27,8 @@ function ButtonElement({
             return;
         }
 
-        if (field.link === 'add_repeated_row') {
-            addRepeatedRow({ callOnChange: true });
-            return;
-        }
-
-        if (field.link === 'remove_repeated_row') {
-            removeRepeatedRow({ index: field.repeat, callOnChange: true });
+        if (['add_repeated_row', 'remove_repeated_row'].includes(field.link)) {
+            onRepeatClick();
             return;
         }
 
