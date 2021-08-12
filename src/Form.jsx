@@ -137,7 +137,7 @@ function Form({
         activeStep
     ]);
 
-    function addRepeatedRow(fieldValuesArg = fieldValues) {
+    function addRepeatedRow({ values = fieldValues, callOnChange = false }) {
         if (
             isNaN(activeStep.repeat_row_start) ||
             isNaN(activeStep.repeat_row_end)
@@ -150,20 +150,34 @@ function Form({
         );
 
         // Update the values by appending a default value for each field
+        const updatedFieldIds = [];
         const updatedValues = {};
         repeatedServarFields.forEach((field) => {
             const { servar } = field;
+            updatedFieldIds.push(field.id);
             updatedValues[servar.key] = [
-                ...fieldValuesArg[servar.key],
+                ...values[servar.key],
                 getDefaultFieldValue(field)
             ];
         });
 
+        if (callOnChange) {
+            fieldOnChange(
+                updatedFieldIds,
+                Object.keys(updatedValues),
+                updatedValues
+            );
+        }
+
         return updateFieldValues(updatedValues);
     }
 
-    function removeRepeatedRow(repeatRowIndex, fieldValuesArg = fieldValues) {
-        if (isNaN(repeatRowIndex)) return;
+    function removeRepeatedRow({
+        index,
+        values = fieldValues,
+        callOnChange = false
+    }) {
+        if (isNaN(index)) return;
 
         // Collect a list of all repeated fields
         const repeatedServarFields = rawActiveStep.servar_fields.filter(
@@ -172,18 +186,25 @@ function Form({
 
         // Update the values by removing the specified index from each field
         const updatedValues = {};
+        const updatedFieldIds = [];
         repeatedServarFields.forEach((field) => {
             const { servar } = field;
-            const newRepeatedValues = justRemove(
-                fieldValuesArg[servar.key],
-                repeatRowIndex
-            );
+            const newRepeatedValues = justRemove(values[servar.key], index);
             const defaultValue = getDefaultFieldValue(field);
+            updatedFieldIds.push(field.id);
             updatedValues[servar.key] =
                 newRepeatedValues.length === 0
                     ? [defaultValue]
                     : newRepeatedValues;
         });
+
+        if (callOnChange) {
+            fieldOnChange(
+                updatedFieldIds,
+                Object.keys(updatedValues),
+                updatedValues
+            );
+        }
 
         return updateFieldValues(updatedValues);
     }
@@ -549,9 +570,9 @@ function Form({
 
         let newValues = updateFieldValues(updateValues);
         if (repeatRowOperation === 'add') {
-            newValues = addRepeatedRow(newValues);
+            newValues = addRepeatedRow({ values: newValues });
         } else if (repeatRowOperation === 'remove') {
-            newValues = removeRepeatedRow(index, newValues);
+            newValues = removeRepeatedRow({ index, values: newValues });
         }
 
         return newValues;

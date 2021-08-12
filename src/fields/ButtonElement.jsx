@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import Button from 'react-bootstrap/Button';
-import Spinner from 'react-bootstrap/Spinner';
-import Delta from 'quill-delta';
-
 import { adjustColor, alignmentMap } from '../utils/formHelperFunctions';
-import generateNodes from './textNodes';
 import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
+
+import Button from 'react-bootstrap/Button';
+import Delta from 'quill-delta';
+import Spinner from 'react-bootstrap/Spinner';
+import generateNodes from './textNodes';
 
 function ButtonElement({
     field,
@@ -35,12 +35,12 @@ function ButtonElement({
         }
 
         if (field.link === 'add_repeated_row') {
-            addRepeatedRow();
+            addRepeatedRow({ callOnChange: true });
             return;
         }
 
         if (field.link === 'remove_repeated_row') {
-            removeRepeatedRow(field.repeat);
+            removeRepeatedRow({ index: field.repeat, callOnChange: true });
             return;
         }
 
