@@ -1,7 +1,8 @@
-import ReactForm from 'react-bootstrap/Form';
-import React from 'react';
-import { IMaskMixin } from 'react-imask';
 import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
+
+import { IMaskMixin } from 'react-imask';
+import React from 'react';
+import ReactForm from 'react-bootstrap/Form';
 
 function BootstrapField({
     label,
@@ -63,17 +64,15 @@ function BootstrapField({
                 style={{
                     position: 'relative',
                     height: `${styles.field_height}${styles.field_height_unit}`,
-                    width: `${styles.field_width}${styles.field_width_unit}`,
-                    maxWidth: '100%'
+                    width: '100%'
                 }}
             >
                 <ReactForm.Control
                     id={servar.key}
                     pattern={pattern}
                     style={{
-                        maxWidth: '100%',
-                        height: `${styles.field_height}${styles.field_height_unit}`,
-                        width: `${styles.field_width}${styles.field_width_unit}`,
+                        height: '100%',
+                        width: '100%',
                         backgroundColor: `#${styles.background_color}`,
                         boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color}`,
                         fontSize: `${styles.font_size}px`,
