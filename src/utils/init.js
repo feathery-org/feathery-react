@@ -4,6 +4,8 @@ import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { v4 as uuidv4 } from 'uuid';
 
 import * as errors from './error';
+import TagManager from 'react-gtm-module';
+import $script from 'scriptjs';
 
 const fpPromise = FingerprintJS.load();
 let initUserPromise = Promise.resolve();
@@ -24,7 +26,7 @@ const initState = {
     sessions: {}
 };
 
-function init(apiKey, options = {}) {
+async function init(apiKey, options = {}) {
     options = { ...defaultOptions, ...options };
 
     if (initState.initialized) return; // can only be initialized one time per load
@@ -44,15 +46,16 @@ function init(apiKey, options = {}) {
         }
     );
 
-    if (initState.userKey) _fetchFormData(options.formKeys);
+    if (initState.userKey) await _fetchFormData(options.formKeys);
     else {
         if (options.tracking === 'fingerprint') {
             initUserPromise = fpPromise
                 .then((fp) => fp.get())
-                .then((result) => {
+                .then(async (result) => {
                     initState.userKey = result.visitorId;
-                    _fetchFormData(options.formKeys);
+                    await _fetchFormData(options.formKeys);
                 });
+            await initUserPromise;
         } else if (options.tracking === 'cookie') {
             document.cookie.split(/; */).map((c) => {
                 const [key, v] = c.split('=', 2);
@@ -61,22 +64,102 @@ function init(apiKey, options = {}) {
 
             if (!initState.userKey) initState.userKey = uuidv4();
             document.cookie = `feathery-user-id=${initState.userKey}; max-age=31536000`;
-            _fetchFormData(options.formKeys);
+            await _fetchFormData(options.formKeys);
         }
     }
 }
 
-// must be called after userKey loads
-function _fetchFormData(formKeys) {
-    formKeys.forEach((key) => {
-        const formClient = new Client(key);
-        formClient.fetchForm().then((stepsResponse) => {
-            initState.forms[key] = stepsResponse;
-        });
-        formClient.fetchSession().then((session) => {
-            initState.sessions[key] = session;
-        });
+function dynamicImport(dependency) {
+    return new Promise((resolve) => {
+        $script(dependency, resolve);
     });
+}
+
+const initializeIntegrations = async (
+    integrations,
+    clientArg,
+    init = false
+) => {
+    const gtm = integrations['google-tag-manager'];
+    if (gtm && !TagManager.initialized) {
+        TagManager.initialized = true;
+        TagManager.initialize({
+            gtmId: gtm.api_key,
+            dataLayer: { userId: initState.userKey }
+        });
+    }
+
+    const fb = integrations.firebase;
+    if (fb) {
+        const firebase = await new Promise((resolve) => {
+            if (global.firebase) resolve(global.firebase);
+            else {
+                // Bring in Firebase dependencies dynamically if this form uses Firebase
+                return dynamicImport([
+                    'https://www.gstatic.com/firebasejs/8.7.1/firebase-app.js',
+                    'https://www.gstatic.com/firebasejs/8.7.1/firebase-auth.js'
+                ]).then(() => {
+                    global.firebase.initializeApp({
+                        apiKey: fb.api_key,
+                        authDomain: `${fb.metadata.project_id}.firebaseapp.com`,
+                        databaseURL: `https://${fb.metadata.project_id}.firebaseio.com`,
+                        projectId: fb.metadata.project_id,
+                        storageBucket: `${fb.metadata.project_id}.appspot.com`,
+                        messagingSenderId: fb.metadata.sender_id,
+                        appId: fb.metadata.app_id
+                    });
+                    resolve(global.firebase);
+                });
+            }
+        });
+
+        if (
+            !init &&
+            firebase.auth().isSignInWithEmailLink(window.location.href)
+        ) {
+            const authEmail = window.localStorage.getItem(
+                'featheryFirebaseEmail'
+            );
+            if (authEmail) {
+                return firebase
+                    .auth()
+                    .signInWithEmailLink(authEmail, window.location.href)
+                    .then(async (result) => {
+                        const authToken = await result.user.getIdToken();
+                        return await clientArg
+                            .submitAuthInfo({
+                                authId: result.user.uid,
+                                authToken,
+                                authEmail
+                            })
+                            .then((session) => {
+                                return session;
+                            });
+                    });
+            }
+        }
+    }
+};
+
+// must be called after userKey loads
+async function _fetchFormData(formKeys) {
+    await Promise.all(
+        formKeys.map((key) => {
+            const formClient = new Client(key);
+            const fp = formClient.fetchForm().then((stepsResponse) => {
+                initState.forms[key] = stepsResponse;
+            });
+            return formClient.fetchSession().then(async (session) => {
+                initState.sessions[key] = session;
+                await initializeIntegrations(
+                    session.integrations,
+                    formClient,
+                    true
+                );
+                await fp;
+            });
+        })
+    );
 }
 
 function initInfo() {
@@ -85,4 +168,4 @@ function initInfo() {
     return initState;
 }
 
-export { init, initInfo, initState, initUserPromise };
+export { init, initInfo, initializeIntegrations, initState, initUserPromise };
