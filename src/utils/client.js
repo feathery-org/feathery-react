@@ -176,10 +176,8 @@ export default class Client {
         // There will be an entry in filePathMap for it
         // If so we just need to send the S3 path to the backend, not the full file
         const resolveFile = async (file, index = null) => {
-            const path =
-                index === null
-                    ? filePathMap[servar.key]
-                    : filePathMap[servar.key][index];
+            let path = filePathMap[servar.key];
+            if (path && index !== null) path = path[index];
             return path ?? (await file);
         };
         return Array.isArray(fileValue)

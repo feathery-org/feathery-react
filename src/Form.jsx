@@ -48,10 +48,9 @@ import {
     setFormElementError,
     shouldElementHide
 } from './utils/formHelperFunctions';
-import { initInfo, initState } from './utils/init';
+import { initializeIntegrations, initInfo, initState } from './utils/init';
 import { justInsert, justRemove } from './utils/array';
 
-import $script from 'scriptjs';
 import Client from './utils/client';
 import GooglePlaces from './components/GooglePlaces';
 import ProgressBar from 'react-bootstrap/ProgressBar';
@@ -275,70 +274,6 @@ function Form({
         setRawActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
     };
 
-    function dynamicImport(dependency) {
-        return new Promise((resolve) => {
-            $script(dependency, resolve);
-        });
-    }
-
-    const initializeIntegrations = async (integrations, clientArg) => {
-        setIntegrations(integrations);
-
-        const gtm = integrations['google-tag-manager'];
-        if (gtm) {
-            TagManager.initialized = true;
-            TagManager.initialize({
-                gtmId: gtm.api_key,
-                dataLayer: {
-                    userId: initInfo().userKey,
-                    formId: clientArg.formKey
-                }
-            });
-        }
-
-        const fb = integrations.firebase;
-        if (fb) {
-            // Bring in Firebase dependencies dynamically if this form uses Firebase
-            await dynamicImport([
-                'https://www.gstatic.com/firebasejs/8.7.1/firebase-app.js',
-                'https://www.gstatic.com/firebasejs/8.7.1/firebase-auth.js'
-            ]);
-            const firebase = global.firebase;
-            firebase.initializeApp({
-                apiKey: fb.api_key,
-                authDomain: `${fb.metadata.project_id}.firebaseapp.com`,
-                databaseURL: `https://${fb.metadata.project_id}.firebaseio.com`,
-                projectId: fb.metadata.project_id,
-                storageBucket: `${fb.metadata.project_id}.appspot.com`,
-                messagingSenderId: fb.metadata.sender_id,
-                appId: fb.metadata.app_id
-            });
-
-            if (firebase.auth().isSignInWithEmailLink(window.location.href)) {
-                const authEmail = window.localStorage.getItem(
-                    'featheryFirebaseEmail'
-                );
-                if (authEmail) {
-                    return await firebase
-                        .auth()
-                        .signInWithEmailLink(authEmail, window.location.href)
-                        .then(async (result) => {
-                            const authToken = await result.user.getIdToken();
-                            return await clientArg
-                                .submitAuthInfo({
-                                    authId: result.user.uid,
-                                    authToken,
-                                    authEmail
-                                })
-                                .then((session) => {
-                                    return session;
-                                });
-                        });
-                }
-            }
-        }
-    };
-
     const getNewStep = async (newKey, stepsArg, fieldValsArg) => {
         stepsArg = stepsArg || steps;
         fieldValsArg = fieldValsArg || fieldValues;
@@ -378,6 +313,7 @@ function Form({
             TagManager.dataLayer({
                 dataLayer: {
                     stepId: newKey,
+                    formId: client.formKey,
                     event: 'FeatheryStepLoad'
                 }
             });
@@ -452,6 +388,7 @@ function Form({
                 .then(async (session) => {
                     setStepSequence(session.step_sequence);
                     setSequenceIndex(session.current_sequence_index);
+                    setIntegrations(session.integrations);
                     const newSession = await initializeIntegrations(
                         session.integrations,
                         clientInstance
@@ -931,6 +868,7 @@ function Form({
             TagManager.dataLayer({
                 dataLayer: {
                     stepId: activeStep.key,
+                    formId: client.formKey,
                     event: 'FeatheryStepSubmit'
                 }
             });
