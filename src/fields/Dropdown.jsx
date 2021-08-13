@@ -1,7 +1,8 @@
+import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
+
 import React from 'react';
 import ReactForm from 'react-bootstrap/Form';
 import { states } from '../utils/formHelperFunctions';
-import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
 
 function Dropdown({
     field,
@@ -49,8 +50,7 @@ function Dropdown({
                     ...borderStyle,
                     borderRadius: field.borderRadius,
                     height: `${styles.field_height}${styles.field_height_unit}`,
-                    width: `${styles.field_width}${styles.field_width_unit}`,
-                    maxWidth: '100%',
+                    width: '100%',
                     backgroundColor: `#${styles.background_color}`,
                     fontSize: `${styles.font_size}px`,
                     boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color}`,
