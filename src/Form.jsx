@@ -92,8 +92,6 @@ function Form({
     const [errType, setErrType] = useState('html5');
     const [inlineErrors, setInlineErrors] = useState({});
 
-    const [firebase, setFirebase] = useState(null);
-
     const submitRef = useRef(null);
     const formRef = useRef(null);
     const signatureRef = useRef({}).current;
@@ -125,7 +123,7 @@ function Form({
         });
         const b = activeStep.buttons.find((b) => b.link === 'submit');
         if (f && b) {
-            window.firebaseRecaptchaVerifier = new firebase.auth.RecaptchaVerifier(
+            window.firebaseRecaptchaVerifier = new global.firebase.auth.RecaptchaVerifier(
                 b.id,
                 { size: 'invisible' }
             );
@@ -290,7 +288,6 @@ function Form({
                 'https://www.gstatic.com/firebasejs/8.7.1/firebase-auth.js'
             ]);
             const firebase = global.firebase;
-            setFirebase(firebase);
             firebase.initializeApp({
                 apiKey: fb.api_key,
                 authDomain: `${fb.metadata.project_id}.firebaseapp.com`,
@@ -792,7 +789,7 @@ function Form({
             const methods = servar.metadata.login_methods;
             if (servar.type === 'login') {
                 if (methods.includes('phone') && phonePattern.test(fieldVal)) {
-                    return await firebase
+                    return await global.firebase
                         .auth()
                         .signInWithPhoneNumber(
                             `+1${fieldVal}`,
@@ -821,7 +818,7 @@ function Form({
                     methods.includes('email') &&
                     emailPattern.test(fieldVal)
                 ) {
-                    return await firebase
+                    return await global.firebase
                         .auth()
                         .sendSignInLinkToEmail(fieldVal, {
                             url: window.location.href,
