@@ -156,7 +156,7 @@ export default class Client {
         });
     }
 
-    _getFileValue(servar, filePathMap) {
+    async _getFileValue(servar, filePathMap) {
         let fileValue;
         if ('file_upload' in servar) {
             fileValue = servar.file_upload;
@@ -172,32 +172,40 @@ export default class Client {
             return null;
         }
 
-        const resolveFile = (file, index = null) => {
+        // If we've already stored the file from a previous session
+        // There will be an entry in filePathMap for it
+        // If so we just need to send the S3 path to the backend, not the full file
+        const resolveFile = async (file, index = null) => {
             const path =
                 index === null
                     ? filePathMap[servar.key]
                     : filePathMap[servar.key][index];
-            return path ?? file;
+            return path ?? (await file);
         };
         return Array.isArray(fileValue)
-            ? fileValue.map(resolveFile)
+            ? Promise.all(fileValue.map(resolveFile))
             : resolveFile(fileValue);
     }
 
-    _submitFileData(servars, filePathMap) {
+    async _submitFileData(servars, filePathMap) {
         const { userKey, apiKey } = initInfo();
         const url = `${API_URL}api/panel/step/submit/file/${userKey}/`;
 
         const formData = new FormData();
-        servars.forEach((servar) => {
-            const fileValue = this._getFileValue(servar, filePathMap);
+        const files = await Promise.all(
+            servars.map(async (servar) => {
+                const file = await this._getFileValue(servar, filePathMap);
+                return [servar.key, file];
+            })
+        );
+
+        // Append files to the HTTP formData (and handle lists of files)
+        files.forEach(([key, fileValue]) => {
             if (fileValue) {
                 if (Array.isArray(fileValue)) {
-                    fileValue.forEach((file) =>
-                        formData.append(servar.key, file)
-                    );
+                    fileValue.forEach((file) => formData.append(key, file));
                 } else {
-                    formData.append(servar.key, fileValue);
+                    formData.append(key, fileValue);
                 }
             }
         });
