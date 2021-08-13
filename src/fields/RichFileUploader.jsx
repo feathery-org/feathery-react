@@ -11,7 +11,7 @@ function RichFileUploader({
     field,
     onChange: customOnChange,
     onClick: customOnClick,
-    initialFile = Promise.resolve()
+    initialFile
 }) {
     const { servar, styles } = field;
     const showIcon = styles.icon_url !== '';
