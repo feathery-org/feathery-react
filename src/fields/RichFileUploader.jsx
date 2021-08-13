@@ -108,8 +108,9 @@ function RichFileUploader({
                 <Image
                     src={thumbnail}
                     style={{
-                        maxWidth: '100%',
-                        maxHeight: '100%'
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover'
                     }}
                 />
             )}
@@ -118,6 +119,9 @@ function RichFileUploader({
                     style={{
                         color: 'black',
                         height: '100%',
+                        width: '100%',
+                        wordBreak: 'break-all',
+                        fontSize: 'small',
                         display: 'flex',
                         alignItems: 'center'
                     }}

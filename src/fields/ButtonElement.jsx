@@ -1,20 +1,13 @@
 import React, { useState } from 'react';
-import Button from 'react-bootstrap/Button';
-import Spinner from 'react-bootstrap/Spinner';
-import Delta from 'quill-delta';
-
 import { adjustColor, alignmentMap } from '../utils/formHelperFunctions';
-import generateNodes from './textNodes';
 import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
 
-function ButtonElement({
-    field,
-    fieldValues,
-    addRepeatedRow,
-    removeRepeatedRow,
-    submit,
-    setSubmitRef
-}) {
+import Button from 'react-bootstrap/Button';
+import Delta from 'quill-delta';
+import Spinner from 'react-bootstrap/Spinner';
+import generateNodes from './textNodes';
+
+function ButtonElement({ field, values, submit, onRepeatClick, setSubmitRef }) {
     const [showSpinner, setShowSpinner] = useState(false);
 
     const elementID = field.id;
@@ -22,7 +15,7 @@ function ButtonElement({
     const delta = new Delta(field.text_formatted);
     const nodes = generateNodes({
         delta,
-        fieldValues,
+        values,
         field,
         submit,
         repeat,
@@ -34,13 +27,8 @@ function ButtonElement({
             return;
         }
 
-        if (field.link === 'add_repeated_row') {
-            addRepeatedRow();
-            return;
-        }
-
-        if (field.link === 'remove_repeated_row') {
-            removeRepeatedRow(field.repeat);
+        if (['add_repeated_row', 'remove_repeated_row'].includes(field.link)) {
+            onRepeatClick();
             return;
         }
 

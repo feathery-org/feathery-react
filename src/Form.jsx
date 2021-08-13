@@ -137,7 +137,7 @@ function Form({
         activeStep
     ]);
 
-    function addRepeatedRow(fieldValuesArg = fieldValues) {
+    function addRepeatedRow({ values = fieldValues }) {
         if (
             isNaN(activeStep.repeat_row_start) ||
             isNaN(activeStep.repeat_row_end)
@@ -151,19 +151,27 @@ function Form({
 
         // Update the values by appending a default value for each field
         const updatedValues = {};
+        const fieldIDs = [];
+        const fieldKeys = [];
         repeatedServarFields.forEach((field) => {
             const { servar } = field;
             updatedValues[servar.key] = [
-                ...fieldValuesArg[servar.key],
+                ...values[servar.key],
                 getDefaultFieldValue(field)
             ];
+            fieldIDs.push(field.id);
+            fieldKeys.push(servar.key);
         });
 
-        return updateFieldValues(updatedValues);
+        return {
+            values: updateFieldValues(updatedValues),
+            fieldIDs,
+            fieldKeys
+        };
     }
 
-    function removeRepeatedRow(repeatRowIndex, fieldValuesArg = fieldValues) {
-        if (isNaN(repeatRowIndex)) return;
+    function removeRepeatedRow({ index, values = fieldValues }) {
+        if (isNaN(index)) return;
 
         // Collect a list of all repeated fields
         const repeatedServarFields = rawActiveStep.servar_fields.filter(
@@ -172,20 +180,25 @@ function Form({
 
         // Update the values by removing the specified index from each field
         const updatedValues = {};
+        const fieldIDs = [];
+        const fieldKeys = [];
         repeatedServarFields.forEach((field) => {
             const { servar } = field;
-            const newRepeatedValues = justRemove(
-                fieldValuesArg[servar.key],
-                repeatRowIndex
-            );
+            const newRepeatedValues = justRemove(values[servar.key], index);
             const defaultValue = getDefaultFieldValue(field);
             updatedValues[servar.key] =
                 newRepeatedValues.length === 0
                     ? [defaultValue]
                     : newRepeatedValues;
+            fieldIDs.push(field.id);
+            fieldKeys.push(servar.key);
         });
 
-        return updateFieldValues(updatedValues);
+        return {
+            values: updateFieldValues(updatedValues),
+            fieldIDs,
+            fieldKeys
+        };
     }
 
     const updateFieldValues = (newFieldValues, baseFieldValues = null) => {
@@ -549,9 +562,9 @@ function Form({
 
         let newValues = updateFieldValues(updateValues);
         if (repeatRowOperation === 'add') {
-            newValues = addRepeatedRow(newValues);
+            newValues = addRepeatedRow({ values: newValues }).values;
         } else if (repeatRowOperation === 'remove') {
-            newValues = removeRepeatedRow(index, newValues);
+            newValues = removeRepeatedRow({ index, values: newValues }).values;
         }
 
         return newValues;
@@ -1153,7 +1166,7 @@ function Form({
                     <TextElement
                         key={`${activeStep.key}-text-${i}`}
                         field={field}
-                        fieldValues={fieldValues}
+                        values={fieldValues}
                         conditions={activeStep.next_conditions}
                         submit={submit}
                     />
@@ -1171,10 +1184,25 @@ function Form({
                     <ButtonElement
                         key={`${activeStep.key}-button-${i}`}
                         field={field}
-                        fieldValues={fieldValues}
+                        values={fieldValues}
                         submit={submit}
-                        addRepeatedRow={addRepeatedRow}
-                        removeRepeatedRow={removeRepeatedRow}
+                        onRepeatClick={() => {
+                            let data;
+                            if (field.link === 'add_repeated_row') {
+                                data = addRepeatedRow({});
+                            } else if (field.link === 'remove_repeated_row') {
+                                data = removeRepeatedRow({
+                                    index: field.repeat
+                                });
+                            }
+                            if (data.fieldKeys.length > 0) {
+                                fieldOnChange(
+                                    data.fieldIDs,
+                                    data.fieldKeys,
+                                    data.values
+                                );
+                            }
+                        }}
                         setSubmitRef={(newRef) => (submitRef.current = newRef)}
                     />
                 ))}

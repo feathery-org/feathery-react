@@ -101,13 +101,26 @@ function MultiFileUploader({
                         <Image
                             src={thumbnail}
                             style={{
-                                maxWidth: '100%',
-                                maxHeight: '100%'
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover'
                             }}
                         />
                     )}
                     {!thumbnail && (
-                        <span style={{ color: 'black' }}>{filename}</span>
+                        <span
+                            style={{
+                                color: 'black',
+                                height: '100%',
+                                width: '100%',
+                                wordBreak: 'break-all',
+                                fontSize: 'small',
+                                display: 'flex',
+                                alignItems: 'center'
+                            }}
+                        >
+                            {filename}
+                        </span>
                     )}
                     <div
                         style={{
