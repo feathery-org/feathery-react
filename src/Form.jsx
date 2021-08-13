@@ -25,9 +25,11 @@ import {
     injectRepeatedRows
 } from './utils/hydration';
 import {
+    convertFilesToFilePromises,
     emailPattern,
     emailPatternStr,
     fetchS3File,
+    findServars,
     formatAllStepFields,
     formatStepFields,
     getABVariant,
@@ -58,6 +60,12 @@ import SignatureCanvas from 'react-signature-canvas';
 import { SketchPicker } from 'react-color';
 import TagManager from 'react-gtm-module';
 
+const FILE_UPLOADERS = [
+    'file_upload',
+    'rich_file_upload',
+    'rich_multi_file_upload'
+];
+
 function Form({
     // Public API
     formKey,
@@ -77,6 +85,14 @@ function Form({
     const [stepKey, setStepKey] = useState('');
     const [fieldValues, setFieldValues] = useState(initialValues);
     const [filePathMap, setFilePathMap] = useState({});
+    const fileServarKeys = useMemo(
+        () =>
+            findServars(steps, (s) => FILE_UPLOADERS.includes(s.type)).reduce(
+                (keys, servar) => ({ ...keys, [servar.key]: true }),
+                {}
+            ),
+        [steps]
+    );
 
     const [finishConfig, setFinishConfig] = useState({
         finished: false,
@@ -385,8 +401,12 @@ function Form({
                 userId: userKey,
                 lastStep: stepsArg[newKey].next_conditions.length === 0,
                 setValues: (userVals) => {
-                    updateFieldValues(userVals, fieldValsArg);
-                    client.submitCustom(userVals);
+                    const values = convertFilesToFilePromises(
+                        userVals,
+                        fileServarKeys
+                    );
+                    updateFieldValues(values, fieldValsArg);
+                    client.submitCustom(values);
                 },
                 setOptions: updateFieldOptions(stepsArg, newStep),
                 integrationData
@@ -705,11 +725,12 @@ function Form({
                     userId: userKey,
                     lastStep: !newStepKey,
                     setValues: (userVals) => {
-                        newFieldVals = updateFieldValues(
+                        const values = convertFilesToFilePromises(
                             userVals,
-                            newFieldVals
+                            fileServarKeys
                         );
-                        client.submitCustom(userVals);
+                        newFieldVals = updateFieldValues(values, newFieldVals);
+                        client.submitCustom(values);
                     },
                     setOptions: updateFieldOptions(steps),
                     setErrors: (errors) => {
@@ -998,8 +1019,12 @@ function Form({
                 userId: userKey,
                 lastStep: activeStep.next_conditions.length === 0,
                 setValues: (userVals) => {
-                    newValues = updateFieldValues(userVals, newValues);
-                    client.submitCustom(userVals);
+                    const values = convertFilesToFilePromises(
+                        userVals,
+                        fileServarKeys
+                    );
+                    newValues = updateFieldValues(values, newValues);
+                    client.submitCustom(values);
                 },
                 setOptions: updateFieldOptions(steps)
             });
