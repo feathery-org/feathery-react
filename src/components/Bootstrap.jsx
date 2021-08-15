@@ -44,8 +44,8 @@ function BootstrapField({
         if (styles.selected_placeholder_color) {
             placeholderActiveCSS.color = `#${styles.selected_placeholder_color}`;
         }
-        inputPlaceholderCSS.paddingTop = `${styles.field_height / 3}${
-            styles.field_height_unit
+        inputPlaceholderCSS.paddingTop = `${styles.height / 3}${
+            styles.height_unit
         }`;
     }
 
@@ -54,7 +54,7 @@ function BootstrapField({
     return (
         <div
             style={{
-                width: `${styles.field_width}${styles.field_width_unit}`,
+                width: `${styles.width}${styles.width_unit}`,
                 maxWidth: '100%',
                 ...marginStyleFromField(field)
             }}
@@ -63,7 +63,7 @@ function BootstrapField({
             <div
                 style={{
                     position: 'relative',
-                    height: `${styles.field_height}${styles.field_height_unit}`,
+                    height: `${styles.height}${styles.height_unit}`,
                     width: '100%'
                 }}
             >

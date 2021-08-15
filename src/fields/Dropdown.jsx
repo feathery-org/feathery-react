@@ -39,7 +39,7 @@ function Dropdown({
     return (
         <div
             style={{
-                width: `${styles.field_width}${styles.field_width_unit}`,
+                width: `${styles.width}${styles.width_unit}`,
                 maxWidth: '100%',
                 ...marginStyleFromField(field)
             }}
@@ -49,7 +49,7 @@ function Dropdown({
                 style={{
                     ...borderStyle,
                     borderRadius: field.borderRadius,
-                    height: `${styles.field_height}${styles.field_height_unit}`,
+                    height: `${styles.height}${styles.height_unit}`,
                     width: '100%',
                     backgroundColor: `#${styles.background_color}`,
                     fontSize: `${styles.font_size}px`,

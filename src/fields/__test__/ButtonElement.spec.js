@@ -17,7 +17,7 @@ describe('ButtonElement', () => {
                     border_right_color: '2954af',
                     border_bottom_color: '2954af',
                     border_left_color: '2954af',
-                    button_color: '2954af',
+                    background_color: '2954af',
                     layout: 'center'
                 }
             },
@@ -50,7 +50,7 @@ describe('ButtonElement', () => {
                 column_index_end: 0,
                 row_index_end: 0,
                 styles: {
-                    button_color: '2954af',
+                    background_color: '2954af',
                     layout: 'center'
                 }
             },
@@ -96,7 +96,7 @@ describe('ButtonElement', () => {
                 column_index_end: 0,
                 row_index_end: 0,
                 styles: {
-                    button_color: '2954af',
+                    background_color: '2954af',
                     layout: 'center'
                 }
             },

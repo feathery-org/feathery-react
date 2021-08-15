@@ -60,8 +60,8 @@ function RichFileUploader({
             style={{
                 position: 'relative',
                 cursor: 'pointer',
-                height: `${styles.field_height}${styles.field_height_unit}`,
-                width: `${styles.field_width}${styles.field_width_unit}`,
+                height: `${styles.height}${styles.height_unit}`,
+                width: `${styles.width}${styles.width_unit}`,
                 maxHeight: '100%',
                 display: 'flex',
                 justifyContent:
