@@ -1,4 +1,9 @@
-import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
+import {
+    borderStyleFromField,
+    marginStyleFromField,
+    fontStyles,
+    bootstrapStyles
+} from '../utils/styles';
 
 import React from 'react';
 import ReactForm from 'react-bootstrap/Form';
@@ -47,17 +52,14 @@ function Dropdown({
             {fieldLabel}
             <ReactForm.Control
                 style={{
+                    ...bootstrapStyles,
                     ...borderStyle,
                     borderRadius: field.borderRadius,
                     height: `${styles.height}${styles.height_unit}`,
                     width: '100%',
                     backgroundColor: `#${styles.background_color}`,
-                    fontSize: `${styles.font_size}px`,
                     boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color}`,
-                    color: `#${
-                        fieldVal ? styles.font_color : styles.placeholder_color
-                    }`,
-                    fontStyle: styles.placeholder_italic ? 'italic' : 'normal',
+                    ...fontStyles(styles, !fieldVal),
                     appearance: 'none',
                     WebkitAppearance: 'none',
                     MozAppearance: 'none',

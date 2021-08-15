@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import ReactForm from 'react-bootstrap/Form';
-import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
+import {
+    borderStyleFromField,
+    marginStyleFromField,
+    fontStyles,
+    bootstrapStyles
+} from '../utils/styles';
 
 function RadioButtonGroup({
     field,
@@ -38,6 +43,12 @@ function RadioButtonGroup({
                             alignItems: 'center',
                             marginBottom: '5px'
                         }}
+                        css={{
+                            'input[type="radio"]': {
+                                marginTop: 0,
+                                marginBottom: 0
+                            }
+                        }}
                     />
                 );
             })}
@@ -67,6 +78,12 @@ function RadioButtonGroup({
                             display: 'flex',
                             alignItems: 'center'
                         }}
+                        css={{
+                            'input[type="radio"]': {
+                                marginTop: 0,
+                                marginBottom: 0
+                            }
+                        }}
                     />
                     <ReactForm.Control
                         type='text'
@@ -75,12 +92,9 @@ function RadioButtonGroup({
                             height: `${parseInt(field.styles.font_size) + 4}px`,
                             backgroundColor: `#${field.styles.background_color}`,
                             boxShadow: `${field.styles.shadow_x_offset}px ${field.styles.shadow_y_offset}px ${field.styles.shadow_blur_radius}px #${field.styles.shadow_color}`,
-                            color: `#${field.styles.font_color}`,
-                            fontStyle: field.styles.font_italic ? 'italic' : 'normal',
-                            fontWeight: field.styles.font_weight,
-                            fontFamily: field.styles.font_family,
-                            fontSize: `${field.styles.font_size}px`,
                             borderRadius: field.borderRadius,
+                            ...bootstrapStyles,
+                            ...fontStyles(field.styles),
                             ...borderStyleFromField(field)
                         }}
                         css={{

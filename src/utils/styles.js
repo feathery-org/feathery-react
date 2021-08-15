@@ -1,3 +1,10 @@
+const bootstrapStyles = {
+    padding: '0.375rem 0.75rem',
+    boxSizing: 'border-box',
+    transition: 'border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out',
+    outline: 'none'
+};
+
 function borderStyleFromField(field, p = '', important = true) {
     // If color isn't defined on one of the sides, that means there's no border
     if (!field.styles[`${p}border_top_color`]) {
@@ -33,4 +40,23 @@ function marginStyleFromField(field) {
     };
 }
 
-export { borderStyleFromField, marginStyleFromField };
+function fontStyles(styles, placeholder = false) {
+    return {
+        fontStyle: (
+            placeholder ? styles.placeholder_italic : styles.font_italic
+        )
+            ? 'italic'
+            : 'normal',
+        fontWeight: styles.font_weight,
+        fontFamily: styles.font_family,
+        fontSize: `${styles.font_size}px`,
+        color: `#${placeholder ? styles.placeholder_color : styles.font_color}`
+    };
+}
+
+export {
+    borderStyleFromField,
+    marginStyleFromField,
+    fontStyles,
+    bootstrapStyles
+};
