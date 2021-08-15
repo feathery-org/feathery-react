@@ -1072,7 +1072,7 @@ function Form({
                                 justifyContent: pb.styles.vertical_layout,
                                 alignItems: pb.styles.layout,
                                 flexDirection: 'column',
-                                width: `${pb.styles.bar_width}%`,
+                                width: `${pb.styles.width}%`,
                                 ...marginStyleFromField(pb)
                             }}
                         >
@@ -1106,7 +1106,7 @@ function Form({
                             src={image.source_url}
                             alt='Form Image'
                             style={{
-                                width: `${image.styles.image_width}${image.styles.image_width_unit}`,
+                                width: `${image.styles.width}${image.styles.width_unit}`,
                                 objectFit: 'contain',
                                 ...marginStyleFromField(image)
                             }}
@@ -1252,7 +1252,7 @@ function Form({
                             controlElement = (
                                 <div
                                     style={{
-                                        width: `${styles.field_width}px`,
+                                        width: `${styles.width}px`,
                                         maxWidth: '100%',
                                         ...marginStyleFromField(field)
                                     }}
@@ -1262,8 +1262,8 @@ function Form({
                                         penColor='black'
                                         canvasProps={{
                                             id: servar.key,
-                                            width: styles.field_width,
-                                            height: styles.field_height,
+                                            width: styles.width,
+                                            height: styles.height,
                                             style: {
                                                 backgroundColor: `#${styles.background_color}`,
                                                 borderRadius:

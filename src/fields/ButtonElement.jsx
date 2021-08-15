@@ -60,15 +60,13 @@ function ButtonElement({ field, values, submit, onRepeatClick, setSubmitRef }) {
 
     let hoverStyles = borderStyleFromField(field, 'hover_');
     if (field.link !== 'none') {
+        const color = `${adjustColor(
+            field.styles.background_color,
+            -30
+        )} !important`;
         hoverStyles = {
-            backgroundColor: `${adjustColor(
-                field.styles.button_color,
-                -30
-            )} !important`,
-            borderColor: `${adjustColor(
-                field.styles.button_color,
-                -30
-            )} !important`,
+            backgroundColor: color,
+            borderColor: color,
             transition: 'background 0.3s !important',
             ...hoverStyles
         };
@@ -80,7 +78,7 @@ function ButtonElement({ field, values, submit, onRepeatClick, setSubmitRef }) {
         selectedStyles.backgroundColor = `#${field.styles.selected_background_color} !important`;
 
     const borderRadius = `${field.styles.corner_top_left_radius}px ${field.styles.corner_top_right_radius}px ${field.styles.corner_bottom_right_radius}px ${field.styles.corner_bottom_left_radius}px`;
-    const halfHeight = Math.round(field.styles.button_height / 2);
+    const halfHeight = Math.round(field.styles.height / 2);
     return (
         <div
             css={{
@@ -103,10 +101,10 @@ function ButtonElement({ field, values, submit, onRepeatClick, setSubmitRef }) {
                     justifyContent: 'center',
                     alignItems: 'center',
                     cursor: field.link === 'none' ? 'default' : 'pointer',
-                    backgroundColor: `#${field.styles.button_color}`,
+                    backgroundColor: `#${field.styles.background_color}`,
                     boxShadow: 'none',
-                    height: `${field.styles.button_height}${field.styles.button_height_unit}`,
-                    width: `${field.styles.button_width}${field.styles.button_width_unit}`,
+                    height: `${field.styles.height}${field.styles.height_unit}`,
+                    width: `${field.styles.width}${field.styles.width_unit}`,
                     maxWidth: '100%',
                     borderRadius,
                     ...borderStyleFromField(field),
@@ -140,13 +138,13 @@ function ButtonElement({ field, values, submit, onRepeatClick, setSubmitRef }) {
                             style={{
                                 color: 'white',
                                 position: 'absolute',
-                                right: `-${field.styles.button_height}${field.styles.button_height_unit}`,
+                                right: `-${field.styles.height}${field.styles.height_unit}`,
                                 top: '50%',
                                 bottom: '50%',
                                 marginTop: 'auto',
                                 marginBottom: 'auto',
-                                width: `${halfHeight}${field.styles.button_height_unit}`,
-                                height: `${halfHeight}${field.styles.button_height_unit}`,
+                                width: `${halfHeight}${field.styles.height_unit}`,
+                                height: `${halfHeight}${field.styles.height_unit}`,
                                 border: '0.2em solid currentColor',
                                 borderRightColor: 'transparent'
                             }}

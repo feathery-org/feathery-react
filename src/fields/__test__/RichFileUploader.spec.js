@@ -8,10 +8,10 @@ describe('RichFileUploader', () => {
         const props = {
             field: {
                 styles: {
-                    field_height: '50',
-                    field_height_unit: '%',
-                    field_width: '50',
-                    field_width_unit: 'px',
+                    height: '50',
+                    height_unit: '%',
+                    width: '50',
+                    width_unit: 'px',
                     background_color: '000000',
                     icon_url: 'https://feathery.tech',
                     uploader_padding_top: '0',
