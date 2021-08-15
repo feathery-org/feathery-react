@@ -1,4 +1,9 @@
-import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
+import {
+    borderStyleFromField,
+    marginStyleFromField,
+    fontStyles,
+    bootstrapStyles
+} from '../utils/styles';
 
 import { IMaskMixin } from 'react-imask';
 import React from 'react';
@@ -51,6 +56,7 @@ function BootstrapField({
 
     const borderStyle = borderStyleFromField(field);
     if (inlineError) borderStyle.borderColor = '#F42525';
+    const inputType = rows === undefined ? 'input' : 'textarea';
     return (
         <div
             style={{
@@ -73,11 +79,11 @@ function BootstrapField({
                     style={{
                         height: '100%',
                         width: '100%',
+                        ...bootstrapStyles,
                         backgroundColor: `#${styles.background_color}`,
                         boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color}`,
-                        fontSize: `${styles.font_size}px`,
-                        color: `#${styles.font_color}`,
                         borderRadius: field.borderRadius,
+                        ...fontStyles(styles),
                         ...borderStyle,
                         ...inputPlaceholderCSS
                     }}
@@ -101,18 +107,20 @@ function BootstrapField({
                     css={{
                         position: 'absolute',
                         pointerEvents: 'none',
-                        left: '13px',
-                        top: '50%',
-                        marginTop: `-${styles.font_size / 2}px`,
+                        left: '0.75rem',
                         transition: '0.2s ease all',
-                        color: `#${styles.placeholder_color}`,
-                        fontSize: `${styles.font_size}px`,
                         lineHeight: `${styles.font_size}px`,
-                        fontStyle: styles.placeholder_italic
-                            ? 'italic'
-                            : 'normal',
+                        ...fontStyles(styles, true),
+                        ...(rows === undefined
+                            ? {
+                                  top: '50%',
+                                  marginTop: `-${styles.font_size / 2}px`
+                              }
+                            : {
+                                  top: '0.375rem'
+                              }),
                         ...(fieldValue || fieldMask ? placeholderCSS : {}),
-                        'input:focus + &': {
+                        [`${inputType}:focus + &`]: {
                             ...placeholderCSS,
                             ...placeholderActiveCSS
                         }

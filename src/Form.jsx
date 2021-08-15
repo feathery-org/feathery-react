@@ -1,5 +1,3 @@
-import './bootstrap-iso.css';
-
 import {
     BootstrapField,
     MaskedBootstrapField,
@@ -18,7 +16,11 @@ import {
     TextElement
 } from './fields';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { borderStyleFromField, marginStyleFromField } from './utils/styles';
+import {
+    borderStyleFromField,
+    marginStyleFromField,
+    fontStyles
+} from './utils/styles';
 import {
     calculateDimensions,
     calculateRepeatedRowCount,
@@ -990,12 +992,15 @@ function Form({
                 style={{
                     height: '0.4rem',
                     width: '100%',
-                    borderRadius: 0
+                    borderRadius: 0,
+                    display: 'flex',
+                    backgroundColor: '#e9ecef'
                 }}
                 css={{
                     '.progress-bar': {
                         margin: '0 0 0 0 !important',
-                        backgroundColor: `#${pb.styles.bar_color} !important`
+                        backgroundColor: `#${pb.styles.bar_color} !important`,
+                        transition: 'width 0.6s ease'
                     }
                 }}
                 now={percent}
@@ -1015,7 +1020,7 @@ function Form({
 
     return (
         <ReactForm
-            className={`bootstrap-iso ${className}`}
+            className={className}
             ref={formRef}
             style={{
                 backgroundColor: `#${activeStep.default_background_color}`,
@@ -1055,13 +1060,7 @@ function Form({
                             gridRowEnd: pb.row_index_end + 2,
                             alignItems: pb.styles.layout,
                             justifyContent: pb.styles.vertical_layout,
-                            color: `#${pb.styles.font_color}`,
-                            fontStyle: pb.styles.font_italic
-                                ? 'italic'
-                                : 'normal',
-                            fontWeight: pb.styles.font_weight,
-                            fontFamily: pb.styles.font_family,
-                            fontSize: `${pb.styles.font_size}px`,
+                            ...fontStyles(pb.styles),
                             display: 'flex',
                             flexDirection: 'column'
                         }}
@@ -1209,7 +1208,8 @@ function Form({
                         <label
                             htmlFor={servar.key}
                             style={{
-                                marginBottom: '10px'
+                                marginBottom: '10px',
+                                display: 'inline-block'
                             }}
                         >
                             {servar.name}
@@ -1381,6 +1381,12 @@ function Form({
                                         style={{
                                             display: 'flex',
                                             alignItems: 'center'
+                                        }}
+                                        css={{
+                                            'input[type="checkbox"]': {
+                                                marginTop: 0,
+                                                marginBottom: 0
+                                            }
                                         }}
                                     />
                                 </div>
@@ -1659,13 +1665,7 @@ function Form({
                                 gridColumnEnd: field.column_index_end + 2,
                                 gridRowEnd: field.row_index_end + 2,
                                 alignItems: field.styles.layout,
-                                color: `#${field.styles.font_color}`,
-                                fontStyle: field.styles.font_italic
-                                    ? 'italic'
-                                    : 'normal',
-                                fontWeight: field.styles.font_weight,
-                                fontFamily: field.styles.font_family,
-                                fontSize: `${field.styles.font_size}px`,
+                                ...fontStyles(field.styles),
                                 display: 'flex',
                                 flexDirection: 'column',
                                 justifyContent: field.styles.vertical_layout,

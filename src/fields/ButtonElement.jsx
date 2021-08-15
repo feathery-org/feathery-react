@@ -78,7 +78,7 @@ function ButtonElement({ field, values, submit, onRepeatClick, setSubmitRef }) {
         selectedStyles.backgroundColor = `#${field.styles.selected_background_color} !important`;
 
     const borderRadius = `${field.styles.corner_top_left_radius}px ${field.styles.corner_top_right_radius}px ${field.styles.corner_bottom_right_radius}px ${field.styles.corner_bottom_left_radius}px`;
-    const halfHeight = Math.round(field.styles.height / 2);
+    const thirdHeight = Math.round(field.styles.height / 3);
     return (
         <div
             css={{
@@ -143,10 +143,30 @@ function ButtonElement({ field, values, submit, onRepeatClick, setSubmitRef }) {
                                 bottom: '50%',
                                 marginTop: 'auto',
                                 marginBottom: 'auto',
-                                width: `${halfHeight}${field.styles.height_unit}`,
-                                height: `${halfHeight}${field.styles.height_unit}`,
+                                width: `${thirdHeight}${field.styles.height_unit}`,
+                                height: `${thirdHeight}${field.styles.height_unit}`,
                                 border: '0.2em solid currentColor',
-                                borderRightColor: 'transparent'
+                                borderRightColor: 'transparent',
+                                borderWidth: '3px'
+                            }}
+                            css={{
+                                '@-webkit-keyframes spinner-border': {
+                                    to: {
+                                        WebkitTransform: 'rotate(360deg)',
+                                        transform: 'rotate(360deg)'
+                                    }
+                                },
+                                '@keyframes spinner-border': {
+                                    to: {
+                                        WebkitTransform: 'rotate(360deg)',
+                                        transform: 'rotate(360deg)'
+                                    }
+                                },
+                                '&.spinner-border': {
+                                    borderRadius: '50%',
+                                    animation:
+                                        '0.75s linear infinite spinner-border'
+                                }
                             }}
                         />
                     )}
