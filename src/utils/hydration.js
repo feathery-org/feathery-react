@@ -12,7 +12,7 @@ function calculateRepeatedRowCount({ step, values }) {
         return count;
     }
 
-    // Filter out all the text fields that don't belong to the repeated row
+    // Filter out all the text elements that don't belong to the repeated row
     // Then track all the instances of text variables in the text field
     // Calculate the count of repeat rows based on if the corresponding values for the text variables are arrays
     step.texts
@@ -53,7 +53,7 @@ function calculateRepeatedRowCount({ step, values }) {
             });
         });
 
-    // Check the existing servar fields for a repeating field
+    // Check the existing servar elements for a repeating field
     // Count should be the maximum number of repeated servar instances
     step.servar_fields
         .filter((field) => field.servar.repeated)
@@ -80,10 +80,6 @@ function calculateRepeatedRowCount({ step, values }) {
  * Creates a copy of the provided step with the correct number of repeated rows injected into it.
  */
 function injectRepeatedRows({ step, repeatedRowCount }) {
-    if (step === null) {
-        return null;
-    }
-
     const rrStart = step.repeat_row_start;
     const rrEnd = step.repeat_row_end;
 
@@ -126,6 +122,16 @@ function injectRepeatedRows({ step, repeatedRowCount }) {
         ...[...Array(repeatedRowCount)].flatMap(() => repeatedGridRows),
         ...step.grid_rows.slice(rrEnd + 1)
     ];
+    const repeatedMobileGridRows = step.grid_rows.slice(rrStart, rrEnd + 1);
+    const mobileGridRows = step.mobile_grid_rows
+        ? [
+              ...step.mobile_grid_rows.slice(0, rrStart),
+              ...[...Array(repeatedRowCount)].flatMap(
+                  () => repeatedMobileGridRows
+              ),
+              ...step.mobile_grid_rows.slice(rrEnd + 1)
+          ]
+        : null;
 
     const progressBar =
         !step.progress_bar || step.progress_bar.row_index_end < rrStart
@@ -140,6 +146,7 @@ function injectRepeatedRows({ step, repeatedRowCount }) {
         ...step,
         progress_bar: progressBar,
         grid_rows: gridRows,
+        mobile_grid_rows: mobileGridRows,
         servar_fields: step.servar_fields.flatMap(unfold),
         texts: step.texts.flatMap(unfold),
         buttons: step.buttons.flatMap(unfold),
@@ -152,37 +159,49 @@ function injectRepeatedRows({ step, repeatedRowCount }) {
  * Note: The provided step should be fully-hydrated (i.e. rows injected, etc.) to calculate dimensions accurately.
  */
 function calculateDimensions(step) {
-    if (step === null) {
+    const calculateResponsiveDimensions = (step, p = '') => {
+        if (step === null) {
+            return {
+                relativeWidth: 0,
+                definiteWidth: 0,
+                definiteColumns: [],
+                relativeColumns: [],
+                relativeRows: []
+            };
+        }
+
+        const gridColumns = step[`${p}grid_columns`] || step.grid_columns;
+        const gridRows = step[`${p}grid_rows`] || step.grid_rows;
+
+        let hasRelativeColumn = false;
+        let definiteWidth = 0;
+        gridColumns.forEach((column) => {
+            if (column.slice(-2) === 'px') definiteWidth += parseFloat(column);
+            else hasRelativeColumn = true;
+        });
+
+        const relativeColumns = gridColumns.map((column) => {
+            return column.slice(-2) === 'px'
+                ? `${(100 * parseFloat(column)) / definiteWidth}%`
+                : 0;
+        });
+        const relativeRows = gridRows.map((row) =>
+            row === 'min-content' ? row : `minmax(${row},min-content)`
+        );
+        definiteWidth = `${definiteWidth}px`;
+
         return {
-            relativeWidth: 0,
-            definiteWidth: 0,
-            relativeColumns: [],
-            relativeRows: []
+            relativeWidth: hasRelativeColumn ? '100%' : definiteWidth,
+            definiteWidth,
+            definiteColumns: gridColumns,
+            relativeColumns,
+            relativeRows
         };
-    }
-
-    let hasRelativeColumn = false;
-    let definiteWidth = 0;
-    step.grid_columns.forEach((column) => {
-        if (column.slice(-2) === 'px') definiteWidth += parseFloat(column);
-        else hasRelativeColumn = true;
-    });
-
-    const relativeColumns = step.grid_columns.map((column) => {
-        return column.slice(-2) === 'px'
-            ? `${(100 * parseFloat(column)) / definiteWidth}%`
-            : 0;
-    });
-    const relativeRows = step.grid_rows.map((row) =>
-        row === 'min-content' ? row : `minmax(${row},min-content)`
-    );
-    definiteWidth = `${definiteWidth}px`;
+    };
 
     return {
-        relativeWidth: hasRelativeColumn ? '100%' : definiteWidth,
-        definiteWidth,
-        relativeColumns,
-        relativeRows
+        desktop: calculateResponsiveDimensions(step),
+        mobile: calculateResponsiveDimensions(step, 'mobile_')
     };
 }
 

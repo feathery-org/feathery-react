@@ -1,9 +1,4 @@
-import {
-    borderStyleFromField,
-    marginStyleFromField,
-    fontStyles,
-    bootstrapStyles
-} from '../utils/styles';
+import { bootstrapStyles } from '../utils/styles';
 
 import { IMaskMixin } from 'react-imask';
 import React from 'react';
@@ -12,8 +7,6 @@ import ReactForm from 'react-bootstrap/Form';
 function BootstrapField({
     label,
     field,
-    selectStyle,
-    hoverStyle,
     type,
     fieldMask,
     fieldValue,
@@ -24,7 +17,7 @@ function BootstrapField({
     inlineError,
     ...props
 }) {
-    const { servar, styles } = field;
+    const { servar, styles, applyStyles } = field;
 
     if (rows) {
         props.rows = rows;
@@ -36,63 +29,33 @@ function BootstrapField({
         delete props.inputRef;
     } else props.value = fieldValue || '';
 
-    let placeholderCSS = { display: 'none' };
-    const placeholderActiveCSS = {};
-    const inputPlaceholderCSS = {};
-    if (styles.placeholder_transition === 'shrink_top') {
-        const minFontSize = Math.min(styles.font_size, 10);
-        placeholderCSS = {
-            top: 0,
-            marginTop: `${minFontSize / 2}px`,
-            fontSize: `${minFontSize}px`
-        };
-        if (styles.selected_placeholder_color) {
-            placeholderActiveCSS.color = `#${styles.selected_placeholder_color}`;
-        }
-        inputPlaceholderCSS.paddingTop = `${styles.height / 3}${
-            styles.height_unit
-        }`;
-    }
-
-    const borderStyle = borderStyleFromField(field);
-    if (inlineError) borderStyle.borderColor = '#F42525';
     const inputType = rows === undefined ? 'input' : 'textarea';
     return (
         <div
-            style={{
-                width: `${styles.width}${styles.width_unit}`,
+            css={{
                 maxWidth: '100%',
-                ...marginStyleFromField(field)
+                ...applyStyles.getTarget('fc')
             }}
         >
             {label}
             <div
-                style={{
+                css={{
                     position: 'relative',
-                    height: `${styles.height}${styles.height_unit}`,
-                    width: '100%'
+                    width: '100%',
+                    ...applyStyles.getTarget('sub-fc')
                 }}
             >
                 <ReactForm.Control
                     id={servar.key}
                     pattern={pattern}
-                    style={{
+                    css={{
                         height: '100%',
                         width: '100%',
                         ...bootstrapStyles,
-                        backgroundColor: `#${styles.background_color}`,
-                        boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color}`,
-                        borderRadius: field.borderRadius,
-                        ...fontStyles(styles),
-                        ...borderStyle,
-                        ...inputPlaceholderCSS
-                    }}
-                    css={{
-                        '&:focus': {
-                            boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color} !important`,
-                            ...selectStyle
-                        },
-                        '&:hover': hoverStyle
+                        ...applyStyles.getTarget('field'),
+                        ...(inlineError ? { borderColor: '#F42525' } : {}),
+                        '&:focus': applyStyles.getTarget('active'),
+                        '&:hover': applyStyles.getTarget('hover')
                     }}
                     maxLength={servar.max_length}
                     minLength={servar.min_length}
@@ -109,20 +72,14 @@ function BootstrapField({
                         pointerEvents: 'none',
                         left: '0.75rem',
                         transition: '0.2s ease all',
-                        lineHeight: `${styles.font_size}px`,
-                        ...fontStyles(styles, true),
-                        ...(rows === undefined
-                            ? {
-                                  top: '50%',
-                                  marginTop: `-${styles.font_size / 2}px`
-                              }
-                            : {
-                                  top: '0.375rem'
-                              }),
-                        ...(fieldValue || fieldMask ? placeholderCSS : {}),
+                        top: rows === undefined ? '50%' : '0.375rem',
+                        ...applyStyles.getTarget('placeholder'),
+                        ...(fieldValue || fieldMask
+                            ? applyStyles.getTarget('placeholderFocus')
+                            : {}),
                         [`${inputType}:focus + &`]: {
-                            ...placeholderCSS,
-                            ...placeholderActiveCSS
+                            ...applyStyles.getTarget('placeholderFocus'),
+                            ...applyStyles.getTarget('placeholderActive')
                         }
                     }}
                 >
@@ -131,12 +88,11 @@ function BootstrapField({
             </div>
             {inlineError && (
                 <span
-                    style={{
+                    css={{
                         alignSelf: 'flex-start',
-                        fontFamily: field.styles.font_family,
-                        fontSize: `${field.styles.font_size}px`,
                         marginTop: '3px',
-                        color: '#F42525'
+                        color: '#F42525',
+                        ...applyStyles.getTarget('error')
                     }}
                 >
                     {inlineError}

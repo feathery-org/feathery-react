@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
 
 // keyCode constants
 const BACKSPACE = 8;
@@ -20,7 +19,6 @@ function SingleOtpInput({
     onBlur,
     onClick,
     field,
-    hoverCSS,
     inlineError
 }) {
     const input = useRef(null);
@@ -36,12 +34,8 @@ function SingleOtpInput({
         }
     }, [focus, input]);
 
-    const borderStyle = borderStyleFromField(
-        field,
-        focus ? 'selected_' : '',
-        false
-    );
-    if (inlineError) borderStyle.borderColor = '#F42525';
+    const applyStyles = field.applyStyles;
+    applyStyles.applyBorders('field', focus ? 'selected_' : '', false);
     return (
         <div style={{ display: 'flex', alignItems: 'center' }}>
             <input
@@ -50,27 +44,13 @@ function SingleOtpInput({
                     index === 0 ? 'Please enter verification code. ' : ''
                 }Digit ${index + 1}`}
                 autoComplete='off'
-                style={{
+                css={{
                     textAlign: 'center',
                     marginLeft: '8px',
                     outline: 'none',
-                    height: `${field.styles.height}${field.styles.height_unit}`,
-                    width: `${field.styles.width}${field.styles.width_unit}`,
-                    backgroundColor: `#${field.styles.background_color}`,
-                    boxShadow: `${field.styles.shadow_x_offset}px ${field.styles.shadow_y_offset}px ${field.styles.shadow_blur_radius}px #${field.styles.shadow_color}`,
-                    fontSize: `${field.styles.font_size}px`,
-                    color: `#${field.styles.font_color}`,
-                    borderRadius: field.borderRadius,
-                    ...borderStyle
-                }}
-                css={{
-                    '&::placeholder': {
-                        color: `#${field.styles.font_color} !important`
-                    },
-                    '&:focus': {
-                        boxShadow: `${field.styles.shadow_x_offset}px ${field.styles.shadow_y_offset}px ${field.styles.shadow_blur_radius}px #${field.styles.shadow_color} !important`
-                    },
-                    '&:hover': hoverCSS
+                    ...applyStyles.getTarget('field'),
+                    ...(inlineError ? { borderColor: '#F42525' } : {}),
+                    '&:hover': applyStyles.getTarget('hover')
                 }}
                 type='tel'
                 maxLength='1'
@@ -88,7 +68,7 @@ function SingleOtpInput({
     );
 }
 
-function OtpInput({ onChange, onClick, value, field, hoverCSS, inlineError }) {
+function OtpInput({ onChange, onClick, value, field, inlineError }) {
     const [activeInput, setActiveInput] = useState(0);
     const [rawValue, setRawValue] = useState(value.toString().split(''));
 
@@ -211,7 +191,6 @@ function OtpInput({ onChange, onClick, value, field, hoverCSS, inlineError }) {
                     onBlur={() => setActiveInput(-1)}
                     onClick={onClick}
                     field={field}
-                    hoverCSS={hoverCSS}
                     inlineError={inlineError}
                 />
             );
@@ -222,10 +201,10 @@ function OtpInput({ onChange, onClick, value, field, hoverCSS, inlineError }) {
 
     return (
         <div
-            style={{
+            css={{
                 display: 'flex',
                 flexDirection: 'row',
-                ...marginStyleFromField(field)
+                ...field.applyStyles.getTarget('fc')
             }}
         >
             {renderInputs()}
@@ -239,7 +218,6 @@ function FeatheryPinInput({
     fieldVal,
     onClick,
     onChange,
-    hoverCSS,
     inlineError
 }) {
     return (
@@ -250,17 +228,15 @@ function FeatheryPinInput({
                 field={field}
                 onChange={onChange}
                 onClick={onClick}
-                hoverCSS={hoverCSS}
                 inlineError={inlineError}
             />
             {inlineError && (
                 <span
-                    style={{
+                    css={{
                         alignSelf: 'flex-start',
-                        fontFamily: field.styles.font_family,
-                        fontSize: `${field.styles.font_size}px`,
                         marginTop: '3px',
-                        color: '#F42525'
+                        color: '#F42525',
+                        ...field.applyStyles.getTarget('error')
                     }}
                 >
                     {inlineError}

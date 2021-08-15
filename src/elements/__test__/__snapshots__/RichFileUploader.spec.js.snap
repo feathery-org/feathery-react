@@ -1,0 +1,38 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`RichFileUploader renders a basic file upload component 1`] = `
+<div
+  className="css-1cldqkt-RichFileUploader"
+  id="key"
+  onClick={[Function]}
+>
+  <img
+    className="img-fluid"
+    src="https://feathery.tech"
+    style={
+      Object {
+        "maxHeight": "100%",
+        "maxWidth": "100%",
+        "minHeight": 0,
+      }
+    }
+  />
+  <div
+    className="css-1y1kdr4-RichFileUploader"
+  >
+    Upload file...
+  </div>
+  
+  
+  <input
+    accept="image/*"
+    onChange={[Function]}
+    style={
+      Object {
+        "display": "none",
+      }
+    }
+    type="file"
+  />
+</div>
+`;

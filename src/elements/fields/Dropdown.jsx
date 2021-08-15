@@ -1,13 +1,8 @@
-import {
-    borderStyleFromField,
-    marginStyleFromField,
-    fontStyles,
-    bootstrapStyles
-} from '../utils/styles';
+import { bootstrapStyles } from '../../utils/styles';
 
 import React from 'react';
 import ReactForm from 'react-bootstrap/Form';
-import { states } from '../utils/formHelperFunctions';
+import { states } from '../../utils/formHelperFunctions';
 
 function Dropdown({
     field,
@@ -15,12 +10,10 @@ function Dropdown({
     fieldVal,
     onClick,
     onChange,
-    selectCSS,
-    hoverCSS,
     inlineError,
     type = 'default'
 }) {
-    const { servar, styles } = field;
+    const { servar, styles, applyStyles } = field;
 
     let placeholder, options;
     if (type === 'states') {
@@ -39,41 +32,30 @@ function Dropdown({
         ));
     }
 
-    const borderStyle = borderStyleFromField(field);
-    if (inlineError) borderStyle.borderColor = '#F42525';
+    applyStyles.applyFontStyles('field', !fieldVal);
     return (
         <div
-            style={{
-                width: `${styles.width}${styles.width_unit}`,
+            css={{
                 maxWidth: '100%',
-                ...marginStyleFromField(field)
+                ...applyStyles.getTarget('fc')
             }}
         >
             {fieldLabel}
             <ReactForm.Control
-                style={{
+                css={{
                     ...bootstrapStyles,
-                    ...borderStyle,
-                    borderRadius: field.borderRadius,
-                    height: `${styles.height}${styles.height_unit}`,
+                    ...applyStyles.getTarget('field'),
+                    ...(inlineError ? { borderColor: '#F42525' } : {}),
                     width: '100%',
-                    backgroundColor: `#${styles.background_color}`,
-                    boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color}`,
-                    ...fontStyles(styles, !fieldVal),
                     appearance: 'none',
                     WebkitAppearance: 'none',
                     MozAppearance: 'none',
                     backgroundImage:
                         "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='black'/></svg>\")",
                     backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 10px center'
-                }}
-                css={{
-                    '&:focus': {
-                        boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color} !important`,
-                        ...selectCSS
-                    },
-                    '&:hover': hoverCSS
+                    backgroundPosition: 'right 10px center',
+                    '&:focus': applyStyles.getTarget('active'),
+                    '&:hover': applyStyles.getTarget('hover')
                 }}
                 as='select'
                 id={servar.key}
@@ -89,12 +71,11 @@ function Dropdown({
             </ReactForm.Control>
             {inlineError && (
                 <span
-                    style={{
+                    css={{
                         alignSelf: 'flex-start',
-                        fontFamily: field.styles.font_family,
-                        fontSize: `${field.styles.font_size}px`,
                         marginTop: '3px',
-                        color: '#F42525'
+                        color: '#F42525',
+                        ...applyStyles.getTarget('error')
                     }}
                 >
                     {inlineError}

@@ -43,7 +43,7 @@ describe('formHelperFunctions', () => {
     });
 
     describe('formatStepFields', () => {
-        it('formats zero fields correctly', () => {
+        it('formats zero elements correctly', () => {
             // Arrange
             const step = {
                 servar_fields: []
@@ -57,7 +57,7 @@ describe('formHelperFunctions', () => {
             expect(actual).toMatchObject(expected);
         });
 
-        it('formats more than zero fields correctly', () => {
+        it('formats more than zero elements correctly', () => {
             // Arrange
             const step = {
                 servar_fields: [

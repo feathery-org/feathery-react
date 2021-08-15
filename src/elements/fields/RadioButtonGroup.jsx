@@ -1,11 +1,6 @@
 import React, { useState } from 'react';
 import ReactForm from 'react-bootstrap/Form';
-import {
-    borderStyleFromField,
-    marginStyleFromField,
-    fontStyles,
-    bootstrapStyles
-} from '../utils/styles';
+import { bootstrapStyles } from '../../utils/styles';
 
 function RadioButtonGroup({
     field,
@@ -14,17 +9,14 @@ function RadioButtonGroup({
     otherVal,
     onChange,
     handleOtherStateChange,
-    onClick,
-    selectCSS,
-    hoverCSS
+    onClick
 }) {
     const [otherSelect, setOtherSelect] = useState({});
-
-    const servar = field.servar;
+    const { servar, applyStyles } = field;
     const otherChecked =
         (otherSelect[servar.key] || fieldVal) && fieldVal === otherVal;
     return (
-        <div style={marginStyleFromField(field)}>
+        <div css={applyStyles.getTarget('fc')}>
             {fieldLabel}
             {servar.metadata.options.map((opt, i) => {
                 return (
@@ -87,22 +79,12 @@ function RadioButtonGroup({
                     />
                     <ReactForm.Control
                         type='text'
-                        style={{
-                            marginLeft: '5px',
-                            height: `${parseInt(field.styles.font_size) + 4}px`,
-                            backgroundColor: `#${field.styles.background_color}`,
-                            boxShadow: `${field.styles.shadow_x_offset}px ${field.styles.shadow_y_offset}px ${field.styles.shadow_blur_radius}px #${field.styles.shadow_color}`,
-                            borderRadius: field.borderRadius,
-                            ...bootstrapStyles,
-                            ...fontStyles(field.styles),
-                            ...borderStyleFromField(field)
-                        }}
                         css={{
-                            '&:focus': {
-                                boxShadow: `${field.styles.shadow_x_offset}px ${field.styles.shadow_y_offset}px ${field.styles.shadow_blur_radius}px #${field.styles.shadow_color} !important`,
-                                ...selectCSS
-                            },
-                            '&:hover': hoverCSS
+                            marginLeft: '5px',
+                            ...bootstrapStyles,
+                            ...applyStyles.getTarget('field'),
+                            '&:focus': applyStyles.getTarget('active'),
+                            '&:hover': applyStyles.getTarget('hover')
                         }}
                         id={servar.key}
                         value={otherVal || ''}

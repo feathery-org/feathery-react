@@ -20,19 +20,34 @@ describe('hydration', () => {
                 images: [],
                 grid_rows: ['50px', '150px', '50px'],
                 grid_columns: ['150px', '1fr'],
+                mobile_grid_columns: ['30px'],
                 progress_bar: {
                     column_index: 0
                 }
             };
             const expected = {
-                definiteWidth: '150px',
-                relativeWidth: '100%',
-                relativeColumns: ['100%', 0],
-                relativeRows: [
-                    'minmax(50px,min-content)',
-                    'minmax(150px,min-content)',
-                    'minmax(50px,min-content)'
-                ]
+                desktop: {
+                    definiteWidth: '150px',
+                    definiteColumns: ['150px', '1fr'],
+                    relativeWidth: '100%',
+                    relativeColumns: ['100%', 0],
+                    relativeRows: [
+                        'minmax(50px,min-content)',
+                        'minmax(150px,min-content)',
+                        'minmax(50px,min-content)'
+                    ]
+                },
+                mobile: {
+                    definiteWidth: '30px',
+                    definiteColumns: ['30px'],
+                    relativeWidth: '30px',
+                    relativeColumns: ['100%'],
+                    relativeRows: [
+                        'minmax(50px,min-content)',
+                        'minmax(150px,min-content)',
+                        'minmax(50px,min-content)'
+                    ]
+                }
             };
 
             // Act
@@ -102,16 +117,32 @@ describe('hydration', () => {
                 }
             };
             const expected = {
-                definiteWidth: '150px',
-                relativeWidth: '100%',
-                relativeColumns: ['100%', 0],
-                relativeRows: [
-                    'minmax(50px,min-content)',
-                    'minmax(150px,min-content)',
-                    'minmax(150px,min-content)',
-                    'minmax(150px,min-content)',
-                    'minmax(50px,min-content)'
-                ]
+                desktop: {
+                    definiteWidth: '150px',
+                    definiteColumns: ['150px', '50%'],
+                    relativeWidth: '100%',
+                    relativeColumns: ['100%', 0],
+                    relativeRows: [
+                        'minmax(50px,min-content)',
+                        'minmax(150px,min-content)',
+                        'minmax(150px,min-content)',
+                        'minmax(150px,min-content)',
+                        'minmax(50px,min-content)'
+                    ]
+                },
+                mobile: {
+                    definiteWidth: '150px',
+                    definiteColumns: ['150px', '50%'],
+                    relativeWidth: '100%',
+                    relativeColumns: ['100%', 0],
+                    relativeRows: [
+                        'minmax(50px,min-content)',
+                        'minmax(150px,min-content)',
+                        'minmax(150px,min-content)',
+                        'minmax(150px,min-content)',
+                        'minmax(50px,min-content)'
+                    ]
+                }
             };
 
             // Act
@@ -140,7 +171,7 @@ describe('hydration', () => {
             expect(actual).toEqual(expected);
         });
 
-        it('calculates with text fields', () => {
+        it('calculates with text elements', () => {
             // Arrange
             const step = {
                 repeat_row_start: 0,
@@ -173,7 +204,7 @@ describe('hydration', () => {
             expect(actual).toEqual(expected);
         });
 
-        it('calculates with servar fields', () => {
+        it('calculates with servar elements', () => {
             // Arrange
             const step = {
                 repeat_row_start: 0,
@@ -201,7 +232,7 @@ describe('hydration', () => {
             expect(actual).toEqual(expected);
         });
 
-        it('calculates with servar and text fields', () => {
+        it('calculates with servar and text elements', () => {
             // Arrange
             const step = {
                 repeat_row_start: 0,
