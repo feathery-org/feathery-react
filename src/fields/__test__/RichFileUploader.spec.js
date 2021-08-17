@@ -13,7 +13,6 @@ describe('RichFileUploader', () => {
                     width: '50',
                     width_unit: 'px',
                     background_color: '000000',
-                    icon_url: 'https://feathery.tech',
                     uploader_padding_top: '0',
                     uploader_padding_bottom: '0',
                     uploader_padding_left: '0',
@@ -30,7 +29,8 @@ describe('RichFileUploader', () => {
                     metadata: {
                         file_types: 'image/*'
                     }
-                }
+                },
+                icon_url: 'https://feathery.tech'
             },
             onChange: jest.fn(),
             onClick: jest.fn()
