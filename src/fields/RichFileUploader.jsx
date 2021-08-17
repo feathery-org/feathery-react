@@ -14,7 +14,7 @@ function RichFileUploader({
     initialFile
 }) {
     const { servar, styles } = field;
-    const showIcon = styles.icon_url !== '';
+    const showIcon = field.icon_url !== '';
     const showLabel = servar.name !== '';
 
     const [thumbnail, setThumbnail] = useState('');
@@ -82,7 +82,7 @@ function RichFileUploader({
         >
             {showIcon && !file && (
                 <Image
-                    src={styles.icon_url}
+                    src={field.icon_url}
                     fluid
                     style={{
                         maxWidth: '100%',
