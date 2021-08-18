@@ -112,15 +112,16 @@ export default function GooglePlaces({
                         return newValues;
                     });
                     setNoChange(false);
-                    onChange(
-                        Object.values(keyIDMap),
-                        Object.keys(keyIDMap),
+                    onChange({
+                        fieldIDs: Object.values(keyIDMap),
+                        fieldKeys: Object.keys(keyIDMap)
+                    })({
                         newValues,
-                        'googleMaps',
-                        {
+                        trigger: 'googleMaps',
+                        integrationData: {
                             googleMapsAddress: addressObject
                         }
-                    );
+                    });
                 }
             }
         };

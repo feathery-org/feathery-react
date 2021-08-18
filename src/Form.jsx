@@ -936,13 +936,11 @@ function Form({
         }
     }
 
-    const fieldOnChange = (
-        fieldIDs,
-        fieldKeys,
+    const fieldOnChange = ({ fieldIDs, fieldKeys, repeatIndex = 0 }) => ({
         newValues,
         trigger = 'field',
         integrationData = null
-    ) => {
+    }) => {
         if (noChange) {
             return;
         }
@@ -958,6 +956,7 @@ function Form({
                 stepName: activeStep.key,
                 userId: userKey,
                 lastStep: activeStep.next_conditions.length === 0,
+                repeatIndex,
                 setValues: (userVals) => {
                     const values = convertFilesToFilePromises(
                         userVals,
@@ -976,7 +975,7 @@ function Form({
                 elementIDs: fieldIDs,
                 trigger: 'change'
             },
-            0,
+            repeatIndex,
             newValues
         );
     };
@@ -1155,11 +1154,11 @@ function Form({
                                 });
                             }
                             if (data.fieldKeys.length > 0) {
-                                fieldOnChange(
-                                    data.fieldIDs,
-                                    data.fieldKeys,
-                                    data.values
-                                );
+                                fieldOnChange({
+                                    fieldIds: data.fieldIDs,
+                                    fieldKeys: data.fieldKeys,
+                                    repeatIndex: field.repeat
+                                })({ newValues: data.values });
                             }
                         }}
                         setSubmitRef={(newRef) => (submitRef.current = newRef)}
@@ -1230,6 +1229,11 @@ function Form({
                             field.repeat || 0,
                             fieldValues
                         );
+                    const onChange = fieldOnChange({
+                        fieldIDs: [field.id],
+                        fieldKeys: [servar.key],
+                        repeatIndex: field.repeat || 0
+                    });
 
                     const inlineErr =
                         errType === 'inline' &&
@@ -1288,17 +1292,15 @@ function Form({
                                         required={servar.required}
                                         onChange={(e) => {
                                             const file = e.target.files[0];
-                                            fieldOnChange(
-                                                [field.id],
-                                                [servar.key],
-                                                handleValueChange(
+                                            onChange({
+                                                newValues: handleValueChange(
                                                     file
                                                         ? Promise.resolve(file)
                                                         : file,
                                                     servar.key,
                                                     index
                                                 )
-                                            );
+                                            });
                                         }}
                                         onClick={onClick}
                                         style={{
@@ -1313,15 +1315,13 @@ function Form({
                                 <RichFileUploader
                                     field={field}
                                     onChange={(e) => {
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            handleValueChange(
+                                        onChange({
+                                            newValues: handleValueChange(
                                                 e.target.files[0],
                                                 servar.key,
                                                 index
                                             )
-                                        );
+                                        });
                                     }}
                                     onClick={onClick}
                                     initialFile={fieldVal}
@@ -1333,15 +1333,13 @@ function Form({
                                 <MultiFileUploader
                                     field={field}
                                     onChange={(e) => {
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            handleValueChange(
+                                        onChange({
+                                            newValues: handleValueChange(
                                                 e.target.files,
                                                 servar.key,
                                                 index
                                             )
-                                        );
+                                        });
                                     }}
                                     onClick={onClick}
                                     initialFiles={fieldVal}
@@ -1371,11 +1369,12 @@ function Form({
                                         id={servar.key}
                                         checked={fieldVal}
                                         onChange={(e) => {
-                                            fieldOnChange(
-                                                [field.id],
-                                                [servar.key],
-                                                handleChange(e, index)
-                                            );
+                                            onChange({
+                                                newValues: handleChange(
+                                                    e,
+                                                    index
+                                                )
+                                            });
                                         }}
                                         onClick={onClick}
                                         style={{
@@ -1400,11 +1399,9 @@ function Form({
                                     fieldVal={fieldVal}
                                     onClick={onClick}
                                     onChange={(e) => {
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            handleChange(e, index)
-                                        );
+                                        onChange({
+                                            newValues: handleChange(e, index)
+                                        });
                                     }}
                                     selectCSS={select}
                                     hoverCSS={hover}
@@ -1420,11 +1417,9 @@ function Form({
                                     fieldVal={fieldVal}
                                     onClick={onClick}
                                     onChange={(e) => {
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            handleChange(e, index)
-                                        );
+                                        onChange({
+                                            newValues: handleChange(e, index)
+                                        });
                                     }}
                                     selectCSS={select}
                                     hoverCSS={hover}
@@ -1443,11 +1438,9 @@ function Form({
                                     type='email'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            handleChange(e, index)
-                                        );
+                                        onChange({
+                                            newValues: handleChange(e, index)
+                                        });
                                     }}
                                     onClick={onClick}
                                     pattern={emailPatternStr}
@@ -1463,15 +1456,13 @@ function Form({
                                     fieldVal={fieldVal}
                                     onClick={onClick}
                                     onChange={(val) => {
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            handleValueChange(
+                                        onChange({
+                                            newValues: handleValueChange(
                                                 val,
                                                 servar.key,
                                                 index
                                             )
-                                        );
+                                        });
                                     }}
                                     hoverCSS={hover}
                                     inlineError={inlineErr}
@@ -1488,7 +1479,7 @@ function Form({
                                     step={activeStep}
                                     fieldValues={fieldValues}
                                     updateFieldValues={updateFieldValues}
-                                    fieldOnChange={fieldOnChange}
+                                    onChange={onChange}
                                     handleOtherStateChange={
                                         handleOtherStateChange
                                     }
@@ -1506,16 +1497,15 @@ function Form({
                                     fieldVal={fieldVal}
                                     otherVal={otherVal}
                                     onChange={(e, newVals = null) => {
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            newVals ||
+                                        onChange({
+                                            newValues:
+                                                newVals ||
                                                 handleValueChange(
                                                     e.target.value,
                                                     servar.key,
                                                     index
                                                 )
-                                        );
+                                        });
                                     }}
                                     handleOtherStateChange={
                                         handleOtherStateChange
@@ -1571,11 +1561,7 @@ function Form({
                                                     const newValues = handleColorChange(
                                                         servar.key
                                                     )(color);
-                                                    fieldOnChange(
-                                                        [field.id],
-                                                        [servar.key],
-                                                        newValues
-                                                    );
+                                                    onChange({ newValues });
                                                 }}
                                             />
                                         </div>
@@ -1593,11 +1579,9 @@ function Form({
                                     type='textarea'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            handleChange(e, index)
-                                        );
+                                        onChange({
+                                            newValues: handleChange(e, index)
+                                        });
                                     }}
                                     onClick={onClick}
                                     rows={styles.num_rows}
@@ -1615,11 +1599,9 @@ function Form({
                                     type='url'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            handleChange(e, index)
-                                        );
+                                        onChange({
+                                            newValues: handleChange(e, index)
+                                        });
                                     }}
                                     onClick={onClick}
                                     inlineError={inlineErr}
@@ -1634,15 +1616,13 @@ function Form({
                                     fieldValue={fieldVal}
                                     onClick={onClick}
                                     onAccept={(value) => {
-                                        fieldOnChange(
-                                            [field.id],
-                                            [servar.key],
-                                            handleValueChange(
+                                        onChange({
+                                            newValues: handleValueChange(
                                                 value,
                                                 servar.key,
                                                 index
                                             )
-                                        );
+                                        });
                                     }}
                                     label={fieldLabel}
                                     field={field}
