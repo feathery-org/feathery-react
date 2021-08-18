@@ -8,7 +8,7 @@ import TagManager from 'react-gtm-module';
 import $script from 'scriptjs';
 
 const fpPromise = FingerprintJS.load();
-let initUserPromise = Promise.resolve();
+let initFormsPromise = Promise.resolve();
 const defaultOptions = {
     userKey: null,
     formKeys: [],
@@ -26,7 +26,7 @@ const initState = {
     sessions: {}
 };
 
-async function init(apiKey, options = {}) {
+function init(apiKey, options = {}) {
     options = { ...defaultOptions, ...options };
 
     if (initState.initialized) return; // can only be initialized one time per load
@@ -46,16 +46,15 @@ async function init(apiKey, options = {}) {
         }
     );
 
-    if (initState.userKey) await _fetchFormData(options.formKeys);
+    if (initState.userKey) initFormsPromise = _fetchFormData(options.formKeys);
     else {
         if (options.tracking === 'fingerprint') {
-            initUserPromise = fpPromise
+            initFormsPromise = fpPromise
                 .then((fp) => fp.get())
                 .then(async (result) => {
                     initState.userKey = result.visitorId;
                     await _fetchFormData(options.formKeys);
                 });
-            await initUserPromise;
         } else if (options.tracking === 'cookie') {
             document.cookie.split(/; */).map((c) => {
                 const [key, v] = c.split('=', 2);
@@ -64,9 +63,10 @@ async function init(apiKey, options = {}) {
 
             if (!initState.userKey) initState.userKey = uuidv4();
             document.cookie = `feathery-user-id=${initState.userKey}; max-age=31536000`;
-            await _fetchFormData(options.formKeys);
+            initFormsPromise = _fetchFormData(options.formKeys);
         }
     }
+    return initFormsPromise;
 }
 
 function dynamicImport(dependency) {
@@ -168,4 +168,4 @@ function initInfo() {
     return initState;
 }
 
-export { init, initInfo, initializeIntegrations, initState, initUserPromise };
+export { init, initInfo, initializeIntegrations, initState, initFormsPromise };

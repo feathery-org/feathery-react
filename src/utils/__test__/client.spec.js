@@ -1,9 +1,9 @@
 import Client, { API_URL, CDN_URL } from '../client';
-import { initInfo, initUserPromise } from '../init';
+import { initInfo, initFormsPromise } from '../init';
 
 jest.mock('../init', () => ({
     initInfo: jest.fn(),
-    initUserPromise: Promise.resolve()
+    initFormsPromise: Promise.resolve()
 }));
 
 describe('client', () => {
@@ -162,7 +162,7 @@ describe('client', () => {
             global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
             // Act
-            await initUserPromise;
+            await initFormsPromise;
             const response = await client.registerEvent({
                 step_key: stepKey,
                 next_step_key: nextStepKey,

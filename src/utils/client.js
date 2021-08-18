@@ -1,6 +1,6 @@
 import * as errors from './error';
 
-import { initInfo, initState, initUserPromise } from './init';
+import { initInfo, initState, initFormsPromise } from './init';
 
 import encodeGetParams from './string';
 
@@ -38,6 +38,7 @@ export default class Client {
     }
 
     async fetchForm() {
+        await initFormsPromise;
         const { apiKey, forms } = initInfo();
         if (this.formKey in forms) return Promise.resolve(forms[this.formKey]);
 
@@ -60,7 +61,7 @@ export default class Client {
     }
 
     async fetchSession() {
-        await initUserPromise;
+        await initFormsPromise;
         const { apiKey, userKey, sessions } = initInfo();
         if (this.formKey in sessions)
             return Promise.resolve(sessions[this.formKey]);
@@ -240,7 +241,7 @@ export default class Client {
     }
 
     registerEvent(eventData, promise = null) {
-        initUserPromise.then(() => {
+        return initFormsPromise.then(() => {
             const { userKey, apiKey } = initInfo();
             const url = `${API_URL}api/event/`;
             const data = {
