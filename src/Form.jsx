@@ -658,7 +658,7 @@ function Form({
                 const elementType = metadata.elementType;
                 await onSubmit({
                     submitFields: formattedFields,
-                    repeatIndex: repeat,
+                    elementRepeatIndex: repeat,
                     fields: allFields,
                     stepName: activeStep.key,
                     userId: userKey,
@@ -936,10 +936,16 @@ function Form({
         }
     }
 
-    const fieldOnChange = ({ fieldIDs, fieldKeys, repeatIndex = 0 }) => ({
+    const fieldOnChange = ({
+        fieldIDs,
+        fieldKeys,
+        elementRepeatIndex = 0
+    }) => ({
         newValues,
         trigger = 'field',
-        integrationData = null
+        integrationData = null,
+        // Multi-file upload is not a repeated row but a repeated field
+        valueRepeatIndex = null
     }) => {
         if (noChange) {
             return;
@@ -956,7 +962,8 @@ function Form({
                 stepName: activeStep.key,
                 userId: userKey,
                 lastStep: activeStep.next_conditions.length === 0,
-                repeatIndex,
+                elementRepeatIndex,
+                valueRepeatIndex,
                 setValues: (userVals) => {
                     const values = convertFilesToFilePromises(
                         userVals,
@@ -975,7 +982,7 @@ function Form({
                 elementIDs: fieldIDs,
                 trigger: 'change'
             },
-            repeatIndex,
+            elementRepeatIndex,
             newValues
         );
     };
@@ -1157,7 +1164,7 @@ function Form({
                                 fieldOnChange({
                                     fieldIds: data.fieldIDs,
                                     fieldKeys: data.fieldKeys,
-                                    repeatIndex: field.repeat
+                                    elementRepeatIndex: field.repeat
                                 })({ newValues: data.values });
                             }
                         }}
@@ -1232,7 +1239,7 @@ function Form({
                     const onChange = fieldOnChange({
                         fieldIDs: [field.id],
                         fieldKeys: [servar.key],
-                        repeatIndex: field.repeat || 0
+                        elementRepeatIndex: field.repeat || 0
                     });
 
                     const inlineErr =
@@ -1332,13 +1339,14 @@ function Form({
                             controlElement = (
                                 <MultiFileUploader
                                     field={field}
-                                    onChange={(e) => {
+                                    onChange={(files, fieldIndex) => {
                                         onChange({
                                             newValues: handleValueChange(
-                                                e.target.files,
+                                                files,
                                                 servar.key,
                                                 index
-                                            )
+                                            ),
+                                            valueRepeatIndex: fieldIndex
                                         });
                                     }}
                                     onClick={onClick}

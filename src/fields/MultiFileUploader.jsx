@@ -52,9 +52,7 @@ function MultiFileUploader({
         const newRawFiles = [...rawFiles, ...uploadedFiles];
         setRawFiles(newRawFiles);
         setThumbnailsData([...thumbnailsData, ...newThumbnailData]);
-
-        // Simulate the onChange event from a multi-select
-        customOnChange({ target: { files: newRawFiles } });
+        customOnChange(newRawFiles, rawFiles.length);
 
         // Wipe the value of the upload element so we can upload multiple copies of the same file
         // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
@@ -66,9 +64,7 @@ function MultiFileUploader({
             const newRawFiles = justRemove(rawFiles, index);
             setRawFiles(newRawFiles);
             setThumbnailsData(justRemove(thumbnailsData, index));
-
-            // Simulate the onChange event from a multi-select
-            customOnChange({ target: { files: newRawFiles } });
+            customOnChange(newRawFiles, index);
         };
     }
 
