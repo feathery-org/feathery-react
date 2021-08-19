@@ -126,7 +126,7 @@ function BootstrapField({
                         }
                     }}
                 >
-                    {styles.placeholder || ''}
+                    {field.placeholder || ''}
                 </span>
             </div>
             {inlineError && (

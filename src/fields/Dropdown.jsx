@@ -83,7 +83,7 @@ function Dropdown({
                 onClick={onClick}
             >
                 <option key='' value='' disabled>
-                    {styles.placeholder || placeholder}
+                    {field.placeholder || placeholder}
                 </option>
                 {options}
             </ReactForm.Control>
