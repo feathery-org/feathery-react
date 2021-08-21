@@ -466,7 +466,11 @@ function Form({
 
         activeStep.servar_fields.forEach((field) => {
             const servar = field.servar;
-            if (servar.key !== key || (index && field.repeat !== index)) return;
+            if (
+                servar.key !== key ||
+                (index !== null && field.repeat !== index)
+            )
+                return;
 
             if (servar.repeat_trigger === 'set_value') {
                 const defaultValue = getDefaultFieldValue(field);

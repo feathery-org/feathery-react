@@ -145,6 +145,8 @@ function getDefaultFieldValue(field) {
             return '000000';
         case 'select':
             return null;
+        case 'file_upload':
+            return null;
         case 'rich_multi_file_upload':
             return [];
         case 'rich_file_upload':
