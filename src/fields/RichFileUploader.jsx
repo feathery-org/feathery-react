@@ -23,7 +23,10 @@ function RichFileUploader({
 
     // Set file state to the initialFile AND update file state whenever initialFile changes
     const [file, setFile] = useState(initialFile);
-    useEffect(() => setFile(initialFile), [initialFile]);
+    useEffect(() => {
+        if (fileInput.current) fileInput.current.value = '';
+        setFile(initialFile);
+    }, [initialFile]);
 
     // When a file is uploaded, we convert it to a thumbnail
     useEffect(() => {
