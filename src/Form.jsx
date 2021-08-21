@@ -1014,8 +1014,11 @@ function Form({
         ];
         const completionPercentage = (
             <div
+                key='completionPercentage'
                 style={{ width: '100%', textAlign: 'center' }}
-            >{`${percent}% completed`}</div>
+            >
+                {`${percent}% completed`}
+            </div>
         );
         if (pb.styles.percent_text_layout === 'top') {
             progressBarElements.splice(0, 0, completionPercentage);
