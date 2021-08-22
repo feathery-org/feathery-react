@@ -3,9 +3,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { FiX } from 'react-icons/fi';
 import { IconContext } from 'react-icons';
 import { Image } from 'react-bootstrap';
-import { getThumbnailData } from '../utils/image';
-import { justRemove } from '../utils/array';
-import { marginStyleFromField } from '../utils/styles';
+import { getThumbnailData } from '../../utils/image';
+import { justRemove } from '../../utils/array';
 
 function MultiFileUploader({
     field,
@@ -13,7 +12,7 @@ function MultiFileUploader({
     onClick: customOnClick,
     initialFiles = []
 }) {
-    const { servar, styles } = field;
+    const { servar, applyStyles } = field;
     const showIcon = field.icon_url !== '';
     const showLabel = servar.name !== '';
 
@@ -70,19 +69,17 @@ function MultiFileUploader({
 
     return (
         <div
-            style={{
+            css={{
                 display: 'flex',
                 flexWrap: 'wrap',
-                ...marginStyleFromField(field)
+                ...applyStyles.getTarget('fc')
             }}
         >
             {thumbnailsData.map(({ filename, thumbnail }, index) => (
                 <div
                     key={index}
-                    style={{
+                    css={{
                         position: 'relative',
-                        height: `${styles.height}${styles.height_unit}`,
-                        width: `${styles.width}${styles.width_unit}`,
                         margin: '0 6px 6px 0',
                         maxHeight: '100%',
                         border: '1px solid lightgrey',
@@ -90,7 +87,8 @@ function MultiFileUploader({
                         overflow: 'hidden',
                         display: 'flex',
                         justifyContent: 'center',
-                        alignItems: 'center'
+                        alignItems: 'center',
+                        ...applyStyles.getTarget('field')
                     }}
                 >
                     {thumbnail && (
@@ -144,11 +142,9 @@ function MultiFileUploader({
             <div
                 id={servar.key}
                 onClick={onClick}
-                style={{
+                css={{
                     position: 'relative',
                     cursor: 'pointer',
-                    height: `${styles.height}${styles.height_unit}`,
-                    width: `${styles.width}${styles.width_unit}`,
                     maxHeight: '100%',
                     display: 'flex',
                     justifyContent:
@@ -157,12 +153,9 @@ function MultiFileUploader({
                     flexDirection: 'column',
                     border: '1px solid lightgrey',
                     borderRadius: '4px',
-                    paddingTop: `${styles.uploader_padding_top}px`,
-                    paddingBottom: `${styles.uploader_padding_bottom}px`,
-                    paddingLeft: `${styles.uploader_padding_left}px`,
-                    paddingRight: `${styles.uploader_padding_right}px`,
                     overflow: 'hidden',
-                    margin: '0 6px 6px 0'
+                    margin: '0 6px 6px 0',
+                    ...applyStyles.getTarget('ac')
                 }}
             >
                 {showIcon && (
@@ -177,17 +170,7 @@ function MultiFileUploader({
                     />
                 )}
                 {showLabel && (
-                    <div
-                        style={{
-                            paddingTop: `${styles.cta_padding_top}px`,
-                            paddingBottom: `${styles.cta_padding_bottom}px`,
-                            paddingLeft: `${styles.cta_padding_left}px`,
-                            paddingRight: `${styles.cta_padding_right}px`,
-                            background: `#${styles.background_color}`
-                        }}
-                    >
-                        {servar.name}
-                    </div>
+                    <div css={applyStyles.getTarget('add')}>{servar.name}</div>
                 )}
                 <input
                     ref={fileInput}

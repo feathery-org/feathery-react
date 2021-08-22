@@ -1,5 +1,4 @@
 import React from 'react';
-import { borderStyleFromField, marginStyleFromField } from '../utils/styles';
 
 const handleButtonGroupChange = (e, step, updateFieldValues) => {
     const fieldKey = e.target.id;
@@ -22,21 +21,18 @@ function ButtonGroup({
     fieldVal,
     step,
     onClick,
-    updateFieldValues,
-    selectCSS,
-    hoverCSS
+    updateFieldValues
 }) {
-    const servar = field.servar;
+    const { servar, applyStyles } = field;
     return (
         <>
             {fieldLabel}
             <div
-                style={{
+                css={{
                     display: 'flex',
                     flexWrap: 'wrap',
                     width: '100%',
-                    alignItems: field.styles.layout,
-                    justifyContent: field.styles.vertical_layout
+                    ...applyStyles.getTarget('fc')
                 }}
             >
                 {servar.metadata.options.map((opt) => {
@@ -52,23 +48,17 @@ function ButtonGroup({
                                 onClick(e, true, vals);
                             }}
                             key={opt}
-                            style={{
+                            css={{
                                 display: 'flex',
                                 justifyContent: 'center',
                                 alignItems: 'center',
                                 cursor: 'pointer',
-                                height: `${field.styles.height}${field.styles.height_unit}`,
-                                width: `${field.styles.width}${field.styles.width_unit}`,
-                                backgroundColor: `#${field.styles.background_color}`,
-                                boxShadow: `${field.styles.shadow_x_offset}px ${field.styles.shadow_y_offset}px ${field.styles.shadow_blur_radius}px #${field.styles.shadow_color}`,
-                                borderRadius: field.borderRadius,
-                                ...borderStyleFromField(field),
-                                ...marginStyleFromField(field)
-                            }}
-                            css={{
-                                '&:active': selectCSS,
-                                '&:hover': hoverCSS,
-                                ...(fieldVal === opt ? selectCSS : {})
+                                ...applyStyles.getTarget('field'),
+                                '&:active': applyStyles.getTarget('active'),
+                                '&:hover': applyStyles.getTarget('hover'),
+                                ...(fieldVal === opt
+                                    ? applyStyles.getTarget('active')
+                                    : {})
                             }}
                         >
                             {opt}

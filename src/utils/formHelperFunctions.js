@@ -444,7 +444,7 @@ function shouldElementHide({ fields, values, element }) {
         return false;
     }
 
-    // Get the target value (taking repeated fields into account)
+    // Get the target value (taking repeated elements into account)
     const targets = fields.filter((field) => field.servar.id === hideIf.servar);
     const target = targets[element.repeat ?? 0];
 

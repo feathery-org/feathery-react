@@ -1,12 +1,13 @@
 import React from 'react';
 import { create, act } from 'react-test-renderer';
 import ButtonElement from '../ButtonElement';
+import { getButtonStyles } from '../../utils/styles';
 
 describe('ButtonElement', () => {
     it('renders an empty Button element', async () => {
         // Arrange
         const props = {
-            field: {
+            element: {
                 text_formatted: [{ insert: '\n' }],
                 column_index: 0,
                 row_index: 0,
@@ -19,15 +20,15 @@ describe('ButtonElement', () => {
                     border_left_color: '2954af',
                     background_color: '2954af',
                     layout: 'center'
-                }
+                },
+                mobile_styles: {}
             },
-            fieldValues: {},
-            conditions: [],
-            displaySteps: [],
+            values: {},
             submit: () => {},
-            setElementKey: () => {},
-            setRepeat: () => {}
+            setSubmitRef: () => {},
+            onRepeatClick: () => {}
         };
+        getButtonStyles(props.element);
 
         // Act
         let button;
@@ -43,7 +44,7 @@ describe('ButtonElement', () => {
     it('renders a button with plain text', async () => {
         // Arrange
         const props = {
-            field: {
+            element: {
                 text_formatted: [{ insert: 'Hello World!' }],
                 column_index: 0,
                 row_index: 0,
@@ -52,15 +53,15 @@ describe('ButtonElement', () => {
                 styles: {
                     background_color: '2954af',
                     layout: 'center'
-                }
+                },
+                mobile_styles: {}
             },
-            fieldValues: {},
-            conditions: [],
-            displaySteps: [],
+            values: {},
             submit: () => {},
-            setElementKey: () => {},
-            setRepeat: () => {}
+            setSubmitRef: () => {},
+            onRepeatClick: () => {}
         };
+        getButtonStyles(props.element);
 
         // Act
         let button;
@@ -76,7 +77,7 @@ describe('ButtonElement', () => {
     it('renders a button with custom styles', async () => {
         // Arrange
         const props = {
-            field: {
+            element: {
                 text_formatted: [
                     {
                         insert: 'Hello World!',
@@ -98,15 +99,15 @@ describe('ButtonElement', () => {
                 styles: {
                     background_color: '2954af',
                     layout: 'center'
-                }
+                },
+                mobile_styles: {}
             },
-            fieldValues: {},
-            conditions: [],
-            displaySteps: [],
+            values: {},
             submit: () => {},
-            setElementKey: () => {},
-            setRepeat: () => {}
+            setSubmitRef: () => {},
+            onRepeatClick: () => {}
         };
+        getButtonStyles(props.element);
 
         // Act
         let button;

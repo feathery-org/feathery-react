@@ -9,18 +9,16 @@ import {
     ButtonGroup,
     CheckboxGroup,
     Dropdown,
+    ImageElement,
     MultiFileUploader,
     PinInput,
     RadioButtonGroup,
     RichFileUploader,
-    TextElement
-} from './fields';
+    TextElement,
+    ProgressBarElement
+} from './elements';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-    borderStyleFromField,
-    marginStyleFromField,
-    fontStyles
-} from './utils/styles';
+import { applyStepStyles } from './utils/styles';
 import {
     calculateDimensions,
     calculateRepeatedRowCount,
@@ -55,7 +53,6 @@ import { justInsert, justRemove } from './utils/array';
 
 import Client from './utils/client';
 import GooglePlaces from './components/GooglePlaces';
-import ProgressBar from 'react-bootstrap/ProgressBar';
 import ReactForm from 'react-bootstrap/Form';
 import SignatureCanvas from 'react-signature-canvas';
 import { SketchPicker } from 'react-color';
@@ -124,10 +121,19 @@ function Form({
     );
 
     // Create the fully-hydrated activeStep by injecting repeated rows
+    // and pre-calculating styles.
     // Note: Other hydration transformations can also be included here
     const activeStep = useMemo(() => {
-        return injectRepeatedRows({ step: rawActiveStep, repeatedRowCount });
+        if (!rawActiveStep) return null;
+        const stepCopy = JSON.parse(JSON.stringify(rawActiveStep));
+        applyStepStyles(stepCopy);
+        return injectRepeatedRows({ step: stepCopy, repeatedRowCount });
     }, [rawActiveStep, repeatedRowCount]);
+
+    // When the active step changes, recalculate the dimensions of the new step
+    const dimensions = useMemo(() => calculateDimensions(activeStep), [
+        activeStep
+    ]);
 
     useEffect(() => {
         if (!activeStep) return;
@@ -147,11 +153,6 @@ function Form({
         }
     }, [activeStep?.key]);
 
-    // When the active step changes, recalculate the dimensions of the new step
-    const dimensions = useMemo(() => calculateDimensions(activeStep), [
-        activeStep
-    ]);
-
     function addRepeatedRow({ values = fieldValues }) {
         if (
             isNaN(activeStep.repeat_row_start) ||
@@ -159,7 +160,7 @@ function Form({
         )
             return;
 
-        // Collect a list of all repeated fields
+        // Collect a list of all repeated elements
         const repeatedServarFields = rawActiveStep.servar_fields.filter(
             (field) => field.servar.repeated
         );
@@ -188,7 +189,7 @@ function Form({
     function removeRepeatedRow({ index, values = fieldValues }) {
         if (isNaN(index)) return;
 
-        // Collect a list of all repeated fields
+        // Collect a list of all repeated elements
         const repeatedServarFields = rawActiveStep.servar_fields.filter(
             (field) => field.servar.repeated
         );
@@ -991,65 +992,42 @@ function Form({
         );
     };
 
-    let progressBarElements = null;
     const pb = activeStep.progress_bar;
-    if (pb) {
-        const percent =
-            pb.progress || Math.round((100 * curDepth) / (maxDepth + 1));
-        progressBarElements = [
-            <ProgressBar
-                key='progress'
-                style={{
-                    height: '0.4rem',
-                    width: '100%',
-                    borderRadius: 0,
-                    display: 'flex',
-                    backgroundColor: '#e9ecef'
-                }}
-                css={{
-                    '.progress-bar': {
-                        margin: '0 0 0 0 !important',
-                        backgroundColor: `#${pb.styles.bar_color} !important`,
-                        transition: 'width 0.6s ease'
-                    }
-                }}
-                now={percent}
-            />
-        ];
-        const completionPercentage = (
-            <div
-                key='completionPercentage'
-                style={{ width: '100%', textAlign: 'center' }}
-            >
-                {`${percent}% completed`}
-            </div>
-        );
-        if (pb.styles.percent_text_layout === 'top') {
-            progressBarElements.splice(0, 0, completionPercentage);
-        } else if (pb.styles.percent_text_layout === 'bottom') {
-            progressBarElements.splice(1, 0, completionPercentage);
-        }
+    const ddw = dimensions.desktop.definiteWidth;
+    const dmw = dimensions.mobile.definiteWidth;
+    const stepCSS = {
+        backgroundColor: `#${activeStep.default_background_color}`,
+        display: 'grid',
+        maxWidth: '100%',
+        gridTemplateRows: dimensions.desktop.relativeRows.join(' '),
+        width: dimensions.desktop.relativeWidth,
+        gridTemplateColumns: dimensions.desktop.definiteColumns.join(' '),
+        ...style
+    };
+    // If checks to prevent media query collisions
+    if (ddw !== '478px' && ddw !== dmw) {
+        stepCSS[`@media (max-width: ${ddw})`] = {
+            width: ddw,
+            gridTemplateColumns: dimensions.desktop.relativeColumns.join(' ')
+        };
     }
+    if (dmw !== '478px') {
+        stepCSS['@media (max-width: 478px)'] = {
+            width: dimensions.mobile.relativeWidth,
+            gridTemplateRows: dimensions.mobile.relativeRows.join(' '),
+            gridTemplateColumns: dimensions.mobile.definiteColumns.join(' ')
+        };
+    }
+    stepCSS[`@media (max-width: ${dmw})`] = {
+        width: dmw,
+        gridTemplateColumns: dimensions.mobile.relativeColumns.join(' ')
+    };
 
     return (
         <ReactForm
             className={className}
             ref={formRef}
-            style={{
-                backgroundColor: `#${activeStep.default_background_color}`,
-                maxWidth: '100%',
-                display: 'grid',
-                gridTemplateRows: dimensions.relativeRows.join(' '),
-                ...style
-            }}
-            css={{
-                width: dimensions.definiteWidth,
-                gridTemplateColumns: dimensions.relativeColumns.join(' '),
-                [`@media (min-width: ${dimensions.definiteWidth})`]: {
-                    width: dimensions.relativeWidth,
-                    gridTemplateColumns: activeStep.grid_columns.join(' ')
-                }
-            }}
+            css={stepCSS}
             onSubmit={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1064,33 +1042,11 @@ function Form({
                     values: fieldValues,
                     element: pb
                 }) && (
-                    <div
-                        key='progress-bar'
-                        css={{
-                            gridColumnStart: pb.column_index + 1,
-                            gridRowStart: pb.row_index + 1,
-                            gridColumnEnd: pb.column_index_end + 2,
-                            gridRowEnd: pb.row_index_end + 2,
-                            alignItems: pb.styles.layout,
-                            justifyContent: pb.styles.vertical_layout,
-                            ...fontStyles(pb.styles),
-                            display: 'flex',
-                            flexDirection: 'column'
-                        }}
-                    >
-                        <div
-                            style={{
-                                display: 'flex',
-                                justifyContent: pb.styles.vertical_layout,
-                                alignItems: pb.styles.layout,
-                                flexDirection: 'column',
-                                width: `${pb.styles.width}%`,
-                                ...marginStyleFromField(pb)
-                            }}
-                        >
-                            {progressBarElements}
-                        </div>
-                    </div>
+                    <ProgressBarElement
+                        element={pb}
+                        curDepth={curDepth}
+                        maxDepth={maxDepth}
+                    />
                 )}
             {activeStep.images
                 .filter(
@@ -1101,43 +1057,22 @@ function Form({
                             element: image
                         })
                 )
-                .map((image, i) => (
-                    <div
-                        key={`${activeStep.key}-image-${i}`}
-                        style={{
-                            gridColumnStart: image.column_index + 1,
-                            gridRowStart: image.row_index + 1,
-                            gridColumnEnd: image.column_index_end + 2,
-                            gridRowEnd: image.row_index_end + 2,
-                            display: 'flex',
-                            alignItems: image.styles.vertical_layout,
-                            justifyContent: image.styles.layout
-                        }}
-                    >
-                        <img
-                            src={image.source_url}
-                            alt='Form Image'
-                            style={{
-                                width: `${image.styles.width}${image.styles.width_unit}`,
-                                objectFit: 'contain',
-                                ...marginStyleFromField(image)
-                            }}
-                        />
-                    </div>
+                .map((element) => (
+                    <ImageElement key={`${element.id}`} element={element} />
                 ))}
             {activeStep.texts
                 .filter(
-                    (text) =>
+                    (element) =>
                         !shouldElementHide({
                             fields: activeStep.servar_fields,
                             values: fieldValues,
-                            element: text
+                            element
                         })
                 )
-                .map((field, i) => (
+                .map((element) => (
                     <TextElement
-                        key={`${activeStep.key}-text-${i}`}
-                        field={field}
+                        key={`${element.id}`}
+                        element={element}
                         values={fieldValues}
                         conditions={activeStep.next_conditions}
                         submit={submit}
@@ -1152,26 +1087,26 @@ function Form({
                             element: button
                         })
                 )
-                .map((field, i) => (
+                .map((element) => (
                     <ButtonElement
-                        key={`${activeStep.key}-button-${i}`}
-                        field={field}
+                        key={`${element.id}`}
+                        element={element}
                         values={fieldValues}
                         submit={submit}
                         onRepeatClick={() => {
                             let data;
-                            if (field.link === 'add_repeated_row') {
+                            if (element.link === 'add_repeated_row') {
                                 data = addRepeatedRow({});
-                            } else if (field.link === 'remove_repeated_row') {
+                            } else if (element.link === 'remove_repeated_row') {
                                 data = removeRepeatedRow({
-                                    index: field.repeat
+                                    index: element.repeat
                                 });
                             }
                             if (data.fieldKeys.length > 0) {
                                 fieldOnChange({
                                     fieldIds: data.fieldIDs,
                                     fieldKeys: data.fieldKeys,
-                                    elementRepeatIndex: field.repeat
+                                    elementRepeatIndex: element.repeat
                                 })({ newValues: data.values });
                             }
                         }}
@@ -1200,7 +1135,6 @@ function Form({
                         field,
                         fieldValues
                     );
-                    const styles = field.styles;
 
                     let otherVal = '';
                     if (servar.metadata.other) {
@@ -1252,27 +1186,17 @@ function Form({
                     const inlineErr =
                         errType === 'inline' &&
                         getInlineError(field, inlineErrors);
-                    field.borderRadius = `${styles.corner_top_left_radius}px ${styles.corner_top_right_radius}px ${styles.corner_bottom_right_radius}px ${styles.corner_bottom_left_radius}px`;
-                    const hover = borderStyleFromField(field, 'hover_');
-                    if (styles.hover_background_color)
-                        hover.backgroundColor = `#${styles.hover_background_color} !important`;
-                    if (styles.hover_font_color)
-                        hover.color = `#${styles.hover_font_color} !important`;
-                    const select = borderStyleFromField(field, 'selected_');
-                    if (styles.selected_background_color)
-                        select.backgroundColor = `#${styles.selected_background_color} !important`;
-                    if (styles.selected_font_color)
-                        select.color = `#${styles.selected_font_color} !important`;
+
+                    const styles = field.styles;
 
                     let controlElement;
                     switch (servar.type) {
                         case 'signature':
                             controlElement = (
                                 <div
-                                    style={{
-                                        width: `${styles.width}px`,
-                                        maxWidth: '100%',
-                                        ...marginStyleFromField(field)
+                                    css={{
+                                        ...field.applyStyles.getTarget('fc'),
+                                        maxWidth: '100%'
                                     }}
                                 >
                                     {fieldLabel}
@@ -1282,13 +1206,9 @@ function Form({
                                             id: servar.key,
                                             width: styles.width,
                                             height: styles.height,
-                                            style: {
-                                                backgroundColor: `#${styles.background_color}`,
-                                                borderRadius:
-                                                    field.borderRadius,
-                                                boxShadow: `${styles.shadow_x_offset}px ${styles.shadow_y_offset}px ${styles.shadow_blur_radius}px #${styles.shadow_color}`,
-                                                ...borderStyleFromField(field)
-                                            }
+                                            style: field.applyStyles.getTarget(
+                                                'field'
+                                            )
                                         }}
                                         ref={(ref) => {
                                             signatureRef[servar.key] = ref;
@@ -1299,7 +1219,7 @@ function Form({
                             break;
                         case 'file_upload':
                             controlElement = (
-                                <div style={marginStyleFromField(field)}>
+                                <div css={field.applyStyles.getTarget('fc')}>
                                     {fieldLabel}
                                     <ReactForm.File
                                         id={servar.key}
@@ -1370,14 +1290,12 @@ function Form({
                                     step={activeStep}
                                     onClick={onClick}
                                     updateFieldValues={updateFieldValues}
-                                    selectCSS={select}
-                                    hoverCSS={hover}
                                 />
                             );
                             break;
                         case 'checkbox':
                             controlElement = (
-                                <div style={marginStyleFromField(field)}>
+                                <div css={field.applyStyles.getTarget('fc')}>
                                     {fieldLabel}
                                     <ReactForm.Check
                                         type='checkbox'
@@ -1418,8 +1336,6 @@ function Form({
                                             newValues: handleChange(e, index)
                                         });
                                     }}
-                                    selectCSS={select}
-                                    hoverCSS={hover}
                                     inlineError={inlineErr}
                                 />
                             );
@@ -1436,8 +1352,6 @@ function Form({
                                             newValues: handleChange(e, index)
                                         });
                                     }}
-                                    selectCSS={select}
-                                    hoverCSS={hover}
                                     inlineError={inlineErr}
                                     type='states'
                                 />
@@ -1448,8 +1362,6 @@ function Form({
                                 <BootstrapField
                                     label={fieldLabel}
                                     field={field}
-                                    selectStyle={select}
-                                    hoverStyle={hover}
                                     type='email'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
@@ -1479,7 +1391,6 @@ function Form({
                                             )
                                         });
                                     }}
-                                    hoverCSS={hover}
                                     inlineError={inlineErr}
                                 />
                             );
@@ -1499,8 +1410,6 @@ function Form({
                                         handleOtherStateChange
                                     }
                                     onClick={onClick}
-                                    selectCSS={select}
-                                    hoverCSS={hover}
                                 />
                             );
                             break;
@@ -1526,14 +1435,12 @@ function Form({
                                         handleOtherStateChange
                                     }
                                     onClick={onClick}
-                                    selectCSS={select}
-                                    hoverCSS={hover}
                                 />
                             );
                             break;
                         case 'hex_color':
                             controlElement = (
-                                <div style={marginStyleFromField(field)}>
+                                <div css={field.applyStyles.getTarget('fc')}>
                                     {fieldLabel}
                                     <div
                                         css={{
@@ -1541,8 +1448,9 @@ function Form({
                                             height: '36px',
                                             background: `#${fieldVal}`,
                                             cursor: 'pointer',
-                                            ...borderStyleFromField(field),
-                                            borderRadius: field.borderRadius
+                                            ...field.applyStyles.getTarget(
+                                                'field'
+                                            )
                                         }}
                                         onClick={(e) => {
                                             onClick(e);
@@ -1589,8 +1497,6 @@ function Form({
                                 <BootstrapField
                                     label={fieldLabel}
                                     field={field}
-                                    selectStyle={select}
-                                    hoverStyle={hover}
                                     type='textarea'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
@@ -1609,8 +1515,6 @@ function Form({
                                 <BootstrapField
                                     label={fieldLabel}
                                     field={field}
-                                    selectStyle={select}
-                                    hoverStyle={hover}
                                     type='url'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
@@ -1641,8 +1545,6 @@ function Form({
                                     }}
                                     label={fieldLabel}
                                     field={field}
-                                    selectStyle={select}
-                                    hoverStyle={hover}
                                     type='text'
                                     ref={(r) => (maskedRef[servar.key] = r)}
                                     fieldMask={
@@ -1654,17 +1556,12 @@ function Form({
                     }
                     return (
                         <div
-                            style={{
-                                gridColumnStart: field.column_index + 1,
-                                gridRowStart: field.row_index + 1,
-                                gridColumnEnd: field.column_index_end + 2,
-                                gridRowEnd: field.row_index_end + 2,
-                                alignItems: field.styles.layout,
-                                ...fontStyles(field.styles),
+                            css={{
                                 display: 'flex',
                                 flexDirection: 'column',
-                                justifyContent: field.styles.vertical_layout,
-                                width: '100%'
+                                width: '100%',
+                                ...field.applyStyles.getLayout(),
+                                ...field.applyStyles.getTarget('container')
                             }}
                             key={reactFriendlyKey(field)}
                         >

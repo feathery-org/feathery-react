@@ -3,9 +3,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { FiX } from 'react-icons/fi';
 import { IconContext } from 'react-icons';
 import { Image } from 'react-bootstrap';
-import { getThumbnailData } from '../utils/image';
-import { marginStyleFromField } from '../utils/styles';
-import { reactFriendlyKey } from '../utils/formHelperFunctions';
+import { getThumbnailData } from '../../utils/image';
+import { reactFriendlyKey } from '../../utils/formHelperFunctions';
 
 function RichFileUploader({
     field,
@@ -13,7 +12,7 @@ function RichFileUploader({
     onClick: customOnClick,
     initialFile
 }) {
-    const { servar, styles } = field;
+    const { servar, applyStyles } = field;
     const showIcon = field.icon_url !== '';
     const showLabel = servar.name !== '';
 
@@ -56,15 +55,26 @@ function RichFileUploader({
         customOnChange({ target: { files: [] } });
     }
 
+    applyStyles.apply(
+        'fc',
+        [
+            'uploader_padding_top',
+            'uploader_padding_right',
+            'uploader_padding_bottom',
+            'uploader_padding_left'
+        ],
+        (a, b, c, d) => ({
+            padding: file ? '0' : `${a}px ${b}px ${c}px ${d}px`
+        })
+    );
+
     return (
         <div
             id={reactFriendlyKey(field)}
             onClick={onClick}
-            style={{
+            css={{
                 position: 'relative',
                 cursor: 'pointer',
-                height: `${styles.height}${styles.height_unit}`,
-                width: `${styles.width}${styles.width_unit}`,
                 maxHeight: '100%',
                 display: 'flex',
                 justifyContent:
@@ -73,14 +83,8 @@ function RichFileUploader({
                 flexDirection: 'column',
                 border: '1px solid lightgrey',
                 borderRadius: '4px',
-                paddingTop: `${!file ? styles.uploader_padding_top : 0}px`,
-                paddingBottom: `${
-                    !file ? styles.uploader_padding_bottom : 0
-                }px`,
-                paddingLeft: `${!file ? styles.uploader_padding_left : 0}px`,
-                paddingRight: `${!file ? styles.uploader_padding_right : 0}px`,
                 overflow: 'hidden',
-                ...marginStyleFromField(field)
+                ...applyStyles.getTarget('fc')
             }}
         >
             {showIcon && !file && (
@@ -95,17 +99,7 @@ function RichFileUploader({
                 />
             )}
             {showLabel && !file && (
-                <div
-                    style={{
-                        paddingTop: `${styles.cta_padding_top}px`,
-                        paddingBottom: `${styles.cta_padding_bottom}px`,
-                        paddingLeft: `${styles.cta_padding_left}px`,
-                        paddingRight: `${styles.cta_padding_right}px`,
-                        background: `#${styles.background_color}`
-                    }}
-                >
-                    {servar.name}
-                </div>
+                <div css={applyStyles.getTarget('field')}>{servar.name}</div>
             )}
             {thumbnail && (
                 <Image

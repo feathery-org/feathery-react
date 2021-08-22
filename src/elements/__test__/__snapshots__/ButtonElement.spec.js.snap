@@ -1,0 +1,119 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ButtonElement renders a button with custom styles 1`] = `
+<div
+  className="css-n00kzt-ButtonElement"
+>
+  <button
+    className="css-j96s3f-ButtonElement btn btn-primary"
+    disabled={false}
+    onClick={[Function]}
+    style={
+      Object {
+        "alignItems": "center",
+        "boxShadow": "none",
+        "cursor": "pointer",
+        "display": "flex",
+        "justifyContent": "center",
+        "maxWidth": "100%",
+      }
+    }
+    type="button"
+  >
+    <div
+      style={
+        Object {
+          "display": "flex",
+          "position": "relative",
+        }
+      }
+    >
+      <span
+        className="css-1h32x8r-generateNodes"
+        onClick={[Function]}
+      >
+        Hello World!
+      </span>
+    </div>
+  </button>
+</div>
+`;
+
+exports[`ButtonElement renders a button with plain text 1`] = `
+<div
+  className="css-n00kzt-ButtonElement"
+>
+  <button
+    className="css-j96s3f-ButtonElement btn btn-primary"
+    disabled={false}
+    onClick={[Function]}
+    style={
+      Object {
+        "alignItems": "center",
+        "boxShadow": "none",
+        "cursor": "pointer",
+        "display": "flex",
+        "justifyContent": "center",
+        "maxWidth": "100%",
+      }
+    }
+    type="button"
+  >
+    <div
+      style={
+        Object {
+          "display": "flex",
+          "position": "relative",
+        }
+      }
+    >
+      <span
+        className="css-enkqi-generateNodes"
+        onClick={[Function]}
+      >
+        Hello World!
+      </span>
+    </div>
+  </button>
+</div>
+`;
+
+exports[`ButtonElement renders an empty Button element 1`] = `
+<div
+  className="css-n00kzt-ButtonElement"
+>
+  <button
+    className="css-jvbg1j-ButtonElement btn btn-primary"
+    disabled={false}
+    onClick={[Function]}
+    style={
+      Object {
+        "alignItems": "center",
+        "boxShadow": "none",
+        "cursor": "pointer",
+        "display": "flex",
+        "justifyContent": "center",
+        "maxWidth": "100%",
+      }
+    }
+    type="button"
+  >
+    <div
+      style={
+        Object {
+          "display": "flex",
+          "position": "relative",
+        }
+      }
+    >
+      <span
+        className="css-enkqi-generateNodes"
+        onClick={[Function]}
+      >
+        
+
+      </span>
+    </div>
+  </button>
+</div>
+`;
