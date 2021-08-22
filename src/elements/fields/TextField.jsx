@@ -1,106 +1,108 @@
 import { bootstrapStyles } from '../../utils/styles';
 
 import { IMaskMixin } from 'react-imask';
-import React from 'react';
+import React, { memo } from 'react';
 import ReactForm from 'react-bootstrap/Form';
 
-function BootstrapField({
-    label,
-    field,
-    type,
-    fieldMask,
-    fieldValue,
-    onChange,
-    onClick,
-    pattern,
-    rows,
-    inlineError,
-    ...props
-}) {
-    const { servar, applyStyles } = field;
+const BootstrapField = memo(
+    ({
+        label,
+        field,
+        type,
+        fieldMask,
+        fieldValue,
+        onChange,
+        onClick,
+        pattern,
+        rows,
+        inlineError,
+        ...props
+    }) => {
+        const { servar, applyStyles } = field;
 
-    if (rows) {
-        props.rows = rows;
-        props.as = type;
-    } else props.type = type;
+        if (rows) {
+            props.rows = rows;
+            props.as = type;
+        } else props.type = type;
 
-    if (props.inputRef) {
-        props.ref = props.inputRef;
-        delete props.inputRef;
-    } else props.value = fieldValue || '';
+        if (props.inputRef) {
+            props.ref = props.inputRef;
+            delete props.inputRef;
+        } else props.value = fieldValue || '';
 
-    const inputType = rows === undefined ? 'input' : 'textarea';
-    return (
-        <div
-            css={{
-                maxWidth: '100%',
-                ...applyStyles.getTarget('fc')
-            }}
-        >
-            {label}
+        const inputType = rows === undefined ? 'input' : 'textarea';
+        return (
             <div
                 css={{
-                    position: 'relative',
-                    width: '100%',
-                    ...applyStyles.getTarget('sub-fc')
+                    maxWidth: '100%',
+                    ...applyStyles.getTarget('fc')
                 }}
             >
-                <ReactForm.Control
-                    id={servar.key}
-                    pattern={pattern}
+                {label}
+                <div
                     css={{
-                        height: '100%',
+                        position: 'relative',
                         width: '100%',
-                        ...bootstrapStyles,
-                        ...applyStyles.getTarget('field'),
-                        ...(inlineError ? { borderColor: '#F42525' } : {}),
-                        '&:focus': applyStyles.getTarget('active'),
-                        '&:hover': applyStyles.getTarget('hover')
-                    }}
-                    maxLength={servar.max_length}
-                    minLength={servar.min_length}
-                    required={servar.required}
-                    onChange={onChange}
-                    onClick={onClick}
-                    autoComplete={servar.metadata.autocomplete || 'on'}
-                    placeholder=''
-                    {...props}
-                />
-                <span
-                    css={{
-                        position: 'absolute',
-                        pointerEvents: 'none',
-                        left: '0.75rem',
-                        transition: '0.2s ease all',
-                        top: rows === undefined ? '50%' : '0.375rem',
-                        ...applyStyles.getTarget('placeholder'),
-                        ...(fieldValue || fieldMask
-                            ? applyStyles.getTarget('placeholderFocus')
-                            : {}),
-                        [`${inputType}:focus + &`]: {
-                            ...applyStyles.getTarget('placeholderFocus'),
-                            ...applyStyles.getTarget('placeholderActive')
-                        }
+                        ...applyStyles.getTarget('sub-fc')
                     }}
                 >
-                    {field.placeholder || ''}
-                </span>
+                    <ReactForm.Control
+                        id={servar.key}
+                        pattern={pattern}
+                        css={{
+                            height: '100%',
+                            width: '100%',
+                            ...bootstrapStyles,
+                            ...applyStyles.getTarget('field'),
+                            ...(inlineError ? { borderColor: '#F42525' } : {}),
+                            '&:focus': applyStyles.getTarget('active'),
+                            '&:hover': applyStyles.getTarget('hover')
+                        }}
+                        maxLength={servar.max_length}
+                        minLength={servar.min_length}
+                        required={servar.required}
+                        onChange={onChange}
+                        onClick={onClick}
+                        autoComplete={servar.metadata.autocomplete || 'on'}
+                        placeholder=''
+                        {...props}
+                    />
+                    <span
+                        css={{
+                            position: 'absolute',
+                            pointerEvents: 'none',
+                            left: '0.75rem',
+                            transition: '0.2s ease all',
+                            top: rows === undefined ? '50%' : '0.375rem',
+                            ...applyStyles.getTarget('placeholder'),
+                            ...(fieldValue || fieldMask
+                                ? applyStyles.getTarget('placeholderFocus')
+                                : {}),
+                            [`${inputType}:focus + &`]: {
+                                ...applyStyles.getTarget('placeholderFocus'),
+                                ...applyStyles.getTarget('placeholderActive')
+                            }
+                        }}
+                    >
+                        {field.placeholder || ''}
+                    </span>
+                </div>
+                {inlineError && (
+                    <span
+                        css={{
+                            alignSelf: 'flex-start',
+                            marginTop: '3px',
+                            color: '#F42525',
+                            ...applyStyles.getTarget('error')
+                        }}
+                    >
+                        {inlineError}
+                    </span>
+                )}
             </div>
-            {inlineError && (
-                <span
-                    css={{
-                        alignSelf: 'flex-start',
-                        marginTop: '3px',
-                        color: '#F42525',
-                        ...applyStyles.getTarget('error')
-                    }}
-                >
-                    {inlineError}
-                </span>
-            )}
-        </div>
-    );
-}
+        );
+    }
+);
 
 function getMaskProps(servar, value) {
     switch (servar.type) {
@@ -139,8 +141,8 @@ function getMaskProps(servar, value) {
     }
 }
 
-const MaskedBootstrapField = IMaskMixin((props) => (
-    <BootstrapField {...props} />
-));
+const MaskedBootstrapField = memo(
+    IMaskMixin((props) => <BootstrapField {...props} />)
+);
 
 export { BootstrapField, MaskedBootstrapField, getMaskProps };
