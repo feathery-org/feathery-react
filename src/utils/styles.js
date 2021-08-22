@@ -562,7 +562,8 @@ function getFieldStyles(field) {
                 'sub-fc',
                 'placeholder',
                 'placeholderActive',
-                'placeholderFocus'
+                'placeholderFocus',
+                'tooltip'
             );
             styles.applyMargin('fc');
             styles.applyWidth('fc');
@@ -607,6 +608,11 @@ function getFieldStyles(field) {
             } else {
                 styles.setStyle('placeholderFocus', 'display', 'none');
             }
+
+            styles.apply('tooltip', ['font_size'], (a) => ({
+                width: `${a}px`,
+                height: `${a}px`
+            }));
             break;
     }
 

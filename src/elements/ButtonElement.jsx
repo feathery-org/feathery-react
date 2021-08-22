@@ -3,11 +3,12 @@ import React, { useState } from 'react';
 import Button from 'react-bootstrap/Button';
 import Delta from 'quill-delta';
 import Spinner from 'react-bootstrap/Spinner';
-import generateNodes from '../components/textNodes';
+import generateNodes from '../components/TextNodes';
 
 function ButtonElement({
     element,
     values,
+    handleRedirect,
     submit,
     onRepeatClick,
     setSubmitRef
@@ -15,14 +16,12 @@ function ButtonElement({
     const [showSpinner, setShowSpinner] = useState(false);
 
     const elementID = element.id;
-    const repeat = element.repeat || 0;
     const delta = new Delta(element.text_formatted);
     const nodes = generateNodes({
         element,
         delta,
         values,
-        submit,
-        repeat,
+        handleRedirect,
         elementID
     });
 
@@ -46,15 +45,17 @@ function ButtonElement({
         // Note: We only need to set the spinner if the submit request failed
         // If the request succeeded then the button unmounts and calling setShowSpinner is an error
         try {
-            const newStep = await submit(
-                element.link === 'submit',
-                {
-                    elementType: 'button',
-                    elementIDs: [elementID],
-                    trigger: 'click'
-                },
-                repeat
-            );
+            const metadata = {
+                elementType: 'button',
+                elementIDs: [elementID],
+                trigger: 'click'
+            };
+            let newStep;
+            if (element.link === 'submit') {
+                newStep = await submit(metadata, element.repeat || 0);
+            } else {
+                newStep = handleRedirect({ metadata });
+            }
 
             // If the submit failed we want to throw here to turn off the spinner
             if (!newStep) setShowSpinner(false);

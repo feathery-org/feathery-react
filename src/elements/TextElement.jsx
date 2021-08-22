@@ -1,8 +1,8 @@
 import React from 'react';
 import Delta from 'quill-delta';
-import generateNodes from '../components/textNodes';
+import generateNodes from '../components/TextNodes';
 
-function TextElement({ element, values, conditions, submit }) {
+function TextElement({ element, values, conditions, handleRedirect }) {
     const elementID = element.id;
     let delta = new Delta(element.text_formatted);
 
@@ -16,13 +16,11 @@ function TextElement({ element, values, conditions, submit }) {
         }
     });
 
-    const repeat = element.repeat || 0;
     const nodes = generateNodes({
         element,
         delta,
         values,
-        submit,
-        repeat,
+        handleRedirect,
         elementID
     });
 

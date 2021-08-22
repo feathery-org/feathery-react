@@ -572,177 +572,160 @@ function Form({
         });
     };
 
-    const submit = async (
-        submitData,
-        metadata,
-        repeat = 0,
-        newValues = null
-    ) => {
+    const submit = async (metadata, repeat = 0, newValues = null) => {
         let newFieldVals = newValues || fieldValues;
-        if (submitData) {
-            const servarMap = {};
-            activeStep.servar_fields.forEach(
-                (field) => (servarMap[field.servar.key] = field.servar)
-            );
-            const formattedFields = formatStepFields(
-                activeStep,
-                newFieldVals,
-                signatureRef
-            );
+        const servarMap = {};
+        activeStep.servar_fields.forEach(
+            (field) => (servarMap[field.servar.key] = field.servar)
+        );
+        const formattedFields = formatStepFields(
+            activeStep,
+            newFieldVals,
+            signatureRef
+        );
 
-            const newInlineErrors = {};
-            Object.entries(formattedFields).map(([fieldKey, { value }]) => {
-                const servar = servarMap[fieldKey];
-                const err = getFieldError(value, servar, signatureRef);
-                if (errType === 'html5') {
-                    setFormElementError({
-                        formRef,
-                        fieldKey,
-                        message: err,
-                        servarType: servar.type
+        const newInlineErrors = {};
+        Object.entries(formattedFields).map(([fieldKey, { value }]) => {
+            const servar = servarMap[fieldKey];
+            const err = getFieldError(value, servar, signatureRef);
+            if (errType === 'html5') {
+                setFormElementError({
+                    formRef,
+                    fieldKey,
+                    message: err,
+                    servarType: servar.type
+                });
+            } else if (errType === 'inline') {
+                newInlineErrors[fieldKey] = { message: err };
+            }
+        });
+        // do validation check before running user submission function
+        // so user does not access invalid data
+        if (errType === 'html5') {
+            formRef.current.reportValidity();
+            if (!formRef.current.checkValidity()) return;
+        } else if (errType === 'inline') {
+            setInlineErrors(newInlineErrors);
+            const invalid = Object.values(newInlineErrors).find(
+                (data) => data.message
+            );
+            if (invalid) return;
+        }
+
+        let errorMessage, errorField;
+        ({ newFieldVals, errorMessage, errorField } = await handleActions(
+            formattedFields,
+            metadata,
+            newFieldVals
+        ));
+        if (errorMessage && errorField) {
+            if (errType === 'html5') {
+                setFormElementError({
+                    formRef,
+                    fieldKey: errorField.key,
+                    message: errorMessage,
+                    servarType: errorField.type
+                });
+                formRef.current.reportValidity();
+            } else if (errType === 'inline') {
+                newInlineErrors[errorField.key] = { message: errorMessage };
+                setInlineErrors(newInlineErrors);
+            }
+            return;
+        }
+
+        // Execute user-provided onSubmit function if present
+        if (typeof onSubmit === 'function') {
+            const integrationData = {};
+            if (initState.authId) {
+                integrationData.firebaseAuthId = initState.authId;
+            }
+            if (initState.authToken) {
+                integrationData.firebaseAuthToken = initState.authToken;
+            }
+
+            const allFields = formatAllStepFields(steps, newFieldVals);
+            const { newStepKey } = nextStepKey(
+                activeStep.next_conditions,
+                metadata,
+                steps,
+                newFieldVals,
+                stepSequence,
+                sequenceIndex
+            );
+            const { userKey } = initInfo();
+            const elementType = metadata.elementType;
+            await onSubmit({
+                submitFields: formattedFields,
+                elementRepeatIndex: repeat,
+                fields: allFields,
+                stepName: activeStep.key,
+                userId: userKey,
+                lastStep: !newStepKey,
+                setValues: (userVals) => {
+                    const values = convertFilesToFilePromises(
+                        userVals,
+                        fileServarKeys
+                    );
+                    newFieldVals = updateFieldValues(values, newFieldVals);
+                    client.submitCustom(values);
+                },
+                setOptions: updateFieldOptions(steps),
+                setErrors: (errors) => {
+                    Object.entries(errors).forEach(([fieldKey, error]) => {
+                        let index = null;
+                        let message = error;
+                        // If the user provided an object for an error then use the specified index and message
+                        // This allows users to specify an error on an element in a repeated row
+                        if (typeof error === 'object') {
+                            index = error.index;
+                            message = error.message;
+                        }
+                        if (errType === 'html5') {
+                            setFormElementError({
+                                formRef,
+                                fieldKey,
+                                message,
+                                index
+                            });
+                        } else {
+                            newInlineErrors[fieldKey] = { message, index };
+                        }
                     });
-                } else if (errType === 'inline') {
-                    newInlineErrors[fieldKey] = { message: err };
-                }
+                },
+                triggerKey: lookupElementKey(
+                    activeStep,
+                    metadata.elementIDs[0],
+                    elementType
+                ),
+                triggerType: elementType,
+                triggerAction: metadata.trigger,
+                integrationData
             });
-            // do validation check before running user submission function
-            // so user does not access invalid data
+
+            // do validation check in case user has manually invalidated the step
             if (errType === 'html5') {
                 formRef.current.reportValidity();
                 if (!formRef.current.checkValidity()) return;
             } else if (errType === 'inline') {
-                setInlineErrors(newInlineErrors);
+                setInlineErrors(JSON.parse(JSON.stringify(newInlineErrors)));
                 const invalid = Object.values(newInlineErrors).find(
                     (data) => data.message
                 );
                 if (invalid) return;
             }
 
-            let errorMessage, errorField;
-            ({ newFieldVals, errorMessage, errorField } = await handleActions(
-                formattedFields,
-                metadata,
-                newFieldVals
-            ));
-            if (errorMessage && errorField) {
-                if (errType === 'html5') {
-                    setFormElementError({
-                        formRef,
-                        fieldKey: errorField.key,
-                        message: errorMessage,
-                        servarType: errorField.type
-                    });
-                    formRef.current.reportValidity();
-                } else if (errType === 'inline') {
-                    newInlineErrors[errorField.key] = { message: errorMessage };
-                    setInlineErrors(newInlineErrors);
-                }
-                return;
-            }
-
-            // Execute user-provided onSubmit function if present
-            if (typeof onSubmit === 'function') {
-                const integrationData = {};
-                if (initState.authId) {
-                    integrationData.firebaseAuthId = initState.authId;
-                }
-                if (initState.authToken) {
-                    integrationData.firebaseAuthToken = initState.authToken;
-                }
-
-                const allFields = formatAllStepFields(steps, newFieldVals);
-                const { newStepKey } = nextStepKey(
-                    activeStep.next_conditions,
-                    metadata,
-                    steps,
-                    newFieldVals,
-                    stepSequence,
-                    sequenceIndex
-                );
-                const { userKey } = initInfo();
-                const elementType = metadata.elementType;
-                await onSubmit({
-                    submitFields: formattedFields,
-                    elementRepeatIndex: repeat,
-                    fields: allFields,
-                    stepName: activeStep.key,
-                    userId: userKey,
-                    lastStep: !newStepKey,
-                    setValues: (userVals) => {
-                        const values = convertFilesToFilePromises(
-                            userVals,
-                            fileServarKeys
-                        );
-                        newFieldVals = updateFieldValues(values, newFieldVals);
-                        client.submitCustom(values);
-                    },
-                    setOptions: updateFieldOptions(steps),
-                    setErrors: (errors) => {
-                        Object.entries(errors).forEach(([fieldKey, error]) => {
-                            let index = null;
-                            let message = error;
-                            // If the user provided an object for an error then use the specified index and message
-                            // This allows users to specify an error on an element in a repeated row
-                            if (typeof error === 'object') {
-                                index = error.index;
-                                message = error.message;
-                            }
-                            if (errType === 'html5') {
-                                setFormElementError({
-                                    formRef,
-                                    fieldKey,
-                                    message,
-                                    index
-                                });
-                            } else {
-                                newInlineErrors[fieldKey] = { message, index };
-                            }
-                        });
-                    },
-                    triggerKey: lookupElementKey(
-                        activeStep,
-                        metadata.elementIDs[0],
-                        elementType
-                    ),
-                    triggerType: elementType,
-                    triggerAction: metadata.trigger,
-                    integrationData
-                });
-
-                // do validation check in case user has manually invalidated the step
-                if (errType === 'html5') {
-                    formRef.current.reportValidity();
-                    if (!formRef.current.checkValidity()) return;
-                } else if (errType === 'inline') {
-                    setInlineErrors(
-                        JSON.parse(JSON.stringify(newInlineErrors))
-                    );
-                    const invalid = Object.values(newInlineErrors).find(
-                        (data) => data.message
-                    );
-                    if (invalid) return;
-                }
-
-                // async execution after user's onSubmit
-                return handleSubmitRedirect({
-                    metadata,
-                    newFieldVals,
-                    submitData,
-                    formattedFields
-                });
-            } else {
-                return handleSubmitRedirect({
-                    metadata,
-                    newFieldVals,
-                    submitData,
-                    formattedFields
-                });
-            }
-        } else {
-            return handleRedirect({
+            // async execution after user's onSubmit
+            return handleSubmitRedirect({
                 metadata,
                 newFieldVals,
-                submitData
+                formattedFields
+            });
+        } else {
+            return handleSubmitRedirect({
+                metadata,
+                newFieldVals,
+                formattedFields
             });
         }
     };
@@ -850,12 +833,7 @@ function Form({
         return { newFieldVals };
     }
 
-    function handleSubmitRedirect({
-        metadata,
-        newFieldVals,
-        submitData,
-        formattedFields
-    }) {
+    function handleSubmitRedirect({ metadata, newFieldVals, formattedFields }) {
         const featheryFields = Object.entries(formattedFields).map(
             ([key, val]) => {
                 let newVal = val.value;
@@ -884,17 +862,18 @@ function Form({
         return handleRedirect({
             metadata,
             newFieldVals,
-            submitData,
+            submitData: true,
             submitPromise
         });
     }
 
     function handleRedirect({
         metadata,
-        newFieldVals,
-        submitData,
+        submitData = false,
+        newFieldVals = null,
         submitPromise = null
     }) {
+        newFieldVals = newFieldVals || fieldValues;
         const { newStepKey, newSequence, newSequenceIndex } = nextStepKey(
             activeStep.next_conditions,
             metadata,
@@ -980,16 +959,14 @@ function Form({
                 setOptions: updateFieldOptions(steps)
             });
         }
-        submit(
-            false,
-            {
+        handleRedirect({
+            metadata: {
                 elementType: 'field',
                 elementIDs: fieldIDs,
                 trigger: 'change'
             },
-            elementRepeatIndex,
-            newValues
-        );
+            newFieldVals: newValues
+        });
     };
 
     const pb = activeStep.progress_bar;
@@ -1075,7 +1052,7 @@ function Form({
                         element={element}
                         values={fieldValues}
                         conditions={activeStep.next_conditions}
-                        submit={submit}
+                        handleRedirect={handleRedirect}
                     />
                 ))}
             {activeStep.buttons
@@ -1092,6 +1069,7 @@ function Form({
                         key={`${element.id}`}
                         element={element}
                         values={fieldValues}
+                        handleRedirect={handleRedirect}
                         submit={submit}
                         onRepeatClick={() => {
                             let data;
@@ -1168,17 +1146,22 @@ function Form({
                         e,
                         submitData = false,
                         fieldValues = null
-                    ) =>
-                        submit(
-                            submitData,
-                            {
-                                elementType: 'field',
-                                elementIDs: [field.id],
-                                trigger: 'click'
-                            },
-                            field.repeat || 0,
-                            fieldValues
-                        );
+                    ) => {
+                        const metadata = {
+                            elementType: 'field',
+                            elementIDs: [field.id],
+                            trigger: 'click'
+                        };
+                        if (submitData) {
+                            submit(metadata, field.repeat || 0, fieldValues);
+                        } else {
+                            handleRedirect({
+                                metadata,
+                                newFieldVals: fieldValues
+                            });
+                        }
+                    };
+
                     const onChange = fieldOnChange({
                         fieldIDs: [field.id],
                         fieldKeys: [servar.key],
