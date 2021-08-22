@@ -3,6 +3,7 @@ import { bootstrapStyles } from '../../utils/styles';
 import { IMaskMixin } from 'react-imask';
 import React, { memo } from 'react';
 import ReactForm from 'react-bootstrap/Form';
+import InlineTooltip from '../../components/Tooltip';
 
 const BootstrapField = memo(
     ({
@@ -86,6 +87,13 @@ const BootstrapField = memo(
                     >
                         {field.placeholder || ''}
                     </span>
+                    {field.tooltipText && (
+                        <InlineTooltip
+                            id={field.id}
+                            text={field.tooltipText}
+                            applyStyles={applyStyles}
+                        />
+                    )}
                 </div>
                 {inlineError && (
                     <span

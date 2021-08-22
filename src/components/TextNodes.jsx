@@ -6,8 +6,7 @@ const generateNodes = ({
     element,
     delta,
     values,
-    submit,
-    repeat,
+    handleRedirect,
     elementID
 }) => {
     return delta
@@ -37,17 +36,15 @@ const generateNodes = ({
             const attrs = op.attributes;
             if (attrs?.start && attrs?.end) {
                 onClick = () => {
-                    submit(
-                        false,
-                        {
+                    handleRedirect({
+                        metadata: {
                             elementType: 'text',
                             elementIDs: [elementID],
                             trigger: 'click',
                             start: attrs.start,
                             end: attrs.end
-                        },
-                        repeat
-                    );
+                        }
+                    });
                 };
             }
 
@@ -56,7 +53,7 @@ const generateNodes = ({
                     key={i}
                     css={{
                         whiteSpace: 'pre-wrap',
-                        ...element.richFontStyles[i],
+                        ...element.richFontStyles[i]
                     }}
                     onClick={onClick}
                 >
