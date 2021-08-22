@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import Button from 'react-bootstrap/Button';
 import Delta from 'quill-delta';
 import Spinner from 'react-bootstrap/Spinner';
-import generateNodes from './textNodes';
+import generateNodes from '../components/textNodes';
 
 function ButtonElement({
     element,

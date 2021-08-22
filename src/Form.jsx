@@ -2,7 +2,7 @@ import {
     BootstrapField,
     MaskedBootstrapField,
     getMaskProps
-} from './components/Bootstrap';
+} from './elements/fields/TextField';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import {
     ButtonElement,

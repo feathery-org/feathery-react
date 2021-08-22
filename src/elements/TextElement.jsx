@@ -1,6 +1,6 @@
 import React from 'react';
 import Delta from 'quill-delta';
-import generateNodes from './textNodes';
+import generateNodes from '../components/textNodes';
 
 function TextElement({ element, values, conditions, submit }) {
     const elementID = element.id;
