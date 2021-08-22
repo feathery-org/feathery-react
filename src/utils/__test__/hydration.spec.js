@@ -1,10 +1,11 @@
-import { calculateDimensions, calculateRepeatedRowCount } from '../hydration';
+import { calculateStepCSS, calculateRepeatedRowCount } from '../hydration';
 
 describe('hydration', () => {
     describe('calculateDimensions', () => {
         it('calculates dimensions', () => {
             // Arrange
             const inputStep = {
+                default_background_color: '000000FF',
                 repeat_row_start: 2,
                 repeat_row_end: 3,
                 texts: [],
@@ -26,32 +27,27 @@ describe('hydration', () => {
                 }
             };
             const expected = {
-                desktop: {
-                    definiteWidth: '150px',
-                    definiteColumns: ['150px', '1fr'],
-                    relativeWidth: '100%',
-                    relativeColumns: ['100%', 0],
-                    relativeRows: [
-                        'minmax(50px,min-content)',
-                        'minmax(150px,min-content)',
-                        'minmax(50px,min-content)'
-                    ]
+                backgroundColor: '#000000FF',
+                display: 'grid',
+                maxWidth: '100%',
+                gridTemplateRows:
+                    'minmax(50px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
+                width: '100%',
+                gridTemplateColumns: '150px 1fr',
+                '@media (max-width: 478px)': {
+                    width: '30px',
+                    gridTemplateRows:
+                        'minmax(50px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
+                    gridTemplateColumns: '30px'
                 },
-                mobile: {
-                    definiteWidth: '30px',
-                    definiteColumns: ['30px'],
-                    relativeWidth: '30px',
-                    relativeColumns: ['100%'],
-                    relativeRows: [
-                        'minmax(50px,min-content)',
-                        'minmax(150px,min-content)',
-                        'minmax(50px,min-content)'
-                    ]
+                '@media (max-width: 150px)': {
+                    width: '150px',
+                    gridTemplateColumns: '100% 0'
                 }
             };
 
             // Act
-            const actual = calculateDimensions(inputStep);
+            const actual = calculateStepCSS(inputStep);
 
             // Assert
             expect(actual).toMatchObject(expected);
@@ -60,6 +56,7 @@ describe('hydration', () => {
         it('handles repeating elements', () => {
             // Arrange
             const inputStep = {
+                default_background_color: '000000FF',
                 repeat_row_start: 1,
                 repeat_row_end: 1,
                 texts: [
@@ -117,36 +114,27 @@ describe('hydration', () => {
                 }
             };
             const expected = {
-                desktop: {
-                    definiteWidth: '150px',
-                    definiteColumns: ['150px', '50%'],
-                    relativeWidth: '100%',
-                    relativeColumns: ['100%', 0],
-                    relativeRows: [
-                        'minmax(50px,min-content)',
-                        'minmax(150px,min-content)',
-                        'minmax(150px,min-content)',
-                        'minmax(150px,min-content)',
-                        'minmax(50px,min-content)'
-                    ]
+                backgroundColor: '#000000FF',
+                display: 'grid',
+                maxWidth: '100%',
+                gridTemplateRows:
+                    'minmax(50px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
+                width: '100%',
+                gridTemplateColumns: '150px 50%',
+                '@media (max-width: 478px)': {
+                    width: '100%',
+                    gridTemplateRows:
+                        'minmax(50px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
+                    gridTemplateColumns: '150px 50%'
                 },
-                mobile: {
-                    definiteWidth: '150px',
-                    definiteColumns: ['150px', '50%'],
-                    relativeWidth: '100%',
-                    relativeColumns: ['100%', 0],
-                    relativeRows: [
-                        'minmax(50px,min-content)',
-                        'minmax(150px,min-content)',
-                        'minmax(150px,min-content)',
-                        'minmax(150px,min-content)',
-                        'minmax(50px,min-content)'
-                    ]
+                '@media (max-width: 150px)': {
+                    width: '150px',
+                    gridTemplateColumns: '100% 0'
                 }
             };
 
             // Act
-            const actual = calculateDimensions(inputStep);
+            const actual = calculateStepCSS(inputStep);
 
             // Assert
             expect(actual).toMatchObject(expected);
