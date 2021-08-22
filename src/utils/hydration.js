@@ -154,60 +154,81 @@ function injectRepeatedRows({ step, repeatedRowCount }) {
     };
 }
 
+const calculateDimensionsHelper = (step, p = '') => {
+    const gridColumns = step[`${p}grid_columns`] || step.grid_columns;
+    const gridRows = step[`${p}grid_rows`] || step.grid_rows;
+
+    let hasRelativeColumn = false;
+    let definiteWidth = 0;
+    gridColumns.forEach((column) => {
+        if (column.slice(-2) === 'px') definiteWidth += parseFloat(column);
+        else hasRelativeColumn = true;
+    });
+
+    const relativeColumns = gridColumns.map((column) => {
+        return column.slice(-2) === 'px'
+            ? `${(100 * parseFloat(column)) / definiteWidth}%`
+            : 0;
+    });
+    const relativeRows = gridRows.map((row) =>
+        row === 'min-content' ? row : `minmax(${row},min-content)`
+    );
+    definiteWidth = `${definiteWidth}px`;
+
+    return {
+        relativeWidth: hasRelativeColumn ? '100%' : definiteWidth,
+        definiteWidth,
+        definiteColumns: gridColumns,
+        relativeColumns,
+        relativeRows
+    };
+};
+
 /**
  * Calculates the dimensions of the provided step.
  * Note: The provided step should be fully-hydrated (i.e. rows injected, etc.) to calculate dimensions accurately.
  */
-function calculateDimensions(step) {
-    const calculateResponsiveDimensions = (step, p = '') => {
-        if (step === null) {
-            return {
-                relativeWidth: 0,
-                definiteWidth: 0,
-                definiteColumns: [],
-                relativeColumns: [],
-                relativeRows: []
-            };
-        }
+function calculateStepCSS(step) {
+    if (!step) return {};
 
-        const gridColumns = step[`${p}grid_columns`] || step.grid_columns;
-        const gridRows = step[`${p}grid_rows`] || step.grid_rows;
+    const desktop = calculateDimensionsHelper(step);
+    const mobile = calculateDimensionsHelper(step, 'mobile_');
 
-        let hasRelativeColumn = false;
-        let definiteWidth = 0;
-        gridColumns.forEach((column) => {
-            if (column.slice(-2) === 'px') definiteWidth += parseFloat(column);
-            else hasRelativeColumn = true;
-        });
-
-        const relativeColumns = gridColumns.map((column) => {
-            return column.slice(-2) === 'px'
-                ? `${(100 * parseFloat(column)) / definiteWidth}%`
-                : 0;
-        });
-        const relativeRows = gridRows.map((row) =>
-            row === 'min-content' ? row : `minmax(${row},min-content)`
-        );
-        definiteWidth = `${definiteWidth}px`;
-
-        return {
-            relativeWidth: hasRelativeColumn ? '100%' : definiteWidth,
-            definiteWidth,
-            definiteColumns: gridColumns,
-            relativeColumns,
-            relativeRows
+    const stepCSS = {
+        backgroundColor: `#${step.default_background_color}`,
+        display: 'grid',
+        maxWidth: '100%',
+        gridTemplateRows: desktop.relativeRows.join(' '),
+        width: desktop.relativeWidth,
+        gridTemplateColumns: desktop.definiteColumns.join(' ')
+    };
+    const ddw = desktop.definiteWidth;
+    const dmw = mobile.definiteWidth;
+    // If checks to prevent media query collisions
+    if (ddw !== '478px' && ddw !== dmw) {
+        stepCSS[`@media (max-width: ${ddw})`] = {
+            width: ddw,
+            gridTemplateColumns: desktop.relativeColumns.join(' ')
         };
+    }
+    if (dmw !== '478px') {
+        stepCSS['@media (max-width: 478px)'] = {
+            width: mobile.relativeWidth,
+            gridTemplateRows: mobile.relativeRows.join(' '),
+            gridTemplateColumns: mobile.definiteColumns.join(' ')
+        };
+    }
+    stepCSS[`@media (max-width: ${dmw})`] = {
+        width: dmw,
+        gridTemplateColumns: mobile.relativeColumns.join(' ')
     };
 
-    return {
-        desktop: calculateResponsiveDimensions(step),
-        mobile: calculateResponsiveDimensions(step, 'mobile_')
-    };
+    return stepCSS;
 }
 
 export {
     TEXT_VARIABLE_PATTERN,
     calculateRepeatedRowCount,
     injectRepeatedRows,
-    calculateDimensions
+    calculateStepCSS
 };

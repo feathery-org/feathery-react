@@ -20,7 +20,7 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { applyStepStyles } from './utils/styles';
 import {
-    calculateDimensions,
+    calculateStepCSS,
     calculateRepeatedRowCount,
     injectRepeatedRows
 } from './utils/hydration';
@@ -131,7 +131,7 @@ function Form({
     }, [rawActiveStep, repeatedRowCount]);
 
     // When the active step changes, recalculate the dimensions of the new step
-    const dimensions = useMemo(() => calculateDimensions(activeStep), [
+    const stepCSS = useMemo(() => calculateStepCSS(activeStep), [
         activeStep
     ]);
 
@@ -457,51 +457,40 @@ function Form({
     }
 
     // Note: If index is provided, handleChange assumes the field is a repeated field
-    const handleChange = (e, index = null) => {
+    const eventChange = (e, field, index = null) => {
         const target = e.target;
         let value = target.type === 'checkbox' ? target.checked : target.value;
-        const key = target.id;
         const updateValues = {};
         let clearGMaps = false;
         let repeatRowOperation;
 
-        activeStep.servar_fields.forEach((field) => {
-            const servar = field.servar;
-            if (
-                servar.key !== key ||
-                (index !== null && field.repeat !== index)
-            )
-                return;
+        const servar = field.servar;
+        if (servar.repeat_trigger === 'set_value') {
+            const defaultValue = getDefaultFieldValue(field);
+            const { value: previousValue } = getFieldValue(field, fieldValues);
 
-            if (servar.repeat_trigger === 'set_value') {
-                const defaultValue = getDefaultFieldValue(field);
-                const { value: previousValue } = getFieldValue(
-                    field,
-                    fieldValues
-                );
+            // Add a repeated row if the value went from unset to set
+            if (previousValue === defaultValue && value !== defaultValue)
+                repeatRowOperation = 'add';
 
-                // Add a repeated row if the value went from unset to set
-                if (previousValue === defaultValue && value !== defaultValue)
-                    repeatRowOperation = 'add';
+            // Remove a repeated row if the value went from set to unset
+            if (previousValue !== defaultValue && value === defaultValue)
+                repeatRowOperation = 'remove';
+        }
 
-                // Remove a repeated row if the value went from set to unset
-                if (previousValue !== defaultValue && value === defaultValue)
-                    repeatRowOperation = 'remove';
-            }
+        if (servar.type === 'integer_field') value = parseInt(value);
+        else if (servar.type === 'gmap_line_1' && !value) clearGMaps = true;
+        else if (
+            servar.type === 'checkbox' &&
+            // eslint-disable-next-line camelcase
+            servar.metadata?.always_checked
+        )
+            value = true;
+        updateValues[servar.key] =
+            index === null
+                ? value
+                : justInsert(fieldValues[servar.key], value, index);
 
-            if (servar.type === 'integer_field') value = parseInt(value);
-            else if (servar.type === 'gmap_line_1' && !value) clearGMaps = true;
-            else if (
-                servar.type === 'checkbox' &&
-                // eslint-disable-next-line camelcase
-                servar.metadata?.always_checked
-            )
-                value = true;
-            updateValues[servar.key] =
-                index === null
-                    ? value
-                    : justInsert(fieldValues[servar.key], value, index);
-        });
         if (clearGMaps) {
             activeStep.servar_fields.forEach((field) => {
                 const servar = field.servar;
@@ -531,8 +520,8 @@ function Form({
         return newValues;
     };
 
-    const handleValueChange = (value, id, index = null) => {
-        return handleChange({ target: { type: '', value, id } }, index);
+    const valueChange = (value, field, index = null) => {
+        return eventChange({ target: { type: '', value } }, field, index);
     };
 
     const handleOtherStateChange = (oldOtherVal) => (e) => {
@@ -970,41 +959,14 @@ function Form({
     };
 
     const pb = activeStep.progress_bar;
-    const ddw = dimensions.desktop.definiteWidth;
-    const dmw = dimensions.mobile.definiteWidth;
-    const stepCSS = {
-        backgroundColor: `#${activeStep.default_background_color}`,
-        display: 'grid',
-        maxWidth: '100%',
-        gridTemplateRows: dimensions.desktop.relativeRows.join(' '),
-        width: dimensions.desktop.relativeWidth,
-        gridTemplateColumns: dimensions.desktop.definiteColumns.join(' '),
-        ...style
-    };
-    // If checks to prevent media query collisions
-    if (ddw !== '478px' && ddw !== dmw) {
-        stepCSS[`@media (max-width: ${ddw})`] = {
-            width: ddw,
-            gridTemplateColumns: dimensions.desktop.relativeColumns.join(' ')
-        };
-    }
-    if (dmw !== '478px') {
-        stepCSS['@media (max-width: 478px)'] = {
-            width: dimensions.mobile.relativeWidth,
-            gridTemplateRows: dimensions.mobile.relativeRows.join(' '),
-            gridTemplateColumns: dimensions.mobile.definiteColumns.join(' ')
-        };
-    }
-    stepCSS[`@media (max-width: ${dmw})`] = {
-        width: dmw,
-        gridTemplateColumns: dimensions.mobile.relativeColumns.join(' ')
-    };
-
     return (
         <ReactForm
             className={className}
             ref={formRef}
-            css={stepCSS}
+            css={{
+                ...stepCSS,
+                ...style
+            }}
             onSubmit={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1212,11 +1174,11 @@ function Form({
                                         onChange={(e) => {
                                             const file = e.target.files[0];
                                             onChange({
-                                                newValues: handleValueChange(
+                                                newValues: valueChange(
                                                     file
                                                         ? Promise.resolve(file)
                                                         : file,
-                                                    servar.key,
+                                                    field,
                                                     index
                                                 )
                                             });
@@ -1235,9 +1197,9 @@ function Form({
                                     field={field}
                                     onChange={(e) => {
                                         onChange({
-                                            newValues: handleValueChange(
+                                            newValues: valueChange(
                                                 e.target.files[0],
-                                                servar.key,
+                                                field,
                                                 index
                                             )
                                         });
@@ -1253,9 +1215,9 @@ function Form({
                                     field={field}
                                     onChange={(files, fieldIndex) => {
                                         onChange({
-                                            newValues: handleValueChange(
+                                            newValues: valueChange(
                                                 files,
-                                                servar.key,
+                                                field,
                                                 index
                                             ),
                                             valueRepeatIndex: fieldIndex
@@ -1288,8 +1250,9 @@ function Form({
                                         checked={fieldVal}
                                         onChange={(e) => {
                                             onChange({
-                                                newValues: handleChange(
+                                                newValues: eventChange(
                                                     e,
+                                                    field,
                                                     index
                                                 )
                                             });
@@ -1318,7 +1281,11 @@ function Form({
                                     onClick={onClick}
                                     onChange={(e) => {
                                         onChange({
-                                            newValues: handleChange(e, index)
+                                            newValues: eventChange(
+                                                e,
+                                                field,
+                                                index
+                                            )
                                         });
                                     }}
                                     inlineError={inlineErr}
@@ -1334,7 +1301,11 @@ function Form({
                                     onClick={onClick}
                                     onChange={(e) => {
                                         onChange({
-                                            newValues: handleChange(e, index)
+                                            newValues: eventChange(
+                                                e,
+                                                field,
+                                                index
+                                            )
                                         });
                                     }}
                                     inlineError={inlineErr}
@@ -1351,7 +1322,11 @@ function Form({
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
                                         onChange({
-                                            newValues: handleChange(e, index)
+                                            newValues: eventChange(
+                                                e,
+                                                field,
+                                                index
+                                            )
                                         });
                                     }}
                                     onClick={onClick}
@@ -1369,9 +1344,9 @@ function Form({
                                     onClick={onClick}
                                     onChange={(val) => {
                                         onChange({
-                                            newValues: handleValueChange(
+                                            newValues: valueChange(
                                                 val,
-                                                servar.key,
+                                                field,
                                                 index
                                             )
                                         });
@@ -1409,9 +1384,9 @@ function Form({
                                         onChange({
                                             newValues:
                                                 newVals ||
-                                                handleValueChange(
+                                                valueChange(
                                                     e.target.value,
-                                                    servar.key,
+                                                    field,
                                                     index
                                                 )
                                         });
@@ -1486,7 +1461,11 @@ function Form({
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
                                         onChange({
-                                            newValues: handleChange(e, index)
+                                            newValues: eventChange(
+                                                e,
+                                                field,
+                                                index
+                                            )
                                         });
                                     }}
                                     onClick={onClick}
@@ -1504,7 +1483,11 @@ function Form({
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
                                         onChange({
-                                            newValues: handleChange(e, index)
+                                            newValues: eventChange(
+                                                e,
+                                                field,
+                                                index
+                                            )
                                         });
                                     }}
                                     onClick={onClick}
@@ -1521,9 +1504,9 @@ function Form({
                                     onClick={onClick}
                                     onAccept={(value) => {
                                         onChange({
-                                            newValues: handleValueChange(
+                                            newValues: valueChange(
                                                 value,
-                                                servar.key,
+                                                field,
                                                 index
                                             )
                                         });
