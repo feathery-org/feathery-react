@@ -1,4 +1,4 @@
-import { bootstrapStyles } from '../utils/styles';
+import { bootstrapStyles } from '../../utils/styles';
 
 import { IMaskMixin } from 'react-imask';
 import React from 'react';
@@ -17,7 +17,7 @@ function BootstrapField({
     inlineError,
     ...props
 }) {
-    const { servar, styles, applyStyles } = field;
+    const { servar, applyStyles } = field;
 
     if (rows) {
         props.rows = rows;

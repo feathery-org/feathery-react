@@ -13,7 +13,7 @@ function Dropdown({
     inlineError,
     type = 'default'
 }) {
-    const { servar, styles, applyStyles } = field;
+    const { servar, applyStyles } = field;
 
     let placeholder, options;
     if (type === 'states') {
