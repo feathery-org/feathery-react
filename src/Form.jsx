@@ -1123,9 +1123,11 @@ function Form({
                             element: field
                         })
                 )
-                .sort((first, second) => {
-                    if (first.row_index > second.row_index) return 1;
-                    else if (first.row_index < second.row_index) return -1;
+                .sort((a, b) => {
+                    if (a.row_index > b.row_index) return 1;
+                    else if (a.row_index < b.row_index) return -1;
+                    else if (a.column_index > b.column_index) return 1;
+                    else if (a.column_index < b.column_index) return -1;
                     else return 0;
                 })
                 .map((field) => ({ field, index: field.repeat ?? null }))
