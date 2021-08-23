@@ -322,8 +322,15 @@ const recurseDepth = (steps, originKey, curKey) => {
 /**
  * Creates a unique key value for a servar field (taking repeated instances into account).
  */
-function reactFriendlyKey(field) {
+function reactFriendlyFieldKey(field) {
     return field.servar.key + (field.repeat ? `-${field.repeat}` : '');
+}
+
+/**
+ * Creates a unique key value for a button (taking repeated instances into account).
+ */
+function reactFriendlyButtonKey(field) {
+    return field.id + (field.repeat ? `-${field.repeat}` : '');
 }
 
 /**
@@ -529,7 +536,8 @@ export {
     nextStepKey,
     getOrigin,
     recurseDepth,
-    reactFriendlyKey,
+    reactFriendlyButtonKey,
+    reactFriendlyFieldKey,
     getFieldValue,
     getFieldError,
     getInlineError,

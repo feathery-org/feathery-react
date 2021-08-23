@@ -42,7 +42,8 @@ import {
     nextStepKey,
     objectMap,
     phonePattern,
-    reactFriendlyKey,
+    reactFriendlyButtonKey,
+    reactFriendlyFieldKey,
     recurseDepth,
     setFormElementError,
     shouldElementHide
@@ -105,6 +106,7 @@ function Form({
     const [inlineErrors, setInlineErrors] = useState({});
     const [repeatChanged, setRepeatChanged] = useState(false);
     // Set to trigger conditional renders on field value updates, no need to use
+    // eslint-disable-next-line no-unused-vars
     const [render, setRender] = useState(false);
 
     const fieldValuesRef = useRef(initialValues);
@@ -994,7 +996,7 @@ function Form({
                 )
                 .map((element) => (
                     <ButtonElement
-                        key={`${element.id}`}
+                        key={reactFriendlyButtonKey(element)}
                         element={element}
                         values={fieldValues}
                         handleRedirect={handleRedirect}
@@ -1451,7 +1453,7 @@ function Form({
                                 ...field.applyStyles.getLayout(),
                                 ...field.applyStyles.getTarget('container')
                             }}
-                            key={reactFriendlyKey(field)}
+                            key={reactFriendlyFieldKey(field)}
                         >
                             {controlElement}
                         </div>
