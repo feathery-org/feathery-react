@@ -29,7 +29,7 @@ const BootstrapField = memo(
         if (props.inputRef) {
             props.ref = props.inputRef;
             delete props.inputRef;
-        } else props.value = fieldValue || '';
+        } else props.defaultValue = fieldValue || '';
 
         const inputType = rows === undefined ? 'input' : 'textarea';
         return (

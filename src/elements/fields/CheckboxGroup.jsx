@@ -13,7 +13,6 @@ const handleCheckboxGroupChange = (
 ) => {
     const target = e.target;
     const opt = target.name;
-    let newValues = null;
     step.servar_fields.forEach((field) => {
         const servar = field.servar;
         if (servar.key !== servarKey) return;
@@ -25,14 +24,13 @@ const handleCheckboxGroupChange = (
             : value.filter((v) => v !== opt);
         if (fieldValue.repeated) {
             const { valueList, index } = fieldValue;
-            newValues = updateFieldValues({
+            updateFieldValues({
                 [servar.key]: justInsert(valueList, newValue, index)
             });
         } else {
-            newValues = updateFieldValues({ [servar.key]: newValue });
+            updateFieldValues({ [servar.key]: newValue });
         }
     });
-    return newValues;
 };
 
 function CheckboxGroup({
@@ -62,14 +60,14 @@ function CheckboxGroup({
                         label={opt}
                         checked={fieldVal.includes(opt)}
                         onChange={(e) => {
-                            const newValues = handleCheckboxGroupChange(
+                            handleCheckboxGroupChange(
                                 e,
                                 servar.key,
                                 step,
                                 fieldValues,
                                 updateFieldValues
                             );
-                            onChange(newValues);
+                            onChange();
                         }}
                         onClick={onClick}
                         style={{
@@ -101,14 +99,14 @@ function CheckboxGroup({
                         label='Other'
                         checked={otherChecked}
                         onChange={(e) => {
-                            const newValues = handleCheckboxGroupChange(
+                            handleCheckboxGroupChange(
                                 e,
                                 servar.key,
                                 step,
                                 fieldValues,
                                 updateFieldValues
                             );
-                            onChange(newValues);
+                            onChange();
                         }}
                         onClick={onClick}
                         style={{
@@ -134,10 +132,8 @@ function CheckboxGroup({
                         id={servar.key}
                         value={otherVal || ''}
                         onChange={(e) => {
-                            const newValues = handleOtherStateChange(otherVal)(
-                                e
-                            );
-                            onChange(newValues);
+                            handleOtherStateChange(otherVal)(e);
+                            onChange();
                         }}
                         onClick={onClick}
                         maxLength={servar.max_length}

@@ -81,7 +81,6 @@ function Form({
     const [steps, setSteps] = useState(null);
     const [rawActiveStep, setRawActiveStep] = useState(null);
     const [stepKey, setStepKey] = useState('');
-    const [fieldValues, setFieldValues] = useState(initialValues);
     const [filePathMap, setFilePathMap] = useState({});
     const fileServarKeys = useMemo(
         () =>
@@ -100,40 +99,37 @@ function Form({
     const [curDepth, setCurDepth] = useState(0);
     const [maxDepth, setMaxDepth] = useState(0);
     const [integrations, setIntegrations] = useState({});
-    const [noChange, setNoChange] = useState(false);
     const [stepSequence, setStepSequence] = useState([]);
     const [sequenceIndex, setSequenceIndex] = useState(0);
     const [errType, setErrType] = useState('html5');
     const [inlineErrors, setInlineErrors] = useState({});
+    const [repeatChanged, setRepeatChanged] = useState(false);
+    // Set to trigger conditional renders on field value updates, no need to use
+    const [render, setRender] = useState(false);
 
+    const fieldValuesRef = useRef(initialValues);
+    let fieldValues = fieldValuesRef.current;
     const submitRef = useRef(null);
     const formRef = useRef(null);
     const signatureRef = useRef({}).current;
     const maskedRef = useRef({}).current;
-
-    const repeatedRowCount = useMemo(
-        () =>
-            calculateRepeatedRowCount({
-                step: rawActiveStep,
-                values: fieldValues
-            }),
-        [rawActiveStep, fieldValues]
-    );
 
     // Create the fully-hydrated activeStep by injecting repeated rows
     // and pre-calculating styles.
     // Note: Other hydration transformations can also be included here
     const activeStep = useMemo(() => {
         if (!rawActiveStep) return null;
-        const stepCopy = JSON.parse(JSON.stringify(rawActiveStep));
-        applyStepStyles(stepCopy);
-        return injectRepeatedRows({ step: stepCopy, repeatedRowCount });
-    }, [rawActiveStep, repeatedRowCount]);
+        let stepCopy = JSON.parse(JSON.stringify(rawActiveStep));
+        const repeatedRowCount = calculateRepeatedRowCount({
+            step: rawActiveStep,
+            values: fieldValues
+        });
+        stepCopy = injectRepeatedRows({ step: stepCopy, repeatedRowCount });
+        return applyStepStyles(stepCopy);
+    }, [rawActiveStep, repeatChanged]);
 
     // When the active step changes, recalculate the dimensions of the new step
-    const stepCSS = useMemo(() => calculateStepCSS(activeStep), [
-        activeStep
-    ]);
+    const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
 
     useEffect(() => {
         if (!activeStep) return;
@@ -153,7 +149,7 @@ function Form({
         }
     }, [activeStep?.key]);
 
-    function addRepeatedRow({ values = fieldValues }) {
+    function addRepeatedRow() {
         if (
             isNaN(activeStep.repeat_row_start) ||
             isNaN(activeStep.repeat_row_end)
@@ -172,21 +168,22 @@ function Form({
         repeatedServarFields.forEach((field) => {
             const { servar } = field;
             updatedValues[servar.key] = [
-                ...values[servar.key],
+                ...fieldValues[servar.key],
                 getDefaultFieldValue(field)
             ];
             fieldIDs.push(field.id);
             fieldKeys.push(servar.key);
         });
 
+        setRepeatChanged((repeatChanged) => !repeatChanged);
+        updateFieldValues(updatedValues);
         return {
-            values: updateFieldValues(updatedValues),
             fieldIDs,
             fieldKeys
         };
     }
 
-    function removeRepeatedRow({ index, values = fieldValues }) {
+    function removeRepeatedRow(index) {
         if (isNaN(index)) return;
 
         // Collect a list of all repeated elements
@@ -200,7 +197,10 @@ function Form({
         const fieldKeys = [];
         repeatedServarFields.forEach((field) => {
             const { servar } = field;
-            const newRepeatedValues = justRemove(values[servar.key], index);
+            const newRepeatedValues = justRemove(
+                fieldValues[servar.key],
+                index
+            );
             const defaultValue = getDefaultFieldValue(field);
             updatedValues[servar.key] =
                 newRepeatedValues.length === 0
@@ -210,29 +210,25 @@ function Form({
             fieldKeys.push(servar.key);
         });
 
-        return {
-            values: updateFieldValues(updatedValues),
-            fieldIDs,
-            fieldKeys
-        };
+        setRepeatChanged((repeatChanged) => !repeatChanged);
+        updateFieldValues(updatedValues);
+        return { fieldIDs, fieldKeys };
     }
 
-    const updateFieldValues = (newFieldValues, baseFieldValues = null) => {
-        let newValues;
-        if (baseFieldValues) {
-            newValues = {
-                ...baseFieldValues,
-                ...fieldValues,
-                ...newFieldValues
-            };
-        } else {
-            newValues = { ...fieldValues, ...newFieldValues };
-        }
-        setFieldValues(newValues);
-        return newValues;
+    const updateFieldValues = (newFieldValues, rerender = true) => {
+        const empty = Object.entries(newFieldValues).some(
+            ([key, val]) => !val || !fieldValues[key]
+        );
+        fieldValuesRef.current = {
+            ...fieldValues,
+            ...newFieldValues
+        };
+        fieldValues = fieldValuesRef.current;
+        // Always rerender from empty state for display purposes
+        if (rerender || empty) setRender((render) => !render);
     };
 
-    function updateSessionValues(session, fieldVals) {
+    function updateSessionValues(session) {
         // Convert files of the format { url, path } to Promise<File>
         const filePromises = objectMap(session.file_values, (fileOrFiles) =>
             Array.isArray(fileOrFiles)
@@ -248,10 +244,7 @@ function Form({
         );
 
         setFilePathMap({ ...filePathMap, ...newFilePathMap });
-        return updateFieldValues(
-            { ...session.field_values, ...filePromises },
-            fieldVals
-        );
+        updateFieldValues({ ...session.field_values, ...filePromises });
     }
 
     const updateFieldOptions = (stepData, activeStepData) => (
@@ -277,11 +270,8 @@ function Form({
         setRawActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
     };
 
-    const getNewStep = async (newKey, stepsArg, fieldValsArg) => {
-        stepsArg = stepsArg || steps;
-        fieldValsArg = fieldValsArg || fieldValues;
-
-        let newStep = stepsArg[newKey];
+    const getNewStep = async (newKey) => {
+        let newStep = steps[newKey];
         while (true) {
             const loadCond = newStep.next_conditions.find((cond) => {
                 if (cond.trigger !== 'load' || cond.element_type !== 'step')
@@ -299,14 +289,14 @@ function Form({
             });
             if (loadCond) {
                 newKey = loadCond.next_step_key;
-                newStep = stepsArg[newKey];
+                newStep = steps[newKey];
             } else break;
         }
         newStep = JSON.parse(JSON.stringify(newStep));
 
         const [curDepth, maxDepth] = recurseDepth(
-            stepsArg,
-            getOrigin(stepsArg),
+            steps,
+            getOrigin(steps),
             newKey
         );
         setCurDepth(curDepth);
@@ -323,7 +313,7 @@ function Form({
         }
 
         if (typeof onLoad === 'function') {
-            const formattedFields = formatAllStepFields(stepsArg, fieldValsArg);
+            const formattedFields = formatAllStepFields(steps, fieldValues);
             const { userKey } = initInfo();
 
             const integrationData = {};
@@ -338,16 +328,16 @@ function Form({
                 stepName: newKey,
                 previousStepName: activeStep?.key,
                 userId: userKey,
-                lastStep: stepsArg[newKey].next_conditions.length === 0,
+                lastStep: steps[newKey].next_conditions.length === 0,
                 setValues: (userVals) => {
                     const values = convertFilesToFilePromises(
                         userVals,
                         fileServarKeys
                     );
-                    updateFieldValues(values, fieldValsArg);
+                    updateFieldValues(values);
                     client.submitCustom(values);
                 },
-                setOptions: updateFieldOptions(stepsArg, newStep),
+                setOptions: updateFieldOptions(steps, newStep),
                 integrationData
             });
             setRawActiveStep(newStep);
@@ -399,10 +389,8 @@ function Form({
                     if (newSession) session = newSession;
 
                     fetchPromise.then(async (data) => {
-                        updateSessionValues(
-                            session,
-                            getDefaultFieldValues(data)
-                        );
+                        updateFieldValues(getDefaultFieldValues(data));
+                        updateSessionValues(session);
                         const newKey =
                             session.current_step_key || getOrigin(data);
                         history.replace(
@@ -413,10 +401,7 @@ function Form({
                 .catch((error) => {
                     // Use default values if origin fails
                     fetchPromise.then(async (data) => {
-                        updateFieldValues(
-                            fieldValues,
-                            getDefaultFieldValues(data)
-                        );
+                        updateFieldValues(getDefaultFieldValues(data));
                         const newKey = getOrigin(data);
                         history.replace(
                             location.pathname + location.search + `#${newKey}`
@@ -430,7 +415,6 @@ function Form({
         activeStep,
         setClient,
         setSteps,
-        getNewStep,
         getDefaultFieldValues,
         updateFieldValues
     ]);
@@ -457,9 +441,7 @@ function Form({
     }
 
     // Note: If index is provided, handleChange assumes the field is a repeated field
-    const eventChange = (e, field, index = null) => {
-        const target = e.target;
-        let value = target.type === 'checkbox' ? target.checked : target.value;
+    const changeValue = (value, field, index = null, rerender = true) => {
         const updateValues = {};
         let clearGMaps = false;
         let repeatRowOperation;
@@ -510,18 +492,9 @@ function Form({
             });
         }
 
-        let newValues = updateFieldValues(updateValues);
-        if (repeatRowOperation === 'add') {
-            newValues = addRepeatedRow({ values: newValues }).values;
-        } else if (repeatRowOperation === 'remove') {
-            newValues = removeRepeatedRow({ index, values: newValues }).values;
-        }
-
-        return newValues;
-    };
-
-    const valueChange = (value, field, index = null) => {
-        return eventChange({ target: { type: '', value } }, field, index);
+        updateFieldValues(updateValues, rerender);
+        if (repeatRowOperation === 'add') addRepeatedRow();
+        else if (repeatRowOperation === 'remove') removeRepeatedRow(index);
     };
 
     const handleOtherStateChange = (oldOtherVal) => (e) => {
@@ -538,19 +511,17 @@ function Form({
         } else {
             if (curFieldVal === oldOtherVal) curFieldVal = curOtherVal;
         }
-        return updateFieldValues({ [target.id]: curFieldVal });
+        updateFieldValues({ [target.id]: curFieldVal });
     };
 
     const handleColorChange = (servarKey) => (color) => {
-        let newValues = null;
         activeStep.servar_fields.forEach((field) => {
             const servar = field.servar;
             if (servar.key !== servarKey) return;
-            newValues = updateFieldValues({
+            updateFieldValues({
                 [servar.key]: color.hex.substr(1, 6)
             });
         });
-        return newValues;
     };
 
     const handleColorPickerClick = (servarKey) => () => {
@@ -561,15 +532,14 @@ function Form({
         });
     };
 
-    const submit = async (metadata, repeat = 0, newValues = null) => {
-        let newFieldVals = newValues || fieldValues;
+    const submit = async (metadata, repeat = 0) => {
         const servarMap = {};
         activeStep.servar_fields.forEach(
             (field) => (servarMap[field.servar.key] = field.servar)
         );
         const formattedFields = formatStepFields(
             activeStep,
-            newFieldVals,
+            fieldValues,
             signatureRef
         );
 
@@ -601,12 +571,7 @@ function Form({
             if (invalid) return;
         }
 
-        let errorMessage, errorField;
-        ({ newFieldVals, errorMessage, errorField } = await handleActions(
-            formattedFields,
-            metadata,
-            newFieldVals
-        ));
+        const { errorMessage, errorField } = await handleActions();
         if (errorMessage && errorField) {
             if (errType === 'html5') {
                 setFormElementError({
@@ -633,12 +598,12 @@ function Form({
                 integrationData.firebaseAuthToken = initState.authToken;
             }
 
-            const allFields = formatAllStepFields(steps, newFieldVals);
+            const allFields = formatAllStepFields(steps, fieldValues);
             const { newStepKey } = nextStepKey(
                 activeStep.next_conditions,
                 metadata,
                 steps,
-                newFieldVals,
+                fieldValues,
                 stepSequence,
                 sequenceIndex
             );
@@ -656,7 +621,7 @@ function Form({
                         userVals,
                         fileServarKeys
                     );
-                    newFieldVals = updateFieldValues(values, newFieldVals);
+                    updateFieldValues(values);
                     client.submitCustom(values);
                 },
                 setOptions: updateFieldOptions(steps),
@@ -707,22 +672,20 @@ function Form({
             // async execution after user's onSubmit
             return handleSubmitRedirect({
                 metadata,
-                newFieldVals,
                 formattedFields
             });
         } else {
             return handleSubmitRedirect({
                 metadata,
-                newFieldVals,
                 formattedFields
             });
         }
     };
 
-    async function handleActions(formattedFields, metadata, newFieldVals) {
+    async function handleActions() {
         for (let i = 0; i < activeStep.servar_fields.length; i++) {
             const servar = activeStep.servar_fields[i].servar;
-            const fieldVal = newFieldVals[servar.key];
+            const fieldVal = fieldValues[servar.key];
             const methods = servar.metadata.login_methods;
             if (servar.type === 'login') {
                 if (methods.includes('phone') && phonePattern.test(fieldVal)) {
@@ -736,7 +699,7 @@ function Form({
                             // SMS sent
                             window.firebaseConfirmationResult = confirmationResult;
                             window.firebasePhoneNumber = fieldVal;
-                            return { newFieldVals };
+                            return {};
                         })
                         .catch((error) => {
                             // Error; SMS not sent. Reset Recaptcha
@@ -766,7 +729,7 @@ function Form({
                                 'featheryFirebaseEmail',
                                 fieldVal
                             );
-                            return { newFieldVals };
+                            return {};
                         })
                         .catch((error) => {
                             return {
@@ -797,11 +760,8 @@ function Form({
                                     authPhone: window.firebasePhoneNumber
                                 })
                                 .then((session) => {
-                                    newFieldVals = updateSessionValues(
-                                        session,
-                                        newFieldVals
-                                    );
-                                    return { newFieldVals };
+                                    updateSessionValues(session);
+                                    return {};
                                 });
                         })
                         .catch(() => {
@@ -819,10 +779,10 @@ function Form({
                 }
             }
         }
-        return { newFieldVals };
+        return {};
     }
 
-    function handleSubmitRedirect({ metadata, newFieldVals, formattedFields }) {
+    function handleSubmitRedirect({ metadata, formattedFields }) {
         const featheryFields = Object.entries(formattedFields).map(
             ([key, val]) => {
                 let newVal = val.value;
@@ -850,7 +810,6 @@ function Form({
 
         return handleRedirect({
             metadata,
-            newFieldVals,
             submitData: true,
             submitPromise
         });
@@ -859,15 +818,13 @@ function Form({
     function handleRedirect({
         metadata,
         submitData = false,
-        newFieldVals = null,
         submitPromise = null
     }) {
-        newFieldVals = newFieldVals || fieldValues;
         const { newStepKey, newSequence, newSequenceIndex } = nextStepKey(
             activeStep.next_conditions,
             metadata,
             steps,
-            newFieldVals,
+            fieldValues,
             stepSequence,
             sequenceIndex
         );
@@ -914,18 +871,13 @@ function Form({
         fieldKeys,
         elementRepeatIndex = 0
     }) => ({
-        newValues,
         trigger = 'field',
         integrationData = null,
         // Multi-file upload is not a repeated row but a repeated field
         valueRepeatIndex = null
     }) => {
-        if (noChange) {
-            return;
-        }
-
         if (typeof onChange === 'function') {
-            const formattedFields = formatAllStepFields(steps, newValues);
+            const formattedFields = formatAllStepFields(steps, fieldValues);
             const { userKey } = initInfo();
             onChange({
                 changeKeys: fieldKeys,
@@ -942,7 +894,7 @@ function Form({
                         userVals,
                         fileServarKeys
                     );
-                    newValues = updateFieldValues(values, newValues);
+                    updateFieldValues(values);
                     client.submitCustom(values);
                 },
                 setOptions: updateFieldOptions(steps)
@@ -953,8 +905,7 @@ function Form({
                 elementType: 'field',
                 elementIDs: fieldIDs,
                 trigger: 'change'
-            },
-            newFieldVals: newValues
+            }
         });
     };
 
@@ -1036,18 +987,16 @@ function Form({
                         onRepeatClick={() => {
                             let data;
                             if (element.link === 'add_repeated_row') {
-                                data = addRepeatedRow({});
+                                data = addRepeatedRow();
                             } else if (element.link === 'remove_repeated_row') {
-                                data = removeRepeatedRow({
-                                    index: element.repeat
-                                });
+                                data = removeRepeatedRow(element.repeat);
                             }
                             if (data.fieldKeys.length > 0) {
                                 fieldOnChange({
                                     fieldIds: data.fieldIDs,
                                     fieldKeys: data.fieldKeys,
                                     elementRepeatIndex: element.repeat
-                                })({ newValues: data.values });
+                                })();
                             }
                         }}
                         setSubmitRef={(newRef) => (submitRef.current = newRef)}
@@ -1104,23 +1053,16 @@ function Form({
                             {servar.name}
                         </label>
                     ) : null;
-                    const onClick = (
-                        e,
-                        submitData = false,
-                        fieldValues = null
-                    ) => {
+                    const onClick = (e, submitData = false) => {
                         const metadata = {
                             elementType: 'field',
                             elementIDs: [field.id],
                             trigger: 'click'
                         };
                         if (submitData) {
-                            submit(metadata, field.repeat || 0, fieldValues);
+                            submit(metadata, field.repeat || 0);
                         } else {
-                            handleRedirect({
-                                metadata,
-                                newFieldVals: fieldValues
-                            });
+                            handleRedirect({ metadata });
                         }
                     };
 
@@ -1173,15 +1115,14 @@ function Form({
                                         required={servar.required}
                                         onChange={(e) => {
                                             const file = e.target.files[0];
-                                            onChange({
-                                                newValues: valueChange(
-                                                    file
-                                                        ? Promise.resolve(file)
-                                                        : file,
-                                                    field,
-                                                    index
-                                                )
-                                            });
+                                            changeValue(
+                                                file
+                                                    ? Promise.resolve(file)
+                                                    : file,
+                                                field,
+                                                index
+                                            );
+                                            onChange({});
                                         }}
                                         onClick={onClick}
                                         style={{
@@ -1195,14 +1136,9 @@ function Form({
                             controlElement = (
                                 <RichFileUploader
                                     field={field}
-                                    onChange={(e) => {
-                                        onChange({
-                                            newValues: valueChange(
-                                                e.target.files[0],
-                                                field,
-                                                index
-                                            )
-                                        });
+                                    onChange={(files) => {
+                                        changeValue(files[0], field, index);
+                                        onChange({});
                                     }}
                                     onClick={onClick}
                                     initialFile={fieldVal}
@@ -1214,12 +1150,8 @@ function Form({
                                 <MultiFileUploader
                                     field={field}
                                     onChange={(files, fieldIndex) => {
+                                        changeValue(files, field, index);
                                         onChange({
-                                            newValues: valueChange(
-                                                files,
-                                                field,
-                                                index
-                                            ),
                                             valueRepeatIndex: fieldIndex
                                         });
                                     }}
@@ -1249,13 +1181,9 @@ function Form({
                                         id={servar.key}
                                         checked={fieldVal}
                                         onChange={(e) => {
-                                            onChange({
-                                                newValues: eventChange(
-                                                    e,
-                                                    field,
-                                                    index
-                                                )
-                                            });
+                                            const val = e.target.checked;
+                                            changeValue(val, field, index);
+                                            onChange({});
                                         }}
                                         onClick={onClick}
                                         style={{
@@ -1280,13 +1208,9 @@ function Form({
                                     fieldVal={fieldVal}
                                     onClick={onClick}
                                     onChange={(e) => {
-                                        onChange({
-                                            newValues: eventChange(
-                                                e,
-                                                field,
-                                                index
-                                            )
-                                        });
+                                        const val = e.target.value;
+                                        changeValue(val, field, index);
+                                        onChange({});
                                     }}
                                     inlineError={inlineErr}
                                 />
@@ -1300,13 +1224,9 @@ function Form({
                                     fieldVal={fieldVal}
                                     onClick={onClick}
                                     onChange={(e) => {
-                                        onChange({
-                                            newValues: eventChange(
-                                                e,
-                                                field,
-                                                index
-                                            )
-                                        });
+                                        const val = e.target.value;
+                                        changeValue(val, field, index);
+                                        onChange({});
                                     }}
                                     inlineError={inlineErr}
                                     type='states'
@@ -1321,13 +1241,9 @@ function Form({
                                     type='email'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
-                                        onChange({
-                                            newValues: eventChange(
-                                                e,
-                                                field,
-                                                index
-                                            )
-                                        });
+                                        const val = e.target.value;
+                                        changeValue(val, field, index, false);
+                                        onChange({});
                                     }}
                                     onClick={onClick}
                                     pattern={emailPatternStr}
@@ -1343,13 +1259,8 @@ function Form({
                                     fieldVal={fieldVal}
                                     onClick={onClick}
                                     onChange={(val) => {
-                                        onChange({
-                                            newValues: valueChange(
-                                                val,
-                                                field,
-                                                index
-                                            )
-                                        });
+                                        changeValue(val, field, index, false);
+                                        onChange({});
                                     }}
                                     inlineError={inlineErr}
                                 />
@@ -1380,16 +1291,15 @@ function Form({
                                     fieldLabel={fieldLabel}
                                     fieldVal={fieldVal}
                                     otherVal={otherVal}
-                                    onChange={(e, newVals = null) => {
-                                        onChange({
-                                            newValues:
-                                                newVals ||
-                                                valueChange(
-                                                    e.target.value,
-                                                    field,
-                                                    index
-                                                )
-                                        });
+                                    onChange={(e, change = true) => {
+                                        if (change) {
+                                            changeValue(
+                                                e.target.value,
+                                                field,
+                                                index
+                                            );
+                                        }
+                                        onChange({});
                                     }}
                                     handleOtherStateChange={
                                         handleOtherStateChange
@@ -1441,10 +1351,10 @@ function Form({
                                             <SketchPicker
                                                 color={`#${fieldVal}`}
                                                 onChange={(color) => {
-                                                    const newValues = handleColorChange(
+                                                    handleColorChange(
                                                         servar.key
                                                     )(color);
-                                                    onChange({ newValues });
+                                                    onChange({});
                                                 }}
                                             />
                                         </div>
@@ -1460,13 +1370,9 @@ function Form({
                                     type='textarea'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
-                                        onChange({
-                                            newValues: eventChange(
-                                                e,
-                                                field,
-                                                index
-                                            )
-                                        });
+                                        const val = e.target.value;
+                                        changeValue(val, field, index, false);
+                                        onChange({});
                                     }}
                                     onClick={onClick}
                                     rows={styles.num_rows}
@@ -1482,13 +1388,9 @@ function Form({
                                     type='url'
                                     fieldValue={fieldVal}
                                     onChange={(e) => {
-                                        onChange({
-                                            newValues: eventChange(
-                                                e,
-                                                field,
-                                                index
-                                            )
-                                        });
+                                        const val = e.target.value;
+                                        changeValue(val, field, index, false);
+                                        onChange({});
                                     }}
                                     onClick={onClick}
                                     inlineError={inlineErr}
@@ -1502,14 +1404,9 @@ function Form({
                                     unmask
                                     fieldValue={fieldVal}
                                     onClick={onClick}
-                                    onAccept={(value) => {
-                                        onChange({
-                                            newValues: valueChange(
-                                                value,
-                                                field,
-                                                index
-                                            )
-                                        });
+                                    onAccept={(val) => {
+                                        changeValue(val, field, index, false);
+                                        onChange({});
                                     }}
                                     label={fieldLabel}
                                     field={field}
@@ -1542,9 +1439,8 @@ function Form({
                     googleKey={integrations['google-maps']}
                     activeStep={activeStep}
                     steps={steps}
-                    setFieldValues={setFieldValues}
                     onChange={fieldOnChange}
-                    setNoChange={setNoChange}
+                    updateFieldValues={updateFieldValues}
                 />
             }
         </ReactForm>
