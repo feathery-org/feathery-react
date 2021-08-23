@@ -611,8 +611,7 @@ function getFieldStyles(field) {
             }
 
             styles.apply('tooltip', ['font_size'], (a) => ({
-                width: `${a}px`,
-                height: `${a}px`
+                width: `${a}px`
             }));
             break;
     }
