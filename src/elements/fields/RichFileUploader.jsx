@@ -4,7 +4,7 @@ import { FiX } from 'react-icons/fi';
 import { IconContext } from 'react-icons';
 import { Image } from 'react-bootstrap';
 import { getThumbnailData } from '../../utils/image';
-import { reactFriendlyKey } from '../../utils/formHelperFunctions';
+import { reactFriendlyFieldKey } from '../../utils/formHelperFunctions';
 
 function RichFileUploader({
     field,
@@ -70,7 +70,7 @@ function RichFileUploader({
 
     return (
         <div
-            id={reactFriendlyKey(field)}
+            id={reactFriendlyFieldKey(field)}
             onClick={onClick}
             css={{
                 position: 'relative',
