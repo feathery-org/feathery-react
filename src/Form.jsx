@@ -12,16 +12,15 @@ import {
     ImageElement,
     MultiFileUploader,
     PinInput,
+    ProgressBarElement,
     RadioButtonGroup,
     RichFileUploader,
-    TextElement,
-    ProgressBarElement
+    TextElement
 } from './elements';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { applyStepStyles } from './utils/styles';
 import {
-    calculateStepCSS,
     calculateRepeatedRowCount,
+    calculateStepCSS,
     injectRepeatedRows
 } from './utils/hydration';
 import {
@@ -48,7 +47,7 @@ import {
     setFormElementError,
     shouldElementHide
 } from './utils/formHelperFunctions';
-import { initializeIntegrations, initInfo, initState } from './utils/init';
+import { initInfo, initState, initializeIntegrations } from './utils/init';
 import { justInsert, justRemove } from './utils/array';
 
 import Client from './utils/client';
@@ -57,6 +56,7 @@ import ReactForm from 'react-bootstrap/Form';
 import SignatureCanvas from 'react-signature-canvas';
 import { SketchPicker } from 'react-color';
 import TagManager from 'react-gtm-module';
+import { applyStepStyles } from './utils/styles';
 
 const FILE_UPLOADERS = [
     'file_upload',
@@ -213,6 +213,21 @@ function Form({
         setRepeatChanged((repeatChanged) => !repeatChanged);
         updateFieldValues(updatedValues);
         return { fieldIDs, fieldKeys };
+    }
+
+    // Update the map we maintain to track files that have already been uploaded to S3
+    // This means nulling the existing mapping because the user uploaded a new file
+    function updateFilePathMap(key, index = null) {
+        setFilePathMap((filePathMap) => {
+            const newMap = { ...filePathMap };
+            if (index !== null) {
+                newMap[key][index] = null;
+            } else {
+                newMap[key] = null;
+            }
+
+            return newMap;
+        });
     }
 
     const updateFieldValues = (newFieldValues, rerender = true) => {
@@ -1137,6 +1152,10 @@ function Form({
                                 <RichFileUploader
                                     field={field}
                                     onChange={(files) => {
+                                        updateFilePathMap(
+                                            servar.key,
+                                            servar.repeated ? index : null
+                                        );
                                         changeValue(files[0], field, index);
                                         onChange({});
                                     }}
@@ -1150,6 +1169,10 @@ function Form({
                                 <MultiFileUploader
                                     field={field}
                                     onChange={(files, fieldIndex) => {
+                                        updateFilePathMap(
+                                            servar.key,
+                                            servar.repeated ? index : null
+                                        );
                                         changeValue(files, field, index);
                                         onChange({
                                             valueRepeatIndex: fieldIndex
