@@ -3,16 +3,14 @@ import React from 'react';
 const handleButtonGroupChange = (e, step, updateFieldValues) => {
     const fieldKey = e.target.id;
 
-    let newValues = null;
     step.servar_fields.forEach((field) => {
         const servar = field.servar;
         if (servar.key !== fieldKey) return;
 
-        newValues = updateFieldValues({
+        updateFieldValues({
             [servar.key]: e.target.textContent
         });
     });
-    return newValues;
 };
 
 function ButtonGroup({
@@ -40,12 +38,12 @@ function ButtonGroup({
                         <div
                             id={servar.key}
                             onClick={(e) => {
-                                const vals = handleButtonGroupChange(
+                                handleButtonGroupChange(
                                     e,
                                     step,
                                     updateFieldValues
                                 );
-                                onClick(e, true, vals);
+                                onClick(e, true);
                             }}
                             key={opt}
                             css={{

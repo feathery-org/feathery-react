@@ -13,9 +13,8 @@ export default function GooglePlaces({
     googleKey,
     activeStep,
     steps,
-    setFieldValues,
     onChange,
-    setNoChange
+    updateFieldValues
 }) {
     const [googlePreload, setGooglePreload] = useState(false);
     const [googleLoad, setGoogleLoad] = useState(false);
@@ -103,20 +102,11 @@ export default function GooglePlaces({
                 trackMapFields(activeStep);
 
                 if (Object.keys(addrValues).length > 0) {
-                    let newValues;
-                    // We set noChange to true to suppress onChange events from individual elements (because GMaps updates multiple elements)
-                    // Note: Re-rendering of form happens immediately after setting noChange and fieldValues
-                    setNoChange(true);
-                    setFieldValues((fieldValues) => {
-                        newValues = { ...fieldValues, ...addrValues };
-                        return newValues;
-                    });
-                    setNoChange(false);
+                    updateFieldValues(addrValues);
                     onChange({
                         fieldIDs: Object.values(keyIDMap),
                         fieldKeys: Object.keys(keyIDMap)
                     })({
-                        newValues,
                         trigger: 'googleMaps',
                         integrationData: {
                             googleMapsAddress: addressObject

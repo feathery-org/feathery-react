@@ -500,6 +500,7 @@ function getFieldStyles(field) {
             styles.applyMargin('fc');
             break;
         case 'dropdown':
+        case 'gmap_state':
             styles.applyMargin('fc');
             styles.applyWidth('fc');
             styles.applyBorders('field');
@@ -626,6 +627,7 @@ function applyStepStyles(step) {
     step.servar_fields.forEach((e) => getFieldStyles(e));
     const pb = step.progress_bar;
     if (pb) getProgressBarStyles(pb);
+    return step;
 }
 
 export {

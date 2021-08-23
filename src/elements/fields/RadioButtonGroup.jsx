@@ -89,10 +89,8 @@ function RadioButtonGroup({
                         id={servar.key}
                         value={otherVal || ''}
                         onChange={(e) => {
-                            const newValues = handleOtherStateChange(otherVal)(
-                                e
-                            );
-                            onChange(e, newValues);
+                            handleOtherStateChange(otherVal)(e);
+                            onChange(e, false);
                         }}
                         onClick={onClick}
                         maxLength={servar.max_length}

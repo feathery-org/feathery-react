@@ -46,13 +46,13 @@ function RichFileUploader({
         const filePromise = Promise.resolve(file);
         setFile(filePromise);
 
-        customOnChange({ target: { files: file ? [filePromise] : [] } });
+        customOnChange(file ? [filePromise] : []);
     }
 
     function onClear() {
         fileInput.current.value = '';
         setFile(null);
-        customOnChange({ target: { files: [] } });
+        customOnChange([]);
     }
 
     applyStyles.apply(
