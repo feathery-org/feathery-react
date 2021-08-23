@@ -37,6 +37,7 @@ export default function InlineTooltip({ id, text, applyStyles }) {
                     bottom: 0,
                     margin: 'auto',
                     cursor: 'pointer',
+                    height: '100%',
                     ...applyStyles.getTarget('tooltip')
                 }}
             />
