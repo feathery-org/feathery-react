@@ -42,8 +42,7 @@ import {
     nextStepKey,
     objectMap,
     phonePattern,
-    reactFriendlyButtonKey,
-    reactFriendlyFieldKey,
+    reactFriendlyKey,
     recurseDepth,
     setFormElementError,
     shouldElementHide
@@ -950,6 +949,7 @@ function Form({
                     element: pb
                 }) && (
                     <ProgressBarElement
+                        key={reactFriendlyKey(pb)}
                         element={pb}
                         curDepth={curDepth}
                         maxDepth={maxDepth}
@@ -965,7 +965,10 @@ function Form({
                         })
                 )
                 .map((element) => (
-                    <ImageElement key={`${element.id}`} element={element} />
+                    <ImageElement
+                        key={reactFriendlyKey(element)}
+                        element={element}
+                    />
                 ))}
             {activeStep.texts
                 .filter(
@@ -978,7 +981,7 @@ function Form({
                 )
                 .map((element) => (
                     <TextElement
-                        key={`${element.id}`}
+                        key={reactFriendlyKey(element)}
                         element={element}
                         values={fieldValues}
                         conditions={activeStep.next_conditions}
@@ -996,7 +999,7 @@ function Form({
                 )
                 .map((element) => (
                     <ButtonElement
-                        key={reactFriendlyButtonKey(element)}
+                        key={reactFriendlyKey(element)}
                         element={element}
                         values={fieldValues}
                         handleRedirect={handleRedirect}
@@ -1453,7 +1456,7 @@ function Form({
                                 ...field.applyStyles.getLayout(),
                                 ...field.applyStyles.getTarget('container')
                             }}
-                            key={reactFriendlyFieldKey(field)}
+                            key={reactFriendlyKey(field)}
                         >
                             {controlElement}
                         </div>

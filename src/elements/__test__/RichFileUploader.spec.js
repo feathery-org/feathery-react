@@ -8,6 +8,7 @@ describe('RichFileUploader', () => {
         // Arrange
         const props = {
             field: {
+                id: 'fieldId',
                 styles: {
                     height: '50',
                     height_unit: '%',
