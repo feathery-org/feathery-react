@@ -22,7 +22,7 @@ export default function InlineTooltip({ id, text, applyStyles }) {
                             textAlign: 'center',
                             backgroundColor: '#000',
                             borderRadius: '.25rem',
-                            ...applyStyles.getTarget('tooltip')
+                            fontSize: 'smaller'
                         }
                     }}
                 >
