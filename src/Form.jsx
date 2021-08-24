@@ -124,10 +124,14 @@ function Form({
             step: rawActiveStep,
             values: fieldValues
         });
-        const hydratedStep = injectRepeatedRows({
-            step: rawActiveStep,
-            repeatedRowCount
-        });
+        const hydratedStep = JSON.parse(
+            JSON.stringify(
+                injectRepeatedRows({
+                    step: rawActiveStep,
+                    repeatedRowCount
+                })
+            )
+        );
         return applyStepStyles(hydratedStep);
     }, [rawActiveStep, repeatChanged]);
 
