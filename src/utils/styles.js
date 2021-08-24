@@ -575,7 +575,6 @@ function getFieldStyles(field) {
                 'placeholder',
                 'placeholderActive',
                 'placeholderFocus',
-                'tooltip',
                 'tooltipIcon'
             );
             styles.applyMargin('fc');
@@ -624,9 +623,6 @@ function getFieldStyles(field) {
 
             styles.apply('tooltipIcon', 'font_size', (a) => ({
                 width: `${a}px`
-            }));
-            styles.apply('tooltip', 'font_size', (a) => ({
-                fontSize: `${a - 2}px`
             }));
             break;
     }
