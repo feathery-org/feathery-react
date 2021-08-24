@@ -15,6 +15,10 @@ const mobileIndices = {
     gridRowEnd: 'mobile_row_index_end'
 };
 
+/**
+ * Handles the translation of server-side properties into responsive CSS
+ * attributes
+ */
 class ApplyStyles {
     constructor(element, targets) {
         this.element = element;
@@ -24,6 +28,7 @@ class ApplyStyles {
         this.mobileTargets = Object.fromEntries(targets.map((t) => [t, {}]));
     }
 
+    // Return CSS for the step dimensions / layout
     getLayout() {
         const layout = {
             gridColumnStart: this.element.column_index + 1,
@@ -61,6 +66,7 @@ class ApplyStyles {
         });
     }
 
+    // Return CSS for a particular target HTML element
     getTarget(target) {
         return {
             ...this.targets[target],
@@ -72,7 +78,12 @@ class ApplyStyles {
         this.targets[target][key] = val;
     }
 
+    // Translate a set of server-side properties into CSS for a particular
+    // target
     apply(target, properties, get) {
+        // if not array, assume user passed in 1 element
+        if (!Array.isArray(properties)) properties = [properties];
+
         const styles = properties.map((p) => this.styles[p]);
         this.targets[target] = { ...this.targets[target], ...get(...styles) };
 
@@ -131,12 +142,12 @@ class ApplyStyles {
     applySelectorStyles(target, prefix) {
         this.applyBorders(target, prefix);
         if (this.styles[`${prefix}background_color`]) {
-            this.apply(target, [`${prefix}background_color`], (a) => ({
+            this.apply(target, `${prefix}background_color`, (a) => ({
                 backgroundColor: `#${a} !important`
             }));
         }
         if (this.styles[`${prefix}font_color`]) {
-            this.apply(target, [`${prefix}font_color`], (a) => ({
+            this.apply(target, `${prefix}font_color`, (a) => ({
                 color: `#${a} !important`
             }));
         }
@@ -195,17 +206,17 @@ class ApplyStyles {
     }
 
     applyFontStyles(target, placeholder = false) {
-        this.apply(target, ['font_weight'], (a) => ({ fontWeight: a }));
-        this.apply(target, ['font_family'], (a) => ({ fontFamily: a }));
-        this.apply(target, ['font_size'], (a) => ({ fontSize: `${a}px` }));
+        this.apply(target, 'font_weight', (a) => ({ fontWeight: a }));
+        this.apply(target, 'font_family', (a) => ({ fontFamily: a }));
+        this.apply(target, 'font_size', (a) => ({ fontSize: `${a}px` }));
         this.apply(
             target,
-            [placeholder ? 'placeholder_italic' : 'font_italic'],
+            placeholder ? 'placeholder_italic' : 'font_italic',
             (a) => ({ fontStyle: a ? 'italic' : 'normal' })
         );
         this.apply(
             target,
-            [placeholder ? 'placeholder_color' : 'font_color'],
+            placeholder ? 'placeholder_color' : 'font_color',
             (a) => ({ color: `#${a}` })
         );
     }
@@ -254,10 +265,10 @@ class ApplyStyles {
 
 function getImageStyles(element) {
     const as = new ApplyStyles(element, ['container', 'image']);
-    as.apply('container', ['layout'], (a) => ({
+    as.apply('container', 'layout', (a) => ({
         justifyContent: a
     }));
-    as.apply('container', ['vertical_layout'], (a) => ({
+    as.apply('container', 'vertical_layout', (a) => ({
         alignItems: a
     }));
 
@@ -265,7 +276,7 @@ function getImageStyles(element) {
     as.applyWidth('image');
 
     if (element.styles.line_height) {
-        as.apply('text', ['line_height'], (a) => ({
+        as.apply('text', 'line_height', (a) => ({
             lineHeight: `${a}px`
         }));
     }
@@ -275,26 +286,26 @@ function getImageStyles(element) {
 
 function getProgressBarStyles(element) {
     const as = new ApplyStyles(element, ['container', 'barContainer', 'bar']);
-    as.apply('container', ['vertical_layout'], (a) => ({
+    as.apply('container', 'vertical_layout', (a) => ({
         justifyContent: a
     }));
-    as.apply('container', ['layout'], (a) => ({
+    as.apply('container', 'layout', (a) => ({
         alignItems: a
     }));
     as.applyFontStyles('container');
 
-    as.apply('barContainer', ['vertical_layout'], (a) => ({
+    as.apply('barContainer', 'vertical_layout', (a) => ({
         justifyContent: a
     }));
-    as.apply('barContainer', ['layout'], (a) => ({
+    as.apply('barContainer', 'layout', (a) => ({
         alignItems: a
     }));
-    as.apply('barContainer', ['width'], (a) => ({
+    as.apply('barContainer', 'width', (a) => ({
         width: `${a}%`
     }));
     as.applyMargin('barContainer');
 
-    as.apply('bar', ['bar_color'], (a) => ({
+    as.apply('bar', 'bar_color', (a) => ({
         backgroundColor: `#${a}`
     }));
 
@@ -303,21 +314,21 @@ function getProgressBarStyles(element) {
 
 function getTextStyles(element) {
     const as = new ApplyStyles(element, ['container', 'text']);
-    as.apply('container', ['layout'], (a) => ({
+    as.apply('container', 'layout', (a) => ({
         alignItems: alignmentMap[a],
         textAlign: a
     }));
-    as.apply('container', ['vertical_layout'], (a) => ({
+    as.apply('container', 'vertical_layout', (a) => ({
         justifyContent: a
     }));
     if (element.styles.border_color) {
-        as.apply('container', ['border_color'], (a) => ({
+        as.apply('container', 'border_color', (a) => ({
             border: `1px solid #${a}`
         }));
     }
     as.applyMargin('text');
     if (element.styles.line_height) {
-        as.apply('text', ['line_height'], (a) => ({
+        as.apply('text', 'line_height', (a) => ({
             lineHeight: `${a}px`
         }));
     }
@@ -335,15 +346,15 @@ function getButtonStyles(element) {
         'spinner'
     ]);
 
-    as.apply('container', ['layout'], (a) => ({
+    as.apply('container', 'layout', (a) => ({
         alignItems: alignmentMap[a],
         textAlign: a
     }));
-    as.apply('container', ['vertical_layout'], (a) => ({
+    as.apply('container', 'vertical_layout', (a) => ({
         justifyContent: a
     }));
 
-    as.apply('button', ['background_color'], (a) => ({
+    as.apply('button', 'background_color', (a) => ({
         backgroundColor: `#${a}`
     }));
     as.applyHeight('button');
@@ -354,7 +365,7 @@ function getButtonStyles(element) {
 
     as.applyBorders('buttonHover', 'hover_');
     if (element.link !== 'none') {
-        as.apply('buttonHover', ['background_color'], (a) => {
+        as.apply('buttonHover', 'background_color', (a) => {
             const color = `${adjustColor(a, -30)} !important`;
             return {
                 backgroundColor: color,
@@ -364,19 +375,19 @@ function getButtonStyles(element) {
         });
     }
     if (element.styles.hover_background_color) {
-        as.apply('buttonHover', ['hover_background_color'], (a) => ({
+        as.apply('buttonHover', 'hover_background_color', (a) => ({
             backgroundColor: `#${a} !important`
         }));
     }
 
     as.applyBorders('buttonActive', 'selected_');
     if (element.styles.selected_background_color) {
-        as.apply('buttonHover', ['selected_background_color'], (a) => ({
+        as.apply('buttonHover', 'selected_background_color', (a) => ({
             backgroundColor: `#${a} !important`
         }));
     }
 
-    as.apply('spinner', ['show_spinner_on_submit'], (a) => ({
+    as.apply('spinner', 'show_spinner_on_submit', (a) => ({
         display: a ? 'default' : 'none'
     }));
     as.apply('spinner', ['height', 'height_unit'], (a, b) => {
@@ -397,29 +408,29 @@ function getFieldStyles(field) {
     const styles = new ApplyStyles(field, targets);
 
     styles.applyFontStyles('container');
-    styles.apply('container', ['layout'], (a) => ({
+    styles.apply('container', 'layout', (a) => ({
         alignItems: a
     }));
-    styles.apply('container', ['vertical_layout'], (a) => ({
+    styles.apply('container', 'vertical_layout', (a) => ({
         justifyContent: a
     }));
     styles.applyMargin('fc');
     styles.applySelectorStyles('active', 'selected_');
     styles.applySelectorStyles('hover', 'hover_');
-    styles.apply('error', ['font_family'], (a) => ({
+    styles.apply('error', 'font_family', (a) => ({
         fontFamily: `#${a}`
     }));
-    styles.apply('error', ['font_size'], (a) => ({
+    styles.apply('error', 'font_size', (a) => ({
         fontSize: `${a}px`
     }));
 
     const type = field.servar.type;
     switch (type) {
         case 'signature':
-            styles.apply('fc', ['width'], (a) => ({
+            styles.apply('fc', 'width', (a) => ({
                 width: `${a}px`
             }));
-            styles.apply('field', ['background_color'], (a) => ({
+            styles.apply('field', 'background_color', (a) => ({
                 backgroundColor: `#${a}`
             }));
             styles.applyCorners('field');
@@ -441,7 +452,7 @@ function getFieldStyles(field) {
                     padding: `${a}px ${b}px ${c}px ${d}px`
                 })
             );
-            styles.apply('field', ['background_color'], (a) => ({
+            styles.apply('field', 'background_color', (a) => ({
                 backgroundColor: `#${a}`
             }));
             break;
@@ -475,20 +486,20 @@ function getFieldStyles(field) {
                     padding: `${a}px ${b}px ${c}px ${d}px`
                 })
             );
-            styles.apply('add', ['background_color'], (a) => ({
+            styles.apply('add', 'background_color', (a) => ({
                 backgroundColor: `#${a}`
             }));
             break;
         case 'button_group':
-            styles.apply('fc', ['layout'], (a) => ({
+            styles.apply('fc', 'layout', (a) => ({
                 alignItems: `#${a}`
             }));
-            styles.apply('fc', ['vertical_layout'], (a) => ({
+            styles.apply('fc', 'vertical_layout', (a) => ({
                 justifyContent: a
             }));
             styles.applyHeight('field');
             styles.applyWidth('field');
-            styles.apply('field', ['background_color'], (a) => ({
+            styles.apply('field', 'background_color', (a) => ({
                 backgroundColor: `#${a}`
             }));
             styles.applyBoxShadow('field');
@@ -507,7 +518,7 @@ function getFieldStyles(field) {
             styles.applyCorners('field');
             styles.applyHeight('field');
             styles.applyBoxShadow('field');
-            styles.apply('field', ['background_color'], (a) => ({
+            styles.apply('field', 'background_color', (a) => ({
                 backgroundColor: `#${a}`
             }));
             break;
@@ -517,13 +528,13 @@ function getFieldStyles(field) {
             styles.applyHeight('field');
             styles.applyBoxShadow('field');
             styles.applyCorners('field');
-            styles.apply('field', ['background_color'], (a) => ({
+            styles.apply('field', 'background_color', (a) => ({
                 backgroundColor: `#${a}`
             }));
-            styles.apply('field', ['font_size'], (a) => ({
+            styles.apply('field', 'font_size', (a) => ({
                 fontSize: `${a}px`
             }));
-            styles.apply('field', ['font_color'], (a) => ({
+            styles.apply('field', 'font_color', (a) => ({
                 color: `#${a}`
             }));
             break;
@@ -533,10 +544,10 @@ function getFieldStyles(field) {
             styles.applyBorders('field');
             styles.applyBoxShadow('field');
             styles.applyFontStyles('field');
-            styles.apply('field', ['background_color'], (a) => ({
+            styles.apply('field', 'background_color', (a) => ({
                 backgroundColor: `#${a}`
             }));
-            styles.apply('field', ['font_size'], (a) => ({
+            styles.apply('field', 'font_size', (a) => ({
                 height: `${parseInt(a) + 4}px`
             }));
             break;
@@ -546,10 +557,10 @@ function getFieldStyles(field) {
             styles.applyBorders('field');
             styles.applyBoxShadow('field');
             styles.applyFontStyles('field');
-            styles.apply('field', ['background_color'], (a) => ({
+            styles.apply('field', 'background_color', (a) => ({
                 backgroundColor: `#${a}`
             }));
-            styles.apply('field', ['font_size'], (a) => ({
+            styles.apply('field', 'font_size', (a) => ({
                 height: `${parseInt(a) + 4}px`
             }));
             break;
@@ -573,20 +584,20 @@ function getFieldStyles(field) {
             styles.applyCorners('field');
             styles.applyBorders('field');
             styles.applyFontStyles('field');
-            styles.apply('field', ['background_color'], (a) => ({
+            styles.apply('field', 'background_color', (a) => ({
                 backgroundColor: `#${a}`
             }));
             styles.applyFontStyles('placeholder', true);
-            styles.apply('placeholder', ['font_size'], (a) => ({
+            styles.apply('placeholder', 'font_size', (a) => ({
                 lineHeight: `${a}px`
             }));
             if (type !== 'text_area') {
-                styles.apply('placeholder', ['font_size'], (a) => ({
+                styles.apply('placeholder', 'font_size', (a) => ({
                     marginTop: `-${a / 2}px`
                 }));
             }
             if (field.styles.placeholder_transition === 'shrink_top') {
-                styles.apply('placeholderFocus', ['font_size'], (a) => {
+                styles.apply('placeholderFocus', 'font_size', (a) => {
                     const minFontSize = Math.min(a, 10);
                     return {
                         top: 0,
@@ -597,7 +608,7 @@ function getFieldStyles(field) {
                 if (styles.selected_placeholder_color) {
                     styles.apply(
                         'placeholderActive',
-                        ['selected_placeholder_color'],
+                        'selected_placeholder_color',
                         (a) => ({
                             color: `#${a}`
                         })
@@ -610,7 +621,7 @@ function getFieldStyles(field) {
                 styles.setStyle('placeholderFocus', 'display', 'none');
             }
 
-            styles.apply('tooltip', ['font_size'], (a) => ({
+            styles.apply('tooltip', 'font_size', (a) => ({
                 width: `${a}px`
             }));
             break;
