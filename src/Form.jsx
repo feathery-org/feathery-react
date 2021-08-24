@@ -228,6 +228,7 @@ function Form({
         setFilePathMap((filePathMap) => {
             const newMap = { ...filePathMap };
             if (index !== null) {
+                if (!newMap[key]) newMap[key] = [];
                 newMap[key][index] = null;
             } else {
                 newMap[key] = null;
