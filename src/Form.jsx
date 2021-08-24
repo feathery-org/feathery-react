@@ -120,13 +120,15 @@ function Form({
     // Note: Other hydration transformations can also be included here
     const activeStep = useMemo(() => {
         if (!rawActiveStep) return null;
-        let stepCopy = JSON.parse(JSON.stringify(rawActiveStep));
         const repeatedRowCount = calculateRepeatedRowCount({
             step: rawActiveStep,
             values: fieldValues
         });
-        stepCopy = injectRepeatedRows({ step: stepCopy, repeatedRowCount });
-        return applyStepStyles(stepCopy);
+        const hydratedStep = injectRepeatedRows({
+            step: rawActiveStep,
+            repeatedRowCount
+        });
+        return applyStepStyles(hydratedStep);
     }, [rawActiveStep, repeatChanged]);
 
     // When the active step changes, recalculate the dimensions of the new step
