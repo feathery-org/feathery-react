@@ -21,7 +21,8 @@ export default function InlineTooltip({ id, text, applyStyles }) {
                             color: '#fff',
                             textAlign: 'center',
                             backgroundColor: '#000',
-                            borderRadius: '.25rem'
+                            borderRadius: '.25rem',
+                            ...applyStyles.getTarget('tooltip')
                         }
                     }}
                 >
@@ -38,7 +39,7 @@ export default function InlineTooltip({ id, text, applyStyles }) {
                     margin: 'auto',
                     cursor: 'pointer',
                     height: '100%',
-                    ...applyStyles.getTarget('tooltip')
+                    ...applyStyles.getTarget('tooltipIcon')
                 }}
             />
         </OverlayTrigger>

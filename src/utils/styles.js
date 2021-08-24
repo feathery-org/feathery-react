@@ -575,7 +575,8 @@ function getFieldStyles(field) {
                 'placeholder',
                 'placeholderActive',
                 'placeholderFocus',
-                'tooltip'
+                'tooltip',
+                'tooltipIcon'
             );
             styles.applyMargin('fc');
             styles.applyWidth('fc');
@@ -621,8 +622,11 @@ function getFieldStyles(field) {
                 styles.setStyle('placeholderFocus', 'display', 'none');
             }
 
-            styles.apply('tooltip', 'font_size', (a) => ({
+            styles.apply('tooltipIcon', 'font_size', (a) => ({
                 width: `${a}px`
+            }));
+            styles.apply('tooltip', 'font_size', (a) => ({
+                fontSize: `${a - 2}px`
             }));
             break;
     }
