@@ -991,7 +991,6 @@ function Form({
                         key={reactFriendlyKey(element)}
                         element={element}
                         values={fieldValues}
-                        conditions={activeStep.next_conditions}
                         handleRedirect={handleRedirect}
                     />
                 ))}

@@ -221,9 +221,28 @@ class ApplyStyles {
         );
     }
 
-    applyRichFontStyles() {
+    applyRichFontStyles(element = null, conditions = null) {
+        let delta = new Delta(this.element.text_formatted);
+
+        if (element && conditions) {
+            conditions.forEach((cond) => {
+                if (
+                    cond.element_type === 'text' &&
+                    cond.element_id === element.id
+                ) {
+                    const start = cond.metadata.start || 0;
+                    const end = cond.metadata.end || element.text.length;
+                    delta = delta.compose(
+                        new Delta()
+                            .retain(start)
+                            .retain(end - start, { start, end })
+                    );
+                }
+            });
+        }
+
+        this.element.text_formatted = delta.ops;
         this.element.richFontStyles = {};
-        const delta = new Delta(this.element.text_formatted);
         delta
             .filter((op) => op.insert)
             .forEach((op, i) => {
@@ -312,7 +331,7 @@ function getProgressBarStyles(element) {
     element.applyStyles = as;
 }
 
-function getTextStyles(element) {
+function getTextStyles(element, conditions) {
     const as = new ApplyStyles(element, ['container', 'text']);
     as.apply('container', 'layout', (a) => ({
         alignItems: alignmentMap[a],
@@ -332,7 +351,7 @@ function getTextStyles(element) {
             lineHeight: `${a}px`
         }));
     }
-    as.applyRichFontStyles();
+    as.applyRichFontStyles(element, conditions);
 
     element.applyStyles = as;
 }
@@ -632,7 +651,7 @@ function getFieldStyles(field) {
 
 function applyStepStyles(step) {
     step.images.forEach((e) => getImageStyles(e));
-    step.texts.forEach((e) => getTextStyles(e));
+    step.texts.forEach((e) => getTextStyles(e, step.next_conditions));
     step.buttons.forEach((e) => getButtonStyles(e));
     step.servar_fields.forEach((e) => getFieldStyles(e));
     const pb = step.progress_bar;
