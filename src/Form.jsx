@@ -898,7 +898,7 @@ function Form({
         integrationData = null,
         // Multi-file upload is not a repeated row but a repeated field
         valueRepeatIndex = null
-    }) => {
+    } = {}) => {
         if (typeof onChange === 'function') {
             const formattedFields = formatAllStepFields(steps, fieldValues);
             const { userKey } = initInfo();
@@ -1148,7 +1148,7 @@ function Form({
                                                 field,
                                                 index
                                             );
-                                            onChange({});
+                                            onChange();
                                         }}
                                         onClick={onClick}
                                         style={{
@@ -1168,7 +1168,7 @@ function Form({
                                             servar.repeated ? index : null
                                         );
                                         changeValue(files[0], field, index);
-                                        onChange({});
+                                        onChange();
                                     }}
                                     onClick={onClick}
                                     initialFile={fieldVal}
@@ -1217,7 +1217,7 @@ function Form({
                                         onChange={(e) => {
                                             const val = e.target.checked;
                                             changeValue(val, field, index);
-                                            onChange({});
+                                            onChange();
                                         }}
                                         onClick={onClick}
                                         style={{
@@ -1244,7 +1244,7 @@ function Form({
                                     onChange={(e) => {
                                         const val = e.target.value;
                                         changeValue(val, field, index);
-                                        onChange({});
+                                        onChange();
                                     }}
                                     inlineError={inlineErr}
                                 />
@@ -1260,7 +1260,7 @@ function Form({
                                     onChange={(e) => {
                                         const val = e.target.value;
                                         changeValue(val, field, index);
-                                        onChange({});
+                                        onChange();
                                     }}
                                     inlineError={inlineErr}
                                     type='states'
@@ -1277,7 +1277,7 @@ function Form({
                                     onChange={(e) => {
                                         const val = e.target.value;
                                         changeValue(val, field, index, false);
-                                        onChange({});
+                                        onChange();
                                     }}
                                     onClick={onClick}
                                     pattern={emailPatternStr}
@@ -1294,7 +1294,7 @@ function Form({
                                     onClick={onClick}
                                     onChange={(val) => {
                                         changeValue(val, field, index, false);
-                                        onChange({});
+                                        onChange();
                                     }}
                                     inlineError={inlineErr}
                                 />
@@ -1333,7 +1333,7 @@ function Form({
                                                 index
                                             );
                                         }
-                                        onChange({});
+                                        onChange();
                                     }}
                                     handleOtherStateChange={
                                         handleOtherStateChange
@@ -1388,7 +1388,7 @@ function Form({
                                                     handleColorChange(
                                                         servar.key
                                                     )(color);
-                                                    onChange({});
+                                                    onChange();
                                                 }}
                                             />
                                         </div>
@@ -1406,7 +1406,7 @@ function Form({
                                     onChange={(e) => {
                                         const val = e.target.value;
                                         changeValue(val, field, index, false);
-                                        onChange({});
+                                        onChange();
                                     }}
                                     onClick={onClick}
                                     rows={styles.num_rows}
@@ -1424,7 +1424,7 @@ function Form({
                                     onChange={(e) => {
                                         const val = e.target.value;
                                         changeValue(val, field, index, false);
-                                        onChange({});
+                                        onChange();
                                     }}
                                     onClick={onClick}
                                     inlineError={inlineErr}
@@ -1440,7 +1440,7 @@ function Form({
                                     onClick={onClick}
                                     onAccept={(val) => {
                                         changeValue(val, field, index, false);
-                                        onChange({});
+                                        onChange();
                                     }}
                                     label={fieldLabel}
                                     field={field}
