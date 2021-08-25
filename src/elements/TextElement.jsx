@@ -2,26 +2,13 @@ import React from 'react';
 import Delta from 'quill-delta';
 import generateNodes from '../components/TextNodes';
 
-function TextElement({ element, values, conditions, handleRedirect }) {
-    const elementID = element.id;
-    let delta = new Delta(element.text_formatted);
-
-    conditions.forEach((cond) => {
-        if (cond.element_type === 'text' && cond.element_id === elementID) {
-            const start = cond.metadata.start || 0;
-            const end = cond.metadata.end || element.text.length;
-            delta = delta.compose(
-                new Delta().retain(start).retain(end - start, { start, end })
-            );
-        }
-    });
-
+function TextElement({ element, values, handleRedirect }) {
     const nodes = generateNodes({
         element,
-        delta,
         values,
         handleRedirect,
-        elementID
+        delta: new Delta(element.text_formatted),
+        elementID: element.id
     });
 
     const styles = element.applyStyles;
