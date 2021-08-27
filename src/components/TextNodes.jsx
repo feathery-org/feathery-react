@@ -1,5 +1,6 @@
 import React from 'react';
 import { TEXT_VARIABLE_PATTERN } from '../utils/hydration';
+import { isNum } from '../utils/primitives';
 
 // TODO (jake): Make this in React
 const generateNodes = ({
@@ -33,8 +34,9 @@ const generateNodes = ({
             });
 
             let onClick = () => {};
-            const attrs = op.attributes;
-            if (attrs?.start && attrs?.end) {
+            const attrs = op.attributes || {};
+            // eslint-disable-next-line no-undef
+            if (isNum(attrs.start) && isNum(attrs.end)) {
                 onClick = () => {
                     handleRedirect({
                         metadata: {
