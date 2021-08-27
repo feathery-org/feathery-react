@@ -1,4 +1,5 @@
 import { adjustColor, alignmentMap } from './formHelperFunctions';
+import { isNum } from './primitives';
 import Delta from 'quill-delta';
 
 const bootstrapStyles = {
@@ -38,8 +39,8 @@ class ApplyStyles {
         };
 
         if (
-            Object.values(mobileIndices).some(
-                (index) => !isNaN(parseInt(this.element[index]))
+            Object.values(mobileIndices).some((index) =>
+                isNum(this.element[index])
             )
         ) {
             const mobileLayout = {};
@@ -250,7 +251,8 @@ class ApplyStyles {
                 if (!attrs) return;
 
                 const desktop = this._applyRichFontScreenStyles(attrs);
-                if (attrs.start && attrs.end) desktop.cursor = 'pointer';
+                if (isNum(attrs.start) && isNum(attrs.end))
+                    desktop.cursor = 'pointer';
                 const mobile = this._applyRichFontScreenStyles(
                     attrs,
                     'mobile_'

@@ -1,6 +1,6 @@
-import encodeGetParams from '../string';
+import { encodeGetParams, isNum } from '../primitives';
 
-describe('string', () => {
+describe('primitives', () => {
     describe('encodeGetParams', () => {
         it('handles well-formatted input', () => {
             // Arrange
@@ -28,6 +28,32 @@ describe('string', () => {
 
             // Assert
             expect(actual).toEqual(expected);
+        });
+    });
+});
+
+describe('primitives', () => {
+    describe('isNum', () => {
+        it('handles well-formatted input', () => {
+            // Arrange
+            const val = '1';
+
+            // Act
+            const actual = isNum(val);
+
+            // Assert
+            expect(actual).toEqual(true);
+        });
+
+        it('handles poorly-formatted input', () => {
+            // Arrange
+            const val = 'a';
+
+            // Act
+            const actual = isNum(val);
+
+            // Assert
+            expect(actual).toEqual(false);
         });
     });
 });

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { isNum } from '../../utils/primitives';
 
 // keyCode constants
 const BACKSPACE = 8;
@@ -79,7 +80,7 @@ function OtpInput({ onChange, onClick, value, field, inlineError }) {
     };
 
     const isInputValueValid = (value) => {
-        return !isNaN(parseInt(value, 10)) && value.trim().length === 1;
+        return isNum(value, 10) && value.trim().length === 1;
     };
 
     const numInputs = field.servar.max_length;

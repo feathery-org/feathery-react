@@ -2,7 +2,7 @@ import * as errors from './error';
 
 import { initInfo, initState, initFormsPromise } from './init';
 
-import encodeGetParams from './string';
+import { encodeGetParams } from './primitives';
 
 // Convenience boolean for urls - manually change for testing
 const isLocal = false;

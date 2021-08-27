@@ -4,4 +4,8 @@ function encodeGetParams(params) {
         .join('&');
 }
 
-export default encodeGetParams;
+function isNum(candidate) {
+    return !isNaN(parseInt(candidate));
+}
+
+export { encodeGetParams, isNum };
