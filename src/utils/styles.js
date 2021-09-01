@@ -268,16 +268,19 @@ class ApplyStyles {
     _applyRichFontScreenStyles(attrs, p = '') {
         const styles = {};
 
-        if (attrs[`${p}size`]) styles.fontSize = `${attrs[`${p}size`]}px`;
-        if (attrs[`${p}family`])
-            styles.fontFamily = attrs[`${p}family`].replace(/"/g, "'");
-        if (attrs[`${p}color`]) styles.color = `#${attrs[`${p}color`]}`;
-        if (attrs[`${p}weight`]) styles.fontWeight = attrs[`${p}weight`];
-        if (attrs[`${p}italic`]) styles.fontStyle = 'italic';
+        let name = `${p}font_size`;
+        if (attrs[name]) styles.fontSize = `${attrs[name]}px`;
+        name = `${p}font_family`;
+        if (attrs[name]) styles.fontFamily = attrs[name].replace(/"/g, "'");
+        name = `${p}font_color`;
+        if (attrs[name]) styles.color = `#${attrs[name]}`;
+        name = `${p}font_weight`;
+        if (attrs[name]) styles.fontWeight = attrs[name];
+        if (attrs[`${p}font_italic`]) styles.fontStyle = 'italic';
 
         const lines = [];
-        if (attrs[`${p}strike`]) lines.push('line-through');
-        if (attrs[`${p}underline`]) lines.push('underline');
+        if (attrs[`${p}font_strike`]) lines.push('line-through');
+        if (attrs[`${p}font_underline`]) lines.push('underline');
         if (lines.length > 0) styles.textDecoration = lines.join(' ');
 
         return styles;
