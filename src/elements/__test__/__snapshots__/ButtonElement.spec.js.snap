@@ -29,7 +29,7 @@ exports[`ButtonElement renders a button with custom styles 1`] = `
       }
     >
       <span
-        className="css-1h32x8r-generateNodes"
+        className="css-16rodpe-generateNodes"
         onClick={[Function]}
       >
         Hello World!

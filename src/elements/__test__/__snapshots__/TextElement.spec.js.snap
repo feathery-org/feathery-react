@@ -25,7 +25,7 @@ exports[`Text renders a text block with custom styles 1`] = `
     className="css-pzhd6a-TextElement"
   >
     <span
-      className="css-1h32x8r-generateNodes"
+      className="css-16rodpe-generateNodes"
       onClick={[Function]}
     >
       Hello World!
