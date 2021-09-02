@@ -2,7 +2,7 @@
 
 exports[`RichFileUploader renders a basic file upload component 1`] = `
 <div
-  className="css-1cu3y3v-RichFileUploader"
+  className="css-p1tkxp-RichFileUploader"
   id="fieldId"
   onClick={[Function]}
 >

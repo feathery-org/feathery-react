@@ -153,6 +153,7 @@ function MultiFileUploader({
                     flexDirection: 'column',
                     border: '1px solid lightgrey',
                     borderRadius: '4px',
+                    background: 'white',
                     overflow: 'hidden',
                     margin: '0 6px 6px 0',
                     ...applyStyles.getTarget('ac')

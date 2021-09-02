@@ -83,6 +83,7 @@ function RichFileUploader({
                 flexDirection: 'column',
                 border: '1px solid lightgrey',
                 borderRadius: '4px',
+                background: 'white',
                 overflow: 'hidden',
                 ...applyStyles.getTarget('fc')
             }}
