@@ -54,7 +54,7 @@ class ApplyStyles {
                     mobileLayout[key] = mVal;
                 }
             });
-            layout['@media (max-width: 478px)'] = mobileLayout;
+            layout['@media (maxWidth: 478px)'] = mobileLayout;
         }
 
         return layout;
@@ -71,7 +71,7 @@ class ApplyStyles {
     getTarget(target) {
         return {
             ...this.targets[target],
-            '@media (max-width: 478px)': this.mobileTargets[target]
+            '@media (maxWidth: 478px)': this.mobileTargets[target]
         };
     }
 
@@ -260,7 +260,7 @@ class ApplyStyles {
 
                 this.element.richFontStyles[i] = {
                     ...desktop,
-                    '@media (max-width: 478px)': mobile
+                    '@media (maxWidth: 478px)': mobile
                 };
             });
     }
