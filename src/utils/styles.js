@@ -251,7 +251,7 @@ class ApplyStyles {
                 if (!attrs) return;
 
                 const desktop = this._applyRichFontScreenStyles(attrs);
-                if (isNum(attrs.start) && isNum(attrs.end))
+                if (attrs.link || (isNum(attrs.start) && isNum(attrs.end)))
                     desktop.cursor = 'pointer';
                 const mobile = this._applyRichFontScreenStyles(
                     attrs,

@@ -35,8 +35,9 @@ const generateNodes = ({
 
             let onClick = () => {};
             const attrs = op.attributes || {};
-            // eslint-disable-next-line no-undef
-            if (isNum(attrs.start) && isNum(attrs.end)) {
+            if (attrs.link) {
+                onClick = () => window.open(attrs.link, '_blank');
+            } else if (isNum(attrs.start) && isNum(attrs.end)) {
                 onClick = () => {
                     handleRedirect({
                         metadata: {
