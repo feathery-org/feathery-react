@@ -44,7 +44,6 @@ function SingleOtpInput({
                 aria-label={`${
                     index === 0 ? 'Please enter verification code. ' : ''
                 }Digit ${index + 1}`}
-                autoComplete='off'
                 css={{
                     textAlign: 'center',
                     marginLeft: '8px',
@@ -54,7 +53,6 @@ function SingleOtpInput({
                     '&:hover': applyStyles.getTarget('hover')
                 }}
                 type='tel'
-                maxLength='1'
                 ref={input}
                 value={value || ''}
                 onChange={onChange}
@@ -107,24 +105,16 @@ function OtpInput({ onChange, onClick, value, field, inlineError }) {
         handleOtpChange(newVal);
     };
 
-    // Handle pasted OTP
-    const handleOnPaste = (e) => {
-        e.preventDefault();
-
-        // Get pastedData in an array of max size (num of inputs - current position)
-        const pastedData = e.clipboardData
-            .getData('text/plain')
-            .slice(0, numInputs - activeInput)
-            .split('');
-        if (isNaN(parseInt(pastedData, 10))) return;
+    const handleMultipleValues = (vals) => {
+        if (isNaN(parseInt(vals, 10))) return;
 
         const newVal = JSON.parse(JSON.stringify(rawValue));
         let nextActiveInput = activeInput;
 
         // Paste data from focused input onwards
         for (let pos = 0; pos < numInputs; ++pos) {
-            if (pos >= activeInput && pastedData.length > 0) {
-                newVal[pos] = pastedData.shift();
+            if (pos >= activeInput && vals.length > 0) {
+                newVal[pos] = vals.shift();
                 nextActiveInput++;
             }
         }
@@ -134,9 +124,21 @@ function OtpInput({ onChange, onClick, value, field, inlineError }) {
         handleOtpChange(newVal);
     };
 
+    // Handle pasted OTP
+    const handleOnPaste = (e) => {
+        e.preventDefault();
+
+        // Get pastedData in an array of max size (num of inputs - current position)
+        const pastedData = e.clipboardData
+            .getData('text/plain')
+            .slice(0, numInputs - activeInput)
+            .split('');
+        handleMultipleValues(pastedData);
+    };
+
     const handleOnChange = (e) => {
         const { value } = e.target;
-        if (isInputValueValid(value)) changeCodeAtFocus(value);
+        handleMultipleValues(value.split(''));
     };
 
     // Handle cases of backspace, delete, left arrow, right arrow, space
