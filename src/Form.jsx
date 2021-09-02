@@ -1,8 +1,4 @@
-import {
-    BootstrapField,
-    MaskedBootstrapField,
-    getMaskProps
-} from './elements/fields/TextField';
+import { MaskedTextField, getMaskProps } from './elements/fields/TextField';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import {
     ButtonElement,
@@ -26,7 +22,6 @@ import {
 import {
     convertFilesToFilePromises,
     emailPattern,
-    emailPatternStr,
     fetchS3File,
     findServars,
     formatAllStepFields,
@@ -1267,24 +1262,6 @@ function Form({
                                 />
                             );
                             break;
-                        case 'email':
-                            controlElement = (
-                                <BootstrapField
-                                    label={fieldLabel}
-                                    field={field}
-                                    type='email'
-                                    fieldValue={fieldVal}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        changeValue(val, field, index, false);
-                                        onChange();
-                                    }}
-                                    onClick={onClick}
-                                    pattern={emailPatternStr}
-                                    inlineError={inlineErr}
-                                />
-                            );
-                            break;
                         case 'pin_input':
                             controlElement = (
                                 <PinInput
@@ -1396,45 +1373,10 @@ function Form({
                                 </div>
                             );
                             break;
-                        case 'text_area':
-                            controlElement = (
-                                <BootstrapField
-                                    label={fieldLabel}
-                                    field={field}
-                                    type='textarea'
-                                    fieldValue={fieldVal}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        changeValue(val, field, index, false);
-                                        onChange();
-                                    }}
-                                    onClick={onClick}
-                                    rows={styles.num_rows}
-                                    inlineError={inlineErr}
-                                />
-                            );
-                            break;
-                        case 'url':
-                            controlElement = (
-                                <BootstrapField
-                                    label={fieldLabel}
-                                    field={field}
-                                    type='url'
-                                    fieldValue={fieldVal}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        changeValue(val, field, index, false);
-                                        onChange();
-                                    }}
-                                    onClick={onClick}
-                                    inlineError={inlineErr}
-                                />
-                            );
-                            break;
                         default:
                             controlElement = (
-                                <MaskedBootstrapField
-                                    {...getMaskProps(servar, fieldVal)}
+                                <MaskedTextField
+                                    {...getMaskProps(servar, styles, fieldVal)}
                                     unmask
                                     fieldValue={fieldVal}
                                     onClick={onClick}
@@ -1444,7 +1386,6 @@ function Form({
                                     }}
                                     label={fieldLabel}
                                     field={field}
-                                    type='text'
                                     ref={(r) => (maskedRef[servar.key] = r)}
                                     fieldMask={
                                         maskedRef[servar.key]?.maskRef?._value

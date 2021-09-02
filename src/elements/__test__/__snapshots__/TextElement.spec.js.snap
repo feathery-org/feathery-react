@@ -2,10 +2,10 @@
 
 exports[`Text renders a plaintext text block 1`] = `
 <div
-  className="css-kna6ir-TextElement"
+  className="css-13f5ulz-TextElement"
 >
   <div
-    className="css-pzhd6a-TextElement"
+    className="css-pc7kr-TextElement"
   >
     <span
       className="css-enkqi-generateNodes"
@@ -19,13 +19,13 @@ exports[`Text renders a plaintext text block 1`] = `
 
 exports[`Text renders a text block with custom styles 1`] = `
 <div
-  className="css-kna6ir-TextElement"
+  className="css-13f5ulz-TextElement"
 >
   <div
-    className="css-pzhd6a-TextElement"
+    className="css-pc7kr-TextElement"
   >
     <span
-      className="css-16rodpe-generateNodes"
+      className="css-1k1lbqh-generateNodes"
       onClick={[Function]}
     >
       Hello World!
@@ -36,10 +36,10 @@ exports[`Text renders a text block with custom styles 1`] = `
 
 exports[`Text renders an empty text block 1`] = `
 <div
-  className="css-kna6ir-TextElement"
+  className="css-13f5ulz-TextElement"
 >
   <div
-    className="css-pzhd6a-TextElement"
+    className="css-pc7kr-TextElement"
   >
     <span
       className="css-enkqi-generateNodes"

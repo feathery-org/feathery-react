@@ -206,19 +206,19 @@ function calculateStepCSS(step) {
     const dmw = mobile.definiteWidth;
     // If checks to prevent media query collisions
     if (ddw !== '478px' && ddw !== dmw) {
-        stepCSS[`@media (max-width: ${ddw})`] = {
+        stepCSS[`@media (maxWidth: ${ddw})`] = {
             width: ddw,
             gridTemplateColumns: desktop.relativeColumns.join(' ')
         };
     }
     if (dmw !== '478px') {
-        stepCSS['@media (max-width: 478px)'] = {
+        stepCSS['@media (maxWidth: 478px)'] = {
             width: mobile.relativeWidth,
             gridTemplateRows: mobile.relativeRows.join(' '),
             gridTemplateColumns: mobile.definiteColumns.join(' ')
         };
     }
-    stepCSS[`@media (max-width: ${dmw})`] = {
+    stepCSS[`@media (maxWidth: ${dmw})`] = {
         width: dmw,
         gridTemplateColumns: mobile.relativeColumns.join(' ')
     };

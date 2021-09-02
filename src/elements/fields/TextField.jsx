@@ -4,8 +4,9 @@ import { IMaskMixin } from 'react-imask';
 import React, { memo } from 'react';
 import ReactForm from 'react-bootstrap/Form';
 import InlineTooltip from '../../components/Tooltip';
+import { emailPatternStr } from '../../utils/formHelperFunctions';
 
-const BootstrapField = memo(
+const TextField = memo(
     ({
         label,
         field,
@@ -112,22 +113,11 @@ const BootstrapField = memo(
     }
 );
 
-function getMaskProps(servar, value) {
+const MaskedTextField = memo(IMaskMixin((props) => <TextField {...props} />));
+
+function getMaskProps(servar, styles, value) {
+    let methods;
     switch (servar.type) {
-        case 'login':
-            return {
-                mask: servar.metadata.login_methods.map((method) => {
-                    return {
-                        method,
-                        mask: method === 'phone' ? '(000) 000-0000' : /.+/
-                    };
-                }),
-                value
-            };
-        case 'phone_number':
-            return { mask: '+1 (000) 000-0000', value };
-        case 'ssn':
-            return { mask: '000 - 00 - 0000', value };
         case 'integer_field':
             return {
                 mask: servar.format === 'currency' ? '$num' : 'num',
@@ -139,7 +129,55 @@ function getMaskProps(servar, value) {
                         signed: false
                     }
                 },
-                value: value.toString()
+                value: value.toString(),
+                type: 'tel'
+            };
+        case 'email':
+            return {
+                mask: /.+/,
+                type: 'email',
+                pattern: emailPatternStr,
+                value
+            };
+        case 'login':
+            methods = servar.metadata.login_methods;
+            return {
+                mask: methods.map((method) => {
+                    return {
+                        method,
+                        mask: method === 'phone' ? '(000) 000-0000' : /.+/
+                    };
+                }),
+                type:
+                    methods.length === 1 && methods[0] === 'phone'
+                        ? 'tel'
+                        : 'text',
+                value
+            };
+        case 'phone_number':
+            return {
+                mask: '+1 (000) 000-0000',
+                type: 'tel',
+                value
+            };
+        case 'ssn':
+            return {
+                mask: '000 - 00 - 0000',
+                type: 'tel',
+                value
+            };
+        case 'text_area':
+            return {
+                mask: /.+/,
+                type: 'textarea',
+                rows: styles.num_rows,
+                value
+            };
+        case 'url':
+            return {
+                mask: /.+/,
+                type: 'url',
+                value
             };
         default:
             return {
@@ -149,8 +187,4 @@ function getMaskProps(servar, value) {
     }
 }
 
-const MaskedBootstrapField = memo(
-    IMaskMixin((props) => <BootstrapField {...props} />)
-);
-
-export { BootstrapField, MaskedBootstrapField, getMaskProps };
+export { MaskedTextField, getMaskProps };
