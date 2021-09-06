@@ -96,6 +96,15 @@ const dataURLToFile = (dataURL, name) => {
 const formatStepFields = (step, fieldValues, signatureRef) => {
     const formattedFields = {};
     step.servar_fields.forEach((field) => {
+        if (
+            shouldElementHide({
+                fields: step.servar_fields,
+                values: fieldValues,
+                element: field
+            })
+        )
+            return;
+
         const servar = field.servar;
         let value;
         if (servar.type === 'signature') {
