@@ -15,6 +15,7 @@ function SingleOtpInput({
     onChange,
     onKeyDown,
     onInput,
+    paste,
     onPaste,
     onFocus,
     onBlur,
@@ -32,6 +33,9 @@ function SingleOtpInput({
         if (inputEl && focus) {
             inputEl.focus();
             inputEl.select();
+            if (paste) {
+                inputEl.selectionStart = inputEl.selectionEnd;
+            }
         }
     }, [focus, input]);
 
@@ -69,6 +73,7 @@ function SingleOtpInput({
 
 function OtpInput({ onChange, onClick, value, field, inlineError }) {
     const [activeInput, setActiveInput] = useState(0);
+    const [pasted, setPasted] = useState(false);
     const [rawValue, setRawValue] = useState(value.toString().split(''));
 
     // Helper to return OTP from input
@@ -133,7 +138,11 @@ function OtpInput({ onChange, onClick, value, field, inlineError }) {
             .getData('text/plain')
             .slice(0, numInputs - activeInput)
             .split('');
+        var inputLength = pastedData.length;
         handleMultipleValues(pastedData);
+        if (activeInput + inputLength >= numInputs) {
+            setPasted(true);
+        }
     };
 
     const handleOnChange = (e) => {
@@ -186,9 +195,11 @@ function OtpInput({ onChange, onClick, value, field, inlineError }) {
                     onChange={handleOnChange}
                     onKeyDown={handleOnKeyDown}
                     onInput={handleOnInput}
+                    paste={pasted}
                     onPaste={handleOnPaste}
                     onFocus={(e) => {
                         setActiveInput(i);
+                        setPasted(false);
                         e.target.select();
                     }}
                     onBlur={() => setActiveInput(-1)}
