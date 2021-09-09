@@ -35,8 +35,8 @@ const generateNodes = ({
 
             let onClick = () => {};
             const attrs = op.attributes || {};
-            if (attrs.link) {
-                onClick = () => window.open(attrs.link, '_blank');
+            if (attrs.font_link) {
+                onClick = () => window.open(attrs.font_link, '_blank');
             } else if (isNum(attrs.start) && isNum(attrs.end)) {
                 onClick = () => {
                     handleRedirect({
