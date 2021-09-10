@@ -133,20 +133,11 @@ function injectRepeatedRows({ step, repeatedRowCount }) {
           ]
         : null;
 
-    const progressBar =
-        !step.progress_bar || step.progress_bar.row_index_end < rrStart
-            ? step.progress_bar
-            : {
-                  ...step.progress_bar,
-                  row_index: afterRowIndex(step.progress_bar.row_index),
-                  row_index_end: afterRowIndex(step.progress_bar.row_index_end)
-              };
-
     return {
         ...step,
-        progress_bar: progressBar,
         grid_rows: gridRows,
         mobile_grid_rows: mobileGridRows,
+        progress_bars: step.progress_bars.flatMap(unfold),
         servar_fields: step.servar_fields.flatMap(unfold),
         texts: step.texts.flatMap(unfold),
         buttons: step.buttons.flatMap(unfold),

@@ -646,8 +646,7 @@ function applyStepStyles(step) {
     step.texts.forEach((e) => getTextStyles(e, step.next_conditions));
     step.buttons.forEach((e) => getButtonStyles(e));
     step.servar_fields.forEach((e) => getFieldStyles(e));
-    const pb = step.progress_bar;
-    if (pb) getProgressBarStyles(pb);
+    step.progress_bars.forEach((e) => getProgressBarStyles(e));
     return step;
 }
 

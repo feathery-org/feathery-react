@@ -930,7 +930,6 @@ function Form({
         });
     };
 
-    const pb = activeStep.progress_bar;
     return (
         <ReactForm
             className={className}
@@ -947,19 +946,23 @@ function Form({
             }}
         >
             {children}
-            {pb &&
-                !shouldElementHide({
-                    fields: activeStep.servar_fields,
-                    values: fieldValues,
-                    element: pb
-                }) && (
+            {activeStep.progress_bars
+                .filter(
+                    (pb) =>
+                        !shouldElementHide({
+                            fields: activeStep.servar_fields,
+                            values: fieldValues,
+                            element: pb
+                        })
+                )
+                .map((pb) => (
                     <ProgressBarElement
                         key={reactFriendlyKey(pb)}
                         element={pb}
                         curDepth={curDepth}
                         maxDepth={maxDepth}
                     />
-                )}
+                ))}
             {activeStep.images
                 .filter(
                     (image) =>

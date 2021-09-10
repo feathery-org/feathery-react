@@ -22,9 +22,11 @@ describe('hydration', () => {
                 grid_rows: ['50px', '150px', '50px'],
                 grid_columns: ['150px', '1fr'],
                 mobile_grid_columns: ['30px'],
-                progress_bar: {
-                    column_index: 0
-                }
+                progress_bars: [
+                    {
+                        column_index: 0
+                    }
+                ]
             };
             const expected = {
                 backgroundColor: '#000000FF',
@@ -109,9 +111,11 @@ describe('hydration', () => {
                 images: [],
                 grid_rows: ['50px', '150px', '150px', '150px', '50px'],
                 grid_columns: ['150px', '50%'],
-                progress_bar: {
-                    column_index: 0
-                }
+                progress_bars: [
+                    {
+                        column_index: 0
+                    }
+                ]
             };
             const expected = {
                 backgroundColor: '#000000FF',
