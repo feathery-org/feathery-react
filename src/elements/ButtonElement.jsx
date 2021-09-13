@@ -94,7 +94,7 @@ function ButtonElement({
                     '&:hover:enabled': styles.getTarget('buttonHover'),
                     ...styles.getTarget('button')
                 }}
-                disabled={element.link === 'none'}
+                disabled={element.link === 'none' || showSpinner}
                 onClick={buttonOnClick}
             >
                 <div style={{ display: 'flex', position: 'relative' }}>
