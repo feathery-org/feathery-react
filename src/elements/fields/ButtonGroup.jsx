@@ -43,7 +43,7 @@ function ButtonGroup({
                                     step,
                                     updateFieldValues
                                 );
-                                onClick(e, true);
+                                onClick(e, field.link === 'submit');
                             }}
                             key={opt}
                             css={{
