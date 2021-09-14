@@ -143,14 +143,15 @@ class ApplyStyles {
     applySelectorStyles(target, prefix) {
         this.applyBorders(target, prefix);
         if (this.styles[`${prefix}background_color`]) {
-            this.apply(target, `${prefix}background_color`, (a) => ({
-                backgroundColor: `#${a} !important`
-            }));
+            this.applyColor(
+                target,
+                `${prefix}background_color`,
+                'backgroundColor',
+                true
+            );
         }
         if (this.styles[`${prefix}font_color`]) {
-            this.apply(target, `${prefix}font_color`, (a) => ({
-                color: `#${a} !important`
-            }));
+            this.applyColor(target, `${prefix}font_color`, 'color', true);
         }
     }
 
@@ -204,6 +205,14 @@ class ApplyStyles {
         this.apply(target, ['width', 'width_unit'], (a, b) => ({
             width: `${a}${b}`
         }));
+    }
+
+    applyColor(target, jsonProp, cssProp, important = false) {
+        this.apply(target, jsonProp, (color) => {
+            color = `${color === 'transparent' ? color : `#${color}`}`;
+            if (important) color = `${color} !important`;
+            return { [cssProp]: color };
+        });
     }
 
     applyFontStyles(target, placeholder = false) {
@@ -442,7 +451,7 @@ function getFieldStyles(field) {
     styles.applySelectorStyles('active', 'selected_');
     styles.applySelectorStyles('hover', 'hover_');
     styles.apply('error', 'font_family', (a) => ({
-        fontFamily: `#${a}`
+        fontFamily: a
     }));
     styles.apply('error', 'font_size', (a) => ({
         fontSize: `${a}px`
@@ -454,9 +463,7 @@ function getFieldStyles(field) {
             styles.apply('fc', 'width', (a) => ({
                 width: `${a}px`
             }));
-            styles.apply('field', 'background_color', (a) => ({
-                backgroundColor: `#${a}`
-            }));
+            styles.applyColor('field', 'background_color', 'backgroundColor');
             styles.applyCorners('field');
             styles.applyBorders('field');
             styles.applyBoxShadow('field');
@@ -476,9 +483,7 @@ function getFieldStyles(field) {
                     padding: `${a}px ${b}px ${c}px ${d}px`
                 })
             );
-            styles.apply('field', 'background_color', (a) => ({
-                backgroundColor: `#${a}`
-            }));
+            styles.applyColor('field', 'background_color', 'backgroundColor');
             break;
         case 'rich_multi_file_upload':
             styles.addTargets('ac', 'add');
@@ -510,22 +515,18 @@ function getFieldStyles(field) {
                     padding: `${a}px ${b}px ${c}px ${d}px`
                 })
             );
-            styles.apply('add', 'background_color', (a) => ({
-                backgroundColor: `#${a}`
-            }));
+            styles.applyColor('add', 'background_color', 'backgroundColor');
             break;
         case 'button_group':
             styles.apply('fc', 'layout', (a) => ({
-                alignItems: `#${a}`
+                alignItems: a
             }));
             styles.apply('fc', 'vertical_layout', (a) => ({
                 justifyContent: a
             }));
             styles.applyHeight('field');
             styles.applyWidth('field');
-            styles.apply('field', 'background_color', (a) => ({
-                backgroundColor: `#${a}`
-            }));
+            styles.applyColor('field', 'background_color', 'backgroundColor');
             styles.applyBoxShadow('field');
             styles.applyCorners('field');
             styles.applyBorders('field');
@@ -542,9 +543,7 @@ function getFieldStyles(field) {
             styles.applyCorners('field');
             styles.applyHeight('field');
             styles.applyBoxShadow('field');
-            styles.apply('field', 'background_color', (a) => ({
-                backgroundColor: `#${a}`
-            }));
+            styles.applyColor('field', 'background_color', 'backgroundColor');
             break;
         case 'pin_input':
             styles.applyMargin('fc');
@@ -552,15 +551,11 @@ function getFieldStyles(field) {
             styles.applyHeight('field');
             styles.applyBoxShadow('field');
             styles.applyCorners('field');
-            styles.apply('field', 'background_color', (a) => ({
-                backgroundColor: `#${a}`
-            }));
+            styles.applyColor('field', 'background_color', 'backgroundColor');
             styles.apply('field', 'font_size', (a) => ({
                 fontSize: `${a}px`
             }));
-            styles.apply('field', 'font_color', (a) => ({
-                color: `#${a}`
-            }));
+            styles.applyColor('field', 'font_color', 'color');
             break;
         case 'multiselect':
             styles.applyMargin('fc');
@@ -568,9 +563,7 @@ function getFieldStyles(field) {
             styles.applyBorders('field');
             styles.applyBoxShadow('field');
             styles.applyFontStyles('field');
-            styles.apply('field', 'background_color', (a) => ({
-                backgroundColor: `#${a}`
-            }));
+            styles.applyColor('field', 'background_color', 'backgroundColor');
             styles.apply('field', 'font_size', (a) => ({
                 height: `${parseInt(a) + 4}px`
             }));
@@ -581,9 +574,7 @@ function getFieldStyles(field) {
             styles.applyBorders('field');
             styles.applyBoxShadow('field');
             styles.applyFontStyles('field');
-            styles.apply('field', 'background_color', (a) => ({
-                backgroundColor: `#${a}`
-            }));
+            styles.applyColor('field', 'background_color', 'backgroundColor');
             styles.apply('field', 'font_size', (a) => ({
                 height: `${parseInt(a) + 4}px`
             }));
@@ -608,9 +599,7 @@ function getFieldStyles(field) {
             styles.applyCorners('field');
             styles.applyBorders('field');
             styles.applyFontStyles('field');
-            styles.apply('field', 'background_color', (a) => ({
-                backgroundColor: `#${a}`
-            }));
+            styles.applyColor('field', 'background_color', 'backgroundColor');
             styles.applyFontStyles('placeholder', true);
             styles.apply('placeholder', 'font_size', (a) => ({
                 lineHeight: `${a}px`
@@ -630,12 +619,10 @@ function getFieldStyles(field) {
                     };
                 });
                 if (styles.selected_placeholder_color) {
-                    styles.apply(
+                    styles.applyColor(
                         'placeholderActive',
                         'selected_placeholder_color',
-                        (a) => ({
-                            color: `#${a}`
-                        })
+                        'color'
                     );
                 }
                 styles.apply('field', ['height', 'height_unit'], (a, b) => ({
