@@ -2,10 +2,10 @@
 
 exports[`ButtonElement renders a button with custom styles 1`] = `
 <div
-  className="css-1wlrtcl-ButtonElement"
+  className="css-n00kzt-ButtonElement"
 >
   <button
-    className="css-1wth4m0-ButtonElement btn btn-primary"
+    className="css-j96s3f-ButtonElement btn btn-primary"
     disabled={false}
     onClick={[Function]}
     style={
@@ -29,7 +29,7 @@ exports[`ButtonElement renders a button with custom styles 1`] = `
       }
     >
       <span
-        className="css-1k1lbqh-generateNodes"
+        className="css-16rodpe-generateNodes"
         onClick={[Function]}
       >
         Hello World!
@@ -41,10 +41,10 @@ exports[`ButtonElement renders a button with custom styles 1`] = `
 
 exports[`ButtonElement renders a button with plain text 1`] = `
 <div
-  className="css-1wlrtcl-ButtonElement"
+  className="css-n00kzt-ButtonElement"
 >
   <button
-    className="css-1wth4m0-ButtonElement btn btn-primary"
+    className="css-j96s3f-ButtonElement btn btn-primary"
     disabled={false}
     onClick={[Function]}
     style={
@@ -80,10 +80,10 @@ exports[`ButtonElement renders a button with plain text 1`] = `
 
 exports[`ButtonElement renders an empty Button element 1`] = `
 <div
-  className="css-1wlrtcl-ButtonElement"
+  className="css-n00kzt-ButtonElement"
 >
   <button
-    className="css-jnnik-ButtonElement btn btn-primary"
+    className="css-jvbg1j-ButtonElement btn btn-primary"
     disabled={false}
     onClick={[Function]}
     style={
