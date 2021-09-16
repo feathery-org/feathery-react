@@ -36,13 +36,13 @@ describe('hydration', () => {
                     'minmax(50px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
                 width: '100%',
                 gridTemplateColumns: '150px 1fr',
-                '@media (maxWidth: 478px)': {
+                '@media (max-width: 478px)': {
                     width: '30px',
                     gridTemplateRows:
                         'minmax(50px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
                     gridTemplateColumns: '30px'
                 },
-                '@media (maxWidth: 150px)': {
+                '@media (max-width: 150px)': {
                     width: '150px',
                     gridTemplateColumns: '100% 0'
                 }
@@ -125,13 +125,13 @@ describe('hydration', () => {
                     'minmax(50px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
                 width: '100%',
                 gridTemplateColumns: '150px 50%',
-                '@media (maxWidth: 478px)': {
+                '@media (max-width: 478px)': {
                     width: '100%',
                     gridTemplateRows:
                         'minmax(50px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
                     gridTemplateColumns: '150px 50%'
                 },
-                '@media (maxWidth: 150px)': {
+                '@media (max-width: 150px)': {
                     width: '150px',
                     gridTemplateColumns: '100% 0'
                 }

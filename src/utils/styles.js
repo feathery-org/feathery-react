@@ -54,7 +54,7 @@ class ApplyStyles {
                     mobileLayout[key] = mVal;
                 }
             });
-            layout['@media (maxWidth: 478px)'] = mobileLayout;
+            layout['@media (max-width: 478px)'] = mobileLayout;
         }
 
         return layout;
@@ -71,7 +71,7 @@ class ApplyStyles {
     getTarget(target) {
         return {
             ...this.targets[target],
-            '@media (maxWidth: 478px)': this.mobileTargets[target]
+            '@media (max-width: 478px)': this.mobileTargets[target]
         };
     }
 
@@ -207,6 +207,12 @@ class ApplyStyles {
         }));
     }
 
+    applyVisibility(target) {
+        this.apply(target, 'visibility', (a) => ({
+            visibility: a
+        }));
+    }
+
     applyColor(target, jsonProp, cssProp, important = false) {
         this.apply(target, jsonProp, (color) => {
             color = `${color === 'transparent' ? color : `#${color}`}`;
@@ -269,7 +275,7 @@ class ApplyStyles {
 
                 this.element.richFontStyles[i] = {
                     ...desktop,
-                    '@media (maxWidth: 478px)': mobile
+                    '@media (max-width: 478px)': mobile
                 };
             });
     }
@@ -307,6 +313,7 @@ function getImageStyles(element) {
 
     as.applyMargin('image');
     as.applyWidth('image');
+    as.applyVisibility('container');
 
     if (element.styles.line_height) {
         as.apply('text', 'line_height', (a) => ({
@@ -326,6 +333,7 @@ function getProgressBarStyles(element) {
         alignItems: a
     }));
     as.applyFontStyles('container');
+    as.applyVisibility('container');
 
     as.apply('barContainer', 'vertical_layout', (a) => ({
         justifyContent: a
@@ -354,6 +362,7 @@ function getTextStyles(element, conditions) {
     as.apply('container', 'vertical_layout', (a) => ({
         justifyContent: a
     }));
+    as.applyVisibility('container');
     if (element.styles.border_color) {
         as.apply('container', 'border_color', (a) => ({
             border: `1px solid #${a}`
@@ -386,6 +395,7 @@ function getButtonStyles(element) {
     as.apply('container', 'vertical_layout', (a) => ({
         justifyContent: a
     }));
+    as.applyVisibility('container');
 
     as.apply('button', 'background_color', (a) => ({
         backgroundColor: `#${a}`
