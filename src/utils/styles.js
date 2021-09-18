@@ -300,6 +300,43 @@ class ApplyStyles {
 
         return styles;
     }
+
+    applyPlaceholderStyles(type, styles) {
+        this.addTargets('placeholder', 'placeholderActive', 'placeholderFocus');
+        this.applyFontStyles('placeholder', true);
+        this.apply('placeholder', 'font_size', (a) => ({
+            lineHeight: `${a}px`
+        }));
+        if (type !== 'text_area') {
+            this.apply('placeholder', 'font_size', (a) => ({
+                marginTop: `-${a / 2}px`
+            }));
+        }
+        if (styles.placeholder_transition === 'shrink_top') {
+            this.apply('placeholderFocus', 'font_size', (a) => {
+                const minFontSize = Math.min(a, 10);
+                return {
+                    top: 0,
+                    marginTop: `${minFontSize / 2}px`,
+                    fontSize: `${minFontSize}px`
+                };
+            });
+            if (styles.selected_placeholder_color) {
+                this.apply(
+                    'placeholderActive',
+                    'selected_placeholder_color',
+                    (a) => ({
+                        color: `#${a}`
+                    })
+                );
+            }
+            this.apply('field', ['height', 'height_unit'], (a, b) => ({
+                paddingTop: `${a / 3}${b}`
+            }));
+        } else {
+            this.setStyle('placeholderFocus', 'display', 'none');
+        }
+    }
 }
 
 function getImageStyles(element) {
@@ -547,6 +584,8 @@ function getFieldStyles(field) {
             break;
         case 'dropdown':
         case 'gmap_state':
+            styles.addTargets('sub-fc');
+            styles.applyHeight('sub-fc');
             styles.applyMargin('fc');
             styles.applyWidth('fc');
             styles.applyBorders('field');
@@ -554,6 +593,7 @@ function getFieldStyles(field) {
             styles.applyHeight('field');
             styles.applyBoxShadow('field');
             styles.applyColor('field', 'background_color', 'backgroundColor');
+            styles.applyPlaceholderStyles(type, field.styles);
             break;
         case 'pin_input':
             styles.applyMargin('fc');
@@ -595,13 +635,7 @@ function getFieldStyles(field) {
             styles.applyBorders('field');
             break;
         default:
-            styles.addTargets(
-                'sub-fc',
-                'placeholder',
-                'placeholderActive',
-                'placeholderFocus',
-                'tooltipIcon'
-            );
+            styles.addTargets('sub-fc', 'tooltipIcon');
             styles.applyMargin('fc');
             styles.applyWidth('fc');
             styles.applyHeight('sub-fc');
@@ -610,38 +644,7 @@ function getFieldStyles(field) {
             styles.applyBorders('field');
             styles.applyFontStyles('field');
             styles.applyColor('field', 'background_color', 'backgroundColor');
-            styles.applyFontStyles('placeholder', true);
-            styles.apply('placeholder', 'font_size', (a) => ({
-                lineHeight: `${a}px`
-            }));
-            if (type !== 'text_area') {
-                styles.apply('placeholder', 'font_size', (a) => ({
-                    marginTop: `-${a / 2}px`
-                }));
-            }
-            if (field.styles.placeholder_transition === 'shrink_top') {
-                styles.apply('placeholderFocus', 'font_size', (a) => {
-                    const minFontSize = Math.min(a, 10);
-                    return {
-                        top: 0,
-                        marginTop: `${minFontSize / 2}px`,
-                        fontSize: `${minFontSize}px`
-                    };
-                });
-                if (styles.selected_placeholder_color) {
-                    styles.applyColor(
-                        'placeholderActive',
-                        'selected_placeholder_color',
-                        'color'
-                    );
-                }
-                styles.apply('field', ['height', 'height_unit'], (a, b) => ({
-                    paddingTop: `${a / 3}${b}`
-                }));
-            } else {
-                styles.setStyle('placeholderFocus', 'display', 'none');
-            }
-
+            styles.applyPlaceholderStyles(type, field.styles);
             styles.apply('tooltipIcon', 'font_size', (a) => ({
                 width: `${a}px`
             }));
