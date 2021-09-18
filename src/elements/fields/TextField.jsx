@@ -58,7 +58,10 @@ const TextField = memo(
                             ...applyStyles.getTarget('field'),
                             ...(inlineError ? { borderColor: '#F42525' } : {}),
                             '&:focus': applyStyles.getTarget('active'),
-                            '&:hover': applyStyles.getTarget('hover')
+                            '&:hover': applyStyles.getTarget('hover'),
+                            '&:not(:focus)': fieldValue
+                                ? {}
+                                : { color: 'transparent' }
                         }}
                         maxLength={servar.max_length}
                         minLength={servar.min_length}
@@ -77,7 +80,7 @@ const TextField = memo(
                             transition: '0.2s ease all',
                             top: rows === undefined ? '50%' : '0.375rem',
                             ...applyStyles.getTarget('placeholder'),
-                            ...(fieldValue || fieldMask
+                            ...(fieldValue
                                 ? applyStyles.getTarget('placeholderFocus')
                                 : {}),
                             [`${inputType}:focus + &`]: {
