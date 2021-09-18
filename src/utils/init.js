@@ -62,7 +62,7 @@ function init(apiKey, options = {}) {
             });
 
             if (!initState.userKey) initState.userKey = uuidv4();
-            document.cookie = `feathery-user-id=${initState.userKey}; max-age=31536000`;
+            document.cookie = `feathery-user-id=${initState.userKey}; max-age=31536000; SameSite=strict`;
             initFormsPromise = _fetchFormData(options.formKeys);
         }
     }

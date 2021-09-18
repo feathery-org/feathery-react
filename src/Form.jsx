@@ -724,11 +724,9 @@ function Form({
                             window.firebaseRecaptchaVerifier
                                 .render()
                                 .then(function (widgetId) {
-                                    // Fire reCaptcha
+                                    // Reset reCaptcha
                                     // eslint-disable-next-line no-undef
                                     grecaptcha.reset(widgetId);
-                                    // eslint-disable-next-line no-undef
-                                    grecaptcha.execute();
                                 });
                             return {
                                 errorMessage: error.message,

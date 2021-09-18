@@ -1,5 +1,8 @@
 import getRandomBoolean from './random';
+import libphonenumber from 'google-libphonenumber';
 import { initInfo } from './init';
+
+const phoneValidator = libphonenumber.PhoneNumberUtil.getInstance();
 
 const states = [
     'Alabama',
@@ -60,7 +63,13 @@ const emailPatternStr =
     "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:.[a-zA-Z0-9-]+)+$";
 const emailPattern = new RegExp(emailPatternStr);
 
-const methodPatternMap = { email: emailPattern, phone: phonePattern };
+const validators = {
+    email: (a) => emailPattern.test(a),
+    phone: (a) => {
+        const number = phoneValidator.parseAndKeepRawInput(a, 'US');
+        return phoneValidator.isValidNumberForRegion(number, 'US');
+    }
+};
 
 function adjustColor(color, amount) {
     return (
@@ -384,7 +393,7 @@ function getFieldError(value, servar, signatureRef) {
     }
 
     // Check if value is badly formatted
-    if (servar.type === 'phone_number' && !phonePattern.test(value)) {
+    if (servar.type === 'phone_number' && !validators.phone(value)) {
         return 'Invalid phone number';
     } else if (servar.type === 'email' && !emailPattern.test(value)) {
         return 'Invalid email format';
@@ -396,11 +405,15 @@ function getFieldError(value, servar, signatureRef) {
     ) {
         return 'Please enter a full code';
     } else if (servar.type === 'login') {
-        let validFormat = false;
+        let validFormat = true;
+        let invalidType = '';
         servar.metadata.login_methods.forEach((method) => {
-            validFormat = validFormat || methodPatternMap[method].test(value);
+            if (!validators[method](value)) {
+                validFormat = false;
+                invalidType = method;
+            }
         });
-        if (!validFormat) return 'Please enter a valid login';
+        if (!validFormat) return `Please enter a valid ${invalidType}`;
     }
 
     // No error
