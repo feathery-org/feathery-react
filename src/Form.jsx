@@ -955,7 +955,7 @@ function Form({
                 )
                 .map((pb) => (
                     <ProgressBarElement
-                        key={reactFriendlyKey(pb)}
+                        key={`pb-${pb.column_index}-${pb.column_index_end}-${pb.row_index}-${pb.row_index_end}`}
                         element={pb}
                         curDepth={curDepth}
                         maxDepth={maxDepth}
@@ -1381,6 +1381,7 @@ function Form({
                             controlElement = (
                                 <MaskedTextField
                                     {...getMaskProps(servar, styles, fieldVal)}
+                                    lazy={false}
                                     unmask
                                     fieldValue={fieldVal}
                                     onClick={onClick}
