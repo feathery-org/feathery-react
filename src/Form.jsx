@@ -936,11 +936,15 @@ function Form({
                 ...stepCSS,
                 ...style
             }}
-            onSubmit={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                // eslint-disable-next-line no-unused-expressions
-                submitRef?.current();
+            onKeyDown={(e) => {
+                // Skip 1-input steps by pressing `Enter`
+                if (
+                    e.key === 'Enter' &&
+                    activeStep.servar_fields.length === 1
+                ) {
+                    // eslint-disable-next-line no-unused-expressions
+                    submitRef?.current();
+                }
             }}
         >
             {children}
