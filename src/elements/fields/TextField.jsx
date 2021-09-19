@@ -68,6 +68,10 @@ const TextField = memo(
                         required={servar.required}
                         onChange={onChange}
                         onClick={onClick}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && inputType === 'textarea')
+                                e.stopPropagation();
+                        }}
                         autoComplete={servar.metadata.autocomplete || 'on'}
                         placeholder=''
                         {...props}
