@@ -461,21 +461,23 @@ function getInlineError(field, inlineErrors) {
 function shouldElementHide({ fields, values, element }) {
     // eslint-disable-next-line camelcase
     const hideIf = element.hide_if;
-
-    if (!hideIf?.servar || !hideIf?.comparison) {
-        return false;
-    }
+    if (!hideIf) return false;
 
     // Get the target value (taking repeated elements into account)
-    const targets = fields.filter((field) => field.servar.id === hideIf.servar);
-    const target = targets[element.repeat ?? 0];
+    let value = '';
+    if (hideIf.field_type === 'servar') {
+        const targets = fields.filter(
+            (field) => field.servar.id === hideIf.servar
+        );
+        const target = targets[element.repeat ?? 0];
 
-    // If the field we're based on isn't there, don't hide
-    if (!target) {
-        return false;
+        // If the field we're based on isn't there, don't hide
+        if (!target) return false;
+
+        value = getFieldValue(target, values).value;
+    } else if (hideIf.field_type === 'custom') {
+        value = values[hideIf.custom];
     }
-
-    const { value } = getFieldValue(target, values);
 
     // If the hideIf value is an empty string, we want to match on the "empty" value of a field
     // This could be null, undefined, an empty array, or an empty string
