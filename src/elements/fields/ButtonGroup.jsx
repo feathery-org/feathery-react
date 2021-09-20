@@ -43,7 +43,7 @@ function ButtonGroup({
                                     step,
                                     updateFieldValues
                                 );
-                                onClick(e, field.link === 'submit');
+                                onClick(e, field.submit_trigger === 'auto');
                             }}
                             key={opt}
                             css={{

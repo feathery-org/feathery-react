@@ -1,4 +1,7 @@
-import { MaskedTextField, getMaskProps } from './elements/fields/TextField';
+import {
+    MaskedTextField,
+    getTextFieldProps, textFieldShouldSubmit
+} from "./elements/fields/TextField";
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import {
     ButtonElement,
@@ -891,6 +894,7 @@ function Form({
         elementRepeatIndex = 0
     }) => ({
         trigger = 'field',
+        submitData = false,
         integrationData = null,
         // Multi-file upload is not a repeated row but a repeated field
         valueRepeatIndex = null
@@ -919,13 +923,16 @@ function Form({
                 setOptions: updateFieldOptions(steps)
             });
         }
-        handleRedirect({
-            metadata: {
-                elementType: 'field',
-                elementIDs: fieldIDs,
-                trigger: 'change'
-            }
-        });
+        const metadata = {
+            elementType: 'field',
+            elementIDs: fieldIDs,
+            trigger: 'change'
+        };
+        if (submitData) {
+            // Simulate button click if available
+            if (submitRef.current) submitRef.current();
+            else submit(metadata, elementRepeatIndex);
+        } else handleRedirect({ metadata });
     };
 
     return (
@@ -939,11 +946,12 @@ function Form({
             onKeyDown={(e) => {
                 // Skip 1-input steps by pressing `Enter`
                 if (
+                    submitRef.current &&
                     e.key === 'Enter' &&
                     activeStep.servar_fields.length === 1
                 ) {
-                    // eslint-disable-next-line no-unused-expressions
-                    submitRef?.current();
+                    // Simulate button click if available
+                    submitRef.current();
                 }
             }}
         >
@@ -1107,7 +1115,7 @@ function Form({
 
                     const styles = field.styles;
 
-                    let controlElement;
+                    let controlElement, fieldProps;
                     switch (servar.type) {
                         case 'signature':
                             controlElement = (
@@ -1151,7 +1159,11 @@ function Form({
                                                 field,
                                                 index
                                             );
-                                            onChange();
+                                            onChange({
+                                                submitData:
+                                                    field.submit_trigger ===
+                                                        'auto' && file
+                                            });
                                         }}
                                         onClick={onClick}
                                         style={{
@@ -1166,12 +1178,17 @@ function Form({
                                 <RichFileUploader
                                     field={field}
                                     onChange={(files) => {
+                                        const fileVal = files[0];
                                         updateFilePathMap(
                                             servar.key,
                                             servar.repeated ? index : null
                                         );
-                                        changeValue(files[0], field, index);
-                                        onChange();
+                                        changeValue(fileVal, field, index);
+                                        onChange({
+                                            submitData:
+                                                field.submit_trigger ===
+                                                    'auto' && fileVal
+                                        });
                                     }}
                                     onClick={onClick}
                                     initialFile={fieldVal}
@@ -1189,7 +1206,8 @@ function Form({
                                         );
                                         changeValue(files, field, index);
                                         onChange({
-                                            valueRepeatIndex: fieldIndex
+                                            valueRepeatIndex: fieldIndex,
+                                            submitData: false
                                         });
                                     }}
                                     onClick={onClick}
@@ -1238,21 +1256,6 @@ function Form({
                             );
                             break;
                         case 'dropdown':
-                            controlElement = (
-                                <Dropdown
-                                    field={field}
-                                    fieldLabel={fieldLabel}
-                                    fieldVal={fieldVal}
-                                    onClick={onClick}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        changeValue(val, field, index);
-                                        onChange();
-                                    }}
-                                    inlineError={inlineErr}
-                                />
-                            );
-                            break;
                         case 'gmap_state':
                             controlElement = (
                                 <Dropdown
@@ -1263,10 +1266,18 @@ function Form({
                                     onChange={(e) => {
                                         const val = e.target.value;
                                         changeValue(val, field, index);
-                                        onChange();
+                                        onChange({
+                                            submitData:
+                                                field.submit_trigger ===
+                                                    'auto' && val
+                                        });
                                     }}
                                     inlineError={inlineErr}
-                                    type='states'
+                                    type={
+                                        servar.type === 'gmap_state'
+                                            ? 'states'
+                                            : 'default'
+                                    }
                                 />
                             );
                             break;
@@ -1279,6 +1290,13 @@ function Form({
                                     onClick={onClick}
                                     onChange={(val) => {
                                         changeValue(val, field, index, false);
+                                        onChange({
+                                            submitData:
+                                                field.submit_trigger ===
+                                                    'auto' &&
+                                                val.length ===
+                                                    field.servar.max_length
+                                        });
                                         onChange();
                                     }}
                                     inlineError={inlineErr}
@@ -1311,14 +1329,15 @@ function Form({
                                     fieldVal={fieldVal}
                                     otherVal={otherVal}
                                     onChange={(e, change = true) => {
+                                        const val = e.target.value;
                                         if (change) {
-                                            changeValue(
-                                                e.target.value,
-                                                field,
-                                                index
-                                            );
+                                            changeValue(val, field, index);
                                         }
-                                        onChange();
+                                        onChange({
+                                            submitData:
+                                                field.submit_trigger ===
+                                                    'auto' && val
+                                        });
                                     }}
                                     handleOtherStateChange={
                                         handleOtherStateChange
@@ -1373,7 +1392,11 @@ function Form({
                                                     handleColorChange(
                                                         servar.key
                                                     )(color);
-                                                    onChange();
+                                                    onChange({
+                                                        submitData:
+                                                            field.submit_trigger ===
+                                                                'auto' && color
+                                                    });
                                                 }}
                                             />
                                         </div>
@@ -1382,16 +1405,24 @@ function Form({
                             );
                             break;
                         default:
+                            fieldProps = getTextFieldProps(
+                                servar,
+                                styles,
+                                fieldVal
+                            );
                             controlElement = (
                                 <MaskedTextField
-                                    {...getMaskProps(servar, styles, fieldVal)}
+                                    {...fieldProps}
                                     lazy={false}
                                     unmask
                                     fieldValue={fieldVal}
                                     onClick={onClick}
                                     onAccept={(val) => {
                                         changeValue(val, field, index, false);
-                                        onChange();
+                                        const submitData =
+                                            field.submit_trigger === 'auto' &&
+                                            textFieldShouldSubmit(servar, val);
+                                        onChange({ submitData });
                                     }}
                                     label={fieldLabel}
                                     field={field}

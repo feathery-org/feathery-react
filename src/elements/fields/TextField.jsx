@@ -122,8 +122,24 @@ const TextField = memo(
 
 const MaskedTextField = memo(IMaskMixin((props) => <TextField {...props} />));
 
-function getMaskProps(servar, styles, value) {
-    let methods;
+function textFieldShouldSubmit(servar, value) {
+    let methods, onlyPhone;
+    switch (servar.type) {
+        case 'login':
+            methods = servar.metadata.login_methods;
+            onlyPhone = methods.length === 1 && methods[0] === 'phone';
+            return onlyPhone && value.length === 10;
+        case 'phone_number':
+            return value.length === 10;
+        case 'ssn':
+            return value.length === 9;
+        default:
+            return false;
+    }
+}
+
+function getTextFieldProps(servar, styles, value) {
+    let methods, onlyPhone;
     switch (servar.type) {
         case 'integer_field':
             return {
@@ -148,6 +164,7 @@ function getMaskProps(servar, styles, value) {
             };
         case 'login':
             methods = servar.metadata.login_methods;
+            onlyPhone = methods.length === 1 && methods[0] === 'phone';
             return {
                 mask: methods.map((method) => {
                     return {
@@ -155,10 +172,7 @@ function getMaskProps(servar, styles, value) {
                         mask: method === 'phone' ? '(000) 000-0000' : /.+/
                     };
                 }),
-                type:
-                    methods.length === 1 && methods[0] === 'phone'
-                        ? 'tel'
-                        : 'text',
+                type: onlyPhone ? 'tel' : 'text',
                 value
             };
         case 'phone_number':
@@ -194,4 +208,4 @@ function getMaskProps(servar, styles, value) {
     }
 }
 
-export { MaskedTextField, getMaskProps };
+export { MaskedTextField, getTextFieldProps, textFieldShouldSubmit };
