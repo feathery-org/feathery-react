@@ -59,9 +59,10 @@ const TextField = memo(
                             ...(inlineError ? { borderColor: '#F42525' } : {}),
                             '&:focus': applyStyles.getTarget('active'),
                             '&:hover': applyStyles.getTarget('hover'),
-                            '&:not(:focus)': fieldValue
-                                ? {}
-                                : { color: 'transparent' }
+                            '&:not(:focus)':
+                                fieldValue || !field.placeholder
+                                    ? {}
+                                    : { color: 'transparent' }
                         }}
                         maxLength={servar.max_length}
                         minLength={servar.min_length}
