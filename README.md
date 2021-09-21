@@ -7,7 +7,7 @@
 Feathery is a low-code tool for product teams to build best-in-class product forms. It replaces your form libraries and `<input/>` elements -- don't reinvent the wheel.
 
 ## Documentation
-For details on how to use this library, check out our [documentation](https://docs.feathery.tech/react-overview).
+For details on how to use this library, check out our [documentation](https://docs.feathery.tech/react/react-overview).
 
 ## License
 [BSL](https://github.com/feathery-org/feathery-react/blob/master/LICENSE)
