@@ -16,6 +16,7 @@ const defaultOptions = {
 };
 const initState = {
     initialized: false,
+    tracking: '',
     apiKey: '',
     userKey: '',
     authId: '',
@@ -40,11 +41,16 @@ function init(apiKey, options = {}) {
     }
 
     initState.apiKey = apiKey;
-    ['authId', 'authToken', 'authEmail', 'authPhoneNumber', 'userKey'].forEach(
-        (key) => {
-            if (options[key]) initState[key] = options[key];
-        }
-    );
+    [
+        'authId',
+        'authToken',
+        'authEmail',
+        'authPhoneNumber',
+        'userKey',
+        'tracking'
+    ].forEach((key) => {
+        if (options[key]) initState[key] = options[key];
+    });
 
     if (initState.userKey) initFormsPromise = _fetchFormData(options.formKeys);
     else {
@@ -168,4 +174,20 @@ function initInfo() {
     return initState;
 }
 
-export { init, initInfo, initializeIntegrations, initState, initFormsPromise };
+function updateUserKey(newUserKey) {
+    new Client().updateUserKey(newUserKey).then(() => {
+        initState.userKey = newUserKey;
+        if (initState.tracking === 'cookie') {
+            document.cookie = `feathery-user-id=${newUserKey}; max-age=31536000; SameSite=strict`;
+        }
+    });
+}
+
+export {
+    init,
+    initInfo,
+    initializeIntegrations,
+    updateUserKey,
+    initState,
+    initFormsPromise
+};

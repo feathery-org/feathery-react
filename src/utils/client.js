@@ -37,6 +37,27 @@ export default class Client {
         }
     }
 
+    updateUserKey(newUserKey) {
+        const { apiKey, userKey: oldUserKey } = initInfo();
+        const data = {
+            new_fuser_key: newUserKey,
+            ...(oldUserKey ? { fuser_key: oldUserKey } : {})
+        };
+        const url = `${API_URL}api/fuser/update_key/`;
+        const options = {
+            cache: 'no-store',
+            headers: {
+                Authorization: 'Token ' + apiKey,
+                'Content-Type': 'application/json'
+            },
+            method: 'PATCH',
+            body: JSON.stringify(data)
+        };
+        return fetch(url, options).then((response) => {
+            this._checkResponseSuccess(response);
+        });
+    }
+
     async fetchForm() {
         await initFormsPromise;
         const { apiKey, forms } = initInfo();
