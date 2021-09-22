@@ -242,7 +242,7 @@ function Form({
             ([key, val]) => !val || !fieldValues[key]
         );
         fieldValuesRef.current = {
-            ...fieldValues,
+            ...fieldValuesRef.current,
             ...newFieldValues
         };
         fieldValues = fieldValuesRef.current;
