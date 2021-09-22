@@ -15,16 +15,14 @@ function Dropdown({
 }) {
     const { servar, applyStyles } = field;
 
-    let placeholder, options;
+    let options;
     if (type === 'states') {
-        placeholder = 'State';
         options = states.map((state) => (
             <option key={state} value={state}>
                 {state}
             </option>
         ));
     } else {
-        placeholder = 'Select...';
         options = servar.metadata.options.map((option) => (
             <option key={option} value={option}>
                 {option}
@@ -91,7 +89,7 @@ function Dropdown({
                         }
                     }}
                 >
-                    {field.placeholder || placeholder}
+                    {field.placeholder || ''}
                 </span>
             </div>
             {inlineError && (
