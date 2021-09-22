@@ -1,7 +1,8 @@
 import {
     MaskedTextField,
-    getTextFieldProps, textFieldShouldSubmit
-} from "./elements/fields/TextField";
+    getTextFieldProps,
+    textFieldShouldSubmit
+} from './elements/fields/TextField';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import {
     ButtonElement,

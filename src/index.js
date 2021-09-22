@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import Form from './Form';
-import { init } from './utils/init';
+import { init, updateUserKey } from './utils/init';
 
 /**
  * Utility function which renders a form with the provided props in the DOM element with the provided ID.
@@ -13,6 +13,6 @@ function renderAt(elementId, props) {
     ReactDOM.render(<Form {...props} />, container);
 }
 
-const Feathery = { Form, init, renderAt };
+const Feathery = { Form, init, updateUserKey, renderAt };
 
 export { Feathery };
