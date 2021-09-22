@@ -27,9 +27,14 @@ exports[`RichFileUploader renders a basic file upload component 1`] = `
   <input
     accept="image/*"
     onChange={[Function]}
+    required={true}
     style={
       Object {
-        "display": "none",
+        "bottom": 0,
+        "height": 1,
+        "opacity": 0,
+        "position": "absolute",
+        "width": 1,
       }
     }
     type="file"

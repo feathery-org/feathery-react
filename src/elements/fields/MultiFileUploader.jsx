@@ -173,13 +173,22 @@ function MultiFileUploader({
                 {showLabel && (
                     <div css={applyStyles.getTarget('add')}>{servar.name}</div>
                 )}
+                {/* Input component must be hidden, and it also remains empty since we track files in state here */}
+                {/* Since the input is always empty, we have to check for existing data and ignore the required attribute */}
                 <input
                     ref={fileInput}
                     type='file'
                     multiple
                     onChange={onChange}
+                    required={servar.required && rawFiles.length === 0}
                     accept={servar.metadata.file_types}
-                    style={{ display: 'none' }}
+                    style={{
+                        position: 'absolute',
+                        height: 1,
+                        width: 1,
+                        bottom: 0,
+                        opacity: 0
+                    }}
                 />
             </div>
         </div>

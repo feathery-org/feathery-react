@@ -150,12 +150,21 @@ function RichFileUploader({
                     </IconContext.Provider>
                 </div>
             )}
+            {/* Input component must be hidden, and it also remains empty since we track files in state here */}
+            {/* Since the input is always empty, we have to check for existing data and ignore the required attribute */}
             <input
                 ref={fileInput}
                 type='file'
                 onChange={onChange}
+                required={servar.required && !file}
                 accept={servar.metadata.file_types}
-                style={{ display: 'none' }}
+                style={{
+                    position: 'absolute',
+                    height: 1,
+                    width: 1,
+                    bottom: 0,
+                    opacity: 0
+                }}
             />
         </div>
     );
