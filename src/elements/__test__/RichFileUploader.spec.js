@@ -1,5 +1,6 @@
+import { act, create } from 'react-test-renderer';
+
 import React from 'react';
-import { create, act } from 'react-test-renderer';
 import { RichFileUploader } from '..';
 import { getFieldStyles } from '../../utils/styles';
 
@@ -28,13 +29,13 @@ describe('RichFileUploader', () => {
                 servar: {
                     key: 'key',
                     name: 'Upload file...',
-                    required: true,
                     metadata: {
                         file_types: 'image/*'
                     }
                 },
                 icon_url: 'https://feathery.tech'
             },
+            required: true,
             onChange: jest.fn(),
             onClick: jest.fn()
         };

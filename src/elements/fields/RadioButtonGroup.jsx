@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+
 import ReactForm from 'react-bootstrap/Form';
 import { bootstrapStyles } from '../../utils/styles';
 
 function RadioButtonGroup({
     field,
+    required,
     fieldLabel,
     fieldVal,
     otherVal,
@@ -26,7 +28,7 @@ function RadioButtonGroup({
                         key={`${servar.key}-${i}`}
                         label={opt}
                         checked={fieldVal === opt}
-                        required={servar.required}
+                        required={required}
                         onChange={onChange}
                         onClick={onClick}
                         value={opt}

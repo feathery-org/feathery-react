@@ -8,6 +8,7 @@ import { reactFriendlyKey } from '../../utils/formHelperFunctions';
 
 function RichFileUploader({
     field,
+    required,
     onChange: customOnChange,
     onClick: customOnClick,
     initialFile
@@ -156,7 +157,7 @@ function RichFileUploader({
                 ref={fileInput}
                 type='file'
                 onChange={onChange}
-                required={servar.required && !file}
+                required={required && !file}
                 accept={servar.metadata.file_types}
                 style={{
                     position: 'absolute',
