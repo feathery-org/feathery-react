@@ -1,11 +1,11 @@
-import { bootstrapStyles } from '../../utils/styles';
-
 import React from 'react';
 import ReactForm from 'react-bootstrap/Form';
+import { bootstrapStyles } from '../../utils/styles';
 import { states } from '../../utils/formHelperFunctions';
 
 function Dropdown({
     field,
+    required,
     fieldLabel,
     fieldVal,
     onClick,
@@ -65,7 +65,7 @@ function Dropdown({
                     as='select'
                     id={servar.key}
                     value={fieldVal}
-                    required={servar.required}
+                    required={required}
                     onChange={onChange}
                     onClick={onClick}
                 >

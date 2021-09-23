@@ -1,8 +1,3 @@
-import {
-    MaskedTextField,
-    getTextFieldProps,
-    textFieldShouldSubmit
-} from './elements/fields/TextField';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import {
     ButtonElement,
@@ -17,6 +12,11 @@ import {
     RichFileUploader,
     TextElement
 } from './elements';
+import {
+    MaskedTextField,
+    getTextFieldProps,
+    textFieldShouldSubmit
+} from './elements/fields/TextField';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     calculateRepeatedRowCount,
@@ -37,6 +37,7 @@ import {
     getFieldValue,
     getInlineError,
     getOrigin,
+    isFieldActuallyRequired,
     lookupElementKey,
     nextStepKey,
     objectMap,
@@ -114,15 +115,34 @@ function Form({
     const signatureRef = useRef({}).current;
     const maskedRef = useRef({}).current;
 
+    // Determine if there is a field with a custom repeat_trigger configuration anywhere in the step
+    const repeatTriggerExists = useMemo(
+        () =>
+            rawActiveStep
+                ? rawActiveStep.servar_fields.some(
+                      (field) => field.servar.repeat_trigger
+                  )
+                : false,
+        [rawActiveStep]
+    );
+
+    // Calculate how many repeated rows there are given the current field values
+    const repeatedRowCount = useMemo(
+        () =>
+            rawActiveStep
+                ? calculateRepeatedRowCount({
+                      step: rawActiveStep,
+                      values: fieldValues
+                  })
+                : null,
+        [rawActiveStep, repeatChanged]
+    );
+
     // Create the fully-hydrated activeStep by injecting repeated rows
     // and pre-calculating styles.
     // Note: Other hydration transformations can also be included here
     const activeStep = useMemo(() => {
         if (!rawActiveStep) return null;
-        const repeatedRowCount = calculateRepeatedRowCount({
-            step: rawActiveStep,
-            values: fieldValues
-        });
         const hydratedStep = JSON.parse(
             JSON.stringify(
                 injectRepeatedRows({
@@ -132,7 +152,7 @@ function Form({
             )
         );
         return applyStepStyles(hydratedStep);
-    }, [rawActiveStep, repeatChanged]);
+    }, [rawActiveStep, repeatedRowCount]);
 
     // When the active step changes, recalculate the dimensions of the new step
     const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
@@ -474,7 +494,12 @@ function Form({
             const { value: previousValue } = getFieldValue(field, fieldValues);
 
             // Add a repeated row if the value went from unset to set
-            if (previousValue === defaultValue && value !== defaultValue)
+            // And this is the last field in a set of repeated fields
+            if (
+                index === repeatedRowCount - 1 &&
+                previousValue === defaultValue &&
+                value !== defaultValue
+            )
                 repeatRowOperation = 'add';
 
             // Remove a repeated row if the value went from set to unset
@@ -1064,6 +1089,13 @@ function Form({
                         field,
                         fieldValues
                     );
+                    const required = isFieldActuallyRequired(
+                        field,
+                        repeatTriggerExists,
+                        repeatedRowCount
+                    );
+
+                    const fieldProps = { field, required };
 
                     let otherVal = '';
                     if (servar.metadata.other) {
@@ -1116,7 +1148,7 @@ function Form({
 
                     const styles = field.styles;
 
-                    let controlElement, fieldProps;
+                    let controlElement, textFieldProps;
                     switch (servar.type) {
                         case 'signature':
                             controlElement = (
@@ -1150,7 +1182,7 @@ function Form({
                                     {fieldLabel}
                                     <ReactForm.File
                                         id={servar.key}
-                                        required={servar.required}
+                                        required={required}
                                         onChange={(e) => {
                                             const file = e.target.files[0];
                                             changeValue(
@@ -1177,7 +1209,7 @@ function Form({
                         case 'rich_file_upload':
                             controlElement = (
                                 <RichFileUploader
-                                    field={field}
+                                    {...fieldProps}
                                     onChange={(files) => {
                                         const fileVal = files[0];
                                         updateFilePathMap(
@@ -1199,7 +1231,7 @@ function Form({
                         case 'rich_multi_file_upload':
                             controlElement = (
                                 <MultiFileUploader
-                                    field={field}
+                                    {...fieldProps}
                                     onChange={(files, fieldIndex) => {
                                         updateFilePathMap(
                                             servar.key,
@@ -1219,7 +1251,7 @@ function Form({
                         case 'button_group':
                             controlElement = (
                                 <ButtonGroup
-                                    field={field}
+                                    {...fieldProps}
                                     fieldLabel={fieldLabel}
                                     fieldVal={fieldVal}
                                     step={activeStep}
@@ -1260,7 +1292,7 @@ function Form({
                         case 'gmap_state':
                             controlElement = (
                                 <Dropdown
-                                    field={field}
+                                    {...fieldProps}
                                     fieldLabel={fieldLabel}
                                     fieldVal={fieldVal}
                                     onClick={onClick}
@@ -1285,7 +1317,7 @@ function Form({
                         case 'pin_input':
                             controlElement = (
                                 <PinInput
-                                    field={field}
+                                    {...fieldProps}
                                     fieldLabel={fieldLabel}
                                     fieldVal={fieldVal}
                                     onClick={onClick}
@@ -1307,7 +1339,7 @@ function Form({
                         case 'multiselect':
                             controlElement = (
                                 <CheckboxGroup
-                                    field={field}
+                                    {...fieldProps}
                                     fieldLabel={fieldLabel}
                                     fieldVal={fieldVal}
                                     otherVal={otherVal}
@@ -1325,7 +1357,7 @@ function Form({
                         case 'select':
                             controlElement = (
                                 <RadioButtonGroup
-                                    field={field}
+                                    {...fieldProps}
                                     fieldLabel={fieldLabel}
                                     fieldVal={fieldVal}
                                     otherVal={otherVal}
@@ -1406,7 +1438,7 @@ function Form({
                             );
                             break;
                         default:
-                            fieldProps = getTextFieldProps(
+                            textFieldProps = getTextFieldProps(
                                 servar,
                                 styles,
                                 fieldVal
@@ -1414,6 +1446,7 @@ function Form({
                             controlElement = (
                                 <MaskedTextField
                                     {...fieldProps}
+                                    {...textFieldProps}
                                     lazy={false}
                                     unmask
                                     fieldValue={fieldVal}
@@ -1426,7 +1459,6 @@ function Form({
                                         onChange({ submitData });
                                     }}
                                     label={fieldLabel}
-                                    field={field}
                                     ref={(r) => (maskedRef[servar.key] = r)}
                                     fieldMask={
                                         maskedRef[servar.key]?.maskRef?._value

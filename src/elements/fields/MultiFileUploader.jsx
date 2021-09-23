@@ -8,6 +8,7 @@ import { justRemove } from '../../utils/array';
 
 function MultiFileUploader({
     field,
+    required,
     onChange: customOnChange,
     onClick: customOnClick,
     initialFiles = []
@@ -180,7 +181,7 @@ function MultiFileUploader({
                     type='file'
                     multiple
                     onChange={onChange}
-                    required={servar.required && rawFiles.length === 0}
+                    required={required && rawFiles.length === 0}
                     accept={servar.metadata.file_types}
                     style={{
                         position: 'absolute',

@@ -1,14 +1,15 @@
-import { bootstrapStyles } from '../../utils/styles';
+import React, { memo } from 'react';
 
 import { IMaskMixin } from 'react-imask';
-import React, { memo } from 'react';
-import ReactForm from 'react-bootstrap/Form';
 import InlineTooltip from '../../components/Tooltip';
+import ReactForm from 'react-bootstrap/Form';
+import { bootstrapStyles } from '../../utils/styles';
 import { emailPatternStr } from '../../utils/formHelperFunctions';
 
 const TextField = memo(
     ({
         label,
+        required,
         field,
         type,
         fieldMask,
@@ -66,7 +67,7 @@ const TextField = memo(
                         }}
                         maxLength={servar.max_length}
                         minLength={servar.min_length}
-                        required={servar.required}
+                        required={required}
                         onChange={onChange}
                         onClick={onClick}
                         onKeyDown={(e) => {
