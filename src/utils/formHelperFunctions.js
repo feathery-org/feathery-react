@@ -549,7 +549,7 @@ function isFieldActuallyRequired(field, repeatTriggerExists, repeatedRowCount) {
     const isTrailingRepeatField =
         repeatTriggerExists &&
         repeatedRowCount > 1 &&
-        field.servar.repeat === repeatedRowCount - 1;
+        field.repeat === repeatedRowCount - 1;
     return field.servar.required && !isTrailingRepeatField;
 }
 
