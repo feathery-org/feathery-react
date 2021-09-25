@@ -1,8 +1,37 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import ProgressBar from 'react-bootstrap/ProgressBar';
 
-function ProgressBarElement({ element, curDepth, maxDepth }) {
-    const styles = element.applyStyles;
+function applyProgressBarStyles(element, applyStyles) {
+    applyStyles.addTargets('barContainer', 'bar');
+
+    applyStyles.applyFontStyles('barContainer');
+    applyStyles.applyMargin('barContainer');
+    applyStyles.apply('barContainer', 'vertical_layout', (a) => ({
+        justifyContent: a
+    }));
+    applyStyles.apply('barContainer', 'layout', (a) => ({
+        alignItems: a
+    }));
+    applyStyles.apply('barContainer', 'width', (a) => ({
+        width: `${a}%`
+    }));
+
+    applyStyles.apply('bar', 'bar_color', (a) => ({
+        backgroundColor: `#${a}`
+    }));
+
+    return applyStyles;
+}
+
+function ProgressBarElement({
+    element,
+    applyStyles,
+    curDepth = 1,
+    maxDepth = 1
+}) {
+    const styles = useMemo(() => applyProgressBarStyles(element, applyStyles), [
+        applyStyles
+    ]);
 
     const percent =
         element.progress || Math.round((100 * curDepth) / (maxDepth + 1));
@@ -42,23 +71,13 @@ function ProgressBarElement({ element, curDepth, maxDepth }) {
 
     return (
         <div
-            key='progress-bar'
             css={{
                 display: 'flex',
                 flexDirection: 'column',
-                ...styles.getLayout(),
-                ...styles.getTarget('container')
+                ...styles.getTarget('barContainer')
             }}
         >
-            <div
-                css={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    ...styles.getTarget('barContainer')
-                }}
-            >
-                {progressBarElements}
-            </div>
+            {progressBarElements}
         </div>
     );
 }

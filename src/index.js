@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
-import Form from './Form';
+import Elements from './elements';
+import Form from './form/Form';
 import { init, updateUserKey } from './utils/init';
 
 /**
@@ -13,6 +14,4 @@ function renderAt(elementId, props) {
     ReactDOM.render(<Form {...props} />, container);
 }
 
-const Feathery = { Form, init, updateUserKey, renderAt };
-
-export { Feathery };
+export { Form, Elements, init, updateUserKey, renderAt };

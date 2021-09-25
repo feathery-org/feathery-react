@@ -1,27 +1,13 @@
 import React from 'react';
 
-const handleButtonGroupChange = (e, step, updateFieldValues) => {
-    const fieldKey = e.target.id;
-
-    step.servar_fields.forEach((field) => {
-        const servar = field.servar;
-        if (servar.key !== fieldKey) return;
-
-        updateFieldValues({
-            [servar.key]: e.target.textContent
-        });
-    });
-};
-
-function ButtonGroup({
-    field,
+function ButtonGroupField({
+    element,
+    applyStyles,
     fieldLabel,
-    fieldVal,
-    step,
-    onClick,
-    updateFieldValues
+    fieldVal = null,
+    onClick = () => {}
 }) {
-    const { servar, applyStyles } = field;
+    const servar = element.servar;
     return (
         <>
             {fieldLabel}
@@ -37,14 +23,7 @@ function ButtonGroup({
                     return (
                         <div
                             id={servar.key}
-                            onClick={(e) => {
-                                handleButtonGroupChange(
-                                    e,
-                                    step,
-                                    updateFieldValues
-                                );
-                                onClick(e, field.submit_trigger === 'auto');
-                            }}
+                            onClick={onClick}
                             key={opt}
                             css={{
                                 display: 'flex',
@@ -68,4 +47,4 @@ function ButtonGroup({
     );
 }
 
-export default ButtonGroup;
+export default ButtonGroupField;

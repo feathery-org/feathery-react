@@ -1,5 +1,4 @@
 import {
-    adjustColor,
     formatAllStepFields,
     formatStepFields,
     getABVariant,
@@ -14,34 +13,6 @@ import { initInfo } from '../init';
 jest.mock('../init');
 
 describe('formHelperFunctions', () => {
-    describe('adjustColor', () => {
-        it('adjusts color up', () => {
-            // Arrange
-            const color = '#000000';
-            const amount = 30;
-            const expected = '#1e1e1e';
-
-            // Act
-            const actual = adjustColor(color, amount);
-
-            // Assert
-            expect(actual).toEqual(expected);
-        });
-
-        it('adjusts color down', () => {
-            // Arrange
-            const color = '#ffffff';
-            const amount = -30;
-            const expected = '#e1e1e1';
-
-            // Act
-            const actual = adjustColor(color, amount);
-
-            // Assert
-            expect(actual).toEqual(expected);
-        });
-    });
-
     describe('formatStepFields', () => {
         it('formats zero elements correctly', () => {
             // Arrange

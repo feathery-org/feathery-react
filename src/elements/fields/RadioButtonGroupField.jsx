@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
 import ReactForm from 'react-bootstrap/Form';
-import { bootstrapStyles } from '../../utils/styles';
+import { bootstrapStyles } from '../styles';
 
-function RadioButtonGroup({
-    field,
+function RadioButtonGroupField({
+    element,
+    applyStyles,
     fieldLabel,
-    fieldVal,
-    otherVal,
-    onChange,
-    handleOtherStateChange,
-    onClick
+    fieldVal = '',
+    otherVal = '',
+    onChange = () => {},
+    onOtherChange = () => {},
+    onClick = () => {}
 }) {
+    const servar = element.servar;
     const [otherSelect, setOtherSelect] = useState({});
-    const { servar, applyStyles } = field;
     const otherChecked =
         (otherSelect[servar.key] || fieldVal) && fieldVal === otherVal;
     return (
@@ -88,10 +89,7 @@ function RadioButtonGroup({
                         }}
                         id={servar.key}
                         value={otherVal || ''}
-                        onChange={(e) => {
-                            handleOtherStateChange(otherVal)(e);
-                            onChange(e, false);
-                        }}
+                        onChange={onOtherChange}
                         onClick={onClick}
                         maxLength={servar.max_length}
                         minLength={servar.min_length}
@@ -103,4 +101,4 @@ function RadioButtonGroup({
     );
 }
 
-export default RadioButtonGroup;
+export default RadioButtonGroupField;

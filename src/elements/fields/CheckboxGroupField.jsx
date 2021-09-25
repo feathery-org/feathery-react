@@ -1,51 +1,18 @@
 import React from 'react';
 import ReactForm from 'react-bootstrap/Form';
-import { getFieldValue } from '../../utils/formHelperFunctions';
-import { justInsert } from '../../utils/array';
-import { bootstrapStyles } from '../../utils/styles';
+import { bootstrapStyles } from '../styles';
 
-const handleCheckboxGroupChange = (
-    e,
-    servarKey,
-    step,
-    fieldValues,
-    updateFieldValues
-) => {
-    const target = e.target;
-    const opt = target.name;
-    step.servar_fields.forEach((field) => {
-        const servar = field.servar;
-        if (servar.key !== servarKey) return;
-
-        const fieldValue = getFieldValue(field, fieldValues);
-        const { value } = fieldValue;
-        const newValue = target.checked
-            ? [...value, opt]
-            : value.filter((v) => v !== opt);
-        if (fieldValue.repeated) {
-            const { valueList, index } = fieldValue;
-            updateFieldValues({
-                [servar.key]: justInsert(valueList, newValue, index)
-            });
-        } else {
-            updateFieldValues({ [servar.key]: newValue });
-        }
-    });
-};
-
-function CheckboxGroup({
-    field,
+function CheckboxGroupField({
+    element,
+    applyStyles,
     fieldLabel,
-    fieldVal,
-    otherVal,
-    step,
-    fieldValues,
-    updateFieldValues,
-    onChange,
-    handleOtherStateChange,
-    onClick
+    fieldVal = [],
+    otherVal = '',
+    onChange = () => {},
+    onOtherChange = () => {},
+    onClick = () => {}
 }) {
-    const { servar, applyStyles } = field;
+    const servar = element.servar;
     const otherChecked = fieldVal.includes(otherVal);
     return (
         <div css={applyStyles.getTarget('fc')}>
@@ -59,16 +26,7 @@ function CheckboxGroup({
                         name={opt}
                         label={opt}
                         checked={fieldVal.includes(opt)}
-                        onChange={(e) => {
-                            handleCheckboxGroupChange(
-                                e,
-                                servar.key,
-                                step,
-                                fieldValues,
-                                updateFieldValues
-                            );
-                            onChange();
-                        }}
+                        onChange={onChange}
                         onClick={onClick}
                         style={{
                             display: 'flex',
@@ -98,16 +56,7 @@ function CheckboxGroup({
                         name={otherVal}
                         label='Other'
                         checked={otherChecked}
-                        onChange={(e) => {
-                            handleCheckboxGroupChange(
-                                e,
-                                servar.key,
-                                step,
-                                fieldValues,
-                                updateFieldValues
-                            );
-                            onChange();
-                        }}
+                        onChange={onChange}
                         onClick={onClick}
                         style={{
                             display: 'flex',
@@ -131,10 +80,7 @@ function CheckboxGroup({
                         }}
                         id={servar.key}
                         value={otherVal || ''}
-                        onChange={(e) => {
-                            handleOtherStateChange(otherVal)(e);
-                            onChange();
-                        }}
+                        onChange={onOtherChange}
                         onClick={onClick}
                         maxLength={servar.max_length}
                         minLength={servar.min_length}
@@ -146,4 +92,4 @@ function CheckboxGroup({
     );
 }
 
-export default CheckboxGroup;
+export default CheckboxGroupField;

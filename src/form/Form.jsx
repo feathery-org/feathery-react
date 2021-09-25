@@ -1,28 +1,11 @@
-import {
-    MaskedTextField,
-    getTextFieldProps,
-    textFieldShouldSubmit
-} from './elements/fields/TextField';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
-import {
-    ButtonElement,
-    ButtonGroup,
-    CheckboxGroup,
-    Dropdown,
-    ImageElement,
-    MultiFileUploader,
-    PinInput,
-    ProgressBarElement,
-    RadioButtonGroup,
-    RichFileUploader,
-    TextElement
-} from './elements';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Elements from '../elements';
 import {
     calculateRepeatedRowCount,
     calculateStepCSS,
     injectRepeatedRows
-} from './utils/hydration';
+} from '../utils/hydration';
 import {
     convertFilesToFilePromises,
     emailPattern,
@@ -44,18 +27,16 @@ import {
     reactFriendlyKey,
     recurseDepth,
     setFormElementError,
-    shouldElementHide
-} from './utils/formHelperFunctions';
-import { initInfo, initState, initializeIntegrations } from './utils/init';
-import { justInsert, justRemove } from './utils/array';
+    shouldElementHide,
+    textFieldShouldSubmit
+} from '../utils/formHelperFunctions';
+import { initInfo, initState, initializeIntegrations } from '../utils/init';
+import { justInsert, justRemove } from '../utils/array';
+import Client from '../utils/client';
 
-import Client from './utils/client';
-import GooglePlaces from './components/GooglePlaces';
+import GooglePlaces from './GooglePlaces';
 import ReactForm from 'react-bootstrap/Form';
-import SignatureCanvas from 'react-signature-canvas';
-import { SketchPicker } from 'react-color';
 import TagManager from 'react-gtm-module';
-import { applyStepStyles } from './utils/styles';
 
 const FILE_UPLOADERS = [
     'file_upload',
@@ -94,7 +75,6 @@ function Form({
         finished: false,
         redirectURL: null
     });
-    const [displayColorPicker, setDisplayColorPicker] = useState({});
     const [curDepth, setCurDepth] = useState(0);
     const [maxDepth, setMaxDepth] = useState(0);
     const [integrations, setIntegrations] = useState({});
@@ -112,7 +92,6 @@ function Form({
     const submitRef = useRef(null);
     const formRef = useRef(null);
     const signatureRef = useRef({}).current;
-    const maskedRef = useRef({}).current;
 
     // Create the fully-hydrated activeStep by injecting repeated rows
     // and pre-calculating styles.
@@ -123,7 +102,7 @@ function Form({
             step: rawActiveStep,
             values: fieldValues
         });
-        const hydratedStep = JSON.parse(
+        return JSON.parse(
             JSON.stringify(
                 injectRepeatedRows({
                     step: rawActiveStep,
@@ -131,7 +110,6 @@ function Form({
                 })
             )
         );
-        return applyStepStyles(hydratedStep);
     }, [rawActiveStep, repeatChanged]);
 
     // When the active step changes, recalculate the dimensions of the new step
@@ -536,21 +514,26 @@ function Form({
         updateFieldValues({ [target.id]: curFieldVal });
     };
 
-    const handleColorChange = (servarKey) => (color) => {
+    const handleCheckboxGroupChange = (e, servarKey) => {
+        const target = e.target;
+        const opt = target.name;
         activeStep.servar_fields.forEach((field) => {
             const servar = field.servar;
             if (servar.key !== servarKey) return;
-            updateFieldValues({
-                [servar.key]: color.hex.substr(1, 6)
-            });
-        });
-    };
 
-    const handleColorPickerClick = (servarKey) => () => {
-        const curVal = displayColorPicker[servarKey];
-        setDisplayColorPicker({
-            ...displayColorPicker,
-            [servarKey]: !curVal
+            const fieldValue = getFieldValue(field, fieldValues);
+            const { value } = fieldValue;
+            const newValue = target.checked
+                ? [...value, opt]
+                : value.filter((v) => v !== opt);
+            if (fieldValue.repeated) {
+                const { valueList, index } = fieldValue;
+                updateFieldValues({
+                    [servar.key]: justInsert(valueList, newValue, index)
+                });
+            } else {
+                updateFieldValues({ [servar.key]: newValue });
+            }
         });
     };
 
@@ -967,8 +950,9 @@ function Form({
                         })
                 )
                 .map((pb) => (
-                    <ProgressBarElement
+                    <Elements.ProgressBarElement
                         key={`pb-${pb.column_index}-${pb.column_index_end}-${pb.row_index}-${pb.row_index_end}`}
+                        componentOnly={false}
                         element={pb}
                         curDepth={curDepth}
                         maxDepth={maxDepth}
@@ -984,8 +968,9 @@ function Form({
                         })
                 )
                 .map((element) => (
-                    <ImageElement
+                    <Elements.ImageElement
                         key={reactFriendlyKey(element)}
+                        componentOnly={false}
                         element={element}
                     />
                 ))}
@@ -999,11 +984,13 @@ function Form({
                         })
                 )
                 .map((element) => (
-                    <TextElement
+                    <Elements.TextElement
                         key={reactFriendlyKey(element)}
+                        componentOnly={false}
                         element={element}
                         values={fieldValues}
                         handleRedirect={handleRedirect}
+                        conditions={activeStep.next_conditions}
                     />
                 ))}
             {activeStep.buttons
@@ -1016,8 +1003,9 @@ function Form({
                         })
                 )
                 .map((element) => (
-                    <ButtonElement
+                    <Elements.ButtonElement
                         key={reactFriendlyKey(element)}
+                        componentOnly={false}
                         element={element}
                         values={fieldValues}
                         handleRedirect={handleRedirect}
@@ -1057,8 +1045,8 @@ function Form({
                     else if (a.column_index < b.column_index) return -1;
                     else return 0;
                 })
-                .map((field) => ({ field, index: field.repeat ?? null }))
-                .map(({ field, index }) => {
+                .map((field) => {
+                    const index = field.repeat ?? null;
                     const servar = field.servar;
                     const { value: fieldVal } = getFieldValue(
                         field,
@@ -1080,17 +1068,6 @@ function Form({
                         }
                     }
 
-                    const fieldLabel = servar.name ? (
-                        <label
-                            htmlFor={servar.key}
-                            style={{
-                                marginBottom: '10px',
-                                display: 'inline-block'
-                            }}
-                        >
-                            {servar.name}
-                        </label>
-                    ) : null;
                     const onClick = (e, submitData = false) => {
                         const metadata = {
                             elementType: 'field',
@@ -1114,70 +1091,42 @@ function Form({
                         errType === 'inline' &&
                         getInlineError(field, inlineErrors);
 
-                    const styles = field.styles;
-
-                    let controlElement, fieldProps;
+                    let changeHandler;
                     switch (servar.type) {
                         case 'signature':
-                            controlElement = (
-                                <div
-                                    css={{
-                                        ...field.applyStyles.getTarget('fc'),
-                                        maxWidth: '100%'
-                                    }}
-                                >
-                                    {fieldLabel}
-                                    <SignatureCanvas
-                                        penColor='black'
-                                        canvasProps={{
-                                            id: servar.key,
-                                            width: styles.width,
-                                            height: styles.height,
-                                            style: field.applyStyles.getTarget(
-                                                'field'
-                                            )
-                                        }}
-                                        ref={(ref) => {
-                                            signatureRef[servar.key] = ref;
-                                        }}
-                                    />
-                                </div>
+                            return (
+                                <Elements.SignatureField
+                                    componentOnly={false}
+                                    element={field}
+                                    signatureRef={signatureRef}
+                                />
                             );
-                            break;
                         case 'file_upload':
-                            controlElement = (
-                                <div css={field.applyStyles.getTarget('fc')}>
-                                    {fieldLabel}
-                                    <ReactForm.File
-                                        id={servar.key}
-                                        required={servar.required}
-                                        onChange={(e) => {
-                                            const file = e.target.files[0];
-                                            changeValue(
-                                                file
-                                                    ? Promise.resolve(file)
-                                                    : file,
-                                                field,
-                                                index
-                                            );
-                                            onChange({
-                                                submitData:
-                                                    field.submit_trigger ===
-                                                        'auto' && file
-                                            });
-                                        }}
-                                        onClick={onClick}
-                                        style={{
-                                            cursor: 'pointer'
-                                        }}
-                                    />
-                                </div>
+                            return (
+                                <Elements.FileUploadField
+                                    componentOnly={false}
+                                    element={field}
+                                    onChange={(e) => {
+                                        const file = e.target.files[0];
+                                        changeValue(
+                                            file ? Promise.resolve(file) : file,
+                                            field,
+                                            index
+                                        );
+                                        onChange({
+                                            submitData:
+                                                field.submit_trigger ===
+                                                    'auto' && file
+                                        });
+                                    }}
+                                    onClick={onClick}
+                                />
                             );
-                            break;
                         case 'rich_file_upload':
-                            controlElement = (
-                                <RichFileUploader
-                                    field={field}
+                            return (
+                                <Elements.RichFileUploadField
+                                    componentOnly={false}
+                                    element={field}
                                     onChange={(files) => {
                                         const fileVal = files[0];
                                         updateFilePathMap(
@@ -1195,11 +1144,11 @@ function Form({
                                     initialFile={fieldVal}
                                 />
                             );
-                            break;
                         case 'rich_multi_file_upload':
-                            controlElement = (
-                                <MultiFileUploader
-                                    field={field}
+                            return (
+                                <Elements.MultiFileUploadField
+                                    componentOnly={false}
+                                    element={field}
                                     onChange={(files, fieldIndex) => {
                                         updateFilePathMap(
                                             servar.key,
@@ -1215,53 +1164,51 @@ function Form({
                                     initialFiles={fieldVal}
                                 />
                             );
-                            break;
                         case 'button_group':
-                            controlElement = (
-                                <ButtonGroup
-                                    field={field}
-                                    fieldLabel={fieldLabel}
+                            return (
+                                <Elements.ButtonGroupField
+                                    componentOnly={false}
+                                    element={field}
                                     fieldVal={fieldVal}
-                                    step={activeStep}
-                                    onClick={onClick}
-                                    updateFieldValues={updateFieldValues}
+                                    onClick={(e) => {
+                                        const fieldKey = e.target.id;
+                                        activeStep.servar_fields.forEach(
+                                            (field) => {
+                                                const servar = field.servar;
+                                                if (servar.key !== fieldKey)
+                                                    return;
+                                                updateFieldValues({
+                                                    [servar.key]:
+                                                        e.target.textContent
+                                                });
+                                            }
+                                        );
+                                        onClick(
+                                            e,
+                                            field.submit_trigger === 'auto'
+                                        );
+                                    }}
                                 />
                             );
-                            break;
                         case 'checkbox':
-                            controlElement = (
-                                <div css={field.applyStyles.getTarget('fc')}>
-                                    {fieldLabel}
-                                    <ReactForm.Check
-                                        type='checkbox'
-                                        id={servar.key}
-                                        checked={fieldVal}
-                                        onChange={(e) => {
-                                            const val = e.target.checked;
-                                            changeValue(val, field, index);
-                                            onChange();
-                                        }}
-                                        onClick={onClick}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center'
-                                        }}
-                                        css={{
-                                            'input[type="checkbox"]': {
-                                                marginTop: 0,
-                                                marginBottom: 0
-                                            }
-                                        }}
-                                    />
-                                </div>
+                            return (
+                                <Elements.CheckboxField
+                                    componentOnly={false}
+                                    element={field}
+                                    onClick={onClick}
+                                    onChange={(e) => {
+                                        const val = e.target.checked;
+                                        changeValue(val, field, index);
+                                        onChange();
+                                    }}
+                                />
                             );
-                            break;
                         case 'dropdown':
                         case 'gmap_state':
-                            controlElement = (
-                                <Dropdown
-                                    field={field}
-                                    fieldLabel={fieldLabel}
+                            return (
+                                <Elements.DropdownField
+                                    componentOnly={false}
+                                    element={field}
                                     fieldVal={fieldVal}
                                     onClick={onClick}
                                     onChange={(e) => {
@@ -1274,19 +1221,13 @@ function Form({
                                         });
                                     }}
                                     inlineError={inlineErr}
-                                    type={
-                                        servar.type === 'gmap_state'
-                                            ? 'states'
-                                            : 'default'
-                                    }
                                 />
                             );
-                            break;
                         case 'pin_input':
-                            controlElement = (
-                                <PinInput
-                                    field={field}
-                                    fieldLabel={fieldLabel}
+                            return (
+                                <Elements.PinInputField
+                                    componentOnly={false}
+                                    element={field}
                                     fieldVal={fieldVal}
                                     onClick={onClick}
                                     onChange={(val) => {
@@ -1303,117 +1244,79 @@ function Form({
                                     inlineError={inlineErr}
                                 />
                             );
-                            break;
                         case 'multiselect':
-                            controlElement = (
-                                <CheckboxGroup
-                                    field={field}
-                                    fieldLabel={fieldLabel}
+                            return (
+                                <Elements.CheckboxGroupField
+                                    componentOnly={false}
+                                    element={field}
                                     fieldVal={fieldVal}
                                     otherVal={otherVal}
-                                    step={activeStep}
-                                    fieldValues={fieldValues}
-                                    updateFieldValues={updateFieldValues}
-                                    onChange={onChange}
-                                    handleOtherStateChange={
-                                        handleOtherStateChange
-                                    }
-                                    onClick={onClick}
-                                />
-                            );
-                            break;
-                        case 'select':
-                            controlElement = (
-                                <RadioButtonGroup
-                                    field={field}
-                                    fieldLabel={fieldLabel}
-                                    fieldVal={fieldVal}
-                                    otherVal={otherVal}
-                                    onChange={(e, change = true) => {
-                                        const val = e.target.value;
-                                        if (change) {
-                                            changeValue(val, field, index);
-                                        }
-                                        onChange({
-                                            submitData:
-                                                field.submit_trigger ===
-                                                    'auto' && val
-                                        });
+                                    onChange={(e) => {
+                                        handleCheckboxGroupChange(
+                                            e,
+                                            servar.key
+                                        );
+                                        onChange();
                                     }}
-                                    handleOtherStateChange={
-                                        handleOtherStateChange
-                                    }
+                                    onOtherChange={(e) => {
+                                        handleOtherStateChange(otherVal)(e);
+                                        onChange();
+                                    }}
                                     onClick={onClick}
                                 />
                             );
-                            break;
+                        case 'select':
+                            changeHandler = (e, change = true) => {
+                                const val = e.target.value;
+                                if (change) {
+                                    changeValue(val, field, index);
+                                }
+                                onChange({
+                                    submitData:
+                                        field.submit_trigger === 'auto' && val
+                                });
+                            };
+                            return (
+                                <Elements.RadioButtonGroupField
+                                    componentOnly={false}
+                                    element={field}
+                                    fieldVal={fieldVal}
+                                    otherVal={otherVal}
+                                    onChange={changeHandler}
+                                    onOtherChange={(e) => {
+                                        handleOtherStateChange(otherVal)(e);
+                                        changeHandler(e, false);
+                                    }}
+                                    onClick={onClick}
+                                />
+                            );
                         case 'hex_color':
-                            controlElement = (
-                                <div css={field.applyStyles.getTarget('fc')}>
-                                    {fieldLabel}
-                                    <div
-                                        css={{
-                                            width: '36px',
-                                            height: '36px',
-                                            background: `#${fieldVal}`,
-                                            cursor: 'pointer',
-                                            ...field.applyStyles.getTarget(
-                                                'field'
-                                            )
-                                        }}
-                                        onClick={(e) => {
-                                            onClick(e);
-                                            handleColorPickerClick(
-                                                servar.key
-                                            )();
-                                        }}
-                                    />
-                                    {displayColorPicker[servar.key] ? (
-                                        <div
-                                            css={{
-                                                position: 'absolute',
-                                                zIndex: 2
-                                            }}
-                                        >
-                                            <div
-                                                css={{
-                                                    position: 'fixed',
-                                                    top: '0px',
-                                                    right: '0px',
-                                                    bottom: '0px',
-                                                    left: '0px'
-                                                }}
-                                                onClick={handleColorPickerClick(
-                                                    servar.key
-                                                )}
-                                            />
-                                            <SketchPicker
-                                                color={`#${fieldVal}`}
-                                                onChange={(color) => {
-                                                    handleColorChange(
-                                                        servar.key
-                                                    )(color);
-                                                    onChange({
-                                                        submitData:
-                                                            field.submit_trigger ===
-                                                                'auto' && color
-                                                    });
-                                                }}
-                                            />
-                                        </div>
-                                    ) : null}
-                                </div>
+                            changeHandler = (color) => {
+                                activeStep.servar_fields.forEach((field) => {
+                                    const iterServar = field.servar;
+                                    if (iterServar.key !== servar.key) return;
+                                    updateFieldValues({
+                                        [iterServar.key]: color.hex.substr(1, 6)
+                                    });
+                                });
+                                onChange({
+                                    submitData:
+                                        field.submit_trigger === 'auto' && color
+                                });
+                            };
+                            return (
+                                <Elements.ColorPickerField
+                                    componentOnly={false}
+                                    fieldVal={fieldVal}
+                                    onChange={changeHandler}
+                                    onClick={onClick}
+                                />
                             );
-                            break;
                         default:
-                            fieldProps = getTextFieldProps(
-                                servar,
-                                styles,
-                                fieldVal
-                            );
-                            controlElement = (
-                                <MaskedTextField
-                                    {...fieldProps}
+                            return (
+                                <Elements.TextField
+                                    componentOnly={false}
+                                    element={field}
                                     lazy={false}
                                     unmask
                                     fieldValue={fieldVal}
@@ -1425,30 +1328,10 @@ function Form({
                                             textFieldShouldSubmit(servar, val);
                                         onChange({ submitData });
                                     }}
-                                    label={fieldLabel}
-                                    field={field}
-                                    ref={(r) => (maskedRef[servar.key] = r)}
-                                    fieldMask={
-                                        maskedRef[servar.key]?.maskRef?._value
-                                    }
                                     inlineError={inlineErr}
                                 />
                             );
                     }
-                    return (
-                        <div
-                            css={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                width: '100%',
-                                ...field.applyStyles.getLayout(),
-                                ...field.applyStyles.getTarget('container')
-                            }}
-                            key={reactFriendlyKey(field)}
-                        >
-                            {controlElement}
-                        </div>
-                    );
                 })}
             {
                 <GooglePlaces
