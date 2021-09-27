@@ -1,0 +1,28 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ButtonGroup renders an empty Button group 1`] = `
+<div
+  className="css-ycrngl-ButtonGroup"
+/>
+`;
+
+exports[`ButtonGroup renders an empty Button group with options 1`] = `
+<div
+  className="css-ycrngl-ButtonGroup"
+>
+  <div
+    className="css-ucggnj"
+    id="key"
+    onClick={[Function]}
+  >
+    opt1
+  </div>
+  <div
+    className="css-ucggnj"
+    id="key"
+    onClick={[Function]}
+  >
+    opt2
+  </div>
+</div>
+`;

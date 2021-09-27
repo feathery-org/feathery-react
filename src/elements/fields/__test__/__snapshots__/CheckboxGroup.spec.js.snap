@@ -1,0 +1,9 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`CheckboxGroup renders a Radio Button group 1`] = `
+<div
+  className="css-jra06k-CheckboxGroup"
+>
+  label
+</div>
+`;

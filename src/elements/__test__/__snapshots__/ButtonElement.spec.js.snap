@@ -1,0 +1,251 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ButtonElement renders a button with custom styles 1`] = `
+<div
+  className="css-n00kzt-ButtonElement"
+>
+  <button
+    className="css-j96s3f-ButtonElement btn btn-primary"
+    disabled={false}
+    onClick={[Function]}
+    style={
+      Object {
+        "alignItems": "center",
+        "boxShadow": "none",
+        "cursor": "pointer",
+        "display": "flex",
+        "justifyContent": "center",
+        "maxWidth": "100%",
+      }
+    }
+    type="button"
+  >
+    <div
+      style={
+        Object {
+          "display": "flex",
+          "position": "relative",
+        }
+      }
+    >
+      <span
+        className="css-16rodpe-generateNodes"
+        onClick={[Function]}
+      >
+        Hello World!
+      </span>
+    </div>
+  </button>
+</div>
+`;
+
+exports[`ButtonElement renders a button with link add_repeated_row 1`] = `
+<div
+  className="css-n00kzt-ButtonElement"
+>
+  <button
+    className="css-j96s3f-ButtonElement btn btn-primary"
+    disabled={false}
+    onClick={[Function]}
+    style={
+      Object {
+        "alignItems": "center",
+        "boxShadow": "none",
+        "cursor": "pointer",
+        "display": "flex",
+        "justifyContent": "center",
+        "maxWidth": "100%",
+      }
+    }
+    type="button"
+  >
+    <div
+      style={
+        Object {
+          "display": "flex",
+          "position": "relative",
+        }
+      }
+    >
+      <span
+        className="css-enkqi-generateNodes"
+        onClick={[Function]}
+      >
+        Hello World!
+      </span>
+    </div>
+  </button>
+</div>
+`;
+
+exports[`ButtonElement renders a button with link none 1`] = `
+<div
+  className="css-n00kzt-ButtonElement"
+>
+  <button
+    className="css-rzntk1-ButtonElement btn btn-primary"
+    disabled={true}
+    onClick={[Function]}
+    style={
+      Object {
+        "alignItems": "center",
+        "boxShadow": "none",
+        "cursor": "default",
+        "display": "flex",
+        "justifyContent": "center",
+        "maxWidth": "100%",
+      }
+    }
+    type="button"
+  >
+    <div
+      style={
+        Object {
+          "display": "flex",
+          "position": "relative",
+        }
+      }
+    >
+      <span
+        className="css-16rodpe-generateNodes"
+        onClick={[Function]}
+      >
+        Hello World!
+      </span>
+    </div>
+  </button>
+</div>
+`;
+
+exports[`ButtonElement renders a button with link submit 1`] = `
+<div
+  className="css-n00kzt-ButtonElement"
+>
+  <button
+    className="css-j96s3f-ButtonElement btn btn-primary"
+    disabled={true}
+    onClick={[Function]}
+    style={
+      Object {
+        "alignItems": "center",
+        "boxShadow": "none",
+        "cursor": "pointer",
+        "display": "flex",
+        "justifyContent": "center",
+        "maxWidth": "100%",
+      }
+    }
+    type="button"
+  >
+    <div
+      style={
+        Object {
+          "display": "flex",
+          "position": "relative",
+        }
+      }
+    >
+      <span
+        className="css-enkqi-generateNodes"
+        onClick={[Function]}
+      >
+        Hello World!
+      </span>
+      <div
+        className="css-18p0nwm-ButtonElement spinner-border"
+        style={
+          Object {
+            "border": "0.2em solid currentColor",
+            "borderRightColor": "transparent",
+            "bottom": "50%",
+            "color": "white",
+            "marginBottom": "auto",
+            "marginTop": "auto",
+            "position": "absolute",
+            "top": "50%",
+          }
+        }
+      />
+    </div>
+  </button>
+</div>
+`;
+
+exports[`ButtonElement renders a button with plain text 1`] = `
+<div
+  className="css-n00kzt-ButtonElement"
+>
+  <button
+    className="css-j96s3f-ButtonElement btn btn-primary"
+    disabled={false}
+    onClick={[Function]}
+    style={
+      Object {
+        "alignItems": "center",
+        "boxShadow": "none",
+        "cursor": "pointer",
+        "display": "flex",
+        "justifyContent": "center",
+        "maxWidth": "100%",
+      }
+    }
+    type="button"
+  >
+    <div
+      style={
+        Object {
+          "display": "flex",
+          "position": "relative",
+        }
+      }
+    >
+      <span
+        className="css-enkqi-generateNodes"
+        onClick={[Function]}
+      >
+        Hello World!
+      </span>
+    </div>
+  </button>
+</div>
+`;
+
+exports[`ButtonElement renders an empty Button element 1`] = `
+<div
+  className="css-n00kzt-ButtonElement"
+>
+  <button
+    className="css-jvbg1j-ButtonElement btn btn-primary"
+    disabled={false}
+    onClick={[Function]}
+    style={
+      Object {
+        "alignItems": "center",
+        "boxShadow": "none",
+        "cursor": "pointer",
+        "display": "flex",
+        "justifyContent": "center",
+        "maxWidth": "100%",
+      }
+    }
+    type="button"
+  >
+    <div
+      style={
+        Object {
+          "display": "flex",
+          "position": "relative",
+        }
+      }
+    >
+      <span
+        className="css-enkqi-generateNodes"
+        onClick={[Function]}
+      >
+        
+
+      </span>
+    </div>
+  </button>
+</div>
+`;
