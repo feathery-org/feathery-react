@@ -1,22 +1,22 @@
+import { bootstrapStyles } from '../styles';
+
 import React from 'react';
 import ReactForm from 'react-bootstrap/Form';
-import { bootstrapStyles } from '../../utils/styles';
-import { states } from '../../utils/formHelperFunctions';
 
-function Dropdown({
-    field,
-    required,
+export default function DropdownField({
+    element,
+    applyStyles,
     fieldLabel,
-    fieldVal,
-    onClick,
-    onChange,
     inlineError,
-    type = 'default'
+    required = false,
+    fieldVal = '',
+    onClick = () => {},
+    onChange = () => {}
 }) {
-    const { servar, applyStyles } = field;
+    const servar = element.servar;
 
     let options;
-    if (type === 'states') {
+    if (servar.type === 'gmap_state') {
         options = states.map((state) => (
             <option key={state} value={state}>
                 {state}
@@ -89,23 +89,63 @@ function Dropdown({
                         }
                     }}
                 >
-                    {field.placeholder || ''}
+                    {element.placeholder || ''}
                 </span>
             </div>
-            {inlineError && (
-                <span
-                    css={{
-                        alignSelf: 'flex-start',
-                        marginTop: '3px',
-                        color: '#F42525',
-                        ...applyStyles.getTarget('error')
-                    }}
-                >
-                    {inlineError}
-                </span>
-            )}
         </div>
     );
 }
 
-export default Dropdown;
+const states = [
+    'Alabama',
+    'Alaska',
+    'Arizona',
+    'Arkansas',
+    'California',
+    'Colorado',
+    'Connecticut',
+    'Delaware',
+    'District Of Columbia',
+    'Florida',
+    'Georgia',
+    'Hawaii',
+    'Idaho',
+    'Illinois',
+    'Indiana',
+    'Iowa',
+    'Kansas',
+    'Kentucky',
+    'Louisiana',
+    'Maine',
+    'Maryland',
+    'Massachusetts',
+    'Michigan',
+    'Minnesota',
+    'Mississippi',
+    'Missouri',
+    'Montana',
+    'Nebraska',
+    'Nevada',
+    'New Hampshire',
+    'New Jersey',
+    'New Mexico',
+    'New York',
+    'North Carolina',
+    'North Dakota',
+    'Ohio',
+    'Oklahoma',
+    'Oregon',
+    'Pennsylvania',
+    'Rhode Island',
+    'South Carolina',
+    'South Dakota',
+    'Tennessee',
+    'Texas',
+    'Utah',
+    'Vermont',
+    'Virginia',
+    'Washington',
+    'West Virginia',
+    'Wisconsin',
+    'Wyoming'
+];

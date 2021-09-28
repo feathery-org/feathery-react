@@ -1,82 +1,44 @@
-import React from 'react';
+import React, { useState } from 'react';
 import ReactForm from 'react-bootstrap/Form';
-import { getFieldValue } from '../../utils/formHelperFunctions';
-import { justInsert } from '../../utils/array';
-import { bootstrapStyles } from '../../utils/styles';
+import { bootstrapStyles } from '../styles';
 
-const handleCheckboxGroupChange = (
-    e,
-    servarKey,
-    step,
-    fieldValues,
-    updateFieldValues
-) => {
-    const target = e.target;
-    const opt = target.name;
-    step.servar_fields.forEach((field) => {
-        const servar = field.servar;
-        if (servar.key !== servarKey) return;
-
-        const fieldValue = getFieldValue(field, fieldValues);
-        const { value } = fieldValue;
-        const newValue = target.checked
-            ? [...value, opt]
-            : value.filter((v) => v !== opt);
-        if (fieldValue.repeated) {
-            const { valueList, index } = fieldValue;
-            updateFieldValues({
-                [servar.key]: justInsert(valueList, newValue, index)
-            });
-        } else {
-            updateFieldValues({ [servar.key]: newValue });
-        }
-    });
-};
-
-function CheckboxGroup({
-    field,
+function RadioButtonGroupField({
+    element,
+    applyStyles,
     fieldLabel,
-    fieldVal,
-    otherVal,
-    step,
-    fieldValues,
-    updateFieldValues,
-    onChange,
-    handleOtherStateChange,
-    onClick
+    required = false,
+    fieldVal = '',
+    otherVal = '',
+    onChange = () => {},
+    onOtherChange = () => {},
+    onClick = () => {}
 }) {
-    const { servar, applyStyles } = field;
-    const otherChecked = fieldVal.includes(otherVal);
+    const servar = element.servar;
+    const [otherSelect, setOtherSelect] = useState({});
+    const otherChecked =
+        (otherSelect[servar.key] || fieldVal) && fieldVal === otherVal;
     return (
         <div css={applyStyles.getTarget('fc')}>
             {fieldLabel}
             {servar.metadata.options.map((opt, i) => {
                 return (
                     <ReactForm.Check
-                        type='checkbox'
+                        type='radio'
                         id={`${servar.key}-${i}`}
                         key={`${servar.key}-${i}`}
-                        name={opt}
                         label={opt}
-                        checked={fieldVal.includes(opt)}
-                        onChange={(e) => {
-                            handleCheckboxGroupChange(
-                                e,
-                                servar.key,
-                                step,
-                                fieldValues,
-                                updateFieldValues
-                            );
-                            onChange();
-                        }}
+                        checked={fieldVal === opt}
+                        required={required}
+                        onChange={onChange}
                         onClick={onClick}
+                        value={opt}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
                             marginBottom: '5px'
                         }}
                         css={{
-                            'input[type="checkbox"]': {
+                            'input[type="radio"]': {
                                 marginTop: 0,
                                 marginBottom: 0
                             }
@@ -92,29 +54,26 @@ function CheckboxGroup({
                     }}
                 >
                     <ReactForm.Check
-                        type='checkbox'
+                        type='radio'
                         id={`${servar.key}-`}
                         key={`${servar.key}-`}
-                        name={otherVal}
                         label='Other'
                         checked={otherChecked}
                         onChange={(e) => {
-                            handleCheckboxGroupChange(
-                                e,
-                                servar.key,
-                                step,
-                                fieldValues,
-                                updateFieldValues
-                            );
-                            onChange();
+                            setOtherSelect({
+                                ...otherSelect,
+                                [servar.key]: true
+                            });
+                            onChange(e);
                         }}
                         onClick={onClick}
+                        value={otherVal || ''}
                         style={{
                             display: 'flex',
                             alignItems: 'center'
                         }}
                         css={{
-                            'input[type="checkbox"]': {
+                            'input[type="radio"]': {
                                 marginTop: 0,
                                 marginBottom: 0
                             }
@@ -131,10 +90,7 @@ function CheckboxGroup({
                         }}
                         id={servar.key}
                         value={otherVal || ''}
-                        onChange={(e) => {
-                            handleOtherStateChange(otherVal)(e);
-                            onChange();
-                        }}
+                        onChange={onOtherChange}
                         onClick={onClick}
                         maxLength={servar.max_length}
                         minLength={servar.min_length}
@@ -146,4 +102,4 @@ function CheckboxGroup({
     );
 }
 
-export default CheckboxGroup;
+export default RadioButtonGroupField;

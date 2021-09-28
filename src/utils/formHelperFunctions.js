@@ -1,67 +1,15 @@
 import getRandomBoolean from './random';
-import { initInfo } from './init';
 import libphonenumber from 'google-libphonenumber';
+import { initInfo } from './init';
 
 const phoneValidator = libphonenumber.PhoneNumberUtil.getInstance();
 
-const states = [
-    'Alabama',
-    'Alaska',
-    'Arizona',
-    'Arkansas',
-    'California',
-    'Colorado',
-    'Connecticut',
-    'Delaware',
-    'District Of Columbia',
-    'Florida',
-    'Georgia',
-    'Hawaii',
-    'Idaho',
-    'Illinois',
-    'Indiana',
-    'Iowa',
-    'Kansas',
-    'Kentucky',
-    'Louisiana',
-    'Maine',
-    'Maryland',
-    'Massachusetts',
-    'Michigan',
-    'Minnesota',
-    'Mississippi',
-    'Missouri',
-    'Montana',
-    'Nebraska',
-    'Nevada',
-    'New Hampshire',
-    'New Jersey',
-    'New Mexico',
-    'New York',
-    'North Carolina',
-    'North Dakota',
-    'Ohio',
-    'Oklahoma',
-    'Oregon',
-    'Pennsylvania',
-    'Rhode Island',
-    'South Carolina',
-    'South Dakota',
-    'Tennessee',
-    'Texas',
-    'Utah',
-    'Vermont',
-    'Virginia',
-    'Washington',
-    'West Virginia',
-    'Wisconsin',
-    'Wyoming'
-];
-
-const phonePattern = /^\d{10}$/;
 const emailPatternStr =
     "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:.[a-zA-Z0-9-]+)+$";
-const emailPattern = new RegExp(emailPatternStr);
+const emailPattern = new RegExp(
+    "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:.[a-zA-Z0-9-]+)+$"
+);
+const phonePattern = /^\d{10}$/;
 
 const validators = {
     email: (a) => emailPattern.test(a),
@@ -70,23 +18,6 @@ const validators = {
         return phoneValidator.isValidNumberForRegion(number, 'US');
     }
 };
-
-function adjustColor(color, amount) {
-    return (
-        '#' +
-        color
-            .replace(/^#/, '')
-            .replace(/../g, (color) =>
-                (
-                    '0' +
-                    Math.min(
-                        255,
-                        Math.max(0, parseInt(color, 16) + amount)
-                    ).toString(16)
-                ).substr(-2)
-            )
-    );
-}
 
 const dataURLToFile = (dataURL, name) => {
     const arr = dataURL.split(',');
@@ -160,7 +91,7 @@ function getDefaultFieldValue(field) {
         case 'multiselect':
             return [];
         case 'hex_color':
-            return '000000';
+            return 'FFFFFFFF';
         case 'select':
             return null;
         case 'file_upload':
@@ -508,12 +439,6 @@ async function fetchS3File(url) {
     });
 }
 
-const alignmentMap = {
-    left: 'flex-start',
-    center: 'center',
-    right: 'flex-end'
-};
-
 /**
  * If customers provide files through context.setValues
  * we need to explicitly convert any files to file Promises
@@ -542,6 +467,22 @@ function findServars(steps, matcher) {
     });
 }
 
+function textFieldShouldSubmit(servar, value) {
+    let methods, onlyPhone;
+    switch (servar.type) {
+        case 'login':
+            methods = servar.metadata.login_methods;
+            onlyPhone = methods.length === 1 && methods[0] === 'phone';
+            return onlyPhone && value.length === 10;
+        case 'phone_number':
+            return value.length === 10;
+        case 'ssn':
+            return value.length === 9;
+        default:
+            return false;
+    }
+}
+
 // To determine if a field should actually be required, we need to consider the repeat_trigger config
 // If this is the trailing element in a set of repeat_trigger elements, then it shouldn't be required
 // Because we render the trailing element as a way to create a new row, NOT as a required field for the user
@@ -554,7 +495,6 @@ function isFieldActuallyRequired(field, repeatTriggerExists, repeatedRowCount) {
 }
 
 export {
-    adjustColor,
     formatAllStepFields,
     formatStepFields,
     getABVariant,
@@ -574,9 +514,8 @@ export {
     fetchS3File,
     convertFilesToFilePromises,
     findServars,
+    textFieldShouldSubmit,
     isFieldActuallyRequired,
-    states,
-    alignmentMap,
     phonePattern,
     emailPattern,
     emailPatternStr

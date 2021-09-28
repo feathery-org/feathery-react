@@ -1,14 +1,12 @@
-import { act, create } from 'react-test-renderer';
-
 import React from 'react';
-import { RichFileUploader } from '..';
-import { getFieldStyles } from '../../utils/styles';
+import { create, act } from 'react-test-renderer';
+import Elements from '../..';
 
-describe('RichFileUploader', () => {
+describe('RichFileUploadField', () => {
     it('renders a basic file upload component', () => {
         // Arrange
         const props = {
-            field: {
+            element: {
                 id: 'fieldId',
                 styles: {
                     height: '50',
@@ -29,6 +27,7 @@ describe('RichFileUploader', () => {
                 servar: {
                     key: 'key',
                     name: 'Upload file...',
+                    required: true,
                     metadata: {
                         file_types: 'image/*'
                     }
@@ -39,12 +38,11 @@ describe('RichFileUploader', () => {
             onChange: jest.fn(),
             onClick: jest.fn()
         };
-        getFieldStyles(props.field);
 
         // Act
         let component;
         act(() => {
-            component = create(<RichFileUploader {...props} />);
+            component = create(<Elements.RichFileUploadField {...props} />);
         });
 
         // Assert
