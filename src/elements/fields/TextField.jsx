@@ -1,144 +1,9 @@
-import React, { memo } from 'react';
-
 import { IMaskMixin } from 'react-imask';
-import InlineTooltip from '../../components/Tooltip';
+import React, { memo } from 'react';
 import ReactForm from 'react-bootstrap/Form';
-import { bootstrapStyles } from '../../utils/styles';
+import InlineTooltip from '../components/Tooltip';
+import { bootstrapStyles } from '../styles';
 import { emailPatternStr } from '../../utils/formHelperFunctions';
-
-const TextField = memo(
-    ({
-        label,
-        required,
-        field,
-        type,
-        fieldMask,
-        fieldValue,
-        onChange,
-        onClick,
-        pattern,
-        rows,
-        inlineError,
-        ...props
-    }) => {
-        const { servar, applyStyles } = field;
-
-        if (rows) {
-            props.rows = rows;
-            props.as = type;
-        } else props.type = type;
-
-        if (props.inputRef) {
-            props.ref = props.inputRef;
-            delete props.inputRef;
-        } else props.defaultValue = fieldValue || '';
-
-        const inputType = rows === undefined ? 'input' : 'textarea';
-        return (
-            <div
-                css={{
-                    maxWidth: '100%',
-                    ...applyStyles.getTarget('fc')
-                }}
-            >
-                {label}
-                <div
-                    css={{
-                        position: 'relative',
-                        width: '100%',
-                        ...applyStyles.getTarget('sub-fc')
-                    }}
-                >
-                    <ReactForm.Control
-                        id={servar.key}
-                        pattern={pattern}
-                        css={{
-                            height: '100%',
-                            width: '100%',
-                            ...bootstrapStyles,
-                            ...applyStyles.getTarget('field'),
-                            ...(inlineError ? { borderColor: '#F42525' } : {}),
-                            '&:focus': applyStyles.getTarget('active'),
-                            '&:hover': applyStyles.getTarget('hover'),
-                            '&:not(:focus)':
-                                fieldValue || !field.placeholder
-                                    ? {}
-                                    : { color: 'transparent' }
-                        }}
-                        maxLength={servar.max_length}
-                        minLength={servar.min_length}
-                        required={required}
-                        onChange={onChange}
-                        onClick={onClick}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' && inputType === 'textarea')
-                                e.stopPropagation();
-                        }}
-                        autoComplete={servar.metadata.autocomplete || 'on'}
-                        placeholder=''
-                        {...props}
-                    />
-                    <span
-                        css={{
-                            position: 'absolute',
-                            pointerEvents: 'none',
-                            left: '0.75rem',
-                            transition: '0.2s ease all',
-                            top: rows === undefined ? '50%' : '0.375rem',
-                            ...applyStyles.getTarget('placeholder'),
-                            ...(fieldValue
-                                ? applyStyles.getTarget('placeholderFocus')
-                                : {}),
-                            [`${inputType}:focus + &`]: {
-                                ...applyStyles.getTarget('placeholderFocus'),
-                                ...applyStyles.getTarget('placeholderActive')
-                            }
-                        }}
-                    >
-                        {field.placeholder || ''}
-                    </span>
-                    {field.tooltipText && (
-                        <InlineTooltip
-                            id={field.id}
-                            text={field.tooltipText}
-                            applyStyles={applyStyles}
-                        />
-                    )}
-                </div>
-                {inlineError && (
-                    <span
-                        css={{
-                            alignSelf: 'flex-start',
-                            marginTop: '3px',
-                            color: '#F42525',
-                            ...applyStyles.getTarget('error')
-                        }}
-                    >
-                        {inlineError}
-                    </span>
-                )}
-            </div>
-        );
-    }
-);
-
-const MaskedTextField = memo(IMaskMixin((props) => <TextField {...props} />));
-
-function textFieldShouldSubmit(servar, value) {
-    let methods, onlyPhone;
-    switch (servar.type) {
-        case 'login':
-            methods = servar.metadata.login_methods;
-            onlyPhone = methods.length === 1 && methods[0] === 'phone';
-            return onlyPhone && value.length === 10;
-        case 'phone_number':
-            return value.length === 10;
-        case 'ssn':
-            return value.length === 9;
-        default:
-            return false;
-    }
-}
 
 function getTextFieldProps(servar, styles, value) {
     let methods, onlyPhone;
@@ -192,7 +57,7 @@ function getTextFieldProps(servar, styles, value) {
         case 'text_area':
             return {
                 mask: /.+/,
-                type: 'textarea',
+                as: 'textarea',
                 rows: styles.num_rows,
                 value
             };
@@ -210,4 +75,108 @@ function getTextFieldProps(servar, styles, value) {
     }
 }
 
-export { MaskedTextField, getTextFieldProps, textFieldShouldSubmit };
+function TextField({
+    element,
+    applyStyles,
+    fieldLabel,
+    required = false,
+    fieldValue = '',
+    onChange = () => {},
+    onClick = () => {},
+    inlineError,
+    inputRef,
+    ...fieldProps
+}) {
+    const servar = element.servar;
+    const inputType = fieldProps.as === 'textarea' ? 'textarea' : 'input';
+    return (
+        <div
+            css={{
+                maxWidth: '100%',
+                ...applyStyles.getTarget('fc')
+            }}
+        >
+            {fieldLabel}
+            <div
+                css={{
+                    position: 'relative',
+                    width: '100%',
+                    ...applyStyles.getTarget('sub-fc')
+                }}
+            >
+                <ReactForm.Control
+                    id={servar.key}
+                    css={{
+                        height: '100%',
+                        width: '100%',
+                        ...bootstrapStyles,
+                        ...applyStyles.getTarget('field'),
+                        ...(inlineError ? { borderColor: '#F42525' } : {}),
+                        '&:focus': applyStyles.getTarget('active'),
+                        '&:hover': applyStyles.getTarget('hover'),
+                        '&:not(:focus)':
+                            fieldValue || !element.placeholder
+                                ? {}
+                                : { color: 'transparent' }
+                    }}
+                    maxLength={servar.max_length}
+                    minLength={servar.min_length}
+                    required={required}
+                    onChange={onChange}
+                    onClick={onClick}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' && inputType === 'textarea')
+                            e.stopPropagation();
+                    }}
+                    autoComplete={servar.metadata.autocomplete || 'on'}
+                    ref={inputRef}
+                    placeholder=''
+                    {...fieldProps}
+                />
+                <span
+                    css={{
+                        position: 'absolute',
+                        pointerEvents: 'none',
+                        left: '0.75rem',
+                        transition: '0.2s ease all',
+                        top: inputType === 'textarea' ? '0.375rem' : '50%',
+                        ...applyStyles.getTarget('placeholder'),
+                        ...(fieldValue
+                            ? applyStyles.getTarget('placeholderFocus')
+                            : {}),
+                        [`${inputType}:focus + &`]: {
+                            ...applyStyles.getTarget('placeholderFocus'),
+                            ...applyStyles.getTarget('placeholderActive')
+                        }
+                    }}
+                >
+                    {element.placeholder || ''}
+                </span>
+                {element.tooltipText && (
+                    <InlineTooltip
+                        id={`tooltip-${element.id}`}
+                        text={element.tooltipText}
+                        applyStyles={applyStyles}
+                    />
+                )}
+            </div>
+        </div>
+    );
+}
+
+const MaskedTextField = IMaskMixin((props) => <TextField {...props} />);
+
+const MaskedPropsTextField = ({ element, fieldValue = '', ...props }) => {
+    const servar = element.servar;
+    const fieldProps = getTextFieldProps(servar, element.styles, fieldValue);
+    return (
+        <MaskedTextField
+            element={element}
+            fieldValue={fieldValue}
+            {...props}
+            {...fieldProps}
+        />
+    );
+};
+
+export default memo(MaskedPropsTextField);

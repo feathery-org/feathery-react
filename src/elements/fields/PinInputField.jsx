@@ -20,7 +20,8 @@ function SingleOtpInput({
     onFocus,
     onBlur,
     onClick,
-    field,
+    element,
+    applyStyles,
     inlineError
 }) {
     const input = useRef(null);
@@ -39,12 +40,11 @@ function SingleOtpInput({
         }
     }, [focus, input]);
 
-    const applyStyles = field.applyStyles;
     applyStyles.applyBorders('field', focus ? 'selected_' : '', false);
     return (
         <div style={{ display: 'flex', alignItems: 'center' }}>
             <input
-                id={`${field.servar.key}-${index}`}
+                id={`${element.servar.key}-${index}`}
                 aria-label={`${
                     index === 0 ? 'Please enter verification code. ' : ''
                 }Digit ${index + 1}`}
@@ -71,8 +71,16 @@ function SingleOtpInput({
     );
 }
 
-function OtpInput({ onChange, onClick, value, field, inlineError }) {
-    const [activeInput, setActiveInput] = useState(0);
+function OtpInput({
+    element,
+    applyStyles,
+    autofocus,
+    onChange,
+    onClick,
+    value,
+    inlineError
+}) {
+    const [activeInput, setActiveInput] = useState(autofocus ? 0 : -1);
     const [pasted, setPasted] = useState(false);
     const [rawValue, setRawValue] = useState(value.toString().split(''));
 
@@ -86,7 +94,7 @@ function OtpInput({ onChange, onClick, value, field, inlineError }) {
         return isNum(value, 10) && value.trim().length === 1;
     };
 
-    const numInputs = field.servar.max_length;
+    const numInputs = element.servar.max_length;
 
     // Focus on input by index
     const focusInput = (input) => {
@@ -188,7 +196,7 @@ function OtpInput({ onChange, onClick, value, field, inlineError }) {
         for (let i = 0; i < numInputs; i++) {
             inputs.push(
                 <SingleOtpInput
-                    key={`${field.servar.key}-${i}`}
+                    key={`${element.servar.key}-${i}`}
                     index={i}
                     focus={activeInput === i}
                     value={rawValue[i]}
@@ -204,7 +212,8 @@ function OtpInput({ onChange, onClick, value, field, inlineError }) {
                     }}
                     onBlur={() => setActiveInput(-1)}
                     onClick={onClick}
-                    field={field}
+                    element={element}
+                    applyStyles={applyStyles}
                     inlineError={inlineError}
                 />
             );
@@ -218,7 +227,7 @@ function OtpInput({ onChange, onClick, value, field, inlineError }) {
             css={{
                 display: 'flex',
                 flexDirection: 'row',
-                ...field.applyStyles.getTarget('fc')
+                ...applyStyles.getTarget('fc')
             }}
         >
             {renderInputs()}
@@ -226,38 +235,30 @@ function OtpInput({ onChange, onClick, value, field, inlineError }) {
     );
 }
 
-function FeatheryPinInput({
-    field,
+function PinInputField({
+    element,
+    applyStyles,
     fieldLabel,
-    fieldVal,
-    onClick,
-    onChange,
-    inlineError
+    inlineError,
+    autofocus = false,
+    fieldVal = '',
+    onClick = () => {},
+    onChange = () => {}
 }) {
     return (
         <div style={{ display: 'flex' }}>
             {fieldLabel}
             <OtpInput
+                autofocus={autofocus}
                 value={fieldVal}
-                field={field}
+                applyStyles={applyStyles}
+                element={element}
                 onChange={onChange}
                 onClick={onClick}
                 inlineError={inlineError}
             />
-            {inlineError && (
-                <span
-                    css={{
-                        alignSelf: 'flex-start',
-                        marginTop: '3px',
-                        color: '#F42525',
-                        ...field.applyStyles.getTarget('error')
-                    }}
-                >
-                    {inlineError}
-                </span>
-            )}
         </div>
     );
 }
 
-export default FeatheryPinInput;
+export default PinInputField;

@@ -6,15 +6,16 @@ import { Image } from 'react-bootstrap';
 import { getThumbnailData } from '../../utils/image';
 import { justRemove } from '../../utils/array';
 
-function MultiFileUploader({
-    field,
-    required,
-    onChange: customOnChange,
-    onClick: customOnClick,
+function MultiFileUploadField({
+    element,
+    applyStyles,
+    required = false,
+    onChange: customOnChange = () => {},
+    onClick: customOnClick = () => {},
     initialFiles = []
 }) {
-    const { servar, applyStyles } = field;
-    const showIcon = field.icon_url !== '';
+    const servar = element.servar;
+    const showIcon = element.icon_url !== '';
     const showLabel = servar.name !== '';
 
     // Maintain separate lists of raw files and thumbnails data
@@ -29,7 +30,7 @@ function MultiFileUploader({
             const data = await Promise.all(initialFiles.map(getThumbnailData));
             setThumbnailsData(data);
         })();
-    }, [initialFiles]);
+    }, []);
 
     // Reference the hidden multi-select element
     const fileInput = useRef();
@@ -162,7 +163,7 @@ function MultiFileUploader({
             >
                 {showIcon && (
                     <Image
-                        src={field.icon_url}
+                        src={element.icon_url}
                         fluid
                         style={{
                             maxWidth: '100%',
@@ -196,4 +197,4 @@ function MultiFileUploader({
     );
 }
 
-export default MultiFileUploader;
+export default MultiFileUploadField;

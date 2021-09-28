@@ -1,10 +1,38 @@
 import React from 'react';
 import { create, act } from 'react-test-renderer';
-import ButtonElement from '../ButtonElement';
-import { getButtonStyles } from '../../utils/styles';
+import { adjustColor } from '../ButtonElement';
+import Elements from '../..';
 
 describe('ButtonElement', () => {
-    it('renders an empty Button element', async () => {
+    describe('adjustColor', () => {
+        it('adjusts color up', () => {
+            // Arrange
+            const color = '#000000';
+            const amount = 30;
+            const expected = '#1e1e1e';
+
+            // Act
+            const actual = adjustColor(color, amount);
+
+            // Assert
+            expect(actual).toEqual(expected);
+        });
+
+        it('adjusts color down', () => {
+            // Arrange
+            const color = '#ffffff';
+            const amount = -30;
+            const expected = '#e1e1e1';
+
+            // Act
+            const actual = adjustColor(color, amount);
+
+            // Assert
+            expect(actual).toEqual(expected);
+        });
+    });
+
+    it('renders an empty ButtonElement element', async () => {
         // Arrange
         const props = {
             element: {
@@ -28,12 +56,11 @@ describe('ButtonElement', () => {
             setSubmitRef: () => {},
             onRepeatClick: () => {}
         };
-        getButtonStyles(props.element);
 
         // Act
         let button;
         act(() => {
-            button = create(<ButtonElement {...props} />);
+            button = create(<Elements.ButtonElement {...props} />);
         });
         const tree = button.toJSON();
 
@@ -61,12 +88,11 @@ describe('ButtonElement', () => {
             setSubmitRef: () => {},
             onRepeatClick: () => {}
         };
-        getButtonStyles(props.element);
 
         // Act
         let button;
         act(() => {
-            button = create(<ButtonElement {...props} />);
+            button = create(<Elements.ButtonElement {...props} />);
         });
         const tree = button.toJSON();
 
@@ -107,12 +133,11 @@ describe('ButtonElement', () => {
             setSubmitRef: () => {},
             onRepeatClick: () => {}
         };
-        getButtonStyles(props.element);
 
         // Act
         let button;
         act(() => {
-            button = create(<ButtonElement {...props} />);
+            button = create(<Elements.ButtonElement {...props} />);
         });
         const tree = button.toJSON();
 

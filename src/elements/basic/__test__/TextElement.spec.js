@@ -1,7 +1,6 @@
 import React from 'react';
 import { create, act } from 'react-test-renderer';
-import TextElement from '../TextElement';
-import { getTextStyles } from '../../utils/styles';
+import Elements from '../..';
 
 describe('Text', () => {
     it('renders an empty text block', async () => {
@@ -16,12 +15,11 @@ describe('Text', () => {
             conditions: [],
             submit: () => {}
         };
-        getTextStyles(props.element);
 
         // Act
         let text;
         act(() => {
-            text = create(<TextElement {...props} />);
+            text = create(<Elements.TextElement {...props} />);
         });
         const tree = text.toJSON();
 
@@ -41,12 +39,11 @@ describe('Text', () => {
             conditions: [],
             submit: () => {}
         };
-        getTextStyles(props.element);
 
         // Act
         let text;
         act(() => {
-            text = create(<TextElement {...props} />);
+            text = create(<Elements.TextElement {...props} />);
         });
         const tree = text.toJSON();
 
@@ -79,12 +76,11 @@ describe('Text', () => {
             conditions: [],
             submit: () => {}
         };
-        getTextStyles(props.element);
 
         // Act
         let text;
         act(() => {
-            text = create(<TextElement {...props} />);
+            text = create(<Elements.TextElement {...props} />);
         });
         const tree = text.toJSON();
 

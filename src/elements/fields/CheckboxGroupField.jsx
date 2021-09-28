@@ -1,44 +1,40 @@
-import React, { useState } from 'react';
-
+import React from 'react';
 import ReactForm from 'react-bootstrap/Form';
-import { bootstrapStyles } from '../../utils/styles';
+import { bootstrapStyles } from '../styles';
 
-function RadioButtonGroup({
-    field,
-    required,
+function CheckboxGroupField({
+    element,
+    applyStyles,
     fieldLabel,
-    fieldVal,
-    otherVal,
-    onChange,
-    handleOtherStateChange,
-    onClick
+    fieldVal = [],
+    otherVal = '',
+    onChange = () => {},
+    onOtherChange = () => {},
+    onClick = () => {}
 }) {
-    const [otherSelect, setOtherSelect] = useState({});
-    const { servar, applyStyles } = field;
-    const otherChecked =
-        (otherSelect[servar.key] || fieldVal) && fieldVal === otherVal;
+    const servar = element.servar;
+    const otherChecked = fieldVal.includes(otherVal);
     return (
         <div css={applyStyles.getTarget('fc')}>
             {fieldLabel}
             {servar.metadata.options.map((opt, i) => {
                 return (
                     <ReactForm.Check
-                        type='radio'
+                        type='checkbox'
                         id={`${servar.key}-${i}`}
                         key={`${servar.key}-${i}`}
+                        name={opt}
                         label={opt}
-                        checked={fieldVal === opt}
-                        required={required}
+                        checked={fieldVal.includes(opt)}
                         onChange={onChange}
                         onClick={onClick}
-                        value={opt}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
                             marginBottom: '5px'
                         }}
                         css={{
-                            'input[type="radio"]': {
+                            'input[type="checkbox"]': {
                                 marginTop: 0,
                                 marginBottom: 0
                             }
@@ -54,26 +50,20 @@ function RadioButtonGroup({
                     }}
                 >
                     <ReactForm.Check
-                        type='radio'
+                        type='checkbox'
                         id={`${servar.key}-`}
                         key={`${servar.key}-`}
+                        name={otherVal}
                         label='Other'
                         checked={otherChecked}
-                        onChange={(e) => {
-                            setOtherSelect({
-                                ...otherSelect,
-                                [servar.key]: true
-                            });
-                            onChange(e);
-                        }}
+                        onChange={onChange}
                         onClick={onClick}
-                        value={otherVal || ''}
                         style={{
                             display: 'flex',
                             alignItems: 'center'
                         }}
                         css={{
-                            'input[type="radio"]': {
+                            'input[type="checkbox"]': {
                                 marginTop: 0,
                                 marginBottom: 0
                             }
@@ -90,10 +80,7 @@ function RadioButtonGroup({
                         }}
                         id={servar.key}
                         value={otherVal || ''}
-                        onChange={(e) => {
-                            handleOtherStateChange(otherVal)(e);
-                            onChange(e, false);
-                        }}
+                        onChange={onOtherChange}
                         onClick={onClick}
                         maxLength={servar.max_length}
                         minLength={servar.min_length}
@@ -105,4 +92,4 @@ function RadioButtonGroup({
     );
 }
 
-export default RadioButtonGroup;
+export default CheckboxGroupField;

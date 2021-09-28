@@ -4,17 +4,17 @@ import { FiX } from 'react-icons/fi';
 import { IconContext } from 'react-icons';
 import { Image } from 'react-bootstrap';
 import { getThumbnailData } from '../../utils/image';
-import { reactFriendlyKey } from '../../utils/formHelperFunctions';
 
-function RichFileUploader({
-    field,
-    required,
-    onChange: customOnChange,
-    onClick: customOnClick,
-    initialFile
+function RichFileUploadField({
+    element,
+    applyStyles,
+    required = false,
+    onChange: customOnChange = () => {},
+    onClick: customOnClick = () => {},
+    initialFile = null
 }) {
-    const { servar, applyStyles } = field;
-    const showIcon = field.icon_url !== '';
+    const servar = element.servar;
+    const showIcon = element.icon_url !== '';
     const showLabel = servar.name !== '';
 
     const [thumbnail, setThumbnail] = useState('');
@@ -71,7 +71,7 @@ function RichFileUploader({
 
     return (
         <div
-            id={reactFriendlyKey(field)}
+            id={servar.key}
             onClick={onClick}
             css={{
                 position: 'relative',
@@ -91,7 +91,7 @@ function RichFileUploader({
         >
             {showIcon && !file && (
                 <Image
-                    src={field.icon_url}
+                    src={element.icon_url}
                     fluid
                     style={{
                         maxWidth: '100%',
@@ -171,4 +171,4 @@ function RichFileUploader({
     );
 }
 
-export default RichFileUploader;
+export default RichFileUploadField;
