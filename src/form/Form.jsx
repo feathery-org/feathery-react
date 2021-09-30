@@ -99,8 +99,8 @@ function Form({
         () =>
             rawActiveStep
                 ? rawActiveStep.servar_fields.some(
-                (field) => field.servar.repeat_trigger
-                )
+                      (field) => field.servar.repeat_trigger
+                  )
                 : false,
         [rawActiveStep]
     );
@@ -110,9 +110,9 @@ function Form({
         () =>
             rawActiveStep
                 ? calculateRepeatedRowCount({
-                    step: rawActiveStep,
-                    values: fieldValues
-                })
+                      step: rawActiveStep,
+                      values: fieldValues
+                  })
                 : null,
         [rawActiveStep, repeatChanged]
     );
@@ -441,9 +441,9 @@ function Form({
     useEffect(() => {
         return steps
             ? history.listen(async () => {
-                const hashKey = decodeURI(location.hash.substr(1));
-                if (hashKey in steps) setStepKey(hashKey);
-            })
+                  const hashKey = decodeURI(location.hash.substr(1));
+                  if (hashKey in steps) setStepKey(hashKey);
+              })
             : undefined;
     }, [steps]);
 
@@ -734,7 +734,7 @@ function Form({
                             // Error; SMS not sent. Reset Recaptcha
                             window.firebaseRecaptchaVerifier
                                 .render()
-                                .then(function(widgetId) {
+                                .then(function (widgetId) {
                                     // Reset reCaptcha
                                     // eslint-disable-next-line no-undef
                                     grecaptcha.reset(widgetId);
@@ -846,10 +846,10 @@ function Form({
     }
 
     function handleRedirect({
-                                metadata,
-                                submitData = false,
-                                submitPromise = null
-                            }) {
+        metadata,
+        submitData = false,
+        submitPromise = null
+    }) {
         const { newStepKey, newSequence, newSequenceIndex } = nextStepKey(
             activeStep.next_conditions,
             metadata,
@@ -897,16 +897,16 @@ function Form({
     }
 
     const fieldOnChange = ({
-                               fieldIDs,
-                               fieldKeys,
-                               elementRepeatIndex = 0
-                           }) => ({
-                                      trigger = 'field',
-                                      submitData = false,
-                                      integrationData = null,
-                                      // Multi-file upload is not a repeated row but a repeated field
-                                      valueRepeatIndex = null
-                                  } = {}) => {
+        fieldIDs,
+        fieldKeys,
+        elementRepeatIndex = 0
+    }) => ({
+        trigger = 'field',
+        submitData = false,
+        integrationData = null,
+        // Multi-file upload is not a repeated row but a repeated field
+        valueRepeatIndex = null
+    } = {}) => {
         if (typeof onChange === 'function') {
             const formattedFields = formatAllStepFields(steps, fieldValues);
             const { userKey } = initInfo();
@@ -1151,7 +1151,7 @@ function Form({
                                         onChange({
                                             submitData:
                                                 field.submit_trigger ===
-                                                'auto' && file
+                                                    'auto' && file
                                         });
                                     }}
                                     onClick={onClick}
@@ -1171,7 +1171,7 @@ function Form({
                                         onChange({
                                             submitData:
                                                 field.submit_trigger ===
-                                                'auto' && fileVal
+                                                    'auto' && fileVal
                                         });
                                     }}
                                     onClick={onClick}
@@ -1211,7 +1211,7 @@ function Form({
                                                     return;
                                                 updateFieldValues({
                                                     [servar.key]:
-                                                    e.target.textContent
+                                                        e.target.textContent
                                                 });
                                             }
                                         );
@@ -1248,7 +1248,7 @@ function Form({
                                         onChange({
                                             submitData:
                                                 field.submit_trigger ===
-                                                'auto' && val
+                                                    'auto' && val
                                         });
                                     }}
                                     inlineError={inlineErr}
@@ -1265,9 +1265,9 @@ function Form({
                                         onChange({
                                             submitData:
                                                 field.submit_trigger ===
-                                                'auto' &&
+                                                    'auto' &&
                                                 val.length ===
-                                                field.servar.max_length
+                                                    field.servar.max_length
                                         });
                                         onChange();
                                     }}
