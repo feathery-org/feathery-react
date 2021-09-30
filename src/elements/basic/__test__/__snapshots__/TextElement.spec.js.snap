@@ -2,10 +2,10 @@
 
 exports[`Text renders a plaintext text block 1`] = `
 <div
-  className="css-sa3tol-TextElement"
+  className="css-1t7rfbf-TextElement"
 >
   <div
-    className="css-795pei-TextElement"
+    className="css-tr0c9q-TextElement"
   >
     <span
       className="css-1kxrhf3"
@@ -19,10 +19,10 @@ exports[`Text renders a plaintext text block 1`] = `
 
 exports[`Text renders a text block with custom styles 1`] = `
 <div
-  className="css-sa3tol-TextElement"
+  className="css-1t7rfbf-TextElement"
 >
   <div
-    className="css-795pei-TextElement"
+    className="css-tr0c9q-TextElement"
   >
     <span
       className="css-1kxrhf3"
@@ -36,10 +36,10 @@ exports[`Text renders a text block with custom styles 1`] = `
 
 exports[`Text renders an empty text block 1`] = `
 <div
-  className="css-sa3tol-TextElement"
+  className="css-1t7rfbf-TextElement"
 >
   <div
-    className="css-795pei-TextElement"
+    className="css-tr0c9q-TextElement"
   >
     <span
       className="css-1kxrhf3"

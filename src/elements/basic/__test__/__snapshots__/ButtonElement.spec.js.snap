@@ -2,7 +2,7 @@
 
 exports[`ButtonElement renders a button with custom styles 1`] = `
 <button
-  className="css-100jsw4-ButtonElement btn btn-primary"
+  className="css-3azwfl-ButtonElement btn btn-primary"
   disabled={false}
   onClick={[Function]}
   style={
@@ -37,7 +37,7 @@ exports[`ButtonElement renders a button with custom styles 1`] = `
 
 exports[`ButtonElement renders a button with plain text 1`] = `
 <button
-  className="css-100jsw4-ButtonElement btn btn-primary"
+  className="css-3azwfl-ButtonElement btn btn-primary"
   disabled={false}
   onClick={[Function]}
   style={
@@ -72,7 +72,7 @@ exports[`ButtonElement renders a button with plain text 1`] = `
 
 exports[`ButtonElement renders an empty ButtonElement element 1`] = `
 <button
-  className="css-89fnp8-ButtonElement btn btn-primary"
+  className="css-1xc1nhy-ButtonElement btn btn-primary"
   disabled={false}
   onClick={[Function]}
   style={
