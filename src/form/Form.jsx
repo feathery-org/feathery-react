@@ -1,6 +1,5 @@
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import Elements from '../elements';
 import {
     calculateRepeatedRowCount,
     calculateStepCSS,
@@ -33,8 +32,9 @@ import {
 } from '../utils/formHelperFunctions';
 import { initInfo, initState, initializeIntegrations } from '../utils/init';
 import { justInsert, justRemove } from '../utils/array';
-import Client from '../utils/client';
 
+import Client from '../utils/client';
+import Elements from '../elements';
 import GooglePlaces from './GooglePlaces';
 import ReactForm from 'react-bootstrap/Form';
 import TagManager from 'react-gtm-module';
@@ -153,11 +153,11 @@ function Form({
         }
     }, [activeStep?.key]);
 
-    const scrollToRef = (ref) => window.scrollTo({
-        top: 0,
-        left: ref?.current?.offsetTop,
-        behavior: 'smooth'
-    });
+    const scrollToRef = (ref) =>
+        window.scrollTo({
+            top: ref?.current?.offsetTop,
+            behavior: 'smooth'
+        });
     useEffect(() => {
         if (shouldScrollToTop) {
             scrollToRef(formRef);
@@ -901,7 +901,12 @@ function Form({
             client.registerEvent(eventData, submitPromise);
             const newURL =
                 location.pathname + location.search + `#${newStepKey}`;
-            if (submitData || (metadata.elementType === 'text' && metadata.trigger === 'click')) setShouldScrollToTop(true);
+            if (
+                submitData ||
+                (metadata.elementType === 'text' &&
+                    metadata.trigger === 'click')
+            )
+                setShouldScrollToTop(true);
             else setShouldScrollToTop(false);
             if (submitData || ['button', 'text'].includes(metadata.elementType))
                 history.push(newURL);
