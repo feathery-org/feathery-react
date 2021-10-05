@@ -9,7 +9,7 @@ Array [
   >
     <img
       className="img-fluid"
-      src="https://feathery.tech"
+      src="https://feathery.io"
       style={
         Object {
           "maxHeight": "100%",
