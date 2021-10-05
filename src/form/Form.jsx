@@ -63,6 +63,7 @@ function Form({
     const [rawActiveStep, setRawActiveStep] = useState(null);
     const [stepKey, setStepKey] = useState('');
     const [filePathMap, setFilePathMap] = useState({});
+    const [shouldScrollToTop, setShouldScrollToTop] = useState(true);
     const fileServarKeys = useMemo(
         () =>
             findServars(steps, (s) => FILE_UPLOADERS.includes(s.type)).reduce(
@@ -151,6 +152,17 @@ function Form({
             );
         }
     }, [activeStep?.key]);
+
+    const scrollToRef = (ref) => window.scrollTo({
+        top: 0,
+        left: ref?.current?.offsetTop,
+        behavior: 'smooth'
+    });
+    useEffect(() => {
+        if (shouldScrollToTop) {
+            scrollToRef(formRef);
+        }
+    }, [stepKey]);
 
     function addRepeatedRow() {
         if (
@@ -889,6 +901,8 @@ function Form({
             client.registerEvent(eventData, submitPromise);
             const newURL =
                 location.pathname + location.search + `#${newStepKey}`;
+            if (submitData || (metadata.elementType === 'text' && metadata.trigger === 'click')) setShouldScrollToTop(true);
+            else setShouldScrollToTop(false);
             if (submitData || ['button', 'text'].includes(metadata.elementType))
                 history.push(newURL);
             else history.replace(newURL);
@@ -930,6 +944,7 @@ function Form({
                 },
                 setOptions: updateFieldOptions(steps)
             });
+            setShouldScrollToTop(false);
         }
         const metadata = {
             elementType: 'field',
