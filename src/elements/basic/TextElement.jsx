@@ -18,11 +18,6 @@ function applyTextStyles(element, applyStyles) {
     applyStyles.apply('text', 'layout', (a) => ({
         textAlign: legacyAlignment(a)
     }));
-    if (element.styles.border_color) {
-        applyStyles.apply('container', 'border_color', (a) => ({
-            border: `1px solid #${a}`
-        }));
-    }
     applyStyles.applyMargin('text');
     if (element.styles.line_height) {
         applyStyles.apply('text', 'line_height', (a) => ({
@@ -43,23 +38,14 @@ function TextElement({
         applyStyles
     ]);
     return (
-        <div
-            css={{
-                display: 'flex',
-                flexDirection: 'column',
-                ...styles.getLayout(),
-                ...styles.getTarget('container')
-            }}
-        >
-            <div css={styles.getTarget('text')}>
-                <TextNodes
-                    element={element}
-                    values={values}
-                    applyStyles={applyStyles}
-                    handleRedirect={handleRedirect}
-                    conditions={conditions}
-                />
-            </div>
+        <div css={styles.getTarget('text')}>
+            <TextNodes
+                element={element}
+                values={values}
+                applyStyles={applyStyles}
+                handleRedirect={handleRedirect}
+                conditions={conditions}
+            />
         </div>
     );
 }
