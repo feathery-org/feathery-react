@@ -2,52 +2,40 @@
 
 exports[`Text renders a plaintext text block 1`] = `
 <div
-  className="css-1t7rfbf-TextElement"
+  className="css-tr0c9q-TextElement"
 >
-  <div
-    className="css-tr0c9q-TextElement"
+  <span
+    className="css-1kxrhf3"
+    onClick={[Function]}
   >
-    <span
-      className="css-1kxrhf3"
-      onClick={[Function]}
-    >
-      Hello World!
-    </span>
-  </div>
+    Hello World!
+  </span>
 </div>
 `;
 
 exports[`Text renders a text block with custom styles 1`] = `
 <div
-  className="css-1t7rfbf-TextElement"
+  className="css-tr0c9q-TextElement"
 >
-  <div
-    className="css-tr0c9q-TextElement"
+  <span
+    className="css-1kxrhf3"
+    onClick={[Function]}
   >
-    <span
-      className="css-1kxrhf3"
-      onClick={[Function]}
-    >
-      Hello World!
-    </span>
-  </div>
+    Hello World!
+  </span>
 </div>
 `;
 
 exports[`Text renders an empty text block 1`] = `
 <div
-  className="css-1t7rfbf-TextElement"
+  className="css-tr0c9q-TextElement"
 >
-  <div
-    className="css-tr0c9q-TextElement"
+  <span
+    className="css-1kxrhf3"
+    onClick={[Function]}
   >
-    <span
-      className="css-1kxrhf3"
-      onClick={[Function]}
-    >
-      
+    
 
-    </span>
-  </div>
+  </span>
 </div>
 `;
