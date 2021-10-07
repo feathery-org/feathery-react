@@ -2,7 +2,7 @@
 
 exports[`Text renders a plaintext text block 1`] = `
 <div
-  className="css-tr0c9q-TextElement"
+  className="css-795pei-TextElement"
 >
   <span
     className="css-i7sfrf"
@@ -15,7 +15,7 @@ exports[`Text renders a plaintext text block 1`] = `
 
 exports[`Text renders a text block with custom styles 1`] = `
 <div
-  className="css-tr0c9q-TextElement"
+  className="css-795pei-TextElement"
 >
   <span
     className="css-i7sfrf"
@@ -28,7 +28,7 @@ exports[`Text renders a text block with custom styles 1`] = `
 
 exports[`Text renders an empty text block 1`] = `
 <div
-  className="css-tr0c9q-TextElement"
+  className="css-795pei-TextElement"
 >
   <span
     className="css-i7sfrf"

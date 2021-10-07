@@ -144,7 +144,7 @@ function ButtonElement({
                 },
                 '&:active': styles.getTarget('buttonActive'),
                 '&:hover:enabled': styles.getTarget('buttonHover'),
-                ...styles.getTarget('button')
+                '&&': styles.getTarget('button')
             }}
             disabled={element.link === 'none' || showSpinner}
             onClick={buttonOnClick}
