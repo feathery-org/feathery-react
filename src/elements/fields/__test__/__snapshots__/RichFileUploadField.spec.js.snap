@@ -3,7 +3,7 @@
 exports[`RichFileUploadField renders a basic file upload component 1`] = `
 Array [
   <div
-    className="css-6fg5ye-RichFileUploadField"
+    className="css-rxpr37-RichFileUploadField"
     id="key"
     onClick={[Function]}
   >
@@ -19,7 +19,7 @@ Array [
       }
     />
     <div
-      className="css-k4wh5b-RichFileUploadField"
+      className="css-1bv0rem-RichFileUploadField"
     >
       Upload file...
     </div>

@@ -69,7 +69,7 @@ class ApplyStyles {
     // Return CSS for a particular target HTML element
     getTarget(target, desktopOnly = false) {
         return {
-            '&&': this.targets[target],
+            ...this.targets[target],
             ...(!desktopOnly && this.handleMobile
                 ? { [breakpointKey]: this.mobileTargets[target] }
                 : {})
