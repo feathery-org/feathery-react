@@ -242,9 +242,6 @@ class ApplyStyles {
 
     getRichFontStyles(attrs) {
         const fontStyles = this._getRichFontScreenStyles(attrs);
-        if (attrs.font_link || (isNum(attrs.start) && isNum(attrs.end)))
-            fontStyles.cursor = 'pointer';
-
         if (this.handleMobile) {
             fontStyles[breakpointKey] = this._getRichFontScreenStyles(
                 attrs,

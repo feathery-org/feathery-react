@@ -26,7 +26,7 @@ exports[`ButtonElement renders a button with custom styles 1`] = `
     }
   >
     <span
-      className="css-1kxrhf3"
+      className="css-i7sfrf"
       onClick={[Function]}
     >
       Hello World!
@@ -61,7 +61,7 @@ exports[`ButtonElement renders a button with plain text 1`] = `
     }
   >
     <span
-      className="css-1kxrhf3"
+      className="css-i7sfrf"
       onClick={[Function]}
     >
       Hello World!
@@ -96,7 +96,7 @@ exports[`ButtonElement renders an empty ButtonElement element 1`] = `
     }
   >
     <span
-      className="css-1kxrhf3"
+      className="css-i7sfrf"
       onClick={[Function]}
     >
       

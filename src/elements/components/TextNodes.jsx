@@ -18,12 +18,18 @@ function TextNodes({
                 cond.element_type === 'text' &&
                 cond.element_id === element.id
             ) {
-                const start = cond.metadata.start || 0;
-                const end = cond.metadata.end || element.text.length;
+                let start = cond.metadata.start;
+                let end = cond.metadata.end;
+                let fullSpan = false;
+                if (start === undefined && end === undefined) {
+                    start = 0;
+                    end = element.text.length;
+                    fullSpan = true;
+                }
                 delta = delta.compose(
                     new Delta()
                         .retain(start)
-                        .retain(end - start, { start, end })
+                        .retain(end - start, { start, end, fullSpan })
                 );
             }
         });
@@ -57,9 +63,11 @@ function TextNodes({
                 }
 
                 let onClick = () => {};
+                let cursor = 'default';
                 const attrs = op.attributes || {};
                 if (attrs.font_link) {
                     onClick = () => window.open(attrs.font_link, '_blank');
+                    cursor = 'pointer';
                 } else if (isNum(attrs.start) && isNum(attrs.end)) {
                     onClick = () => {
                         handleRedirect({
@@ -67,11 +75,12 @@ function TextNodes({
                                 elementType: 'text',
                                 elementIDs: [element.id],
                                 trigger: 'click',
-                                start: attrs.start,
-                                end: attrs.end
+                                start: attrs.fullSpan ? undefined : attrs.start,
+                                end: attrs.fullSpan ? undefined : attrs.end
                             }
                         });
                     };
+                    cursor = 'pointer';
                 }
 
                 return (
@@ -79,6 +88,7 @@ function TextNodes({
                         key={i}
                         css={{
                             whiteSpace: 'pre-wrap',
+                            cursor,
                             ...applyStyles.getRichFontStyles(attrs)
                         }}
                         onClick={onClick}
