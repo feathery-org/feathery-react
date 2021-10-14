@@ -59,6 +59,7 @@ function Form({
     const [client, setClient] = useState(null);
     const history = useHistory();
 
+    const [first, setFirst] = useState(true);
     const [steps, setSteps] = useState(null);
     const [rawActiveStep, setRawActiveStep] = useState(null);
     const [stepKey, setStepKey] = useState('');
@@ -369,6 +370,7 @@ function Form({
                     client.submitCustom(values);
                 },
                 setOptions: updateFieldOptions(steps, newStep),
+                firstStepLoaded: first,
                 integrationData
             });
             setRawActiveStep(newStep);
@@ -389,6 +391,7 @@ function Form({
         if (client === null) {
             const clientInstance = new Client(formKey);
             setClient(clientInstance);
+            setFirst(true);
 
             // render form without values first for speed
             const fetchPromise = clientInstance
@@ -445,6 +448,7 @@ function Form({
         client,
         activeStep,
         setClient,
+        setFirst,
         setSteps,
         getDefaultFieldValues,
         updateFieldValues
@@ -695,6 +699,7 @@ function Form({
                 ),
                 triggerType: elementType,
                 triggerAction: metadata.trigger,
+                firstStepSubmitted: first,
                 integrationData
             });
 
@@ -896,6 +901,7 @@ function Form({
                 return true;
             }
         } else {
+            setFirst(false);
             if (steps[newStepKey].next_conditions.length === 0)
                 eventData.completed = true;
             client.registerEvent(eventData, submitPromise);
