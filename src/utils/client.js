@@ -8,10 +8,10 @@ import { encodeGetParams } from './primitives';
 const isLocal = false;
 export const API_URL = isLocal
     ? 'http://localhost:8006/'
-    : 'https://api.feathery.tech/';
+    : 'https://api.feathery.io/';
 export const CDN_URL = isLocal
     ? 'http://localhost:8006/'
-    : 'https://cdn.feathery.tech/';
+    : 'https://cdn.feathery.io/';
 
 export default class Client {
     constructor(formKey) {
