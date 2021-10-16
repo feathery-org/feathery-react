@@ -5,7 +5,7 @@ exports[`Text renders a plaintext text block 1`] = `
   className="css-795pei-TextElement"
 >
   <span
-    className="css-i7sfrf"
+    className="css-1guhjp7"
     onClick={[Function]}
   >
     Hello World!
@@ -18,7 +18,7 @@ exports[`Text renders a text block with custom styles 1`] = `
   className="css-795pei-TextElement"
 >
   <span
-    className="css-i7sfrf"
+    className="css-1guhjp7"
     onClick={[Function]}
   >
     Hello World!
@@ -31,7 +31,7 @@ exports[`Text renders an empty text block 1`] = `
   className="css-795pei-TextElement"
 >
   <span
-    className="css-i7sfrf"
+    className="css-1guhjp7"
     onClick={[Function]}
   >
     
