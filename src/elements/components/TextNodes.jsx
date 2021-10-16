@@ -63,7 +63,7 @@ function TextNodes({
                 }
 
                 let onClick = () => {};
-                let cursor = 'default';
+                let cursor = 'inherit';
                 const attrs = op.attributes || {};
                 if (attrs.font_link) {
                     onClick = () => window.open(attrs.font_link, '_blank');

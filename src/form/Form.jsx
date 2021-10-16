@@ -52,6 +52,7 @@ function Form({
     onLoad = null,
     onSubmit = null,
     initialValues = {},
+    usePreviousUserData = true,
     style = {},
     className = '',
     children
@@ -261,6 +262,9 @@ function Form({
     };
 
     function updateSessionValues(session) {
+        // Don't track previous sessions if toggled
+        if (!usePreviousUserData) return;
+
         // Convert files of the format { url, path } to Promise<File>
         const filePromises = objectMap(session.file_values, (fileOrFiles) =>
             Array.isArray(fileOrFiles)
