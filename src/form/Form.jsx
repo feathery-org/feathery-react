@@ -982,14 +982,16 @@ function Form({
                 ...style
             }}
             onKeyDown={(e) => {
-                // Skip 1-input steps by pressing `Enter`
-                if (
-                    submitRef.current &&
-                    e.key === 'Enter' &&
-                    activeStep.servar_fields.length === 1
-                ) {
-                    // Simulate button click if available
-                    submitRef.current();
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    // Skip 1-input steps by pressing `Enter`
+                    if (
+                        submitRef.current &&
+                        activeStep.servar_fields.length === 1
+                    ) {
+                        // Simulate button click if available
+                        submitRef.current();
+                    }
                 }
             }}
         >
