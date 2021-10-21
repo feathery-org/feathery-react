@@ -52,6 +52,7 @@ function Form({
     onLoad = null,
     onSubmit = null,
     initialValues = {},
+    initialStepId = '',
     usePreviousUserData = true,
     style = {},
     className = '',
@@ -430,7 +431,9 @@ function Form({
                         updateFieldValues(getDefaultFieldValues(data));
                         updateSessionValues(session);
                         const newKey =
-                            session.current_step_key || getOrigin(data);
+                            initialStepId ||
+                            session.current_step_key ||
+                            getOrigin(data);
                         history.replace(
                             location.pathname + location.search + `#${newKey}`
                         );

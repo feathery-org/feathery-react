@@ -9,6 +9,7 @@ import $script from 'scriptjs';
 
 const fpPromise = FingerprintJS.load();
 let initFormsPromise = Promise.resolve();
+const defaultClient = new Client();
 const defaultOptions = {
     userKey: null,
     formKeys: [],
@@ -71,6 +72,16 @@ function init(apiKey, options = {}) {
             document.cookie = `feathery-user-id=${initState.userKey}; max-age=31536000; SameSite=strict`;
             initFormsPromise = _fetchFormData(options.formKeys);
         }
+    }
+    if (initState.authId) {
+        initFormsPromise = initFormsPromise.then(
+            async () =>
+                await defaultClient.submitAuthInfo({
+                    authId: initState.authId,
+                    authPhone: initState.authPhoneNumber,
+                    authEmail: initState.authEmail
+                })
+        );
     }
     return initFormsPromise;
 }
@@ -175,7 +186,7 @@ function initInfo() {
 }
 
 function updateUserKey(newUserKey) {
-    new Client().updateUserKey(newUserKey).then(() => {
+    defaultClient.updateUserKey(newUserKey).then(() => {
         initState.userKey = newUserKey;
         if (initState.tracking === 'cookie') {
             document.cookie = `feathery-user-id=${newUserKey}; max-age=31536000; SameSite=strict`;
