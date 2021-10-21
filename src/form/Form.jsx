@@ -62,6 +62,10 @@ function Form({
     const history = useHistory();
 
     const [first, setFirst] = useState(true);
+    const [firstStep, setFirstStep] = useState(true);
+    // If true, will automatically redirect to firstStep if logged back in
+    const [firstLoggedOut, setFirstLoggedOut] = useState(false);
+
     const [steps, setSteps] = useState(null);
     const [rawActiveStep, setRawActiveStep] = useState(null);
     const [stepKey, setStepKey] = useState('');
@@ -310,6 +314,7 @@ function Form({
     const getNewStep = async (newKey) => {
         let newStep = steps[newKey];
         while (true) {
+            let logOut = false;
             const loadCond = newStep.next_conditions.find((cond) => {
                 if (cond.trigger !== 'load' || cond.element_type !== 'step')
                     return false;
@@ -322,9 +327,11 @@ function Form({
                 const auth =
                     cond.rules.find((r) => r.comparison === 'authenticated') &&
                     initState.authId;
+                if (notAuth) logOut = true;
                 return notAuth || auth;
             });
             if (loadCond) {
+                if (logOut) setFirstLoggedOut(true);
                 newKey = loadCond.next_step_key;
                 newStep = steps[newKey];
             } else break;
@@ -434,6 +441,7 @@ function Form({
                             initialStepId ||
                             session.current_step_key ||
                             getOrigin(data);
+                        setFirstStep(newKey);
                         history.replace(
                             location.pathname + location.search + `#${newKey}`
                         );
@@ -444,6 +452,7 @@ function Form({
                     fetchPromise.then(async (data) => {
                         updateFieldValues(getDefaultFieldValues(data));
                         const newKey = getOrigin(data);
+                        setFirstStep(newKey);
                         history.replace(
                             location.pathname + location.search + `#${newKey}`
                         );
@@ -595,6 +604,7 @@ function Form({
             signatureRef
         );
 
+        console.log('submit');
         const newInlineErrors = {};
         Object.entries(formattedFields).map(([fieldKey, { value }]) => {
             const servar = servarMap[fieldKey];
@@ -623,7 +633,7 @@ function Form({
             if (invalid) return;
         }
 
-        const { errorMessage, errorField } = await handleActions();
+        const { loggedIn, errorMessage, errorField } = await handleActions();
         if (errorMessage && errorField) {
             if (errType === 'html5') {
                 setFormElementError({
@@ -725,12 +735,14 @@ function Form({
             // async execution after user's onSubmit
             return handleSubmitRedirect({
                 metadata,
-                formattedFields
+                formattedFields,
+                loggedIn
             });
         } else {
             return handleSubmitRedirect({
                 metadata,
-                formattedFields
+                formattedFields,
+                loggedIn
             });
         }
     };
@@ -815,7 +827,7 @@ function Form({
                                 })
                                 .then((session) => {
                                     updateSessionValues(session);
-                                    return {};
+                                    return { loggedIn: true };
                                 });
                         })
                         .catch(() => {
@@ -836,7 +848,17 @@ function Form({
         return {};
     }
 
-    function handleSubmitRedirect({ metadata, formattedFields }) {
+    function handleSubmitRedirect({
+        metadata,
+        formattedFields,
+        loggedIn = false
+    }) {
+        let redirectKey = '';
+        if (loggedIn && firstLoggedOut) {
+            setFirstLoggedOut(false);
+            redirectKey = firstStep;
+        }
+
         const featheryFields = Object.entries(formattedFields).map(
             ([key, val]) => {
                 let newVal = val.value;
@@ -864,37 +886,46 @@ function Form({
 
         return handleRedirect({
             metadata,
-            submitData: true,
-            submitPromise
+            redirectKey,
+            submitPromise,
+            submitData: true
         });
     }
 
     function handleRedirect({
         metadata,
-        submitData = false,
-        submitPromise = null
+        redirectKey = '',
+        submitPromise = null,
+        submitData = false
     }) {
-        const { newStepKey, newSequence, newSequenceIndex } = nextStepKey(
-            activeStep.next_conditions,
-            metadata,
-            steps,
-            fieldValues,
-            stepSequence,
-            sequenceIndex
-        );
-
-        setSequenceIndex(newSequenceIndex);
-        setStepSequence(newSequence);
-
-        const eventData = {
+        let eventData = {
             step_key: activeStep.key,
-            next_step_key: newStepKey ?? '',
+            next_step_key: redirectKey,
             event: submitData ? 'complete' : 'skip',
-            current_sequence_index: newSequenceIndex,
-            step_sequence: newSequence
         };
 
-        if (!newStepKey) {
+        if (!redirectKey) {
+            const { newStepKey, newSequence, newSequenceIndex } = nextStepKey(
+                activeStep.next_conditions,
+                metadata,
+                steps,
+                fieldValues,
+                stepSequence,
+                sequenceIndex
+            );
+
+            setSequenceIndex(newSequenceIndex);
+            setStepSequence(newSequence);
+            redirectKey = newStepKey;
+            eventData = {
+                ...eventData,
+                next_step_key: newStepKey,
+                current_sequence_index: newSequenceIndex,
+                step_sequence: newSequence
+            };
+        }
+
+        if (!redirectKey) {
             if (
                 submitData ||
                 ['button', 'text'].includes(metadata.elementType)
@@ -909,11 +940,11 @@ function Form({
             }
         } else {
             setFirst(false);
-            if (steps[newStepKey].next_conditions.length === 0)
+            if (steps[redirectKey].next_conditions.length === 0)
                 eventData.completed = true;
             client.registerEvent(eventData, submitPromise);
             const newURL =
-                location.pathname + location.search + `#${newStepKey}`;
+                location.pathname + location.search + `#${redirectKey}`;
             if (
                 submitData ||
                 (metadata.elementType === 'text' &&
@@ -1307,6 +1338,7 @@ function Form({
                                         onChange();
                                     }}
                                     inlineError={inlineErr}
+                                    autofocus
                                 />
                             );
                         case 'multiselect':
