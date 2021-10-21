@@ -83,13 +83,14 @@ export default class Client {
 
     async fetchSession() {
         await initFormsPromise;
-        const { apiKey, userKey, sessions } = initInfo();
+        const { apiKey, userKey, sessions, authId } = initInfo();
         if (this.formKey in sessions)
             return Promise.resolve(sessions[this.formKey]);
 
         const params = encodeGetParams({
             form_key: this.formKey,
-            ...(userKey ? { fuser_key: userKey } : {})
+            ...(userKey ? { fuser_key: userKey } : {}),
+            ...(authId ? { auth_id: authId } : {})
         });
         const url = `${API_URL}api/panel/session/?${params}`;
         const options = {
@@ -108,7 +109,6 @@ export default class Client {
 
         const data = {
             form_key: this.formKey,
-            panel_key: this.formKey,
             auth_id: authId,
             auth_phone: authPhone,
             auth_email: authEmail,
