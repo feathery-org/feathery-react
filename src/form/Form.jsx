@@ -854,7 +854,7 @@ function Form({
         loggedIn = false
     }) {
         let redirectKey = '';
-        if (loggedIn && firstLoggedOut) {
+        if (loggedIn && firstLoggedOut && firstStep !== activeStep.key) {
             setFirstLoggedOut(false);
             redirectKey = firstStep;
         }
