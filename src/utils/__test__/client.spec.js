@@ -75,16 +75,11 @@ describe('client', () => {
     });
 
     describe('submitCustom', () => {
-        it('fetches on submit', () => {
+        it('fetches on submit', async () => {
             // Arrange
             const formKey = 'formKey';
             const client = new Client(formKey);
-            const customKeyValues = ['foo', 'bar'];
-            const body = {
-                fuser_key: 'userKey',
-                custom_key_values: customKeyValues,
-                form_key: formKey
-            };
+            const customKeyValues = { foo: 'bar' };
             initInfo.mockReturnValue({ apiKey: 'apiKey', userKey: 'userKey' });
             global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
@@ -93,18 +88,23 @@ describe('client', () => {
 
             // Assert
             expect(global.fetch).toHaveBeenCalledWith(
-                `${API_URL}api/panel/custom/submit/`,
+                `${API_URL}api/panel/custom/submit/v2/`,
                 {
                     cache: 'no-store',
-                    headers: {
-                        Authorization: 'Token apiKey',
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { Authorization: 'Token apiKey' },
                     method: 'POST',
-                    body: JSON.stringify(body)
+                    body: expect.any(FormData)
                 }
             );
-            expect(response).toEqual(undefined);
+            const formData = Array.from(
+                global.fetch.mock.calls[0][1].body.entries()
+            ).reduce((acc, f) => ({ ...acc, [f[0]]: f[1] }), {});
+            expect(formData).toMatchObject({
+                custom_key_values: JSON.stringify(customKeyValues),
+                fuser_key: 'userKey',
+                form_key: formKey
+            });
+            expect(await response).toEqual(undefined);
         });
     });
 
