@@ -136,22 +136,32 @@ export default class Client {
 
     submitCustom(customKeyValues) {
         const { userKey, apiKey } = initInfo();
-        const url = `${API_URL}api/panel/custom/submit/`;
-        const data = {
-            ...(userKey ? { fuser_key: userKey } : {}),
-            custom_key_values: customKeyValues,
-            form_key: this.formKey
-        };
+        const url = `${API_URL}api/panel/custom/submit/v2/`;
+
+        const jsonKeyVals = {};
+        const formData = new FormData();
+        Object.entries(customKeyValues).forEach(([key, val]) => {
+            if (val instanceof Blob) {
+                formData.append('files', val);
+                formData.append('file_keys', key);
+            } else {
+                jsonKeyVals[key] = val;
+            }
+        });
+        formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
+        formData.set('form_key', this.formKey);
+        if (userKey) formData.set('fuser_key', userKey);
+
         const options = {
             cache: 'no-store',
             headers: {
-                Authorization: 'Token ' + apiKey,
-                'Content-Type': 'application/json'
+                Authorization: 'Token ' + apiKey
             },
             method: 'POST',
-            body: JSON.stringify(data)
+            body: formData
         };
-        fetch(url, options).then((response) => {
+
+        return fetch(url, options).then((response) => {
             this._checkResponseSuccess(response);
         });
     }

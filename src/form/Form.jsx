@@ -604,7 +604,6 @@ function Form({
             signatureRef
         );
 
-        console.log('submit');
         const newInlineErrors = {};
         Object.entries(formattedFields).map(([fieldKey, { value }]) => {
             const servar = servarMap[fieldKey];
@@ -901,7 +900,7 @@ function Form({
         let eventData = {
             step_key: activeStep.key,
             next_step_key: redirectKey,
-            event: submitData ? 'complete' : 'skip',
+            event: submitData ? 'complete' : 'skip'
         };
 
         if (!redirectKey) {
