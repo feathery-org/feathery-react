@@ -38,6 +38,7 @@ import Elements from '../elements';
 import GooglePlaces from './GooglePlaces';
 import ReactForm from 'react-bootstrap/Form';
 import TagManager from 'react-gtm-module';
+import { sendLoginCode, verifySMSCode } from "../integrations/firebase";
 
 const FILE_UPLOADERS = [
     'file_upload',
@@ -750,98 +751,18 @@ function Form({
         for (let i = 0; i < activeStep.servar_fields.length; i++) {
             const servar = activeStep.servar_fields[i].servar;
             const fieldVal = fieldValues[servar.key];
-            const methods = servar.metadata.login_methods;
             if (servar.type === 'login') {
-                if (methods.includes('phone') && phonePattern.test(fieldVal)) {
-                    return await global.firebase
-                        .auth()
-                        .signInWithPhoneNumber(
-                            `+1${fieldVal}`,
-                            window.firebaseRecaptchaVerifier
-                        )
-                        .then((confirmationResult) => {
-                            // SMS sent
-                            window.firebaseConfirmationResult = confirmationResult;
-                            window.firebasePhoneNumber = fieldVal;
-                            return {};
-                        })
-                        .catch((error) => {
-                            // Error; SMS not sent. Reset Recaptcha
-                            window.firebaseRecaptchaVerifier
-                                .render()
-                                .then(function (widgetId) {
-                                    // Reset reCaptcha
-                                    // eslint-disable-next-line no-undef
-                                    grecaptcha.reset(widgetId);
-                                });
-                            return {
-                                errorMessage: error.message,
-                                errorField: servar
-                            };
-                        });
-                } else if (
-                    methods.includes('email') &&
-                    emailPattern.test(fieldVal)
-                ) {
-                    return await global.firebase
-                        .auth()
-                        .sendSignInLinkToEmail(fieldVal, {
-                            url: window.location.href,
-                            handleCodeInApp: true
-                        })
-                        .then(() => {
-                            window.localStorage.setItem(
-                                'featheryFirebaseEmail',
-                                fieldVal
-                            );
-                            return {};
-                        })
-                        .catch((error) => {
-                            return {
-                                errorMessage: error.message,
-                                errorField: servar
-                            };
-                        });
-                } else {
-                    return {
-                        errorMessage: 'Invalid login',
-                        errorField: servar
-                    };
-                }
+                return await sendLoginCode(fieldVal, servar);
             } else if (
                 servar.type === 'pin_input' &&
                 servar.metadata.verify_sms_code
             ) {
-                const fcr = window.firebaseConfirmationResult;
-                if (fcr) {
-                    return await fcr
-                        .confirm(fieldVal)
-                        .then(async (result) => {
-                            // User signed in successfully.
-                            return await client
-                                .submitAuthInfo({
-                                    authId: result.user.uid,
-                                    authToken: await result.user.getIdToken(),
-                                    authPhone: window.firebasePhoneNumber
-                                })
-                                .then((session) => {
-                                    updateSessionValues(session);
-                                    return { loggedIn: true };
-                                });
-                        })
-                        .catch(() => {
-                            // User couldn't sign in (bad verification code?)
-                            return {
-                                errorMessage: 'Invalid code',
-                                errorField: servar
-                            };
-                        });
-                } else {
-                    return {
-                        errorMessage: 'Please refresh and try again',
-                        errorField: servar
-                    };
-                }
+                return await verifySMSCode(
+                    fieldVal,
+                    servar,
+                    client,
+                    updateSessionValues
+                );
             }
         }
         return {};
@@ -1006,6 +927,48 @@ function Form({
         } else handleRedirect({ metadata });
     };
 
+    const buttonOnClick = (button) => async (setShowSpinner) => {
+        if (['add_repeated_row', 'remove_repeated_row'].includes(button.link)) {
+            let data;
+            if (button.link === 'add_repeated_row') data = addRepeatedRow();
+            else if (button.link === 'remove_repeated_row') {
+                data = removeRepeatedRow(button.repeat);
+            }
+            if (data.fieldKeys.length > 0) {
+                fieldOnChange({
+                    fieldIds: data.fieldIDs,
+                    fieldKeys: data.fieldKeys,
+                    elementRepeatIndex: button.repeat
+                })();
+            }
+        } else if (button.link === 'trigger_plaid') {
+            console.log('hi');
+        } else if (['submit', 'skip'].includes(button.link)) {
+            if (button.link === 'submit') setShowSpinner(true);
+            // Perform the submit callback
+            // Note: We only need to set the spinner if the submit request failed
+            // If the request succeeded then the button unmounts and calling setShowSpinner is an error
+            try {
+                const metadata = {
+                    elementType: 'button',
+                    elementIDs: [button.id],
+                    trigger: 'click'
+                };
+                let newStep;
+                if (button.link === 'submit') {
+                    newStep = await submit(metadata, button.repeat || 0);
+                } else {
+                    newStep = handleRedirect({ metadata });
+                }
+
+                // If the submit failed we want to throw here to turn off the spinner
+                if (!newStep) setShowSpinner(false);
+            } catch {
+                setShowSpinner(false);
+            }
+        }
+    };
+
     return (
         <ReactForm
             className={className}
@@ -1098,26 +1061,10 @@ function Form({
                         element={element}
                         values={fieldValues}
                         handleRedirect={handleRedirect}
-                        submit={submit}
-                        onRepeatClick={() => {
-                            let data;
-                            if (element.link === 'add_repeated_row') {
-                                data = addRepeatedRow();
-                            } else if (element.link === 'remove_repeated_row') {
-                                data = removeRepeatedRow(element.repeat);
-                            }
-                            if (data.fieldKeys.length > 0) {
-                                fieldOnChange({
-                                    fieldIds: data.fieldIDs,
-                                    fieldKeys: data.fieldKeys,
-                                    elementRepeatIndex: element.repeat
-                                })();
-                            }
-                        }}
+                        onClick={buttonOnClick(element)}
                         setSubmitRef={(newRef) => (submitRef.current = newRef)}
                     />
                 ))}
-
             {activeStep.servar_fields
                 .filter(
                     (field) =>
