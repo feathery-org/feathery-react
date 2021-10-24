@@ -14,4 +14,7 @@ function renderAt(elementId, props) {
     ReactDOM.render(<Form {...props} />, container);
 }
 
-export { Form, Elements, init, updateUserKey, renderAt };
+// Entrypoint for globally namespaced JS library
+const Feathery = { Form, Elements, init, updateUserKey, renderAt };
+
+export { Form, Elements, init, updateUserKey, renderAt, Feathery };
