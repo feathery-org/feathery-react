@@ -28,7 +28,7 @@ describe('client', () => {
 
             // Assert
             expect(global.fetch).toHaveBeenCalledWith(
-                `${CDN_URL}api/panel/v4/?form_key=formKey`,
+                `${CDN_URL}panel/v4/?form_key=formKey`,
                 {
                     cache: 'no-store',
                     importance: 'high',
@@ -63,7 +63,7 @@ describe('client', () => {
 
             // Assert
             expect(global.fetch).toHaveBeenCalledWith(
-                `${API_URL}api/panel/session/?form_key=formKey&fuser_key=userKey`,
+                `${API_URL}panel/session/?form_key=formKey&fuser_key=userKey`,
                 {
                     cache: 'no-store',
                     importance: 'high',
@@ -84,11 +84,11 @@ describe('client', () => {
             global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
             // Act
-            const response = client.submitCustom(customKeyValues);
+            const response = await client.submitCustom(customKeyValues);
 
             // Assert
             expect(global.fetch).toHaveBeenCalledWith(
-                `${API_URL}api/panel/custom/submit/v2/`,
+                `${API_URL}panel/custom/submit/v2/`,
                 {
                     cache: 'no-store',
                     headers: { Authorization: 'Token apiKey' },
@@ -104,7 +104,7 @@ describe('client', () => {
                 fuser_key: 'userKey',
                 form_key: formKey
             });
-            expect(await response).toEqual(undefined);
+            expect(response).toEqual({ status: 200 });
         });
     });
 
@@ -128,7 +128,7 @@ describe('client', () => {
 
             // Assert
             expect(global.fetch).toHaveBeenCalledWith(
-                `${API_URL}api/panel/step/submit/`,
+                `${API_URL}panel/step/submit/`,
                 {
                     cache: 'no-store',
                     headers: {
@@ -170,7 +170,7 @@ describe('client', () => {
             });
 
             // Assert
-            expect(global.fetch).toHaveBeenCalledWith(`${API_URL}api/event/`, {
+            expect(global.fetch).toHaveBeenCalledWith(`${API_URL}event/`, {
                 cache: 'no-store',
                 headers: {
                     Authorization: 'Token apiKey',
@@ -179,7 +179,7 @@ describe('client', () => {
                 method: 'POST',
                 body: JSON.stringify(body)
             });
-            expect(response).toEqual(undefined);
+            expect(response).toEqual({ status: 200 });
         });
     });
 });

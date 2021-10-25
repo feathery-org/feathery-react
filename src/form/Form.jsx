@@ -37,6 +37,7 @@ import GooglePlaces from './GooglePlaces';
 import ReactForm from 'react-bootstrap/Form';
 import TagManager from 'react-gtm-module';
 import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
+import { openPlaidLink } from '../integrations/plaid';
 
 const FILE_UPLOADERS = [
     'file_upload',
@@ -86,6 +87,7 @@ function Form({
     const [curDepth, setCurDepth] = useState(0);
     const [maxDepth, setMaxDepth] = useState(0);
     const [integrations, setIntegrations] = useState({});
+    const [plaidLinked, setPlaidLinked] = useState(true);
     const [stepSequence, setStepSequence] = useState([]);
     const [sequenceIndex, setSequenceIndex] = useState(0);
     const [errType, setErrType] = useState('html5');
@@ -128,6 +130,9 @@ function Form({
     // Note: Other hydration transformations can also be included here
     const activeStep = useMemo(() => {
         if (!rawActiveStep) return null;
+        setPlaidLinked(
+            !rawActiveStep.buttons.find((b) => b.link === 'trigger_plaid')
+        );
         return JSON.parse(
             JSON.stringify(
                 injectRepeatedRows({
@@ -593,7 +598,14 @@ function Form({
         });
     };
 
-    const submit = async (metadata, repeat = 0) => {
+    const submit = async ({
+        metadata,
+        repeat = 0,
+        plaidSuccess = plaidLinked
+    }) => {
+        // Can't submit step until the user has gone through the Plaid flow if present
+        if (!plaidSuccess) return;
+
         const servarMap = {};
         activeStep.servar_fields.forEach(
             (field) => (servarMap[field.servar.key] = field.servar)
@@ -922,8 +934,42 @@ function Form({
         if (submitData) {
             // Simulate button click if available
             if (submitRef.current) submitRef.current();
-            else submit(metadata, elementRepeatIndex);
+            else submit({ metadata, repeat: elementRepeatIndex });
         } else handleRedirect({ metadata });
+    };
+
+    const buttonOnSubmit = async (
+        submitData,
+        button,
+        setShowSpinner,
+        plaidSuccess = false
+    ) => {
+        if (submitData) setShowSpinner(true);
+        // Perform the submit callback
+        // Note: We only need to set the spinner if the submit request failed
+        // If the request succeeded then the button unmounts and calling setShowSpinner is an error
+        try {
+            const metadata = {
+                elementType: 'button',
+                elementIDs: [button.id],
+                trigger: 'click'
+            };
+            let newStep;
+            if (submitData) {
+                newStep = await submit({
+                    metadata,
+                    repeat: button.repeat || 0,
+                    plaidSuccess
+                });
+            } else {
+                newStep = handleRedirect({ metadata });
+            }
+
+            // If the submit failed we want to throw here to turn off the spinner
+            if (!newStep) setShowSpinner(false);
+        } catch {
+            setShowSpinner(false);
+        }
     };
 
     const buttonOnClick = (button) => async (setShowSpinner) => {
@@ -941,30 +987,24 @@ function Form({
                 })();
             }
         } else if (button.link === 'trigger_plaid') {
-            console.log('hi');
-        } else if (['submit', 'skip'].includes(button.link)) {
-            if (button.link === 'submit') setShowSpinner(true);
-            // Perform the submit callback
-            // Note: We only need to set the spinner if the submit request failed
-            // If the request succeeded then the button unmounts and calling setShowSpinner is an error
-            try {
-                const metadata = {
-                    elementType: 'button',
-                    elementIDs: [button.id],
-                    trigger: 'click'
-                };
-                let newStep;
-                if (button.link === 'submit') {
-                    newStep = await submit(metadata, button.repeat || 0);
-                } else {
-                    newStep = handleRedirect({ metadata });
-                }
-
-                // If the submit failed we want to throw here to turn off the spinner
-                if (!newStep) setShowSpinner(false);
-            } catch {
-                setShowSpinner(false);
+            if (!plaidLinked) {
+                await openPlaidLink(client, async () => {
+                    setPlaidLinked(true);
+                    if (activeStep.servar_fields.length === 0)
+                        await buttonOnSubmit(
+                            true,
+                            button,
+                            setShowSpinner,
+                            true
+                        );
+                });
             }
+        } else if (['submit', 'skip'].includes(button.link)) {
+            await buttonOnSubmit(
+                button.link === 'submit',
+                button,
+                setShowSpinner
+            );
         }
     };
 
@@ -1110,7 +1150,7 @@ function Form({
                             trigger: 'click'
                         };
                         if (submitData) {
-                            submit(metadata, field.repeat || 0);
+                            submit({ metadata, repeat: field.repeat || 0 });
                         } else {
                             handleRedirect({ metadata });
                         }
