@@ -4,8 +4,9 @@ import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { v4 as uuidv4 } from 'uuid';
 
 import * as errors from './error';
-import TagManager from 'react-gtm-module';
-import $script from 'scriptjs';
+import { emailLogin, installFirebase } from '../integrations/firebase';
+import { installPlaid } from '../integrations/plaid';
+import { initializeTagManager } from '../integrations/googleTagManager';
 
 const fpPromise = FingerprintJS.load();
 let initFormsPromise = Promise.resolve();
@@ -86,76 +87,22 @@ function init(apiKey, options = {}) {
     return initFormsPromise;
 }
 
-function dynamicImport(dependency) {
-    return new Promise((resolve) => {
-        $script(dependency, resolve);
-    });
-}
-
 const initializeIntegrations = async (
     integrations,
     clientArg,
     init = false
 ) => {
     const gtm = integrations['google-tag-manager'];
-    if (gtm && !TagManager.initialized) {
-        TagManager.initialized = true;
-        TagManager.initialize({
-            gtmId: gtm.api_key,
-            dataLayer: { userId: initState.userKey }
-        });
-    }
-
     const fb = integrations.firebase;
-    if (fb) {
-        const firebase = await new Promise((resolve) => {
-            if (global.firebase) resolve(global.firebase);
-            else {
-                // Bring in Firebase dependencies dynamically if this form uses Firebase
-                return dynamicImport([
-                    'https://www.gstatic.com/firebasejs/8.7.1/firebase-app.js',
-                    'https://www.gstatic.com/firebasejs/8.7.1/firebase-auth.js'
-                ]).then(() => {
-                    global.firebase.initializeApp({
-                        apiKey: fb.api_key,
-                        authDomain: `${fb.metadata.project_id}.firebaseapp.com`,
-                        databaseURL: `https://${fb.metadata.project_id}.firebaseio.com`,
-                        projectId: fb.metadata.project_id,
-                        storageBucket: `${fb.metadata.project_id}.appspot.com`,
-                        messagingSenderId: fb.metadata.sender_id,
-                        appId: fb.metadata.app_id
-                    });
-                    resolve(global.firebase);
-                });
-            }
-        });
+    const plaid = integrations.plaid;
 
-        if (
-            !init &&
-            firebase.auth().isSignInWithEmailLink(window.location.href)
-        ) {
-            const authEmail = window.localStorage.getItem(
-                'featheryFirebaseEmail'
-            );
-            if (authEmail) {
-                return firebase
-                    .auth()
-                    .signInWithEmailLink(authEmail, window.location.href)
-                    .then(async (result) => {
-                        const authToken = await result.user.getIdToken();
-                        return await clientArg
-                            .submitAuthInfo({
-                                authId: result.user.uid,
-                                authToken,
-                                authEmail
-                            })
-                            .then((session) => {
-                                return session;
-                            });
-                    });
-            }
-        }
-    }
+    const [, firebase] = await Promise.all([
+        installPlaid(plaid),
+        installFirebase(fb)
+    ]);
+
+    if (gtm) initializeTagManager(gtm);
+    if (fb && !init) emailLogin(fb, firebase, clientArg);
 };
 
 // must be called after userKey loads
