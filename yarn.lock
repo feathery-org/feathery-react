@@ -7467,6 +7467,11 @@ p-try@^2.0.0:
   resolved "https://registry.npmjs.org/p-try/-/p-try-2.2.0.tgz"
   integrity sha512-R4nPAVTAU0B9D35/Gk3uJf/7XYbQcyohSKdvAxIRSNghFl4e71hVoGnBNQz9cWaXxO2I10KTC+3jMdvvoKw6dQ==
 
+pandemonium@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/pandemonium/-/pandemonium-2.0.0.tgz#4b0a646a4372e651ab7ab18f5277dbedc197ecd1"
+  integrity sha512-ACX7eLSSL7XKZEPxHw1HsZyjLDajIPuN5IFppmwwFs/xKE1FZF87cVk5bSg0ZI9lpA4DBTju/6KGDdrcwGG2rg==
+
 parent-module@^1.0.0:
   version "1.0.1"
   resolved "https://registry.npmjs.org/parent-module/-/parent-module-1.0.1.tgz"
@@ -8517,6 +8522,20 @@ regex-not@^1.0.0, regex-not@^1.0.2:
   dependencies:
     extend-shallow "^3.0.2"
     safe-regex "^1.1.0"
+
+regex-to-strings@^2.0.3:
+  version "2.0.3"
+  resolved "https://registry.yarnpkg.com/regex-to-strings/-/regex-to-strings-2.0.3.tgz#c55e258ef7957b6582b34d5b532cb371bd84f7cc"
+  integrity sha512-tVyvUmQd3skf7lPrzFO0ubkcFOeO3bgZ354NueaBw/fumAESUbfXrgYhr8UlnF0EZhOEMB9938HvaOFg9kSRPw==
+  dependencies:
+    escape-string-regexp "^4.0.0"
+    pandemonium "^2.0.0"
+    regexp-tree "^0.1.23"
+
+regexp-tree@^0.1.23:
+  version "0.1.24"
+  resolved "https://registry.yarnpkg.com/regexp-tree/-/regexp-tree-0.1.24.tgz#3d6fa238450a4d66e5bc9c4c14bb720e2196829d"
+  integrity sha512-s2aEVuLhvnVJW6s/iPgEGK6R+/xngd2jNQ+xy4bXNDKxZKJH6jpPHY6kVeVv1IeLCHgswRj+Kl3ELaDjG6V1iw==
 
 regexp.prototype.flags@^1.3.0:
   version "1.3.0"

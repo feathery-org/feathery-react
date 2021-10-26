@@ -4,6 +4,7 @@ import ReactForm from 'react-bootstrap/Form';
 import InlineTooltip from '../components/Tooltip';
 import { bootstrapStyles } from '../styles';
 import { emailPatternStr } from '../../utils/formHelperFunctions';
+import { expandN } from "regex-to-strings";
 
 function getTextFieldProps(servar, styles, value) {
     let methods, onlyPhone;
@@ -75,6 +76,38 @@ function getTextFieldProps(servar, styles, value) {
     }
 }
 
+const escapeChars = (plainTextString) => {
+    const specialChars = "/.^$*+-?()[]{}|—\//g";
+    const specialCharsMap = {".": "\.", "^":"\^", "$":"\$", "*":"\*", "+":"\+", "-":"\-", "?":"\?", "(":"\(", ")":"\)", "[":"\[", "]":"\]", "{":"\{", "}":"\}", "|":"\|", "—":"\—", "/":"\/"}
+    console.log(plainTextString.replace(specialChars, m => {console.log(m, specialCharsMap[m]); return specialCharsMap[m]}));
+
+}
+const generateRegexString = (rawPatternString) => {
+    let startIndex = 0;
+    let processedRegexString = ""
+    while (rawPatternString.indexOf("{{ ", startIndex) >= 0) {
+      const start = rawPatternString.indexOf("{{ ", startIndex);
+      const end = rawPatternString.indexOf(" }}", startIndex);
+      const identifiedRegex = rawPatternString.slice(start + 3, end).trim();
+      console.log(start+3, end, identifiedRegex, rawPatternString.slice(startIndex, start));
+      processedRegexString += escapeChars(rawPatternString.slice(startIndex, start))
+      processedRegexString += identifiedRegex;
+    
+
+      startIndex = end + 3;
+    }
+    
+    return processedRegexString+rawPatternString.substring(startIndex);
+  };
+
+function getFieldMaskProps(fieldMask){ 
+    console.log(fieldMask)
+    const rp = generateRegexString(fieldMask);
+    const ex = "$ 1000 / year";
+    console.log("Pattern Check: ",ex.match(rp), ex, rp);
+    return {fieldMaskRegex:undefined, fieldMaskPattern:undefined}
+}
+
 function TextField({
     element,
     applyStyles,
@@ -88,6 +121,9 @@ function TextField({
     ...fieldProps
 }) {
     const servar = element.servar;
+    const {fieldMaskRegex, fieldMaskPattern} = getFieldMaskProps("$ {{ \\d{4} }} / year");
+    console.log("fieldMaskRegex", fieldMaskRegex)
+    console.log("fieldMaskPattern", fieldMaskPattern)
     const inputType = fieldProps.as === 'textarea' ? 'textarea' : 'input';
     return (
         <div
@@ -164,7 +200,8 @@ function TextField({
     );
 }
 
-const MaskedTextField = IMaskMixin((props) => <TextField {...props} />);
+// const MaskedTextField = IMaskMixin((props) => <TextField {...props} />);
+const MaskedTextField = (props) => <TextField {...props} />
 
 const MaskedPropsTextField = ({ element, fieldValue = '', ...props }) => {
     const servar = element.servar;
