@@ -77,50 +77,11 @@ function ButtonElement({
     applyStyles,
     values = null,
     handleRedirect = () => {},
-    submit = () => {},
-    onRepeatClick = () => {},
+    onClick = () => {},
     setSubmitRef = () => {}
 }) {
     const [showSpinner, setShowSpinner] = useState(false);
-
-    async function buttonOnClick() {
-        if (element.link === 'none') {
-            return;
-        }
-
-        if (
-            ['add_repeated_row', 'remove_repeated_row'].includes(element.link)
-        ) {
-            onRepeatClick();
-            return;
-        }
-
-        if (element.link === 'submit') {
-            setShowSpinner(true);
-        }
-
-        // Perform the submit callback
-        // Note: We only need to set the spinner if the submit request failed
-        // If the request succeeded then the button unmounts and calling setShowSpinner is an error
-        try {
-            const metadata = {
-                elementType: 'button',
-                elementIDs: [element.id],
-                trigger: 'click'
-            };
-            let newStep;
-            if (element.link === 'submit') {
-                newStep = await submit(metadata, element.repeat || 0);
-            } else {
-                newStep = handleRedirect({ metadata });
-            }
-
-            // If the submit failed we want to throw here to turn off the spinner
-            if (!newStep) setShowSpinner(false);
-        } catch {
-            setShowSpinner(false);
-        }
-    }
+    const buttonOnClick = () => onClick(setShowSpinner);
     if (element.link === 'submit') setSubmitRef(buttonOnClick);
 
     const styles = useMemo(() => applyButtonStyles(element, applyStyles), [

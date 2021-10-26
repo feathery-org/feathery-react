@@ -38,6 +38,7 @@ import Elements from '../elements';
 import GooglePlaces from './GooglePlaces';
 import ReactForm from 'react-bootstrap/Form';
 import TagManager from 'react-gtm-module';
+import { sendLoginCode, verifySMSCode } from "../integrations/firebase";
 
 const FILE_UPLOADERS = [
     'file_upload',
@@ -52,6 +53,7 @@ function Form({
     onLoad = null,
     onSubmit = null,
     initialValues = {},
+    initialStepId = '',
     usePreviousUserData = true,
     style = {},
     className = '',
@@ -61,6 +63,10 @@ function Form({
     const history = useHistory();
 
     const [first, setFirst] = useState(true);
+    const [firstStep, setFirstStep] = useState(true);
+    // If true, will automatically redirect to firstStep if logged back in
+    const [firstLoggedOut, setFirstLoggedOut] = useState(false);
+
     const [steps, setSteps] = useState(null);
     const [rawActiveStep, setRawActiveStep] = useState(null);
     const [stepKey, setStepKey] = useState('');
@@ -309,6 +315,7 @@ function Form({
     const getNewStep = async (newKey) => {
         let newStep = steps[newKey];
         while (true) {
+            let logOut = false;
             const loadCond = newStep.next_conditions.find((cond) => {
                 if (cond.trigger !== 'load' || cond.element_type !== 'step')
                     return false;
@@ -321,9 +328,11 @@ function Form({
                 const auth =
                     cond.rules.find((r) => r.comparison === 'authenticated') &&
                     initState.authId;
+                if (notAuth) logOut = true;
                 return notAuth || auth;
             });
             if (loadCond) {
+                if (logOut) setFirstLoggedOut(true);
                 newKey = loadCond.next_step_key;
                 newStep = steps[newKey];
             } else break;
@@ -430,7 +439,10 @@ function Form({
                         updateFieldValues(getDefaultFieldValues(data));
                         updateSessionValues(session);
                         const newKey =
-                            session.current_step_key || getOrigin(data);
+                            initialStepId ||
+                            session.current_step_key ||
+                            getOrigin(data);
+                        setFirstStep(newKey);
                         history.replace(
                             location.pathname + location.search + `#${newKey}`
                         );
@@ -441,6 +453,7 @@ function Form({
                     fetchPromise.then(async (data) => {
                         updateFieldValues(getDefaultFieldValues(data));
                         const newKey = getOrigin(data);
+                        setFirstStep(newKey);
                         history.replace(
                             location.pathname + location.search + `#${newKey}`
                         );
@@ -620,7 +633,7 @@ function Form({
             if (invalid) return;
         }
 
-        const { errorMessage, errorField } = await handleActions();
+        const { loggedIn, errorMessage, errorField } = await handleActions();
         if (errorMessage && errorField) {
             if (errType === 'html5') {
                 setFormElementError({
@@ -722,12 +735,14 @@ function Form({
             // async execution after user's onSubmit
             return handleSubmitRedirect({
                 metadata,
-                formattedFields
+                formattedFields,
+                loggedIn
             });
         } else {
             return handleSubmitRedirect({
                 metadata,
-                formattedFields
+                formattedFields,
+                loggedIn
             });
         }
     };
@@ -736,104 +751,34 @@ function Form({
         for (let i = 0; i < activeStep.servar_fields.length; i++) {
             const servar = activeStep.servar_fields[i].servar;
             const fieldVal = fieldValues[servar.key];
-            const methods = servar.metadata.login_methods;
             if (servar.type === 'login') {
-                if (methods.includes('phone') && phonePattern.test(fieldVal)) {
-                    return await global.firebase
-                        .auth()
-                        .signInWithPhoneNumber(
-                            `+1${fieldVal}`,
-                            window.firebaseRecaptchaVerifier
-                        )
-                        .then((confirmationResult) => {
-                            // SMS sent
-                            window.firebaseConfirmationResult = confirmationResult;
-                            window.firebasePhoneNumber = fieldVal;
-                            return {};
-                        })
-                        .catch((error) => {
-                            // Error; SMS not sent. Reset Recaptcha
-                            window.firebaseRecaptchaVerifier
-                                .render()
-                                .then(function (widgetId) {
-                                    // Reset reCaptcha
-                                    // eslint-disable-next-line no-undef
-                                    grecaptcha.reset(widgetId);
-                                });
-                            return {
-                                errorMessage: error.message,
-                                errorField: servar
-                            };
-                        });
-                } else if (
-                    methods.includes('email') &&
-                    emailPattern.test(fieldVal)
-                ) {
-                    return await global.firebase
-                        .auth()
-                        .sendSignInLinkToEmail(fieldVal, {
-                            url: window.location.href,
-                            handleCodeInApp: true
-                        })
-                        .then(() => {
-                            window.localStorage.setItem(
-                                'featheryFirebaseEmail',
-                                fieldVal
-                            );
-                            return {};
-                        })
-                        .catch((error) => {
-                            return {
-                                errorMessage: error.message,
-                                errorField: servar
-                            };
-                        });
-                } else {
-                    return {
-                        errorMessage: 'Invalid login',
-                        errorField: servar
-                    };
-                }
+                return await sendLoginCode(fieldVal, servar);
             } else if (
                 servar.type === 'pin_input' &&
                 servar.metadata.verify_sms_code
             ) {
-                const fcr = window.firebaseConfirmationResult;
-                if (fcr) {
-                    return await fcr
-                        .confirm(fieldVal)
-                        .then(async (result) => {
-                            // User signed in successfully.
-                            return await client
-                                .submitAuthInfo({
-                                    authId: result.user.uid,
-                                    authToken: await result.user.getIdToken(),
-                                    authPhone: window.firebasePhoneNumber
-                                })
-                                .then((session) => {
-                                    updateSessionValues(session);
-                                    return {};
-                                });
-                        })
-                        .catch(() => {
-                            // User couldn't sign in (bad verification code?)
-                            return {
-                                errorMessage: 'Invalid code',
-                                errorField: servar
-                            };
-                        });
-                } else {
-                    return {
-                        errorMessage: 'Please refresh and try again',
-                        errorField: servar
-                    };
-                }
+                return await verifySMSCode(
+                    fieldVal,
+                    servar,
+                    client,
+                    updateSessionValues
+                );
             }
         }
         return {};
     }
 
-    function handleSubmitRedirect({ metadata, formattedFields }) {
+    function handleSubmitRedirect({
+        metadata,
+        formattedFields,
+        loggedIn = false
+    }) {
+        let redirectKey = '';
+        if (loggedIn && firstLoggedOut && firstStep !== activeStep.key) {
+            setFirstLoggedOut(false);
+            redirectKey = firstStep;
+        }
+
         const featheryFields = Object.entries(formattedFields).map(
             ([key, val]) => {
                 let newVal = val.value;
@@ -861,37 +806,46 @@ function Form({
 
         return handleRedirect({
             metadata,
-            submitData: true,
-            submitPromise
+            redirectKey,
+            submitPromise,
+            submitData: true
         });
     }
 
     function handleRedirect({
         metadata,
-        submitData = false,
-        submitPromise = null
+        redirectKey = '',
+        submitPromise = null,
+        submitData = false
     }) {
-        const { newStepKey, newSequence, newSequenceIndex } = nextStepKey(
-            activeStep.next_conditions,
-            metadata,
-            steps,
-            fieldValues,
-            stepSequence,
-            sequenceIndex
-        );
-
-        setSequenceIndex(newSequenceIndex);
-        setStepSequence(newSequence);
-
-        const eventData = {
+        let eventData = {
             step_key: activeStep.key,
-            next_step_key: newStepKey ?? '',
-            event: submitData ? 'complete' : 'skip',
-            current_sequence_index: newSequenceIndex,
-            step_sequence: newSequence
+            next_step_key: redirectKey,
+            event: submitData ? 'complete' : 'skip'
         };
 
-        if (!newStepKey) {
+        if (!redirectKey) {
+            const { newStepKey, newSequence, newSequenceIndex } = nextStepKey(
+                activeStep.next_conditions,
+                metadata,
+                steps,
+                fieldValues,
+                stepSequence,
+                sequenceIndex
+            );
+
+            setSequenceIndex(newSequenceIndex);
+            setStepSequence(newSequence);
+            redirectKey = newStepKey;
+            eventData = {
+                ...eventData,
+                next_step_key: newStepKey,
+                current_sequence_index: newSequenceIndex,
+                step_sequence: newSequence
+            };
+        }
+
+        if (!redirectKey) {
             if (
                 submitData ||
                 ['button', 'text'].includes(metadata.elementType)
@@ -906,11 +860,11 @@ function Form({
             }
         } else {
             setFirst(false);
-            if (steps[newStepKey].next_conditions.length === 0)
+            if (steps[redirectKey].next_conditions.length === 0)
                 eventData.completed = true;
             client.registerEvent(eventData, submitPromise);
             const newURL =
-                location.pathname + location.search + `#${newStepKey}`;
+                location.pathname + location.search + `#${redirectKey}`;
             if (
                 submitData ||
                 (metadata.elementType === 'text' &&
@@ -971,6 +925,48 @@ function Form({
             if (submitRef.current) submitRef.current();
             else submit(metadata, elementRepeatIndex);
         } else handleRedirect({ metadata });
+    };
+
+    const buttonOnClick = (button) => async (setShowSpinner) => {
+        if (['add_repeated_row', 'remove_repeated_row'].includes(button.link)) {
+            let data;
+            if (button.link === 'add_repeated_row') data = addRepeatedRow();
+            else if (button.link === 'remove_repeated_row') {
+                data = removeRepeatedRow(button.repeat);
+            }
+            if (data.fieldKeys.length > 0) {
+                fieldOnChange({
+                    fieldIds: data.fieldIDs,
+                    fieldKeys: data.fieldKeys,
+                    elementRepeatIndex: button.repeat
+                })();
+            }
+        } else if (button.link === 'trigger_plaid') {
+            console.log('hi');
+        } else if (['submit', 'skip'].includes(button.link)) {
+            if (button.link === 'submit') setShowSpinner(true);
+            // Perform the submit callback
+            // Note: We only need to set the spinner if the submit request failed
+            // If the request succeeded then the button unmounts and calling setShowSpinner is an error
+            try {
+                const metadata = {
+                    elementType: 'button',
+                    elementIDs: [button.id],
+                    trigger: 'click'
+                };
+                let newStep;
+                if (button.link === 'submit') {
+                    newStep = await submit(metadata, button.repeat || 0);
+                } else {
+                    newStep = handleRedirect({ metadata });
+                }
+
+                // If the submit failed we want to throw here to turn off the spinner
+                if (!newStep) setShowSpinner(false);
+            } catch {
+                setShowSpinner(false);
+            }
+        }
     };
 
     return (
@@ -1065,26 +1061,10 @@ function Form({
                         element={element}
                         values={fieldValues}
                         handleRedirect={handleRedirect}
-                        submit={submit}
-                        onRepeatClick={() => {
-                            let data;
-                            if (element.link === 'add_repeated_row') {
-                                data = addRepeatedRow();
-                            } else if (element.link === 'remove_repeated_row') {
-                                data = removeRepeatedRow(element.repeat);
-                            }
-                            if (data.fieldKeys.length > 0) {
-                                fieldOnChange({
-                                    fieldIds: data.fieldIDs,
-                                    fieldKeys: data.fieldKeys,
-                                    elementRepeatIndex: element.repeat
-                                })();
-                            }
-                        }}
+                        onClick={buttonOnClick(element)}
                         setSubmitRef={(newRef) => (submitRef.current = newRef)}
                     />
                 ))}
-
             {activeStep.servar_fields
                 .filter(
                     (field) =>
@@ -1304,6 +1284,7 @@ function Form({
                                         onChange();
                                     }}
                                     inlineError={inlineErr}
+                                    autofocus
                                 />
                             );
                         case 'multiselect':

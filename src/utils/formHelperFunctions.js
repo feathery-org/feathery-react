@@ -203,7 +203,7 @@ const nextStepKey = (
         .filter(Boolean);
     newSequence = [...newSequence, ...notInSequence];
 
-    let newStepKey = newKey || defaultKey;
+    let newStepKey = newKey || defaultKey || '';
     if (newSequence.length === 1 && stepSequence.length > 0 && !newStepKey) {
         // Go back in dynamic sequence
         if (sequenceIndex <= 1) newStepKey = newSequence[0];
