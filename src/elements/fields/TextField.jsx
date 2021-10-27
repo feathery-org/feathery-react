@@ -101,6 +101,12 @@ function TextField({
                 css={{
                     position: 'relative',
                     width: '100%',
+                    ...(inputType === 'textarea'
+                        ? {}
+                        : {
+                              whiteSpace: 'nowrap',
+                              overflowX: 'hidden'
+                          }),
                     ...applyStyles.getTarget('sub-fc')
                 }}
             >
