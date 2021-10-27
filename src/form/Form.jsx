@@ -7,7 +7,6 @@ import {
 } from '../utils/hydration';
 import {
     convertFilesToFilePromises,
-    emailPattern,
     fetchS3File,
     findServars,
     formatAllStepFields,
@@ -23,7 +22,6 @@ import {
     lookupElementKey,
     nextStepKey,
     objectMap,
-    phonePattern,
     reactFriendlyKey,
     recurseDepth,
     setFormElementError,
@@ -38,7 +36,7 @@ import Elements from '../elements';
 import GooglePlaces from './GooglePlaces';
 import ReactForm from 'react-bootstrap/Form';
 import TagManager from 'react-gtm-module';
-import { sendLoginCode, verifySMSCode } from "../integrations/firebase";
+import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
 
 const FILE_UPLOADERS = [
     'file_upload',
