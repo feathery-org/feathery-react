@@ -245,7 +245,7 @@ const getOrigin = (steps) => {
     return originKey;
 };
 
-const recurseDepth = (steps, originKey, curKey) => {
+const recurseDepth = (stepSequence, steps, originKey, curKey) => {
     // We may pass in a displaySteps draft that doesn't have an origin specified
     if (!originKey) return [0, 0];
 
@@ -264,6 +264,22 @@ const recurseDepth = (steps, originKey, curKey) => {
         step.next_conditions.forEach((condition) => {
             stepQueue.push([steps[condition.next_step_key], depth + 1]);
         });
+    }
+    // if i'm in a custom sequence, figure out how many steps to the end from the last step of the sequence.
+    // then, add the length of the sequence we haven't seen yet to current depth and the whole sequence length to max depth
+    if (curKey in stepSequence) {
+        let ind = 0;
+        for (const i in stepSequence) {
+            if (i === curKey) {
+                break;
+            }
+            ind++;
+        }
+        let cd = 0;
+        let md = 0;
+        [cd, md] = recurseDepth([], steps, originKey, stepSequence[ind], false);
+        curDepth = cd + stepSequence.length() - ind;
+        maxDepth = md + stepSequence.length();
     }
     return [curDepth, maxDepth];
 };
