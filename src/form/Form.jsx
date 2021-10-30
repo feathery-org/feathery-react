@@ -340,7 +340,8 @@ function Form({
         const [curDepth, maxDepth] = recurseDepth(
             steps,
             getOrigin(steps),
-            newKey
+            newKey,
+            stepSequence
         );
         setCurDepth(curDepth);
         setMaxDepth(maxDepth);

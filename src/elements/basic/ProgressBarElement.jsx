@@ -33,8 +33,7 @@ function ProgressBarElement({
         applyStyles
     ]);
 
-    const percent =
-        element.progress || Math.round((100 * curDepth) / (maxDepth + 1));
+    const percent = Math.round((100 * curDepth) / (maxDepth + 1));
     const progressBarElements = [
         <ProgressBar
             key='progress'
