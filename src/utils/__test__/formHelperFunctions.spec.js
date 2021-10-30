@@ -406,7 +406,12 @@ describe('formHelperFunctions', () => {
             const expected = [0, 0];
 
             // Act
-            const actual = recurseDepth(steps, originStepKey, currentStepKey);
+            const actual = recurseDepth(
+                steps,
+                originStepKey,
+                currentStepKey,
+                []
+            );
 
             // Assert
             expect(actual).toEqual(expected);
@@ -433,7 +438,12 @@ describe('formHelperFunctions', () => {
             const expected = [1, 1];
 
             // Act
-            const actual = recurseDepth(steps, originStepKey, currentStepKey);
+            const actual = recurseDepth(
+                steps,
+                originStepKey,
+                currentStepKey,
+                []
+            );
 
             // Assert
             expect(actual).toEqual(expected);
@@ -475,7 +485,12 @@ describe('formHelperFunctions', () => {
             const expected = [1, 2];
 
             // Act
-            const actual = recurseDepth(steps, originStepKey, currentStepKey);
+            const actual = recurseDepth(
+                steps,
+                originStepKey,
+                currentStepKey,
+                []
+            );
 
             // Assert
             expect(actual).toEqual(expected);

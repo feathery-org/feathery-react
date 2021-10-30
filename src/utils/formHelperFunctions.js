@@ -245,41 +245,44 @@ const getOrigin = (steps) => {
     return originKey;
 };
 
-const recurseDepth = (stepSequence, steps, originKey, curKey) => {
-    // We may pass in a displaySteps draft that doesn't have an origin specified
-    if (!originKey) return [0, 0];
-
-    const seenStepKeys = new Set();
-    const stepQueue = [[steps[originKey], 0]];
+const recurseDepth = (steps, originKey, curKey, stepSequence) => {
     let curDepth = 0;
     let maxDepth = 0;
-    while (stepQueue.length > 0) {
-        const [step, depth] = stepQueue.shift();
-        if (seenStepKeys.has(step.key)) continue;
-        seenStepKeys.add(step.key);
+    if (stepSequence.includes(curKey)) {
+        // If the user is in a custom sequence, figure out:
+        // * how many steps to the end from the last step of the sequence
+        // * how many steps from the origin to the beginning of the sequence
+        // * length of the sequence itself
+        const [endSequenceDepth] = recurseDepth(
+            steps,
+            stepSequence.at(-1),
+            stepSequence.at(-1),
+            []
+        );
+        const [beginningSequenceDepth] = recurseDepth(
+            steps,
+            originKey,
+            stepSequence[0],
+            []
+        );
+        curDepth = beginningSequenceDepth + stepSequence.indexOf(curKey);
+        maxDepth =
+            beginningSequenceDepth + stepSequence.length - 1 + endSequenceDepth;
+    } else {
+        const seenStepKeys = new Set();
+        const stepQueue = [[steps[originKey], 0]];
+        while (stepQueue.length > 0) {
+            const [step, depth] = stepQueue.shift();
+            if (seenStepKeys.has(step.key)) continue;
+            seenStepKeys.add(step.key);
 
-        if (step.key === curKey) curDepth = depth;
-        maxDepth = depth;
+            if (step.key === curKey) curDepth = depth;
+            maxDepth = depth;
 
-        step.next_conditions.forEach((condition) => {
-            stepQueue.push([steps[condition.next_step_key], depth + 1]);
-        });
-    }
-    // if i'm in a custom sequence, figure out how many steps to the end from the last step of the sequence.
-    // then, add the length of the sequence we haven't seen yet to current depth and the whole sequence length to max depth
-    if (curKey in stepSequence) {
-        let ind = 0;
-        for (const i in stepSequence) {
-            if (i === curKey) {
-                break;
-            }
-            ind++;
+            step.next_conditions.forEach((condition) => {
+                stepQueue.push([steps[condition.next_step_key], depth + 1]);
+            });
         }
-        let cd = 0;
-        let md = 0;
-        [cd, md] = recurseDepth([], steps, originKey, stepSequence[ind], false);
-        curDepth = cd + stepSequence.length() - ind;
-        maxDepth = md + stepSequence.length();
     }
     return [curDepth, maxDepth];
 };

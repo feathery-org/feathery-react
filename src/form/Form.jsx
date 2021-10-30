@@ -338,10 +338,10 @@ function Form({
         newStep = JSON.parse(JSON.stringify(newStep));
 
         const [curDepth, maxDepth] = recurseDepth(
-            stepSequence,
             steps,
             getOrigin(steps),
-            newKey
+            newKey,
+            stepSequence
         );
         setCurDepth(curDepth);
         setMaxDepth(maxDepth);
