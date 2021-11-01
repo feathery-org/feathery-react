@@ -112,7 +112,9 @@ function MultiFileUploadField({
                                 wordBreak: 'break-all',
                                 fontSize: 'small',
                                 display: 'flex',
-                                alignItems: 'center'
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                textAlign: 'center'
                             }}
                         >
                             {filename}
