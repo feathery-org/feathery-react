@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef } from 'react';
+import { useFileData, useThumbnailData } from '../../utils/image';
 
 import { FiX } from 'react-icons/fi';
 import { IconContext } from 'react-icons';
 import { Image } from 'react-bootstrap';
-import { getThumbnailData } from '../../utils/image';
 import { justRemove } from '../../utils/array';
 
 function MultiFileUploadField({
@@ -18,19 +18,11 @@ function MultiFileUploadField({
     const showIcon = element.icon_url !== '';
     const showLabel = servar.name !== '';
 
-    // Maintain separate lists of raw files and thumbnails data
     // Raw files are useful to bubble up through onChange
-    // Thumbnails data can be evaluated only when we add files (for performance)
-    const [rawFiles, setRawFiles] = useState(initialFiles);
-    const [thumbnailsData, setThumbnailsData] = useState(
-        initialFiles.map(() => ({ filename: '', thumbnail: '' }))
-    );
-    useEffect(() => {
-        (async () => {
-            const data = await Promise.all(initialFiles.map(getThumbnailData));
-            setThumbnailsData(data);
-        })();
-    }, []);
+    // Raw files are then translated into thumbnail data
+    // And we filter out any files that can't be reasonably thumbnailed
+    const [rawFiles, setRawFiles] = useFileData(initialFiles);
+    const thumbnailData = useThumbnailData(rawFiles);
 
     // Reference the hidden multi-select element
     const fileInput = useRef();
@@ -46,13 +38,8 @@ function MultiFileUploadField({
         const uploadedFiles = Array.from(event.target.files).map((file) =>
             Promise.resolve(file)
         );
-        const newThumbnailData = await Promise.all(
-            uploadedFiles.map(getThumbnailData)
-        );
-
         const newRawFiles = [...rawFiles, ...uploadedFiles];
         setRawFiles(newRawFiles);
-        setThumbnailsData([...thumbnailsData, ...newThumbnailData]);
         customOnChange(newRawFiles, rawFiles.length);
 
         // Wipe the value of the upload element so we can upload multiple copies of the same file
@@ -64,7 +51,6 @@ function MultiFileUploadField({
         return () => {
             const newRawFiles = justRemove(rawFiles, index);
             setRawFiles(newRawFiles);
-            setThumbnailsData(justRemove(thumbnailsData, index));
             customOnChange(newRawFiles, index);
         };
     }
@@ -77,7 +63,7 @@ function MultiFileUploadField({
                 ...applyStyles.getTarget('fc')
             }}
         >
-            {thumbnailsData.map(({ filename, thumbnail }, index) => (
+            {thumbnailData.map(({ filename, thumbnail }, index) => (
                 <div
                     key={index}
                     css={{

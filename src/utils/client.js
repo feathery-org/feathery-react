@@ -1,6 +1,6 @@
 import * as errors from './error';
 
-import { initInfo, initState, initFormsPromise } from './init';
+import { initFormsPromise, initInfo, initState } from './init';
 
 import { encodeGetParams } from './primitives';
 
@@ -117,7 +117,9 @@ export default class Client {
         files.forEach(([key, fileValue]) => {
             if (fileValue) {
                 if (Array.isArray(fileValue)) {
-                    fileValue.forEach((file) => formData.append(key, file));
+                    fileValue
+                        .filter((file) => !!file)
+                        .forEach((file) => formData.append(key, file));
                 } else {
                     formData.append(key, fileValue);
                 }
