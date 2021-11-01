@@ -942,7 +942,6 @@ function Form({
         submitData,
         button,
         setShowSpinner,
-        plaidSuccess = false
     ) => {
         if (submitData) setShowSpinner(true);
         // Perform the submit callback
@@ -959,7 +958,7 @@ function Form({
                 newStep = await submit({
                     metadata,
                     repeat: button.repeat || 0,
-                    plaidSuccess
+                    plaidSuccess: true
                 });
             } else {
                 newStep = handleRedirect({ metadata });
@@ -994,8 +993,7 @@ function Form({
                         await buttonOnSubmit(
                             true,
                             button,
-                            setShowSpinner,
-                            true
+                            setShowSpinner
                         );
                 });
             }
