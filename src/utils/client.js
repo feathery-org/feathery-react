@@ -7,11 +7,11 @@ import { encodeGetParams } from './primitives';
 // Convenience boolean for urls - manually change for testing
 const isLocal = false;
 export const API_URL = isLocal
-    ? 'http://localhost:8006/'
-    : 'https://api.feathery.io/';
+    ? 'http://localhost:8006/api/'
+    : 'https://api.feathery.io/api/';
 export const CDN_URL = isLocal
-    ? 'http://localhost:8006/'
-    : 'https://cdn.feathery.io/';
+    ? 'http://localhost:8006/api/'
+    : 'https://cdn.feathery.io/api/';
 
 export default class Client {
     constructor(formKey) {
@@ -37,155 +37,39 @@ export default class Client {
         }
     }
 
-    updateUserKey(newUserKey) {
-        const { apiKey, userKey: oldUserKey } = initInfo();
-        const data = {
-            new_fuser_key: newUserKey,
-            ...(oldUserKey ? { fuser_key: oldUserKey } : {})
-        };
-        const url = `${API_URL}api/fuser/update_key/`;
-        const options = {
+    async _fetch(url, options) {
+        const { apiKey } = initInfo();
+        const { headers, ...otherOptions } = options;
+        options = {
             cache: 'no-store',
             headers: {
                 Authorization: 'Token ' + apiKey,
-                'Content-Type': 'application/json'
+                ...headers
             },
-            method: 'PATCH',
-            body: JSON.stringify(data)
+            ...otherOptions
         };
         return fetch(url, options).then((response) => {
             this._checkResponseSuccess(response);
-        });
-    }
-
-    async fetchForm() {
-        await initFormsPromise;
-        const { apiKey, forms } = initInfo();
-        if (this.formKey in forms) return Promise.resolve(forms[this.formKey]);
-
-        const params = encodeGetParams({
-            form_key: this.formKey
-        });
-        const url = `${CDN_URL}api/panel/v4/?${params}`;
-        const options = {
-            cache: 'no-store',
-            importance: 'high',
-            headers: {
-                Authorization: 'Token ' + apiKey,
-                'Accept-Encoding': 'gzip'
-            }
-        };
-        return fetch(url, options).then((response) => {
-            this._checkResponseSuccess(response);
-            return response.json();
-        });
-    }
-
-    async fetchSession() {
-        await initFormsPromise;
-        const { apiKey, userKey, sessions, authId } = initInfo();
-        if (this.formKey in sessions)
-            return Promise.resolve(sessions[this.formKey]);
-
-        const params = encodeGetParams({
-            form_key: this.formKey,
-            ...(userKey ? { fuser_key: userKey } : {}),
-            ...(authId ? { auth_id: authId } : {})
-        });
-        const url = `${API_URL}api/panel/session/?${params}`;
-        const options = {
-            cache: 'no-store',
-            importance: 'high',
-            headers: { Authorization: 'Token ' + apiKey }
-        };
-        return fetch(url, options).then((response) => {
-            this._checkResponseSuccess(response);
-            return response.json();
-        });
-    }
-
-    submitAuthInfo({ authId, authToken = '', authPhone = '', authEmail = '' }) {
-        const { apiKey, userKey } = initInfo();
-
-        const data = {
-            form_key: this.formKey,
-            auth_id: authId,
-            auth_phone: authPhone,
-            auth_email: authEmail,
-            ...(userKey ? { fuser_key: userKey } : {})
-        };
-        const url = `${API_URL}api/panel/update_auth/`;
-        const options = {
-            cache: 'no-store',
-            headers: {
-                Authorization: 'Token ' + apiKey,
-                'Content-Type': 'application/json'
-            },
-            method: 'PATCH',
-            body: JSON.stringify(data)
-        };
-        return fetch(url, options).then((response) => {
-            this._checkResponseSuccess(response);
-            initState.authId = authId;
-            if (authToken) initState.authToken = authToken;
-            if (authPhone) initState.authPhoneNumber = authPhone;
-            if (authEmail) initState.authEmail = authEmail;
-            return response.json();
-        });
-    }
-
-    submitCustom(customKeyValues) {
-        const { userKey, apiKey } = initInfo();
-        const url = `${API_URL}api/panel/custom/submit/v2/`;
-
-        const jsonKeyVals = {};
-        const formData = new FormData();
-        Object.entries(customKeyValues).forEach(([key, val]) => {
-            if (val instanceof Blob) {
-                formData.append('files', val);
-                formData.append('file_keys', key);
-            } else {
-                jsonKeyVals[key] = val;
-            }
-        });
-        formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
-        formData.set('form_key', this.formKey);
-        if (userKey) formData.set('fuser_key', userKey);
-
-        const options = {
-            cache: 'no-store',
-            headers: {
-                Authorization: 'Token ' + apiKey
-            },
-            method: 'POST',
-            body: formData
-        };
-
-        return fetch(url, options).then((response) => {
-            this._checkResponseSuccess(response);
+            return response;
         });
     }
 
     _submitJSONData(servars) {
-        const { userKey, apiKey } = initInfo();
-        const url = `${API_URL}api/panel/step/submit/`;
+        const { userKey } = initInfo();
+        const url = `${API_URL}panel/step/submit/`;
         const data = {
             ...(userKey ? { fuser_key: userKey } : {}),
             servars,
             panel_key: this.formKey
         };
         const options = {
-            cache: 'no-store',
             headers: {
-                Authorization: 'Token ' + apiKey,
                 'Content-Type': 'application/json'
             },
             method: 'POST',
             body: JSON.stringify(data)
         };
-        return fetch(url, options).then((response) => {
-            this._checkResponseSuccess(response);
-        });
+        return this._fetch(url, options);
     }
 
     async _getFileValue(servar, filePathMap) {
@@ -218,8 +102,8 @@ export default class Client {
     }
 
     async _submitFileData(servars, filePathMap) {
-        const { userKey, apiKey } = initInfo();
-        const url = `${API_URL}api/panel/step/submit/file/${userKey}/`;
+        const { userKey } = initInfo();
+        const url = `${API_URL}panel/step/submit/file/${userKey}/`;
 
         const formData = new FormData();
         const files = await Promise.all(
@@ -240,17 +124,100 @@ export default class Client {
             }
         });
 
-        const options = {
-            cache: 'no-store',
-            headers: {
-                Authorization: 'Token ' + apiKey
-            },
-            method: 'POST',
-            body: formData
+        return this._fetch(url, { method: 'POST', body: formData });
+    }
+
+    updateUserKey(newUserKey) {
+        const { userKey: oldUserKey } = initInfo();
+        const data = {
+            new_fuser_key: newUserKey,
+            ...(oldUserKey ? { fuser_key: oldUserKey } : {})
         };
-        return fetch(url, options).then((response) => {
-            this._checkResponseSuccess(response);
+        const url = `${API_URL}fuser/update_key/`;
+        const options = {
+            headers: { 'Content-Type': 'application/json' },
+            method: 'PATCH',
+            body: JSON.stringify(data)
+        };
+        return this._fetch(url, options);
+    }
+
+    async fetchForm() {
+        await initFormsPromise;
+        const { forms } = initInfo();
+        if (this.formKey in forms) return Promise.resolve(forms[this.formKey]);
+
+        const params = encodeGetParams({
+            form_key: this.formKey
         });
+        const url = `${CDN_URL}panel/v4/?${params}`;
+        const options = {
+            importance: 'high',
+            headers: { 'Accept-Encoding': 'gzip' }
+        };
+        return this._fetch(url, options).then((response) => response.json());
+    }
+
+    async fetchSession() {
+        await initFormsPromise;
+        const { userKey, sessions, authId } = initInfo();
+        if (this.formKey in sessions)
+            return Promise.resolve(sessions[this.formKey]);
+
+        const params = encodeGetParams({
+            form_key: this.formKey,
+            ...(userKey ? { fuser_key: userKey } : {}),
+            ...(authId ? { auth_id: authId } : {})
+        });
+        const url = `${API_URL}panel/session/?${params}`;
+        const options = { importance: 'high' };
+        return this._fetch(url, options).then((response) => response.json());
+    }
+
+    submitAuthInfo({ authId, authToken = '', authPhone = '', authEmail = '' }) {
+        const { userKey } = initInfo();
+
+        const data = {
+            form_key: this.formKey,
+            auth_id: authId,
+            auth_phone: authPhone,
+            auth_email: authEmail,
+            ...(userKey ? { fuser_key: userKey } : {})
+        };
+        const url = `${API_URL}panel/update_auth/`;
+        const options = {
+            headers: { 'Content-Type': 'application/json' },
+            method: 'PATCH',
+            body: JSON.stringify(data)
+        };
+        return this._fetch(url, options).then((response) => {
+            initState.authId = authId;
+            if (authToken) initState.authToken = authToken;
+            if (authPhone) initState.authPhoneNumber = authPhone;
+            if (authEmail) initState.authEmail = authEmail;
+            return response.json();
+        });
+    }
+
+    submitCustom(customKeyValues) {
+        const { userKey } = initInfo();
+        const url = `${API_URL}panel/custom/submit/v2/`;
+
+        const jsonKeyVals = {};
+        const formData = new FormData();
+        Object.entries(customKeyValues).forEach(([key, val]) => {
+            if (val instanceof Blob) {
+                formData.append('files', val);
+                formData.append('file_keys', key);
+            } else {
+                jsonKeyVals[key] = val;
+            }
+        });
+        formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
+        formData.set('form_key', this.formKey);
+        if (userKey) formData.set('fuser_key', userKey);
+
+        return this._fetch(url, { method: 'POST', body: formData });
     }
 
     // servars = [{key: <servarKey>, <type>: <value>}]
@@ -271,35 +238,53 @@ export default class Client {
         await jsonPromise;
     }
 
-    registerEvent(eventData, promise = null) {
-        return initFormsPromise.then(() => {
-            const { userKey, apiKey } = initInfo();
-            const url = `${API_URL}api/event/`;
-            const data = {
-                form_key: this.formKey,
-                ...eventData,
-                ...(userKey ? { fuser_key: userKey } : {})
-            };
-            const options = {
-                cache: 'no-store',
-                headers: {
-                    Authorization: 'Token ' + apiKey,
-                    'Content-Type': 'application/json'
-                },
-                method: 'POST',
-                body: JSON.stringify(data)
-            };
-            if (promise) {
-                promise.then(() => {
-                    fetch(url, options).then((response) => {
-                        this._checkResponseSuccess(response);
-                    });
-                });
-            } else {
-                fetch(url, options).then((response) => {
-                    this._checkResponseSuccess(response);
-                });
-            }
+    async registerEvent(eventData, promise = null) {
+        await initFormsPromise;
+        const { userKey } = initInfo();
+        const url = `${API_URL}event/`;
+        const data = {
+            form_key: this.formKey,
+            ...eventData,
+            ...(userKey ? { fuser_key: userKey } : {})
+        };
+        const options = {
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            body: JSON.stringify(data)
+        };
+        if (promise) return promise.then(() => this._fetch(url, options));
+        else return this._fetch(url, options);
+    }
+
+    // THIRD-PARTY INTEGRATIONS
+    async fetchPlaidLinkToken() {
+        await initFormsPromise;
+        const { userKey } = initInfo();
+        const params = encodeGetParams({
+            form_key: this.formKey,
+            ...(userKey ? { fuser_key: userKey } : {})
         });
+        const url = `${API_URL}plaid/link_token/?${params}`;
+        const options = { headers: { 'Content-Type': 'application/json' } };
+        return this._fetch(url, options).then(
+            async (response) => await response.json()
+        );
+    }
+
+    async submitPlaidUserData(publicToken) {
+        await initFormsPromise;
+        const { userKey } = initInfo();
+        const url = `${API_URL}plaid/user_data/`;
+        const data = {
+            public_token: publicToken,
+            form_key: this.formKey,
+            ...(userKey ? { fuser_key: userKey } : {})
+        };
+        const options = {
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            body: JSON.stringify(data)
+        };
+        return this._fetch(url, options);
     }
 }
