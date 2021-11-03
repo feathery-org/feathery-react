@@ -336,7 +336,14 @@ function Form({
             });
             if (loadCond) {
                 if (logOut) setFirstLoggedOut(true);
+                const sameKey = loadCond.next_step_key === newKey;
                 newKey = loadCond.next_step_key;
+                if (!sameKey) {
+                    history.replace(
+                        location.pathname + location.search + `#${newKey}`
+                    );
+                    return;
+                }
                 newStep = steps[newKey];
             } else break;
         }
@@ -938,11 +945,7 @@ function Form({
         } else handleRedirect({ metadata });
     };
 
-    const buttonOnSubmit = async (
-        submitData,
-        button,
-        setShowSpinner,
-    ) => {
+    const buttonOnSubmit = async (submitData, button, setShowSpinner) => {
         if (submitData) setShowSpinner(true);
         // Perform the submit callback
         // Note: We only need to set the spinner if the submit request failed
@@ -990,11 +993,7 @@ function Form({
                 await openPlaidLink(client, async () => {
                     setPlaidLinked(true);
                     if (activeStep.servar_fields.length === 0)
-                        await buttonOnSubmit(
-                            true,
-                            button,
-                            setShowSpinner
-                        );
+                        await buttonOnSubmit(true, button, setShowSpinner);
                 });
             }
         } else if (['submit', 'skip'].includes(button.link)) {
