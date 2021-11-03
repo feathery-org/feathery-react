@@ -43,6 +43,8 @@ export default function DropdownField({
                 css={{
                     position: 'relative',
                     width: '100%',
+                    whiteSpace: 'nowrap',
+                    overflowX: 'hidden',
                     ...applyStyles.getTarget('sub-fc')
                 }}
             >

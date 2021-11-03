@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect, memo } from 'react';
+import React, { useState, useRef, memo } from 'react';
 import ReactForm from 'react-bootstrap/Form';
 import InlineTooltip from '../components/Tooltip';
 import { bootstrapStyles } from '../styles';
@@ -9,7 +9,7 @@ import {
 
 import format from 'string-format';
 format.extend(String.prototype, {
-    defaultDigit: (s) => (s === '' ? '0' : s),
+    defaultDigit: (s, index) => (s === '' ? '0' : s),
     defaultChar: (s) => (s === '' ? 'a' : s),
     defaultMaskChar: (s) => (s === '' ? '_' : s),
     defaultMaskDigit: (s) => (s === '' ? '_' : s)
@@ -83,29 +83,6 @@ function getTextFieldProps(servar, styles, value) {
                 value
             };
     }
-}
-
-function useCaretPosition(inputRef, startingPos) {
-    const [start, setStart] = useState(startingPos);
-    const [end, setEnd] = useState(startingPos);
-    var updateCaret = useCallback(function () {
-        // Get the updated caret postions from the ref passed in
-        if (inputRef && inputRef.current) {
-            var _a = inputRef.current,
-                selectionStart = _a.selectionStart,
-                selectionEnd = _a.selectionEnd;
-            setStart(selectionStart);
-            setEnd(selectionEnd);
-        }
-    }, []);
-    useEffect(function () {
-        // Set the caret position by setting the selection range with the
-        // most current start and end values
-        if (inputRef && inputRef.current) {
-            inputRef.current.setSelectionRange(start, end);
-        }
-    });
-    return { start: start, end: end, updateCaret: updateCaret };
 }
 
 function getFieldMaskMeta(fieldMask) {
@@ -206,12 +183,11 @@ function TextField({
         fieldMaskComparisionString,
         fieldMaskString,
         deterministicPattern
-    } = getFieldMaskMeta(servar.field_mask);
+    } = getFieldMaskMeta('$ {{ \\d{4} }} / year');
 
     const [rawFieldValue, setRawFieldValue] = useState('');
     const fieldValueComparisionMask = useRef(fieldMaskComparisionString);
     const fieldValueMask = useRef(fieldMaskString);
-    const { updateCaret } = useCaretPosition(inputRef, 4);
     const rawCaretPos = useRef(0);
     const maskedCaretPos = useRef(4);
 
@@ -228,6 +204,12 @@ function TextField({
                 css={{
                     position: 'relative',
                     width: '100%',
+                    ...(inputType === 'textarea'
+                        ? {}
+                        : {
+                              whiteSpace: 'nowrap',
+                              overflowX: 'hidden'
+                          }),
                     ...applyStyles.getTarget('sub-fc')
                 }}
             >

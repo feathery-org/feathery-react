@@ -35,7 +35,7 @@ const dataURLToFile = (dataURL, name) => {
 };
 
 const escapeChars = (plainTextString) => {
-    const specialChars = /[\.\^\$\*\+\-\?\)\(\]\[\}\{\|\—\/]/g;
+    const specialChars = /[.^$*+-?()[\]}{|—/]/g;
     return plainTextString.replace(specialChars, (m) => '\\' + m);
 };
 
@@ -98,8 +98,8 @@ const generateRegexString = (rawPatternString) => {
         regexString += identifiedRegex;
 
         const expandedStrings = expandN(identifiedRegex, 500);
-        let patternComparisionSet = new Set();
-        let patternMaskSet = new Set();
+        const patternComparisionSet = new Set();
+        const patternMaskSet = new Set();
         for (const s of expandedStrings) {
             patternComparisionSet.add(
                 s
@@ -304,25 +304,44 @@ const getOrigin = (steps) => {
     return originKey;
 };
 
-const recurseDepth = (steps, originKey, curKey) => {
-    // We may pass in a displaySteps draft that doesn't have an origin specified
-    if (!originKey) return [0, 0];
-
-    const seenStepKeys = new Set();
-    const stepQueue = [[steps[originKey], 0]];
+const recurseDepth = (steps, originKey, curKey, stepSequence) => {
     let curDepth = 0;
     let maxDepth = 0;
-    while (stepQueue.length > 0) {
-        const [step, depth] = stepQueue.shift();
-        if (seenStepKeys.has(step.key)) continue;
-        seenStepKeys.add(step.key);
+    if (stepSequence.includes(curKey)) {
+        // If the user is in a custom sequence, figure out:
+        // * how many steps to the end from the last step of the sequence
+        // * how many steps from the origin to the beginning of the sequence
+        // * length of the sequence itself
+        const [endSequenceDepth] = recurseDepth(
+            steps,
+            stepSequence.at(-1),
+            stepSequence.at(-1),
+            []
+        );
+        const [beginningSequenceDepth] = recurseDepth(
+            steps,
+            originKey,
+            stepSequence[0],
+            []
+        );
+        curDepth = beginningSequenceDepth + stepSequence.indexOf(curKey);
+        maxDepth =
+            beginningSequenceDepth + stepSequence.length - 1 + endSequenceDepth;
+    } else {
+        const seenStepKeys = new Set();
+        const stepQueue = [[steps[originKey], 0]];
+        while (stepQueue.length > 0) {
+            const [step, depth] = stepQueue.shift();
+            if (seenStepKeys.has(step.key)) continue;
+            seenStepKeys.add(step.key);
 
-        if (step.key === curKey) curDepth = depth;
-        maxDepth = depth;
+            if (step.key === curKey) curDepth = depth;
+            maxDepth = depth;
 
-        step.next_conditions.forEach((condition) => {
-            stepQueue.push([steps[condition.next_step_key], depth + 1]);
-        });
+            step.next_conditions.forEach((condition) => {
+                stepQueue.push([steps[condition.next_step_key], depth + 1]);
+            });
+        }
     }
     return [curDepth, maxDepth];
 };

@@ -97,7 +97,7 @@ const initializeIntegrations = async (
     const plaid = integrations.plaid;
 
     const [, firebase] = await Promise.all([
-        installPlaid(plaid),
+        installPlaid(!!plaid),
         installFirebase(fb)
     ]);
 
