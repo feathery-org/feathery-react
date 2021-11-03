@@ -1,10 +1,19 @@
-import { IMaskMixin } from 'react-imask';
-import React, { memo } from 'react';
+import React, { useState, useRef, useCallback, useEffect, memo } from 'react';
 import ReactForm from 'react-bootstrap/Form';
 import InlineTooltip from '../components/Tooltip';
 import { bootstrapStyles } from '../styles';
-import { emailPatternStr } from '../../utils/formHelperFunctions';
-import { expandN } from "regex-to-strings";
+import {
+    emailPatternStr,
+    generateRegexString
+} from '../../utils/formHelperFunctions';
+
+import format from 'string-format';
+format.extend(String.prototype, {
+    defaultDigit: (s) => (s === '' ? '0' : s),
+    defaultChar: (s) => (s === '' ? 'a' : s),
+    defaultMaskChar: (s) => (s === '' ? '_' : s),
+    defaultMaskDigit: (s) => (s === '' ? '_' : s)
+});
 
 function getTextFieldProps(servar, styles, value) {
     let methods, onlyPhone;
@@ -76,37 +85,108 @@ function getTextFieldProps(servar, styles, value) {
     }
 }
 
-const escapeChars = (plainTextString) => {
-    const specialChars = "/.^$*+-?()[]{}|—\//g";
-    const specialCharsMap = {".": "\.", "^":"\^", "$":"\$", "*":"\*", "+":"\+", "-":"\-", "?":"\?", "(":"\(", ")":"\)", "[":"\[", "]":"\]", "{":"\{", "}":"\}", "|":"\|", "—":"\—", "/":"\/"}
-    console.log(plainTextString.replace(specialChars, m => {console.log(m, specialCharsMap[m]); return specialCharsMap[m]}));
-
+function useCaretPosition(inputRef, startingPos) {
+    const [start, setStart] = useState(startingPos);
+    const [end, setEnd] = useState(startingPos);
+    var updateCaret = useCallback(function () {
+        // Get the updated caret postions from the ref passed in
+        if (inputRef && inputRef.current) {
+            var _a = inputRef.current,
+                selectionStart = _a.selectionStart,
+                selectionEnd = _a.selectionEnd;
+            setStart(selectionStart);
+            setEnd(selectionEnd);
+        }
+    }, []);
+    useEffect(function () {
+        // Set the caret position by setting the selection range with the
+        // most current start and end values
+        if (inputRef && inputRef.current) {
+            inputRef.current.setSelectionRange(start, end);
+        }
+    });
+    return { start: start, end: end, updateCaret: updateCaret };
 }
-const generateRegexString = (rawPatternString) => {
-    let startIndex = 0;
-    let processedRegexString = ""
-    while (rawPatternString.indexOf("{{ ", startIndex) >= 0) {
-      const start = rawPatternString.indexOf("{{ ", startIndex);
-      const end = rawPatternString.indexOf(" }}", startIndex);
-      const identifiedRegex = rawPatternString.slice(start + 3, end).trim();
-      console.log(start+3, end, identifiedRegex, rawPatternString.slice(startIndex, start));
-      processedRegexString += escapeChars(rawPatternString.slice(startIndex, start))
-      processedRegexString += identifiedRegex;
-    
 
-      startIndex = end + 3;
+function getFieldMaskMeta(fieldMask) {
+    if (fieldMask === '' || fieldMask === undefined || fieldMask === null)
+        return {
+            fieldMaskRegex: '',
+            fieldMaskComparisionString: '',
+            fieldMaskString: '',
+            deterministicPattern: true
+        };
+
+    const [
+        fieldMaskRegex,
+        fieldMaskComparisionString,
+        fieldMaskString,
+        deterministicPattern
+    ] = generateRegexString(fieldMask);
+
+    return {
+        fieldMaskRegex,
+        fieldMaskComparisionString,
+        fieldMaskString,
+        deterministicPattern
+    };
+}
+
+const validateNewFieldValue = (
+    event,
+    rawFieldValue,
+    rawCaretPos,
+    maskedCaretPos,
+    regexFieldMask,
+    patternFieldMask,
+    deterministicPattern,
+    setRawFieldValue
+) => {
+    const anyCharRegex = '^\\w$';
+    let tempRawValue = rawFieldValue;
+
+    if (event.key.search(anyCharRegex) === 0) {
+        tempRawValue =
+            tempRawValue.substring(0, rawCaretPos.current) +
+            event.key +
+            tempRawValue.substring(rawCaretPos.current + 1);
+
+        const newPatternFieldMask = patternFieldMask.current.format(
+            ...tempRawValue
+        );
+
+        if (newPatternFieldMask.search(regexFieldMask) === 0) {
+            setRawFieldValue(tempRawValue);
+            rawCaretPos.current += 1;
+            maskedCaretPos.current += 1;
+        }
+    } else if (event.key === 'Backspace') {
+        tempRawValue =
+            tempRawValue.slice(0, rawCaretPos.current - 1) +
+            tempRawValue.slice(rawCaretPos.current);
+
+        const newPatternFieldMask = patternFieldMask.current.format(
+            ...tempRawValue
+        );
+
+        if (newPatternFieldMask.search(regexFieldMask) === 0) {
+            setRawFieldValue(tempRawValue);
+            rawCaretPos.current -= 1;
+            maskedCaretPos.current -= 1;
+        }
+    } else if (event.key === 'Delete') {
+        tempRawValue =
+            tempRawValue.slice(0, rawCaretPos.current - 1) +
+            tempRawValue.slice(rawCaretPos.current + 1);
+        const newPatternFieldMask = patternFieldMask.current.format(
+            ...tempRawValue
+        );
+
+        if (newPatternFieldMask.search(regexFieldMask) === 0) {
+            setRawFieldValue(tempRawValue);
+        }
     }
-    
-    return processedRegexString+rawPatternString.substring(startIndex);
-  };
-
-function getFieldMaskProps(fieldMask){ 
-    console.log(fieldMask)
-    const rp = generateRegexString(fieldMask);
-    const ex = "$ 1000 / year";
-    console.log("Pattern Check: ",ex.match(rp), ex, rp);
-    return {fieldMaskRegex:undefined, fieldMaskPattern:undefined}
-}
+};
 
 function TextField({
     element,
@@ -121,9 +201,20 @@ function TextField({
     ...fieldProps
 }) {
     const servar = element.servar;
-    const {fieldMaskRegex, fieldMaskPattern} = getFieldMaskProps("$ {{ \\d{4} }} / year");
-    console.log("fieldMaskRegex", fieldMaskRegex)
-    console.log("fieldMaskPattern", fieldMaskPattern)
+    const {
+        fieldMaskRegex,
+        fieldMaskComparisionString,
+        fieldMaskString,
+        deterministicPattern
+    } = getFieldMaskMeta(servar.field_mask);
+
+    const [rawFieldValue, setRawFieldValue] = useState('');
+    const fieldValueComparisionMask = useRef(fieldMaskComparisionString);
+    const fieldValueMask = useRef(fieldMaskString);
+    const { updateCaret } = useCaretPosition(inputRef, 4);
+    const rawCaretPos = useRef(0);
+    const maskedCaretPos = useRef(4);
+
     const inputType = fieldProps.as === 'textarea' ? 'textarea' : 'input';
     return (
         <div
@@ -161,13 +252,28 @@ function TextField({
                     onChange={onChange}
                     onClick={onClick}
                     onKeyDown={(e) => {
+                        validateNewFieldValue(
+                            e,
+                            rawFieldValue,
+                            rawCaretPos,
+                            maskedCaretPos,
+                            fieldMaskRegex,
+                            fieldValueComparisionMask,
+                            deterministicPattern,
+                            setRawFieldValue
+                        );
                         if (e.key === 'Enter' && inputType === 'textarea')
                             e.stopPropagation();
                     }}
                     autoComplete={servar.metadata.autocomplete || 'on'}
+                    data-rawvalue={rawFieldValue}
                     ref={inputRef}
                     placeholder=''
                     {...fieldProps}
+                    value={
+                        fieldValueMask.current.format(...rawFieldValue) ||
+                        rawFieldValue
+                    }
                 />
                 <span
                     css={{
@@ -186,7 +292,8 @@ function TextField({
                         }
                     }}
                 >
-                    {element.placeholder || ''}
+                    {fieldValueMask.current.format(...rawFieldValue) ||
+                        rawFieldValue}
                 </span>
                 {element.tooltipText && (
                     <InlineTooltip
@@ -200,14 +307,12 @@ function TextField({
     );
 }
 
-// const MaskedTextField = IMaskMixin((props) => <TextField {...props} />);
-const MaskedTextField = (props) => <TextField {...props} />
-
 const MaskedPropsTextField = ({ element, fieldValue = '', ...props }) => {
     const servar = element.servar;
     const fieldProps = getTextFieldProps(servar, element.styles, fieldValue);
+
     return (
-        <MaskedTextField
+        <TextField
             element={element}
             fieldValue={fieldValue}
             {...props}

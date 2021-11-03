@@ -1,6 +1,7 @@
 import getRandomBoolean from './random';
 import libphonenumber from 'google-libphonenumber';
 import { initInfo } from './init';
+import { expandN } from 'regex-to-strings';
 
 const phoneValidator = libphonenumber.PhoneNumberUtil.getInstance();
 
@@ -31,6 +32,11 @@ const dataURLToFile = (dataURL, name) => {
     }
 
     return new File([u8arr], name, { type: mime });
+};
+
+const escapeChars = (plainTextString) => {
+    const specialChars = /[\.\^\$\*\+\-\?\)\(\]\[\}\{\|\—\/]/g;
+    return plainTextString.replace(specialChars, (m) => '\\' + m);
 };
 
 const formatStepFields = (step, fieldValues, signatureRef) => {
@@ -71,6 +77,59 @@ const formatAllStepFields = (steps, fieldValues) => {
         formattedFields = { ...formattedFields, ...stepFields };
     });
     return formattedFields;
+};
+
+const generateRegexString = (rawPatternString) => {
+    let startIndex = 0;
+    let regexString = '';
+    let patternComparisionString = '';
+    let patternMaskString = '';
+    let deterministic = true;
+
+    while (rawPatternString.indexOf('{{ ', startIndex) >= 0) {
+        const start = rawPatternString.indexOf('{{ ', startIndex);
+        const end = rawPatternString.indexOf(' }}', startIndex);
+        const identifiedRegex = rawPatternString.slice(start + 3, end).trim();
+
+        regexString += escapeChars(rawPatternString.slice(startIndex, start));
+        patternComparisionString += rawPatternString.slice(startIndex, start);
+        patternMaskString += rawPatternString.slice(startIndex, start);
+
+        regexString += identifiedRegex;
+
+        const expandedStrings = expandN(identifiedRegex, 500);
+        let patternComparisionSet = new Set();
+        let patternMaskSet = new Set();
+        for (const s of expandedStrings) {
+            patternComparisionSet.add(
+                s
+                    .replaceAll(/[a-zA-Z]/g, '{!defaultChar}')
+                    .replaceAll(/\d/g, '{!defaultDigit}')
+            );
+            patternMaskSet.add(
+                s
+                    .replaceAll(/[a-zA-Z]/g, '{!defaultMaskChar}')
+                    .replaceAll(/\d/g, '{!defaultMaskDigit}')
+            );
+        }
+
+        if (patternComparisionSet.size === 1) {
+            patternComparisionString += [...patternComparisionSet][0];
+            patternMaskString += [...patternMaskSet][0];
+        } else {
+            patternComparisionString += ' ';
+            patternMaskString += ' ';
+            deterministic = false;
+        }
+        startIndex = end + 3;
+    }
+
+    return [
+        regexString + escapeChars(rawPatternString.substring(startIndex)),
+        patternComparisionString + rawPatternString.substring(startIndex),
+        patternMaskString + rawPatternString.substring(startIndex),
+        deterministic
+    ];
 };
 
 const getABVariant = (stepRes) => {
@@ -497,6 +556,7 @@ function isFieldActuallyRequired(field, repeatTriggerExists, repeatedRowCount) {
 export {
     formatAllStepFields,
     formatStepFields,
+    generateRegexString,
     getABVariant,
     getDefaultFieldValue,
     getDefaultFieldValues,

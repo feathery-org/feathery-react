@@ -38,7 +38,7 @@ import Elements from '../elements';
 import GooglePlaces from './GooglePlaces';
 import ReactForm from 'react-bootstrap/Form';
 import TagManager from 'react-gtm-module';
-import { sendLoginCode, verifySMSCode } from "../integrations/firebase";
+import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
 
 const FILE_UPLOADERS = [
     'file_upload',
@@ -1357,17 +1357,17 @@ function Form({
                             return (
                                 <Elements.TextField
                                     {...fieldProps}
-                                    lazy={false}
-                                    unmask
+                                    // lazy={false}
+                                    // unmask
                                     fieldValue={fieldVal}
                                     onClick={onClick}
-                                    onAccept={(val) => {
-                                        changeValue(val, field, index, false);
-                                        const submitData =
-                                            field.submit_trigger === 'auto' &&
-                                            textFieldShouldSubmit(servar, val);
-                                        onChange({ submitData });
-                                    }}
+                                    // onAccept={(val) => {
+                                    //     changeValue(val, field, index, false);
+                                    //     const submitData =
+                                    //         field.submit_trigger === 'auto' &&
+                                    //         textFieldShouldSubmit(servar, val);
+                                    //     onChange({ submitData });
+                                    // }}
                                     inlineError={inlineErr}
                                 />
                             );

@@ -77,8 +77,10 @@
     "react-load-script": "^0.0.6",
     "react-router-dom": "^5.2.0",
     "react-signature-canvas": "^1.0.3",
+    "react-use-caret-position": "^1.0.3",
     "regex-to-strings": "^2.0.3",
     "scriptjs": "^2.5.9",
+    "string-format": "^2.0.0",
     "uuid": "^8.3.2"
   },
   "babel": {
