@@ -16,4 +16,8 @@ function justRemove(list, index) {
     return [...list.slice(0, index), ...list.slice(index + 1)];
 }
 
-export { justInsert, justRemove };
+function toList(itemOrList) {
+    return Array.isArray(itemOrList) ? itemOrList : [itemOrList];
+}
+
+export { justInsert, justRemove, toList };

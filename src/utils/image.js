@@ -1,3 +1,7 @@
+import { useEffect, useState } from 'react';
+
+import { toList } from './array';
+
 export const THUMBNAIL_TYPE = {
     PDF: 'pdf',
     IMAGE: 'image',
@@ -18,6 +22,25 @@ export function getThumbnailType(file) {
     return thumbnailType;
 }
 
+/**
+ * Utility hook for handling file values in file upload fields.
+ * This custom hook maintains a referentially-stable list of files,
+ * and will execute a callback every time that list changes.
+ */
+export function useFileData(initialFiles, onSetFiles = () => {}) {
+    const [files, setFiles] = useState(toList(initialFiles));
+    useEffect(() => {
+        setFiles(toList(initialFiles));
+        onSetFiles();
+    }, [initialFiles]);
+
+    return [files, setFiles];
+}
+
+/**
+ * Given a File (or a Promise<File>), convert the file to a filename and thumbnail.
+ * Filename will be a plaintext string and thumbnail will be a base64 encoded image.
+ */
 export async function getThumbnailData(filePromise) {
     const file = await filePromise;
     const thumbnailType = getThumbnailType(file);
@@ -36,4 +59,26 @@ export async function getThumbnailData(filePromise) {
     } else {
         return { filename: file?.name ?? '', thumbnail: '' };
     }
+}
+
+/**
+ * Utility hook for converting a list of files into a list of thumbnail information.
+ */
+export function useThumbnailData(files) {
+    const [thumbnailData, setThumbnailData] = useState(
+        files.map(() => ({ filename: '', thumbnail: '' }))
+    );
+
+    useEffect(() => {
+        const thumbnailPromises = files.map(getThumbnailData);
+        Promise.all(thumbnailPromises)
+            .then((data) =>
+                data.filter((item) => item.thumbnail || item.filename)
+            )
+            .then((data) => {
+                setThumbnailData(data);
+            });
+    }, [files]);
+
+    return thumbnailData;
 }

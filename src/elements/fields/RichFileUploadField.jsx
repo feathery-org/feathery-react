@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef } from 'react';
+import { useFileData, useThumbnailData } from '../../utils/image';
 
 import { FiX } from 'react-icons/fi';
 import { IconContext } from 'react-icons';
 import { Image } from 'react-bootstrap';
-import { getThumbnailData } from '../../utils/image';
 
 function RichFileUploadField({
     element,
@@ -16,26 +16,13 @@ function RichFileUploadField({
     const servar = element.servar;
     const showIcon = element.icon_url !== '';
     const showLabel = servar.name !== '';
-
-    const [thumbnail, setThumbnail] = useState('');
-    const [filename, setFilename] = useState('');
     const fileInput = useRef();
 
-    // Set file state to the initialFile AND update file state whenever initialFile changes
-    const [file, setFile] = useState(initialFile);
-    useEffect(() => {
+    const [files, setFiles] = useFileData(initialFile, () => {
         if (fileInput.current) fileInput.current.value = '';
-        setFile(initialFile);
-    }, [initialFile]);
-
-    // When a file is uploaded, we convert it to a thumbnail
-    useEffect(() => {
-        (async () => {
-            const { filename, thumbnail } = await getThumbnailData(file);
-            setFilename(filename);
-            setThumbnail(thumbnail);
-        })();
-    }, [file]);
+    });
+    const { thumbnail, filename } = useThumbnailData(files)[0] ?? {};
+    const fileExists = thumbnail || filename;
 
     function onClick(event) {
         fileInput.current.click();
@@ -45,14 +32,14 @@ function RichFileUploadField({
     function onChange(event) {
         const file = event.target.files[0];
         const filePromise = Promise.resolve(file);
-        setFile(filePromise);
+        setFiles([filePromise]);
 
         customOnChange(file ? [filePromise] : []);
     }
 
     function onClear() {
         fileInput.current.value = '';
-        setFile(null);
+        setFiles([null]);
         customOnChange([]);
     }
 
@@ -65,7 +52,7 @@ function RichFileUploadField({
             'uploader_padding_left'
         ],
         (a, b, c, d) => ({
-            padding: file ? '0' : `${a}px ${b}px ${c}px ${d}px`
+            padding: fileExists ? '0' : `${a}px ${b}px ${c}px ${d}px`
         })
     );
 
@@ -79,7 +66,9 @@ function RichFileUploadField({
                 maxHeight: '100%',
                 display: 'flex',
                 justifyContent:
-                    !file && showLabel && showIcon ? 'space-between' : 'center',
+                    !fileExists && showLabel && showIcon
+                        ? 'space-between'
+                        : 'center',
                 alignItems: 'center',
                 flexDirection: 'column',
                 border: '1px solid lightgrey',
@@ -89,7 +78,7 @@ function RichFileUploadField({
                 ...applyStyles.getTarget('fc')
             }}
         >
-            {showIcon && !file && (
+            {showIcon && !fileExists && (
                 <Image
                     src={element.icon_url}
                     fluid
@@ -100,7 +89,7 @@ function RichFileUploadField({
                     }}
                 />
             )}
-            {showLabel && !file && (
+            {showLabel && !fileExists && (
                 <div css={applyStyles.getTarget('field')}>{servar.name}</div>
             )}
             {thumbnail && (
@@ -130,7 +119,7 @@ function RichFileUploadField({
                     {filename}
                 </div>
             )}
-            {file && servar.repeat_trigger !== 'set_value' && (
+            {fileExists && servar.repeat_trigger !== 'set_value' && (
                 <div
                     style={{
                         position: 'absolute',
@@ -159,7 +148,7 @@ function RichFileUploadField({
                 ref={fileInput}
                 type='file'
                 onChange={onChange}
-                required={required && !file}
+                required={required && !fileExists}
                 accept={servar.metadata.file_types}
                 style={{
                     position: 'absolute',
