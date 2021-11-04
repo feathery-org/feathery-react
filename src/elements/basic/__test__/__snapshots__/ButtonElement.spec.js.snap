@@ -3,7 +3,7 @@
 exports[`ButtonElement renders a button with custom styles 1`] = `
 <button
   className="css-12uj0k6-ButtonElement btn btn-primary"
-  disabled={false}
+  disabled={null}
   onClick={[Function]}
   style={
     Object {
@@ -38,7 +38,7 @@ exports[`ButtonElement renders a button with custom styles 1`] = `
 exports[`ButtonElement renders a button with plain text 1`] = `
 <button
   className="css-12uj0k6-ButtonElement btn btn-primary"
-  disabled={false}
+  disabled={null}
   onClick={[Function]}
   style={
     Object {
@@ -73,7 +73,7 @@ exports[`ButtonElement renders a button with plain text 1`] = `
 exports[`ButtonElement renders an empty ButtonElement element 1`] = `
 <button
   className="css-1ol2xm8-ButtonElement btn btn-primary"
-  disabled={false}
+  disabled={null}
   onClick={[Function]}
   style={
     Object {

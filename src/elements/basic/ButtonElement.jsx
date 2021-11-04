@@ -1,7 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 
 import ReactButton from 'react-bootstrap/Button';
-import Spinner from 'react-bootstrap/Spinner';
 import TextNodes from '../components/TextNodes';
 
 function adjustColor(color, amount) {
@@ -19,7 +18,7 @@ function adjustColor(color, amount) {
 }
 
 function applyButtonStyles(element, applyStyles) {
-  applyStyles.addTargets('button', 'buttonActive', 'buttonHover', 'spinner');
+  applyStyles.addTargets('button', 'buttonActive', 'buttonHover', 'loader');
 
   applyStyles.apply('button', 'background_color', (a) => ({
     backgroundColor: `#${a}`
@@ -54,10 +53,7 @@ function applyButtonStyles(element, applyStyles) {
     }));
   }
 
-  applyStyles.apply('spinner', 'show_spinner_on_submit', (a) => ({
-    display: a ? 'default' : 'none'
-  }));
-  applyStyles.apply('spinner', ['height', 'height_unit'], (a, b) => {
+  applyStyles.apply('loader', ['height', 'height_unit'], (a, b) => {
     const thirdHeight = Math.round(a / 3);
     return {
       right: `-${a}${b}`,
@@ -73,17 +69,14 @@ function ButtonElement({
   element,
   applyStyles,
   values = null,
+  loader = null,
   handleRedirect = () => {},
-  onClick = () => {},
-  setSubmitRef = () => {}
+  onClick = () => {}
 }) {
-  const [showSpinner, setShowSpinner] = useState(false);
-  const buttonOnClick = () => onClick(setShowSpinner);
-  if (element.link === 'submit') setSubmitRef(buttonOnClick);
-
   const styles = useMemo(() => applyButtonStyles(element, applyStyles), [
     applyStyles
   ]);
+
   return (
     <ReactButton
       id={element.id}
@@ -97,15 +90,13 @@ function ButtonElement({
         maxWidth: '100%'
       }}
       css={{
-        '&:disabled': {
-          cursor: 'default !important'
-        },
+        '&:disabled': { cursor: 'default !important' },
         '&:active': styles.getTarget('buttonActive'),
         '&:hover:enabled': styles.getTarget('buttonHover'),
         '&&': styles.getTarget('button')
       }}
-      disabled={element.link === 'none' || showSpinner}
-      onClick={buttonOnClick}
+      disabled={element.link === 'none' || loader}
+      onClick={onClick}
     >
       <div style={{ display: 'flex', position: 'relative' }}>
         <TextNodes
@@ -124,39 +115,19 @@ function ButtonElement({
             }}
           />
         )}
-        {showSpinner && (
-          <Spinner
-            animation='border'
-            style={{
-              color: 'white',
+        {loader && (
+          <div
+            css={{
               position: 'absolute',
               top: '50%',
               bottom: '50%',
               marginTop: 'auto',
               marginBottom: 'auto',
-              border: '0.2em solid currentColor',
-              borderRightColor: 'transparent'
+              ...styles.getTarget('loader')
             }}
-            css={{
-              ...styles.getTarget('spinner'),
-              '@-webkit-keyframes spinner-border': {
-                to: {
-                  WebkitTransform: 'rotate(360deg)',
-                  transform: 'rotate(360deg)'
-                }
-              },
-              '@keyframes spinner-border': {
-                to: {
-                  WebkitTransform: 'rotate(360deg)',
-                  transform: 'rotate(360deg)'
-                }
-              },
-              '&.spinner-border': {
-                borderRadius: '50%',
-                animation: '0.75s linear infinite spinner-border'
-              }
-            }}
-          />
+          >
+            {loader}
+          </div>
         )}
       </div>
     </ReactButton>

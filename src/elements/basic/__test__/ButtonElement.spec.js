@@ -50,11 +50,7 @@ describe('ButtonElement', () => {
           layout: 'center'
         },
         mobile_styles: {}
-      },
-      values: {},
-      submit: () => {},
-      setSubmitRef: () => {},
-      onRepeatClick: () => {}
+      }
     };
 
     // Act
@@ -82,11 +78,7 @@ describe('ButtonElement', () => {
           layout: 'center'
         },
         mobile_styles: {}
-      },
-      values: {},
-      submit: () => {},
-      setSubmitRef: () => {},
-      onRepeatClick: () => {}
+      }
     };
 
     // Act
@@ -127,11 +119,7 @@ describe('ButtonElement', () => {
           layout: 'center'
         },
         mobile_styles: {}
-      },
-      values: {},
-      submit: () => {},
-      setSubmitRef: () => {},
-      onRepeatClick: () => {}
+      }
     };
 
     // Act
