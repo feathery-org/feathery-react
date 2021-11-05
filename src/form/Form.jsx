@@ -6,6 +6,7 @@ import {
   injectRepeatedRows
 } from '../utils/hydration';
 import {
+  changeStep,
   convertFilesToFilePromises,
   fetchS3File,
   findServars,
@@ -324,13 +325,7 @@ function Form({
       });
       if (loadCond) {
         if (logOut) setFirstLoggedOut(true);
-        const sameKey = loadCond.next_step_key === newKey;
-        newKey = loadCond.next_step_key;
-        if (!sameKey) {
-          history.replace(location.pathname + location.search + `#${newKey}`);
-          return;
-        }
-        newStep = steps[newKey];
+        if (changeStep(loadCond.next_step_key, newKey, steps, history)) return;
       } else break;
     }
     newStep = JSON.parse(JSON.stringify(newStep));
@@ -365,12 +360,16 @@ function Form({
       if (initState.authToken) {
         integrationData.firebaseAuthToken = initState.authToken;
       }
+      let stepChanged = false;
       await onLoad({
         fields: formattedFields,
         stepName: newKey,
         previousStepName: activeStep?.key,
         userId: userKey,
         lastStep: steps[newKey].next_conditions.length === 0,
+        setStep: (stepKey) => {
+          stepChanged = changeStep(stepKey, newKey, steps, history);
+        },
         setValues: (userVals) => {
           const values = convertFilesToFilePromises(userVals, fileServarKeys);
           updateFieldValues(values);
@@ -380,6 +379,7 @@ function Form({
         firstStepLoaded: first,
         integrationData
       });
+      if (stepChanged) return;
       setRawActiveStep(newStep);
     } else {
       setRawActiveStep(newStep);
