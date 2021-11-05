@@ -12,7 +12,7 @@ function MultiFileUploadField({
   required = false,
   onChange: customOnChange = () => {},
   onClick: customOnClick = () => {},
-  initialFiles = []
+  initialFiles = null
 }) {
   const servar = element.servar;
   const showIcon = element.icon_url !== '';
