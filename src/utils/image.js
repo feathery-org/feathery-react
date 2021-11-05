@@ -3,23 +3,23 @@ import { useEffect, useState } from 'react';
 import { toList } from './array';
 
 export const THUMBNAIL_TYPE = {
-    PDF: 'pdf',
-    IMAGE: 'image',
-    UNKNOWN: 'unknown'
+  PDF: 'pdf',
+  IMAGE: 'image',
+  UNKNOWN: 'unknown'
 };
 
 export function getThumbnailType(file) {
-    let thumbnailType = THUMBNAIL_TYPE.UNKNOWN;
+  let thumbnailType = THUMBNAIL_TYPE.UNKNOWN;
 
-    if (file) {
-        if (/image\//.test(file.type)) {
-            thumbnailType = THUMBNAIL_TYPE.IMAGE;
-        } else if (/application\/pdf/.test(file.type)) {
-            thumbnailType = THUMBNAIL_TYPE.PDF;
-        }
+  if (file) {
+    if (/image\//.test(file.type)) {
+      thumbnailType = THUMBNAIL_TYPE.IMAGE;
+    } else if (/application\/pdf/.test(file.type)) {
+      thumbnailType = THUMBNAIL_TYPE.PDF;
     }
+  }
 
-    return thumbnailType;
+  return thumbnailType;
 }
 
 /**
@@ -28,13 +28,13 @@ export function getThumbnailType(file) {
  * and will execute a callback every time that list changes.
  */
 export function useFileData(initialFiles, onSetFiles = () => {}) {
-    const [files, setFiles] = useState(toList(initialFiles));
-    useEffect(() => {
-        setFiles(toList(initialFiles));
-        onSetFiles();
-    }, [initialFiles]);
+  const [files, setFiles] = useState(toList(initialFiles));
+  useEffect(() => {
+    setFiles(toList(initialFiles));
+    onSetFiles();
+  }, [initialFiles]);
 
-    return [files, setFiles];
+  return [files, setFiles];
 }
 
 /**
@@ -42,43 +42,41 @@ export function useFileData(initialFiles, onSetFiles = () => {}) {
  * Filename will be a plaintext string and thumbnail will be a base64 encoded image.
  */
 export async function getThumbnailData(filePromise) {
-    const file = await filePromise;
-    const thumbnailType = getThumbnailType(file);
-    if (thumbnailType === THUMBNAIL_TYPE.IMAGE) {
-        const url = await new Promise((resolve) => {
-            const reader = new FileReader();
+  const file = await filePromise;
+  const thumbnailType = getThumbnailType(file);
+  if (thumbnailType === THUMBNAIL_TYPE.IMAGE) {
+    const url = await new Promise((resolve) => {
+      const reader = new FileReader();
 
-            reader.addEventListener('load', (event) => {
-                resolve(event.target.result);
-            });
+      reader.addEventListener('load', (event) => {
+        resolve(event.target.result);
+      });
 
-            reader.readAsDataURL(file);
-        });
+      reader.readAsDataURL(file);
+    });
 
-        return { filename: '', thumbnail: url };
-    } else {
-        return { filename: file?.name ?? '', thumbnail: '' };
-    }
+    return { filename: '', thumbnail: url };
+  } else {
+    return { filename: file?.name ?? '', thumbnail: '' };
+  }
 }
 
 /**
  * Utility hook for converting a list of files into a list of thumbnail information.
  */
 export function useThumbnailData(files) {
-    const [thumbnailData, setThumbnailData] = useState(
-        files.map(() => ({ filename: '', thumbnail: '' }))
-    );
+  const [thumbnailData, setThumbnailData] = useState(
+    files.map(() => ({ filename: '', thumbnail: '' }))
+  );
 
-    useEffect(() => {
-        const thumbnailPromises = files.map(getThumbnailData);
-        Promise.all(thumbnailPromises)
-            .then((data) =>
-                data.filter((item) => item.thumbnail || item.filename)
-            )
-            .then((data) => {
-                setThumbnailData(data);
-            });
-    }, [files]);
+  useEffect(() => {
+    const thumbnailPromises = files.map(getThumbnailData);
+    Promise.all(thumbnailPromises)
+      .then((data) => data.filter((item) => item.thumbnail || item.filename))
+      .then((data) => {
+        setThumbnailData(data);
+      });
+  }, [files]);
 
-    return thumbnailData;
+  return thumbnailData;
 }

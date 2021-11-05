@@ -5,166 +5,162 @@ import Spinner from 'react-bootstrap/Spinner';
 import TextNodes from '../components/TextNodes';
 
 function adjustColor(color, amount) {
-    return (
-        '#' +
-        color
-            .replace(/^#/, '')
-            .replace(/../g, (color) =>
-                (
-                    '0' +
-                    Math.min(
-                        255,
-                        Math.max(0, parseInt(color, 16) + amount)
-                    ).toString(16)
-                ).substr(-2)
-            )
-    );
+  return (
+    '#' +
+    color
+      .replace(/^#/, '')
+      .replace(/../g, (color) =>
+        (
+          '0' +
+          Math.min(255, Math.max(0, parseInt(color, 16) + amount)).toString(16)
+        ).substr(-2)
+      )
+  );
 }
 
 function applyButtonStyles(element, applyStyles) {
-    applyStyles.addTargets('button', 'buttonActive', 'buttonHover', 'spinner');
+  applyStyles.addTargets('button', 'buttonActive', 'buttonHover', 'spinner');
 
-    applyStyles.apply('button', 'background_color', (a) => ({
-        backgroundColor: `#${a}`
-    }));
-    applyStyles.applyHeight('button');
-    applyStyles.applyWidth('button');
-    applyStyles.applyCorners('button');
-    applyStyles.applyBorders('button');
-    applyStyles.applyMargin('button');
+  applyStyles.apply('button', 'background_color', (a) => ({
+    backgroundColor: `#${a}`
+  }));
+  applyStyles.applyHeight('button');
+  applyStyles.applyWidth('button');
+  applyStyles.applyCorners('button');
+  applyStyles.applyBorders('button');
+  applyStyles.applyMargin('button');
 
-    applyStyles.applyBorders('buttonHover', 'hover_');
-    if (element.link !== 'none') {
-        applyStyles.apply('buttonHover', 'background_color', (a) => {
-            const color = `${adjustColor(a, -30)} !important`;
-            return {
-                backgroundColor: color,
-                borderColor: color,
-                transition: 'background 0.3s !important'
-            };
-        });
-    }
-    if (element.styles.hover_background_color) {
-        applyStyles.apply('buttonHover', 'hover_background_color', (a) => ({
-            backgroundColor: `#${a} !important`
-        }));
-    }
-
-    applyStyles.applyBorders('buttonActive', 'selected_');
-    if (element.styles.selected_background_color) {
-        applyStyles.apply('buttonHover', 'selected_background_color', (a) => ({
-            backgroundColor: `#${a} !important`
-        }));
-    }
-
-    applyStyles.apply('spinner', 'show_spinner_on_submit', (a) => ({
-        display: a ? 'default' : 'none'
-    }));
-    applyStyles.apply('spinner', ['height', 'height_unit'], (a, b) => {
-        const thirdHeight = Math.round(a / 3);
-        return {
-            right: `-${a}${b}`,
-            width: `${thirdHeight}${b}`,
-            height: `${thirdHeight}${b}`
-        };
+  applyStyles.applyBorders('buttonHover', 'hover_');
+  if (element.link !== 'none') {
+    applyStyles.apply('buttonHover', 'background_color', (a) => {
+      const color = `${adjustColor(a, -30)} !important`;
+      return {
+        backgroundColor: color,
+        borderColor: color,
+        transition: 'background 0.3s !important'
+      };
     });
+  }
+  if (element.styles.hover_background_color) {
+    applyStyles.apply('buttonHover', 'hover_background_color', (a) => ({
+      backgroundColor: `#${a} !important`
+    }));
+  }
 
-    return applyStyles;
+  applyStyles.applyBorders('buttonActive', 'selected_');
+  if (element.styles.selected_background_color) {
+    applyStyles.apply('buttonHover', 'selected_background_color', (a) => ({
+      backgroundColor: `#${a} !important`
+    }));
+  }
+
+  applyStyles.apply('spinner', 'show_spinner_on_submit', (a) => ({
+    display: a ? 'default' : 'none'
+  }));
+  applyStyles.apply('spinner', ['height', 'height_unit'], (a, b) => {
+    const thirdHeight = Math.round(a / 3);
+    return {
+      right: `-${a}${b}`,
+      width: `${thirdHeight}${b}`,
+      height: `${thirdHeight}${b}`
+    };
+  });
+
+  return applyStyles;
 }
 
 function ButtonElement({
-    element,
-    applyStyles,
-    values = null,
-    handleRedirect = () => {},
-    onClick = () => {},
-    setSubmitRef = () => {}
+  element,
+  applyStyles,
+  values = null,
+  handleRedirect = () => {},
+  onClick = () => {},
+  setSubmitRef = () => {}
 }) {
-    const [showSpinner, setShowSpinner] = useState(false);
-    const buttonOnClick = () => onClick(setShowSpinner);
-    if (element.link === 'submit') setSubmitRef(buttonOnClick);
+  const [showSpinner, setShowSpinner] = useState(false);
+  const buttonOnClick = () => onClick(setShowSpinner);
+  if (element.link === 'submit') setSubmitRef(buttonOnClick);
 
-    const styles = useMemo(() => applyButtonStyles(element, applyStyles), [
-        applyStyles
-    ]);
-    return (
-        <ReactButton
-            id={element.id}
-            key={element.id}
+  const styles = useMemo(() => applyButtonStyles(element, applyStyles), [
+    applyStyles
+  ]);
+  return (
+    <ReactButton
+      id={element.id}
+      key={element.id}
+      style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        cursor: element.link === 'none' ? 'default' : 'pointer',
+        boxShadow: 'none',
+        maxWidth: '100%'
+      }}
+      css={{
+        '&:disabled': {
+          cursor: 'default !important'
+        },
+        '&:active': styles.getTarget('buttonActive'),
+        '&:hover:enabled': styles.getTarget('buttonHover'),
+        '&&': styles.getTarget('button')
+      }}
+      disabled={element.link === 'none' || showSpinner}
+      onClick={buttonOnClick}
+    >
+      <div style={{ display: 'flex', position: 'relative' }}>
+        <TextNodes
+          element={element}
+          values={values}
+          applyStyles={applyStyles}
+          handleRedirect={handleRedirect}
+        />
+        {element.image_url && (
+          <img
+            src={element.image_url}
             style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                cursor: element.link === 'none' ? 'default' : 'pointer',
-                boxShadow: 'none',
-                maxWidth: '100%'
+              objectFit: 'contain',
+              width: '100%',
+              height: '100%'
+            }}
+          />
+        )}
+        {showSpinner && (
+          <Spinner
+            animation='border'
+            style={{
+              color: 'white',
+              position: 'absolute',
+              top: '50%',
+              bottom: '50%',
+              marginTop: 'auto',
+              marginBottom: 'auto',
+              border: '0.2em solid currentColor',
+              borderRightColor: 'transparent'
             }}
             css={{
-                '&:disabled': {
-                    cursor: 'default !important'
-                },
-                '&:active': styles.getTarget('buttonActive'),
-                '&:hover:enabled': styles.getTarget('buttonHover'),
-                '&&': styles.getTarget('button')
+              ...styles.getTarget('spinner'),
+              '@-webkit-keyframes spinner-border': {
+                to: {
+                  WebkitTransform: 'rotate(360deg)',
+                  transform: 'rotate(360deg)'
+                }
+              },
+              '@keyframes spinner-border': {
+                to: {
+                  WebkitTransform: 'rotate(360deg)',
+                  transform: 'rotate(360deg)'
+                }
+              },
+              '&.spinner-border': {
+                borderRadius: '50%',
+                animation: '0.75s linear infinite spinner-border'
+              }
             }}
-            disabled={element.link === 'none' || showSpinner}
-            onClick={buttonOnClick}
-        >
-            <div style={{ display: 'flex', position: 'relative' }}>
-                <TextNodes
-                    element={element}
-                    values={values}
-                    applyStyles={applyStyles}
-                    handleRedirect={handleRedirect}
-                />
-                {element.image_url && (
-                    <img
-                        src={element.image_url}
-                        style={{
-                            objectFit: 'contain',
-                            width: '100%',
-                            height: '100%'
-                        }}
-                    />
-                )}
-                {showSpinner && (
-                    <Spinner
-                        animation='border'
-                        style={{
-                            color: 'white',
-                            position: 'absolute',
-                            top: '50%',
-                            bottom: '50%',
-                            marginTop: 'auto',
-                            marginBottom: 'auto',
-                            border: '0.2em solid currentColor',
-                            borderRightColor: 'transparent'
-                        }}
-                        css={{
-                            ...styles.getTarget('spinner'),
-                            '@-webkit-keyframes spinner-border': {
-                                to: {
-                                    WebkitTransform: 'rotate(360deg)',
-                                    transform: 'rotate(360deg)'
-                                }
-                            },
-                            '@keyframes spinner-border': {
-                                to: {
-                                    WebkitTransform: 'rotate(360deg)',
-                                    transform: 'rotate(360deg)'
-                                }
-                            },
-                            '&.spinner-border': {
-                                borderRadius: '50%',
-                                animation:
-                                    '0.75s linear infinite spinner-border'
-                            }
-                        }}
-                    />
-                )}
-            </div>
-        </ReactButton>
-    );
+          />
+        )}
+      </div>
+    </ReactButton>
+  );
 }
 
 export default ButtonElement;
