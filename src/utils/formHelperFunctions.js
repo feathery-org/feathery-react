@@ -505,7 +505,17 @@ function isFieldActuallyRequired(field, repeatTriggerExists, repeatedRowCount) {
   return field.servar.required && !isTrailingRepeatField;
 }
 
+function changeStep(newKey, oldKey, steps, history) {
+  const sameKey = oldKey === newKey;
+  if (!sameKey && newKey in steps) {
+    history.replace(location.pathname + location.search + `#${newKey}`);
+    return true;
+  }
+  return false;
+}
+
 export {
+  changeStep,
   formatAllStepFields,
   formatStepFields,
   getABVariant,
