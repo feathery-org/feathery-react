@@ -10,8 +10,8 @@ import { init, updateUserKey } from './utils/init';
  * @param {Object} props The props defined on the *Form* component
  */
 function renderAt(elementId, props) {
-    const container = document.getElementById(elementId);
-    ReactDOM.render(<Form {...props} />, container);
+  const container = document.getElementById(elementId);
+  ReactDOM.render(<Form {...props} />, container);
 }
 
 // Entrypoint for globally namespaced JS library
