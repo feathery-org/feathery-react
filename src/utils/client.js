@@ -5,7 +5,7 @@ import { initInfo, initState, initFormsPromise } from './init';
 import { encodeGetParams } from './primitives';
 
 // Convenience boolean for urls - manually change for testing
-const isLocal = true;
+const isLocal = false;
 export const API_URL = isLocal
     ? 'http://localhost:8006/api/'
     : 'https://api.feathery.io/api/';

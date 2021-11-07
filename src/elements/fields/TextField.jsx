@@ -2,10 +2,9 @@ import React, { useState, useRef, memo } from 'react';
 import ReactForm from 'react-bootstrap/Form';
 import InlineTooltip from '../components/Tooltip';
 import { bootstrapStyles } from '../styles';
-import {
-    emailPatternStr,
-    generateRegexString
-} from '../../utils/formHelperFunctions';
+import { emailPatternStr } from '../../utils/formHelperFunctions';
+import { generateRegexString } from '../../utils/strings';
+import { useHotkeys } from 'react-hotkeys-hook';
 
 import format from 'string-format';
 format.extend(String.prototype, {
@@ -86,84 +85,34 @@ function getTextFieldProps(servar, styles, value) {
 }
 
 function getFieldMaskMeta(fieldMask) {
-    if (fieldMask === '' || fieldMask === undefined || fieldMask === null)
-        return {
-            fieldMaskRegex: '',
-            fieldMaskComparisionString: '',
-            fieldMaskString: '',
-            deterministicPattern: true
-        };
+    const defaultSettings = {
+        fieldMaskRegex: '',
+        fieldMaskComparisionString: '',
+        fieldMaskString: '',
+        deterministicPattern: true,
+        maxRawInputLength: Infinity,
+        maskedCaretPos: 0
+    };
+    if (!fieldMask) return defaultSettings;
 
     const [
         fieldMaskRegex,
         fieldMaskComparisionString,
         fieldMaskString,
-        deterministicPattern
-    ] = generateRegexString(fieldMask);
+        deterministicPattern,
+        maxRawInputLength,
+        maskedCaretPos
+    ] = generateRegexString(fieldMask, defaultSettings);
 
     return {
         fieldMaskRegex,
         fieldMaskComparisionString,
         fieldMaskString,
-        deterministicPattern
+        deterministicPattern,
+        maxRawInputLength,
+        maskedCaretPos
     };
 }
-
-const validateNewFieldValue = (
-    event,
-    rawFieldValue,
-    rawCaretPos,
-    maskedCaretPos,
-    regexFieldMask,
-    patternFieldMask,
-    deterministicPattern,
-    setRawFieldValue
-) => {
-    const anyCharRegex = '^\\w$';
-    let tempRawValue = rawFieldValue;
-
-    if (event.key.search(anyCharRegex) === 0) {
-        tempRawValue =
-            tempRawValue.substring(0, rawCaretPos.current) +
-            event.key +
-            tempRawValue.substring(rawCaretPos.current + 1);
-
-        const newPatternFieldMask = patternFieldMask.current.format(
-            ...tempRawValue
-        );
-
-        if (newPatternFieldMask.search(regexFieldMask) === 0) {
-            setRawFieldValue(tempRawValue);
-            rawCaretPos.current += 1;
-            maskedCaretPos.current += 1;
-        }
-    } else if (event.key === 'Backspace') {
-        tempRawValue =
-            tempRawValue.slice(0, rawCaretPos.current - 1) +
-            tempRawValue.slice(rawCaretPos.current);
-
-        const newPatternFieldMask = patternFieldMask.current.format(
-            ...tempRawValue
-        );
-
-        if (newPatternFieldMask.search(regexFieldMask) === 0) {
-            setRawFieldValue(tempRawValue);
-            rawCaretPos.current -= 1;
-            maskedCaretPos.current -= 1;
-        }
-    } else if (event.key === 'Delete') {
-        tempRawValue =
-            tempRawValue.slice(0, rawCaretPos.current - 1) +
-            tempRawValue.slice(rawCaretPos.current + 1);
-        const newPatternFieldMask = patternFieldMask.current.format(
-            ...tempRawValue
-        );
-
-        if (newPatternFieldMask.search(regexFieldMask) === 0) {
-            setRawFieldValue(tempRawValue);
-        }
-    }
-};
 
 function TextField({
     element,
@@ -182,16 +131,138 @@ function TextField({
         fieldMaskRegex,
         fieldMaskComparisionString,
         fieldMaskString,
-        deterministicPattern
-    } = getFieldMaskMeta('$ {{ \\d{4} }} / year');
+        deterministicPattern,
+        maxRawInputLength,
+        maskedCaretPos: caretPos
+    } = getFieldMaskMeta(servar.field_mask);
 
     const [rawFieldValue, setRawFieldValue] = useState('');
-    const fieldValueComparisionMask = useRef(fieldMaskComparisionString);
+    const patternFieldMask = useRef(fieldMaskComparisionString);
     const fieldValueMask = useRef(fieldMaskString);
     const rawCaretPos = useRef(0);
-    const maskedCaretPos = useRef(4);
+    const maskedCaretPos = useRef(caretPos);
 
     const inputType = fieldProps.as === 'textarea' ? 'textarea' : 'input';
+
+    // Most of the following key combinations perform their default operations like delete, paste.
+    // We had to include 'v' in this set of hot keys because, the char 'v' can be part of user input as well.
+    // So, if we do not handle this case properly, paste operation will be triggered and
+    // also the second useHotKeys effect also takes place. So, along with pasting the text,
+    // we will see an additional 'v' in the user input.
+    useHotkeys(
+        'backspace, delete, ctrl+v, command+v, left, right, v, enter',
+        (e, handler) => {
+            let tempRawValue = '';
+            let newPatternFieldMask = '';
+
+            switch (handler.key) {
+                case 'v':
+                    if (rawFieldValue.length >= maxRawInputLength) return;
+                    tempRawValue =
+                        rawFieldValue.substring(0, rawCaretPos.current) +
+                        e.key +
+                        rawFieldValue.substring(rawCaretPos.current + 1);
+
+                    newPatternFieldMask = patternFieldMask.current.format(
+                        ...tempRawValue
+                    );
+
+                    if (newPatternFieldMask.search(fieldMaskRegex) === 0) {
+                        setRawFieldValue(tempRawValue);
+                        rawCaretPos.current += 1;
+                        maskedCaretPos.current += 1;
+                    }
+                    break;
+                case 'enter':
+                    if (inputType === 'textarea') e.stopPropagation();
+                    break;
+                case 'backspace':
+                    tempRawValue =
+                        rawFieldValue.slice(0, rawCaretPos.current - 1) +
+                        rawFieldValue.slice(rawCaretPos.current);
+
+                    newPatternFieldMask = patternFieldMask.current.format(
+                        ...tempRawValue
+                    );
+
+                    if (newPatternFieldMask.search(fieldMaskRegex) === 0) {
+                        setRawFieldValue(tempRawValue);
+                        rawCaretPos.current -= 1;
+                        maskedCaretPos.current -= 1;
+                    }
+                    break;
+
+                case 'delete':
+                    tempRawValue =
+                        rawFieldValue.slice(0, rawCaretPos.current - 1) +
+                        rawFieldValue.slice(rawCaretPos.current + 1);
+
+                    newPatternFieldMask = patternFieldMask.current.format(
+                        ...tempRawValue
+                    );
+
+                    if (newPatternFieldMask.search(fieldMaskRegex) === 0) {
+                        setRawFieldValue(tempRawValue);
+                    }
+                    break;
+                case 'control+v':
+                case 'command+v':
+                    navigator.clipboard.readText().then((clipboardText) => {
+                        console.log(clipboardText);
+                        tempRawValue =
+                            rawFieldValue.substring(0, rawCaretPos.current) +
+                            clipboardText +
+                            rawFieldValue.substring(rawCaretPos.current + 1);
+
+                        newPatternFieldMask = patternFieldMask.current.format(
+                            ...tempRawValue
+                        );
+
+                        if (newPatternFieldMask.search(fieldMaskRegex) === 0) {
+                            setRawFieldValue(tempRawValue);
+                            rawCaretPos.current = e.target.selectionEnd;
+                            maskedCaretPos.current += 1;
+                        }
+                    });
+                    break;
+                default:
+                    break;
+            }
+        },
+        {
+            enableOnTags: ['INPUT', 'TEXTAREA']
+        }
+    );
+
+    useHotkeys(
+        '*',
+        (e, handler) => {
+            if (rawFieldValue.length >= maxRawInputLength) return;
+            const anyCharRegex = '^[vV]$';
+            let tempRawValue = '';
+
+            if (e.key.search(anyCharRegex) === -1) {
+                tempRawValue =
+                    rawFieldValue.substring(0, rawCaretPos.current) +
+                    e.key +
+                    rawFieldValue.substring(rawCaretPos.current + 1);
+
+                const newPatternFieldMask = patternFieldMask.current.format(
+                    ...tempRawValue
+                );
+
+                if (newPatternFieldMask.search(fieldMaskRegex) === 0) {
+                    setRawFieldValue(tempRawValue);
+                    rawCaretPos.current += 1;
+                    maskedCaretPos.current += 1;
+                }
+            }
+        },
+        {
+            enableOnTags: ['INPUT', 'TEXTAREA']
+        }
+    );
+
     return (
         <div
             css={{
@@ -233,20 +304,6 @@ function TextField({
                     required={required}
                     onChange={onChange}
                     onClick={onClick}
-                    onKeyDown={(e) => {
-                        validateNewFieldValue(
-                            e,
-                            rawFieldValue,
-                            rawCaretPos,
-                            maskedCaretPos,
-                            fieldMaskRegex,
-                            fieldValueComparisionMask,
-                            deterministicPattern,
-                            setRawFieldValue
-                        );
-                        if (e.key === 'Enter' && inputType === 'textarea')
-                            e.stopPropagation();
-                    }}
                     autoComplete={servar.metadata.autocomplete || 'on'}
                     data-rawvalue={rawFieldValue}
                     ref={inputRef}

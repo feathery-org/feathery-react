@@ -1386,17 +1386,8 @@ function Form({
                             return (
                                 <Elements.TextField
                                     {...fieldProps}
-                                    // lazy={false}
-                                    // unmask
                                     fieldValue={fieldVal}
                                     onClick={onClick}
-                                    // onAccept={(val) => {
-                                    //     changeValue(val, field, index, false);
-                                    //     const submitData =
-                                    //         field.submit_trigger === 'auto' &&
-                                    //         textFieldShouldSubmit(servar, val);
-                                    //     onChange({ submitData });
-                                    // }}
                                     inlineError={inlineErr}
                                 />
                             );
