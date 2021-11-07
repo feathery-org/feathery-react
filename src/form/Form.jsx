@@ -39,6 +39,8 @@ import ReactForm from 'react-bootstrap/Form';
 import TagManager from 'react-gtm-module';
 import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
+import Spinner from 'react-bootstrap/Spinner';
+import Lottie from 'lottie-react';
 
 const FILE_UPLOADERS = [
   'file_upload',
@@ -97,6 +99,12 @@ function Form({
   // Set to trigger conditional renders on field value updates, no need to use
   // eslint-disable-next-line no-unused-vars
   const [render, setRender] = useState(false);
+
+  const [loaders, setLoaders] = useState({});
+  const stepLoader = useMemo(
+    () => Object.values(loaders).find((l) => l?.showOn === 'full_page')?.loader,
+    [loaders]
+  );
 
   const fieldValuesRef = useRef(initialValues);
   let fieldValues = fieldValuesRef.current;
@@ -384,6 +392,7 @@ function Form({
     } else {
       setRawActiveStep(newStep);
     }
+    setLoaders({});
 
     const eventData = { step_key: newKey, event: 'load' };
     if (stepSequence.includes(newKey)) {
@@ -582,7 +591,8 @@ function Form({
   const submit = async ({
     metadata,
     repeat = 0,
-    plaidSuccess = plaidLinked
+    plaidSuccess = plaidLinked,
+    setLoader = () => {}
   }) => {
     // Can't submit step until the user has gone through the Plaid flow if present
     if (!plaidSuccess) return;
@@ -663,6 +673,7 @@ function Form({
       );
       const { userKey } = initInfo();
       const elementType = metadata.elementType;
+      await setLoader();
       await onSubmit({
         submitFields: formattedFields,
         elementRepeatIndex: repeat,
@@ -677,6 +688,7 @@ function Form({
         },
         setOptions: updateFieldOptions(steps),
         setErrors: (errors) => {
+          if (Object.keys(errors).length > 0) setLoaders({});
           Object.entries(errors).forEach(([fieldKey, error]) => {
             let index = null;
             let message = error;
@@ -861,6 +873,103 @@ function Form({
     }
   }
 
+  const setButtonLoader = async (button) => {
+    let loader = null;
+    if (!button.loading_icon_url) {
+      loader = (
+        <Spinner
+          animation='border'
+          style={{
+            color: 'white',
+            border: '0.2em solid currentColor',
+            borderRightColor: 'transparent',
+            boxSizing: 'border-box',
+            width: '100%',
+            height: '100%'
+          }}
+          css={{
+            '@-webkit-keyframes spinner-border': {
+              to: {
+                WebkitTransform: 'rotate(360deg)',
+                transform: 'rotate(360deg)'
+              }
+            },
+            '@keyframes spinner-border': {
+              to: {
+                WebkitTransform: 'rotate(360deg)',
+                transform: 'rotate(360deg)'
+              }
+            },
+            '&.spinner-border': {
+              borderRadius: '50%',
+              animation: '0.75s linear infinite spinner-border'
+            }
+          }}
+        />
+      );
+    } else if (button.loading_file_type === 'image') {
+      loader = <img src={button.loading_icon_url} alt='Button Loader' />;
+    } else if (button.loading_file_type === 'lottie_json') {
+      const animationData = await fetch(
+        button.loading_icon_url
+      ).then((response) => response.json());
+      loader = <Lottie animationData={animationData} loop autoplay />;
+    }
+    setLoaders((loaders) => ({
+      ...loaders,
+      [button.id]: { showOn: button.show_loading_icon, loader }
+    }));
+  };
+
+  const buttonOnSubmit = async (submitData, button) => {
+    try {
+      const metadata = {
+        elementType: 'button',
+        elementIDs: [button.id],
+        trigger: 'click'
+      };
+      if (submitData) {
+        await submit({
+          metadata,
+          repeat: button.repeat || 0,
+          plaidSuccess: true,
+          setLoader: () => setButtonLoader(button)
+        });
+      } else {
+        handleRedirect({ metadata });
+      }
+    } catch {
+      setLoaders({});
+    }
+  };
+
+  const buttonOnClick = async (button) => {
+    if (['add_repeated_row', 'remove_repeated_row'].includes(button.link)) {
+      let data;
+      if (button.link === 'add_repeated_row') data = addRepeatedRow();
+      else if (button.link === 'remove_repeated_row') {
+        data = removeRepeatedRow(button.repeat);
+      }
+      if (data.fieldKeys.length > 0) {
+        fieldOnChange({
+          fieldIds: data.fieldIDs,
+          fieldKeys: data.fieldKeys,
+          elementRepeatIndex: button.repeat
+        })();
+      }
+    } else if (button.link === 'trigger_plaid') {
+      if (!plaidLinked) {
+        await openPlaidLink(client, async () => {
+          setPlaidLinked(true);
+          if (activeStep.servar_fields.length === 0)
+            await buttonOnSubmit(true, button);
+        });
+      }
+    } else if (['submit', 'skip'].includes(button.link)) {
+      await buttonOnSubmit(button.link === 'submit', button);
+    }
+  };
+
   const fieldOnChange = ({ fieldIDs, fieldKeys, elementRepeatIndex = 0 }) => ({
     trigger = 'field',
     submitData = false,
@@ -897,453 +1006,428 @@ function Form({
     };
     if (submitData) {
       // Simulate button click if available
-      if (submitRef.current) submitRef.current();
+      const submitButton = activeStep.buttons.find((b) => b.link === 'submit');
+      if (submitButton) buttonOnClick(submitButton);
       else submit({ metadata, repeat: elementRepeatIndex });
     } else handleRedirect({ metadata });
   };
 
-  const buttonOnSubmit = async (submitData, button, setShowSpinner) => {
-    if (submitData) setShowSpinner(true);
-    // Perform the submit callback
-    // Note: We only need to set the spinner if the submit request failed
-    // If the request succeeded then the button unmounts and calling setShowSpinner is an error
-    try {
-      const metadata = {
-        elementType: 'button',
-        elementIDs: [button.id],
-        trigger: 'click'
-      };
-      let newStep;
-      if (submitData) {
-        newStep = await submit({
-          metadata,
-          repeat: button.repeat || 0,
-          plaidSuccess: true
-        });
-      } else {
-        newStep = handleRedirect({ metadata });
-      }
-
-      // If the submit failed we want to throw here to turn off the spinner
-      if (!newStep) setShowSpinner(false);
-    } catch {
-      setShowSpinner(false);
-    }
-  };
-
-  const buttonOnClick = (button) => async (setShowSpinner) => {
-    if (['add_repeated_row', 'remove_repeated_row'].includes(button.link)) {
-      let data;
-      if (button.link === 'add_repeated_row') data = addRepeatedRow();
-      else if (button.link === 'remove_repeated_row') {
-        data = removeRepeatedRow(button.repeat);
-      }
-      if (data.fieldKeys.length > 0) {
-        fieldOnChange({
-          fieldIds: data.fieldIDs,
-          fieldKeys: data.fieldKeys,
-          elementRepeatIndex: button.repeat
-        })();
-      }
-    } else if (button.link === 'trigger_plaid') {
-      if (!plaidLinked) {
-        await openPlaidLink(client, async () => {
-          setPlaidLinked(true);
-          if (activeStep.servar_fields.length === 0)
-            await buttonOnSubmit(true, button, setShowSpinner);
-        });
-      }
-    } else if (['submit', 'skip'].includes(button.link)) {
-      await buttonOnSubmit(button.link === 'submit', button, setShowSpinner);
-    }
-  };
-
   return (
-    <ReactForm
-      className={className}
-      ref={formRef}
-      css={{
-        ...stepCSS,
-        ...style
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          // Skip 1-input steps by pressing `Enter`
-          if (submitRef.current && activeStep.servar_fields.length === 1) {
-            // Simulate button click if available
-            submitRef.current();
-          }
-        }
-      }}
-    >
-      {children}
-      {activeStep.progress_bars
-        .filter(
-          (pb) =>
-            !shouldElementHide({
-              fields: activeStep.servar_fields,
-              values: fieldValues,
-              element: pb
-            })
-        )
-        .map((pb) => (
-          <Elements.ProgressBarElement
-            key={`pb-${pb.column_index}-${pb.column_index_end}-${pb.row_index}-${pb.row_index_end}`}
-            componentOnly={false}
-            element={pb}
-            curDepth={curDepth}
-            maxDepth={maxDepth}
-          />
-        ))}
-      {activeStep.images
-        .filter(
-          (image) =>
-            !shouldElementHide({
-              fields: activeStep.servar_fields,
-              values: fieldValues,
-              element: image
-            })
-        )
-        .map((element) => (
-          <Elements.ImageElement
-            key={reactFriendlyKey(element)}
-            componentOnly={false}
-            element={element}
-          />
-        ))}
-      {activeStep.texts
-        .filter(
-          (element) =>
-            !shouldElementHide({
-              fields: activeStep.servar_fields,
-              values: fieldValues,
-              element
-            })
-        )
-        .map((element) => (
-          <Elements.TextElement
-            key={reactFriendlyKey(element)}
-            componentOnly={false}
-            element={element}
-            values={fieldValues}
-            handleRedirect={handleRedirect}
-            conditions={activeStep.next_conditions}
-          />
-        ))}
-      {activeStep.buttons
-        .filter(
-          (button) =>
-            !shouldElementHide({
-              fields: activeStep.servar_fields,
-              values: fieldValues,
-              element: button
-            })
-        )
-        .map((element) => (
-          <Elements.ButtonElement
-            key={reactFriendlyKey(element)}
-            componentOnly={false}
-            element={element}
-            values={fieldValues}
-            handleRedirect={handleRedirect}
-            onClick={buttonOnClick(element)}
-            setSubmitRef={(newRef) => (submitRef.current = newRef)}
-          />
-        ))}
-      {activeStep.servar_fields
-        .filter(
-          (field) =>
-            !shouldElementHide({
-              fields: activeStep.servar_fields,
-              values: fieldValues,
-              element: field
-            })
-        )
-        .sort((a, b) => {
-          if (a.row_index > b.row_index) return 1;
-          else if (a.row_index < b.row_index) return -1;
-          else if (a.column_index > b.column_index) return 1;
-          else if (a.column_index < b.column_index) return -1;
-          else return 0;
-        })
-        .map((field) => {
-          const index = field.repeat ?? null;
-          const servar = field.servar;
-          const { value: fieldVal } = getFieldValue(field, fieldValues);
-
-          let otherVal = '';
-          if (servar.metadata.other) {
-            if (
-              servar.type === 'select' &&
-              !servar.metadata.options.includes(fieldVal)
-            ) {
-              otherVal = fieldVal;
-            } else if (servar.type === 'multiselect') {
-              fieldVal.forEach((val) => {
-                if (!servar.metadata.options.includes(val)) otherVal = val;
-              });
+    <>
+      {stepLoader && (
+        <div
+          style={{
+            backgroundColor: 'white',
+            position: 'absolute',
+            height: '100vh',
+            width: '100vw',
+            zIndex: 50,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center'
+          }}
+        >
+          <div
+            style={{
+              height: '20vh',
+              width: '20vh'
+            }}
+          >
+            {stepLoader}
+          </div>
+        </div>
+      )}
+      <ReactForm
+        className={className}
+        ref={formRef}
+        css={{
+          ...stepCSS,
+          ...style
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            // Skip 1-input steps by pressing `Enter`
+            const submitButton = activeStep.buttons.find(
+              (b) => b.link === 'submit'
+            );
+            if (submitButton && activeStep.servar_fields.length === 1) {
+              // Simulate button click if available
+              buttonOnClick(submitButton);
             }
           }
+        }}
+      >
+        {children}
+        {activeStep.progress_bars
+          .filter(
+            (pb) =>
+              !shouldElementHide({
+                fields: activeStep.servar_fields,
+                values: fieldValues,
+                element: pb
+              })
+          )
+          .map((pb) => (
+            <Elements.ProgressBarElement
+              key={`pb-${pb.column_index}-${pb.column_index_end}-${pb.row_index}-${pb.row_index_end}`}
+              componentOnly={false}
+              element={pb}
+              curDepth={curDepth}
+              maxDepth={maxDepth}
+            />
+          ))}
+        {activeStep.images
+          .filter(
+            (image) =>
+              !shouldElementHide({
+                fields: activeStep.servar_fields,
+                values: fieldValues,
+                element: image
+              })
+          )
+          .map((element) => (
+            <Elements.ImageElement
+              key={reactFriendlyKey(element)}
+              componentOnly={false}
+              element={element}
+            />
+          ))}
+        {activeStep.texts
+          .filter(
+            (element) =>
+              !shouldElementHide({
+                fields: activeStep.servar_fields,
+                values: fieldValues,
+                element
+              })
+          )
+          .map((element) => (
+            <Elements.TextElement
+              key={reactFriendlyKey(element)}
+              componentOnly={false}
+              element={element}
+              values={fieldValues}
+              handleRedirect={handleRedirect}
+              conditions={activeStep.next_conditions}
+            />
+          ))}
+        {activeStep.buttons
+          .filter(
+            (button) =>
+              !shouldElementHide({
+                fields: activeStep.servar_fields,
+                values: fieldValues,
+                element: button
+              })
+          )
+          .map((element) => (
+            <Elements.ButtonElement
+              key={reactFriendlyKey(element)}
+              componentOnly={false}
+              element={element}
+              values={fieldValues}
+              loader={
+                loaders[element.id]?.showOn === 'on_button' &&
+                loaders[element.id]?.loader
+              }
+              handleRedirect={handleRedirect}
+              onClick={() => buttonOnClick(element)}
+              setSubmitRef={(newRef) => (submitRef.current = newRef)}
+            />
+          ))}
+        {activeStep.servar_fields
+          .filter(
+            (field) =>
+              !shouldElementHide({
+                fields: activeStep.servar_fields,
+                values: fieldValues,
+                element: field
+              })
+          )
+          .sort((a, b) => {
+            if (a.row_index > b.row_index) return 1;
+            else if (a.row_index < b.row_index) return -1;
+            else if (a.column_index > b.column_index) return 1;
+            else if (a.column_index < b.column_index) return -1;
+            else return 0;
+          })
+          .map((field) => {
+            const index = field.repeat ?? null;
+            const servar = field.servar;
+            const { value: fieldVal } = getFieldValue(field, fieldValues);
 
-          const onClick = (e, submitData = false) => {
-            const metadata = {
-              elementType: 'field',
-              elementIDs: [field.id],
-              trigger: 'click'
+            let otherVal = '';
+            if (servar.metadata.other) {
+              if (
+                servar.type === 'select' &&
+                !servar.metadata.options.includes(fieldVal)
+              ) {
+                otherVal = fieldVal;
+              } else if (servar.type === 'multiselect') {
+                fieldVal.forEach((val) => {
+                  if (!servar.metadata.options.includes(val)) otherVal = val;
+                });
+              }
+            }
+
+            const onClick = (e, submitData = false) => {
+              const metadata = {
+                elementType: 'field',
+                elementIDs: [field.id],
+                trigger: 'click'
+              };
+              if (submitData) {
+                submit({ metadata, repeat: field.repeat || 0 });
+              } else {
+                handleRedirect({ metadata });
+              }
             };
-            if (submitData) {
-              submit({ metadata, repeat: field.repeat || 0 });
-            } else {
-              handleRedirect({ metadata });
-            }
-          };
 
-          const onChange = fieldOnChange({
-            fieldIDs: [field.id],
-            fieldKeys: [servar.key],
-            elementRepeatIndex: field.repeat || 0
-          });
+            const onChange = fieldOnChange({
+              fieldIDs: [field.id],
+              fieldKeys: [servar.key],
+              elementRepeatIndex: field.repeat || 0
+            });
 
-          const inlineErr =
-            errType === 'inline' && getInlineError(field, inlineErrors);
+            const inlineErr =
+              errType === 'inline' && getInlineError(field, inlineErrors);
 
-          const required = isFieldActuallyRequired(
-            field,
-            repeatTriggerExists,
-            repeatedRowCount
-          );
+            const required = isFieldActuallyRequired(
+              field,
+              repeatTriggerExists,
+              repeatedRowCount
+            );
 
-          const fieldProps = {
-            key: reactFriendlyKey(field),
-            element: field,
-            componentOnly: false,
-            required
-          };
+            const fieldProps = {
+              key: reactFriendlyKey(field),
+              element: field,
+              componentOnly: false,
+              required
+            };
 
-          let changeHandler;
-          switch (servar.type) {
-            case 'signature':
-              return (
-                <Elements.SignatureField
-                  {...fieldProps}
-                  signatureRef={signatureRef}
-                />
-              );
-            case 'file_upload':
-              return (
-                <Elements.FileUploadField
-                  {...fieldProps}
-                  onChange={(e) => {
-                    const file = e.target.files[0];
-                    changeValue(
-                      file ? Promise.resolve(file) : file,
-                      field,
-                      index
-                    );
-                    onChange({
-                      submitData: field.submit_trigger === 'auto' && file
-                    });
-                  }}
-                  onClick={onClick}
-                />
-              );
-            case 'rich_file_upload':
-              return (
-                <Elements.RichFileUploadField
-                  {...fieldProps}
-                  onChange={(files) => {
-                    const fileVal = files[0];
-                    updateFilePathMap(
-                      servar.key,
-                      servar.repeated ? index : null
-                    );
-                    changeValue(fileVal, field, index);
-                    onChange({
-                      submitData: field.submit_trigger === 'auto' && fileVal
-                    });
-                  }}
-                  onClick={onClick}
-                  initialFile={fieldVal}
-                />
-              );
-            case 'rich_multi_file_upload':
-              return (
-                <Elements.MultiFileUploadField
-                  {...fieldProps}
-                  onChange={(files, fieldIndex) => {
-                    updateFilePathMap(
-                      servar.key,
-                      servar.repeated ? index : null
-                    );
-                    changeValue(files, field, index);
-                    onChange({
-                      valueRepeatIndex: fieldIndex,
-                      submitData: false
-                    });
-                  }}
-                  onClick={onClick}
-                  initialFiles={fieldVal}
-                />
-              );
-            case 'button_group':
-              return (
-                <Elements.ButtonGroupField
-                  {...fieldProps}
-                  fieldVal={fieldVal}
-                  onClick={(e) => {
-                    const fieldKey = e.target.id;
-                    activeStep.servar_fields.forEach((field) => {
-                      const servar = field.servar;
-                      if (servar.key !== fieldKey) return;
-                      updateFieldValues({
-                        [servar.key]: e.target.textContent
+            let changeHandler;
+            switch (servar.type) {
+              case 'signature':
+                return (
+                  <Elements.SignatureField
+                    {...fieldProps}
+                    signatureRef={signatureRef}
+                  />
+                );
+              case 'file_upload':
+                return (
+                  <Elements.FileUploadField
+                    {...fieldProps}
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      changeValue(
+                        file ? Promise.resolve(file) : file,
+                        field,
+                        index
+                      );
+                      onChange({
+                        submitData: field.submit_trigger === 'auto' && file
                       });
-                    });
-                    onClick(e, field.submit_trigger === 'auto');
-                  }}
-                />
-              );
-            case 'checkbox':
-              return (
-                <Elements.CheckboxField
-                  {...fieldProps}
-                  fieldVal={fieldVal}
-                  onClick={onClick}
-                  onChange={(e) => {
-                    const val = e.target.checked;
-                    changeValue(val, field, index);
-                    onChange();
-                  }}
-                />
-              );
-            case 'dropdown':
-            case 'gmap_state':
-              return (
-                <Elements.DropdownField
-                  {...fieldProps}
-                  fieldVal={fieldVal}
-                  onClick={onClick}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    changeValue(val, field, index);
-                    onChange({
-                      submitData: field.submit_trigger === 'auto' && val
-                    });
-                  }}
-                  inlineError={inlineErr}
-                />
-              );
-            case 'pin_input':
-              return (
-                <Elements.PinInputField
-                  {...fieldProps}
-                  fieldVal={fieldVal}
-                  onClick={onClick}
-                  onChange={(val) => {
-                    changeValue(val, field, index, false);
-                    onChange({
-                      submitData:
-                        field.submit_trigger === 'auto' &&
-                        val.length === field.servar.max_length
-                    });
-                    onChange();
-                  }}
-                  inlineError={inlineErr}
-                  autofocus
-                />
-              );
-            case 'multiselect':
-              return (
-                <Elements.CheckboxGroupField
-                  {...fieldProps}
-                  fieldVal={fieldVal}
-                  otherVal={otherVal}
-                  onChange={(e) => {
-                    handleCheckboxGroupChange(e, servar.key);
-                    onChange();
-                  }}
-                  onOtherChange={(e) => {
-                    handleOtherStateChange(otherVal)(e);
-                    onChange();
-                  }}
-                  onClick={onClick}
-                />
-              );
-            case 'select':
-              changeHandler = (e, change = true) => {
-                const val = e.target.value;
-                if (change) {
-                  changeValue(val, field, index);
-                }
-                onChange({
-                  submitData: field.submit_trigger === 'auto' && val
-                });
-              };
-              return (
-                <Elements.RadioButtonGroupField
-                  {...fieldProps}
-                  fieldVal={fieldVal}
-                  otherVal={otherVal}
-                  onChange={changeHandler}
-                  onOtherChange={(e) => {
-                    handleOtherStateChange(otherVal)(e);
-                    changeHandler(e, false);
-                  }}
-                  onClick={onClick}
-                />
-              );
-            case 'hex_color':
-              changeHandler = (color) => {
-                activeStep.servar_fields.forEach((field) => {
-                  const iterServar = field.servar;
-                  if (iterServar.key !== servar.key) return;
-                  updateFieldValues({
-                    [iterServar.key]: color
+                    }}
+                    onClick={onClick}
+                  />
+                );
+              case 'rich_file_upload':
+                return (
+                  <Elements.RichFileUploadField
+                    {...fieldProps}
+                    onChange={(files) => {
+                      const fileVal = files[0];
+                      updateFilePathMap(
+                        servar.key,
+                        servar.repeated ? index : null
+                      );
+                      changeValue(fileVal, field, index);
+                      onChange({
+                        submitData: field.submit_trigger === 'auto' && fileVal
+                      });
+                    }}
+                    onClick={onClick}
+                    initialFile={fieldVal}
+                  />
+                );
+              case 'rich_multi_file_upload':
+                return (
+                  <Elements.MultiFileUploadField
+                    {...fieldProps}
+                    onChange={(files, fieldIndex) => {
+                      updateFilePathMap(
+                        servar.key,
+                        servar.repeated ? index : null
+                      );
+                      changeValue(files, field, index);
+                      onChange({
+                        valueRepeatIndex: fieldIndex,
+                        submitData: false
+                      });
+                    }}
+                    onClick={onClick}
+                    initialFiles={fieldVal}
+                  />
+                );
+              case 'button_group':
+                return (
+                  <Elements.ButtonGroupField
+                    {...fieldProps}
+                    fieldVal={fieldVal}
+                    onClick={(e) => {
+                      const fieldKey = e.target.id;
+                      activeStep.servar_fields.forEach((field) => {
+                        const servar = field.servar;
+                        if (servar.key !== fieldKey) return;
+                        updateFieldValues({
+                          [servar.key]: e.target.textContent
+                        });
+                      });
+                      onClick(e, field.submit_trigger === 'auto');
+                    }}
+                  />
+                );
+              case 'checkbox':
+                return (
+                  <Elements.CheckboxField
+                    {...fieldProps}
+                    fieldVal={fieldVal}
+                    onClick={onClick}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      changeValue(val, field, index);
+                      onChange();
+                    }}
+                  />
+                );
+              case 'dropdown':
+              case 'gmap_state':
+                return (
+                  <Elements.DropdownField
+                    {...fieldProps}
+                    fieldVal={fieldVal}
+                    onClick={onClick}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      changeValue(val, field, index);
+                      onChange({
+                        submitData: field.submit_trigger === 'auto' && val
+                      });
+                    }}
+                    inlineError={inlineErr}
+                  />
+                );
+              case 'pin_input':
+                return (
+                  <Elements.PinInputField
+                    {...fieldProps}
+                    fieldVal={fieldVal}
+                    onClick={onClick}
+                    onChange={(val) => {
+                      changeValue(val, field, index, false);
+                      onChange({
+                        submitData:
+                          field.submit_trigger === 'auto' &&
+                          val.length === field.servar.max_length
+                      });
+                      onChange();
+                    }}
+                    inlineError={inlineErr}
+                    autofocus
+                  />
+                );
+              case 'multiselect':
+                return (
+                  <Elements.CheckboxGroupField
+                    {...fieldProps}
+                    fieldVal={fieldVal}
+                    otherVal={otherVal}
+                    onChange={(e) => {
+                      handleCheckboxGroupChange(e, servar.key);
+                      onChange();
+                    }}
+                    onOtherChange={(e) => {
+                      handleOtherStateChange(otherVal)(e);
+                      onChange();
+                    }}
+                    onClick={onClick}
+                  />
+                );
+              case 'select':
+                changeHandler = (e, change = true) => {
+                  const val = e.target.value;
+                  if (change) changeValue(val, field, index);
+                  onChange({
+                    submitData: field.submit_trigger === 'auto' && val
                   });
-                });
-                onChange({
-                  submitData: field.submit_trigger === 'auto' && color
-                });
-              };
-              return (
-                <Elements.ColorPickerField
-                  {...fieldProps}
-                  fieldVal={fieldVal}
-                  onChange={changeHandler}
-                  onClick={onClick}
-                />
-              );
-            default:
-              return (
-                <Elements.TextField
-                  {...fieldProps}
-                  lazy={false}
-                  unmask
-                  fieldValue={fieldVal}
-                  onClick={onClick}
-                  onAccept={(val) => {
-                    changeValue(val, field, index, false);
-                    const submitData =
-                      field.submit_trigger === 'auto' &&
-                      textFieldShouldSubmit(servar, val);
-                    onChange({ submitData });
-                  }}
-                  inlineError={inlineErr}
-                />
-              );
-          }
-        })}
-      {
-        <GooglePlaces
-          googleKey={integrations['google-maps']}
-          activeStep={activeStep}
-          steps={steps}
-          onChange={fieldOnChange}
-          updateFieldValues={updateFieldValues}
-        />
-      }
-    </ReactForm>
+                };
+                return (
+                  <Elements.RadioButtonGroupField
+                    {...fieldProps}
+                    fieldVal={fieldVal}
+                    otherVal={otherVal}
+                    onChange={changeHandler}
+                    onOtherChange={(e) => {
+                      handleOtherStateChange(otherVal)(e);
+                      changeHandler(e, false);
+                    }}
+                    onClick={onClick}
+                  />
+                );
+              case 'hex_color':
+                changeHandler = (color) => {
+                  activeStep.servar_fields.forEach((field) => {
+                    const iterServar = field.servar;
+                    if (iterServar.key !== servar.key) return;
+                    updateFieldValues({
+                      [iterServar.key]: color
+                    });
+                  });
+                  onChange({
+                    submitData: field.submit_trigger === 'auto' && color
+                  });
+                };
+                return (
+                  <Elements.ColorPickerField
+                    {...fieldProps}
+                    fieldVal={fieldVal}
+                    onChange={changeHandler}
+                    onClick={onClick}
+                  />
+                );
+              default:
+                return (
+                  <Elements.TextField
+                    {...fieldProps}
+                    lazy={false}
+                    unmask
+                    fieldValue={fieldVal}
+                    onClick={onClick}
+                    onAccept={(val) => {
+                      changeValue(val, field, index, false);
+                      const submitData =
+                        field.submit_trigger === 'auto' &&
+                        textFieldShouldSubmit(servar, val);
+                      onChange({ submitData });
+                    }}
+                    inlineError={inlineErr}
+                  />
+                );
+            }
+          })}
+        {
+          <GooglePlaces
+            googleKey={integrations['google-maps']}
+            activeStep={activeStep}
+            steps={steps}
+            onChange={fieldOnChange}
+            updateFieldValues={updateFieldValues}
+          />
+        }
+      </ReactForm>
+    </>
   );
 }
 
