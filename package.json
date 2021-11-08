@@ -73,6 +73,7 @@
     "react-bootstrap": "^1.6.1",
     "react-color": "^2.19.3",
     "react-gtm-module": "^2.0.11",
+    "react-hotkeys-hook": "^3.4.4",
     "react-icons": "^4.2.0",
     "react-imask": "^6.0.7",
     "react-load-script": "^0.0.6",

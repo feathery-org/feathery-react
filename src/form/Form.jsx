@@ -31,17 +31,18 @@ import {
 } from '../utils/formHelperFunctions';
 import { initInfo, initState, initializeIntegrations } from '../utils/init';
 import { justInsert, justRemove } from '../utils/array';
-
 import Client from '../utils/client';
+import { stringifyWithNull } from '../utils/string';
 import Elements from '../elements';
 import GooglePlaces from './GooglePlaces';
+
 import ReactForm from 'react-bootstrap/Form';
 import TagManager from 'react-gtm-module';
 import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
 import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
 import Spinner from 'react-bootstrap/Spinner';
 import Lottie from 'lottie-react';
-import { stringifyWithNull } from '../utils/string';
+import { useHotkeys } from 'react-hotkeys-hook';
 
 const FILE_UPLOADERS = [
   'file_upload',
@@ -191,6 +192,22 @@ function Form({
       scrollToRef(formRef);
     }
   }, [stepKey]);
+
+  useHotkeys(
+    'enter',
+    (e) => {
+      e.preventDefault();
+      // Skip 1-input steps by pressing `Enter`
+      const submitButton = activeStep.buttons.find((b) => b.link === 'submit');
+      if (submitButton && activeStep.servar_fields.length === 1) {
+        // Simulate button click if available
+        buttonOnClick(submitButton);
+      }
+    },
+    {
+      enableOnTags: ['INPUT', 'SELECT']
+    }
+  );
 
   function addRepeatedRow() {
     if (isNaN(activeStep.repeat_row_start) || isNaN(activeStep.repeat_row_end))
@@ -1099,19 +1116,6 @@ function Form({
         css={{
           ...stepCSS,
           ...style
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            // Skip 1-input steps by pressing `Enter`
-            const submitButton = activeStep.buttons.find(
-              (b) => b.properties.link === 'submit'
-            );
-            if (submitButton && activeStep.servar_fields.length === 1) {
-              // Simulate button click if available
-              buttonOnClick(submitButton);
-            }
-          }
         }}
       >
         {children}

@@ -4,6 +4,7 @@ import ReactForm from 'react-bootstrap/Form';
 import InlineTooltip from '../components/Tooltip';
 import { bootstrapStyles } from '../styles';
 import { emailPatternStr } from '../../utils/formHelperFunctions';
+import { useHotkeys } from 'react-hotkeys-hook';
 
 function getTextFieldProps(servar, styles, value) {
   let methods, onlyPhone;
@@ -89,6 +90,16 @@ function TextField({
 }) {
   const servar = element.servar;
   const inputType = fieldProps.as === 'textarea' ? 'textarea' : 'input';
+
+  console.log("fieldProp: ", fieldProps)
+  useHotkeys(
+    'enter',
+    (e) => e.stopPropagation(),
+    {
+      enableOnTags: ['TEXTAREA']
+    }
+  );
+
   return (
     <div
       css={{
@@ -130,10 +141,6 @@ function TextField({
           required={required}
           onChange={onChange}
           onClick={onClick}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && inputType === 'textarea')
-              e.stopPropagation();
-          }}
           autoComplete={servar.metadata.autocomplete || 'on'}
           ref={inputRef}
           placeholder=''
