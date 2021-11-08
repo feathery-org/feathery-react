@@ -26,6 +26,7 @@ function ButtonGroupField({
               onClick={onClick}
               key={opt}
               css={{
+                boxSizing: 'border-box',
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
