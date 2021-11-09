@@ -54,6 +54,7 @@ function Form({
   onChange = null,
   onLoad = null,
   onSubmit = null,
+  onSkip = null,
   initialValues = {},
   initialStepId = '',
   usePreviousUserData = true,
@@ -87,6 +88,7 @@ function Form({
     finished: false,
     redirectURL: null
   });
+  const [userProgress, setUserProgress] = useState(null);
   const [curDepth, setCurDepth] = useState(0);
   const [maxDepth, setMaxDepth] = useState(0);
   const [integrations, setIntegrations] = useState({});
@@ -383,6 +385,7 @@ function Form({
           updateFieldValues(values);
           client.submitCustom(values);
         },
+        setProgress: (val) => setUserProgress(val),
         setOptions: updateFieldOptions(steps, newStep),
         firstStepLoaded: first,
         integrationData
@@ -671,15 +674,15 @@ function Form({
         stepSequence,
         sequenceIndex
       );
-      const { userKey } = initInfo();
       const elementType = metadata.elementType;
       await setLoader();
+      let stepChanged = false;
       await onSubmit({
         submitFields: formattedFields,
         elementRepeatIndex: repeat,
         fields: allFields,
         stepName: activeStep.key,
-        userId: userKey,
+        userId: initInfo().userKey,
         lastStep: !newStepKey,
         setValues: (userVals) => {
           const values = convertFilesToFilePromises(userVals, fileServarKeys);
@@ -710,6 +713,10 @@ function Form({
             }
           });
         },
+        setStep: (stepKey) => {
+          stepChanged = changeStep(stepKey, activeStep.key, steps, history);
+        },
+        setProgress: (val) => setUserProgress(val),
         triggerKey: lookupElementKey(
           activeStep,
           metadata.elementIDs[0],
@@ -720,6 +727,7 @@ function Form({
         firstStepSubmitted: first,
         integrationData
       });
+      if (stepChanged) return;
 
       // do validation check in case user has manually invalidated the step
       if (errType === 'html5') {
@@ -936,6 +944,33 @@ function Form({
           setLoader: () => setButtonLoader(button)
         });
       } else {
+        if (onSkip) {
+          let stepChanged = false;
+          await onSkip({
+            stepName: activeStep.key,
+            userId: initInfo().userKey,
+            setValues: (userVals) => {
+              const values = convertFilesToFilePromises(
+                userVals,
+                fileServarKeys
+              );
+              updateFieldValues(values);
+              client.submitCustom(values);
+            },
+            setStep: (stepKey) => {
+              stepChanged = changeStep(stepKey, activeStep.key, steps, history);
+            },
+            setProgress: (val) => setUserProgress(val),
+            triggerKey: lookupElementKey(
+              activeStep,
+              metadata.elementIDs[0],
+              metadata.elementType
+            ),
+            triggerType: metadata.elementType,
+            triggerAction: metadata.trigger
+          });
+          if (stepChanged) return;
+        }
         handleRedirect({ metadata });
       }
     } catch {
@@ -1073,6 +1108,7 @@ function Form({
               key={`pb-${pb.column_index}-${pb.column_index_end}-${pb.row_index}-${pb.row_index_end}`}
               componentOnly={false}
               element={pb}
+              progress={userProgress}
               curDepth={curDepth}
               maxDepth={maxDepth}
             />
