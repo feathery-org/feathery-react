@@ -268,9 +268,7 @@ export default class Client {
     });
     const url = `${API_URL}plaid/link_token/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
-    return this._fetch(url, options).then(
-      async (response) => await response.json()
-    );
+    return this._fetch(url, options).then((response) => response.json());
   }
 
   async submitPlaidUserData(publicToken) {
@@ -287,6 +285,6 @@ export default class Client {
       method: 'POST',
       body: JSON.stringify(data)
     };
-    return this._fetch(url, options);
+    return this._fetch(url, options).then((response) => response.json());
   }
 }
