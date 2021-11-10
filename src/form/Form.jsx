@@ -38,7 +38,7 @@ import GooglePlaces from './GooglePlaces';
 import ReactForm from 'react-bootstrap/Form';
 import TagManager from 'react-gtm-module';
 import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
-import { openPlaidLink } from '../integrations/plaid';
+import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
 import Spinner from 'react-bootstrap/Spinner';
 import Lottie from 'lottie-react';
 
@@ -92,7 +92,8 @@ function Form({
   const [curDepth, setCurDepth] = useState(0);
   const [maxDepth, setMaxDepth] = useState(0);
   const [integrations, setIntegrations] = useState({});
-  const [plaidLinked, setPlaidLinked] = useState(true);
+  const [plaidLinked, setPlaidLinked] = useState(false);
+  const [hasPlaid, setHasPlaid] = useState(false);
   const [stepSequence, setStepSequence] = useState([]);
   const [sequenceIndex, setSequenceIndex] = useState(0);
   const [errType, setErrType] = useState('html5');
@@ -141,9 +142,10 @@ function Form({
   // Note: Other hydration transformations can also be included here
   const activeStep = useMemo(() => {
     if (!rawActiveStep) return null;
-    setPlaidLinked(
-      !rawActiveStep.buttons.find((b) => b.link === 'trigger_plaid')
+    setHasPlaid(
+      !!rawActiveStep.buttons.find((b) => b.link === 'trigger_plaid')
     );
+    setPlaidLinked(false);
     return JSON.parse(
       JSON.stringify(
         injectRepeatedRows({
@@ -598,7 +600,7 @@ function Form({
     setLoader = () => {}
   }) => {
     // Can't submit step until the user has gone through the Plaid flow if present
-    if (!plaidSuccess) return;
+    if (hasPlaid && !plaidSuccess) return;
 
     const servarMap = {};
     activeStep.servar_fields.forEach(
@@ -666,6 +668,10 @@ function Form({
       }
 
       const allFields = formatAllStepFields(steps, fieldValues);
+      const plaidFieldValues = getPlaidFieldValues(
+        integrations.plaid,
+        fieldValues
+      );
       const { newStepKey } = nextStepKey(
         activeStep.next_conditions,
         metadata,
@@ -678,7 +684,7 @@ function Form({
       await setLoader();
       let stepChanged = false;
       await onSubmit({
-        submitFields: formattedFields,
+        submitFields: { ...formattedFields, ...plaidFieldValues },
         elementRepeatIndex: repeat,
         fields: allFields,
         stepName: activeStep.key,
@@ -994,11 +1000,15 @@ function Form({
       }
     } else if (button.link === 'trigger_plaid') {
       if (!plaidLinked) {
-        await openPlaidLink(client, async () => {
-          setPlaidLinked(true);
-          if (activeStep.servar_fields.length === 0)
-            await buttonOnSubmit(true, button);
-        });
+        await openPlaidLink(
+          client,
+          async () => {
+            setPlaidLinked(true);
+            if (activeStep.servar_fields.length === 0)
+              await buttonOnSubmit(true, button);
+          },
+          updateFieldValues
+        );
       }
     } else if (['submit', 'skip'].includes(button.link)) {
       await buttonOnSubmit(button.link === 'submit', button);

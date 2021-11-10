@@ -9,17 +9,27 @@ export function installPlaid(isPlaidActive) {
   }
 }
 
-export async function openPlaidLink(client, onSuccess) {
+export async function openPlaidLink(client, onSuccess, updateFieldValues) {
   const linkToken = (await client.fetchPlaidLinkToken()).link_token;
   // eslint-disable-next-line no-undef
   const handler = Plaid.create({
     token: linkToken,
     onSuccess: async (publicToken) => {
-      await client.submitPlaidUserData(publicToken);
+      const fieldVals = await client.submitPlaidUserData(publicToken);
+      updateFieldValues(fieldVals);
       await onSuccess();
       handler.exit();
       handler.destroy();
     }
   });
   handler.open();
+}
+
+export function getPlaidFieldValues(plaidConfig, fieldValues) {
+  // eslint-disable-next-line camelcase
+  const keys = plaidConfig.metadata?.plaid_field_map || [];
+  return Object.values(keys).reduce((result, key) => {
+    result[key] = fieldValues[key];
+    return result;
+  }, {});
 }
