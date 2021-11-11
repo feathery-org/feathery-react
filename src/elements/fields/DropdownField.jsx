@@ -89,7 +89,7 @@ export default function DropdownField({
             }
           }}
         >
-          {element.placeholder || ''}
+          {element.properties.placeholder || ''}
         </span>
       </div>
     </div>

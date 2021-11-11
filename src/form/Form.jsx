@@ -143,7 +143,7 @@ function Form({
   const activeStep = useMemo(() => {
     if (!rawActiveStep) return null;
     setHasPlaid(
-      !!rawActiveStep.buttons.find((b) => b.link === 'trigger_plaid')
+      !!rawActiveStep.buttons.find((b) => b.properties.link === 'trigger_plaid')
     );
     setPlaidLinked(false);
     return JSON.parse(
@@ -168,7 +168,7 @@ function Form({
         servar.metadata.login_methods.includes('phone')
       );
     });
-    const b = activeStep.buttons.find((b) => b.link === 'submit');
+    const b = activeStep.buttons.find((b) => b.properties.link === 'submit');
     if (f && b) {
       window.firebaseRecaptchaVerifier = new global.firebase.auth.RecaptchaVerifier(
         b.id,
@@ -889,7 +889,7 @@ function Form({
 
   const setButtonLoader = async (button) => {
     let loader = null;
-    if (!button.loading_icon_url) {
+    if (!button.properties.loading_icon_url) {
       loader = (
         <Spinner
           animation='border'
@@ -921,17 +921,17 @@ function Form({
           }}
         />
       );
-    } else if (button.loading_file_type === 'image') {
-      loader = <img src={button.loading_icon_url} alt='Button Loader' />;
-    } else if (button.loading_file_type === 'lottie_json') {
+    } else if (button.properties.loading_file_type === 'image') {
+      loader = <img src={button.properties.loading_icon_url} alt='Button Loader' />;
+    } else if (button.properties.loading_file_type === 'lottie_json') {
       const animationData = await fetch(
-        button.loading_icon_url
+        button.properties.loading_icon_url
       ).then((response) => response.json());
       loader = <Lottie animationData={animationData} loop autoplay />;
     }
     setLoaders((loaders) => ({
       ...loaders,
-      [button.id]: { showOn: button.show_loading_icon, loader }
+      [button.id]: { showOn: button.properties.show_loading_icon, loader }
     }));
   };
 
@@ -985,10 +985,10 @@ function Form({
   };
 
   const buttonOnClick = async (button) => {
-    if (['add_repeated_row', 'remove_repeated_row'].includes(button.link)) {
+    if (['add_repeated_row', 'remove_repeated_row'].includes(button.properties.link)) {
       let data;
-      if (button.link === 'add_repeated_row') data = addRepeatedRow();
-      else if (button.link === 'remove_repeated_row') {
+      if (button.properties.link === 'add_repeated_row') data = addRepeatedRow();
+      else if (button.properties.link === 'remove_repeated_row') {
         data = removeRepeatedRow(button.repeat);
       }
       if (data.fieldKeys.length > 0) {
@@ -998,7 +998,7 @@ function Form({
           elementRepeatIndex: button.repeat
         })();
       }
-    } else if (button.link === 'trigger_plaid') {
+    } else if (button.properties.link === 'trigger_plaid') {
       if (!plaidLinked) {
         await openPlaidLink(
           client,
@@ -1010,8 +1010,8 @@ function Form({
           updateFieldValues
         );
       }
-    } else if (['submit', 'skip'].includes(button.link)) {
-      await buttonOnSubmit(button.link === 'submit', button);
+    } else if (['submit', 'skip'].includes(button.properties.link)) {
+      await buttonOnSubmit(button.properties.link === 'submit', button);
     }
   };
 
@@ -1051,7 +1051,7 @@ function Form({
     };
     if (submitData) {
       // Simulate button click if available
-      const submitButton = activeStep.buttons.find((b) => b.link === 'submit');
+      const submitButton = activeStep.buttons.find((b) => b.properties.link === 'submit');
       if (submitButton) buttonOnClick(submitButton);
       else submit({ metadata, repeat: elementRepeatIndex });
     } else handleRedirect({ metadata });
@@ -1094,7 +1094,7 @@ function Form({
             e.preventDefault();
             // Skip 1-input steps by pressing `Enter`
             const submitButton = activeStep.buttons.find(
-              (b) => b.link === 'submit'
+              (b) => b.properties.link === 'submit'
             );
             if (submitButton && activeStep.servar_fields.length === 1) {
               // Simulate button click if available
@@ -1273,7 +1273,7 @@ function Form({
                         index
                       );
                       onChange({
-                        submitData: field.submit_trigger === 'auto' && file
+                        submitData: field.properties.submit_trigger === 'auto' && file
                       });
                     }}
                     onClick={onClick}
@@ -1291,7 +1291,7 @@ function Form({
                       );
                       changeValue(fileVal, field, index);
                       onChange({
-                        submitData: field.submit_trigger === 'auto' && fileVal
+                        submitData: field.properties.submit_trigger === 'auto' && fileVal
                       });
                     }}
                     onClick={onClick}
@@ -1331,7 +1331,7 @@ function Form({
                           [servar.key]: e.target.textContent
                         });
                       });
-                      onClick(e, field.submit_trigger === 'auto');
+                      onClick(e, field.properties.submit_trigger === 'auto');
                     }}
                   />
                 );
@@ -1359,7 +1359,7 @@ function Form({
                       const val = e.target.value;
                       changeValue(val, field, index);
                       onChange({
-                        submitData: field.submit_trigger === 'auto' && val
+                        submitData: field.properties.submit_trigger === 'auto' && val
                       });
                     }}
                     inlineError={inlineErr}
@@ -1375,7 +1375,7 @@ function Form({
                       changeValue(val, field, index, false);
                       onChange({
                         submitData:
-                          field.submit_trigger === 'auto' &&
+                          field.properties.submit_trigger === 'auto' &&
                           val.length === field.servar.max_length
                       });
                       onChange();
@@ -1406,7 +1406,7 @@ function Form({
                   const val = e.target.value;
                   if (change) changeValue(val, field, index);
                   onChange({
-                    submitData: field.submit_trigger === 'auto' && val
+                    submitData: field.properties.submit_trigger === 'auto' && val
                   });
                 };
                 return (
@@ -1432,7 +1432,7 @@ function Form({
                     });
                   });
                   onChange({
-                    submitData: field.submit_trigger === 'auto' && color
+                    submitData: field.properties.submit_trigger === 'auto' && color
                   });
                 };
                 return (
@@ -1454,7 +1454,7 @@ function Form({
                     onAccept={(val) => {
                       changeValue(val, field, index, false);
                       const submitData =
-                        field.submit_trigger === 'auto' &&
+                        field.properties.submit_trigger === 'auto' &&
                         textFieldShouldSubmit(servar, val);
                       onChange({ submitData });
                     }}

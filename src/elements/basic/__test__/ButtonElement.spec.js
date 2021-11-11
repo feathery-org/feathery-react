@@ -36,7 +36,6 @@ describe('ButtonElement', () => {
     // Arrange
     const props = {
       element: {
-        text_formatted: [{ insert: '\n' }],
         column_index: 0,
         row_index: 0,
         column_index_end: 0,
@@ -49,7 +48,8 @@ describe('ButtonElement', () => {
           background_color: '2954af',
           layout: 'center'
         },
-        mobile_styles: {}
+        mobile_styles: {},
+        properties: { text_formatted: [{ insert: '\n' }] }
       }
     };
 
@@ -68,7 +68,6 @@ describe('ButtonElement', () => {
     // Arrange
     const props = {
       element: {
-        text_formatted: [{ insert: 'Hello World!' }],
         column_index: 0,
         row_index: 0,
         column_index_end: 0,
@@ -77,7 +76,8 @@ describe('ButtonElement', () => {
           background_color: '2954af',
           layout: 'center'
         },
-        mobile_styles: {}
+        mobile_styles: {},
+        properties: { text_formatted: [{ insert: 'Hello World!' }] }
       }
     };
 
@@ -96,20 +96,6 @@ describe('ButtonElement', () => {
     // Arrange
     const props = {
       element: {
-        text_formatted: [
-          {
-            insert: 'Hello World!',
-            attributes: {
-              weight: 700,
-              color: '#000000FF',
-              size: '48px',
-              font: 'sans-serif',
-              italic: true,
-              strike: false,
-              underline: false
-            }
-          }
-        ],
         column_index: 0,
         row_index: 0,
         column_index_end: 0,
@@ -118,7 +104,23 @@ describe('ButtonElement', () => {
           background_color: '2954af',
           layout: 'center'
         },
-        mobile_styles: {}
+        mobile_styles: {},
+        properties: {
+          text_formatted: [
+            {
+              insert: 'Hello World!',
+              attributes: {
+                weight: 700,
+                color: '#000000FF',
+                size: '48px',
+                font: 'sans-serif',
+                italic: true,
+                strike: false,
+                underline: false
+              }
+            }
+          ]
+        }
       }
     };
 
