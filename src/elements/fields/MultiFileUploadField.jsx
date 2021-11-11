@@ -15,7 +15,7 @@ function MultiFileUploadField({
   initialFiles = null
 }) {
   const servar = element.servar;
-  const showIcon = element.icon_url !== '';
+  const showIcon = element.properties.icon_url !== '';
   const showLabel = servar.name !== '';
 
   // Raw files are useful to bubble up through onChange
@@ -150,7 +150,7 @@ function MultiFileUploadField({
       >
         {showIcon && (
           <Image
-            src={element.icon_url}
+            src={element.properties.icon_url}
             fluid
             style={{
               maxWidth: '100%',

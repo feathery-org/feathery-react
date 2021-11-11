@@ -12,7 +12,7 @@ function TextNodes({
   conditions = []
 }) {
   return useMemo(() => {
-    let delta = new Delta(element.text_formatted);
+    let delta = new Delta(element.properties.text_formatted);
     conditions.forEach((cond) => {
       if (cond.element_type === 'text' && cond.element_id === element.id) {
         let start = cond.metadata.start;
@@ -20,7 +20,7 @@ function TextNodes({
         let fullSpan = false;
         if (start === undefined && end === undefined) {
           start = 0;
-          end = element.text.length;
+          end = element.properties.text.length;
           fullSpan = true;
         }
         delta = delta.compose(

@@ -30,7 +30,7 @@ function applyButtonStyles(element, applyStyles) {
   applyStyles.applyMargin('button');
 
   applyStyles.applyBorders('buttonHover', 'hover_');
-  if (element.link !== 'none') {
+  if (element.properties.link !== 'none') {
     applyStyles.apply('buttonHover', 'background_color', (a) => {
       const color = `${adjustColor(a, -30)} !important`;
       return {
@@ -85,7 +85,7 @@ function ButtonElement({
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        cursor: element.link === 'none' ? 'default' : 'pointer',
+        cursor: element.properties.link === 'none' ? 'default' : 'pointer',
         boxShadow: 'none',
         maxWidth: '100%'
       }}
@@ -95,7 +95,7 @@ function ButtonElement({
         '&:hover:enabled': styles.getTarget('buttonHover'),
         '&&': styles.getTarget('button')
       }}
-      disabled={element.link === 'none' || loader}
+      disabled={element.properties.link === 'none' || loader}
       onClick={onClick}
     >
       <div style={{ display: 'flex', position: 'relative' }}>
@@ -105,9 +105,9 @@ function ButtonElement({
           applyStyles={applyStyles}
           handleRedirect={handleRedirect}
         />
-        {element.image_url && (
+        {element.properties.image_url && (
           <img
-            src={element.image_url}
+            src={element.properties.image_url}
             style={{
               objectFit: 'contain',
               width: '100%',

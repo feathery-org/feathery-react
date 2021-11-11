@@ -7,9 +7,9 @@ describe('Text', () => {
     // Arrange
     const props = {
       element: {
-        text_formatted: [{ insert: '\n' }],
         styles: {},
-        mobile_styles: {}
+        mobile_styles: {},
+        properties: { text_formatted: [{ insert: '\n' }] }
       },
       values: {},
       conditions: [],
@@ -31,9 +31,9 @@ describe('Text', () => {
     // Arrange
     const props = {
       element: {
-        text_formatted: [{ insert: 'Hello World!' }],
         styles: {},
-        mobile_styles: {}
+        mobile_styles: {},
+        properties: { text_formatted: [{ insert: 'Hello World!' }] }
       },
       values: {},
       conditions: [],
@@ -55,22 +55,24 @@ describe('Text', () => {
     // Arrange
     const props = {
       element: {
-        text_formatted: [
-          {
-            insert: 'Hello World!',
-            attributes: {
-              weight: 700,
-              color: '#000000FF',
-              size: '48px',
-              font: 'sans-serif',
-              italic: true,
-              strike: false,
-              underline: false
-            }
-          }
-        ],
         styles: {},
-        mobile_styles: {}
+        mobile_styles: {},
+        properties: {
+          text_formatted: [
+            {
+              insert: 'Hello World!',
+              attributes: {
+                weight: 700,
+                color: '#000000FF',
+                size: '48px',
+                font: 'sans-serif',
+                italic: true,
+                strike: false,
+                underline: false
+              }
+            }
+          ]
+        }
       },
       values: {},
       conditions: [],

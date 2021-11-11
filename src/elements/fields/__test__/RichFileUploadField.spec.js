@@ -32,7 +32,13 @@ describe('RichFileUploadField', () => {
             file_types: 'image/*'
           }
         },
-        icon_url: 'https://feathery.io'
+        properties: {
+          required: true,
+          metadata: {
+            file_types: 'image/*'
+          },
+          icon_url: 'https://feathery.io'
+        }
       },
       required: true,
       onChange: jest.fn(),
