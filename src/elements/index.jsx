@@ -6,7 +6,7 @@ import ButtonElement from './basic/ButtonElement';
 import ImageElement from './basic/ImageElement';
 import ProgressBarElement from './basic/ProgressBarElement';
 
-import ApplyStyles from './styles';
+import ApplyStyles, { mobileBreakpointKey } from './styles';
 
 const Basic = {
   ImageElement,
@@ -51,13 +51,19 @@ Object.entries(Elements).map(([key, Element]) => {
     );
     if (componentOnly) return e;
     else {
+      const layout = applyStyles.getLayout();
+      const containerStyles = applyStyles.getTarget('container');
       return (
         <div
           css={{
             display: 'flex',
             flexDirection: 'column',
-            ...applyStyles.getLayout(),
-            ...applyStyles.getTarget('container')
+            ...layout,
+            ...containerStyles,
+            [mobileBreakpointKey]: {
+              ...layout[mobileBreakpointKey],
+              ...containerStyles[mobileBreakpointKey]
+            }
           }}
         >
           {e}
