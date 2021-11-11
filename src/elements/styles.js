@@ -7,7 +7,7 @@ const mobileIndices = {
   gridRowEnd: 'mobile_row_index_end'
 };
 
-const breakpointKey = '@media (max-width: 478px)';
+export const mobileBreakpointKey = '@media (max-width: 478px)';
 
 /**
  * Handles the translation of server-side properties into responsive CSS
@@ -49,7 +49,7 @@ class ApplyStyles {
           mobileLayout[key] = mVal;
         }
       });
-      layout['@media (max-width: 478px)'] = mobileLayout;
+      layout[mobileBreakpointKey] = mobileLayout;
     }
 
     return layout;
@@ -67,7 +67,7 @@ class ApplyStyles {
     return {
       ...this.targets[target],
       ...(!desktopOnly && this.handleMobile
-        ? { [breakpointKey]: this.mobileTargets[target] }
+        ? { [mobileBreakpointKey]: this.mobileTargets[target] }
         : {})
     };
   }
@@ -239,7 +239,7 @@ class ApplyStyles {
   getRichFontStyles(attrs) {
     const fontStyles = this._getRichFontScreenStyles(attrs);
     if (this.handleMobile) {
-      fontStyles[breakpointKey] = this._getRichFontScreenStyles(
+      fontStyles[mobileBreakpointKey] = this._getRichFontScreenStyles(
         attrs,
         'mobile_'
       );
