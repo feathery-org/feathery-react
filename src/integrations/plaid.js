@@ -27,7 +27,7 @@ export async function openPlaidLink(client, onSuccess, updateFieldValues) {
 
 export function getPlaidFieldValues(plaidConfig, fieldValues) {
   // eslint-disable-next-line camelcase
-  const keys = plaidConfig.metadata?.plaid_field_map || [];
+  const keys = plaidConfig?.metadata?.plaid_field_map || [];
   return Object.values(keys).reduce((result, key) => {
     result[key] = fieldValues[key];
     return result;
