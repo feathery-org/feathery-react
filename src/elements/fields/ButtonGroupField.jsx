@@ -19,7 +19,8 @@ function ButtonGroupField({
           ...applyStyles.getTarget('fc')
         }}
       >
-        {servar.metadata.options.map((opt) => {
+        {servar.metadata.options.map((opt, index) => {
+          const imageUrl = servar.metadata.option_image_urls[index];
           return (
             <div
               id={servar.key}
@@ -30,6 +31,7 @@ function ButtonGroupField({
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
+                flexDirection: 'column',
                 cursor: 'pointer',
                 ...applyStyles.getTarget('field'),
                 '&:active': applyStyles.getTarget('active'),
@@ -37,6 +39,16 @@ function ButtonGroupField({
                 ...(fieldVal === opt ? applyStyles.getTarget('active') : {})
               }}
             >
+              {imageUrl && (
+                <img
+                  src={imageUrl}
+                  style={{
+                    // Setting min-height to 0 prevents vertical image overflow
+                    minHeight: 0,
+                    objectFit: 'contain'
+                  }}
+                />
+              )}
               {opt}
             </div>
           );
