@@ -84,10 +84,7 @@ function Form({
     [steps]
   );
 
-  const [finishConfig, setFinishConfig] = useState({
-    finished: false,
-    redirectURL: null
-  });
+  const [finished, setFinished] = useState(false);
   const [userProgress, setUserProgress] = useState(null);
   const [curDepth, setCurDepth] = useState(0);
   const [maxDepth, setMaxDepth] = useState(0);
@@ -96,6 +93,7 @@ function Form({
   const [hasPlaid, setHasPlaid] = useState(false);
   const [stepSequence, setStepSequence] = useState([]);
   const [sequenceIndex, setSequenceIndex] = useState(0);
+  const [redirectUrl, setRedirectUrl] = useState('');
   const [errType, setErrType] = useState('html5');
   const [inlineErrors, setInlineErrors] = useState({});
   const [repeatChanged, setRepeatChanged] = useState(false);
@@ -423,8 +421,9 @@ function Form({
             data[step.key] = step;
           });
           setSteps(data);
-          setErrType(stepsResponse.error_type || 'html5');
-          return data;
+          setRedirectUrl(stepsResponse.redirect_url);
+          setErrType(stepsResponse.error_type);
+          return [data, stepsResponse.save_user_location];
         })
         .catch((error) => console.log(error));
 
@@ -443,11 +442,13 @@ function Form({
           );
           if (newSession) session = newSession;
 
-          fetchPromise.then(async (data) => {
+          fetchPromise.then(async ([data, saveUserLocation]) => {
             updateFieldValues(getDefaultFieldValues(data));
             updateSessionValues(session);
             const newKey =
-              initialStepId || session.current_step_key || getOrigin(data);
+              initialStepId ||
+              (saveUserLocation && session.current_step_key) ||
+              getOrigin(data);
             setFirstStep(newKey);
             history.replace(location.pathname + location.search + `#${newKey}`);
           });
@@ -487,9 +488,9 @@ function Form({
   }, [stepKey]);
 
   if (!activeStep) return null;
-  if (finishConfig.finished) {
-    if (finishConfig.redirectURL) {
-      window.location.href = finishConfig.redirectURL;
+  if (finished) {
+    if (redirectUrl) {
+      window.location.href = redirectUrl;
     }
     return null;
   }
@@ -862,10 +863,7 @@ function Form({
       if (submitData || ['button', 'text'].includes(metadata.elementType)) {
         eventData.completed = true;
         client.registerEvent(eventData, submitPromise);
-        setFinishConfig({
-          finished: true,
-          redirectURL: activeStep.redirect_url
-        });
+        setFinished(true);
         return true;
       }
     } else {
@@ -922,7 +920,9 @@ function Form({
         />
       );
     } else if (button.properties.loading_file_type === 'image') {
-      loader = <img src={button.properties.loading_icon_url} alt='Button Loader' />;
+      loader = (
+        <img src={button.properties.loading_icon_url} alt='Button Loader' />
+      );
     } else if (button.properties.loading_file_type === 'lottie_json') {
       const animationData = await fetch(
         button.properties.loading_icon_url
@@ -985,9 +985,14 @@ function Form({
   };
 
   const buttonOnClick = async (button) => {
-    if (['add_repeated_row', 'remove_repeated_row'].includes(button.properties.link)) {
+    if (
+      ['add_repeated_row', 'remove_repeated_row'].includes(
+        button.properties.link
+      )
+    ) {
       let data;
-      if (button.properties.link === 'add_repeated_row') data = addRepeatedRow();
+      if (button.properties.link === 'add_repeated_row')
+        data = addRepeatedRow();
       else if (button.properties.link === 'remove_repeated_row') {
         data = removeRepeatedRow(button.repeat);
       }
@@ -1051,7 +1056,9 @@ function Form({
     };
     if (submitData) {
       // Simulate button click if available
-      const submitButton = activeStep.buttons.find((b) => b.properties.link === 'submit');
+      const submitButton = activeStep.buttons.find(
+        (b) => b.properties.link === 'submit'
+      );
       if (submitButton) buttonOnClick(submitButton);
       else submit({ metadata, repeat: elementRepeatIndex });
     } else handleRedirect({ metadata });
@@ -1273,7 +1280,8 @@ function Form({
                         index
                       );
                       onChange({
-                        submitData: field.properties.submit_trigger === 'auto' && file
+                        submitData:
+                          field.properties.submit_trigger === 'auto' && file
                       });
                     }}
                     onClick={onClick}
@@ -1291,7 +1299,8 @@ function Form({
                       );
                       changeValue(fileVal, field, index);
                       onChange({
-                        submitData: field.properties.submit_trigger === 'auto' && fileVal
+                        submitData:
+                          field.properties.submit_trigger === 'auto' && fileVal
                       });
                     }}
                     onClick={onClick}
@@ -1359,7 +1368,8 @@ function Form({
                       const val = e.target.value;
                       changeValue(val, field, index);
                       onChange({
-                        submitData: field.properties.submit_trigger === 'auto' && val
+                        submitData:
+                          field.properties.submit_trigger === 'auto' && val
                       });
                     }}
                     inlineError={inlineErr}
@@ -1406,7 +1416,8 @@ function Form({
                   const val = e.target.value;
                   if (change) changeValue(val, field, index);
                   onChange({
-                    submitData: field.properties.submit_trigger === 'auto' && val
+                    submitData:
+                      field.properties.submit_trigger === 'auto' && val
                   });
                 };
                 return (
@@ -1432,7 +1443,8 @@ function Form({
                     });
                   });
                   onChange({
-                    submitData: field.properties.submit_trigger === 'auto' && color
+                    submitData:
+                      field.properties.submit_trigger === 'auto' && color
                   });
                 };
                 return (
