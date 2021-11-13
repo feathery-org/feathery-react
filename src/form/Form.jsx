@@ -445,8 +445,10 @@ function Form({
           fetchPromise.then(async ([data, saveUserLocation]) => {
             updateFieldValues(getDefaultFieldValues(data));
             updateSessionValues(session);
+            const hashKey = decodeURI(location.hash.substr(1));
             const newKey =
               initialStepId ||
+              (hashKey && hashKey in data && hashKey) ||
               (saveUserLocation && session.current_step_key) ||
               getOrigin(data);
             setFirstStep(newKey);
