@@ -69,16 +69,17 @@ function init(apiKey, options = {}) {
     }
   }
   if (initState.authId) {
-    initFormsPromise = initFormsPromise.then(() =>
-      defaultClient.submitAuthInfo({
-        authId: initState.authId,
-        authPhone: initState.authPhoneNumber,
-        authEmail: initState.authEmail
-      })
+    initFormsPromise = initFormsPromise.then(
+      async () =>
+        await defaultClient.submitAuthInfo({
+          authId: initState.authId,
+          authPhone: initState.authPhoneNumber,
+          authEmail: initState.authEmail
+        })
     );
   }
-  initFormsPromise = initFormsPromise.then(() =>
-    _fetchFormData(options.formKeys)
+  initFormsPromise = initFormsPromise.then(
+    async () => await _fetchFormData(options.formKeys)
   );
   return initFormsPromise;
 }
