@@ -192,7 +192,7 @@ export default class Client {
       method: 'PATCH',
       body: JSON.stringify(data)
     };
-    return this._fetch(url, options).then(async (response) => {
+    return this._fetch(url, options).then((response) => {
       initState.authId = authId;
       if (authToken) initState.authToken = authToken;
       if (authPhone) initState.authPhoneNumber = authPhone;
