@@ -54,36 +54,32 @@ function init(apiKey, options = {}) {
     if (options[key]) initState[key] = options[key];
   });
 
-  if (initState.userKey) initFormsPromise = _fetchFormData(options.formKeys);
-  else {
+  if (!initState.userKey) {
     if (options.tracking === 'fingerprint') {
       initFormsPromise = fpPromise
         .then((fp) => fp.get())
-        .then(async (result) => {
-          initState.userKey = result.visitorId;
-          await _fetchFormData(options.formKeys);
-        });
+        .then((result) => (initState.userKey = result.visitorId));
     } else if (options.tracking === 'cookie') {
       document.cookie.split(/; */).map((c) => {
         const [key, v] = c.split('=', 2);
         if (key === 'feathery-user-id') initState.userKey = v;
       });
-
       if (!initState.userKey) initState.userKey = uuidv4();
       document.cookie = `feathery-user-id=${initState.userKey}; max-age=31536000; SameSite=strict`;
-      initFormsPromise = _fetchFormData(options.formKeys);
     }
   }
   if (initState.authId) {
-    initFormsPromise = initFormsPromise.then(
-      async () =>
-        await defaultClient.submitAuthInfo({
-          authId: initState.authId,
-          authPhone: initState.authPhoneNumber,
-          authEmail: initState.authEmail
-        })
+    initFormsPromise = initFormsPromise.then(() =>
+      defaultClient.submitAuthInfo({
+        authId: initState.authId,
+        authPhone: initState.authPhoneNumber,
+        authEmail: initState.authEmail
+      })
     );
   }
+  initFormsPromise = initFormsPromise.then(() =>
+    _fetchFormData(options.formKeys)
+  );
   return initFormsPromise;
 }
 
@@ -106,8 +102,8 @@ const initializeIntegrations = async (
 };
 
 // must be called after userKey loads
-async function _fetchFormData(formKeys) {
-  await Promise.all(
+function _fetchFormData(formKeys) {
+  return Promise.all(
     formKeys.map((key) => {
       const formClient = new Client(key);
       const fp = formClient.fetchForm().then((stepsResponse) => {
