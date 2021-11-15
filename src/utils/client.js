@@ -145,7 +145,6 @@ export default class Client {
   }
 
   async fetchForm() {
-    await initFormsPromise;
     const { forms } = initInfo();
     if (this.formKey in forms) return Promise.resolve(forms[this.formKey]);
 
@@ -161,7 +160,6 @@ export default class Client {
   }
 
   async fetchSession() {
-    await initFormsPromise;
     const { userKey, sessions, authId } = initInfo();
     if (this.formKey in sessions)
       return Promise.resolve(sessions[this.formKey]);
