@@ -191,6 +191,7 @@ const nextStepKey = (
       }
     });
 
+  // TODO: remove advanced navigation logic once Upfront migrates off
   // order and compose new sequence
   let newSequence = sequenceValues
     .map((val) => inSequence[val])
