@@ -1,17 +1,23 @@
 import { dynamicImport } from './utils';
 import { emailPattern, phonePattern } from '../utils/formHelperFunctions';
 
+let firebasePromise = null;
+
 export function installFirebase(firebaseConfig) {
-  if (!firebaseConfig) return Promise.resolve();
+  if (firebasePromise) return firebasePromise;
+  else if (!firebaseConfig) return Promise.resolve();
   else {
-    return new Promise((resolve) => {
+    firebasePromise = new Promise((resolve) => {
       if (global.firebase) resolve(global.firebase);
       else {
         // Bring in Firebase dependencies dynamically if this form uses Firebase
-        return dynamicImport([
-          'https://www.gstatic.com/firebasejs/8.7.1/firebase-app.js',
-          'https://www.gstatic.com/firebasejs/8.7.1/firebase-auth.js'
-        ]).then(() => {
+        return dynamicImport(
+          [
+            'https://www.gstatic.com/firebasejs/8.7.1/firebase-app.js',
+            'https://www.gstatic.com/firebasejs/8.7.1/firebase-auth.js'
+          ],
+          false
+        ).then(() => {
           global.firebase.initializeApp({
             apiKey: firebaseConfig.api_key,
             authDomain: `${firebaseConfig.metadata.project_id}.firebaseapp.com`,
@@ -25,6 +31,7 @@ export function installFirebase(firebaseConfig) {
         });
       }
     });
+    return firebasePromise;
   }
 }
 
