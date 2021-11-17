@@ -1463,7 +1463,7 @@ function Form({
                     {...fieldProps}
                     lazy={false}
                     unmask
-                    fieldValue={fieldVal}
+                    fieldValue={fieldVal.toString()}
                     onClick={onClick}
                     onAccept={(val) => {
                       changeValue(val, field, index, false);
