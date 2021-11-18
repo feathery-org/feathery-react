@@ -599,7 +599,6 @@ function Form({
     };
     
     const handleTextFieldValueChange = (e, servarKey) => {
-        console.log(e.target.dataset);
         if (e.target.dataset.iscomplete === 'true'){
             const newValue = e.target.dataset.rawvalue;
             updateFieldValues({ [servarKey]: newValue })
