@@ -597,6 +597,15 @@ function Form({
             }
         });
     };
+    
+    const handleTextFieldValueChange = (e, servarKey) => {
+        console.log(e.target.dataset);
+        if (e.target.dataset.iscomplete === 'true'){
+            const newValue = e.target.dataset.rawvalue;
+            updateFieldValues({ [servarKey]: newValue })
+        }
+        
+    }
 
     const submit = async ({
         metadata,
@@ -1387,6 +1396,9 @@ function Form({
                                 <Elements.TextField
                                     {...fieldProps}
                                     fieldValue={fieldVal}
+                                    onChange={(e) => {
+                                        handleTextFieldValueChange(e, servar.key);
+                                    }}
                                     onClick={onClick}
                                     inlineError={inlineErr}
                                 />
