@@ -1,8 +1,11 @@
 import { expandN } from 'regex-to-strings';
 
+// These patterns are used by our logic to extract the regex provided by the user.
 const startPattern = '{{ ';
 const endPattern = ' }}';
 
+// Caret position helper for normal text and
+// for special buttons like: backspace, delte, paste.
 const calculateCaretPosition = (
     rawCaretPos,
     selectedCaretPos,
@@ -26,6 +29,7 @@ const calculateCaretPosition = (
     }
 };
 
+// Caret position helper for arrow key interactions.
 const calculateArrowNavigatonCaretPos = (
     rawCaretPos,
     selectedCaretPos,
@@ -39,6 +43,7 @@ const calculateArrowNavigatonCaretPos = (
     else return -1;
 };
 
+// Helper method to perform char escaping to ensure correct string processing.
 const escapeChars = (plainTextString) => {
     // Inorder to get the regex helper method work correctly,
     // we have to escape specials chars in the fixed part of the field mask string.
@@ -47,14 +52,15 @@ const escapeChars = (plainTextString) => {
     return plainTextString.replace(specialChars, (m) => '\\' + m);
 };
 
+// Helper method to get all the index positions of a given string.
 function getIndicesOf(searchStr, str, caseSensitive) {
-    let searchStrLen = searchStr.length;
-    if (searchStrLen == 0) {
+    const searchStrLen = searchStr.length;
+    if (searchStrLen === 0) {
         return [];
     }
-    let startIndex = 0,
-        index,
-        indices = [];
+    let startIndex = 0;
+    let index;
+    const indices = [];
     if (!caseSensitive) {
         str = str.toLowerCase();
         searchStr = searchStr.toLowerCase();
@@ -167,34 +173,6 @@ const generateRegexString = (rawPatternString, defaultSettings) => {
         adjustedIndices = [patternComparisionString.indexOf('{}')];
     }
 
-    // let allowedRawValueLength = (
-    //     patternComparisionString.match(/\{!defaultChar\}/g) || []
-    // ).length;
-    // allowedRawValueLength += (
-    //     patternComparisionString.match(/\{!defaultDigit\}/g) || []
-    // ).length;
-
-    // const patternCharCaretPos = patternComparisionString.indexOf(
-    //     "{!defaultChar}"
-    // );
-    // const patternDigitCaretPos = patternComparisionString.indexOf(
-    //     "{!defaultDigit}"
-    // );
-
-    // let maskedCaretPos = 0;
-
-    // if (deterministic){
-    //     if (patternCharCaretPos < patternDigitCaretPos){
-    //         maskedCaretPos = patternCharCaretPos === -1 ? patternDigitCaretPos: patternCharCaretPos
-    //     }
-    //     else {
-    //         maskedCaretPos = patternDigitCaretPos === -1 ? patternCharCaretPos: patternDigitCaretPos
-    //     }
-    // }
-    // else maskedCaretPos = patternComparisionString.indexOf('{}');
-
-    // if (deterministic) maskedCaretPos =
-
     rawPatternStringSlice = rawPatternString.substring(startIndex);
     return [
         identifiedRegex,
@@ -207,14 +185,16 @@ const generateRegexString = (rawPatternString, defaultSettings) => {
     ];
 };
 
+// Partial regex matching helper. This helper method is
+// taken from : https://stackoverflow.com/questions/22483214/regex-check-if-input-still-has-chances-to-become-matching/41580048#41580048
 const partialMatchRegex = function () {
-    var re = this,
-        source = this.source,
-        i = 0;
+    const re = this;
+    const source = this.source;
+    let i = 0;
 
     function process() {
-        var result = '',
-            tmp;
+        let result = '';
+        let tmp;
 
         function appendRaw(nbChars) {
             result += source.substr(i, nbChars);
@@ -299,7 +279,7 @@ const partialMatchRegex = function () {
                     break;
 
                 case '(':
-                    if (source[i + 1] == '?') {
+                    if (source[i + 1] === '?') {
                         switch (source[i + 2]) {
                             case ':':
                                 result += '(?:';
