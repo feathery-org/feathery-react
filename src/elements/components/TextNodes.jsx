@@ -47,11 +47,11 @@ function TextNodes({
                   isNaN(element.repeat) ||
                   element.repeat >= pVal.length
                 ) {
-                  return pVal[0];
+                  return pVal[0].toString();
                 } else {
-                  return pVal[element.repeat];
+                  return pVal[element.repeat].toString();
                 }
-              } else return pVal;
+              } else return pVal.toString();
             } else return pattern;
           });
         }
