@@ -1071,7 +1071,7 @@ function Form({
       {stepLoader && (
         <div
           style={{
-            backgroundColor: 'white',
+            backgroundColor: `#${activeStep.default_background_color}`,
             position: 'fixed',
             height: '100vh',
             width: '100vw',
