@@ -1072,7 +1072,7 @@ function Form({
         <div
           style={{
             backgroundColor: 'white',
-            position: 'absolute',
+            position: 'fixed',
             height: '100vh',
             width: '100vw',
             zIndex: 50,
