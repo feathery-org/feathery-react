@@ -102,10 +102,15 @@ function Form({
   const [render, setRender] = useState(false);
 
   const [loaders, setLoaders] = useState({});
-  const stepLoader = useMemo(
-    () => Object.values(loaders).find((l) => l?.showOn === 'full_page')?.loader,
-    [loaders]
-  );
+  const stepLoader = useMemo(() => {
+    const data = Object.values(loaders).find((l) => l?.showOn === 'full_page');
+    if (!data) return null;
+    return data.type === 'default' ? (
+      <div style={{ height: '20vh', width: '20vh' }}>{data.loader}</div>
+    ) : (
+      data.loader
+    );
+  }, [loaders]);
 
   const fieldValuesRef = useRef(initialValues);
   let fieldValues = fieldValuesRef.current;
@@ -888,8 +893,9 @@ function Form({
   }
 
   const setButtonLoader = async (button) => {
+    const bp = button.properties;
     let loader = null;
-    if (!button.properties.loading_icon_url) {
+    if (!bp.loading_icon_url) {
       loader = (
         <Spinner
           animation='border'
@@ -921,19 +927,21 @@ function Form({
           }}
         />
       );
-    } else if (button.properties.loading_file_type === 'image') {
-      loader = (
-        <img src={button.properties.loading_icon_url} alt='Button Loader' />
+    } else if (bp.loading_file_type === 'image') {
+      loader = <img src={bp.loading_icon_url} alt='Button Loader' />;
+    } else if (bp.loading_file_type === 'lottie_json') {
+      const animationData = await fetch(bp.loading_icon_url).then((response) =>
+        response.json()
       );
-    } else if (button.properties.loading_file_type === 'lottie_json') {
-      const animationData = await fetch(
-        button.properties.loading_icon_url
-      ).then((response) => response.json());
       loader = <Lottie animationData={animationData} loop autoplay />;
     }
     setLoaders((loaders) => ({
       ...loaders,
-      [button.id]: { showOn: button.properties.show_loading_icon, loader }
+      [button.id]: {
+        showOn: bp.show_loading_icon,
+        loader,
+        type: bp.loading_icon_url ? bp.loading_file_type : 'default'
+      }
     }));
   };
 
@@ -1081,14 +1089,7 @@ function Form({
             alignItems: 'center'
           }}
         >
-          <div
-            style={{
-              height: '20vh',
-              width: '20vh'
-            }}
-          >
-            {stepLoader}
-          </div>
+          {stepLoader}
         </div>
       )}
       <ReactForm
