@@ -12,7 +12,9 @@ describe('hydration', () => {
         buttons: [],
         servar_fields: [
           {
-            text: 'First servar field {{foobar}}',
+            properties: {
+              text: 'First servar field {{foobar}}'
+            },
             row_index: 1,
             row_index_end: 1,
             column_index: 2
@@ -63,21 +65,21 @@ describe('hydration', () => {
         repeat_row_end: 1,
         texts: [
           {
-            text: 'Repeated text field {{foobar}}',
+            properties: { text: 'Repeated text field {{foobar}}' },
             column_index: 2,
             repeat: 0,
             row_index: 1,
             row_index_end: 1
           },
           {
-            text: 'Repeated text field {{foobar}}',
+            properties: { text: 'Repeated text field {{foobar}}' },
             column_index: 2,
             repeat: 1,
             row_index: 2,
             row_index_end: 2
           },
           {
-            text: 'Repeated text field {{foobar}}',
+            properties: { text: 'Repeated text field {{foobar}}' },
             column_index: 2,
             repeat: 2,
             row_index: 3,
@@ -86,21 +88,21 @@ describe('hydration', () => {
         ],
         buttons: [
           {
-            text: 'Repeated button field {{foobar}}',
+            properties: { text: 'Repeated button field {{foobar}}' },
             column_index: 2,
             repeat: 0,
             row_index: 1,
             row_index_end: 1
           },
           {
-            text: 'Repeated button field {{foobar}}',
+            properties: { text: 'Repeated button field {{foobar}}' },
             column_index: 2,
             repeat: 1,
             row_index: 2,
             row_index_end: 2
           },
           {
-            text: 'Repeated button field {{foobar}}',
+            properties: { text: 'Repeated button field {{foobar}}' },
             column_index: 2,
             repeat: 2,
             row_index: 3,
@@ -172,14 +174,14 @@ describe('hydration', () => {
           {
             row_index: 0,
             row_index_end: 0,
-            text: '{{foobar}}'
+            properties: { text: '{{foobar}}' }
           }
         ],
         buttons: [
           {
             row_index: 0,
             row_index_end: 0,
-            text: '{{foobar}}'
+            properties: { text: '{{foobar}}' }
           }
         ],
         servar_fields: []
@@ -233,14 +235,14 @@ describe('hydration', () => {
           {
             row_index: 0,
             row_index_end: 0,
-            text: '{{foobar}}'
+            properties: { text: '{{foobar}}' }
           }
         ],
         buttons: [
           {
             row_index: 0,
             row_index_end: 0,
-            text: '{{foobar}}'
+            properties: { text: '{{foobar}}' }
           }
         ],
         servar_fields: [
