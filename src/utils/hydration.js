@@ -19,7 +19,8 @@ function calculateRepeatedRowCount({ step, values }) {
     .filter(
       (textField) =>
         textField.row_index >= step.repeat_row_start &&
-        textField.row_index_end <= step.repeat_row_end
+        textField.row_index_end <= step.repeat_row_end &&
+        textField.text
     )
     .map((textField) => textField.text.match(TEXT_VARIABLE_PATTERN))
     .filter((matches) => matches !== null)
@@ -38,7 +39,8 @@ function calculateRepeatedRowCount({ step, values }) {
     .filter(
       (btnField) =>
         btnField.row_index >= step.repeat_row_start &&
-        btnField.row_index_end <= step.repeat_row_end
+        btnField.row_index_end <= step.repeat_row_end &&
+        btnField.text
     )
     .map((btnField) => btnField.text.match(TEXT_VARIABLE_PATTERN))
     .filter((matches) => matches !== null)
