@@ -156,10 +156,10 @@ function TextField({
         >
           {element.properties.placeholder || ''}
         </span>
-        {element.tooltipText && (
+        {element.properties.tooltipText && (
           <InlineTooltip
             id={`tooltip-${element.id}`}
-            text={element.tooltipText}
+            text={element.properties.tooltipText}
             applyStyles={applyStyles}
           />
         )}
