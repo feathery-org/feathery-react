@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { isNum } from '../../utils/primitives';
 import Delta from 'quill-delta';
+import { stringifyWithNull } from "../../utils/string";
 
 const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 
@@ -47,11 +48,11 @@ function TextNodes({
                   isNaN(element.repeat) ||
                   element.repeat >= pVal.length
                 ) {
-                  return pVal[0].toString();
+                  return stringifyWithNull(pVal[0]);
                 } else {
-                  return pVal[element.repeat].toString();
+                  return stringifyWithNull(pVal[element.repeat]);
                 }
-              } else return pVal.toString();
+              } else return stringifyWithNull(pVal);
             } else return pattern;
           });
         }

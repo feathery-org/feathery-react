@@ -41,6 +41,7 @@ import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
 import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
 import Spinner from 'react-bootstrap/Spinner';
 import Lottie from 'lottie-react';
+import { stringifyWithNull } from '../utils/string';
 
 const FILE_UPLOADERS = [
   'file_upload',
@@ -1464,7 +1465,7 @@ function Form({
                     {...fieldProps}
                     lazy={false}
                     unmask
-                    fieldValue={fieldVal.toString()}
+                    fieldValue={stringifyWithNull(fieldVal)}
                     onClick={onClick}
                     onAccept={(val) => {
                       changeValue(val, field, index, false);
