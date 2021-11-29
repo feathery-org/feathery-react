@@ -118,9 +118,9 @@ const getDefaultFieldValues = (steps) => {
 
 const lookupElementKey = (step, elementID, elementType) => {
   if (elementType === 'button') {
-    return step.buttons.filter((button) => button.id === elementID)[0].text;
+    return step.buttons.filter((button) => button.id === elementID)[0].properties.text;
   } else if (elementType === 'text') {
-    return step.texts.filter((text) => text.id === elementID)[0].text;
+    return step.texts.filter((text) => text.id === elementID)[0].properties.text;
   } else if (elementType === 'field') {
     return step.servar_fields.filter((field) => field.id === elementID)[0]
       .servar.key;
