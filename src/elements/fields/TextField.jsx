@@ -130,10 +130,6 @@ function TextField({
           required={required}
           onChange={onChange}
           onClick={onClick}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && inputType === 'textarea')
-              e.stopPropagation();
-          }}
           autoComplete={servar.metadata.autocomplete || 'on'}
           ref={inputRef}
           placeholder=''

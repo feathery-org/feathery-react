@@ -1,19 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isNum } from '../../utils/primitives';
-
-// keyCode constants
-const BACKSPACE = 8;
-const LEFT_ARROW = 37;
-const RIGHT_ARROW = 39;
-const DELETE = 46;
-const SPACEBAR = 32;
+import { useHotkeys } from 'react-hotkeys-hook';
 
 function SingleOtpInput({
   index,
   focus,
   value,
   onChange,
-  onKeyDown,
   onInput,
   paste,
   onPaste,
@@ -22,7 +15,10 @@ function SingleOtpInput({
   onClick,
   element,
   applyStyles,
-  inlineError
+  inlineError,
+  changeCodeAtFocus,
+  focusPrevInput,
+  focusNextInput
 }) {
   const input = useRef(null);
 
@@ -41,6 +37,42 @@ function SingleOtpInput({
   }, [focus, input]);
 
   applyStyles.applyBorders('field', focus ? 'selected_' : '', false);
+
+  // Handle cases of backspace, delete, left arrow, right arrow, space
+  useHotkeys(
+    'enter, backspace, delete, left, right, space',
+    (e, handler) => {
+      switch (handler.key) {
+        case 'enter':
+          e.preventDefault();
+          break;
+        case 'backspace':
+          e.preventDefault();
+          changeCodeAtFocus('');
+          focusPrevInput();
+          break;
+        case 'delete':
+          e.preventDefault();
+          changeCodeAtFocus('');
+          break;
+        case 'left':
+          e.preventDefault();
+          focusPrevInput();
+          break;
+        case 'right':
+          e.preventDefault();
+          focusNextInput();
+          break;
+        case 'space':
+          e.preventDefault();
+          break;
+      }
+    },
+    {
+      enableOnTags: ['INPUT', 'TEXTAREA']
+    }
+  );
+
   return (
     <div style={{ display: 'flex', alignItems: 'center' }}>
       <input
@@ -60,7 +92,6 @@ function SingleOtpInput({
         ref={input}
         value={value || ''}
         onChange={onChange}
-        onKeyDown={onKeyDown}
         onInput={onInput}
         onPaste={onPaste}
         onFocus={onFocus}
@@ -158,31 +189,6 @@ function OtpInput({
     handleMultipleValues(value.split(''));
   };
 
-  // Handle cases of backspace, delete, left arrow, right arrow, space
-  const handleOnKeyDown = (e) => {
-    if (e.keyCode === BACKSPACE || e.key === 'Backspace') {
-      e.preventDefault();
-      changeCodeAtFocus('');
-      focusPrevInput();
-    } else if (e.keyCode === DELETE || e.key === 'Delete') {
-      e.preventDefault();
-      changeCodeAtFocus('');
-    } else if (e.keyCode === LEFT_ARROW || e.key === 'ArrowLeft') {
-      e.preventDefault();
-      focusPrevInput();
-    } else if (e.keyCode === RIGHT_ARROW || e.key === 'ArrowRight') {
-      e.preventDefault();
-      focusNextInput();
-    } else if (
-      e.keyCode === SPACEBAR ||
-      e.key === ' ' ||
-      e.key === 'Spacebar' ||
-      e.key === 'Space'
-    ) {
-      e.preventDefault();
-    }
-  };
-
   // The content may not have changed, but some input took place hence change the focus
   const handleOnInput = (e) => {
     if (isInputValueValid(e.target.value)) {
@@ -201,7 +207,6 @@ function OtpInput({
           focus={activeInput === i}
           value={rawValue[i]}
           onChange={handleOnChange}
-          onKeyDown={handleOnKeyDown}
           onInput={handleOnInput}
           paste={pasted}
           onPaste={handleOnPaste}
@@ -215,6 +220,9 @@ function OtpInput({
           element={element}
           applyStyles={applyStyles}
           inlineError={inlineError}
+          changeCodeAtFocus={changeCodeAtFocus}
+          focusPrevInput={focusPrevInput}
+          focusNextInput={focusNextInput}
         />
       );
     }
