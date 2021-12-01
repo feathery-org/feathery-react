@@ -1,6 +1,7 @@
 import React from 'react';
 import { create, act } from 'react-test-renderer';
-import Elements from '../..';
+import RichFileUploadField from '../RichFileUploadField';
+import ApplyStyles from '../../styles';
 
 describe('RichFileUploadField', () => {
   it('renders a basic file upload component', () => {
@@ -44,15 +45,15 @@ describe('RichFileUploadField', () => {
       onChange: jest.fn(),
       onClick: jest.fn()
     };
+    props.applyStyles = new ApplyStyles(props.element, []);
 
     // Act
-    let component;
+    let tree;
     act(() => {
-      component = create(<Elements.RichFileUploadField {...props} />);
+      tree = create(<RichFileUploadField {...props} />).toJSON();
     });
 
     // Assert
-    const tree = component.toJSON();
     expect(tree).toMatchSnapshot();
   });
 });
