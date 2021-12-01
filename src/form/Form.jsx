@@ -198,7 +198,7 @@ function Form({
     (e) => {
       e.preventDefault();
       // Skip 1-input steps by pressing `Enter`
-      const submitButton = activeStep.buttons.find((b) => b.link === 'submit');
+      const submitButton = activeStep.buttons.find((b) => b.properties.link === 'submit');
       if (submitButton && activeStep.servar_fields.length === 1) {
         // Simulate button click if available
         buttonOnClick(submitButton);
