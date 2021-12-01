@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { isNum } from '../../utils/primitives';
 import Delta from 'quill-delta';
-import { stringifyWithNull } from "../../utils/string";
+import { stringifyWithNull } from '../../utils/string';
 
 const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 

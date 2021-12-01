@@ -1,0 +1,149 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ProgressBarElement renders a non-empty progress bar element 1`] = `
+<div
+  className="css-taptzq-ProgressBarElement"
+>
+  <div
+    className="css-v1tuzq-progressBarElements progress"
+    style={
+      Object {
+        "backgroundColor": "#e9ecef",
+        "borderRadius": 0,
+        "display": "flex",
+        "height": "0.4rem",
+        "width": "100%",
+      }
+    }
+  >
+    <div
+      aria-valuemax={100}
+      aria-valuemin={0}
+      aria-valuenow={20}
+      className="progress-bar"
+      role="progressbar"
+      style={
+        Object {
+          "width": "20%",
+        }
+      }
+    />
+  </div>
+</div>
+`;
+
+exports[`ProgressBarElement renders a progress bar with bottom positioned percent text 1`] = `
+<div
+  className="css-taptzq-ProgressBarElement"
+>
+  <div
+    className="css-v1tuzq-progressBarElements progress"
+    style={
+      Object {
+        "backgroundColor": "#e9ecef",
+        "borderRadius": 0,
+        "display": "flex",
+        "height": "0.4rem",
+        "width": "100%",
+      }
+    }
+  >
+    <div
+      aria-valuemax={100}
+      aria-valuemin={0}
+      aria-valuenow={20}
+      className="progress-bar"
+      role="progressbar"
+      style={
+        Object {
+          "width": "20%",
+        }
+      }
+    />
+  </div>
+  <div
+    style={
+      Object {
+        "textAlign": "center",
+        "width": "100%",
+      }
+    }
+  >
+    20% completed
+  </div>
+</div>
+`;
+
+exports[`ProgressBarElement renders a progress bar with top positioned percent text 1`] = `
+<div
+  className="css-taptzq-ProgressBarElement"
+>
+  <div
+    style={
+      Object {
+        "textAlign": "center",
+        "width": "100%",
+      }
+    }
+  >
+    20% completed
+  </div>
+  <div
+    className="css-v1tuzq-progressBarElements progress"
+    style={
+      Object {
+        "backgroundColor": "#e9ecef",
+        "borderRadius": 0,
+        "display": "flex",
+        "height": "0.4rem",
+        "width": "100%",
+      }
+    }
+  >
+    <div
+      aria-valuemax={100}
+      aria-valuemin={0}
+      aria-valuenow={20}
+      className="progress-bar"
+      role="progressbar"
+      style={
+        Object {
+          "width": "20%",
+        }
+      }
+    />
+  </div>
+</div>
+`;
+
+exports[`ProgressBarElement renders an empty progress bar element 1`] = `
+<div
+  className="css-taptzq-ProgressBarElement"
+>
+  <div
+    className="css-v1tuzq-progressBarElements progress"
+    style={
+      Object {
+        "backgroundColor": "#e9ecef",
+        "borderRadius": 0,
+        "display": "flex",
+        "height": "0.4rem",
+        "width": "100%",
+      }
+    }
+  >
+    <div
+      aria-valuemax={100}
+      aria-valuemin={0}
+      aria-valuenow={50}
+      className="progress-bar"
+      role="progressbar"
+      style={
+        Object {
+          "width": "50%",
+        }
+      }
+    />
+  </div>
+</div>
+`;

@@ -1,14 +1,14 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`RadioButtonGroup renders a Radio Button group 1`] = `
+exports[`RadioButtonGroupField renders a Radio Button group 1`] = `
 <div
-  className="css-17s30mt-RadioButtonGroup"
+  className="css-bk9udp-RadioButtonGroupField"
 />
 `;
 
-exports[`RadioButtonGroup renders a Radio Button group with metadata options 1`] = `
+exports[`RadioButtonGroupField renders a Radio Button group with metadata options 1`] = `
 <div
-  className="css-17s30mt-RadioButtonGroup"
+  className="css-bk9udp-RadioButtonGroupField"
 >
   <div
     className="css-gwhptf form-check"
@@ -42,9 +42,9 @@ exports[`RadioButtonGroup renders a Radio Button group with metadata options 1`]
 </div>
 `;
 
-exports[`RadioButtonGroup renders a Radio Button group with metadata options and others field enabled 1`] = `
+exports[`RadioButtonGroupField renders a Radio Button group with metadata options and others field enabled 1`] = `
 <div
-  className="css-17s30mt-RadioButtonGroup"
+  className="css-bk9udp-RadioButtonGroupField"
 >
   <div
     className="css-gwhptf form-check"
