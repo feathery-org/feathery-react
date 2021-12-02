@@ -81,6 +81,7 @@ function TextField({
   fieldLabel,
   required = false,
   fieldValue = '',
+  onBlur = () => {},
   onChange = () => {},
   onClick = () => {},
   inlineError,
@@ -128,6 +129,7 @@ function TextField({
           maxLength={servar.max_length}
           minLength={servar.min_length}
           required={required}
+          onBlur={onBlur}
           onChange={onChange}
           onClick={onClick}
           autoComplete={servar.metadata.autocomplete || 'on'}

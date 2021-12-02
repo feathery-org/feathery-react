@@ -372,22 +372,37 @@ function getFieldError(value, servar, signatureRef) {
  */
 function setFormElementError({
   formRef,
-  fieldKey,
-  message,
+  errorType,
+  fieldKey = '',
+  message = '',
   index = null,
-  servarType = ''
+  servarType = '',
+  inlineErrors = {},
+  setInlineErrors = () => {},
+  triggerErrors = false
 }) {
-  if (['pin_input', 'select', 'multiselect'].includes(servarType))
-    fieldKey = `${fieldKey}-0`;
-  const singleOrList = formRef.current.elements[fieldKey];
-  let elements =
-    singleOrList instanceof RadioNodeList
-      ? Array.from(singleOrList)
-      : [singleOrList];
-  elements = elements.filter((e) => e);
+  if (errorType === 'html5') {
+    if (fieldKey) {
+      if (['pin_input', 'select', 'multiselect'].includes(servarType))
+        fieldKey = `${fieldKey}-0`;
+      const singleOrList = formRef.current.elements[fieldKey];
+      let elements =
+        singleOrList instanceof RadioNodeList
+          ? Array.from(singleOrList)
+          : [singleOrList];
+      elements = elements.filter((e) => e);
 
-  if (index !== null) elements = [elements[index]];
-  elements.forEach((e) => e.setCustomValidity(message));
+      if (index !== null) elements = [elements[index]];
+      elements.forEach((e) => e.setCustomValidity(message));
+    }
+    if (triggerErrors) formRef.current.reportValidity();
+    return formRef.current.checkValidity();
+  } else if (errorType === 'inline') {
+    if (fieldKey) inlineErrors[fieldKey] = { message };
+    if (triggerErrors)
+      setInlineErrors(JSON.parse(JSON.stringify(inlineErrors)));
+    return Object.values(inlineErrors).find((data) => data.message);
+  }
 }
 
 /**
