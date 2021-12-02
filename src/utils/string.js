@@ -1,3 +1,3 @@
 export function stringifyWithNull(value) {
-  return value ? value.toString() : '';
+  return value === null || value === undefined ? '' : value.toString();
 }
