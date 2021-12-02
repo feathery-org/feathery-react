@@ -76,6 +76,7 @@ function MultiFileUploadField({
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
+            boxSizing: 'border-box',
             ...applyStyles.getTarget('field')
           }}
         >
@@ -85,7 +86,7 @@ function MultiFileUploadField({
               style={{
                 width: '100%',
                 height: '100%',
-                objectFit: 'cover'
+                objectFit: 'contain'
               }}
             />
           )}
