@@ -71,6 +71,7 @@ function RichFileUploadField({
         flexDirection: 'column',
         border: '1px solid lightgrey',
         borderRadius: '4px',
+        boxSizing: 'border-box',
         background: 'white',
         overflow: 'hidden',
         ...applyStyles.getTarget('fc')
@@ -96,7 +97,7 @@ function RichFileUploadField({
           style={{
             width: '100%',
             height: '100%',
-            objectFit: 'cover'
+            objectFit: 'contain'
           }}
         />
       )}
