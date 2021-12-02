@@ -77,28 +77,24 @@ function Form({
   const [stepKey, setStepKey] = useState('');
   const [filePathMap, setFilePathMap] = useState({});
   const [shouldScrollToTop, setShouldScrollToTop] = useState(true);
-  const fileServarKeys = useMemo(
-    () =>
-      findServars(steps, (s) => FILE_UPLOADERS.includes(s.type)).reduce(
-        (keys, servar) => ({ ...keys, [servar.key]: true }),
-        {}
-      ),
-    [steps]
-  );
-
   const [finished, setFinished] = useState(false);
   const [userProgress, setUserProgress] = useState(null);
   const [curDepth, setCurDepth] = useState(0);
   const [maxDepth, setMaxDepth] = useState(0);
-  const [integrations, setIntegrations] = useState({});
-  const [plaidLinked, setPlaidLinked] = useState(false);
-  const [hasPlaid, setHasPlaid] = useState(false);
   const [stepSequence, setStepSequence] = useState([]);
   const [sequenceIndex, setSequenceIndex] = useState(0);
   const [redirectUrl, setRedirectUrl] = useState('');
   const [errType, setErrType] = useState('html5');
   const [inlineErrors, setInlineErrors] = useState({});
   const [repeatChanged, setRepeatChanged] = useState(false);
+
+  const [integrations, setIntegrations] = useState({});
+  const [plaidLinked, setPlaidLinked] = useState(false);
+  const [hasPlaid, setHasPlaid] = useState(false);
+  const [gMapFilled, setGMapFilled] = useState(false);
+  const [gMapBlurKey, setGMapBlurKey] = useState('');
+  const [gMapTimeoutId, setGMapTimeoutId] = useState(-1);
+
   // Set to trigger conditional renders on field value updates, no need to use
   // eslint-disable-next-line no-unused-vars
   const [render, setRender] = useState(false);
@@ -113,6 +109,15 @@ function Form({
       data.loader
     );
   }, [loaders]);
+
+  const fileServarKeys = useMemo(
+    () =>
+      findServars(steps, (s) => FILE_UPLOADERS.includes(s.type)).reduce(
+        (keys, servar) => ({ ...keys, [servar.key]: true }),
+        {}
+      ),
+    [steps]
+  );
 
   const fieldValuesRef = useRef(initialValues);
   let fieldValues = fieldValuesRef.current;
@@ -151,6 +156,11 @@ function Form({
       !!rawActiveStep.buttons.find((b) => b.properties.link === 'trigger_plaid')
     );
     setPlaidLinked(false);
+    setGMapFilled(
+      rawActiveStep.servar_fields.find(
+        (f) => f.servar.type === 'gmap_line_1' && fieldValues[f.servar.key]
+      )
+    );
     return JSON.parse(
       JSON.stringify(
         injectRepeatedRows({
@@ -160,6 +170,27 @@ function Form({
       )
     );
   }, [rawActiveStep, repeatedRowCount]);
+
+  useEffect(() => {
+    if (gMapFilled) clearTimeout(gMapTimeoutId);
+    else if (gMapBlurKey) {
+      // Delay by 0.5 seconds to ensure onChange finishes running first if it needs to
+      const timeoutId = setTimeout(
+        () =>
+          setFormElementError({
+            formRef,
+            fieldKey: gMapBlurKey,
+            message: 'An address must be selected',
+            errorType: errType,
+            setInlineErrors: setInlineErrors,
+            triggerErrors: true
+          }),
+        500
+      );
+      setGMapBlurKey('');
+      setGMapTimeoutId(timeoutId);
+    }
+  }, [gMapTimeoutId, gMapFilled, gMapBlurKey]);
 
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
@@ -198,7 +229,9 @@ function Form({
     (e) => {
       e.preventDefault();
       // Skip 1-input steps by pressing `Enter`
-      const submitButton = activeStep.buttons.find((b) => b.properties.link === 'submit');
+      const submitButton = activeStep.buttons.find(
+        (b) => b.properties.link === 'submit'
+      );
       if (submitButton && activeStep.servar_fields.length === 1) {
         // Simulate button click if available
         buttonOnClick(submitButton);
@@ -641,45 +674,39 @@ function Form({
     const newInlineErrors = {};
     Object.entries(formattedFields).map(([fieldKey, { value }]) => {
       const servar = servarMap[fieldKey];
-      const err = getFieldError(value, servar, signatureRef);
-      if (errType === 'html5') {
-        setFormElementError({
-          formRef,
-          fieldKey,
-          message: err,
-          servarType: servar.type
-        });
-      } else if (errType === 'inline') {
-        newInlineErrors[fieldKey] = { message: err };
-      }
+      const message = getFieldError(value, servar, signatureRef);
+      setFormElementError({
+        formRef,
+        fieldKey,
+        message,
+        errorType: errType,
+        servarType: servar.type,
+        inlineErrors: newInlineErrors
+      });
     });
     // do validation check before running user submission function
     // so user does not access invalid data
-    if (errType === 'html5') {
-      formRef.current.reportValidity();
-      if (!formRef.current.checkValidity()) return;
-    } else if (errType === 'inline') {
-      setInlineErrors(newInlineErrors);
-      const invalid = Object.values(newInlineErrors).find(
-        (data) => data.message
-      );
-      if (invalid) return;
-    }
+    const invalid = setFormElementError({
+      formRef,
+      errorType: errType,
+      inlineErrors: newInlineErrors,
+      setInlineErrors,
+      triggerErrors: true
+    });
+    if (invalid) return;
 
     const { loggedIn, errorMessage, errorField } = await handleActions();
     if (errorMessage && errorField) {
-      if (errType === 'html5') {
-        setFormElementError({
-          formRef,
-          fieldKey: errorField.key,
-          message: errorMessage,
-          servarType: errorField.type
-        });
-        formRef.current.reportValidity();
-      } else if (errType === 'inline') {
-        newInlineErrors[errorField.key] = { message: errorMessage };
-        setInlineErrors(newInlineErrors);
-      }
+      setFormElementError({
+        formRef,
+        fieldKey: errorField.key,
+        message: errorMessage,
+        servarType: errorField.type,
+        errorType: errType,
+        inlineErrors: newInlineErrors,
+        setInlineErrors: setInlineErrors,
+        triggerErrors: true
+      });
       return;
     }
 
@@ -733,16 +760,14 @@ function Form({
               index = error.index;
               message = error.message;
             }
-            if (errType === 'html5') {
-              setFormElementError({
-                formRef,
-                fieldKey,
-                message,
-                index
-              });
-            } else {
-              newInlineErrors[fieldKey] = { message, index };
-            }
+            setFormElementError({
+              formRef,
+              fieldKey,
+              message,
+              index,
+              errorType: errType,
+              inlineErrors: newInlineErrors
+            });
           });
         },
         setStep: (stepKey) => {
@@ -762,16 +787,14 @@ function Form({
       if (stepChanged) return;
 
       // do validation check in case user has manually invalidated the step
-      if (errType === 'html5') {
-        formRef.current.reportValidity();
-        if (!formRef.current.checkValidity()) return;
-      } else if (errType === 'inline') {
-        setInlineErrors(JSON.parse(JSON.stringify(newInlineErrors)));
-        const invalid = Object.values(newInlineErrors).find(
-          (data) => data.message
-        );
-        if (invalid) return;
-      }
+      const invalid = setFormElementError({
+        formRef,
+        errorType: errType,
+        inlineErrors: newInlineErrors,
+        setInlineErrors,
+        triggerErrors: true
+      });
+      if (invalid) return;
 
       // async execution after user's onSubmit
       return handleSubmitRedirect({
@@ -1055,6 +1078,19 @@ function Form({
     // Multi-file upload is not a repeated row but a repeated field
     valueRepeatIndex = null
   } = {}) => {
+    if (trigger === 'googleMaps') {
+      setGMapFilled(true);
+      fieldKeys.forEach((fieldKey) => {
+        setFormElementError({
+          formRef,
+          fieldKey,
+          message: '',
+          errorType: errType,
+          setInlineErrors: setInlineErrors,
+          triggerErrors: true
+        });
+      });
+    }
     if (typeof onChange === 'function') {
       const formattedFields = formatAllStepFields(steps, fieldValues);
       const { userKey } = initInfo();
@@ -1470,6 +1506,10 @@ function Form({
                     lazy={false}
                     unmask
                     fieldValue={stringifyWithNull(fieldVal)}
+                    onBlur={() => {
+                      if (servar.type === 'gmap_line_1')
+                        setGMapBlurKey(servar.key);
+                    }}
                     onClick={onClick}
                     onAccept={(val) => {
                       changeValue(val, field, index, false);
