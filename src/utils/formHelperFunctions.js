@@ -396,7 +396,7 @@ function setFormElementError({
       elements.forEach((e) => e.setCustomValidity(message));
     }
     if (triggerErrors) formRef.current.reportValidity();
-    return formRef.current.checkValidity();
+    return !formRef.current.checkValidity();
   } else if (errorType === 'inline') {
     if (fieldKey) inlineErrors[fieldKey] = { message };
     if (triggerErrors)
