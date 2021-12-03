@@ -18,7 +18,8 @@ function SingleOtpInput({
   inlineError,
   changeCodeAtFocus,
   focusPrevInput,
-  focusNextInput
+  focusNextInput,
+  shouldFocus
 }) {
   const input = useRef(null);
 
@@ -42,6 +43,7 @@ function SingleOtpInput({
   useHotkeys(
     'enter, backspace, delete, left, right, space',
     (e, handler) => {
+      if (!shouldFocus) return;
       switch (handler.key) {
         case 'enter':
           e.preventDefault();
@@ -69,7 +71,7 @@ function SingleOtpInput({
       }
     },
     {
-      enableOnTags: ['INPUT', 'TEXTAREA']
+      enableOnTags: ['INPUT']
     }
   );
 
@@ -105,13 +107,13 @@ function SingleOtpInput({
 function OtpInput({
   element,
   applyStyles,
-  autofocus,
+  shouldFocus,
   onChange,
   onClick,
   value,
   inlineError
 }) {
-  const [activeInput, setActiveInput] = useState(autofocus ? 0 : -1);
+  const [activeInput, setActiveInput] = useState(shouldFocus ? 0 : -1);
   const [pasted, setPasted] = useState(false);
   const [rawValue, setRawValue] = useState(value.toString().split(''));
 
@@ -223,6 +225,7 @@ function OtpInput({
           changeCodeAtFocus={changeCodeAtFocus}
           focusPrevInput={focusPrevInput}
           focusNextInput={focusNextInput}
+          shouldFocus={shouldFocus}
         />
       );
     }
@@ -248,7 +251,7 @@ function PinInputField({
   applyStyles,
   fieldLabel,
   inlineError,
-  autofocus = false,
+  shouldFocus = false,
   fieldVal = '',
   onClick = () => {},
   onChange = () => {}
@@ -257,7 +260,7 @@ function PinInputField({
     <div style={{ display: 'flex' }}>
       {fieldLabel}
       <OtpInput
-        autofocus={autofocus}
+        shouldFocus={shouldFocus}
         value={fieldVal}
         applyStyles={applyStyles}
         element={element}

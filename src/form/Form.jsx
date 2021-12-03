@@ -1435,7 +1435,7 @@ function Form({
                       onChange();
                     }}
                     inlineError={inlineErr}
-                    autofocus
+                    shouldFocus
                   />
                 );
               case 'multiselect':
