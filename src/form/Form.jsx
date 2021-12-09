@@ -434,7 +434,6 @@ function Form({
         setValues: (userVals) => {
           const values = convertFilesToFilePromises(userVals, fileServarKeys);
           updateFieldValues(values);
-          client.submitCustom(values);
         },
         setProgress: (val) => setUserProgress(val),
         setOptions: updateFieldOptions(steps, newStep),
@@ -748,7 +747,6 @@ function Form({
         setValues: (userVals) => {
           const values = convertFilesToFilePromises(userVals, fileServarKeys);
           updateFieldValues(values);
-          client.submitCustom(values);
         },
         setOptions: updateFieldOptions(steps),
         setErrors: (errors) => {
@@ -1004,7 +1002,6 @@ function Form({
                 fileServarKeys
               );
               updateFieldValues(values);
-              client.submitCustom(values);
             },
             setStep: (stepKey) => {
               stepChanged = changeStep(stepKey, activeStep.key, steps, history);
@@ -1099,7 +1096,6 @@ function Form({
         setValues: (userVals) => {
           const values = convertFilesToFilePromises(userVals, fileServarKeys);
           updateFieldValues(values);
-          client.submitCustom(values);
         },
         setOptions: updateFieldOptions(steps)
       });
