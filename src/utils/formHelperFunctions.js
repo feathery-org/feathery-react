@@ -350,8 +350,16 @@ function shouldElementHide({ fields, values, element }) {
     if (!target) return false;
 
     value = getFieldValue(target, values).value;
-  } else if (hideIf.field_type === 'custom') {
-    value = values[hideIf.custom];
+  } else if (hideIf.field_type === 'hidden') {
+    const targets = fields.filter(
+      (field) => field.servar.id === hideIf.hidden_field
+    );
+    const target = targets[element.repeat ?? 0];
+
+    // If the field we're based on isn't there, don't hide
+    if (!target) return false;
+
+    value = getFieldValue(target, values).value;
   }
 
   // If the hideIf value is an empty string, we want to match on the "empty" value of a field
