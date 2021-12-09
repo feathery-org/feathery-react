@@ -63,7 +63,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}panel/session/?form_key=formKey&fuser_key=userKey`,
+        `${API_URL}panel/session/v2/?form_key=formKey&fuser_key=userKey`,
         {
           cache: 'no-store',
           importance: 'high',
@@ -88,7 +88,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}panel/custom/submit/v2/`,
+        `${API_URL}panel/custom/submit/v3/`,
         {
           cache: 'no-store',
           headers: { Authorization: 'Token apiKey' },

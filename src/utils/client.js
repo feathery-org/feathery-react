@@ -169,7 +169,7 @@ export default class Client {
       ...(userKey ? { fuser_key: userKey } : {}),
       ...(authId ? { auth_id: authId } : {})
     });
-    const url = `${API_URL}panel/session/?${params}`;
+    const url = `${API_URL}panel/session/v2/?${params}`;
     const options = { importance: 'high' };
     return this._fetch(url, options).then((response) => response.json());
   }
@@ -184,7 +184,7 @@ export default class Client {
       auth_email: authEmail,
       ...(userKey ? { fuser_key: userKey } : {})
     };
-    const url = `${API_URL}panel/update_auth/`;
+    const url = `${API_URL}panel/update_auth/v2/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'PATCH',
@@ -201,7 +201,7 @@ export default class Client {
 
   submitCustom(customKeyValues) {
     const { userKey } = initInfo();
-    const url = `${API_URL}panel/custom/submit/v2/`;
+    const url = `${API_URL}panel/custom/submit/v3/`;
 
     const jsonKeyVals = {};
     const formData = new FormData();
@@ -272,7 +272,7 @@ export default class Client {
   async submitPlaidUserData(publicToken) {
     await initFormsPromise;
     const { userKey } = initInfo();
-    const url = `${API_URL}plaid/user_data/`;
+    const url = `${API_URL}plaid/user_data/v2/`;
     const data = {
       public_token: publicToken,
       form_key: this.formKey,
