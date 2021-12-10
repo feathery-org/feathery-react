@@ -32,13 +32,14 @@ function TextElement({
   applyStyles,
   values = null,
   handleRedirect = () => {},
-  conditions = []
+  conditions = [],
+  elementProps
 }) {
   const styles = useMemo(() => applyTextStyles(element, applyStyles), [
     applyStyles
   ]);
   return (
-    <div css={styles.getTarget('text')}>
+    <div css={styles.getTarget('text')} {...elementProps}>
       <TextNodes
         element={element}
         values={values}

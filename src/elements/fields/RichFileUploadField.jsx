@@ -11,7 +11,8 @@ function RichFileUploadField({
   required = false,
   onChange: customOnChange = () => {},
   onClick: customOnClick = () => {},
-  initialFile = null
+  initialFile = null,
+  elementProps = {}
 }) {
   const servar = element.servar;
   const showIcon = element.properties.icon_url !== '';
@@ -76,6 +77,7 @@ function RichFileUploadField({
         overflow: 'hidden',
         ...applyStyles.getTarget('fc')
       }}
+      {...elementProps}
     >
       {showIcon && !fileExists && (
         <Image

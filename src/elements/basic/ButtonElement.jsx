@@ -71,7 +71,8 @@ function ButtonElement({
   values = null,
   loader = null,
   handleRedirect = () => {},
-  onClick = () => {}
+  onClick = () => {},
+  elementProps = {}
 }) {
   const styles = useMemo(() => applyButtonStyles(element, applyStyles), [
     applyStyles
@@ -97,6 +98,7 @@ function ButtonElement({
       }}
       disabled={element.properties.link === 'none' || loader}
       onClick={onClick}
+      {...elementProps}
     >
       <div style={{ display: 'flex', position: 'relative' }}>
         <TextNodes

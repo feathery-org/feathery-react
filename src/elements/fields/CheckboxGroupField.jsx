@@ -10,12 +10,13 @@ function CheckboxGroupField({
   otherVal = '',
   onChange = () => {},
   onOtherChange = () => {},
-  onClick = () => {}
+  onClick = () => {},
+  elementProps = {}
 }) {
   const servar = element.servar;
   const otherChecked = fieldVal.includes(otherVal);
   return (
-    <div css={applyStyles.getTarget('fc')}>
+    <div css={applyStyles.getTarget('fc')} {...elementProps}>
       {fieldLabel}
       {servar.metadata.options.map((opt, i) => {
         return (

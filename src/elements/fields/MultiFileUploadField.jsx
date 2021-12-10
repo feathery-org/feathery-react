@@ -12,7 +12,8 @@ function MultiFileUploadField({
   required = false,
   onChange: customOnChange = () => {},
   onClick: customOnClick = () => {},
-  initialFiles = null
+  initialFiles = null,
+  elementProps = {}
 }) {
   const servar = element.servar;
   const showIcon = element.properties.icon_url !== '';
@@ -62,6 +63,7 @@ function MultiFileUploadField({
         flexWrap: 'wrap',
         ...applyStyles.getTarget('fc')
       }}
+      {...elementProps}
     >
       {thumbnailData.map(({ filename, thumbnail }, index) => (
         <div

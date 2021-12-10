@@ -110,11 +110,12 @@ function ColorPickerField({
   applyStyles,
   fieldVal = 'FFFFFFFF',
   onChange = () => {},
-  onClick = () => {}
+  onClick = () => {},
+  elementProps = {}
 }) {
   const [showPicker, setShowPicker] = useState(false);
   return (
-    <div css={applyStyles.getTarget('fc')}>
+    <div css={applyStyles.getTarget('fc')} {...elementProps}>
       {fieldLabel}
       <div
         css={{
