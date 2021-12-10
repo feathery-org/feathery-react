@@ -7,11 +7,12 @@ function CheckboxField({
   fieldLabel,
   fieldVal = true,
   onChange = () => {},
-  onClick = () => {}
+  onClick = () => {},
+  elementProps = {}
 }) {
   const servar = element.servar;
   return (
-    <div css={applyStyles.getTarget('fc')}>
+    <div css={applyStyles.getTarget('fc')} {...elementProps}>
       {fieldLabel}
       <Form.Check
         id={servar.key}

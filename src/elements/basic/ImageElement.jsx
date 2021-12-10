@@ -14,7 +14,7 @@ function applyImageStyles(element, applyStyles) {
   return applyStyles;
 }
 
-function ImageElement({ element, applyStyles }) {
+function ImageElement({ element, applyStyles, elementProps = {} }) {
   const styles = useMemo(() => applyImageStyles(element, applyStyles), [
     applyStyles
   ]);
@@ -26,6 +26,7 @@ function ImageElement({ element, applyStyles }) {
         objectFit: 'contain',
         ...styles.getTarget('image')
       }}
+      {...elementProps}
     />
   );
 }

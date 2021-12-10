@@ -60,6 +60,7 @@ function Form({
   initialValues = {},
   initialStepId = '',
   usePreviousUserData = true,
+  elementProps = {},
   style = {},
   className = '',
   children
@@ -1172,6 +1173,7 @@ function Form({
               progress={userProgress}
               curDepth={curDepth}
               maxDepth={maxDepth}
+              elementProps={elementProps[pb.id]}
             />
           ))}
         {activeStep.images
@@ -1188,6 +1190,7 @@ function Form({
               key={reactFriendlyKey(element)}
               componentOnly={false}
               element={element}
+              elementProps={elementProps[element.id]}
             />
           ))}
         {activeStep.texts
@@ -1207,6 +1210,7 @@ function Form({
               values={fieldValues}
               handleRedirect={handleRedirect}
               conditions={activeStep.next_conditions}
+              elementProps={elementProps[element.id]}
             />
           ))}
         {activeStep.buttons
@@ -1231,6 +1235,7 @@ function Form({
               handleRedirect={handleRedirect}
               onClick={() => buttonOnClick(element)}
               setSubmitRef={(newRef) => (submitRef.current = newRef)}
+              elementProps={elementProps[element.id]}
             />
           ))}
         {activeStep.servar_fields
@@ -1300,6 +1305,7 @@ function Form({
               key: reactFriendlyKey(field),
               element: field,
               componentOnly: false,
+              elementProps: elementProps[servar.key],
               required
             };
 

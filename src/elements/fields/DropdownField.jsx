@@ -11,7 +11,8 @@ export default function DropdownField({
   required = false,
   fieldVal = '',
   onClick = () => {},
-  onChange = () => {}
+  onChange = () => {},
+  ...elementProps
 }) {
   const servar = element.servar;
 
@@ -37,6 +38,7 @@ export default function DropdownField({
         maxWidth: '100%',
         ...applyStyles.getTarget('fc')
       }}
+      {...elementProps}
     >
       {fieldLabel}
       <div

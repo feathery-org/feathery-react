@@ -5,7 +5,8 @@ function ButtonGroupField({
   applyStyles,
   fieldLabel,
   fieldVal = null,
-  onClick = () => {}
+  onClick = () => {},
+  elementProps = {}
 }) {
   const servar = element.servar;
   return (
@@ -18,6 +19,7 @@ function ButtonGroupField({
           width: '100%',
           ...applyStyles.getTarget('fc')
         }}
+        {...elementProps}
       >
         {servar.metadata.options.map((opt, index) => {
           const imageUrl = servar.metadata.option_image_urls[index];

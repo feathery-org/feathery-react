@@ -5,7 +5,8 @@ function SignatureField({
   element,
   fieldLabel,
   applyStyles,
-  signatureRef = {}
+  signatureRef = {},
+  elementProps = {}
 }) {
   const servar = element.servar;
   return (
@@ -14,6 +15,7 @@ function SignatureField({
         ...applyStyles.getTarget('fc'),
         maxWidth: '100%'
       }}
+      {...elementProps}
     >
       {fieldLabel}
       <SignatureCanvas

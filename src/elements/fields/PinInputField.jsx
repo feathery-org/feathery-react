@@ -254,10 +254,11 @@ function PinInputField({
   shouldFocus = false,
   fieldVal = '',
   onClick = () => {},
-  onChange = () => {}
+  onChange = () => {},
+  elementProps = {}
 }) {
   return (
-    <div style={{ display: 'flex' }}>
+    <div style={{ display: 'flex' }} {...elementProps}>
       {fieldLabel}
       <OtpInput
         shouldFocus={shouldFocus}

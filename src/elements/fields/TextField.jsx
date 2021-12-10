@@ -84,6 +84,7 @@ function TextField({
   onBlur = () => {},
   onChange = () => {},
   onClick = () => {},
+  elementProps = {},
   inlineError,
   inputRef,
   ...fieldProps
@@ -96,6 +97,7 @@ function TextField({
         maxWidth: '100%',
         ...applyStyles.getTarget('fc')
       }}
+      {...elementProps}
     >
       {fieldLabel}
       <div
