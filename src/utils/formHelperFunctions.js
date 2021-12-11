@@ -129,109 +129,46 @@ const lookupElementKey = (step, elementID, elementType) => {
   } else return '';
 };
 
-const nextStepKey = (
-  nextConditions,
-  metadata,
-  steps,
-  fieldValues,
-  stepSequence,
-  sequenceIndex
-) => {
-  let newKey;
-  let defaultKey = null;
-  let sequenceValues = [];
-  const inSequence = {};
-  const notInSequence = [];
+const nextStepKey = (nextConditions, metadata, fieldValues) => {
+  let newKey = null;
   nextConditions
     .filter(
       (cond) =>
         cond.element_type === metadata.elementType &&
-        metadata.elementIDs.includes(cond.element_id)
+        metadata.elementIDs.includes(cond.element_id) &&
+        cond.trigger === metadata.trigger &&
+        cond.metadata.start === metadata.start &&
+        cond.metadata.end === metadata.end
     )
     .forEach((cond) => {
-      if (
-        cond.trigger !== metadata.trigger ||
-        cond.metadata.start !== metadata.start ||
-        cond.metadata.end !== metadata.end
-      )
-        return;
-
-      if (cond.rules.length === 0) defaultKey = cond.next_step_key;
-      else {
-        let rulesMet = true;
-        cond.rules.forEach((rule) => {
-          const userVal = fieldValues[rule.key] || '';
-          const ruleVal = rule.value || '';
-          if (Array.isArray(userVal)) {
-            rulesMet = false;
-            const equal =
-              userVal.includes(ruleVal) && rule.comparison === 'equal';
-            const notEqual =
-              !userVal.includes(ruleVal) && rule.comparison === 'not_equal';
-            if (equal || notEqual) {
-              if (equal) inSequence[ruleVal] = cond.next_step_key;
-              else if (notEqual) notInSequence.push(cond.next_step_key);
-
-              if (sequenceValues.length === 0) sequenceValues = userVal;
-            }
+      let rulesMet = true;
+      cond.rules.forEach((rule) => {
+        const userVal = fieldValues[rule.key] || '';
+        const ruleVal = rule.value || '';
+        let ruleMet;
+        if (Array.isArray(userVal)) {
+          const equal =
+            userVal.includes(ruleVal) && rule.comparison === 'equal';
+          const notEqual =
+            !userVal.includes(ruleVal) && rule.comparison === 'not_equal';
+          ruleMet = equal || notEqual;
+        } else {
+          if (rule.comparison === 'is_type') {
+            ruleMet =
+              (ruleVal === 'email' && emailPattern.test(userVal)) ||
+              (ruleVal === 'phone' && phonePattern.test(userVal));
           } else {
-            let ruleMet;
-            if (rule.comparison === 'is_type') {
-              ruleMet =
-                (ruleVal === 'email' && emailPattern.test(userVal)) ||
-                (ruleVal === 'phone' && phonePattern.test(userVal));
-            } else {
-              const equal = userVal === ruleVal;
-              ruleMet =
-                (equal && rule.comparison === 'equal') ||
-                (!equal && rule.comparison === 'not_equal');
-            }
-            rulesMet &= ruleMet;
+            const equal = userVal === ruleVal;
+            ruleMet =
+              (equal && rule.comparison === 'equal') ||
+              (!equal && rule.comparison === 'not_equal');
           }
-        });
-        if (rulesMet) newKey = cond.next_step_key;
-      }
+        }
+        rulesMet &= ruleMet;
+      });
+      if (rulesMet) newKey = cond.next_step_key;
     });
-
-  // TODO: remove advanced navigation logic once Upfront migrates off
-  // order and compose new sequence
-  let newSequence = sequenceValues
-    .map((val) => inSequence[val])
-    .filter(Boolean);
-  newSequence = [...newSequence, ...notInSequence];
-
-  let newStepKey = newKey || defaultKey || '';
-  if (newSequence.length === 1 && stepSequence.length > 0 && !newStepKey) {
-    // Go back in dynamic sequence
-    if (sequenceIndex <= 1) newStepKey = newSequence[0];
-    else {
-      sequenceIndex--;
-      newStepKey = stepSequence[sequenceIndex - 1];
-    }
-  } else {
-    // Go forward in dynamic sequence
-    if (newSequence.length > 0 && !newStepKey) {
-      // Propagate new array rules since they exist
-      stepSequence = newSequence;
-      sequenceIndex = 0;
-    }
-
-    if (stepSequence.includes(newStepKey)) {
-      sequenceIndex = stepSequence.indexOf(newStepKey) + 1;
-    } else if (
-      !newStepKey &&
-      stepSequence.length > sequenceIndex &&
-      ['button', 'text'].includes(metadata.elementType)
-    ) {
-      newStepKey = stepSequence[sequenceIndex];
-      sequenceIndex++;
-    }
-  }
-  return {
-    newStepKey,
-    newSequence: stepSequence,
-    newSequenceIndex: sequenceIndex
-  };
+  return newKey;
 };
 
 const getOrigin = (steps) => {
@@ -242,44 +179,22 @@ const getOrigin = (steps) => {
   return originKey;
 };
 
-const recurseDepth = (steps, originKey, curKey, stepSequence) => {
+const recurseDepth = (steps, originKey, curKey) => {
   let curDepth = 0;
   let maxDepth = 0;
-  if (stepSequence.includes(curKey)) {
-    // If the user is in a custom sequence, figure out:
-    // * how many steps to the end from the last step of the sequence
-    // * how many steps from the origin to the beginning of the sequence
-    // * length of the sequence itself
-    const [endSequenceDepth] = recurseDepth(
-      steps,
-      stepSequence.at(-1),
-      stepSequence.at(-1),
-      []
-    );
-    const [beginningSequenceDepth] = recurseDepth(
-      steps,
-      originKey,
-      stepSequence[0],
-      []
-    );
-    curDepth = beginningSequenceDepth + stepSequence.indexOf(curKey);
-    maxDepth =
-      beginningSequenceDepth + stepSequence.length - 1 + endSequenceDepth;
-  } else {
-    const seenStepKeys = new Set();
-    const stepQueue = [[steps[originKey], 0]];
-    while (stepQueue.length > 0) {
-      const [step, depth] = stepQueue.shift();
-      if (seenStepKeys.has(step.key)) continue;
-      seenStepKeys.add(step.key);
+  const seenStepKeys = new Set();
+  const stepQueue = [[steps[originKey], 0]];
+  while (stepQueue.length > 0) {
+    const [step, depth] = stepQueue.shift();
+    if (seenStepKeys.has(step.key)) continue;
+    seenStepKeys.add(step.key);
 
-      if (step.key === curKey) curDepth = depth;
-      maxDepth = depth;
+    if (step.key === curKey) curDepth = depth;
+    maxDepth = depth;
 
-      step.next_conditions.forEach((condition) => {
-        stepQueue.push([steps[condition.next_step_key], depth + 1]);
-      });
-    }
+    step.next_conditions.forEach((condition) => {
+      stepQueue.push([steps[condition.next_step_key], depth + 1]);
+    });
   }
   return [curDepth, maxDepth];
 };
