@@ -59,7 +59,7 @@ function Form({
   onSkip = null,
   initialValues = {},
   initialStepId = '',
-  usePreviousUserData = true,
+  usePreviousUserData = null,
   elementProps = {},
   style = {},
   className = '',
@@ -86,6 +86,7 @@ function Form({
   const [errType, setErrType] = useState('html5');
   const [inlineErrors, setInlineErrors] = useState({});
   const [repeatChanged, setRepeatChanged] = useState(false);
+  const [usePreviousData, setUsePreviousData] = useState(usePreviousUserData);
 
   const [integrations, setIntegrations] = useState({});
   const [plaidLinked, setPlaidLinked] = useState(false);
@@ -328,9 +329,9 @@ function Form({
     if (rerender || empty) setRender((render) => !render);
   };
 
-  function updateSessionValues(session) {
+  function updateSessionValues(session, useSessionData) {
     // Don't track previous sessions if toggled
-    if (!usePreviousUserData) return;
+    if (useSessionData === false || usePreviousData === false) return;
 
     // Convert files of the format { url, path } to Promise<File>
     const filePromises = objectMap(session.file_values, (fileOrFiles) =>
@@ -467,7 +468,12 @@ function Form({
           setSteps(data);
           setRedirectUrl(stepsResponse.redirect_url);
           setErrType(stepsResponse.error_type);
-          return [data, stepsResponse.save_user_location];
+          setUsePreviousData((usePreviousData) =>
+            usePreviousData === null
+              ? stepsResponse.save_user_data
+              : usePreviousData
+          );
+          return [data, stepsResponse];
         })
         .catch((error) => console.log(error));
 
@@ -484,18 +490,28 @@ function Form({
           );
           if (newSession) session = newSession;
 
-          fetchPromise.then(async ([data, saveUserLocation]) => {
-            updateFieldValues(getDefaultFieldValues(data));
-            updateSessionValues(session);
-            const hashKey = decodeURI(location.hash.substr(1));
-            const newKey =
-              initialStepId ||
-              (hashKey && hashKey in data && hashKey) ||
-              (saveUserLocation && session.current_step_key) ||
-              getOrigin(data);
-            setFirstStep(newKey);
-            history.replace(location.pathname + location.search + `#${newKey}`);
-          });
+          fetchPromise.then(
+            async ([
+              data,
+              {
+                save_user_location: saveUserLocation,
+                save_user_data: saveUserData
+              }
+            ]) => {
+              updateFieldValues(getDefaultFieldValues(data));
+              updateSessionValues(session, saveUserData);
+              const hashKey = decodeURI(location.hash.substr(1));
+              const newKey =
+                initialStepId ||
+                (hashKey && hashKey in data && hashKey) ||
+                (saveUserLocation && session.current_step_key) ||
+                getOrigin(data);
+              setFirstStep(newKey);
+              history.replace(
+                location.pathname + location.search + `#${newKey}`
+              );
+            }
+          );
         })
         .catch((error) => {
           // Use default values if origin fails
