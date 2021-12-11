@@ -82,8 +82,6 @@ function Form({
   const [userProgress, setUserProgress] = useState(null);
   const [curDepth, setCurDepth] = useState(0);
   const [maxDepth, setMaxDepth] = useState(0);
-  const [stepSequence, setStepSequence] = useState([]);
-  const [sequenceIndex, setSequenceIndex] = useState(0);
   const [redirectUrl, setRedirectUrl] = useState('');
   const [errType, setErrType] = useState('html5');
   const [inlineErrors, setInlineErrors] = useState({});
@@ -397,12 +395,7 @@ function Form({
     }
     newStep = JSON.parse(JSON.stringify(newStep));
 
-    const [curDepth, maxDepth] = recurseDepth(
-      steps,
-      getOrigin(steps),
-      newKey,
-      stepSequence
-    );
+    const [curDepth, maxDepth] = recurseDepth(steps, getOrigin(steps), newKey);
     setCurDepth(curDepth);
     setMaxDepth(maxDepth);
 
@@ -454,13 +447,7 @@ function Form({
     }
     setLoaders({});
 
-    const eventData = { step_key: newKey, event: 'load' };
-    if (stepSequence.includes(newKey)) {
-      const newSequenceIndex = stepSequence.indexOf(newKey) + 1;
-      setSequenceIndex(newSequenceIndex);
-      eventData.current_sequence_index = newSequenceIndex;
-    }
-    client.registerEvent(eventData);
+    client.registerEvent({ step_key: newKey, event: 'load' });
   };
 
   useEffect(() => {
@@ -490,8 +477,6 @@ function Form({
       clientInstance
         .fetchSession()
         .then(async (session) => {
-          setStepSequence(session.step_sequence);
-          setSequenceIndex(session.current_sequence_index);
           setIntegrations(session.integrations);
           const newSession = await initializeIntegrations(
             session.integrations,
@@ -726,13 +711,10 @@ function Form({
         integrations.plaid,
         fieldValues
       );
-      const { newStepKey } = nextStepKey(
+      const newStepKey = nextStepKey(
         activeStep.next_conditions,
         metadata,
-        steps,
-        fieldValues,
-        stepSequence,
-        sequenceIndex
+        fieldValues
       );
       const elementType = metadata.elementType;
       await setLoader();
@@ -888,24 +870,14 @@ function Form({
     };
 
     if (!redirectKey) {
-      const { newStepKey, newSequence, newSequenceIndex } = nextStepKey(
+      const newStepKey = nextStepKey(
         activeStep.next_conditions,
         metadata,
-        steps,
-        fieldValues,
-        stepSequence,
-        sequenceIndex
+        fieldValues
       );
 
-      setSequenceIndex(newSequenceIndex);
-      setStepSequence(newSequence);
       redirectKey = newStepKey;
-      eventData = {
-        ...eventData,
-        next_step_key: newStepKey,
-        current_sequence_index: newSequenceIndex,
-        step_sequence: newSequence
-      };
+      eventData = { ...eventData, next_step_key: newStepKey };
     }
 
     if (!redirectKey) {

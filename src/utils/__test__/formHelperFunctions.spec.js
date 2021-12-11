@@ -212,23 +212,18 @@ describe('formHelperFunctions', () => {
       ];
 
       // Act
-      const { newStepKey, newSequence, newSequenceIndex } = nextStepKey(
+      const newStepKey = nextStepKey(
         conditions,
         {
           elementType,
           elementIDs,
           trigger
         },
-        null,
-        {},
-        [nextKey],
-        0
+        {}
       );
 
       // Assert
       expect(newStepKey).toEqual(nextKey);
-      expect(newSequence).toEqual([nextKey]);
-      expect(newSequenceIndex).toEqual(1);
     });
 
     it('returns the next step for a single condition rule', () => {
@@ -258,16 +253,14 @@ describe('formHelperFunctions', () => {
       };
 
       // Act
-      const { newStepKey } = nextStepKey(
+      const newStepKey = nextStepKey(
         conditions,
         {
           elementType,
           elementIDs,
           trigger
         },
-        null,
-        fieldValues,
-        []
+        fieldValues
       );
 
       // Assert
@@ -301,23 +294,18 @@ describe('formHelperFunctions', () => {
       };
 
       // Act
-      const { newStepKey, newSequence, newSequenceIndex } = nextStepKey(
+      const newStepKey = nextStepKey(
         conditions,
         {
           elementType,
           elementIDs,
           trigger
         },
-        null,
-        fieldValues,
-        [],
-        0
+        fieldValues
       );
 
       // Assert
       expect(newStepKey).toEqual(nextKey);
-      expect(newSequence).toEqual([nextKey]);
-      expect(newSequenceIndex).toEqual(1);
     });
 
     it('returns the next step for multiple condition rules', () => {
@@ -352,16 +340,14 @@ describe('formHelperFunctions', () => {
       };
 
       // Act
-      const { newStepKey } = nextStepKey(
+      const newStepKey = nextStepKey(
         conditions,
         {
           elementType,
           elementIDs,
           trigger
         },
-        null,
-        fieldValues,
-        []
+        fieldValues
       );
 
       // Assert
