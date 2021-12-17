@@ -35,7 +35,7 @@ describe('RadioButtonGroupField', () => {
           },
           type: 'select'
         },
-        properties: { icon_url: 'https://feathery.tech' }
+        properties: { icon: 'https://feathery.tech' }
       },
       required: true,
       onChange: jest.fn(),
@@ -85,7 +85,7 @@ describe('RadioButtonGroupField', () => {
           },
           type: 'select'
         },
-        properties: { icon_url: 'https://feathery.tech' }
+        properties: { icon: 'https://feathery.tech' }
       },
       required: true,
       onChange: jest.fn(),
@@ -136,7 +136,7 @@ describe('RadioButtonGroupField', () => {
           type: 'select',
           other: true
         },
-        properties: { icon_url: 'https://feathery.tech' }
+        properties: { icon: 'https://feathery.tech' }
       },
       required: true,
       onChange: jest.fn(),

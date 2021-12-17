@@ -38,7 +38,7 @@ describe('RichFileUploadField', () => {
           metadata: {
             file_types: 'image/*'
           },
-          icon_url: 'https://feathery.io'
+          icon: 'https://feathery.io'
         }
       },
       required: true,

@@ -34,7 +34,7 @@ describe('CheckboxGroupField', () => {
         },
         type: 'select'
       },
-      properties: { icon_url: 'https://feathery.tech' }
+      properties: { icon: 'https://feathery.tech' }
     };
     const props = {
       element,

@@ -925,7 +925,7 @@ function Form({
   const setButtonLoader = async (button) => {
     const bp = button.properties;
     let loader = null;
-    if (!bp.loading_icon_url) {
+    if (!bp.loading_icon) {
       loader = (
         <Spinner
           animation='border'
@@ -958,9 +958,9 @@ function Form({
         />
       );
     } else if (bp.loading_file_type === 'image') {
-      loader = <img src={bp.loading_icon_url} alt='Button Loader' />;
+      loader = <img src={bp.loading_icon} alt='Button Loader' />;
     } else if (bp.loading_file_type === 'lottie_json') {
-      const animationData = await fetch(bp.loading_icon_url).then((response) =>
+      const animationData = await fetch(bp.loading_icon).then((response) =>
         response.json()
       );
       loader = <Lottie animationData={animationData} loop autoplay />;
@@ -970,7 +970,7 @@ function Form({
       [button.id]: {
         showOn: bp.show_loading_icon,
         loader,
-        type: bp.loading_icon_url ? bp.loading_file_type : 'default'
+        type: bp.loading_icon ? bp.loading_file_type : 'default'
       }
     }));
   };

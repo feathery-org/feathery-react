@@ -22,7 +22,7 @@ function ButtonGroupField({
         {...elementProps}
       >
         {servar.metadata.options.map((opt, index) => {
-          const imageUrl = servar.metadata.option_image_urls[index];
+          const imageUrl = servar.metadata.option_images[index];
           return (
             <div
               id={servar.key}

@@ -8,7 +8,7 @@ describe('ImageElement', () => {
     // Arrange
     const props = {
       element: {
-        properties: { source_url: '' },
+        properties: { source_image: '' },
         column_index: 0,
         row_index: 0,
         column_index_end: 0,

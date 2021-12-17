@@ -15,7 +15,7 @@ function RichFileUploadField({
   elementProps = {}
 }) {
   const servar = element.servar;
-  const showIcon = element.properties.icon_url !== '';
+  const showIcon = element.properties.icon !== '';
   const showLabel = servar.name !== '';
   const fileInput = useRef();
 
@@ -81,7 +81,7 @@ function RichFileUploadField({
     >
       {showIcon && !fileExists && (
         <Image
-          src={element.properties.icon_url}
+          src={element.properties.icon}
           fluid
           style={{
             maxWidth: '100%',
