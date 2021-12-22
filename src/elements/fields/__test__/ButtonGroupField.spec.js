@@ -34,7 +34,7 @@ describe('ButtonGroupField', () => {
           },
           type: 'select'
         },
-        properties: { icon_url: 'https://feathery.tech' }
+        properties: { icon: 'https://feathery.tech' }
       },
       required: true,
       onChange: jest.fn(),
@@ -80,11 +80,11 @@ describe('ButtonGroupField', () => {
           name: 'Name',
           metadata: {
             options: ['opt1', 'opt2'],
-            option_image_urls: ['', '']
+            option_images: ['', '']
           },
           type: 'select'
         },
-        properties: { icon_url: 'https://feathery.tech' }
+        properties: { icon: 'https://feathery.tech' }
       },
       required: true,
       onChange: jest.fn(),

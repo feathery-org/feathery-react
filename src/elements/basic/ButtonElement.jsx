@@ -107,9 +107,9 @@ function ButtonElement({
           applyStyles={applyStyles}
           handleRedirect={handleRedirect}
         />
-        {element.properties.image_url && (
+        {element.properties.image && (
           <img
-            src={element.properties.image_url}
+            src={element.properties.image}
             style={{
               objectFit: 'contain',
               width: '100%',

@@ -20,7 +20,7 @@ function ImageElement({ element, applyStyles, elementProps = {} }) {
   ]);
   return (
     <img
-      src={element.properties.source_url}
+      src={element.properties.source_image}
       alt='Form Image'
       css={{
         objectFit: 'contain',
