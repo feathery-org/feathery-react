@@ -1497,9 +1497,7 @@ function Form({
                 return (
                   <Elements.TextField
                     {...fieldProps}
-                    lazy={false}
-                    unmask
-                    fieldValue={stringifyWithNull(fieldVal)}
+                    rawValue={stringifyWithNull(fieldVal)}
                     onBlur={() => {
                       if (servar.type === 'gmap_line_1')
                         setGMapBlurKey(servar.key);
