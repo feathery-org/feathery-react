@@ -17,11 +17,11 @@ function escapeDefinitionChars(str) {
 
 function constraintChar(allowed) {
   switch (allowed) {
-    case 'letter':
+    case 'letters':
       return 'a';
     case 'alphanumeric':
       return 'b';
-    case 'digit':
+    case 'digits':
       return '0';
     default:
       return '*';
