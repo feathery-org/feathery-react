@@ -239,7 +239,7 @@ describe('formHelperFunctions', () => {
           trigger,
           rules: [
             {
-              key: 'rule-key',
+              field_key: 'rule-key',
               value: 'rule-value',
               comparison: 'equal'
             }
@@ -280,7 +280,7 @@ describe('formHelperFunctions', () => {
           trigger,
           rules: [
             {
-              key: 'rule-key',
+              field_key: 'rule-key',
               value: 'rule-value',
               comparison: 'equal'
             }
@@ -321,12 +321,12 @@ describe('formHelperFunctions', () => {
           trigger,
           rules: [
             {
-              key: 'rule-key',
+              field_key: 'rule-key',
               value: 'rule-value',
               comparison: 'equal'
             },
             {
-              key: 'rule-key',
+              field_key: 'rule-key',
               value: 'not-rule-value',
               comparison: 'not_equal'
             }
