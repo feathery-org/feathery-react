@@ -362,7 +362,7 @@ function shouldElementHide({ fields, values, element }) {
     if (!target) return false;
 
     value = getFieldValue(target, values).value;
-  } else if (hideIf.field_type === 'custom') {
+  } else if (hideIf.field_type === 'hidden') {
     value = values[hideIf.custom];
   }
 
