@@ -37,13 +37,6 @@ export default class Client {
     }
   }
 
-  handleNetworkError(err) {
-    if (err.name === 'APIKeyError') {
-      throw new errors.APIKeyError();
-    }
-    console.log(err);
-  }
-
   async _fetch(url, options) {
     const { apiKey } = initInfo();
     const { headers, ...otherOptions } = options;

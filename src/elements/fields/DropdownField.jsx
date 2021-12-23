@@ -12,7 +12,7 @@ export default function DropdownField({
   fieldVal = '',
   onClick = () => {},
   onChange = () => {},
-  ...elementProps
+  elementProps = {}
 }) {
   const servar = element.servar;
 
