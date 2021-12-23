@@ -27,7 +27,7 @@ export default class Client {
       case 400:
         throw new errors.FetchError('Invalid parameters');
       case 401:
-        throw new errors.FetchError('Invalid API key');
+        throw new errors.APIKeyError();
       case 404:
         throw new errors.FetchError("Can't find object");
       case 500:
@@ -35,6 +35,13 @@ export default class Client {
       default:
         throw new errors.FetchError('Unknown error');
     }
+  }
+
+  handleNetworkError(err) {
+    if (err.name === 'APIKeyError') {
+      throw new errors.APIKeyError();
+    }
+    console.log(err);
   }
 
   async _fetch(url, options) {

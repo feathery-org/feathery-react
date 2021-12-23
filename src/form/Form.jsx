@@ -475,7 +475,7 @@ function Form({
           );
           return [data, stepsResponse];
         })
-        .catch((error) => console.log(error));
+        .catch((error) => clientInstance.handleNetworkError(error));
 
       // fetch values separately because this request
       // goes to Feathery origin, while the previous
@@ -514,6 +514,7 @@ function Form({
           );
         })
         .catch((error) => {
+          clientInstance.handleNetworkError(error);
           // Use default values if origin fails
           fetchPromise.then(async (data) => {
             updateFieldValues(getDefaultFieldValues(data));
@@ -521,7 +522,6 @@ function Form({
             setFirstStep(newKey);
             history.replace(location.pathname + location.search + `#${newKey}`);
           });
-          console.log(error);
         });
     }
   }, [
