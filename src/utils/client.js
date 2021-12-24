@@ -18,14 +18,15 @@ export default class Client {
     this.formKey = formKey;
   }
 
-  _checkResponseSuccess(response) {
+  async _checkResponseSuccess(response) {
+    let payload;
     switch (response.status) {
       case 200:
-        return;
       case 201:
         return;
       case 400:
-        throw new errors.FetchError('Invalid parameters');
+        payload = JSON.stringify(await response.text());
+        throw new errors.FetchError(`Invalid parameters: ${payload}`);
       case 401:
         throw new errors.APIKeyError();
       case 404:
@@ -48,8 +49,8 @@ export default class Client {
       },
       ...otherOptions
     };
-    return fetch(url, options).then((response) => {
-      this._checkResponseSuccess(response);
+    return fetch(url, options).then(async (response) => {
+      await this._checkResponseSuccess(response);
       return response;
     });
   }
