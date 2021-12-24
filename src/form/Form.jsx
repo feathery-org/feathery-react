@@ -960,9 +960,9 @@ function Form({
           }}
         />
       );
-    } else if (bp.loading_file_type === 'image') {
+    } else if (bp.loading_icon_type === 'image/*') {
       loader = <img src={bp.loading_icon} alt='Button Loader' />;
-    } else if (bp.loading_file_type === 'lottie_json') {
+    } else if (bp.loading_icon_type === 'application/json') {
       const animationData = await fetch(bp.loading_icon).then((response) =>
         response.json()
       );
