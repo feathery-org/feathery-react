@@ -1,9 +1,0 @@
-// Jest Snapshot v1, https://goo.gl/fbAQLP
-
-exports[`ImageElement renders an Image element 1`] = `
-<img
-  alt="Form Image"
-  className="css-jyz4m3-ImageElement"
-  src=""
-/>
-`;
