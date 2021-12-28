@@ -700,8 +700,11 @@ function Form({
     });
     if (invalid) return;
 
-    const { loggedIn, errorMessage, errorField } = await handleActions();
+    const { loggedIn, errorMessage, errorField } = await handleActions(
+      setLoader
+    );
     if (errorMessage && errorField) {
+      setLoaders({});
       setFormElementError({
         formRef,
         fieldKey: errorField.key,
@@ -813,16 +816,18 @@ function Form({
     }
   };
 
-  async function handleActions() {
+  async function handleActions(setLoader) {
     for (let i = 0; i < activeStep.servar_fields.length; i++) {
       const servar = activeStep.servar_fields[i].servar;
       const fieldVal = fieldValues[servar.key];
       if (servar.type === 'login') {
+        setLoader();
         return await sendLoginCode(fieldVal, servar);
       } else if (
         servar.type === 'pin_input' &&
         servar.metadata.verify_sms_code
       ) {
+        setLoader();
         return await verifySMSCode(
           fieldVal,
           servar,
