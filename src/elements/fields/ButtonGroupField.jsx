@@ -23,11 +23,15 @@ function ButtonGroupField({
       >
         {servar.metadata.options.map((opt, index) => {
           const imageUrl = servar.metadata.option_images[index];
+          const fieldStyle = applyStyles.getTarget('field');
+          // enforce width
+          fieldStyle.minWidth = fieldStyle.width;
+          fieldStyle.maxWidth = fieldStyle.width;
           return (
             <div
-              id={servar.key}
+              id={`${servar.key}-option-${index + 1}`}
               onClick={onClick}
-              key={opt}
+              key={`${servar.key}-option-${opt}-${index}`}
               css={{
                 boxSizing: 'border-box',
                 display: 'flex',
@@ -35,7 +39,7 @@ function ButtonGroupField({
                 alignItems: 'center',
                 flexDirection: 'column',
                 cursor: 'pointer',
-                ...applyStyles.getTarget('field'),
+                ...fieldStyle,
                 '&:active': applyStyles.getTarget('active'),
                 '&:hover': applyStyles.getTarget('hover'),
                 ...(fieldVal === opt ? applyStyles.getTarget('active') : {})
