@@ -108,8 +108,8 @@ function applyFieldStyles(field, styles) {
       styles.apply('fc', 'vertical_layout', (a) => ({
         justifyContent: a
       }));
-      styles.applyHeight('field');
-      styles.applyWidth('field');
+      styles.applyHeight('field', true);
+      styles.applyWidth('field', true);
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
@@ -130,7 +130,8 @@ function applyFieldStyles(field, styles) {
       styles.applyHeight('field');
       styles.applyBoxShadow('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
-      if (field.properties.placeholder) styles.applyPlaceholderStyles(type, field.styles);
+      if (field.properties.placeholder)
+        styles.applyPlaceholderStyles(type, field.styles);
       break;
     case 'pin_input':
       styles.applyMargin('fc');
@@ -181,7 +182,8 @@ function applyFieldStyles(field, styles) {
       styles.applyBorders('field');
       styles.applyFontStyles('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
-      if (field.properties.placeholder) styles.applyPlaceholderStyles(type, field.styles);
+      if (field.properties.placeholder)
+        styles.applyPlaceholderStyles(type, field.styles);
       styles.apply('tooltipIcon', 'font_size', (a) => ({
         width: `${a}px`
       }));
