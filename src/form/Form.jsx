@@ -57,6 +57,7 @@ function Form({
   onLoad = null,
   onSubmit = null,
   onSkip = null,
+  onError = null,
   initialValues = {},
   initialStepId = '',
   usePreviousUserData = null,
@@ -179,6 +180,7 @@ function Form({
         () =>
           setFormElementError({
             formRef,
+            errorCallback,
             fieldKey: gMapBlurKey,
             message: 'An address must be selected',
             errorType: errType,
@@ -372,6 +374,31 @@ function Form({
     setRawActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
   };
 
+  const commonCallbackProps = {
+    setOptions: updateFieldOptions(steps),
+    setValues: (userVals) => {
+      const values = convertFilesToFilePromises(userVals, fileServarKeys);
+      updateFieldValues(values);
+      client.submitCustom(values);
+    },
+    setProgress: (val) => setUserProgress(val),
+    setStep: (stepKey) => {
+      changeStep(stepKey, activeStep.key, steps, history);
+    },
+    userId: initInfo().userKey,
+    stepName: activeStep?.key ?? ''
+  };
+  const errorCallback = async (props) => {
+    if (typeof onError === 'function') {
+      const formattedFields = formatAllStepFields(steps, fieldValues);
+      await onError({
+        fields: formattedFields,
+        ...props,
+        ...commonCallbackProps
+      });
+    }
+  };
+
   const getNewStep = async (newKey) => {
     let newStep = steps[newKey];
     while (true) {
@@ -412,7 +439,6 @@ function Form({
 
     if (typeof onLoad === 'function') {
       const formattedFields = formatAllStepFields(steps, fieldValues);
-      const { userKey } = initInfo();
 
       const integrationData = {};
       if (initState.authId) {
@@ -423,21 +449,13 @@ function Form({
       }
       let stepChanged = false;
       await onLoad({
+        ...commonCallbackProps,
         fields: formattedFields,
-        stepName: newKey,
         previousStepName: activeStep?.key,
-        userId: userKey,
         lastStep: steps[newKey].next_conditions.length === 0,
         setStep: (stepKey) => {
           stepChanged = changeStep(stepKey, newKey, steps, history);
         },
-        setValues: (userVals) => {
-          const values = convertFilesToFilePromises(userVals, fileServarKeys);
-          updateFieldValues(values);
-          client.submitCustom(values);
-        },
-        setProgress: (val) => setUserProgress(val),
-        setOptions: updateFieldOptions(steps, newStep),
         firstStepLoaded: first,
         integrationData
       });
@@ -677,11 +695,12 @@ function Form({
     );
 
     const newInlineErrors = {};
-    Object.entries(formattedFields).map(([fieldKey, { value }]) => {
+    Object.entries(formattedFields).map(async ([fieldKey, { value }]) => {
       const servar = servarMap[fieldKey];
       const message = getFieldError(value, servar, signatureRef);
-      setFormElementError({
+      await setFormElementError({
         formRef,
+        errorCallback,
         fieldKey,
         message,
         errorType: errType,
@@ -705,8 +724,9 @@ function Form({
     );
     if (errorMessage && errorField) {
       setLoaders({});
-      setFormElementError({
+      await setFormElementError({
         formRef,
+        errorCallback,
         fieldKey: errorField.key,
         message: errorMessage,
         servarType: errorField.type,
@@ -733,27 +753,20 @@ function Form({
         integrations.plaid,
         fieldValues
       );
-      const newStepKey = nextStepKey(
+      const lastStep = !nextStepKey(
         activeStep.next_conditions,
         metadata,
         fieldValues
       );
+      let stepChanged = false;
       const elementType = metadata.elementType;
       await setLoader();
-      let stepChanged = false;
       await onSubmit({
+        ...commonCallbackProps,
         submitFields: { ...formattedFields, ...plaidFieldValues },
         elementRepeatIndex: repeat,
         fields: allFields,
-        stepName: activeStep.key,
-        userId: initInfo().userKey,
-        lastStep: !newStepKey,
-        setValues: (userVals) => {
-          const values = convertFilesToFilePromises(userVals, fileServarKeys);
-          updateFieldValues(values);
-          client.submitCustom(values);
-        },
-        setOptions: updateFieldOptions(steps),
+        lastStep,
         setErrors: (errors) => {
           if (Object.keys(errors).length > 0) setLoaders({});
           Object.entries(errors).forEach(([fieldKey, error]) => {
@@ -778,7 +791,6 @@ function Form({
         setStep: (stepKey) => {
           stepChanged = changeStep(stepKey, activeStep.key, steps, history);
         },
-        setProgress: (val) => setUserProgress(val),
         triggerKey: lookupElementKey(
           activeStep,
           metadata.elementIDs[0],
@@ -1001,20 +1013,10 @@ function Form({
         if (onSkip) {
           let stepChanged = false;
           await onSkip({
-            stepName: activeStep.key,
-            userId: initInfo().userKey,
-            setValues: (userVals) => {
-              const values = convertFilesToFilePromises(
-                userVals,
-                fileServarKeys
-              );
-              updateFieldValues(values);
-              client.submitCustom(values);
-            },
+            ...commonCallbackProps,
             setStep: (stepKey) => {
               stepChanged = changeStep(stepKey, activeStep.key, steps, history);
             },
-            setProgress: (val) => setUserProgress(val),
             triggerKey: lookupElementKey(
               activeStep,
               metadata.elementIDs[0],
@@ -1090,23 +1092,15 @@ function Form({
     }
     if (typeof onChange === 'function') {
       const formattedFields = formatAllStepFields(steps, fieldValues);
-      const { userKey } = initInfo();
       onChange({
+        ...commonCallbackProps,
         changeKeys: fieldKeys,
         trigger,
         integrationData,
         fields: formattedFields,
-        stepName: activeStep.key,
-        userId: userKey,
         lastStep: activeStep.next_conditions.length === 0,
         elementRepeatIndex,
-        valueRepeatIndex,
-        setValues: (userVals) => {
-          const values = convertFilesToFilePromises(userVals, fileServarKeys);
-          updateFieldValues(values);
-          client.submitCustom(values);
-        },
-        setOptions: updateFieldOptions(steps)
+        valueRepeatIndex
       });
       setShouldScrollToTop(false);
     }

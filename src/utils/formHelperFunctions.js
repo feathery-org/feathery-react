@@ -285,10 +285,12 @@ function getFieldError(value, servar, signatureRef) {
 /**
  * Set an error on a particular form DOM node(s).
  */
-function setFormElementError({
+async function setFormElementError({
   formRef,
   errorType,
+  errorCallback = () => {},
   fieldKey = '',
+  // Empty message means no error / clearing the error
   message = '',
   index = null,
   servarType = '',
@@ -296,6 +298,7 @@ function setFormElementError({
   setInlineErrors = () => {},
   triggerErrors = false
 }) {
+  let invalid = false;
   if (errorType === 'html5') {
     if (fieldKey) {
       if (['pin_input', 'select', 'multiselect'].includes(servarType))
@@ -311,13 +314,22 @@ function setFormElementError({
       elements.forEach((e) => e.setCustomValidity(message));
     }
     if (triggerErrors) formRef.current.reportValidity();
-    return !formRef.current.checkValidity();
+    invalid = !formRef.current.checkValidity();
   } else if (errorType === 'inline') {
     if (fieldKey) inlineErrors[fieldKey] = { message };
     if (triggerErrors)
       setInlineErrors(JSON.parse(JSON.stringify(inlineErrors)));
-    return Object.values(inlineErrors).find((data) => data.message);
+    invalid = Object.values(inlineErrors).some((data) => data.message);
   }
+  if (message) {
+    await errorCallback({
+      errorFieldId: fieldKey,
+      errorFieldType: servarType,
+      errorMessage: message,
+      elementRepeatIndex: index || 0
+    });
+  }
+  return invalid;
 }
 
 /**
