@@ -24,14 +24,11 @@ function ButtonGroupField({
         {servar.metadata.options.map((opt, index) => {
           const imageUrl = servar.metadata.option_images[index];
           const fieldStyle = applyStyles.getTarget('field');
-          // enforce width
-          fieldStyle.minWidth = fieldStyle.width;
-          fieldStyle.maxWidth = fieldStyle.width;
           return (
             <div
-              id={`${servar.key}-option-${index + 1}`}
+              id={servar.key}
               onClick={onClick}
-              key={`${servar.key}-option-${opt}-${index}`}
+              key={`${servar.key}-${index}`}
               css={{
                 boxSizing: 'border-box',
                 display: 'flex',

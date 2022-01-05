@@ -194,16 +194,28 @@ class ApplyStyles {
     );
   }
 
-  applyHeight(target) {
-    this.apply(target, ['height', 'height_unit'], (a, b) => ({
-      height: `${a}${b}`
-    }));
+  applyHeight(target, force = false) {
+    this.apply(target, ['height', 'height_unit'], (a, b) => {
+      const value = `${a}${b}`;
+      const style = { height: value };
+      if (force) {
+        style.minHeight = value;
+        style.maxHeight = value;
+      }
+      return style;
+    });
   }
 
-  applyWidth(target) {
-    this.apply(target, ['width', 'width_unit'], (a, b) => ({
-      width: `${a}${b}`
-    }));
+  applyWidth(target, force = false) {
+    this.apply(target, ['width', 'width_unit'], (a, b) => {
+      const value = `${a}${b}`;
+      const style = { width: value };
+      if (force) {
+        style.minWidth = value;
+        style.maxWidth = value;
+      }
+      return style;
+    });
   }
 
   applyVisibility(target) {
