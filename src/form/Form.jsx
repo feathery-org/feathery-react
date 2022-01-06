@@ -58,6 +58,7 @@ function Form({
   onSubmit = null,
   onSkip = null,
   onError = null,
+  onCustomAction = null,
   initialValues = {},
   initialStepId = '',
   usePreviousUserData = null,
@@ -1010,20 +1011,16 @@ function Form({
           setLoader: () => setButtonLoader(button)
         });
       } else {
-        if (onSkip) {
+        if (typeof onSkip === 'function') {
           let stepChanged = false;
           await onSkip({
             ...commonCallbackProps,
             setStep: (stepKey) => {
               stepChanged = changeStep(stepKey, activeStep.key, steps, history);
             },
-            triggerKey: lookupElementKey(
-              activeStep,
-              metadata.elementIDs[0],
-              metadata.elementType
-            ),
-            triggerType: metadata.elementType,
-            triggerAction: metadata.trigger
+            triggerKey: lookupElementKey(activeStep, button.id, 'button'),
+            triggerType: 'button',
+            triggerAction: 'click'
           });
           if (stepChanged) return;
         }
@@ -1064,6 +1061,15 @@ function Form({
           },
           updateFieldValues
         );
+      }
+    } else if (button.properties.link === 'custom') {
+      if (typeof onCustomAction === 'function') {
+        onCustomAction({
+          ...commonCallbackProps,
+          triggerKey: lookupElementKey(activeStep, button.id, 'button'),
+          triggerType: 'button',
+          triggerAction: 'click'
+        });
       }
     } else if (['submit', 'skip'].includes(button.properties.link)) {
       await buttonOnSubmit(button.properties.link === 'submit', button);
