@@ -146,29 +146,14 @@ const calculateDimensionsHelper = (step, p = '') => {
   const gridColumns = step[`${p}grid_columns`] || step.grid_columns;
   const gridRows = step[`${p}grid_rows`] || step.grid_rows;
 
-  let hasRelativeColumn = false;
-  let definiteWidth = 0;
-  gridColumns.forEach((column) => {
-    if (column.slice(-2) === 'px') definiteWidth += parseFloat(column);
-    else hasRelativeColumn = true;
-  });
-
-  const relativeColumns = gridColumns.map((column) => {
-    return column.slice(-2) === 'px'
-      ? `${(100 * parseFloat(column)) / definiteWidth}%`
-      : 0;
-  });
-  const relativeRows = gridRows.map((row) =>
-    row === 'min-content' ? row : `minmax(${row},min-content)`
+  const hasRelativeColumn = gridColumns.some(
+    (column) => column.slice(-2) === 'fr'
   );
-  definiteWidth = `${definiteWidth}px`;
 
   return {
-    relativeWidth: hasRelativeColumn ? '100%' : definiteWidth,
-    definiteWidth,
-    definiteColumns: gridColumns,
-    relativeColumns,
-    relativeRows
+    gridWidth: hasRelativeColumn ? '100%' : 'auto',
+    columns: gridColumns.map((column) => `minmax(0,${column})`),
+    rows: gridRows.map((row) => `minmax(${row},min-content)`)
   };
 };
 
@@ -185,30 +170,15 @@ function calculateStepCSS(step) {
   const stepCSS = {
     backgroundColor: `#${step.default_background_color}`,
     display: 'grid',
-    maxWidth: '100%',
-    gridTemplateRows: desktop.relativeRows.join(' '),
-    width: desktop.relativeWidth,
-    gridTemplateColumns: desktop.definiteColumns.join(' ')
+    width: desktop.gridWidth,
+    gridTemplateRows: desktop.rows.join(' '),
+    gridTemplateColumns: desktop.columns.join(' ')
   };
-  const ddw = desktop.definiteWidth;
-  const dmw = mobile.definiteWidth;
-  // If checks to prevent media query collisions
-  if (ddw !== '478px' && ddw !== dmw) {
-    stepCSS[`@media (max-width: ${ddw})`] = {
-      width: ddw,
-      gridTemplateColumns: desktop.relativeColumns.join(' ')
-    };
-  }
-  if (dmw !== '478px') {
-    stepCSS['@media (max-width: 478px)'] = {
-      width: mobile.relativeWidth,
-      gridTemplateRows: mobile.relativeRows.join(' '),
-      gridTemplateColumns: mobile.definiteColumns.join(' ')
-    };
-  }
-  stepCSS[`@media (max-width: ${dmw})`] = {
-    width: dmw,
-    gridTemplateColumns: mobile.relativeColumns.join(' ')
+
+  stepCSS['@media (max-width: 478px)'] = {
+    width: mobile.gridWidth,
+    gridTemplateRows: mobile.rows.join(' '),
+    gridTemplateColumns: mobile.columns.join(' ')
   };
 
   return stepCSS;
