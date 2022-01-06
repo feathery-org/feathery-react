@@ -711,7 +711,7 @@ function Form({
     });
     // do validation check before running user submission function
     // so user does not access invalid data
-    const invalid = setFormElementError({
+    const invalid = await setFormElementError({
       formRef,
       errorType: errType,
       inlineErrors: newInlineErrors,
@@ -805,7 +805,7 @@ function Form({
       if (stepChanged) return;
 
       // do validation check in case user has manually invalidated the step
-      const invalid = setFormElementError({
+      const invalid = await setFormElementError({
         formRef,
         errorType: errType,
         inlineErrors: newInlineErrors,
