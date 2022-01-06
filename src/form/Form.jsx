@@ -319,6 +319,11 @@ function Form({
     });
   }
 
+  // Preserve the current fieldValues to avoid overriding initialValues with defaults
+  function applyDefaultFieldValues(data) {
+    return { ...getDefaultFieldValues(data), ...fieldValuesRef.current };
+  }
+
   const updateFieldValues = (newFieldValues, rerender = true) => {
     const empty = Object.entries(newFieldValues).some(
       ([key, val]) => !val || !fieldValues[key]
@@ -520,7 +525,7 @@ function Form({
                 save_user_data: saveUserData
               }
             ]) => {
-              updateFieldValues(getDefaultFieldValues(data));
+              updateFieldValues(applyDefaultFieldValues(data));
               updateSessionValues(session, saveUserData);
               const hashKey = decodeURI(location.hash.substr(1));
               const newKey =
@@ -539,7 +544,7 @@ function Form({
           console.log(error);
           // Use default values if origin fails
           fetchPromise.then(async ([data]) => {
-            updateFieldValues(getDefaultFieldValues(data));
+            updateFieldValues(applyDefaultFieldValues(data));
             const newKey = getOrigin(data);
             setFirstStep(newKey);
             history.replace(location.pathname + location.search + `#${newKey}`);
