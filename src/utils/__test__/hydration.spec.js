@@ -33,20 +33,15 @@ describe('hydration', () => {
       const expected = {
         backgroundColor: '#000000FF',
         display: 'grid',
-        maxWidth: '100%',
+        width: '100%',
         gridTemplateRows:
           'minmax(50px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
-        width: '100%',
-        gridTemplateColumns: '150px 1fr',
+        gridTemplateColumns: 'minmax(0,150px) minmax(0,1fr)',
         '@media (max-width: 478px)': {
-          width: '30px',
+          width: 'auto',
           gridTemplateRows:
             'minmax(50px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
-          gridTemplateColumns: '30px'
-        },
-        '@media (max-width: 150px)': {
-          width: '150px',
-          gridTemplateColumns: '100% 0'
+          gridTemplateColumns: 'minmax(0,30px)'
         }
       };
 
@@ -122,20 +117,15 @@ describe('hydration', () => {
       const expected = {
         backgroundColor: '#000000FF',
         display: 'grid',
-        maxWidth: '100%',
+        width: 'auto',
         gridTemplateRows:
           'minmax(50px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
-        width: '100%',
-        gridTemplateColumns: '150px 50%',
+        gridTemplateColumns: 'minmax(0,150px) minmax(0,50%)',
         '@media (max-width: 478px)': {
-          width: '100%',
+          width: 'auto',
           gridTemplateRows:
             'minmax(50px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
-          gridTemplateColumns: '150px 50%'
-        },
-        '@media (max-width: 150px)': {
-          width: '150px',
-          gridTemplateColumns: '100% 0'
+          gridTemplateColumns: 'minmax(0,150px) minmax(0,50%)'
         }
       };
 
