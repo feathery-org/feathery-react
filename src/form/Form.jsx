@@ -20,7 +20,7 @@ import {
   getInlineError,
   getOrigin,
   isFieldActuallyRequired,
-  lookupElementKey,
+  lookUpTrigger,
   nextStepKey,
   objectMap,
   reactFriendlyKey,
@@ -181,7 +181,13 @@ function Form({
         () =>
           setFormElementError({
             formRef,
-            errorCallback,
+            errorCallback: getErrorCallback({
+              trigger: {
+                id: gMapBlurKey,
+                type: 'field',
+                action: 'blur'
+              }
+            }),
             fieldKey: gMapBlurKey,
             message: 'An address must be selected',
             errorType: errType,
@@ -394,12 +400,13 @@ function Form({
     userId: initInfo().userKey,
     stepName: activeStep?.key ?? ''
   };
-  const errorCallback = async (props) => {
+  const getErrorCallback = (props1) => async (props2) => {
     if (typeof onError === 'function') {
       const formattedFields = formatAllStepFields(steps, fieldValues);
       await onError({
         fields: formattedFields,
-        ...props,
+        ...props1,
+        ...props2,
         ...commonCallbackProps
       });
     }
@@ -699,6 +706,12 @@ function Form({
       fieldValues,
       signatureRef
     );
+    const elementType = metadata.elementType;
+    const trigger = {
+      ...lookUpTrigger(activeStep, metadata.elementIDs[0], elementType),
+      type: elementType,
+      action: metadata.trigger
+    };
 
     const newInlineErrors = {};
     Object.entries(formattedFields).map(async ([fieldKey, { value }]) => {
@@ -706,7 +719,7 @@ function Form({
       const message = getFieldError(value, servar, signatureRef);
       await setFormElementError({
         formRef,
-        errorCallback,
+        errorCallback: getErrorCallback({ trigger }),
         fieldKey,
         message,
         errorType: errType,
@@ -732,7 +745,7 @@ function Form({
       setLoaders({});
       await setFormElementError({
         formRef,
-        errorCallback,
+        errorCallback: getErrorCallback({ trigger }),
         fieldKey: errorField.key,
         message: errorMessage,
         servarType: errorField.type,
@@ -765,7 +778,6 @@ function Form({
         fieldValues
       );
       let stepChanged = false;
-      const elementType = metadata.elementType;
       await setLoader();
       await onSubmit({
         ...commonCallbackProps,
@@ -797,15 +809,9 @@ function Form({
         setStep: (stepKey) => {
           stepChanged = changeStep(stepKey, activeStep.key, steps, history);
         },
-        triggerKey: lookupElementKey(
-          activeStep,
-          metadata.elementIDs[0],
-          elementType
-        ),
-        triggerType: elementType,
-        triggerAction: metadata.trigger,
         firstStepSubmitted: first,
-        integrationData
+        integrationData,
+        trigger
       });
       if (stepChanged) return;
 
@@ -1023,9 +1029,11 @@ function Form({
             setStep: (stepKey) => {
               stepChanged = changeStep(stepKey, activeStep.key, steps, history);
             },
-            triggerKey: lookupElementKey(activeStep, button.id, 'button'),
-            triggerType: 'button',
-            triggerAction: 'click'
+            trigger: {
+              ...lookUpTrigger(activeStep, button.id, 'button'),
+              type: 'button',
+              action: 'click'
+            }
           });
           if (stepChanged) return;
         }
@@ -1071,9 +1079,11 @@ function Form({
       if (typeof onCustomAction === 'function') {
         onCustomAction({
           ...commonCallbackProps,
-          triggerKey: lookupElementKey(activeStep, button.id, 'button'),
-          triggerType: 'button',
-          triggerAction: 'click'
+          trigger: {
+            ...lookUpTrigger(activeStep, button.id, 'button'),
+            type: 'button',
+            action: 'click'
+          }
         });
       }
     } else if (['submit', 'skip'].includes(button.properties.link)) {
