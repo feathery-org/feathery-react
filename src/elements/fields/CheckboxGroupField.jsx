@@ -1,6 +1,15 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import ReactForm from 'react-bootstrap/Form';
 import { bootstrapStyles } from '../styles';
+import { applyCheckboxStyles, composeCheckboxStyle } from './CheckboxField';
+
+const applyCheckboxGroupStyles = (element, applyStyles) => {
+  applyStyles.addTargets(['checkboxGroup']);
+  applyStyles.applyHeight('checkboxGroup');
+  applyStyles.applyWidth('checkboxGroup');
+
+  return applyStyles;
+};
 
 function CheckboxGroupField({
   element,
@@ -15,8 +24,24 @@ function CheckboxGroupField({
 }) {
   const servar = element.servar;
   const otherChecked = fieldVal.includes(otherVal);
+
+  const styles = useMemo(() => {
+    applyCheckboxStyles(element, applyStyles);
+    applyCheckboxGroupStyles(element, applyStyles);
+
+    return applyStyles;
+  }, [applyStyles]);
+
   return (
-    <div css={applyStyles.getTarget('fc')} {...elementProps}>
+    <div
+      css={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        width: '100%',
+        ...applyStyles.getTarget('fc')
+      }}
+      {...elementProps}
+    >
       {fieldLabel}
       {servar.metadata.options.map((opt, i) => {
         return (
@@ -35,10 +60,8 @@ function CheckboxGroupField({
               marginBottom: '5px'
             }}
             css={{
-              'input[type="checkbox"]': {
-                marginTop: 0,
-                marginBottom: 0
-              }
+              ...composeCheckboxStyle(styles),
+              ...styles.getTarget('checkboxGroup')
             }}
           />
         );
@@ -47,7 +70,8 @@ function CheckboxGroupField({
         <div
           style={{
             display: 'flex',
-            alignItems: 'center'
+            alignItems: 'center',
+            ...styles.getTarget('checkboxGroup')
           }}
         >
           <ReactForm.Check
@@ -64,16 +88,14 @@ function CheckboxGroupField({
               alignItems: 'center'
             }}
             css={{
-              'input[type="checkbox"]': {
-                marginTop: 0,
-                marginBottom: 0
-              }
+              ...composeCheckboxStyle(styles)
             }}
           />
           <ReactForm.Control
             type='text'
             css={{
               marginLeft: '5px',
+              width: 'initial',
               ...bootstrapStyles,
               ...applyStyles.getTarget('field'),
               '&:focus': applyStyles.getTarget('active'),
