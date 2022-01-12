@@ -143,7 +143,7 @@ const nextStepKey = (nextConditions, metadata, fieldValues) => {
     .forEach((cond) => {
       let rulesMet = true;
       cond.rules.forEach((rule) => {
-        const userVal = fieldValues[rule.key] || '';
+        const userVal = fieldValues[rule.field_key] || '';
         const ruleVal = rule.value || '';
         let ruleMet;
         if (Array.isArray(userVal)) {
@@ -355,15 +355,17 @@ function shouldElementHide({ fields, values, element }) {
   // Get the target value (taking repeated elements into account)
   let value = '';
   if (hideIf.field_type === 'servar') {
-    const targets = fields.filter((field) => field.servar.id === hideIf.servar);
+    const targets = fields.filter(
+      (field) => field.servar.id === hideIf.field_id
+    );
     const target = targets[element.repeat ?? 0];
 
     // If the field we're based on isn't there, don't hide
     if (!target) return false;
 
     value = getFieldValue(target, values).value;
-  } else if (hideIf.field_type === 'custom') {
-    value = values[hideIf.custom];
+  } else if (hideIf.field_type === 'hidden') {
+    value = values[hideIf.field_key];
   }
 
   // If the hideIf value is an empty string, we want to match on the "empty" value of a field
