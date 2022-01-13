@@ -116,9 +116,6 @@ function applyFieldStyles(field, styles) {
       styles.applyBorders('field');
       styles.applyMargin('field');
       break;
-    case 'checkbox':
-      styles.applyMargin('fc');
-      break;
     case 'dropdown':
     case 'gmap_state':
       styles.addTargets('sub-fc');
