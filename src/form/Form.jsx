@@ -123,7 +123,6 @@ function Form({
 
   const fieldValuesRef = useRef(initialValues);
   let fieldValues = fieldValuesRef.current;
-  const submitRef = useRef(null);
   const formRef = useRef(null);
   const signatureRef = useRef({}).current;
 
@@ -1242,7 +1241,6 @@ function Form({
                   }
                   handleRedirect={handleRedirect}
                   onClick={() => buttonOnClick(el)}
-                  setSubmitRef={(newRef) => (submitRef.current = newRef)}
                   elementProps={elementProps[el.id]}
                 />
               );

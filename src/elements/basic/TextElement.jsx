@@ -33,7 +33,7 @@ function TextElement({
   values = null,
   handleRedirect = () => {},
   conditions = [],
-  elementProps
+  elementProps = {}
 }) {
   const styles = useMemo(() => applyTextStyles(element, applyStyles), [
     applyStyles
