@@ -10,7 +10,7 @@ function ButtonGroupField({
 }) {
   const servar = element.servar;
   return (
-    <>
+    <div>
       {fieldLabel}
       <div
         css={{
@@ -56,7 +56,7 @@ function ButtonGroupField({
           );
         })}
       </div>
-    </>
+    </div>
   );
 }
 
