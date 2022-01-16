@@ -162,8 +162,6 @@ const calculateDimensionsHelper = (step, p = '') => {
  * Note: The provided step should be fully-hydrated (i.e. rows injected, etc.) to calculate dimensions accurately.
  */
 function calculateStepCSS(step) {
-  if (!step) return {};
-
   const desktop = calculateDimensionsHelper(step);
   const mobile = calculateDimensionsHelper(step, 'mobile_');
 
