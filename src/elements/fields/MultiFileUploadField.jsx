@@ -13,7 +13,8 @@ function MultiFileUploadField({
   onChange: customOnChange = () => {},
   onClick: customOnClick = () => {},
   initialFiles = null,
-  elementProps = {}
+  elementProps = {},
+  children
 }) {
   const servar = element.servar;
   const showIcon = element.properties.icon !== '';
@@ -61,6 +62,7 @@ function MultiFileUploadField({
       css={{
         display: 'flex',
         flexWrap: 'wrap',
+        position: 'relative',
         ...applyStyles.getTarget('fc')
       }}
       {...elementProps}
@@ -183,6 +185,7 @@ function MultiFileUploadField({
           }}
         />
       </div>
+      {children}
     </div>
   );
 }

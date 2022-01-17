@@ -12,7 +12,8 @@ function RichFileUploadField({
   onChange: customOnChange = () => {},
   onClick: customOnClick = () => {},
   initialFile = null,
-  elementProps = {}
+  elementProps = {},
+  children
 }) {
   const servar = element.servar;
   const showIcon = element.properties.icon !== '';
@@ -159,6 +160,7 @@ function RichFileUploadField({
           opacity: 0
         }}
       />
+      {children}
     </div>
   );
 }

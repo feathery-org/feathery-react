@@ -20,7 +20,8 @@ function CheckboxGroupField({
   onChange = () => {},
   onOtherChange = () => {},
   onClick = () => {},
-  elementProps = {}
+  elementProps = {},
+  children
 }) {
   const servar = element.servar;
   const otherChecked = fieldVal.includes(otherVal);
@@ -38,6 +39,7 @@ function CheckboxGroupField({
         display: 'flex',
         flexWrap: 'wrap',
         width: '100%',
+        position: 'relative',
         ...applyStyles.getTarget('fc')
       }}
       {...elementProps}
@@ -57,7 +59,8 @@ function CheckboxGroupField({
             style={{
               display: 'flex',
               alignItems: 'center',
-              marginBottom: '5px'
+              marginBottom: '5px',
+              padding: 0
             }}
             css={{
               ...composeCheckboxStyle(styles),
@@ -111,6 +114,7 @@ function CheckboxGroupField({
           />
         </div>
       )}
+      {children}
     </div>
   );
 }

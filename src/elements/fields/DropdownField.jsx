@@ -12,7 +12,8 @@ export default function DropdownField({
   fieldVal = '',
   onClick = () => {},
   onChange = () => {},
-  elementProps = {}
+  elementProps = {},
+  children
 }) {
   const servar = element.servar;
 
@@ -36,6 +37,7 @@ export default function DropdownField({
     <div
       css={{
         maxWidth: '100%',
+        position: 'relative',
         ...applyStyles.getTarget('fc')
       }}
       {...elementProps}
@@ -94,6 +96,7 @@ export default function DropdownField({
           {element.properties.placeholder || ''}
         </span>
       </div>
+      {children}
     </div>
   );
 }

@@ -155,7 +155,8 @@ function TextField({
   elementProps = {},
   inlineError,
   rawValue = '',
-  onAccept = () => {}
+  onAccept = () => {},
+  children
 }) {
   const servar = element.servar;
 
@@ -165,6 +166,7 @@ function TextField({
     <div
       css={{
         maxWidth: '100%',
+        position: 'relative',
         ...applyStyles.getTarget('fc')
       }}
       {...elementProps}
@@ -235,6 +237,7 @@ function TextField({
           />
         )}
       </div>
+      {children}
     </div>
   );
 }

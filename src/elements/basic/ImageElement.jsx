@@ -14,20 +14,23 @@ function applyImageStyles(element, applyStyles) {
   return applyStyles;
 }
 
-function ImageElement({ element, applyStyles, elementProps = {} }) {
+function ImageElement({ element, applyStyles, elementProps = {}, children }) {
   const styles = useMemo(() => applyImageStyles(element, applyStyles), [
     applyStyles
   ]);
   return (
-    <img
-      src={element.properties.source_image}
-      alt='Form Image'
-      css={{
-        objectFit: 'contain',
-        ...styles.getTarget('image')
-      }}
-      {...elementProps}
-    />
+    <div css={{ ...styles.getTarget('image'), position: 'relative' }}>
+      <img
+        src={element.properties.source_image}
+        alt='Form Image'
+        css={{
+          objectFit: 'contain',
+          width: '100%'
+        }}
+        {...elementProps}
+      />
+      {children}
+    </div>
   );
 }
 

@@ -72,7 +72,8 @@ function ButtonElement({
   loader = null,
   handleRedirect = () => {},
   onClick = () => {},
-  elementProps = {}
+  elementProps = {},
+  children
 }) {
   const styles = useMemo(() => applyButtonStyles(element, applyStyles), [
     applyStyles
@@ -88,7 +89,8 @@ function ButtonElement({
         alignItems: 'center',
         cursor: element.properties.link === 'none' ? 'default' : 'pointer',
         boxShadow: 'none',
-        maxWidth: '100%'
+        maxWidth: '100%',
+        position: 'relative'
       }}
       css={{
         '&:disabled': { cursor: 'default !important' },
@@ -132,6 +134,7 @@ function ButtonElement({
           </div>
         )}
       </div>
+      {children}
     </ReactButton>
   );
 }

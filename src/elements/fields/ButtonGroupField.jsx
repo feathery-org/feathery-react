@@ -6,11 +6,12 @@ function ButtonGroupField({
   fieldLabel,
   fieldVal = null,
   onClick = () => {},
-  elementProps = {}
+  elementProps = {},
+  children
 }) {
   const servar = element.servar;
   return (
-    <div>
+    <div css={{ position: 'relative' }}>
       {fieldLabel}
       <div
         css={{
@@ -57,6 +58,7 @@ function ButtonGroupField({
           );
         })}
       </div>
+      {children}
     </div>
   );
 }

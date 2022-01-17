@@ -12,14 +12,18 @@ function RadioButtonGroupField({
   onChange = () => {},
   onOtherChange = () => {},
   onClick = () => {},
-  elementProps = {}
+  elementProps = {},
+  children
 }) {
   const servar = element.servar;
   const [otherSelect, setOtherSelect] = useState({});
   const otherChecked =
     (otherSelect[servar.key] || fieldVal) && fieldVal === otherVal;
   return (
-    <div css={applyStyles.getTarget('fc')} {...elementProps}>
+    <div
+      css={{ ...applyStyles.getTarget('fc'), position: 'relative' }}
+      {...elementProps}
+    >
       {fieldLabel}
       {servar.metadata.options.map((opt, i) => {
         return (
@@ -99,6 +103,7 @@ function RadioButtonGroupField({
           />
         </div>
       )}
+      {children}
     </div>
   );
 }

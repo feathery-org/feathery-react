@@ -33,13 +33,17 @@ function TextElement({
   values = null,
   handleRedirect = () => {},
   conditions = [],
-  elementProps = {}
+  elementProps = {},
+  children
 }) {
   const styles = useMemo(() => applyTextStyles(element, applyStyles), [
     applyStyles
   ]);
   return (
-    <div css={styles.getTarget('text')} {...elementProps}>
+    <div
+      css={{ ...styles.getTarget('text'), position: 'relative' }}
+      {...elementProps}
+    >
       <TextNodes
         element={element}
         values={values}
@@ -47,6 +51,7 @@ function TextElement({
         handleRedirect={handleRedirect}
         conditions={conditions}
       />
+      {children}
     </div>
   );
 }

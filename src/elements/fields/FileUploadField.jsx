@@ -9,11 +9,15 @@ function FileUploadField({
   required = false,
   onChange = () => {},
   onClick = () => {},
-  elementProps = {}
+  elementProps = {},
+  children
 }) {
   const servar = element.servar;
   return (
-    <div css={applyStyles.getTarget('fc')} {...elementProps}>
+    <div
+      css={{ ...applyStyles.getTarget('fc'), position: 'relative' }}
+      {...elementProps}
+    >
       {fieldLabel}
       <ReactForm.File
         id={servar.key}
@@ -22,6 +26,7 @@ function FileUploadField({
         onClick={onClick}
         style={{ cursor: 'pointer' }}
       />
+      {children}
     </div>
   );
 }
