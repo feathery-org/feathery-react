@@ -255,10 +255,11 @@ function PinInputField({
   fieldVal = '',
   onClick = () => {},
   onChange = () => {},
-  elementProps = {}
+  elementProps = {},
+  children
 }) {
   return (
-    <div style={{ display: 'flex' }} {...elementProps}>
+    <div style={{ display: 'flex', position: 'relative' }} {...elementProps}>
       {fieldLabel}
       <OtpInput
         shouldFocus={shouldFocus}
@@ -269,6 +270,7 @@ function PinInputField({
         onClick={onClick}
         inlineError={inlineError}
       />
+      {children}
     </div>
   );
 }

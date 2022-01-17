@@ -29,7 +29,8 @@ function ProgressBarElement({
   progress = null,
   curDepth = 1,
   maxDepth = 1,
-  elementProps = {}
+  elementProps = {},
+  children
 }) {
   const styles = useMemo(() => applyProgressBarStyles(element, applyStyles), [
     applyStyles
@@ -77,11 +78,13 @@ function ProgressBarElement({
       css={{
         display: 'flex',
         flexDirection: 'column',
+        position: 'relative',
         ...styles.getTarget('barContainer')
       }}
       {...elementProps}
     >
       {progressBarElements}
+      {children}
     </div>
   );
 }

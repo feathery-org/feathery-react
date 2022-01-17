@@ -158,7 +158,8 @@ function CheckboxField({
   fieldVal = true,
   onChange = () => {},
   onClick = () => {},
-  elementProps = {}
+  elementProps = {},
+  children
 }) {
   const styles = useMemo(() => applyCheckboxStyles(element, applyStyles), [
     applyStyles
@@ -167,7 +168,10 @@ function CheckboxField({
   const servar = element.servar;
 
   return (
-    <div css={applyStyles.getTarget('fc')} {...elementProps}>
+    <div
+      css={{ ...applyStyles.getTarget('fc'), position: 'relative' }}
+      {...elementProps}
+    >
       {fieldLabel}
       <Form.Check
         id={servar.key}
@@ -177,10 +181,12 @@ function CheckboxField({
         onClick={onClick}
         style={{
           display: 'flex',
-          alignItems: 'center'
+          alignItems: 'center',
+          padding: 0
         }}
         css={composeCheckboxStyle(styles)}
       />
+      {children}
     </div>
   );
 }

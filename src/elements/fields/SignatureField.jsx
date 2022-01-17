@@ -6,14 +6,16 @@ function SignatureField({
   fieldLabel,
   applyStyles,
   signatureRef = {},
-  elementProps = {}
+  elementProps = {},
+  children
 }) {
   const servar = element.servar;
   return (
     <div
       css={{
         ...applyStyles.getTarget('fc'),
-        maxWidth: '100%'
+        maxWidth: '100%',
+        position: 'relative'
       }}
       {...elementProps}
     >
@@ -30,6 +32,7 @@ function SignatureField({
           signatureRef[servar.key] = ref;
         }}
       />
+      {children}
     </div>
   );
 }
