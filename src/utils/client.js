@@ -231,12 +231,12 @@ export default class Client {
         'signature'
       ].some((type) => type in servar);
     const jsonServars = servars.filter((servar) => !isFileServar(servar));
-    const jsonPromise = this._submitJSONData(jsonServars);
     const fileServars = servars.filter(isFileServar);
 
+    const toAwait = [this._submitJSONData(jsonServars)];
     if (fileServars.length > 0)
-      await this._submitFileData(fileServars, filePathMap);
-    await jsonPromise;
+      toAwait.push(this._submitFileData(fileServars, filePathMap));
+    await Promise.all(toAwait);
   }
 
   async registerEvent(eventData, promise = null) {
