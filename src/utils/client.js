@@ -1,7 +1,7 @@
+import { v4 as uuidv4 } from 'uuid';
+
 import * as errors from './error';
-
 import { initFormsPromise, initInfo, initState } from './init';
-
 import { encodeGetParams } from './primitives';
 
 // Convenience boolean for urls - manually change for testing
@@ -16,6 +16,7 @@ export const CDN_URL = isLocal
 export default class Client {
   constructor(formKey) {
     this.formKey = formKey;
+    this.activeRequests = {};
   }
 
   async _checkResponseSuccess(response) {
@@ -38,7 +39,7 @@ export default class Client {
     }
   }
 
-  async _fetch(url, options) {
+  _fetch(url, options) {
     const { apiKey } = initInfo();
     const { headers, ...otherOptions } = options;
     options = {
@@ -49,10 +50,14 @@ export default class Client {
       },
       ...otherOptions
     };
-    return fetch(url, options).then(async (response) => {
+    const promiseId = uuidv4();
+    const promise = fetch(url, options).then(async (response) => {
+      delete this.activeRequests[promiseId];
       await this._checkResponseSuccess(response);
       return response;
     });
+    this.activeRequests[promiseId] = promise;
+    return promise;
   }
 
   _submitJSONData(servars) {

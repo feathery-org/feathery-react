@@ -595,7 +595,9 @@ function Form({
   if (!activeStep) return null;
   if (finished) {
     if (redirectUrl) {
-      window.location.href = redirectUrl;
+      Promise.all(Object.values(client.activeRequests)).then(
+        () => (window.location.href = redirectUrl)
+      );
     }
     return null;
   }
