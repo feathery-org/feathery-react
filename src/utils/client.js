@@ -132,7 +132,7 @@ export default class Client {
       }
     });
 
-    return this._fetch(url, { method: 'POST', body: formData });
+    await this._fetch(url, { method: 'POST', body: formData });
   }
 
   updateUserKey(newUserKey) {
