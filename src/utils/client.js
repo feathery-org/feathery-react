@@ -1,5 +1,3 @@
-import { v4 as uuidv4 } from 'uuid';
-
 import * as errors from './error';
 import { initFormsPromise, initInfo, initState } from './init';
 import { encodeGetParams } from './primitives';
@@ -14,9 +12,9 @@ export const CDN_URL = isLocal
   : 'https://cdn.feathery.io/api/';
 
 export default class Client {
-  constructor(formKey) {
+  constructor(formKey, ignoreNetworkErrors) {
     this.formKey = formKey;
-    this.activeRequests = {};
+    this.ignoreNetworkErrors = ignoreNetworkErrors;
   }
 
   async _checkResponseSuccess(response) {
@@ -50,14 +48,16 @@ export default class Client {
       },
       ...otherOptions
     };
-    const promiseId = uuidv4();
-    const promise = fetch(url, options).then(async (response) => {
-      delete this.activeRequests[promiseId];
-      await this._checkResponseSuccess(response);
-      return response;
-    });
-    this.activeRequests[promiseId] = promise;
-    return promise;
+    return fetch(url, options)
+      .then(async (response) => {
+        await this._checkResponseSuccess(response);
+        return response;
+      })
+      .catch((e) => {
+        // Ignore TypeErrors if form has redirected because `fetch` in
+        // Safari will error after redirect
+        if (!this.ignoreNetworkErrors && e instanceof TypeError) throw e;
+      });
   }
 
   _submitJSONData(servars) {
@@ -132,7 +132,7 @@ export default class Client {
       }
     });
 
-    return this._fetch(url, { method: 'POST', body: formData });
+    await this._fetch(url, { method: 'POST', body: formData });
   }
 
   updateUserKey(newUserKey) {

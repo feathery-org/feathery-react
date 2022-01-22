@@ -125,6 +125,7 @@ function Form({
   let fieldValues = fieldValuesRef.current;
   const formRef = useRef(null);
   const signatureRef = useRef({}).current;
+  const hasRedirected = useRef(false);
 
   // Determine if there is a field with a custom repeat_trigger configuration anywhere in the step
   const repeatTriggerExists = useMemo(
@@ -248,11 +249,11 @@ function Form({
     'enter',
     (e) => {
       e.preventDefault();
-      // Skip 1-input steps by pressing `Enter`
+      // Submit steps by pressing `Enter`
       const submitButton = activeStep.buttons.find(
         (b) => b.properties.link === 'submit'
       );
-      if (submitButton && activeStep.servar_fields.length === 1) {
+      if (submitButton) {
         // Simulate button click if available
         buttonOnClick(submitButton);
       }
@@ -495,7 +496,7 @@ function Form({
 
   useEffect(() => {
     if (client === null) {
-      const clientInstance = new Client(formKey);
+      const clientInstance = new Client(formKey, hasRedirected);
       setClient(clientInstance);
       setFirst(true);
 
@@ -595,9 +596,8 @@ function Form({
   if (!activeStep) return null;
   if (finished) {
     if (redirectUrl) {
-      Promise.all(Object.values(client.activeRequests)).then(
-        () => (window.location.href = redirectUrl)
-      );
+      hasRedirected.current = true;
+      window.location.href = redirectUrl;
     }
     return null;
   }

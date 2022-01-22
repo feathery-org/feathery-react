@@ -62,10 +62,10 @@ function init(apiKey, options = {}) {
     } else if (options.tracking === 'cookie') {
       document.cookie.split(/; */).map((c) => {
         const [key, v] = c.split('=', 2);
-        if (key === 'feathery-user-id') initState.userKey = v;
+        if (key === `feathery-user-id-${apiKey}`) initState.userKey = v;
       });
       if (!initState.userKey) initState.userKey = uuidv4();
-      document.cookie = `feathery-user-id=${initState.userKey}; max-age=31536000; SameSite=strict`;
+      document.cookie = `feathery-user-id-${apiKey}=${initState.userKey}; max-age=31536000; SameSite=strict`;
     }
   }
   if (initState.authId) {
