@@ -198,7 +198,7 @@ function TextField({
             '&:not(:focus)':
               rawValue || !element.properties.placeholder
                 ? {}
-                : { color: 'transparent' }
+                : { color: 'transparent !important' }
           }}
           maxLength={servar.max_length}
           minLength={servar.min_length}
