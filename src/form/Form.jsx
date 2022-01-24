@@ -424,6 +424,12 @@ function Form({
     }
   };
 
+  const updateNewStep = (newStep) => {
+    setLoaders({});
+    setRawActiveStep(newStep);
+    client.registerEvent({ step_key: newStep.key, event: 'load' });
+  };
+
   const getNewStep = async (newKey) => {
     let newStep = steps[newKey];
     while (true) {
@@ -485,13 +491,10 @@ function Form({
         integrationData
       });
       if (stepChanged) return;
-      setRawActiveStep(newStep);
+      updateNewStep(newStep);
     } else {
-      setRawActiveStep(newStep);
+      updateNewStep(newStep);
     }
-    setLoaders({});
-
-    client.registerEvent({ step_key: newKey, event: 'load' });
   };
 
   useEffect(() => {
