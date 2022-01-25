@@ -230,28 +230,26 @@ function getFieldValue(field, values) {
  * Returns an empty string if it's valid.
  */
 function getFieldError(value, servar, signatureRef) {
-  // Check if value is missing when it's required
-  if (servar.required) {
-    let missingVal;
-    switch (servar.type) {
-      case 'select':
-        missingVal = !value;
-        break;
-      case 'file_upload':
-        missingVal = !value;
-        break;
-      case 'checkbox':
-        // eslint-disable-next-line camelcase
-        missingVal = !value && servar.metadata?.must_check;
-        break;
-      case 'signature':
-        missingVal = signatureRef[servar.key].isEmpty();
-        break;
-      default:
-        missingVal = value === '';
-        break;
-    }
-    if (missingVal) return 'This is a required field';
+  let noVal;
+  switch (servar.type) {
+    case 'file_upload':
+    case 'select':
+      noVal = !value;
+      break;
+    case 'checkbox':
+      // eslint-disable-next-line camelcase
+      noVal = !value && servar.metadata?.must_check;
+      break;
+    case 'signature':
+      noVal = signatureRef[servar.key].isEmpty();
+      break;
+    default:
+      noVal = value === '';
+      break;
+  }
+  if (noVal) {
+    // If no value, error if field is required
+    return servar.required ? 'This is a required field' : '';
   }
 
   // Check if value is badly formatted
