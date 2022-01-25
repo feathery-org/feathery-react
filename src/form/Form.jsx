@@ -482,6 +482,7 @@ function Form({
       await onLoad({
         ...commonCallbackProps,
         fields: formattedFields,
+        stepName: newStep.key,
         previousStepName: activeStep?.key,
         lastStep: steps[newKey].next_conditions.length === 0,
         setStep: (stepKey) => {
