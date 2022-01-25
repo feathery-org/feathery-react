@@ -999,6 +999,7 @@ function Form({
               }
             },
             '&.spinner-border': {
+              display: 'block',
               borderRadius: '50%',
               animation: '0.75s linear infinite spinner-border'
             }

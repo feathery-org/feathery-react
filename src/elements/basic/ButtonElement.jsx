@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 
 import ReactButton from 'react-bootstrap/Button';
 import TextNodes from '../components/TextNodes';
+import Spinner from 'react-bootstrap/Spinner';
 
 function adjustColor(color, amount) {
   return (
@@ -56,7 +57,7 @@ function applyButtonStyles(element, applyStyles) {
   applyStyles.apply('loader', ['height', 'height_unit'], (a, b) => {
     const thirdHeight = Math.round(a / 3);
     return {
-      right: `-${a}${b}`,
+      right: `-${thirdHeight + 10}${b}`,
       width: `${thirdHeight}${b}`,
       height: `${thirdHeight}${b}`
     };
@@ -102,23 +103,30 @@ function ButtonElement({
       onClick={onClick}
       {...elementProps}
     >
-      <div style={{ display: 'flex', position: 'relative' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          height: 'inherit',
+          position: 'relative'
+        }}
+      >
+        {element.properties.image && (
+          <img
+            src={element.properties.image}
+            style={{
+              objectFit: 'contain',
+              maxWidth: '80%',
+              maxHeight: '100%'
+            }}
+          />
+        )}
         <TextNodes
           element={element}
           values={values}
           applyStyles={applyStyles}
           handleRedirect={handleRedirect}
         />
-        {element.properties.image && (
-          <img
-            src={element.properties.image}
-            style={{
-              objectFit: 'contain',
-              width: '100%',
-              height: '100%'
-            }}
-          />
-        )}
         {loader && (
           <div
             css={{
