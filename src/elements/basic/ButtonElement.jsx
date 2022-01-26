@@ -88,7 +88,8 @@ function ButtonElement({
         cursor: element.properties.link === 'none' ? 'default' : 'pointer',
         boxShadow: 'none',
         maxWidth: '100%',
-        position: 'relative'
+        position: 'relative',
+        padding: '1px 6px'
       }}
       css={{
         '&:disabled': { cursor: 'default !important' },
