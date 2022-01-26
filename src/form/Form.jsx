@@ -1037,7 +1037,8 @@ function Form({
           metadata,
           repeat: button.repeat || 0,
           plaidSuccess: true,
-          setLoader: () => setButtonLoader(button)
+          setLoader: () => setButtonLoader(button),
+          clearLoader: () => setLoaders({})
         });
       } else {
         if (typeof onSkip === 'function') {
@@ -1090,7 +1091,8 @@ function Form({
             if (activeStep.servar_fields.length === 0)
               await buttonOnSubmit(true, button);
           },
-          updateFieldValues
+          updateFieldValues,
+          () => setButtonLoader(button)
         );
       }
     } else if (button.properties.link === 'custom') {
