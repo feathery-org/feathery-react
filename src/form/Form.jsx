@@ -1092,7 +1092,8 @@ function Form({
               await buttonOnSubmit(true, button);
           },
           updateFieldValues,
-          () => setButtonLoader(button)
+          () => setButtonLoader(button),
+          () => setLoaders({})
         );
       }
     } else if (button.properties.link === 'custom') {
