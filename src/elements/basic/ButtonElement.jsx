@@ -56,11 +56,8 @@ function applyButtonStyles(element, applyStyles) {
 
   applyStyles.apply('loader', ['height', 'height_unit'], (a, b) => {
     const thirdHeight = Math.round(a / 3);
-    return {
-      right: `-${thirdHeight + 10}${b}`,
-      width: `${thirdHeight}${b}`,
-      height: `${thirdHeight}${b}`
-    };
+    const dimension = `${thirdHeight}${b}`;
+    return { width: dimension, height: dimension };
   });
 
   return applyStyles;
@@ -103,45 +100,28 @@ function ButtonElement({
       onClick={onClick}
       {...elementProps}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          height: 'inherit',
-          position: 'relative'
-        }}
-      >
-        {element.properties.image && (
-          <img
-            src={element.properties.image}
-            style={{
-              objectFit: 'contain',
-              maxWidth: '80%',
-              maxHeight: '100%'
-            }}
+      {loader ? (
+        <div css={styles.getTarget('loader')}>{loader}</div>
+      ) : (
+        <>
+          {element.properties.image && (
+            <img
+              src={element.properties.image}
+              style={{
+                objectFit: 'contain',
+                maxWidth: '80%',
+                maxHeight: '100%'
+              }}
+            />
+          )}
+          <TextNodes
+            element={element}
+            values={values}
+            applyStyles={applyStyles}
+            handleRedirect={handleRedirect}
           />
-        )}
-        <TextNodes
-          element={element}
-          values={values}
-          applyStyles={applyStyles}
-          handleRedirect={handleRedirect}
-        />
-        {loader && (
-          <div
-            css={{
-              position: 'absolute',
-              top: '50%',
-              bottom: '50%',
-              marginTop: 'auto',
-              marginBottom: 'auto',
-              ...styles.getTarget('loader')
-            }}
-          >
-            {loader}
-          </div>
-        )}
-      </div>
+        </>
+      )}
       {children}
     </ReactButton>
   );
