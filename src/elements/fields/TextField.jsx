@@ -149,13 +149,14 @@ function TextField({
   element,
   applyStyles,
   fieldLabel,
+  elementProps = {},
   required = false,
+  onAccept = () => {},
   onBlur = () => {},
   onClick = () => {},
-  elementProps = {},
-  inlineError,
   rawValue = '',
-  onAccept = () => {},
+  autoFocus,
+  inlineError,
   children
 }) {
   const servar = element.servar;
@@ -207,6 +208,7 @@ function TextField({
           onClick={onClick}
           autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
+          autoFocus={autoFocus}
           defaultValue={rawValue}
           {...inputProps}
           {...getMaskProps(servar, rawValue)}

@@ -1161,6 +1161,7 @@ function Form({
     } else handleRedirect({ metadata });
   };
 
+  let fieldCounter = 0;
   return (
     <>
       {stepLoader && (
@@ -1255,6 +1256,7 @@ function Form({
                 />
               );
             else if (type === 'field') {
+              fieldCounter++;
               const index = el.repeat ?? null;
               const servar = el.servar;
               const { value: fieldVal } = getFieldValue(el, fieldValues);
@@ -1521,6 +1523,7 @@ function Form({
                           textFieldShouldSubmit(servar, val);
                         onChange({ submitData });
                       }}
+                      autoFocus={fieldCounter === 1}
                       inlineError={inlineErr}
                     />
                   );
