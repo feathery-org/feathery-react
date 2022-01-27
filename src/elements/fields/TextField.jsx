@@ -56,12 +56,6 @@ function getMaskProps(servar, value) {
         value: value.toString()
       };
       break;
-    case 'email':
-      maskProps = {
-        mask: /.+/,
-        value
-      };
-      break;
     case 'login':
       methods = servar.metadata.login_methods;
       maskProps = {
@@ -70,33 +64,19 @@ function getMaskProps(servar, value) {
             method,
             mask: method === 'phone' ? '(000) 000-0000' : /.+/
           };
-        }),
-        value
+        })
       };
       break;
     case 'phone_number':
-      maskProps = {
-        mask: '(000) 000-0000',
-        value
-      };
+      maskProps = { mask: '(000) 000-0000' };
       break;
     case 'ssn':
-      maskProps = {
-        mask: '000 - 00 - 0000',
-        value
-      };
+      maskProps = { mask: '000 - 00 - 0000' };
       break;
+    case 'email':
     case 'text_area':
-      maskProps = {
-        mask: /.+/,
-        value
-      };
-      break;
     case 'url':
-      maskProps = {
-        mask: /.+/,
-        value
-      };
+      maskProps = { mask: /.+/ };
       break;
     default:
       maskProps = {
@@ -209,7 +189,7 @@ function TextField({
           autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
           autoFocus={autoFocus}
-          defaultValue={rawValue}
+          value={rawValue}
           {...inputProps}
           {...getMaskProps(servar, rawValue)}
           onAccept={onAccept}

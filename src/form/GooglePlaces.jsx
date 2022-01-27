@@ -14,7 +14,7 @@ export default function GooglePlaces({
   activeStep,
   steps,
   onChange,
-  updateFieldValues,
+  updateFieldValues
 }) {
   const [googlePreload, setGooglePreload] = useState(false);
   const [googleLoad, setGoogleLoad] = useState(false);
