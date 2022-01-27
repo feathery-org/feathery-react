@@ -368,6 +368,7 @@ function shouldElementHide({ fields, values, element }) {
     value = getFieldValue(target, values).value;
   } else if (hideIf.field_type === 'hidden') {
     value = values[hideIf.field_key];
+    if (Array.isArray(value)) value = value[element.repeat ?? 0];
   }
 
   // If the hideIf value is an empty string, we want to match on the "empty" value of a field
