@@ -140,7 +140,11 @@ const nextStepKey = (nextConditions, metadata, fieldValues) => {
         cond.metadata.start === metadata.start &&
         cond.metadata.end === metadata.end
     )
+    .sort((cond1, cond2) => {
+      return cond1.rules.length < cond2.rules.length ? 1 : -1;
+    })
     .forEach((cond) => {
+      if (newKey) return;
       let rulesMet = true;
       cond.rules.forEach((rule) => {
         const userVal = fieldValues[rule.field_key] || '';
