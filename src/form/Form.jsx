@@ -249,6 +249,7 @@ function Form({
     'enter',
     (e) => {
       e.preventDefault();
+      e.stopPropagation();
       // Submit steps by pressing `Enter`
       const submitButton = activeStep.buttons.find(
         (b) => b.properties.link === 'submit'
