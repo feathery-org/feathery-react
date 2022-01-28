@@ -551,7 +551,8 @@ function Form({
             ]) => {
               updateFieldValues(applyDefaultFieldValues(data));
               updateSessionValues(session, saveUserData);
-              clientInstance.submitCustom(initialValues);
+              if (Object.keys(initialValues).length > 0)
+                clientInstance.submitCustom(initialValues);
               const hashKey = decodeURI(location.hash.substr(1));
               const newKey =
                 initialStepId ||
