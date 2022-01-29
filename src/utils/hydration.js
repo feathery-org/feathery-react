@@ -167,6 +167,8 @@ function calculateStepCSS(step) {
 
   const stepCSS = {
     backgroundColor: `#${step.default_background_color}`,
+    backgroundImage: `url("${step.background_image_url}")`,
+    backgroundSize: 'cover',
     display: 'grid',
     width: desktop.gridWidth,
     gridTemplateRows: desktop.rows.join(' '),
