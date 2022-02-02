@@ -5,9 +5,7 @@ import { applyCheckboxStyles, composeCheckboxStyle } from './CheckboxField';
 
 const applyCheckboxGroupStyles = (element, applyStyles) => {
   applyStyles.addTargets(['checkboxGroup']);
-  applyStyles.applyHeight('checkboxGroup');
   applyStyles.applyWidth('checkboxGroup');
-
   return applyStyles;
 };
 
@@ -58,12 +56,13 @@ function CheckboxGroupField({
             onClick={onClick}
             style={{
               display: 'flex',
-              alignItems: 'center',
-              marginBottom: '5px',
-              padding: 0
+              alignItems: 'flex-start',
+              marginBottom: '18px',
+              padding: 0,
+              lineHeight: 'normal'
             }}
             css={{
-              ...composeCheckboxStyle(styles),
+              ...composeCheckboxStyle(styles, true),
               ...styles.getTarget('checkboxGroup')
             }}
           />
@@ -74,6 +73,7 @@ function CheckboxGroupField({
           style={{
             display: 'flex',
             alignItems: 'center',
+            marginBottom: '18px',
             ...styles.getTarget('checkboxGroup')
           }}
         >
@@ -88,11 +88,11 @@ function CheckboxGroupField({
             onClick={onClick}
             style={{
               display: 'flex',
-              alignItems: 'center'
+              alignItems: 'flex-start',
+              padding: 0,
+              lineHeight: 'normal'
             }}
-            css={{
-              ...composeCheckboxStyle(styles)
-            }}
+            css={composeCheckboxStyle(styles, true)}
           />
           <ReactForm.Control
             type='text'
@@ -111,6 +111,7 @@ function CheckboxGroupField({
             maxLength={servar.max_length}
             minLength={servar.min_length}
             required={otherChecked}
+            disabled={!otherChecked}
           />
         </div>
       )}
