@@ -82,7 +82,8 @@
     "react-router-dom": "^5.2.0",
     "react-signature-canvas": "^1.0.3",
     "scriptjs": "^2.5.9",
-    "uuid": "^8.3.2"
+    "uuid": "^8.3.2",
+    "webfontloader": "^1.6.28"
   },
   "babel": {
     "presets": [

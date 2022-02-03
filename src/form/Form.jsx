@@ -1,5 +1,13 @@
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+
+import WebFont from 'webfontloader';
+import ReactForm from 'react-bootstrap/Form';
+import TagManager from 'react-gtm-module';
+import Spinner from 'react-bootstrap/Spinner';
+import Lottie from 'lottie-react';
+import { useHotkeys } from 'react-hotkeys-hook';
+
 import {
   calculateRepeatedRowCount,
   calculateStepCSS,
@@ -35,14 +43,8 @@ import Client from '../utils/client';
 import { stringifyWithNull } from '../utils/string';
 import Elements from '../elements';
 import GooglePlaces from './GooglePlaces';
-
-import ReactForm from 'react-bootstrap/Form';
-import TagManager from 'react-gtm-module';
 import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
 import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
-import Spinner from 'react-bootstrap/Spinner';
-import Lottie from 'lottie-react';
-import { useHotkeys } from 'react-hotkeys-hook';
 
 const FILE_UPLOADERS = [
   'file_upload',
@@ -513,6 +515,8 @@ function Form({
           getABVariant(stepsResponse).forEach((step) => {
             data[step.key] = step;
           });
+          if (stepsResponse.fonts?.length)
+            WebFont.load({ google: { families: stepsResponse.fonts } });
           setSteps(data);
           setRedirectUrl(stepsResponse.redirect_url);
           setErrType(stepsResponse.error_type);
