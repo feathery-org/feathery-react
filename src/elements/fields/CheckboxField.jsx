@@ -116,13 +116,13 @@ export function applyCheckboxStyles(element, applyStyles) {
   return applyStyles;
 }
 
-export const composeCheckboxStyle = (styles) => {
+export const composeCheckboxStyle = (styles, group = false) => {
   return {
     'input[type="checkbox"]': {
       position: 'static',
       marginLeft: 5,
-      marginRight: 5,
-      marginTop: 0,
+      marginRight: group ? 10 : 5,
+      marginTop: group ? 3 : 0,
       marginBottom: 0,
       appearance: 'none',
       display: 'grid',

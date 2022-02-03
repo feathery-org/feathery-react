@@ -39,13 +39,15 @@ function RadioButtonGroupField({
             value={opt}
             style={{
               display: 'flex',
-              alignItems: 'center',
-              marginBottom: '5px'
+              alignItems: 'flex-start',
+              marginBottom: '18px',
+              padding: 0,
+              lineHeight: 'normal'
             }}
             css={{
               'input[type="radio"]': {
-                marginTop: 0,
-                marginBottom: 0
+                margin: '5px 10px 5px 0',
+                position: 'static'
               }
             }}
           />
@@ -55,7 +57,8 @@ function RadioButtonGroupField({
         <div
           style={{
             display: 'flex',
-            alignItems: 'center'
+            alignItems: 'center',
+            marginBottom: '18px'
           }}
         >
           <ReactForm.Check
@@ -75,12 +78,14 @@ function RadioButtonGroupField({
             value={otherVal || ''}
             style={{
               display: 'flex',
-              alignItems: 'center'
+              alignItems: 'flex-start',
+              padding: 0,
+              lineHeight: 'normal'
             }}
             css={{
               'input[type="radio"]': {
-                marginTop: 0,
-                marginBottom: 0
+                margin: '5px 10px 5px 0',
+                position: 'static'
               }
             }}
           />
@@ -100,6 +105,7 @@ function RadioButtonGroupField({
             maxLength={servar.max_length}
             minLength={servar.min_length}
             required={otherChecked}
+            disabled={!otherChecked}
           />
         </div>
       )}
