@@ -236,6 +236,9 @@ class ApplyStyles {
     this.apply(target, 'font_weight', (a) => ({ fontWeight: a }));
     this.apply(target, 'font_family', (a) => ({ fontFamily: a }));
     this.apply(target, 'font_size', (a) => ({ fontSize: `${a}px` }));
+    this.apply(target, 'line_height', (a) => ({
+      lineHeight: isNum(a) ? `${a}px` : 'normal'
+    }));
     this.apply(
       target,
       placeholder ? 'placeholder_italic' : 'font_italic',
@@ -246,6 +249,13 @@ class ApplyStyles {
       placeholder ? 'placeholder_color' : 'font_color',
       (a) => ({ color: `#${a}` })
     );
+
+    this.apply(target, ['font_strike', 'font_underline'], (a, b) => {
+      const lines = [];
+      if (a) lines.push('line-through');
+      if (b) lines.push('underline');
+      if (lines.length > 0) return { textDecoration: lines.join(' ') };
+    });
   }
 
   getRichFontStyles(attrs) {

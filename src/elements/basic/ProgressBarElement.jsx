@@ -59,10 +59,15 @@ function ProgressBarElement({
       now={percent}
     />
   ];
+  const link = element.styles.font_link;
+  const cursorStyle = link ? { cursor: 'pointer' } : {};
   const completionPercentage = (
     <div
       key='completionPercentage'
-      style={{ width: '100%', textAlign: 'center' }}
+      style={{ width: '100%', textAlign: 'center', ...cursorStyle }}
+      onClick={() => {
+        if (link) window.open(link, '_blank');
+      }}
     >
       {`${percent}% completed`}
     </div>
