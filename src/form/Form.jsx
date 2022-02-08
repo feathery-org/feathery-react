@@ -32,7 +32,7 @@ import {
   nextStepKey,
   objectMap,
   reactFriendlyKey,
-  recurseDepth,
+  recurseProgressDepth,
   setFormElementError,
   shouldElementHide,
   textFieldShouldSubmit
@@ -457,7 +457,11 @@ function Form({
     }
     newStep = JSON.parse(JSON.stringify(newStep));
 
-    const [curDepth, maxDepth] = recurseDepth(steps, getOrigin(steps), newKey);
+    const [curDepth, maxDepth] = recurseProgressDepth(
+      steps,
+      getOrigin(steps),
+      newKey
+    );
     setCurDepth(curDepth);
     setMaxDepth(maxDepth);
 
