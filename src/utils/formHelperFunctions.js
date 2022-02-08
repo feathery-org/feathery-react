@@ -183,14 +183,14 @@ const getOrigin = (steps) => {
   return originKey;
 };
 
-const recurseDepth = (steps, originKey, curKey) => {
+const recurseProgressDepth = (steps, originKey, curKey) => {
   let curDepth = 0;
   let maxDepth = 0;
   const seenStepKeys = new Set();
   const stepQueue = [[steps[originKey], 0]];
   while (stepQueue.length > 0) {
     const [step, depth] = stepQueue.shift();
-    if (seenStepKeys.has(step.key)) continue;
+    if (seenStepKeys.has(step.key) || step.progress_bars.length === 0) continue;
     seenStepKeys.add(step.key);
 
     if (step.key === curKey) curDepth = depth;
@@ -474,7 +474,7 @@ export {
   lookUpTrigger,
   nextStepKey,
   getOrigin,
-  recurseDepth,
+  recurseProgressDepth,
   reactFriendlyKey,
   getFieldValue,
   getFieldError,

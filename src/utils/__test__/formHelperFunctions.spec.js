@@ -5,7 +5,7 @@ import {
   getDefaultFieldValues,
   nextStepKey,
   getOrigin,
-  recurseDepth,
+  recurseProgressDepth,
   getFieldError
 } from '../formHelperFunctions';
 import { initInfo } from '../init';
@@ -386,13 +386,19 @@ describe('formHelperFunctions', () => {
       const steps = {
         step1: {
           key: 'step1',
-          next_conditions: []
+          next_conditions: [],
+          progress_bars: [{}]
         }
       };
       const expected = [0, 0];
 
       // Act
-      const actual = recurseDepth(steps, originStepKey, currentStepKey, []);
+      const actual = recurseProgressDepth(
+        steps,
+        originStepKey,
+        currentStepKey,
+        []
+      );
 
       // Assert
       expect(actual).toEqual(expected);
@@ -409,17 +415,24 @@ describe('formHelperFunctions', () => {
             {
               next_step_key: 'step2'
             }
-          ]
+          ],
+          progress_bars: [{}]
         },
         step2: {
           key: 'step2',
-          next_conditions: []
+          next_conditions: [],
+          progress_bars: [{}]
         }
       };
       const expected = [1, 1];
 
       // Act
-      const actual = recurseDepth(steps, originStepKey, currentStepKey, []);
+      const actual = recurseProgressDepth(
+        steps,
+        originStepKey,
+        currentStepKey,
+        []
+      );
 
       // Assert
       expect(actual).toEqual(expected);
@@ -439,11 +452,13 @@ describe('formHelperFunctions', () => {
             {
               next_step_key: 'step3'
             }
-          ]
+          ],
+          progress_bars: [{}]
         },
         step2: {
           key: 'step2',
-          next_conditions: []
+          next_conditions: [],
+          progress_bars: [{}]
         },
         step3: {
           key: 'step3',
@@ -451,17 +466,24 @@ describe('formHelperFunctions', () => {
             {
               next_step_key: 'step4'
             }
-          ]
+          ],
+          progress_bars: [{}]
         },
         step4: {
           key: 'step4',
-          next_conditions: []
+          next_conditions: [],
+          progress_bars: [{}]
         }
       };
       const expected = [1, 2];
 
       // Act
-      const actual = recurseDepth(steps, originStepKey, currentStepKey, []);
+      const actual = recurseProgressDepth(
+        steps,
+        originStepKey,
+        currentStepKey,
+        []
+      );
 
       // Assert
       expect(actual).toEqual(expected);

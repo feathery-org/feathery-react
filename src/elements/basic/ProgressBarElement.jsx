@@ -40,7 +40,7 @@ function ProgressBarElement({
   const actualProgress = progress ?? element.properties?.progress;
   const percent = isNum(actualProgress)
     ? actualProgress
-    : Math.round((100 * curDepth) / (maxDepth + 1));
+    : Math.round((100 * curDepth) / (maxDepth || 1));
   const progressBarElements = [
     <ProgressBar
       key='progress'
