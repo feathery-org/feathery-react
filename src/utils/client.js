@@ -3,13 +3,22 @@ import { initFormsPromise, initInfo, initState } from './init';
 import { encodeGetParams } from './primitives';
 
 // Convenience boolean for urls - manually change for testing
-const isLocal = false;
-export const API_URL = isLocal
-  ? 'http://localhost:8006/api/'
-  : 'https://api.feathery.io/api/';
-export const CDN_URL = isLocal
-  ? 'http://localhost:8006/api/'
-  : 'https://cdn.feathery.io/api/';
+const API_URL_OPTIONS = {
+  local: 'http://localhost:8006/api/',
+  staging: 'https://staging.feathery.io/api/',
+  production: 'https://api.feathery.io/api/'
+};
+
+const CDN_URL_OPTIONS = {
+  local: 'http://localhost:8006/api/',
+  staging: 'https://staging.feathery.io/api/',
+  production: 'https://cdn.feathery.io/api/'
+};
+
+const environment = 'production';
+
+export const API_URL = API_URL_OPTIONS[environment];
+export const CDN_URL = CDN_URL_OPTIONS[environment];
 
 export default class Client {
   constructor(formKey, ignoreNetworkErrors) {
