@@ -219,7 +219,6 @@ Object.entries(Fields).map(([key, Field]) => {
           <span
             css={{
               alignSelf: 'flex-start',
-              marginTop: '3px',
               color: '#F42525',
               ...applyStyles.getTarget('error')
             }}
