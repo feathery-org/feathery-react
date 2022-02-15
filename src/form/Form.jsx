@@ -45,6 +45,15 @@ import Elements from '../elements';
 import GooglePlaces from './GooglePlaces';
 import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
 import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
+import {
+  LINK_ADD_REPEATED_ROW,
+  LINK_CUSTOM,
+  LINK_REMOVE_REPEATED_ROW,
+  LINK_SEND_SMS,
+  LINK_SKIP,
+  LINK_SUBMIT,
+  LINK_TRIGGER_PLAID
+} from '../elements/basic/ButtonElement';
 
 const FILE_UPLOADERS = [
   'file_upload',
@@ -157,7 +166,9 @@ function Form({
   const activeStep = useMemo(() => {
     if (!rawActiveStep) return null;
     setHasPlaid(
-      !!rawActiveStep.buttons.find((b) => b.properties.link === 'trigger_plaid')
+      !!rawActiveStep.buttons.find(
+        (b) => b.properties.link === LINK_TRIGGER_PLAID
+      )
     );
     setPlaidLinked(false);
     setGMapFilled(
@@ -220,21 +231,33 @@ function Form({
 
   useEffect(() => {
     if (!activeStep) return;
-    const f = activeStep.servar_fields.find((field) => {
+    const hasLoginField = activeStep.servar_fields.some((field) => {
       const servar = field.servar;
       return (
         servar.type === 'login' &&
         servar.metadata.login_methods.includes('phone')
       );
     });
-    const b = activeStep.buttons.find((b) => b.properties.link === 'submit');
-    if (f && b) {
+    const submitButton = activeStep.buttons.find(
+      (b) => b.properties.link === LINK_SUBMIT
+    );
+    if (hasLoginField && submitButton) {
       window.firebaseRecaptchaVerifier = new global.firebase.auth.RecaptchaVerifier(
-        b.id,
+        submitButton.id,
         { size: 'invisible' }
       );
+    } else {
+      const smsButton = activeStep.buttons.find(
+        (b) => b.properties.link === LINK_SEND_SMS
+      );
+      if (smsButton) {
+        window.firebaseRecaptchaVerifier = new global.firebase.auth.RecaptchaVerifier(
+          smsButton.id,
+          { size: 'invisible' }
+        );
+      }
     }
-  }, [activeStep?.key]);
+  }, [activeStep?.id]);
 
   const scrollToRef = (ref) =>
     window.scrollTo({
@@ -254,7 +277,7 @@ function Form({
       e.stopPropagation();
       // Submit steps by pressing `Enter`
       const submitButton = activeStep.buttons.find(
-        (b) => b.properties.link === 'submit'
+        (b) => b.properties.link === LINK_SUBMIT
       );
       if (submitButton) {
         // Simulate button click if available
@@ -1075,15 +1098,11 @@ function Form({
   };
 
   const buttonOnClick = async (button) => {
-    if (
-      ['add_repeated_row', 'remove_repeated_row'].includes(
-        button.properties.link
-      )
-    ) {
+    const link = button.properties.link;
+    if ([LINK_ADD_REPEATED_ROW, LINK_REMOVE_REPEATED_ROW].includes(link)) {
       let data;
-      if (button.properties.link === 'add_repeated_row')
-        data = addRepeatedRow();
-      else if (button.properties.link === 'remove_repeated_row') {
+      if (link === LINK_ADD_REPEATED_ROW) data = addRepeatedRow();
+      else if (link === LINK_REMOVE_REPEATED_ROW) {
         data = removeRepeatedRow(button.repeat);
       }
       if (data.fieldKeys.length > 0) {
@@ -1093,7 +1112,7 @@ function Form({
           elementRepeatIndex: button.repeat
         })();
       }
-    } else if (button.properties.link === 'trigger_plaid') {
+    } else if (link === LINK_TRIGGER_PLAID) {
       if (!plaidLinked) {
         await openPlaidLink(
           client,
@@ -1107,7 +1126,7 @@ function Form({
           () => setLoaders({})
         );
       }
-    } else if (button.properties.link === 'custom') {
+    } else if (link === LINK_CUSTOM) {
       if (typeof onCustomAction === 'function') {
         onCustomAction({
           ...commonCallbackProps,
@@ -1118,8 +1137,16 @@ function Form({
           }
         });
       }
-    } else if (['submit', 'skip'].includes(button.properties.link)) {
-      await buttonOnSubmit(button.properties.link === 'submit', button);
+    } else if (link === LINK_SEND_SMS) {
+      await setButtonLoader(button);
+      await sendLoginCode(
+        fieldValues[button.properties.sms_code_field_key],
+        null,
+        ['phone']
+      );
+      setLoaders({});
+    } else if ([LINK_SUBMIT, LINK_SKIP].includes(link)) {
+      await buttonOnSubmit(link === LINK_SUBMIT, button);
     }
   };
 
@@ -1165,7 +1192,7 @@ function Form({
     if (submitData) {
       // Simulate button click if available
       const submitButton = activeStep.buttons.find(
-        (b) => b.properties.link === 'submit'
+        (b) => b.properties.link === LINK_SUBMIT
       );
       if (submitButton) buttonOnClick(submitButton);
       else submit({ metadata, repeat: elementRepeatIndex });

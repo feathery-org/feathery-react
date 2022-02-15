@@ -2,7 +2,15 @@ import React, { useMemo } from 'react';
 
 import ReactButton from 'react-bootstrap/Button';
 import TextNodes from '../components/TextNodes';
-import Spinner from 'react-bootstrap/Spinner';
+
+const LINK_CUSTOM = 'custom';
+const LINK_NONE = 'none';
+const LINK_SKIP = 'skip';
+const LINK_SUBMIT = 'submit';
+const LINK_ADD_REPEATED_ROW = 'add_repeated_row';
+const LINK_REMOVE_REPEATED_ROW = 'remove_repeated_row';
+const LINK_SEND_SMS = 'send_sms_code';
+const LINK_TRIGGER_PLAID = 'trigger_plaid';
 
 function adjustColor(color, amount) {
   return (
@@ -30,7 +38,7 @@ function applyButtonStyles(element, applyStyles) {
   applyStyles.applyBorders('button');
 
   applyStyles.applyBorders('buttonHover', 'hover_');
-  if (element.properties.link !== 'none') {
+  if (element.properties.link !== LINK_NONE) {
     applyStyles.apply('buttonHover', 'background_color', (a) => {
       const color = `${adjustColor(a, -30)} !important`;
       return {
@@ -84,7 +92,7 @@ function ButtonElement({
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        cursor: element.properties.link === 'none' ? 'default' : 'pointer',
+        cursor: element.properties.link === LINK_NONE ? 'default' : 'pointer',
         boxShadow: 'none',
         maxWidth: '100%',
         position: 'relative',
@@ -96,7 +104,7 @@ function ButtonElement({
         '&:hover:enabled': styles.getTarget('buttonHover'),
         '&&': styles.getTarget('button')
       }}
-      disabled={element.properties.link === 'none' || loader}
+      disabled={element.properties.link === LINK_NONE || loader}
       onClick={onClick}
       {...elementProps}
     >
@@ -128,4 +136,14 @@ function ButtonElement({
 }
 
 export default ButtonElement;
-export { adjustColor };
+export {
+  adjustColor,
+  LINK_CUSTOM,
+  LINK_NONE,
+  LINK_SKIP,
+  LINK_SUBMIT,
+  LINK_ADD_REPEATED_ROW,
+  LINK_REMOVE_REPEATED_ROW,
+  LINK_SEND_SMS,
+  LINK_TRIGGER_PLAID
+};
