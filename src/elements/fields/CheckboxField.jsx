@@ -119,7 +119,6 @@ export function applyCheckableInputStyles(element, applyStyles) {
   }
 
   // base styles
-  applyStyles.applyMargin('fc');
   applyStyles.applyBorders('checkbox');
   if (!isRadioGroup) applyStyles.applyCorners('checkbox');
   applyStyles.applyBoxShadow('checkbox');

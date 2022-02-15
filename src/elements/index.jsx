@@ -38,6 +38,7 @@ Object.entries(Elements).map(([key, Element]) => {
       as.apply('container', 'layout', (a) => ({
         alignItems: legacyAlignment(a)
       }));
+      as.applyPadding('container');
       if (key === 'TextElement' && element.styles.border_color) {
         as.apply('container', 'border_color', (a) => ({
           border: `1px solid #${a}`

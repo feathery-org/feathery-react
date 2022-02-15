@@ -31,7 +31,6 @@ function applyFieldStyles(field, styles) {
   styles.addTargets('fc', 'field', 'error', 'active', 'hover');
 
   styles.applyFontStyles('fc');
-  styles.applyMargin('fc');
   styles.applySelectorStyles('active', 'selected_');
   styles.applySelectorStyles('hover', 'hover_');
   styles.apply('error', 'font_family', (a) => ({
@@ -114,13 +113,11 @@ function applyFieldStyles(field, styles) {
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
       styles.applyBorders('field');
-      styles.applyMargin('field');
       break;
     case 'dropdown':
     case 'gmap_state':
       styles.addTargets('sub-fc');
       styles.applyHeight('sub-fc');
-      styles.applyMargin('fc');
       styles.applyWidth('fc');
       styles.applyBorders('field');
       styles.applyCorners('field');
@@ -131,7 +128,6 @@ function applyFieldStyles(field, styles) {
         styles.applyPlaceholderStyles(type, field.styles);
       break;
     case 'pin_input':
-      styles.applyMargin('fc');
       styles.applyWidth('field');
       styles.applyHeight('field');
       styles.applyBoxShadow('field');
@@ -143,7 +139,6 @@ function applyFieldStyles(field, styles) {
       styles.applyColor('field', 'font_color', 'color');
       break;
     case 'multiselect':
-      styles.applyMargin('fc');
       styles.applyCorners('field');
       styles.applyBorders('field');
       styles.applyBoxShadow('field');
@@ -154,7 +149,6 @@ function applyFieldStyles(field, styles) {
       }));
       break;
     case 'select':
-      styles.applyMargin('fc');
       styles.applyCorners('field');
       styles.applyBorders('field');
       styles.applyBoxShadow('field');
@@ -165,13 +159,11 @@ function applyFieldStyles(field, styles) {
       }));
       break;
     case 'hex_color':
-      styles.applyMargin('fc');
       styles.applyCorners('field');
       styles.applyBorders('field');
       break;
     default:
       styles.addTargets('sub-fc', 'tooltipIcon');
-      styles.applyMargin('fc');
       styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
       styles.applyBoxShadow('field');

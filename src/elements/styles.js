@@ -154,12 +154,12 @@ class ApplyStyles {
     }
   }
 
-  applyMargin(target) {
+  applyPadding(target) {
     this.apply(
       target,
       ['padding_top', 'padding_right', 'padding_bottom', 'padding_left'],
       (a, b, c, d) => ({
-        margin: `${a}px ${b}px ${c}px ${d}px`
+        padding: `${a}px ${b}px ${c}px ${d}px`
       })
     );
   }

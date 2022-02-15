@@ -2,7 +2,6 @@ import React, { useMemo } from 'react';
 
 function applyImageStyles(element, applyStyles) {
   applyStyles.addTargets('image');
-  applyStyles.applyMargin('image');
   applyStyles.applyWidth('image');
 
   if (element.styles.line_height) {
