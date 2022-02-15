@@ -58,8 +58,8 @@ export function emailLogin(firebaseConfig, firebase, clientArg) {
   }
 }
 
-export async function sendLoginCode(fieldVal, servar) {
-  const methods = servar.metadata.login_methods;
+export async function sendLoginCode(fieldVal, servar, methods = null) {
+  methods = methods || servar.metadata.login_methods;
   if (methods.includes('phone') && phonePattern.test(fieldVal)) {
     return await global.firebase
       .auth()
