@@ -7,6 +7,25 @@ const checkmarkClipPath =
 
 const MIN_CHECKBOX_PX = 13;
 
+// Possibly extract this to its own file, however the radio type is nearly identical to checkbox
+const radio = (size, color) => {
+  size = Math.floor(size / 1.7);
+  return {
+    height: size,
+    width: size,
+    border: 0,
+    boxShadow: `inset ${size}px ${size}px #${color}`,
+    borderRadius: '50%'
+  };
+};
+
+const checkbox = (size, color) => {
+  return {
+    boxShadow: `inset ${size}px ${size}px #${color}`,
+    clipPath: checkmarkClipPath
+  };
+};
+
 const scaleCheckboxSize = (fontSize) => {
   return Math.max(Math.floor(fontSize * 0.5), MIN_CHECKBOX_PX);
 };
@@ -18,13 +37,15 @@ const applyHeightAndWidthByFontSize = (applyStyles, target) => {
   });
 };
 
-const applyCheckmarkByFontSize = (applyStyles, target, colorProperty) => {
+const applyCheckmarkByFontSize = (
+  applyStyles,
+  target,
+  colorProperty,
+  isRadio
+) => {
   applyStyles.apply(target, ['font_size', colorProperty], (fontSize, color) => {
-    const scaledSize = `${scaleCheckboxSize(fontSize)}px`;
-    return {
-      boxShadow: `inset ${scaledSize} ${scaledSize} #${color}`,
-      clipPath: checkmarkClipPath
-    };
+    const scaledSize = scaleCheckboxSize(fontSize);
+    return isRadio ? radio(scaledSize, color) : checkbox(scaledSize, color);
   });
 };
 
@@ -41,7 +62,7 @@ const applyCheckmark = (applyStyles, target, colorProperty) => {
   );
 };
 
-export function applyCheckboxStyles(element, applyStyles) {
+export function applyCheckableInputStyles(element, applyStyles) {
   applyStyles.addTargets(
     'checkbox',
     'checkboxCheckmark',
@@ -54,7 +75,10 @@ export function applyCheckboxStyles(element, applyStyles) {
     servar: { type }
   } = element;
 
-  const scaleWithFontSize = type === 'multiselect' || type === 'checkbox_group';
+  const isRadioGroup = type === 'select';
+  const isCheckboxGroup = type === 'multiselect' || type === 'checkbox_group';
+
+  const scaleWithFontSize = isCheckboxGroup || isRadioGroup;
 
   // width/height styles
   if (scaleWithFontSize) {
@@ -64,12 +88,14 @@ export function applyCheckboxStyles(element, applyStyles) {
     applyCheckmarkByFontSize(
       applyStyles,
       'checkboxCheckmark',
-      'selected_font_color'
+      'selected_font_color',
+      isRadioGroup
     );
     applyCheckmarkByFontSize(
       applyStyles,
       'checkboxCheckmarkHover',
-      'hover_font_color'
+      'hover_font_color',
+      isRadioGroup
     );
   } else {
     applyStyles.applyHeight('checkbox');
@@ -78,14 +104,24 @@ export function applyCheckboxStyles(element, applyStyles) {
     applyStyles.applyWidth('checkboxCheckmark');
     applyStyles.applyHeight('checkboxCheckmarkHover');
     applyStyles.applyWidth('checkboxCheckmarkHover');
-    applyCheckmark(applyStyles, 'checkboxCheckmark', 'selected_font_color');
-    applyCheckmark(applyStyles, 'checkboxCheckmarkHover', 'hover_font_color');
+    applyCheckmark(
+      applyStyles,
+      'checkboxCheckmark',
+      'selected_font_color',
+      isRadioGroup
+    );
+    applyCheckmark(
+      applyStyles,
+      'checkboxCheckmarkHover',
+      'hover_font_color',
+      isRadioGroup
+    );
   }
 
   // base styles
   applyStyles.applyMargin('fc');
   applyStyles.applyBorders('checkbox');
-  applyStyles.applyCorners('checkbox');
+  if (!isRadioGroup) applyStyles.applyCorners('checkbox');
   applyStyles.applyBoxShadow('checkbox');
   applyStyles.applyColor(
     'checkbox',
@@ -116,9 +152,14 @@ export function applyCheckboxStyles(element, applyStyles) {
   return applyStyles;
 }
 
-export const composeCheckboxStyle = (styles, group = false) => {
+export const composeCheckableInputStyle = (
+  styles,
+  group = false,
+  type = 'checkbox'
+) => {
+  const isRadio = type === 'radio';
   return {
-    'input[type="checkbox"]': {
+    [`input[type="${type}"]`]: {
       position: 'static',
       marginLeft: 5,
       marginRight: group ? 10 : 5,
@@ -127,26 +168,26 @@ export const composeCheckboxStyle = (styles, group = false) => {
       appearance: 'none',
       display: 'grid',
       placeContent: 'center',
+      borderRadius: isRadio ? '50%' : null, // Force radio buttons to be round
       ...styles.getTarget('checkbox')
     },
-    'input[type="checkbox"]:hover': {
+    [`input[type="${type}"]:hover`]: {
       ...styles.getTarget('checkboxHover')
     },
-    'input[type="checkbox"]::before': {
+    [`input[type="${type}"]::before`]: {
       content: "''",
       transform: 'scale(0)',
       ...styles.getTarget('checkboxCheckmark')
     },
-    'input[type="checkbox"]:hover::before': {
+    [`input[type="${type}"]:hover::before`]: {
       ...styles.getTarget('checkboxCheckmark'),
       ...styles.getTarget('checkboxCheckmarkHover')
     },
-    'input[type="checkbox"]:checked': {
+    [`input[type="${type}"]:checked`]: {
       ...styles.getTarget('checkboxSelected')
     },
-    'input[type="checkbox"]:checked::before': {
-      transform: 'scale(1)',
-      ...styles.getTarget('checkboxSelected')
+    [`input[type="${type}"]:checked::before`]: {
+      transform: 'scale(1)'
     }
   };
 };
@@ -184,7 +225,7 @@ function CheckboxField({
           alignItems: 'center',
           padding: 0
         }}
-        css={composeCheckboxStyle(styles)}
+        css={composeCheckableInputStyle(styles)}
       />
       {children}
     </div>

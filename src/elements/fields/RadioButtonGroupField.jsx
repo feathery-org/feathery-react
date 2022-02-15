@@ -1,6 +1,16 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import ReactForm from 'react-bootstrap/Form';
 import { bootstrapStyles } from '../styles';
+import {
+  applyCheckableInputStyles,
+  composeCheckableInputStyle
+} from './CheckboxField';
+
+const applyRadioGroupStyles = (element, applyStyles) => {
+  applyStyles.addTargets(['radioGroup']);
+  applyStyles.applyWidth('radioGroup');
+  return applyStyles;
+};
 
 function RadioButtonGroupField({
   element,
@@ -19,6 +29,14 @@ function RadioButtonGroupField({
   const [otherSelect, setOtherSelect] = useState({});
   const otherChecked =
     (otherSelect[servar.key] || fieldVal) && fieldVal === otherVal;
+
+  const styles = useMemo(() => {
+    applyCheckableInputStyles(element, applyStyles);
+    applyRadioGroupStyles(element, applyStyles);
+
+    return applyStyles;
+  }, [applyStyles]);
+
   return (
     <div
       css={{ ...applyStyles.getTarget('fc'), position: 'relative' }}
@@ -45,10 +63,8 @@ function RadioButtonGroupField({
               lineHeight: 'normal'
             }}
             css={{
-              'input[type="radio"]': {
-                margin: '5px 10px 5px 0',
-                position: 'static'
-              }
+              ...composeCheckableInputStyle(styles, true, 'radio'),
+              ...styles.getTarget('radioGroup')
             }}
           />
         );
@@ -58,7 +74,8 @@ function RadioButtonGroupField({
           style={{
             display: 'flex',
             alignItems: 'center',
-            marginBottom: '18px'
+            marginBottom: '18px',
+            ...styles.getTarget('radioGroup')
           }}
         >
           <ReactForm.Check
@@ -82,12 +99,7 @@ function RadioButtonGroupField({
               padding: 0,
               lineHeight: 'normal'
             }}
-            css={{
-              'input[type="radio"]': {
-                margin: '5px 10px 5px 0',
-                position: 'static'
-              }
-            }}
+            css={composeCheckableInputStyle(styles, true, 'radio')}
           />
           <ReactForm.Control
             type='text'

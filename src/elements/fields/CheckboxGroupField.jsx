@@ -1,7 +1,10 @@
 import React, { useMemo } from 'react';
 import ReactForm from 'react-bootstrap/Form';
 import { bootstrapStyles } from '../styles';
-import { applyCheckboxStyles, composeCheckboxStyle } from './CheckboxField';
+import {
+  applyCheckableInputStyles,
+  composeCheckableInputStyle
+} from './CheckboxField';
 
 const applyCheckboxGroupStyles = (element, applyStyles) => {
   applyStyles.addTargets(['checkboxGroup']);
@@ -25,7 +28,7 @@ function CheckboxGroupField({
   const otherChecked = fieldVal.includes(otherVal);
 
   const styles = useMemo(() => {
-    applyCheckboxStyles(element, applyStyles);
+    applyCheckableInputStyles(element, applyStyles);
     applyCheckboxGroupStyles(element, applyStyles);
 
     return applyStyles;
@@ -34,9 +37,6 @@ function CheckboxGroupField({
   return (
     <div
       css={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        width: '100%',
         position: 'relative',
         ...applyStyles.getTarget('fc')
       }}
@@ -62,7 +62,7 @@ function CheckboxGroupField({
               lineHeight: 'normal'
             }}
             css={{
-              ...composeCheckboxStyle(styles, true),
+              ...composeCheckableInputStyle(styles, true),
               ...styles.getTarget('checkboxGroup')
             }}
           />
@@ -92,7 +92,7 @@ function CheckboxGroupField({
               padding: 0,
               lineHeight: 'normal'
             }}
-            css={composeCheckboxStyle(styles, true)}
+            css={composeCheckableInputStyle(styles, true)}
           />
           <ReactForm.Control
             type='text'
