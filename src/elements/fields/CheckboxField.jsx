@@ -202,9 +202,10 @@ function CheckboxField({
   elementProps = {},
   children
 }) {
-  const styles = useMemo(() => applyCheckboxStyles(element, applyStyles), [
-    applyStyles
-  ]);
+  const styles = useMemo(
+    () => applyCheckableInputStyles(element, applyStyles),
+    [applyStyles]
+  );
 
   const servar = element.servar;
 
