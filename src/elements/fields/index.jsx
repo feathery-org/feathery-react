@@ -113,6 +113,7 @@ function applyFieldStyles(field, styles) {
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
       styles.applyBorders('field');
+      styles.applyPadding('field', true);
       break;
     case 'dropdown':
     case 'gmap_state':
