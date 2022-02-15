@@ -28,7 +28,6 @@ function applyButtonStyles(element, applyStyles) {
   applyStyles.applyWidth('button');
   applyStyles.applyCorners('button');
   applyStyles.applyBorders('button');
-  applyStyles.applyMargin('button');
 
   applyStyles.applyBorders('buttonHover', 'hover_');
   if (element.properties.link !== 'none') {

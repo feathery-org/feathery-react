@@ -18,7 +18,6 @@ function applyTextStyles(element, applyStyles) {
   applyStyles.apply('text', 'layout', (a) => ({
     textAlign: legacyAlignment(a)
   }));
-  applyStyles.applyMargin('text');
   if (element.styles.line_height) {
     applyStyles.apply('text', 'line_height', (a) => ({
       lineHeight: `${a}px`

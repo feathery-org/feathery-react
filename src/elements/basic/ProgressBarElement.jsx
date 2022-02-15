@@ -6,7 +6,6 @@ function applyProgressBarStyles(element, applyStyles) {
   applyStyles.addTargets('barContainer', 'bar');
 
   applyStyles.applyFontStyles('barContainer');
-  applyStyles.applyMargin('barContainer');
   applyStyles.apply('barContainer', 'vertical_layout', (a) => ({
     justifyContent: a
   }));
