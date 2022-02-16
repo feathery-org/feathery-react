@@ -107,6 +107,16 @@ function applyFieldStyles(field, styles) {
       styles.apply('fc', 'vertical_layout', (a) => ({
         justifyContent: a
       }));
+      // Cancel out extra per-button margins on the edges
+      styles.apply(
+        'fc',
+        ['padding_top', 'padding_right', 'padding_bottom', 'padding_left'],
+        (a, b, c, d) => {
+          return {
+            margin: `${-a}px ${-b}px ${-c}px ${-d}px`
+          };
+        }
+      );
       styles.applyHeight('field', true);
       styles.applyWidth('field', true);
       styles.applyColor('field', 'background_color', 'backgroundColor');
