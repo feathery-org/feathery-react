@@ -136,6 +136,7 @@ function Form({
   let fieldValues = fieldValuesRef.current;
   const formRef = useRef(null);
   const signatureRef = useRef({}).current;
+  const userCallbackRef = useRef([]);
   const hasRedirected = useRef(false);
 
   // Determine if there is a field with a custom repeat_trigger configuration anywhere in the step
@@ -165,17 +166,6 @@ function Form({
   // Note: Other hydration transformations can also be included here
   const activeStep = useMemo(() => {
     if (!rawActiveStep) return null;
-    setHasPlaid(
-      !!rawActiveStep.buttons.find(
-        (b) => b.properties.link === LINK_TRIGGER_PLAID
-      )
-    );
-    setPlaidLinked(false);
-    setGMapFilled(
-      rawActiveStep.servar_fields.find(
-        (f) => f.servar.type === 'gmap_line_1' && fieldValues[f.servar.key]
-      )
-    );
     return JSON.parse(
       JSON.stringify(
         injectRepeatedRows({
@@ -229,8 +219,10 @@ function Form({
     }
   }, [gMapTimeoutId, gMapFilled, gMapBlurKey]);
 
+  // Logic to run every time step changes
   useEffect(() => {
     if (!activeStep) return;
+
     const hasLoginField = activeStep.servar_fields.some((field) => {
       const servar = field.servar;
       return (
@@ -257,6 +249,17 @@ function Form({
         );
       }
     }
+
+    setHasPlaid(
+      !!activeStep.buttons.find((b) => b.properties.link === LINK_TRIGGER_PLAID)
+    );
+    setPlaidLinked(false);
+    setGMapFilled(
+      activeStep.servar_fields.find(
+        (f) => f.servar.type === 'gmap_line_1' && fieldValues[f.servar.key]
+      )
+    );
+    userCallbackRef.current = [];
   }, [activeStep?.id]);
 
   const scrollToRef = (ref) =>
@@ -877,13 +880,13 @@ function Form({
       if (invalid) return;
 
       // async execution after user's onSubmit
-      return handleSubmitRedirect({
+      return await handleSubmitRedirect({
         metadata,
         formattedFields,
         loggedIn
       });
     } else {
-      return handleSubmitRedirect({
+      return await handleSubmitRedirect({
         metadata,
         formattedFields,
         loggedIn
@@ -956,7 +959,7 @@ function Form({
     });
   }
 
-  function handleRedirect({
+  async function handleRedirect({
     metadata,
     redirectKey = '',
     submitPromise = null,
@@ -979,6 +982,7 @@ function Form({
       eventData = { ...eventData, next_step_key: newStepKey };
     }
 
+    await Promise.all(userCallbackRef.current);
     if (!redirectKey) {
       if (submitData || ['button', 'text'].includes(metadata.elementType)) {
         eventData.completed = true;
@@ -1090,7 +1094,7 @@ function Form({
           });
           if (stepChanged) return;
         }
-        handleRedirect({ metadata });
+        await handleRedirect({ metadata });
       }
     } catch {
       setLoaders({});
@@ -1172,16 +1176,18 @@ function Form({
     }
     if (typeof onChange === 'function') {
       const formattedFields = formatAllStepFields(steps, fieldValues);
-      onChange({
-        ...commonCallbackProps,
-        changeKeys: fieldKeys,
-        trigger,
-        integrationData,
-        fields: formattedFields,
-        lastStep: activeStep.next_conditions.length === 0,
-        elementRepeatIndex,
-        valueRepeatIndex
-      });
+      userCallbackRef.current.push(
+        onChange({
+          ...commonCallbackProps,
+          changeKeys: fieldKeys,
+          trigger,
+          integrationData,
+          fields: formattedFields,
+          lastStep: activeStep.next_conditions.length === 0,
+          elementRepeatIndex,
+          valueRepeatIndex
+        })
+      );
       setShouldScrollToTop(false);
     }
     const metadata = {
