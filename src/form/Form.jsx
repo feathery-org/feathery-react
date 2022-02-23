@@ -372,9 +372,11 @@ function Form({
   }
 
   const updateFieldValues = (newFieldValues, rerender = true) => {
-    const empty = Object.entries(newFieldValues).some(
-      ([key, val]) => !val || !fieldValues[key]
-    );
+    const entries = Object.entries(newFieldValues);
+    const noChange = entries.every(([key, val]) => fieldValues[key] === val);
+    if (noChange) return false;
+
+    const empty = entries.some(([key, val]) => !val || !fieldValues[key]);
     fieldValuesRef.current = {
       ...fieldValuesRef.current,
       ...newFieldValues
@@ -382,6 +384,7 @@ function Form({
     fieldValues = fieldValuesRef.current;
     // Always rerender from empty state for display purposes
     if (rerender || empty) setRender((render) => !render);
+    return true;
   };
 
   function updateSessionValues(session, useSessionData) {
@@ -697,9 +700,10 @@ function Form({
       });
     }
 
-    updateFieldValues(updateValues, rerender);
+    const change = updateFieldValues(updateValues, rerender);
     if (repeatRowOperation === 'add') addRepeatedRow();
     else if (repeatRowOperation === 'remove') removeRepeatedRow(index);
+    return change;
   };
 
   const handleOtherStateChange = (oldOtherVal) => (e) => {
@@ -1561,11 +1565,13 @@ function Form({
                       }}
                       onClick={onClick}
                       onAccept={(val) => {
-                        changeValue(val, el, index, false);
-                        const submitData =
-                          el.properties.submit_trigger === 'auto' &&
-                          textFieldShouldSubmit(servar, val);
-                        onChange({ submitData });
+                        const change = changeValue(val, el, index, false);
+                        if (change) {
+                          const submitData =
+                            el.properties.submit_trigger === 'auto' &&
+                            textFieldShouldSubmit(servar, val);
+                          onChange({ submitData });
+                        }
                       }}
                       autoFocus={fieldCounter === 1}
                       inlineError={inlineErr}
