@@ -1,5 +1,5 @@
 {
-  "name": "feathery-react",
+  "name": "@feathery-sdk/react",
   "version": "1.0.337",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
