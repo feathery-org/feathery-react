@@ -1,6 +1,6 @@
 {
-  "name": "@feathery-sdk/react",
-  "version": "1.0.337",
+  "name": "feathery-react",
+  "version": "1.0.338",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
