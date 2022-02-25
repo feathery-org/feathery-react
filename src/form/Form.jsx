@@ -230,7 +230,15 @@ function Form({
         servar.metadata.login_methods.includes('phone')
       );
     });
-    const submitButton = activeStep.buttons.find(
+    const renderedButtons = activeStep.buttons.filter(
+      (element) =>
+        !shouldElementHide({
+          fields: activeStep.servar_fields,
+          values: fieldValues,
+          element: element
+        })
+    );
+    const submitButton = renderedButtons.find(
       (b) => b.properties.link === LINK_SUBMIT
     );
     if (hasLoginField && submitButton) {
@@ -239,7 +247,7 @@ function Form({
         { size: 'invisible' }
       );
     } else {
-      const smsButton = activeStep.buttons.find(
+      const smsButton = renderedButtons.find(
         (b) => b.properties.link === LINK_SEND_SMS
       );
       if (smsButton) {
