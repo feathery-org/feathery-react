@@ -368,7 +368,10 @@ describe('formHelperFunctions', () => {
           key: 'step2'
         }
       };
-      const expected = 'step1';
+      const expected = {
+        origin: true,
+        key: 'step1'
+      };
 
       // Act
       const actual = getOrigin(steps);
@@ -381,24 +384,19 @@ describe('formHelperFunctions', () => {
   describe('recurseDepth', () => {
     it('calculates depth for one node, no branches', () => {
       // Arrange
-      const originStepKey = 'step1';
       const currentStepKey = 'step1';
       const steps = {
         step1: {
           key: 'step1',
           next_conditions: [],
-          progress_bars: [{}]
+          progress_bars: [{}],
+          origin: true
         }
       };
       const expected = [0, 0];
 
       // Act
-      const actual = recurseProgressDepth(
-        steps,
-        originStepKey,
-        currentStepKey,
-        []
-      );
+      const actual = recurseProgressDepth(steps, currentStepKey);
 
       // Assert
       expect(actual).toEqual(expected);
@@ -406,7 +404,6 @@ describe('formHelperFunctions', () => {
 
     it('calculates depth for two nodes, one branch', () => {
       // Arrange
-      const originStepKey = 'step1';
       const currentStepKey = 'step2';
       const steps = {
         step1: {
@@ -416,7 +413,8 @@ describe('formHelperFunctions', () => {
               next_step_key: 'step2'
             }
           ],
-          progress_bars: [{}]
+          progress_bars: [{}],
+          origin: true
         },
         step2: {
           key: 'step2',
@@ -427,12 +425,7 @@ describe('formHelperFunctions', () => {
       const expected = [1, 1];
 
       // Act
-      const actual = recurseProgressDepth(
-        steps,
-        originStepKey,
-        currentStepKey,
-        []
-      );
+      const actual = recurseProgressDepth(steps, currentStepKey);
 
       // Assert
       expect(actual).toEqual(expected);
@@ -440,7 +433,6 @@ describe('formHelperFunctions', () => {
 
     it('calculates depth for multiple nodes, multiple branchs', () => {
       // Arrange
-      const originStepKey = 'step1';
       const currentStepKey = 'step2';
       const steps = {
         step1: {
@@ -453,7 +445,8 @@ describe('formHelperFunctions', () => {
               next_step_key: 'step3'
             }
           ],
-          progress_bars: [{}]
+          progress_bars: [{}],
+          origin: true
         },
         step2: {
           key: 'step2',
@@ -478,12 +471,7 @@ describe('formHelperFunctions', () => {
       const expected = [1, 2];
 
       // Act
-      const actual = recurseProgressDepth(
-        steps,
-        originStepKey,
-        currentStepKey,
-        []
-      );
+      const actual = recurseProgressDepth(steps, currentStepKey);
 
       // Assert
       expect(actual).toEqual(expected);
