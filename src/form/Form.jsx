@@ -21,6 +21,7 @@ import {
   formatAllStepFields,
   formatStepFields,
   getABVariant,
+  getAllElements,
   getDefaultFieldValue,
   getDefaultFieldValues,
   getFieldError,
@@ -184,13 +185,7 @@ function Form({
     return [
       // When the active step changes, recalculate the dimensions of the new step
       calculateStepCSS(activeStep),
-      [
-        ...activeStep.progress_bars.map((e) => [e, 'progress_bar']),
-        ...activeStep.images.map((e) => [e, 'image']),
-        ...activeStep.texts.map((e) => [e, 'text']),
-        ...activeStep.buttons.map((e) => [e, 'button']),
-        ...activeStep.servar_fields.map((e) => [e, 'field'])
-      ]
+      getAllElements(activeStep)
     ];
   }, [activeStep]);
 
@@ -441,20 +436,28 @@ function Form({
     setRawActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
   };
 
-  const commonCallbackProps = {
-    setOptions: updateFieldOptions(steps),
-    setValues: (userVals) => {
-      const values = convertFilesToFilePromises(userVals, fileServarKeys);
-      updateFieldValues(values);
-      client.submitCustom(values);
-    },
-    setProgress: (val) => setUserProgress(val),
-    setStep: (stepKey) => {
-      changeStep(stepKey, activeStep.key, steps, history);
-    },
-    userId: initInfo().userKey,
-    stepName: activeStep?.key ?? ''
+  const getCommonCallbackProps = (newStep = activeStep) => {
+    return {
+      setOptions: updateFieldOptions(steps),
+      setValues: (userVals) => {
+        const values = convertFilesToFilePromises(userVals, fileServarKeys);
+        updateFieldValues(values);
+        client.submitCustom(values);
+      },
+      setProgress: (val) => setUserProgress(val),
+      setStep: (stepKey) => {
+        changeStep(stepKey, newStep.key, steps, history);
+      },
+      step: {
+        style: {
+          backgroundColor: newStep?.default_background_color
+        }
+      },
+      userId: initInfo().userKey,
+      stepName: newStep?.key ?? ''
+    };
   };
+
   const getErrorCallback = (props1) => async (props2) => {
     if (typeof onError === 'function') {
       const formattedFields = formatAllStepFields(steps, fieldValues);
@@ -462,7 +465,7 @@ function Form({
         fields: formattedFields,
         ...props1,
         ...props2,
-        ...commonCallbackProps
+        ...getCommonCallbackProps()
       });
     }
   };
@@ -523,7 +526,7 @@ function Form({
       }
       let stepChanged = false;
       await onLoad({
-        ...commonCallbackProps,
+        ...getCommonCallbackProps(newStep),
         fields: formattedFields,
         stepName: newStep.key,
         previousStepName: activeStep?.key,
@@ -846,7 +849,7 @@ function Form({
       let stepChanged = false;
       await setLoader();
       await onSubmit({
-        ...commonCallbackProps,
+        ...getCommonCallbackProps(),
         submitFields: { ...formattedFields, ...plaidFieldValues },
         elementRepeatIndex: repeat,
         fields: allFields,
@@ -1094,7 +1097,7 @@ function Form({
         if (typeof onSkip === 'function') {
           let stepChanged = false;
           await onSkip({
-            ...commonCallbackProps,
+            ...getCommonCallbackProps(),
             setStep: (stepKey) => {
               stepChanged = changeStep(stepKey, activeStep.key, steps, history);
             },
@@ -1145,7 +1148,7 @@ function Form({
     } else if (link === LINK_CUSTOM) {
       if (typeof onCustomAction === 'function') {
         onCustomAction({
-          ...commonCallbackProps,
+          ...getCommonCallbackProps(),
           trigger: {
             ...lookUpTrigger(activeStep, button.id, 'button'),
             type: 'button',
@@ -1190,7 +1193,7 @@ function Form({
       const formattedFields = formatAllStepFields(steps, fieldValues);
       userCallbackRef.current.push(
         onChange({
-          ...commonCallbackProps,
+          ...getCommonCallbackProps(),
           changeKeys: fieldKeys,
           trigger,
           integrationData,

@@ -105,6 +105,16 @@ function getDefaultFieldValue(field) {
   }
 }
 
+const getAllElements = (step) => {
+  return [
+    ...step.progress_bars.map((e) => [e, 'progress_bar']),
+    ...step.images.map((e) => [e, 'image']),
+    ...step.texts.map((e) => [e, 'text']),
+    ...step.buttons.map((e) => [e, 'button']),
+    ...step.servar_fields.map((e) => [e, 'field'])
+  ];
+};
+
 const getDefaultFieldValues = (steps) => {
   const fieldValues = {};
   Object.values(steps).forEach((step) => {
@@ -471,6 +481,7 @@ export {
   formatAllStepFields,
   formatStepFields,
   getABVariant,
+  getAllElements,
   getDefaultFieldValue,
   getDefaultFieldValues,
   getNewStepUrl,
