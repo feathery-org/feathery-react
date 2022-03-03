@@ -175,32 +175,30 @@ const nextStepKey = (nextConditions, metadata, fieldValues) => {
   return newKey;
 };
 
-const getOrigin = (steps) => {
-  let originKey;
-  Object.values(steps).forEach((step) => {
-    if (step.origin) originKey = step.key;
-  });
-  return originKey;
-};
+const getOrigin = (steps) => Object.values(steps).find((step) => step.origin);
 
-const recurseProgressDepth = (steps, originKey, curKey) => {
-  let curDepth = 0;
-  let maxDepth = 0;
-  const seenStepKeys = new Set();
-  const stepQueue = [[steps[originKey], 0]];
+const getStepDepthMap = (steps, hasProgressBar = false) => {
+  const depthMap = {};
+  const stepQueue = [[getOrigin(steps), 0]];
   while (stepQueue.length > 0) {
     const [step, depth] = stepQueue.shift();
-    if (seenStepKeys.has(step.key) || step.progress_bars.length === 0) continue;
-    seenStepKeys.add(step.key);
-
-    if (step.key === curKey) curDepth = depth;
-    maxDepth = depth;
-
+    if (
+      step.key in depthMap ||
+      // Optionally filter only for steps with progress bar
+      (hasProgressBar && step.progress_bars.length === 0)
+    )
+      continue;
+    depthMap[step.key] = depth;
     step.next_conditions.forEach((condition) => {
       stepQueue.push([steps[condition.next_step_key], depth + 1]);
     });
   }
-  return [curDepth, maxDepth];
+  return depthMap;
+};
+
+const recurseProgressDepth = (steps, curKey) => {
+  const depthMap = getStepDepthMap(steps, true);
+  return [depthMap[curKey], Math.max(...Object.values(depthMap))];
 };
 
 /**
@@ -464,6 +462,10 @@ function changeStep(newKey, oldKey, steps, history) {
   return false;
 }
 
+function getNewStepUrl(stepKey) {
+  return location.pathname + location.search + `#${stepKey}`;
+}
+
 export {
   changeStep,
   formatAllStepFields,
@@ -471,9 +473,11 @@ export {
   getABVariant,
   getDefaultFieldValue,
   getDefaultFieldValues,
+  getNewStepUrl,
   lookUpTrigger,
   nextStepKey,
   getOrigin,
+  getStepDepthMap,
   recurseProgressDepth,
   reactFriendlyKey,
   getFieldValue,

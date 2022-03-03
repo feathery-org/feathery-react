@@ -26,6 +26,7 @@ import {
   getFieldError,
   getFieldValue,
   getInlineError,
+  getNewStepUrl,
   getOrigin,
   isFieldActuallyRequired,
   lookUpTrigger,
@@ -54,6 +55,7 @@ import {
   LINK_SUBMIT,
   LINK_TRIGGER_PLAID
 } from '../elements/basic/ButtonElement';
+import DevNavBar from './DevNavBar';
 
 const FILE_UPLOADERS = [
   'file_upload',
@@ -86,6 +88,7 @@ function Form({
   // If true, will automatically redirect to firstStep if logged back in
   const [firstLoggedOut, setFirstLoggedOut] = useState(false);
 
+  const [productionEnv, setProductionEnv] = useState(true);
   const [steps, setSteps] = useState(null);
   const [rawActiveStep, setRawActiveStep] = useState(null);
   const [stepKey, setStepKey] = useState('');
@@ -494,11 +497,7 @@ function Form({
     }
     newStep = JSON.parse(JSON.stringify(newStep));
 
-    const [curDepth, maxDepth] = recurseProgressDepth(
-      steps,
-      getOrigin(steps),
-      newKey
-    );
+    const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
     setCurDepth(curDepth);
     setMaxDepth(maxDepth);
 
@@ -561,6 +560,7 @@ function Form({
           setSteps(data);
           setRedirectUrl(stepsResponse.redirect_url);
           setErrType(stepsResponse.error_type);
+          setProductionEnv(stepsResponse.production);
           setUsePreviousData((usePreviousData) =>
             usePreviousData === null
               ? stepsResponse.save_user_data
@@ -603,7 +603,7 @@ function Form({
                 initialStepId ||
                 (hashKey && hashKey in data && hashKey) ||
                 (saveUserLocation && session.current_step_key) ||
-                getOrigin(data);
+                getOrigin(data).key;
               setFirstStep(newKey);
               history.replace(
                 location.pathname + location.search + `#${newKey}`
@@ -616,7 +616,7 @@ function Form({
           // Use default values if origin fails
           fetchPromise.then(async ([data]) => {
             updateFieldValues(applyDefaultFieldValues(data));
-            const newKey = getOrigin(data);
+            const newKey = getOrigin(data).key;
             setFirstStep(newKey);
             history.replace(location.pathname + location.search + `#${newKey}`);
           });
@@ -1007,7 +1007,7 @@ function Form({
       if (steps[redirectKey].next_conditions.length === 0)
         eventData.completed = true;
       client.registerEvent(eventData, submitPromise);
-      const newURL = location.pathname + location.search + `#${redirectKey}`;
+      const newURL = getNewStepUrl(redirectKey);
       if (
         submitData ||
         (metadata.elementType === 'text' && metadata.trigger === 'click')
@@ -1588,7 +1588,7 @@ function Form({
               }
             }
           })}
-        {
+        {integrations['google-maps'] && (
           <GooglePlaces
             googleKey={integrations['google-maps']}
             activeStep={activeStep}
@@ -1596,7 +1596,10 @@ function Form({
             onChange={fieldOnChange}
             updateFieldValues={updateFieldValues}
           />
-        }
+        )}
+        {!productionEnv && (
+          <DevNavBar allSteps={steps} curStep={activeStep} history={history} />
+        )}
       </ReactForm>
     </>
   );
