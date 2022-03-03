@@ -81,6 +81,7 @@ export default function DevNavBar({ allSteps, curStep, history }) {
           backgroundColor: 'white',
           boxShadow: '0 4px 14px #00000040',
           borderRadius: '6px',
+          overflowY: 'scroll',
           ...(isForward ? { left: '300px' } : { right: '300px' })
         }}
       >
