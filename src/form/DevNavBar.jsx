@@ -15,7 +15,11 @@ export default function DevNavBar({ allSteps, curStep, history }) {
   const [activeNav, setActiveNav] = useState('');
 
   const [prevStepKeys, nextStepKeys] = useMemo(() => {
-    const [prevStepKeys, nextStepKeys] = handleBoth(null, null, () => []);
+    const [prevStepKeys, nextStepKeys] = handleBoth(
+      null,
+      null,
+      () => new Set()
+    );
     let [prevCondKeys, nextCondKeys] = handleBoth(
       [curStep.previous_conditions, 'previous_step_key'],
       [curStep.next_conditions, 'next_step_key'],
@@ -29,7 +33,7 @@ export default function DevNavBar({ allSteps, curStep, history }) {
       ([prevCondKeys, prevStepKeys], [nextCondKeys]) =>
         [...prevCondKeys].filter((key) => {
           const bidirectional = nextCondKeys.has(key);
-          if (!bidirectional) prevStepKeys.push(key);
+          if (!bidirectional) prevStepKeys.add(key);
           return bidirectional;
         })
     );
@@ -40,23 +44,23 @@ export default function DevNavBar({ allSteps, curStep, history }) {
       const curDepth = depthMap[curStep.key];
       [...prevCondKeys, ...nextCondKeys].forEach((key) => {
         const depth = depthMap[key];
-        if (depth < curDepth) prevStepKeys.push(key);
-        else nextStepKeys.push(key);
+        if (depth < curDepth) prevStepKeys.add(key);
+        else nextStepKeys.add(key);
       });
     } else {
       // If step is floating, allow forward navigation to go to origin step
       const originStep = Object.values(allSteps).find((step) => step.origin);
-      nextStepKeys.push(originStep.key);
+      nextStepKeys.add(originStep.key);
     }
 
     // If step is the first, add floating steps to the previous navigation
     if (curStep.origin) {
       Object.keys(allSteps).map((stepKey) => {
-        if (!(stepKey in depthMap)) prevStepKeys.push(stepKey);
+        if (!(stepKey in depthMap)) prevStepKeys.add(stepKey);
       });
     }
 
-    return [prevStepKeys, nextStepKeys];
+    return [Array.from(prevStepKeys), Array.from(nextStepKeys)];
   }, [curStep.id]);
 
   const navigate = (stepKey) => {
