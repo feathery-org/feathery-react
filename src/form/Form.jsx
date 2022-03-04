@@ -548,30 +548,24 @@ function Form({
       setFirst(true);
 
       // render form without values first for speed
-      const fetchPromise = clientInstance
-        .fetchForm()
-        .then((stepsResponse) => {
-          const data = {};
-          getABVariant(stepsResponse).forEach((step) => {
-            data[step.key] = step;
-          });
-          if (stepsResponse.fonts?.length)
-            WebFont.load({ google: { families: stepsResponse.fonts } });
-          setSteps(data);
-          setRedirectUrl(stepsResponse.redirect_url);
-          setErrType(stepsResponse.error_type);
-          setProductionEnv(stepsResponse.production);
-          setUsePreviousData((usePreviousData) =>
-            usePreviousData === null
-              ? stepsResponse.save_user_data
-              : usePreviousData
-          );
-          return [data, stepsResponse];
-        })
-        .catch((error) => {
-          console.log(error);
-          return [{}, {}];
+      const fetchPromise = clientInstance.fetchForm().then((stepsResponse) => {
+        const data = {};
+        getABVariant(stepsResponse).forEach((step) => {
+          data[step.key] = step;
         });
+        if (stepsResponse.fonts?.length)
+          WebFont.load({ google: { families: stepsResponse.fonts } });
+        setSteps(data);
+        setRedirectUrl(stepsResponse.redirect_url);
+        setErrType(stepsResponse.error_type);
+        setProductionEnv(stepsResponse.production);
+        setUsePreviousData((usePreviousData) =>
+          usePreviousData === null
+            ? stepsResponse.save_user_data
+            : usePreviousData
+        );
+        return [data, stepsResponse];
+      });
 
       // fetch values separately because this request
       // goes to Feathery origin, while the previous
@@ -586,40 +580,46 @@ function Form({
           );
           if (newSession) session = newSession;
 
-          fetchPromise.then(
-            async ([
-              data,
-              {
-                save_user_location: saveUserLocation,
-                save_user_data: saveUserData
+          fetchPromise
+            .then(
+              async ([
+                data,
+                {
+                  save_user_location: saveUserLocation,
+                  save_user_data: saveUserData
+                }
+              ]) => {
+                updateFieldValues(applyDefaultFieldValues(data));
+                updateSessionValues(session, saveUserData);
+                if (Object.keys(initialValues).length > 0)
+                  clientInstance.submitCustom(initialValues);
+                const hashKey = decodeURI(location.hash.substr(1));
+                const newKey =
+                  initialStepId ||
+                  (hashKey && hashKey in data && hashKey) ||
+                  (saveUserLocation && session.current_step_key) ||
+                  getOrigin(data).key;
+                setFirstStep(newKey);
+                history.replace(
+                  location.pathname + location.search + `#${newKey}`
+                );
               }
-            ]) => {
-              updateFieldValues(applyDefaultFieldValues(data));
-              updateSessionValues(session, saveUserData);
-              if (Object.keys(initialValues).length > 0)
-                clientInstance.submitCustom(initialValues);
-              const hashKey = decodeURI(location.hash.substr(1));
-              const newKey =
-                initialStepId ||
-                (hashKey && hashKey in data && hashKey) ||
-                (saveUserLocation && session.current_step_key) ||
-                getOrigin(data).key;
-              setFirstStep(newKey);
-              history.replace(
-                location.pathname + location.search + `#${newKey}`
-              );
-            }
-          );
+            )
+            .catch((err) => console.log(err));
         })
         .catch((error) => {
           console.log(error);
           // Use default values if origin fails
-          fetchPromise.then(async ([data]) => {
-            updateFieldValues(applyDefaultFieldValues(data));
-            const newKey = getOrigin(data).key;
-            setFirstStep(newKey);
-            history.replace(location.pathname + location.search + `#${newKey}`);
-          });
+          fetchPromise
+            .then(async ([data]) => {
+              updateFieldValues(applyDefaultFieldValues(data));
+              const newKey = getOrigin(data).key;
+              setFirstStep(newKey);
+              history.replace(
+                location.pathname + location.search + `#${newKey}`
+              );
+            })
+            .catch((err) => console.log(err));
         });
     }
   }, [
