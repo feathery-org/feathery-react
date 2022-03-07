@@ -63,13 +63,26 @@ class ApplyStyles {
   }
 
   // Return CSS for a particular target HTML element
-  getTarget(target, desktopOnly = false) {
-    return {
-      ...this.targets[target],
-      ...(!desktopOnly && this.handleMobile
-        ? { [mobileBreakpointKey]: this.mobileTargets[target] }
-        : {})
-    };
+  getTarget(targetId, desktopOnly = false) {
+    const target = { ...this.targets[targetId] };
+    if (!desktopOnly && this.handleMobile) {
+      target[mobileBreakpointKey] = this.mobileTargets[targetId];
+    }
+    return target;
+  }
+
+  getTargets(...targets) {
+    let targetStyles = {};
+    targets.forEach((targetId) => {
+      if (!targetId) return;
+      targetStyles = { ...targetStyles, ...this.targets[targetId] };
+      if (this.handleMobile)
+        targetStyles[mobileBreakpointKey] = {
+          ...targetStyles[mobileBreakpointKey],
+          ...this.mobileTargets[targetId]
+        };
+    });
+    return targetStyles;
   }
 
   setStyle(target, key, val) {
