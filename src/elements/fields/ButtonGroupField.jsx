@@ -1,4 +1,5 @@
 import React from 'react';
+import { mobileBreakpointKey } from '../styles';
 
 function ButtonGroupField({
   element,
@@ -23,7 +24,6 @@ function ButtonGroupField({
       >
         {servar.metadata.options.map((opt, index) => {
           const imageUrl = servar.metadata.option_images[index];
-          const fieldStyle = applyStyles.getTarget('field');
           return (
             <div
               id={servar.key}
@@ -36,10 +36,12 @@ function ButtonGroupField({
                 alignItems: 'center',
                 flexDirection: 'column',
                 cursor: 'pointer',
-                ...fieldStyle,
+                ...applyStyles.getTargets(
+                  'field',
+                  fieldVal === opt ? 'active' : ''
+                ),
                 '&:active': applyStyles.getTarget('active'),
-                '&:hover': applyStyles.getTarget('hover'),
-                ...(fieldVal === opt ? applyStyles.getTarget('active') : {})
+                '&:hover': applyStyles.getTarget('hover')
               }}
             >
               {imageUrl && (
