@@ -7,7 +7,7 @@
 Use this library to embed and extend Feathery forms in your codebase
 
 ## Documentation
-For details on how to use this library, check out our [documentation](https://docs.feathery.io/react/react-overview).
+For details on how to use this library, check out our [documentation](https://feathery.io/docs/react/react-overview).
 
 ## License
 [BSL](https://github.com/feathery-org/feathery-react/blob/master/LICENSE)
