@@ -1,6 +1,18 @@
-import { getDefaultFieldValue } from './formHelperFunctions';
+import { getAllElements, getDefaultFieldValue } from './formHelperFunctions';
+import { isNum } from './primitives';
 
 const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
+
+const AUTO = 'auto';
+const FILL = 'fill';
+
+const isFill = (v) => {
+  return v === FILL;
+};
+
+const isAuto = (v) => {
+  return v === AUTO;
+};
 
 /**
  * Calculates the initial number of repeated rows to display given field values (some which may be arrays).
@@ -142,19 +154,77 @@ function injectRepeatedRows({ step, repeatedRowCount }) {
   };
 }
 
+const formatTrackValue = (parentDimension, value, type = 'col', isEmpty) => {
+  // auto values need to be turned into their appropriate CSS value
+  if (isAuto(value)) {
+    // fixed and fill auto values become 1fr in order to expand
+    if (!isAuto(parentDimension)) {
+      value = '1fr';
+    } else {
+      value = isEmpty ? '0' : 'min-content';
+    }
+  }
+  if (type === 'col') return `minmax(0, ${value})`; // Cols need minmax for responsive widths
+  return value;
+};
+
+const formatDimensionValue = (value, type = 'col') => {
+  // fit-content is needed here, for both fill and auto, to allow elements to push beyond the parent container's explicit height.
+  switch (value) {
+    case FILL:
+      return type === 'col' ? '100%' : 'fit-content';
+    case AUTO:
+      return type === 'col' ? 'auto' : 'fit-content';
+    default:
+      return parseInt(value);
+  }
+};
+
+const getNotEmptyTrackMap = (step) => {
+  const allElements = getAllElements(step);
+
+  const row = {};
+  const column = {};
+
+  allElements.forEach(([e]) => {
+    const { row_index: rowIndex, column_index: columnIndex } = e;
+    row[rowIndex] = true;
+    column[columnIndex] = true;
+  });
+
+  return { row, column };
+};
+
 const calculateDimensionsHelper = (step, p = '') => {
   const gridColumns = step[`${p}grid_columns`] || step.grid_columns;
   const gridRows = step[`${p}grid_rows`] || step.grid_rows;
+  const gridWidth = step[`${p}width`] || step.width;
+  const gridHeight = step[`${p}height`] || step.height;
 
-  const hasRelativeColumn = gridColumns.some(
-    (column) => column.slice(-2) === 'fr'
-  );
+  const nonEmptyTracksMap = getNotEmptyTrackMap(step);
 
-  return {
-    gridWidth: hasRelativeColumn ? '100%' : 'auto',
-    columns: gridColumns.map((column) => `minmax(0,${column})`),
-    rows: gridRows.map((row) => `minmax(${row},min-content)`)
+  const dimensions = {
+    gridWidth: formatDimensionValue(gridWidth, 'col'),
+    gridHeight: formatDimensionValue(gridHeight, 'row'),
+    columns: gridColumns.map((v, i) => {
+      const isEmpty = !nonEmptyTracksMap.column[i];
+      return formatTrackValue(gridWidth, v, 'col', isEmpty);
+    }),
+    rows: gridRows.map((v, i) => {
+      const isEmpty = !nonEmptyTracksMap.row[i];
+      return formatTrackValue(gridHeight, v, 'row', isEmpty);
+    })
   };
+
+  // to allow responsiveness, min width shouldn't be set for fixed widths
+  dimensions.minWidth = isNum(gridWidth) ? undefined : dimensions.gridWidth;
+
+  // min and max height must be 100% to prevent fit-content from collapsing, which would break fill's non-collapsing intent
+  dimensions.minHeight = dimensions.maxHeight = isFill(gridHeight)
+    ? '100%'
+    : dimensions.gridHeight;
+
+  return dimensions;
 };
 
 /**
@@ -171,12 +241,23 @@ function calculateStepCSS(step) {
     backgroundSize: 'cover',
     display: 'grid',
     width: desktop.gridWidth,
+    minWidth: desktop.minWidth,
+    maxWidth: desktop.gridWidth,
+    height: desktop.gridHeight,
+    minHeight: desktop.minHeight,
+    maxHeight: desktop.maxHeight,
     gridTemplateRows: desktop.rows.join(' '),
     gridTemplateColumns: desktop.columns.join(' ')
   };
 
-  stepCSS['@media (max-width: 478px)'] = {
+  // 478
+  stepCSS[`@media (max-width: 478px)`] = {
     width: mobile.gridWidth,
+    minWidth: mobile.minWidth,
+    maxWidth: mobile.gridWidth,
+    height: mobile.gridHeight,
+    minHeight: mobile.minHeight,
+    maxHeight: desktop.maxHeight,
     gridTemplateRows: mobile.rows.join(' '),
     gridTemplateColumns: mobile.columns.join(' ')
   };

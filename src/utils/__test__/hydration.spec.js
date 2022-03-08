@@ -24,6 +24,8 @@ describe('hydration', () => {
         grid_rows: ['50px', '150px', '50px'],
         grid_columns: ['150px', '1fr'],
         mobile_grid_columns: ['30px'],
+        width: 'auto',
+        mobile_width: '30px',
         progress_bars: [
           {
             column_index: 0
@@ -33,15 +35,13 @@ describe('hydration', () => {
       const expected = {
         backgroundColor: '#000000FF',
         display: 'grid',
-        width: '100%',
-        gridTemplateRows:
-          'minmax(50px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
-        gridTemplateColumns: 'minmax(0,150px) minmax(0,1fr)',
+        width: 'auto',
+        gridTemplateRows: '50px 150px 50px',
+        gridTemplateColumns: 'minmax(0, 150px) minmax(0, 1fr)',
         '@media (max-width: 478px)': {
-          width: 'auto',
-          gridTemplateRows:
-            'minmax(50px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
-          gridTemplateColumns: 'minmax(0,30px)'
+          width: 30,
+          gridTemplateRows: '50px 150px 50px',
+          gridTemplateColumns: 'minmax(0, 30px)'
         }
       };
 
@@ -107,7 +107,8 @@ describe('hydration', () => {
         servar_fields: [],
         images: [],
         grid_rows: ['50px', '150px', '150px', '150px', '50px'],
-        grid_columns: ['150px', '50%'],
+        grid_columns: ['150px', '50px'],
+        width: 'auto',
         progress_bars: [
           {
             column_index: 0
@@ -118,14 +119,12 @@ describe('hydration', () => {
         backgroundColor: '#000000FF',
         display: 'grid',
         width: 'auto',
-        gridTemplateRows:
-          'minmax(50px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
-        gridTemplateColumns: 'minmax(0,150px) minmax(0,50%)',
+        gridTemplateRows: '50px 150px 150px 150px 50px',
+        gridTemplateColumns: 'minmax(0, 150px) minmax(0, 50px)',
         '@media (max-width: 478px)': {
           width: 'auto',
-          gridTemplateRows:
-            'minmax(50px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(150px,min-content) minmax(50px,min-content)',
-          gridTemplateColumns: 'minmax(0,150px) minmax(0,50%)'
+          gridTemplateRows: '50px 150px 150px 150px 50px',
+          gridTemplateColumns: 'minmax(0, 150px) minmax(0, 50px)'
         }
       };
 
