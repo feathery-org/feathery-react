@@ -33,7 +33,12 @@ const scaleCheckboxSize = (fontSize) => {
 const applyHeightAndWidthByFontSize = (applyStyles, target) => {
   applyStyles.apply(target, ['font_size'], (fontSize) => {
     const scaledSize = `${scaleCheckboxSize(fontSize)}px`;
-    return { height: scaledSize, width: scaledSize };
+    return {
+      minHeight: scaledSize,
+      height: scaledSize,
+      minWidth: scaledSize,
+      width: scaledSize
+    };
   });
 };
 
