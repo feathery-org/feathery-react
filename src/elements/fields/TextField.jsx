@@ -29,14 +29,22 @@ function constraintChar(allowed) {
 }
 
 function getTextFieldMask(servar) {
-  const prefix = escapeDefinitionChars(servar.metadata.prefix || '');
-  const suffix = escapeDefinitionChars(servar.metadata.suffix || '');
-  const definitionChar = constraintChar(servar.metadata.allowed_characters);
-  let numOptional = MAX_TEXT_FIELD_LENGTH - prefix.length - suffix.length;
-  if (servar.max_length) numOptional = Math.min(servar.max_length, numOptional);
+  const data = servar.metadata;
+  const prefix = escapeDefinitionChars(data.prefix || '');
+  const suffix = escapeDefinitionChars(data.suffix || '');
+
+  let mask = '';
+  if (data.mask) mask = data.mask;
+  else {
+    const definitionChar = constraintChar(data.allowed_characters);
+    let numOptional = MAX_TEXT_FIELD_LENGTH - prefix.length - suffix.length;
+    if (servar.max_length)
+      numOptional = Math.min(servar.max_length, numOptional);
+    mask = `[${definitionChar.repeat(numOptional)}]`;
+  }
 
   // Approximate dynamic input by making each character optional
-  return `${prefix}[${definitionChar.repeat(numOptional)}]${suffix}`;
+  return `${prefix}${mask}${suffix}`;
 }
 
 function getMaskProps(servar, value) {
