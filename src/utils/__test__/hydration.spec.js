@@ -24,7 +24,7 @@ describe('hydration', () => {
         grid_rows: ['50px', '150px', '50px'],
         grid_columns: ['150px', '1fr'],
         mobile_grid_columns: ['30px'],
-        width: 'auto',
+        width: 'fit',
         mobile_width: '30px',
         progress_bars: [
           {
@@ -108,7 +108,7 @@ describe('hydration', () => {
         images: [],
         grid_rows: ['50px', '150px', '150px', '150px', '50px'],
         grid_columns: ['150px', '50px'],
-        width: 'auto',
+        width: 'fit',
         progress_bars: [
           {
             column_index: 0

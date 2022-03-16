@@ -3,15 +3,15 @@ import { isNum } from './primitives';
 
 const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 
-const AUTO = 'auto';
+const FIT = 'fit';
 const FILL = 'fill';
 
 const isFill = (v) => {
   return v === FILL;
 };
 
-const isAuto = (v) => {
-  return v === AUTO;
+const isFit = (v) => {
+  return v === FIT;
 };
 
 /**
@@ -155,25 +155,27 @@ function injectRepeatedRows({ step, repeatedRowCount }) {
 }
 
 const formatTrackValue = (parentDimension, value, type = 'col', isEmpty) => {
-  // auto values need to be turned into their appropriate CSS value
-  if (isAuto(value)) {
-    // fixed and fill auto values become 1fr in order to expand
-    if (!isAuto(parentDimension)) {
-      value = '1fr';
-    } else {
+  // fit and fill values need to be turned into their appropriate CSS value
+  if (isFit(value)) {
+    if (isFill(parentDimension)) {
+      value = 'min-content';
+    } else if (isFit(parentDimension)) {
+      // fit parents will collapse empty fit columns
       value = isEmpty ? '0' : 'min-content';
     }
+  } else if (isFill(value)) {
+    value = '1fr';
   }
   if (type === 'col') return `minmax(0, ${value})`; // Cols need minmax for responsive widths
   return value;
 };
 
 const formatDimensionValue = (value, type = 'col') => {
-  // fit-content is needed here, for both fill and auto, to allow elements to push beyond the parent container's explicit height.
+  // fit-content is needed here, for both fill and fit, to allow elements to push beyond the parent container's explicit height.
   switch (value) {
     case FILL:
       return type === 'col' ? '100%' : 'fit-content';
-    case AUTO:
+    case FIT:
       return type === 'col' ? 'auto' : 'fit-content';
     default:
       return parseInt(value);
