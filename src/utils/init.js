@@ -124,8 +124,8 @@ function initInfo() {
   return initState;
 }
 
-function updateUserKey(newUserKey) {
-  defaultClient.updateUserKey(newUserKey).then(() => {
+function updateUserKey(newUserKey, merge = false) {
+  defaultClient.updateUserKey(newUserKey, merge).then(() => {
     initState.userKey = newUserKey;
     if (initState.tracking === 'cookie') {
       document.cookie = `feathery-user-id=${newUserKey}; max-age=31536000; SameSite=strict`;
