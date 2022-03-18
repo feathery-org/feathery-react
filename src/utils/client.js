@@ -144,10 +144,11 @@ export default class Client {
     await this._fetch(url, { method: 'POST', body: formData });
   }
 
-  updateUserKey(newUserKey) {
+  updateUserKey(newUserKey, merge = false) {
     const { userKey: oldUserKey } = initInfo();
     const data = {
       new_fuser_key: newUserKey,
+      merge,
       ...(oldUserKey ? { fuser_key: oldUserKey } : {})
     };
     const url = `${API_URL}fuser/update_key/`;
