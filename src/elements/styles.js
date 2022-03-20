@@ -252,6 +252,12 @@ class ApplyStyles {
     this.apply(target, 'line_height', (a) => ({
       lineHeight: isNum(a) ? `${a}px` : 'normal'
     }));
+    this.apply(target, 'letter_spacing', (a) => ({
+      letterSpacing: isNum(a) ? `${a}px` : 'normal'
+    }));
+    this.apply(target, 'text_transform', (a) => ({
+      textTransform: a || 'none'
+    }));
     this.apply(
       target,
       placeholder ? 'placeholder_italic' : 'font_italic',
@@ -285,15 +291,19 @@ class ApplyStyles {
   _getRichFontScreenStyles(attrs, p = '') {
     const styles = {};
 
-    let name = `${p}font_size`;
-    if (attrs[name]) styles.fontSize = `${attrs[name]}px`;
-    name = `${p}font_family`;
-    if (attrs[name]) styles.fontFamily = attrs[name].replace(/"/g, "'");
-    name = `${p}font_color`;
-    if (attrs[name]) styles.color = `#${attrs[name]}`;
-    name = `${p}font_weight`;
-    if (attrs[name]) styles.fontWeight = attrs[name];
+    let attr = attrs[`${p}font_size`];
+    if (attr) styles.fontSize = `${attr}px`;
+    attr = attrs[`${p}font_family`];
+    if (attr) styles.fontFamily = attr.replace(/"/g, "'");
+    attr = attrs[`${p}font_color`];
+    if (attr) styles.color = `#${attr}`;
+    attr = attrs[`${p}font_weight`];
+    if (attr) styles.fontWeight = attr;
     if (attrs[`${p}font_italic`]) styles.fontStyle = 'italic';
+    attr = attrs[`${p}text_transform`];
+    styles.textTransform = attr || 'none';
+    attr = attrs[`${p}letter_spacing`];
+    styles.letterSpacing = isNum(attr) ? `${attr}px` : 'normal';
 
     const lines = [];
     if (attrs[`${p}font_strike`]) lines.push('line-through');

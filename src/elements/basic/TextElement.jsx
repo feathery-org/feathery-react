@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import TextNodes from '../components/TextNodes';
+import { isNum } from '../../utils/primitives';
 
 // TODO(peter): deprecate once customers have upgraded and backend migrated
 function legacyAlignment(alignment) {
@@ -18,11 +19,15 @@ function applyTextStyles(element, applyStyles) {
   applyStyles.apply('text', 'layout', (a) => ({
     textAlign: legacyAlignment(a)
   }));
-  if (element.styles.line_height) {
-    applyStyles.apply('text', 'line_height', (a) => ({
-      lineHeight: `${a}px`
-    }));
-  }
+  applyStyles.apply('text', 'line_height', (a) => ({
+    lineHeight: isNum(a) ? `${a}px` : 'normal'
+  }));
+  applyStyles.apply('text', 'letter_spacing', (a) => ({
+    letterSpacing: isNum(a) ? `${a}px` : 'normal'
+  }));
+  applyStyles.apply('text', 'text_transform', (a) => ({
+    textTransform: a || 'none'
+  }));
   return applyStyles;
 }
 
