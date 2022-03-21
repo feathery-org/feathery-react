@@ -14,8 +14,13 @@ const phonePattern = /^\d{10}$/;
 const validators = {
   email: (a) => emailPattern.test(a),
   phone: (a) => {
-    const number = phoneValidator.parseAndKeepRawInput(a, 'US');
-    return phoneValidator.isValidNumberForRegion(number, 'US');
+    try {
+      const number = phoneValidator.parseAndKeepRawInput(a, 'US');
+      return phoneValidator.isValidNumberForRegion(number, 'US');
+    } catch (e) {
+      // Invalid phone number
+      return false;
+    }
   }
 };
 
