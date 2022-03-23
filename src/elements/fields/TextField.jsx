@@ -139,6 +139,7 @@ function TextField({
   fieldLabel,
   elementProps = {},
   required = false,
+  editable = false,
   onAccept = () => {},
   onBlur = () => {},
   onClick = () => {},
@@ -156,6 +157,7 @@ function TextField({
       css={{
         maxWidth: '100%',
         position: 'relative',
+        pointerEvents: editable ? 'none' : 'auto',
         ...applyStyles.getTarget('fc')
       }}
       {...elementProps}

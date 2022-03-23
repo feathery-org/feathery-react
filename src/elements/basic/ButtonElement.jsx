@@ -75,6 +75,8 @@ function ButtonElement({
   applyStyles,
   values = null,
   loader = null,
+  editable = false,
+  textCallbacks = {},
   handleRedirect = () => {},
   onClick = () => {},
   elementProps = {},
@@ -92,7 +94,10 @@ function ButtonElement({
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        cursor: element.properties.link === LINK_NONE ? 'default' : 'pointer',
+        cursor:
+          editable || element.properties.link === LINK_NONE
+            ? 'default'
+            : 'pointer',
         boxShadow: 'none',
         maxWidth: '100%',
         position: 'relative',
@@ -100,8 +105,12 @@ function ButtonElement({
       }}
       css={{
         '&:disabled': { cursor: 'default !important' },
-        '&:active': styles.getTarget('buttonActive'),
-        '&:hover:enabled': styles.getTarget('buttonHover'),
+        '&:active:not(:disabled):not(.disabled)': editable
+          ? styles.getTarget('button')
+          : styles.getTarget('buttonActive'),
+        '&:hover:enabled': editable
+          ? styles.getTarget('button')
+          : styles.getTarget('buttonHover'),
         '&&': styles.getTarget('button')
       }}
       disabled={element.properties.link === LINK_NONE || loader}
@@ -127,6 +136,8 @@ function ButtonElement({
             values={values}
             applyStyles={applyStyles}
             handleRedirect={handleRedirect}
+            editable={editable}
+            textCallbacks={textCallbacks}
           />
         </>
       )}

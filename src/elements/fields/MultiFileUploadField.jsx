@@ -10,6 +10,7 @@ function MultiFileUploadField({
   element,
   applyStyles,
   required = false,
+  editable = false,
   onChange: customOnChange = () => {},
   onClick: customOnClick = () => {},
   initialFiles = null,
@@ -63,6 +64,7 @@ function MultiFileUploadField({
         display: 'flex',
         flexWrap: 'wrap',
         position: 'relative',
+        pointerEvents: editable ? 'none' : 'auto',
         ...applyStyles.getTarget('fc')
       }}
       {...elementProps}

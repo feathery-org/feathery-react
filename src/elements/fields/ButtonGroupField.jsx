@@ -1,11 +1,11 @@
 import React from 'react';
-import { mobileBreakpointKey } from '../styles';
 
 function ButtonGroupField({
   element,
   applyStyles,
   fieldLabel,
   fieldVal = null,
+  editable = false,
   onClick = () => {},
   elementProps = {},
   children
@@ -35,13 +35,13 @@ function ButtonGroupField({
                 justifyContent: 'center',
                 alignItems: 'center',
                 flexDirection: 'column',
-                cursor: 'pointer',
+                cursor: editable ? 'default' : 'pointer',
                 ...applyStyles.getTargets(
                   'field',
                   fieldVal === opt ? 'active' : ''
                 ),
                 '&:active': applyStyles.getTarget('active'),
-                '&:hover': applyStyles.getTarget('hover')
+                '&:hover': editable ? {} : applyStyles.getTarget('hover')
               }}
             >
               {imageUrl && (

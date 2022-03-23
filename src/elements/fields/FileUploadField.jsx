@@ -7,6 +7,7 @@ function FileUploadField({
   fieldLabel,
   applyStyles,
   required = false,
+  editable = false,
   onChange = () => {},
   onClick = () => {},
   elementProps = {},
@@ -24,7 +25,7 @@ function FileUploadField({
         required={required}
         onChange={onChange}
         onClick={onClick}
-        style={{ cursor: 'pointer' }}
+        style={{ cursor: 'pointer', pointerEvents: editable ? 'none' : 'auto' }}
       />
       {children}
     </div>
