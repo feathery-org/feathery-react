@@ -37,14 +37,16 @@ describe('formHelperFunctions', () => {
               key: 'key1',
               type: 'text',
               name: 'Name 1'
-            }
+            },
+            hide_ifs: []
           },
           {
             servar: {
               key: 'key2',
               type: 'file_upload',
               name: 'Name 2'
-            }
+            },
+            hide_ifs: []
           }
         ]
       };
@@ -96,7 +98,8 @@ describe('formHelperFunctions', () => {
                 key: 'key1',
                 type: 'text',
                 name: 'Name 1'
-              }
+              },
+              hide_ifs: []
             }
           ]
         },
@@ -107,7 +110,8 @@ describe('formHelperFunctions', () => {
                 key: 'key2',
                 type: 'file_upload',
                 name: 'Name 2'
-              }
+              },
+              hide_ifs: []
             }
           ]
         }
