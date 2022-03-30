@@ -360,29 +360,31 @@ function getInlineError(field, inlineErrors) {
 }
 
 /**
- * Determines if the provided element should be hidden based on its "hide-if" rule.
+ * Determines if the provided element should be hidden based on its "hide-if" rules.
  */
 function shouldElementHide({ fields, values, element }) {
   // eslint-disable-next-line camelcase
-  const hideIf = element.hide_if;
-  if (!hideIf) return false;
+  const hideIfMap = {};
+  element.hide_ifs.forEach((hideIf) => {
+    const index = hideIf.index;
+    if (!(index in hideIfMap)) hideIfMap[index] = [hideIf];
+    else hideIfMap[index].push(hideIf);
+  });
 
-  // Get the target value (taking repeated elements into account)
-  let value = '';
-  if (hideIf.field_type === 'servar') {
-    const targets = fields.filter(
-      (field) => field.servar.id === hideIf.field_id
+  let shouldHide = false;
+  Object.values(hideIfMap).forEach((hideIfs) => {
+    if (shouldHide) return;
+    shouldHide = hideIfs.every((hideIf) =>
+      calculateHide(hideIf, fields, values, element.repeat ?? 0)
     );
-    const target = targets[element.repeat ?? 0];
+  });
+  return shouldHide;
+}
 
-    // If the field we're based on isn't there, don't hide
-    if (!target) return false;
-
-    value = getFieldValue(target, values).value;
-  } else if (hideIf.field_type === 'hidden') {
-    value = values[hideIf.field_key];
-    if (Array.isArray(value)) value = value[element.repeat ?? 0];
-  }
+function calculateHide(hideIf, fields, values, repeat) {
+  // Get the target value (taking repeated elements into account)
+  let value = values[hideIf.field_key];
+  if (Array.isArray(value)) value = value[repeat];
 
   // If the hideIf value is an empty string, we want to match on the "empty" value of a field
   // This could be null, undefined, an empty array, or an empty string
