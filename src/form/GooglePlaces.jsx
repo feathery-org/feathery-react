@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Script from 'react-load-script';
+import { isObjectEmpty } from '../utils/primitives';
 
 const mapFieldTypes = new Set([
   'gmap_line_1',
@@ -101,7 +102,7 @@ export default function GooglePlaces({
         // register current step field IDs if possible
         trackMapFields(activeStep);
 
-        if (Object.keys(addrValues).length > 0) {
+        if (!isObjectEmpty(Object.keys(addrValues))) {
           updateFieldValues(addrValues);
           onChange({
             fieldIDs: Object.values(keyIDMap),

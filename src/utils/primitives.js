@@ -8,4 +8,8 @@ function isNum(candidate) {
   return !isNaN(parseInt(candidate));
 }
 
-export { encodeGetParams, isNum };
+function isObjectEmpty(obj) {
+  return Object.keys(obj).length === 0;
+}
+
+export { encodeGetParams, isNum, isObjectEmpty };
