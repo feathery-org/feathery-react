@@ -13,6 +13,8 @@ const radio = (size, color) => {
   return {
     height: size,
     width: size,
+    minWidth: size,
+    minHeight: size,
     border: 0,
     boxShadow: `inset ${size}px ${size}px #${color}`,
     borderRadius: '50%'
