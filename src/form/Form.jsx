@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import WebFont from 'webfontloader';
 import ReactForm from 'react-bootstrap/Form';
 import TagManager from 'react-gtm-module';
-import Spinner from 'react-bootstrap/Spinner';
 import Lottie from 'lottie-react';
 import { useHotkeys } from 'react-hotkeys-hook';
 
@@ -57,6 +56,9 @@ import {
   LINK_TRIGGER_PLAID
 } from '../elements/basic/ButtonElement';
 import DevNavBar from './DevNavBar';
+import Spinner from '../elements/components/Spinner';
+import { isObjectEmpty } from '../utils/primitives';
+import CallbackQueue from '../utils/callbackQueue';
 
 const FILE_UPLOADERS = [
   'file_upload',
@@ -117,6 +119,7 @@ function Form({
   const [render, setRender] = useState(false);
 
   const [loaders, setLoaders] = useState({});
+  const clearLoaders = () => setLoaders({});
   const stepLoader = useMemo(() => {
     const data = Object.values(loaders).find((l) => l?.showOn === 'full_page');
     if (!data) return null;
@@ -140,7 +143,7 @@ function Form({
   let fieldValues = fieldValuesRef.current;
   const formRef = useRef(null);
   const signatureRef = useRef({}).current;
-  const userCallbackRef = useRef([]);
+  const callbackRef = useRef(new CallbackQueue(null, setLoaders));
   const hasRedirected = useRef(false);
 
   // Determine if there is a field with a custom repeat_trigger configuration anywhere in the step
@@ -265,7 +268,7 @@ function Form({
         (f) => f.servar.type === 'gmap_line_1' && fieldValues[f.servar.key]
       )
     );
-    userCallbackRef.current = [];
+    callbackRef.current = new CallbackQueue(activeStep, setLoaders);
   }, [activeStep?.id]);
 
   const scrollToRef = (ref) =>
@@ -450,6 +453,7 @@ function Form({
       },
       step: {
         style: {
+          // eslint-disable-next-line camelcase
           backgroundColor: newStep?.default_background_color
         }
       },
@@ -471,7 +475,7 @@ function Form({
   };
 
   const updateNewStep = (newStep) => {
-    setLoaders({});
+    clearLoaders();
     setRawActiveStep(newStep);
     client.registerEvent({ step_key: newStep.key, event: 'load' });
   };
@@ -594,7 +598,7 @@ function Form({
               ]) => {
                 updateFieldValues(applyDefaultFieldValues(data));
                 updateSessionValues(session, saveUserData);
-                if (Object.keys(initialValues).length > 0)
+                if (!isObjectEmpty(initialValues))
                   clientInstance.submitCustom(initialValues);
                 const hashKey = decodeURI(location.hash.substr(1));
                 const newKey =
@@ -811,7 +815,7 @@ function Form({
       setLoader
     );
     if (errorMessage && errorField) {
-      setLoaders({});
+      clearLoaders();
       await setFormElementError({
         formRef,
         errorCallback: getErrorCallback({ trigger }),
@@ -855,7 +859,7 @@ function Form({
         fields: allFields,
         lastStep,
         setErrors: (errors) => {
-          if (Object.keys(errors).length > 0) setLoaders({});
+          if (!isObjectEmpty(errors)) clearLoaders();
           Object.entries(errors).forEach(([fieldKey, error]) => {
             let index = null;
             let message = error;
@@ -997,7 +1001,7 @@ function Form({
       eventData = { ...eventData, next_step_key: newStepKey };
     }
 
-    await Promise.all(userCallbackRef.current);
+    await callbackRef.current.all();
     if (!redirectKey) {
       if (submitData || ['button', 'text'].includes(metadata.elementType)) {
         eventData.completed = true;
@@ -1027,40 +1031,8 @@ function Form({
   const setButtonLoader = async (button) => {
     const bp = button.properties;
     let loader = null;
-    if (!bp.loading_icon) {
-      loader = (
-        <Spinner
-          animation='border'
-          style={{
-            color: 'white',
-            border: '0.2em solid currentColor',
-            borderRightColor: 'transparent',
-            boxSizing: 'border-box',
-            width: '100%',
-            height: '100%'
-          }}
-          css={{
-            '@-webkit-keyframes spinner-border': {
-              to: {
-                WebkitTransform: 'rotate(360deg)',
-                transform: 'rotate(360deg)'
-              }
-            },
-            '@keyframes spinner-border': {
-              to: {
-                WebkitTransform: 'rotate(360deg)',
-                transform: 'rotate(360deg)'
-              }
-            },
-            '&.spinner-border': {
-              display: 'block',
-              borderRadius: '50%',
-              animation: '0.75s linear infinite spinner-border'
-            }
-          }}
-        />
-      );
-    } else if (bp.loading_icon_type === 'image/*') {
+    if (!bp.loading_icon) loader = <Spinner />;
+    else if (bp.loading_icon_type === 'image/*') {
       loader = <img src={bp.loading_icon} alt='Button Loader' />;
     } else if (bp.loading_icon_type === 'application/json') {
       const animationData = await fetch(bp.loading_icon).then((response) =>
@@ -1091,7 +1063,7 @@ function Form({
           repeat: button.repeat || 0,
           plaidSuccess: true,
           setLoader: () => setButtonLoader(button),
-          clearLoader: () => setLoaders({})
+          clearLoader: () => clearLoaders()
         });
       } else {
         if (typeof onSkip === 'function') {
@@ -1112,7 +1084,7 @@ function Form({
         await handleRedirect({ metadata });
       }
     } catch {
-      setLoaders({});
+      clearLoaders();
     }
   };
 
@@ -1142,7 +1114,7 @@ function Form({
           },
           updateFieldValues,
           () => setButtonLoader(button),
-          () => setLoaders({})
+          () => clearLoaders()
         );
       }
     } else if (link === LINK_CUSTOM) {
@@ -1163,7 +1135,7 @@ function Form({
         null,
         ['phone']
       );
-      setLoaders({});
+      clearLoaders();
     } else if ([LINK_SUBMIT, LINK_SKIP].includes(link)) {
       await buttonOnSubmit(link === LINK_SUBMIT, button);
     }
@@ -1191,7 +1163,7 @@ function Form({
     }
     if (typeof onChange === 'function') {
       const formattedFields = formatAllStepFields(steps, fieldValues);
-      userCallbackRef.current.push(
+      callbackRef.current.addCallback(
         onChange({
           ...getCommonCallbackProps(),
           changeKeys: fieldKeys,
@@ -1201,7 +1173,8 @@ function Form({
           lastStep: activeStep.next_conditions.length === 0,
           elementRepeatIndex,
           valueRepeatIndex
-        })
+        }),
+        loaders
       );
       setShouldScrollToTop(false);
     }
