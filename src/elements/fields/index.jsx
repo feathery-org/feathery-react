@@ -43,9 +43,7 @@ function applyFieldStyles(field, styles) {
   const type = field.servar.type;
   switch (type) {
     case 'signature':
-      styles.apply('fc', 'width', (a) => ({
-        width: `${a}px`
-      }));
+      styles.applyWidth('fc');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyCorners('field');
       styles.applyBorders('field');
