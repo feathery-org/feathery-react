@@ -101,8 +101,11 @@ function Form({
   const [userProgress, setUserProgress] = useState(null);
   const [curDepth, setCurDepth] = useState(0);
   const [maxDepth, setMaxDepth] = useState(0);
-  const [redirectUrl, setRedirectUrl] = useState('');
-  const [errType, setErrType] = useState('html5');
+  const [formSettings, setFormSettings] = useState({
+    redirectUrl: '',
+    errorType: 'html5',
+    autocomplete: 'on'
+  });
   const [inlineErrors, setInlineErrors] = useState({});
   const [repeatChanged, setRepeatChanged] = useState(false);
   const [usePreviousData, setUsePreviousData] = useState(usePreviousUserData);
@@ -209,7 +212,7 @@ function Form({
             }),
             fieldKey: gMapBlurKey,
             message: 'An address must be selected',
-            errorType: errType,
+            errorType: formSettings.errorType,
             setInlineErrors: setInlineErrors,
             triggerErrors: true
           }),
@@ -555,23 +558,24 @@ function Form({
       setFirst(true);
 
       // render form without values first for speed
-      const fetchPromise = clientInstance.fetchForm().then((stepsResponse) => {
+      const fetchPromise = clientInstance.fetchForm().then((res) => {
         const data = {};
-        getABVariant(stepsResponse).forEach((step) => {
+        getABVariant(res).forEach((step) => {
           data[step.key] = step;
         });
-        if (stepsResponse.fonts?.length)
-          WebFont.load({ google: { families: stepsResponse.fonts } });
+        if (res.fonts?.length)
+          WebFont.load({ google: { families: res.fonts } });
         setSteps(data);
-        setRedirectUrl(stepsResponse.redirect_url);
-        setErrType(stepsResponse.error_type);
-        setProductionEnv(stepsResponse.production);
+        setFormSettings({
+          redirectUrl: res.redirect_url,
+          errorType: res.error_type,
+          autocomplete: res.autocomplete ? 'on' : 'off'
+        });
+        setProductionEnv(res.production);
         setUsePreviousData((usePreviousData) =>
-          usePreviousData === null
-            ? stepsResponse.save_user_data
-            : usePreviousData
+          usePreviousData === null ? res.save_user_data : usePreviousData
         );
-        return [data, stepsResponse];
+        return [data, res];
       });
 
       // fetch values separately because this request
@@ -654,9 +658,9 @@ function Form({
 
   if (!activeStep) return null;
   if (finished) {
-    if (redirectUrl) {
+    if (formSettings.redirectUrl) {
       hasRedirected.current = true;
-      window.location.href = redirectUrl;
+      window.location.href = formSettings.redirectUrl;
     }
     return null;
   }
@@ -795,7 +799,7 @@ function Form({
         errorCallback: getErrorCallback({ trigger }),
         fieldKey,
         message,
-        errorType: errType,
+        errorType: formSettings.errorType,
         servarType: servar.type,
         inlineErrors: newInlineErrors
       });
@@ -804,7 +808,7 @@ function Form({
     // so user does not access invalid data
     const invalid = await setFormElementError({
       formRef,
-      errorType: errType,
+      errorType: formSettings.errorType,
       inlineErrors: newInlineErrors,
       setInlineErrors,
       triggerErrors: true
@@ -822,7 +826,7 @@ function Form({
         fieldKey: errorField.key,
         message: errorMessage,
         servarType: errorField.type,
-        errorType: errType,
+        errorType: formSettings.errorType,
         inlineErrors: newInlineErrors,
         setInlineErrors: setInlineErrors,
         triggerErrors: true
@@ -874,7 +878,7 @@ function Form({
               fieldKey,
               message,
               index,
-              errorType: errType,
+              errorType: formSettings.errorType,
               inlineErrors: newInlineErrors
             });
           });
@@ -891,7 +895,7 @@ function Form({
       // do validation check in case user has manually invalidated the step
       const invalid = await setFormElementError({
         formRef,
-        errorType: errType,
+        errorType: formSettings.errorType,
         inlineErrors: newInlineErrors,
         setInlineErrors,
         triggerErrors: true
@@ -1155,7 +1159,7 @@ function Form({
           formRef,
           fieldKey,
           message: '',
-          errorType: errType,
+          errorType: formSettings.errorType,
           setInlineErrors: setInlineErrors,
           triggerErrors: true
         });
@@ -1213,6 +1217,7 @@ function Form({
         </div>
       )}
       <ReactForm
+        autoComplete={formSettings.autocomplete}
         className={className}
         ref={formRef}
         css={{
@@ -1327,7 +1332,8 @@ function Form({
               });
 
               const inlineErr =
-                errType === 'inline' && getInlineError(el, inlineErrors);
+                formSettings.errorType === 'inline' &&
+                getInlineError(el, inlineErrors);
 
               const required = isFieldActuallyRequired(
                 el,
@@ -1340,6 +1346,7 @@ function Form({
                 element: el,
                 componentOnly: false,
                 elementProps: elementProps[servar.key],
+                autoComplete: formSettings.autocomplete,
                 required
               };
 
