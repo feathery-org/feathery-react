@@ -53,12 +53,13 @@ const formatStepFields = (step, fieldValues, signatureRef) => {
     const servar = field.servar;
     let value;
     if (servar.type === 'signature') {
-      value = signatureRef
-        ? dataURLToFile(
-            signatureRef[servar.key].toDataURL('image/png'),
-            `${servar.key}.png`
-          )
-        : '';
+      value =
+        signatureRef && signatureRef[servar.key]
+          ? dataURLToFile(
+              signatureRef[servar.key].toDataURL('image/png'),
+              `${servar.key}.png`
+            )
+          : '';
     } else value = fieldValues[servar.key];
     formattedFields[servar.key] = {
       value,
@@ -69,10 +70,10 @@ const formatStepFields = (step, fieldValues, signatureRef) => {
   return formattedFields;
 };
 
-const formatAllStepFields = (steps, fieldValues) => {
+const formatAllStepFields = (steps, fieldValues, signatureRef) => {
   let formattedFields = {};
   Object.values(steps).forEach((step) => {
-    const stepFields = formatStepFields(step, fieldValues);
+    const stepFields = formatStepFields(step, fieldValues, signatureRef);
     formattedFields = { ...formattedFields, ...stepFields };
   });
   return formattedFields;

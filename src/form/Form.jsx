@@ -467,7 +467,11 @@ function Form({
 
   const getErrorCallback = (props1) => async (props2) => {
     if (typeof onError === 'function') {
-      const formattedFields = formatAllStepFields(steps, fieldValues);
+      const formattedFields = formatAllStepFields(
+        steps,
+        fieldValues,
+        signatureRef
+      );
       await onError({
         fields: formattedFields,
         ...props1,
@@ -522,7 +526,11 @@ function Form({
     }
 
     if (typeof onLoad === 'function') {
-      const formattedFields = formatAllStepFields(steps, fieldValues);
+      const formattedFields = formatAllStepFields(
+        steps,
+        fieldValues,
+        signatureRef
+      );
 
       const integrationData = {};
       if (initState.authId) {
@@ -698,6 +706,7 @@ function Form({
       servar.metadata?.always_checked
     )
       value = true;
+
     updateValues[servar.key] =
       index === null
         ? value
@@ -844,7 +853,7 @@ function Form({
         integrationData.firebaseAuthToken = initState.authToken;
       }
 
-      const allFields = formatAllStepFields(steps, fieldValues);
+      const allFields = formatAllStepFields(steps, fieldValues, signatureRef);
       const plaidFieldValues = getPlaidFieldValues(
         integrations.plaid,
         fieldValues
@@ -1166,7 +1175,11 @@ function Form({
       });
     }
     if (typeof onChange === 'function') {
-      const formattedFields = formatAllStepFields(steps, fieldValues);
+      const formattedFields = formatAllStepFields(
+        steps,
+        fieldValues,
+        signatureRef
+      );
       callbackRef.current.addCallback(
         onChange({
           ...getCommonCallbackProps(),
@@ -1357,6 +1370,7 @@ function Form({
                     <Elements.SignatureField
                       {...fieldProps}
                       signatureRef={signatureRef}
+                      onEnd={onChange}
                     />
                   );
                 case 'file_upload':

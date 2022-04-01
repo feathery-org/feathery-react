@@ -7,6 +7,7 @@ function SignatureField({
   applyStyles,
   signatureRef = {},
   elementProps = {},
+  onEnd,
   children
 }) {
   const servar = element.servar;
@@ -24,13 +25,16 @@ function SignatureField({
         penColor='black'
         canvasProps={{
           id: servar.key,
-          width: element.styles.width,
           height: element.styles.height,
-          style: applyStyles.getTarget('field', true)
+          style: {
+            ...applyStyles.getTarget('field', true),
+            width: '100%'
+          }
         }}
         ref={(ref) => {
           signatureRef[servar.key] = ref;
         }}
+        onEnd={onEnd}
       />
       {children}
     </div>
