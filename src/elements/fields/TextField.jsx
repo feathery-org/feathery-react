@@ -99,7 +99,7 @@ function getMaskProps(servar, value) {
   return {
     ...maskProps,
     lazy: false,
-    unmask: true
+    unmask: !servar.metadata.save_mask
   };
 }
 
