@@ -364,7 +364,7 @@ function Form({
 
   // Update the map we maintain to track files that have already been uploaded to S3
   // This means nulling the existing mapping because the user uploaded a new file
-  function updateFilePathMap(key, index = null) {
+  function clearFilePathMapEntry(key, index = null) {
     setFilePathMap((filePathMap) => {
       const newMap = { ...filePathMap };
       if (index !== null) {
@@ -412,7 +412,9 @@ function Form({
 
     // Create a map of servar keys to S3 paths so we know which files have been uploaded already
     const newFilePathMap = objectMap(session.file_values, (fileOrFiles) =>
-      Array.isArray(fileOrFiles) ? fileOrFiles.map((f) => f.path) : fileOrFiles
+      Array.isArray(fileOrFiles)
+        ? fileOrFiles.map((f) => f.path)
+        : fileOrFiles.path
     );
 
     setFilePathMap({ ...filePathMap, ...newFilePathMap });
@@ -1370,7 +1372,13 @@ function Form({
                     <Elements.SignatureField
                       {...fieldProps}
                       signatureRef={signatureRef}
-                      onEnd={onChange}
+                      onEnd={() => {
+                        clearFilePathMapEntry(
+                          servar.key,
+                          servar.repeated ? index : null
+                        );
+                        onChange();
+                      }}
                     />
                   );
                 case 'file_upload':
@@ -1379,6 +1387,10 @@ function Form({
                       {...fieldProps}
                       onChange={(e) => {
                         const file = e.target.files[0];
+                        clearFilePathMapEntry(
+                          servar.key,
+                          servar.repeated ? index : null
+                        );
                         changeValue(
                           file ? Promise.resolve(file) : file,
                           el,
@@ -1398,7 +1410,7 @@ function Form({
                       {...fieldProps}
                       onChange={(files) => {
                         const fileVal = files[0];
-                        updateFilePathMap(
+                        clearFilePathMapEntry(
                           servar.key,
                           servar.repeated ? index : null
                         );
@@ -1417,7 +1429,7 @@ function Form({
                     <Elements.MultiFileUploadField
                       {...fieldProps}
                       onChange={(files, fieldIndex) => {
-                        updateFilePathMap(
+                        clearFilePathMapEntry(
                           servar.key,
                           servar.repeated ? index : null
                         );
