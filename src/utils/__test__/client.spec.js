@@ -3,7 +3,10 @@ import { initInfo, initFormsPromise } from '../init';
 
 jest.mock('../init', () => ({
   initInfo: jest.fn(),
-  initFormsPromise: Promise.resolve()
+  initFormsPromise: Promise.resolve(),
+  initState: {},
+  fieldValues: {},
+  filePathMap: {}
 }));
 
 describe('client', () => {
@@ -20,7 +23,7 @@ describe('client', () => {
       });
       global.fetch = jest.fn().mockResolvedValue({
         status: 200,
-        json: jest.fn().mockResolvedValue('json')
+        json: jest.fn().mockResolvedValue({ data: [] })
       });
 
       // Act
@@ -38,7 +41,7 @@ describe('client', () => {
           }
         }
       );
-      expect(response).toEqual('json');
+      expect(response).toEqual([[], { data: [] }]);
     });
   });
 
@@ -51,11 +54,12 @@ describe('client', () => {
         apiKey: 'apiKey',
         userKey: 'userKey',
         sessions: {},
-        forms: {}
+        forms: {},
+        fieldValuesInitialized: false
       });
       global.fetch = jest.fn().mockResolvedValue({
         status: 200,
-        json: jest.fn().mockResolvedValue('json')
+        json: jest.fn().mockResolvedValue({ file_values: {}, field_values: {} })
       });
 
       // Act
@@ -70,7 +74,7 @@ describe('client', () => {
           headers: { Authorization: 'Token apiKey' }
         }
       );
-      expect(response).toEqual('json');
+      expect(response).toEqual({ field_values: {}, file_values: {} });
     });
   });
 

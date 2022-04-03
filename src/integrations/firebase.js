@@ -107,12 +107,7 @@ export async function sendLoginCode(fieldVal, servar, methods = null) {
   }
 }
 
-export async function verifySMSCode(
-  fieldVal,
-  servar,
-  client,
-  updateSessionValues
-) {
+export async function verifySMSCode(fieldVal, servar, client) {
   const fcr = window.firebaseConfirmationResult;
   if (fcr) {
     return await fcr
@@ -126,7 +121,7 @@ export async function verifySMSCode(
             authPhone: window.firebasePhoneNumber
           })
           .then((session) => {
-            updateSessionValues(session);
+            client.updateSessionValues(session);
             return { loggedIn: true };
           });
       })
