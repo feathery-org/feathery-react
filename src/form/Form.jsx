@@ -75,6 +75,8 @@ function Form({
   onSkip = null,
   onError = null,
   onCustomAction = null,
+  onView = null,
+  onViewFields = [],
   initialValues = {},
   initialStepId = '',
   usePreviousUserData = null,
@@ -141,9 +143,15 @@ function Form({
       ),
     [steps]
   );
+  const onViewFieldsDict = useMemo(
+    () => onViewFields.reduce((acc, v) => ({ ...acc, [v]: v }), {}),
+    [onViewFields]
+  );
 
   const fieldValuesRef = useRef(initialValues);
   let fieldValues = fieldValuesRef.current;
+  const visibleFieldsRef = useRef([]);
+  let visibleFields = visibleFieldsRef.current;
   const formRef = useRef(null);
   const signatureRef = useRef({}).current;
   const callbackRef = useRef(new CallbackQueue(null, setLoaders));
@@ -1212,6 +1220,18 @@ function Form({
     } else handleRedirect({ metadata });
   };
 
+  const fieldOnView = () => {
+    if (typeof onView === 'function') {
+      callbackRef.current.addCallback(
+        onView({
+          ...getCommonCallbackProps(),
+          visibleFields
+        }),
+        loaders
+      );
+    }
+  };
+
   let fieldCounter = 0;
   return (
     <>
@@ -1361,6 +1381,9 @@ function Form({
                 element: el,
                 componentOnly: false,
                 elementProps: elementProps[servar.key],
+                fieldOnView,
+                onViewFieldsDict,
+                visibleFields,
                 autoComplete: formSettings.autocomplete,
                 required
               };
