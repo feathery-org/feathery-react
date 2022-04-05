@@ -1,5 +1,4 @@
 import React, { memo, useMemo } from 'react';
-import VisibilitySensor from 'react-visibility-sensor';
 
 import Fields from './fields';
 import TextElement from './basic/TextElement';
@@ -30,78 +29,49 @@ function legacyAlignment(alignment) {
 }
 
 Object.entries(Elements).map(([key, Element]) => {
-  Elements[key] = memo(
-    ({
-      element,
-      componentOnly = true,
-      fieldOnView,
-      onViewFieldsDict,
-      visibleFields,
-      ...props
-    }) => {
-      const applyStyles = useMemo(() => {
-        const as = new ApplyStyles(element, ['container'], !componentOnly);
-        as.apply('container', 'vertical_layout', (a) => ({
-          justifyContent: a
+  Elements[key] = memo(({ element, componentOnly = true, ...props }) => {
+    const applyStyles = useMemo(() => {
+      const as = new ApplyStyles(element, ['container'], !componentOnly);
+      as.apply('container', 'vertical_layout', (a) => ({
+        justifyContent: a
+      }));
+      as.apply('container', 'layout', (a) => ({
+        alignItems: legacyAlignment(a)
+      }));
+      as.applyPadding('container');
+      if (key === 'TextElement' && element.styles.border_color) {
+        as.apply('container', 'border_color', (a) => ({
+          border: `1px solid #${a}`
         }));
-        as.apply('container', 'layout', (a) => ({
-          alignItems: legacyAlignment(a)
-        }));
-        as.applyPadding('container');
-        if (key === 'TextElement' && element.styles.border_color) {
-          as.apply('container', 'border_color', (a) => ({
-            border: `1px solid #${a}`
-          }));
-        }
-        if (key in Basic) as.applyVisibility('container');
-        return as;
-      }, [element, componentOnly]);
-      const featheryElement = (
-        <Element element={element} applyStyles={applyStyles} {...props} />
-      );
-      const e =
-        fieldOnView &&
-        onViewFieldsDict &&
-        onViewFieldsDict[element?.servar?.key] ? (
-          <VisibilitySensor
-            onChange={(isVisible) => {
-              const fieldName = element.servar.key;
-              if (isVisible) visibleFields.push(fieldName);
-              else {
-                const index = visibleFields.indexOf(fieldName);
-                if (index !== -1) visibleFields.splice(index, 1);
-              }
-              fieldOnView();
-            }}
-          >
-            {featheryElement}
-          </VisibilitySensor>
-        ) : (
-          featheryElement
-        );
-      if (componentOnly) return e;
-      else {
-        const layout = applyStyles.getLayout();
-        const containerStyles = applyStyles.getTarget('container');
-        return (
-          <div
-            css={{
-              display: 'flex',
-              flexDirection: 'column',
-              ...layout,
-              ...containerStyles,
-              [mobileBreakpointKey]: {
-                ...layout[mobileBreakpointKey],
-                ...containerStyles[mobileBreakpointKey]
-              }
-            }}
-          >
-            {e}
-          </div>
-        );
       }
+      if (key in Basic) as.applyVisibility('container');
+      return as;
+    }, [element, componentOnly]);
+    const e = (
+      <Element element={element} applyStyles={applyStyles} {...props} />
+    );
+    if (componentOnly) return e;
+    else {
+      const layout = applyStyles.getLayout();
+      const containerStyles = applyStyles.getTarget('container');
+      return (
+        <div
+          css={{
+            display: 'flex',
+            flexDirection: 'column',
+            ...layout,
+            ...containerStyles,
+            [mobileBreakpointKey]: {
+              ...layout[mobileBreakpointKey],
+              ...containerStyles[mobileBreakpointKey]
+            }
+          }}
+        >
+          {e}
+        </div>
+      );
     }
-  );
+  });
 });
 
 export default Elements;
