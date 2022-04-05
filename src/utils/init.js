@@ -26,8 +26,11 @@ const initState = {
   authEmail: '',
   authPhoneNumber: '',
   forms: {},
-  sessions: {}
+  sessions: {},
+  fieldValuesInitialized: false
 };
+const fieldValues = {};
+const filePathMap = {};
 
 function init(apiKey, options = {}) {
   options = { ...defaultOptions, ...options };
@@ -106,14 +109,15 @@ function _fetchFormData(formKeys) {
   return Promise.all(
     formKeys.map((key) => {
       const formClient = new Client(key);
-      const fp = formClient.fetchForm().then((stepsResponse) => {
-        initState.forms[key] = stepsResponse;
-      });
-      return formClient.fetchSession().then(async (session) => {
-        initState.sessions[key] = session;
-        await initializeIntegrations(session.integrations, formClient, true);
-        await fp;
-      });
+      return Promise.all([
+        formClient.fetchForm().then((stepsResponse) => {
+          initState.forms[key] = stepsResponse;
+        }),
+        formClient.fetchSession().then(async (session) => {
+          initState.sessions[key] = session;
+          await initializeIntegrations(session.integrations, formClient, true);
+        })
+      ]);
     })
   );
 }
@@ -139,5 +143,7 @@ export {
   initializeIntegrations,
   updateUserKey,
   initState,
-  initFormsPromise
+  initFormsPromise,
+  fieldValues,
+  filePathMap
 };

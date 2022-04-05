@@ -15,14 +15,11 @@ import {
 import {
   changeStep,
   convertFilesToFilePromises,
-  fetchS3File,
   findServars,
   formatAllStepFields,
   formatStepFields,
-  getABVariant,
   getAllElements,
   getDefaultFieldValue,
-  getDefaultFieldValues,
   getFieldError,
   getFieldValue,
   getInlineError,
@@ -31,14 +28,19 @@ import {
   isFieldActuallyRequired,
   lookUpTrigger,
   nextStepKey,
-  objectMap,
   reactFriendlyKey,
   recurseProgressDepth,
   setFormElementError,
   shouldElementHide,
   textFieldShouldSubmit
 } from '../utils/formHelperFunctions';
-import { initInfo, initState, initializeIntegrations } from '../utils/init';
+import {
+  initInfo,
+  initState,
+  initializeIntegrations,
+  fieldValues,
+  filePathMap
+} from '../utils/init';
 import { justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { stringifyWithNull } from '../utils/string';
@@ -67,7 +69,6 @@ const FILE_UPLOADERS = [
 ];
 
 function Form({
-  // Public API
   formKey,
   onChange = null,
   onLoad = null,
@@ -95,7 +96,6 @@ function Form({
   const [steps, setSteps] = useState(null);
   const [rawActiveStep, setRawActiveStep] = useState(null);
   const [stepKey, setStepKey] = useState('');
-  const [filePathMap, setFilePathMap] = useState({});
   const [shouldScrollToTop, setShouldScrollToTop] = useState(true);
   const [finished, setFinished] = useState(false);
   const [userProgress, setUserProgress] = useState(null);
@@ -108,7 +108,6 @@ function Form({
   });
   const [inlineErrors, setInlineErrors] = useState({});
   const [repeatChanged, setRepeatChanged] = useState(false);
-  const [usePreviousData, setUsePreviousData] = useState(usePreviousUserData);
 
   const [integrations, setIntegrations] = useState({});
   const [plaidLinked, setPlaidLinked] = useState(false);
@@ -142,8 +141,6 @@ function Form({
     [steps]
   );
 
-  const fieldValuesRef = useRef(initialValues);
-  let fieldValues = fieldValuesRef.current;
   const formRef = useRef(null);
   const signatureRef = useRef({}).current;
   const callbackRef = useRef(new CallbackQueue(null, setLoaders));
@@ -365,22 +362,12 @@ function Form({
   // Update the map we maintain to track files that have already been uploaded to S3
   // This means nulling the existing mapping because the user uploaded a new file
   function clearFilePathMapEntry(key, index = null) {
-    setFilePathMap((filePathMap) => {
-      const newMap = { ...filePathMap };
-      if (index !== null) {
-        if (!newMap[key]) newMap[key] = [];
-        newMap[key][index] = null;
-      } else {
-        newMap[key] = null;
-      }
-
-      return newMap;
-    });
-  }
-
-  // Preserve the current fieldValues to avoid overriding initialValues with defaults
-  function applyDefaultFieldValues(data) {
-    return { ...getDefaultFieldValues(data), ...fieldValuesRef.current };
+    if (index !== null) {
+      if (!filePathMap[key]) filePathMap[key] = [];
+      filePathMap[key][index] = null;
+    } else {
+      filePathMap[key] = null;
+    }
   }
 
   const updateFieldValues = (newFieldValues, rerender = true) => {
@@ -389,37 +376,11 @@ function Form({
     if (noChange) return false;
 
     const empty = entries.some(([key, val]) => !val || !fieldValues[key]);
-    fieldValuesRef.current = {
-      ...fieldValuesRef.current,
-      ...newFieldValues
-    };
-    fieldValues = fieldValuesRef.current;
+    Object.assign(fieldValues, newFieldValues);
     // Always rerender from empty state for display purposes
     if (rerender || empty) setRender((render) => !render);
     return true;
   };
-
-  function updateSessionValues(session, useSessionData) {
-    // Don't track previous sessions if toggled
-    if (useSessionData === false || usePreviousData === false) return;
-
-    // Convert files of the format { url, path } to Promise<File>
-    const filePromises = objectMap(session.file_values, (fileOrFiles) =>
-      Array.isArray(fileOrFiles)
-        ? fileOrFiles.map((f) => fetchS3File(f.url))
-        : fetchS3File(fileOrFiles.url)
-    );
-
-    // Create a map of servar keys to S3 paths so we know which files have been uploaded already
-    const newFilePathMap = objectMap(session.file_values, (fileOrFiles) =>
-      Array.isArray(fileOrFiles)
-        ? fileOrFiles.map((f) => f.path)
-        : fileOrFiles.path
-    );
-
-    setFilePathMap({ ...filePathMap, ...newFilePathMap });
-    updateFieldValues({ ...session.field_values, ...filePromises });
-  }
 
   const updateFieldOptions = (stepData, activeStepData) => (
     newFieldOptions
@@ -568,25 +529,24 @@ function Form({
       setFirst(true);
 
       // render form without values first for speed
-      const fetchPromise = clientInstance.fetchForm().then((res) => {
-        const data = {};
-        getABVariant(res).forEach((step) => {
-          data[step.key] = step;
+      const fetchPromise = clientInstance
+        .fetchForm(initialValues)
+        .then(([steps, res]) => {
+          if (res.fonts?.length)
+            WebFont.load({ google: { families: res.fonts } });
+          steps = steps.reduce((result, step) => {
+            result[step.key] = step;
+            return result;
+          }, {});
+          setSteps(steps);
+          setFormSettings({
+            redirectUrl: res.redirect_url,
+            errorType: res.error_type,
+            autocomplete: res.autocomplete ? 'on' : 'off'
+          });
+          setProductionEnv(res.production);
+          return [steps, res];
         });
-        if (res.fonts?.length)
-          WebFont.load({ google: { families: res.fonts } });
-        setSteps(data);
-        setFormSettings({
-          redirectUrl: res.redirect_url,
-          errorType: res.error_type,
-          autocomplete: res.autocomplete ? 'on' : 'off'
-        });
-        setProductionEnv(res.production);
-        setUsePreviousData((usePreviousData) =>
-          usePreviousData === null ? res.save_user_data : usePreviousData
-        );
-        return [data, res];
-      });
 
       // fetch values separately because this request
       // goes to Feathery origin, while the previous
@@ -604,22 +564,29 @@ function Form({
           fetchPromise
             .then(
               async ([
-                data,
+                steps,
                 {
                   save_user_location: saveUserLocation,
                   save_user_data: saveUserData
                 }
               ]) => {
-                updateFieldValues(applyDefaultFieldValues(data));
-                updateSessionValues(session, saveUserData);
+                const usePrevious =
+                  usePreviousUserData === null
+                    ? saveUserData
+                    : usePreviousUserData;
+                if (!usePrevious)
+                  clientInstance.setDefaultFormValues({
+                    steps: Object.values(steps),
+                    override: true
+                  });
                 if (!isObjectEmpty(initialValues))
                   clientInstance.submitCustom(initialValues);
                 const hashKey = decodeURI(location.hash.substr(1));
                 const newKey =
                   initialStepId ||
-                  (hashKey && hashKey in data && hashKey) ||
+                  (hashKey && hashKey in steps && hashKey) ||
                   (saveUserLocation && session.current_step_key) ||
-                  getOrigin(data).key;
+                  getOrigin(steps).key;
                 setFirstStep(newKey);
                 history.replace(
                   location.pathname + location.search + `#${newKey}`
@@ -630,10 +597,9 @@ function Form({
         })
         .catch((error) => {
           console.log(error);
-          // Use default values if origin fails
+          // Go to first step if origin fails
           fetchPromise
             .then(async ([data]) => {
-              updateFieldValues(applyDefaultFieldValues(data));
               const newKey = getOrigin(data).key;
               setFirstStep(newKey);
               history.replace(
@@ -643,15 +609,7 @@ function Form({
             .catch((err) => console.log(err));
         });
     }
-  }, [
-    client,
-    activeStep,
-    setClient,
-    setFirst,
-    setSteps,
-    getDefaultFieldValues,
-    updateFieldValues
-  ]);
+  }, [client, activeStep, setClient, setFirst, setSteps, updateFieldValues]);
 
   useEffect(() => {
     return steps
@@ -940,12 +898,7 @@ function Form({
         servar.metadata.verify_sms_code
       ) {
         setLoader();
-        return await verifySMSCode(
-          fieldVal,
-          servar,
-          client,
-          updateSessionValues
-        );
+        return await verifySMSCode(fieldVal, servar, client);
       }
     }
     return {};
@@ -974,7 +927,7 @@ function Form({
     });
     let submitPromise = null;
     if (featheryFields.length > 0)
-      submitPromise = client.submitStep(featheryFields, filePathMap);
+      submitPromise = client.submitStep(featheryFields);
     if (TagManager.initialized) {
       TagManager.dataLayer({
         dataLayer: {

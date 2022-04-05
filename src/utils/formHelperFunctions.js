@@ -121,17 +121,6 @@ const getAllElements = (step) => {
   ];
 };
 
-const getDefaultFieldValues = (steps) => {
-  const fieldValues = {};
-  Object.values(steps).forEach((step) => {
-    step.servar_fields.forEach((field) => {
-      const val = getDefaultFieldValue(field);
-      fieldValues[field.servar.key] = field.servar.repeated ? [val] : val;
-    });
-  });
-  return fieldValues;
-};
-
 const lookUpTrigger = (step, elementID, elementType) => {
   if (elementType === 'button') {
     const element = step.buttons.find((button) => button.id === elementID);
@@ -491,7 +480,6 @@ export {
   getABVariant,
   getAllElements,
   getDefaultFieldValue,
-  getDefaultFieldValues,
   getNewStepUrl,
   lookUpTrigger,
   nextStepKey,

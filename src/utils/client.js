@@ -1,6 +1,18 @@
 import * as errors from './error';
-import { initFormsPromise, initInfo, initState } from './init';
+import {
+  fieldValues,
+  filePathMap,
+  initFormsPromise,
+  initInfo,
+  initState
+} from './init';
 import { encodeGetParams } from './primitives';
+import {
+  fetchS3File,
+  getABVariant,
+  getDefaultFieldValue,
+  objectMap
+} from './formHelperFunctions';
 
 // Convenience boolean for urls - manually change for testing
 const API_URL_OPTIONS = {
@@ -87,7 +99,7 @@ export default class Client {
     return this._fetch(url, options);
   }
 
-  async _getFileValue(servar, filePathMap) {
+  async _getFileValue(servar) {
     let fileValue;
     if ('file_upload' in servar) {
       fileValue = servar.file_upload;
@@ -116,14 +128,14 @@ export default class Client {
       : resolveFile(fileValue);
   }
 
-  async _submitFileData(servars, filePathMap) {
+  async _submitFileData(servars) {
     const { userKey } = initInfo();
     const url = `${API_URL}panel/step/submit/file/${userKey}/`;
 
     const formData = new FormData();
     const files = await Promise.all(
       servars.map(async (servar) => {
-        const file = await this._getFileValue(servar, filePathMap);
+        const file = await this._getFileValue(servar);
         return [servar.key, file];
       })
     );
@@ -160,7 +172,20 @@ export default class Client {
     return this._fetch(url, options);
   }
 
-  async fetchForm() {
+  setDefaultFormValues({ steps, additionalValues = {}, override = false }) {
+    let values = {};
+    steps.forEach((step) => {
+      step.servar_fields.forEach((field) => {
+        const val = getDefaultFieldValue(field);
+        values[field.servar.key] = field.servar.repeated ? [val] : val;
+      });
+    });
+    values = { ...values, ...additionalValues };
+    if (!override) values = { ...values, ...fieldValues };
+    Object.assign(fieldValues, values);
+  }
+
+  _fetchCacheForm() {
     const { forms } = initInfo();
     if (this.formKey in forms) return Promise.resolve(forms[this.formKey]);
 
@@ -175,26 +200,59 @@ export default class Client {
     return this._fetch(url, options).then((response) => response.json());
   }
 
-  async fetchSession() {
-    const { userKey, sessions, authId } = initInfo();
+  async fetchForm(initialValues) {
+    const result = await this._fetchCacheForm();
+    const steps = getABVariant(result);
+    this.setDefaultFormValues({ steps, additionalValues: initialValues });
+    return [steps, result];
+  }
+
+  fetchSession() {
+    const {
+      userKey,
+      sessions,
+      authId,
+      fieldValuesInitialized: noData
+    } = initInfo();
     if (this.formKey in sessions)
       return Promise.resolve(sessions[this.formKey]);
 
-    const params = encodeGetParams({
-      form_key: this.formKey,
-      ...(userKey ? { fuser_key: userKey } : {}),
-      ...(authId ? { auth_id: authId } : {})
-    });
+    initState.fieldValuesInitialized = true;
+    let params = { form_key: this.formKey };
+    if (userKey) params.fuser_key = userKey;
+    if (authId) params.auth_id = authId;
+    if (noData) params.no_data = 'true';
+    params = encodeGetParams(params);
     const url = `${API_URL}panel/session/?${params}`;
     const options = { importance: 'high' };
-    return this._fetch(url, options).then((response) => response.json());
+    return this._fetch(url, options).then(async (response) => {
+      const session = await response.json();
+      if (!noData) this.updateSessionValues(session);
+      return session;
+    });
+  }
+
+  updateSessionValues(session) {
+    // Convert files of the format { url, path } to Promise<File>
+    const filePromises = objectMap(session.file_values, (fileOrFiles) =>
+      Array.isArray(fileOrFiles)
+        ? fileOrFiles.map((f) => fetchS3File(f.url))
+        : fetchS3File(fileOrFiles.url)
+    );
+
+    // Create a map of servar keys to S3 paths so we know which files have been uploaded already
+    const newFilePathMap = objectMap(session.file_values, (fileOrFiles) =>
+      Array.isArray(fileOrFiles) ? fileOrFiles.map((f) => f.path) : fileOrFiles
+    );
+
+    Object.assign(fieldValues, { ...session.field_values, ...filePromises });
+    Object.assign(filePathMap, newFilePathMap);
   }
 
   submitAuthInfo({ authId, authToken = '', authPhone = '', authEmail = '' }) {
     const { userKey } = initInfo();
 
     const data = {
-      form_key: this.formKey,
       auth_id: authId,
       auth_phone: authPhone,
       auth_email: authEmail,
@@ -237,7 +295,7 @@ export default class Client {
   }
 
   // servars = [{key: <servarKey>, <type>: <value>}]
-  async submitStep(servars, filePathMap) {
+  async submitStep(servars) {
     const isFileServar = (servar) =>
       [
         'file_upload',
@@ -249,8 +307,7 @@ export default class Client {
     const fileServars = servars.filter(isFileServar);
 
     const toAwait = [this._submitJSONData(jsonServars)];
-    if (fileServars.length > 0)
-      toAwait.push(this._submitFileData(fileServars, filePathMap));
+    if (fileServars.length > 0) toAwait.push(this._submitFileData(fileServars));
     await Promise.all(toAwait);
   }
 

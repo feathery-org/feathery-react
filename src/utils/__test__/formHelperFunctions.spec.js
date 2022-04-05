@@ -2,7 +2,6 @@ import {
   formatAllStepFields,
   formatStepFields,
   getABVariant,
-  getDefaultFieldValues,
   nextStepKey,
   getOrigin,
   recurseProgressDepth,
@@ -161,40 +160,6 @@ describe('formHelperFunctions', () => {
       // Assert
       expect(actual1).toEqual(actual2);
     });
-  });
-
-  describe('getDefaultFieldValues', () => {
-    test.each([
-      ['checkbox', false],
-      ['multiselect', []],
-      ['integer_field', ''],
-      ['hex_color', 'FFFFFFFF'],
-      ['select', null],
-      ['foobar', '']
-    ])(
-      'provides the default value for a %s field',
-      (fieldType, expectedValue) => {
-        // Arrange
-        const steps = {
-          step1: {
-            servar_fields: [
-              {
-                servar: {
-                  type: fieldType,
-                  key: 'field'
-                }
-              }
-            ]
-          }
-        };
-
-        // Act
-        const actual = getDefaultFieldValues(steps);
-
-        // Assert
-        expect(actual).toMatchObject({ field: expectedValue });
-      }
-    );
   });
 
   describe('nextStepKey', () => {
