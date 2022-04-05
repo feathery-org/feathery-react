@@ -6,6 +6,7 @@ import {
   initInfo,
   initState
 } from './init';
+import { dataURLToFile } from './image';
 import { encodeGetParams } from './primitives';
 import {
   fetchS3File,
@@ -136,7 +137,11 @@ export default class Client {
     const files = await Promise.all(
       servars.map(async (servar) => {
         const file = await this._getFileValue(servar);
-        return [servar.key, file];
+        let fileToReturn = file;
+        if (servar.signature) {
+          fileToReturn = dataURLToFile(file, `${servar.key}.png`);
+        }
+        return [servar.key, fileToReturn];
       })
     );
 

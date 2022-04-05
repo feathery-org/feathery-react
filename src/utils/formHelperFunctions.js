@@ -24,20 +24,6 @@ const validators = {
   }
 };
 
-const dataURLToFile = (dataURL, name) => {
-  const arr = dataURL.split(',');
-  const mime = arr[0].match(/:(.*?);/)[1];
-  const bstr = atob(arr[1]);
-  let n = bstr.length;
-  const u8arr = new Uint8Array(n);
-
-  while (n--) {
-    u8arr[n] = bstr.charCodeAt(n);
-  }
-
-  return new File([u8arr], name, { type: mime });
-};
-
 const formatStepFields = (step, fieldValues, signatureRef) => {
   const formattedFields = {};
   step.servar_fields.forEach((field) => {
@@ -55,10 +41,7 @@ const formatStepFields = (step, fieldValues, signatureRef) => {
     if (servar.type === 'signature') {
       value =
         signatureRef && signatureRef[servar.key]
-          ? dataURLToFile(
-              signatureRef[servar.key].toDataURL('image/png'),
-              `${servar.key}.png`
-            )
+          ? signatureRef[servar.key].toDataURL('image/png')
           : '';
     } else value = fieldValues[servar.key];
     formattedFields[servar.key] = {

@@ -14,6 +14,7 @@ import {
 } from '../utils/hydration';
 import {
   changeStep,
+  fetchS3File,
   formatAllStepFields,
   formatStepFields,
   getAllElements,
@@ -60,6 +61,7 @@ import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
+import { isBase64PNG, toBase64 } from '../utils/image';
 
 function Form({
   formKey,
@@ -209,6 +211,22 @@ function Form({
   // Logic to run every time step changes
   useEffect(() => {
     if (!activeStep) return;
+
+    activeStep.servar_fields.forEach(async ({ servar: { key, type } }) => {
+      if (type !== 'signature') return;
+
+      const { url } = filePathMap[key];
+      const initialValue = initialValues[key];
+      if (url) {
+        fetchS3File(url).then(async (previousSignature) => {
+          const base64 = await toBase64(previousSignature);
+          signatureRef[key].fromDataURL(base64);
+        });
+      } else if (isBase64PNG(initialValue) && signatureRef[key]) {
+        signatureRef[key].fromDataURL(initialValue);
+        // need to set filePathMap here?
+      }
+    });
 
     const hasLoginField = activeStep.servar_fields.some((field) => {
       const servar = field.servar;
