@@ -70,16 +70,19 @@ function applyButtonStyles(element, applyStyles) {
   return applyStyles;
 }
 
-function ButtonElement({
-  element,
-  applyStyles,
-  values = null,
-  loader = null,
-  handleRedirect = () => {},
-  onClick = () => {},
-  elementProps = {},
-  children
-}) {
+function ButtonElement(
+  {
+    element,
+    applyStyles,
+    values = null,
+    loader = null,
+    handleRedirect = () => {},
+    onClick = () => {},
+    elementProps = {},
+    children
+  },
+  ref
+) {
   const styles = useMemo(() => applyButtonStyles(element, applyStyles), [
     applyStyles
   ]);
@@ -106,6 +109,7 @@ function ButtonElement({
       }}
       disabled={element.properties.link === LINK_NONE || loader}
       onClick={onClick}
+      ref={ref}
       {...elementProps}
     >
       {loader ? (
@@ -135,7 +139,7 @@ function ButtonElement({
   );
 }
 
-export default ButtonElement;
+export default React.forwardRef(ButtonElement);
 export {
   adjustColor,
   LINK_CUSTOM,

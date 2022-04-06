@@ -23,15 +23,18 @@ function applyProgressBarStyles(element, applyStyles) {
   return applyStyles;
 }
 
-function ProgressBarElement({
-  element,
-  applyStyles,
-  progress = null,
-  curDepth = 1,
-  maxDepth = 1,
-  elementProps = {},
-  children
-}) {
+function ProgressBarElement(
+  {
+    element,
+    applyStyles,
+    progress = null,
+    curDepth = 1,
+    maxDepth = 1,
+    elementProps = {},
+    children
+  },
+  ref
+) {
   const styles = useMemo(() => applyProgressBarStyles(element, applyStyles), [
     applyStyles
   ]);
@@ -58,6 +61,7 @@ function ProgressBarElement({
         }
       }}
       now={percent}
+      ref={ref}
     />
   ];
   const link = element.styles.font_link;
@@ -95,4 +99,4 @@ function ProgressBarElement({
   );
 }
 
-export default ProgressBarElement;
+export default React.forwardRef(ProgressBarElement);

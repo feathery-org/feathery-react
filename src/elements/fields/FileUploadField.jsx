@@ -2,16 +2,19 @@ import React from 'react';
 
 import ReactForm from 'react-bootstrap/Form';
 
-function FileUploadField({
-  element,
-  fieldLabel,
-  applyStyles,
-  required = false,
-  onChange = () => {},
-  onClick = () => {},
-  elementProps = {},
-  children
-}) {
+function FileUploadField(
+  {
+    element,
+    fieldLabel,
+    applyStyles,
+    required = false,
+    onChange = () => {},
+    onClick = () => {},
+    elementProps = {},
+    children
+  },
+  ref
+) {
   const servar = element.servar;
   return (
     <div
@@ -25,10 +28,11 @@ function FileUploadField({
         onChange={onChange}
         onClick={onClick}
         style={{ cursor: 'pointer' }}
+        ref={ref}
       />
       {children}
     </div>
   );
 }
 
-export default FileUploadField;
+export default React.forwardRef(FileUploadField);

@@ -31,21 +31,25 @@ function applyTextStyles(element, applyStyles) {
   return applyStyles;
 }
 
-function TextElement({
-  element,
-  applyStyles,
-  values = null,
-  handleRedirect = () => {},
-  conditions = [],
-  elementProps = {},
-  children
-}) {
+function TextElement(
+  {
+    element,
+    applyStyles,
+    values = null,
+    handleRedirect = () => {},
+    conditions = [],
+    elementProps = {},
+    children
+  },
+  ref
+) {
   const styles = useMemo(() => applyTextStyles(element, applyStyles), [
     applyStyles
   ]);
   return (
     <div
       css={{ ...styles.getTarget('text'), position: 'relative' }}
+      ref={ref}
       {...elementProps}
     >
       <TextNodes
@@ -60,4 +64,4 @@ function TextElement({
   );
 }
 
-export default TextElement;
+export default React.forwardRef(TextElement);

@@ -133,20 +133,23 @@ function getInputProps(servar, styles) {
   }
 }
 
-function TextField({
-  element,
-  applyStyles,
-  fieldLabel,
-  elementProps = {},
-  required = false,
-  onAccept = () => {},
-  onBlur = () => {},
-  onClick = () => {},
-  rawValue = '',
-  autoFocus,
-  inlineError,
-  children
-}) {
+function TextField(
+  {
+    element,
+    applyStyles,
+    fieldLabel,
+    elementProps = {},
+    required = false,
+    onAccept = () => {},
+    onBlur = () => {},
+    onClick = () => {},
+    rawValue = '',
+    autoFocus,
+    inlineError,
+    children
+  },
+  ref
+) {
   const servar = element.servar;
 
   const inputProps = getInputProps(servar, element.styles);
@@ -198,6 +201,7 @@ function TextField({
           placeholder=''
           autoFocus={autoFocus}
           value={rawValue}
+          ref={ref}
           {...inputProps}
           {...getMaskProps(servar, rawValue)}
           onAccept={onAccept}
@@ -232,4 +236,4 @@ function TextField({
   );
 }
 
-export default memo(TextField);
+export default memo(React.forwardRef(TextField));

@@ -246,20 +246,27 @@ function OtpInput({
   );
 }
 
-function PinInputField({
-  element,
-  applyStyles,
-  fieldLabel,
-  inlineError,
-  shouldFocus = false,
-  fieldVal = '',
-  onClick = () => {},
-  onChange = () => {},
-  elementProps = {},
-  children
-}) {
+function PinInputField(
+  {
+    element,
+    applyStyles,
+    fieldLabel,
+    inlineError,
+    shouldFocus = false,
+    fieldVal = '',
+    onClick = () => {},
+    onChange = () => {},
+    elementProps = {},
+    children
+  },
+  ref
+) {
   return (
-    <div style={{ display: 'flex', position: 'relative' }} {...elementProps}>
+    <div
+      style={{ display: 'flex', position: 'relative' }}
+      ref={ref}
+      {...elementProps}
+    >
       {fieldLabel}
       <OtpInput
         shouldFocus={shouldFocus}
@@ -275,4 +282,4 @@ function PinInputField({
   );
 }
 
-export default PinInputField;
+export default React.forwardRef(PinInputField);

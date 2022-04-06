@@ -1,18 +1,21 @@
 import React from 'react';
 import { mobileBreakpointKey } from '../styles';
 
-function ButtonGroupField({
-  element,
-  applyStyles,
-  fieldLabel,
-  fieldVal = null,
-  onClick = () => {},
-  elementProps = {},
-  children
-}) {
+function ButtonGroupField(
+  {
+    element,
+    applyStyles,
+    fieldLabel,
+    fieldVal = null,
+    onClick = () => {},
+    elementProps = {},
+    children
+  },
+  ref
+) {
   const servar = element.servar;
   return (
-    <div css={{ position: 'relative' }}>
+    <div css={{ position: 'relative' }} ref={ref}>
       {fieldLabel}
       <div
         css={{
@@ -64,4 +67,4 @@ function ButtonGroupField({
   );
 }
 
-export default ButtonGroupField;
+export default React.forwardRef(ButtonGroupField);

@@ -105,15 +105,18 @@ const transparencyMap = {
   0: '00'
 };
 
-function ColorPickerField({
-  fieldLabel,
-  applyStyles,
-  fieldVal = 'FFFFFFFF',
-  onChange = () => {},
-  onClick = () => {},
-  elementProps = {},
-  children
-}) {
+function ColorPickerField(
+  {
+    fieldLabel,
+    applyStyles,
+    fieldVal = 'FFFFFFFF',
+    onChange = () => {},
+    onClick = () => {},
+    elementProps = {},
+    children
+  },
+  ref
+) {
   const [showPicker, setShowPicker] = useState(false);
   return (
     <div
@@ -158,6 +161,7 @@ function ColorPickerField({
               color = color.hex.substr(1, 6) + a;
               onChange(color);
             }}
+            ref={ref}
           />
         </div>
       ) : null}
@@ -166,4 +170,4 @@ function ColorPickerField({
   );
 }
 
-export default ColorPickerField;
+export default React.forwardRef(ColorPickerField);

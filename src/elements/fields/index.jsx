@@ -191,45 +191,50 @@ function applyFieldStyles(field, styles) {
 }
 
 Object.entries(Fields).map(([key, Field]) => {
-  Fields[key] = memo(({ element, applyStyles, inlineError = '', ...props }) => {
-    const servar = element.servar;
-    const fieldLabel = servar.name ? (
-      <label
-        htmlFor={servar.key}
-        style={{
-          marginBottom: '10px',
-          display: 'inline-block'
-        }}
-      >
-        {servar.name}
-      </label>
-    ) : null;
-    const styles = useMemo(() => applyFieldStyles(element, applyStyles), [
-      element
-    ]);
-    return (
-      <>
-        <Field
-          element={element}
-          fieldLabel={fieldLabel}
-          inlineError={inlineError}
-          applyStyles={styles}
-          {...props}
-        />
-        {inlineError && (
-          <span
-            css={{
-              alignSelf: 'flex-start',
-              color: '#F42525',
-              ...applyStyles.getTarget('error')
+  Fields[key] = memo(
+    React.forwardRef(
+      ({ element, applyStyles, inlineError = '', ...props }, ref) => {
+        const servar = element.servar;
+        const fieldLabel = servar.name ? (
+          <label
+            htmlFor={servar.key}
+            style={{
+              marginBottom: '10px',
+              display: 'inline-block'
             }}
           >
-            {inlineError}
-          </span>
-        )}
-      </>
-    );
-  });
+            {servar.name}
+          </label>
+        ) : null;
+        const styles = useMemo(() => applyFieldStyles(element, applyStyles), [
+          element
+        ]);
+        return (
+          <>
+            <Field
+              element={element}
+              fieldLabel={fieldLabel}
+              inlineError={inlineError}
+              applyStyles={styles}
+              ref={ref}
+              {...props}
+            />
+            {inlineError && (
+              <span
+                css={{
+                  alignSelf: 'flex-start',
+                  color: '#F42525',
+                  ...applyStyles.getTarget('error')
+                }}
+              >
+                {inlineError}
+              </span>
+            )}
+          </>
+        );
+      }
+    )
+  );
 });
 
 export default Fields;

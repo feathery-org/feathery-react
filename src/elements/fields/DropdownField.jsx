@@ -3,18 +3,21 @@ import { bootstrapStyles } from '../styles';
 import React from 'react';
 import ReactForm from 'react-bootstrap/Form';
 
-export default function DropdownField({
-  element,
-  applyStyles,
-  fieldLabel,
-  inlineError,
-  required = false,
-  fieldVal = '',
-  onClick = () => {},
-  onChange = () => {},
-  elementProps = {},
-  children
-}) {
+function DropdownField(
+  {
+    element,
+    applyStyles,
+    fieldLabel,
+    inlineError,
+    required = false,
+    fieldVal = '',
+    onClick = () => {},
+    onChange = () => {},
+    elementProps = {},
+    children
+  },
+  ref
+) {
   const servar = element.servar;
 
   let options;
@@ -74,6 +77,7 @@ export default function DropdownField({
           required={required}
           onChange={onChange}
           onClick={onClick}
+          ref={ref}
         >
           <option key='' value='' disabled />
           {options}
@@ -154,3 +158,5 @@ const states = [
   'Wisconsin',
   'Wyoming'
 ];
+
+export default React.forwardRef(DropdownField);

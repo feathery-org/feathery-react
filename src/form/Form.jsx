@@ -75,6 +75,7 @@ function Form({
   initialStepId = '',
   usePreviousUserData = null,
   elementProps = {},
+  elementRefs = {},
   style = {},
   className = '',
   children
@@ -1222,6 +1223,10 @@ function Form({
                   curDepth={curDepth}
                   maxDepth={maxDepth}
                   elementProps={elementProps[el.id]}
+                  ref={(ref) => {
+                    if (el.id in elementRefs.current)
+                      elementRefs.current[el.id] = ref;
+                  }}
                   onView={onView}
                 />
               );
@@ -1232,6 +1237,10 @@ function Form({
                   componentOnly={false}
                   element={el}
                   elementProps={elementProps[el.id]}
+                  ref={(ref) => {
+                    if (el.id in elementRefs.current)
+                      elementRefs.current[el.id] = ref;
+                  }}
                   onView={onView}
                 />
               );
@@ -1245,6 +1254,10 @@ function Form({
                   handleRedirect={handleRedirect}
                   conditions={activeStep.next_conditions}
                   elementProps={elementProps[el.id]}
+                  ref={(ref) => {
+                    if (el.id in elementRefs.current)
+                      elementRefs.current[el.id] = ref;
+                  }}
                   onView={onView}
                 />
               );
@@ -1262,6 +1275,10 @@ function Form({
                   handleRedirect={handleRedirect}
                   onClick={() => buttonOnClick(el)}
                   elementProps={elementProps[el.id]}
+                  ref={(ref) => {
+                    if (el.id in elementRefs.current)
+                      elementRefs.current[el.id] = ref;
+                  }}
                   onView={onView}
                 />
               );
@@ -1319,6 +1336,10 @@ function Form({
                 element: el,
                 componentOnly: false,
                 elementProps: elementProps[servar.key],
+                ref: (ref) => {
+                  if (servar.key in elementRefs.current)
+                    elementRefs.current[servar.key] = ref;
+                },
                 autoComplete: formSettings.autocomplete,
                 required,
                 onView

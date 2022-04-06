@@ -6,16 +6,19 @@ import { IconContext } from 'react-icons';
 import { Image } from 'react-bootstrap';
 import { justRemove } from '../../utils/array';
 
-function MultiFileUploadField({
-  element,
-  applyStyles,
-  required = false,
-  onChange: customOnChange = () => {},
-  onClick: customOnClick = () => {},
-  initialFiles = null,
-  elementProps = {},
-  children
-}) {
+function MultiFileUploadField(
+  {
+    element,
+    applyStyles,
+    required = false,
+    onChange: customOnChange = () => {},
+    onClick: customOnClick = () => {},
+    initialFiles = null,
+    elementProps = {},
+    children
+  },
+  ref
+) {
   const servar = element.servar;
   const showIcon = element.properties.icon !== '';
   const showLabel = servar.name !== '';
@@ -65,6 +68,7 @@ function MultiFileUploadField({
         position: 'relative',
         ...applyStyles.getTarget('fc')
       }}
+      ref={ref}
       {...elementProps}
     >
       {thumbnailData.map(({ filename, thumbnail }, index) => (
@@ -190,4 +194,4 @@ function MultiFileUploadField({
   );
 }
 
-export default MultiFileUploadField;
+export default React.forwardRef(MultiFileUploadField);

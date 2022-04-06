@@ -5,16 +5,19 @@ import { FiX } from 'react-icons/fi';
 import { IconContext } from 'react-icons';
 import { Image } from 'react-bootstrap';
 
-function RichFileUploadField({
-  element,
-  applyStyles,
-  required = false,
-  onChange: customOnChange = () => {},
-  onClick: customOnClick = () => {},
-  initialFile = null,
-  elementProps = {},
-  children
-}) {
+function RichFileUploadField(
+  {
+    element,
+    applyStyles,
+    required = false,
+    onChange: customOnChange = () => {},
+    onClick: customOnClick = () => {},
+    initialFile = null,
+    elementProps = {},
+    children
+  },
+  parentRef
+) {
   const servar = element.servar;
   const showIcon = element.properties.icon !== '';
   const showLabel = servar.name !== '';
@@ -147,7 +150,10 @@ function RichFileUploadField({
       {/* Input component must be hidden, and it also remains empty since we track files in state here */}
       {/* Since the input is always empty, we have to check for existing data and ignore the required attribute */}
       <input
-        ref={fileInput}
+        ref={(ref) => {
+          fileInput.current = ref;
+          parentRef(ref);
+        }}
         type='file'
         onChange={onChange}
         required={required && !fileExists}
@@ -165,4 +171,4 @@ function RichFileUploadField({
   );
 }
 
-export default RichFileUploadField;
+export default React.forwardRef(RichFileUploadField);

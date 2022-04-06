@@ -18,7 +18,10 @@ function applyImageStyles(element, applyStyles) {
   return applyStyles;
 }
 
-function ImageElement({ element, applyStyles, elementProps = {}, children }) {
+function ImageElement(
+  { element, applyStyles, elementProps = {}, children },
+  ref
+) {
   const styles = useMemo(() => applyImageStyles(element, applyStyles), [
     applyStyles
   ]);
@@ -31,6 +34,7 @@ function ImageElement({ element, applyStyles, elementProps = {}, children }) {
           objectFit: 'contain',
           width: '100%'
         }}
+        ref={ref}
         {...elementProps}
       />
       {children}
@@ -38,4 +42,4 @@ function ImageElement({ element, applyStyles, elementProps = {}, children }) {
   );
 }
 
-export default ImageElement;
+export default React.forwardRef(ImageElement);

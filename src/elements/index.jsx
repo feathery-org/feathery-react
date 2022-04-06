@@ -31,54 +31,63 @@ function legacyAlignment(alignment) {
 
 Object.entries(Elements).map(([key, Element]) => {
   Elements[key] = memo(
-    ({ element, componentOnly = true, onView, ...props }) => {
-      const applyStyles = useMemo(() => {
-        const as = new ApplyStyles(element, ['container'], !componentOnly);
-        as.apply('container', 'vertical_layout', (a) => ({
-          justifyContent: a
-        }));
-        as.apply('container', 'layout', (a) => ({
-          alignItems: legacyAlignment(a)
-        }));
-        as.applyPadding('container');
-        if (key === 'TextElement' && element.styles.border_color) {
-          as.apply('container', 'border_color', (a) => ({
-            border: `1px solid #${a}`
+    React.forwardRef(
+      ({ element, componentOnly = true, onView, ...props }, ref) => {
+        const applyStyles = useMemo(() => {
+          const as = new ApplyStyles(element, ['container'], !componentOnly);
+          as.apply('container', 'vertical_layout', (a) => ({
+            justifyContent: a
           }));
-        }
-        if (key in Basic) as.applyVisibility('container');
-        return as;
-      }, [element, componentOnly]);
-      const featheryElement = (
-        <Element element={element} applyStyles={applyStyles} {...props} />
-      );
-      const e = onView ? (
-        <VisibilitySensor onChange={onView}>{featheryElement}</VisibilitySensor>
-      ) : (
-        featheryElement
-      );
-      if (componentOnly) return e;
-      else {
-        const layout = applyStyles.getLayout();
-        const containerStyles = applyStyles.getTarget('container');
-        return (
-          <div
-            css={{
-              display: 'flex',
-              flexDirection: 'column',
-              ...layout,
-              ...containerStyles,
-              [mobileBreakpointKey]: {
-                ...layout[mobileBreakpointKey],
-                ...containerStyles[mobileBreakpointKey]
-              }
-            }}
-          >
-            {e}
-          </div>
+          as.apply('container', 'layout', (a) => ({
+            alignItems: legacyAlignment(a)
+          }));
+          as.applyPadding('container');
+          if (key === 'TextElement' && element.styles.border_color) {
+            as.apply('container', 'border_color', (a) => ({
+              border: `1px solid #${a}`
+            }));
+          }
+          if (key in Basic) as.applyVisibility('container');
+          return as;
+        }, [element, componentOnly]);
+        const featheryElement = (
+          <Element
+            element={element}
+            applyStyles={applyStyles}
+            ref={ref}
+            {...props}
+          />
         );
+        const e = onView ? (
+          <VisibilitySensor onChange={onView}>
+            {featheryElement}
+          </VisibilitySensor>
+        ) : (
+          featheryElement
+        );
+        if (componentOnly) return e;
+        else {
+          const layout = applyStyles.getLayout();
+          const containerStyles = applyStyles.getTarget('container');
+          return (
+            <div
+              css={{
+                display: 'flex',
+                flexDirection: 'column',
+                ...layout,
+                ...containerStyles,
+                [mobileBreakpointKey]: {
+                  ...layout[mobileBreakpointKey],
+                  ...containerStyles[mobileBreakpointKey]
+                }
+              }}
+            >
+              {e}
+            </div>
+          );
+        }
       }
-    }
+    )
   );
 });
 

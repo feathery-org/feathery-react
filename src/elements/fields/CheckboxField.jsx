@@ -198,16 +198,19 @@ export const composeCheckableInputStyle = (
   };
 };
 
-function CheckboxField({
-  element,
-  applyStyles,
-  fieldLabel,
-  fieldVal = true,
-  onChange = () => {},
-  onClick = () => {},
-  elementProps = {},
-  children
-}) {
+function CheckboxField(
+  {
+    element,
+    applyStyles,
+    fieldLabel,
+    fieldVal = true,
+    onChange = () => {},
+    onClick = () => {},
+    elementProps = {},
+    children
+  },
+  ref
+) {
   const styles = useMemo(
     () => applyCheckableInputStyles(element, applyStyles),
     [applyStyles]
@@ -233,10 +236,11 @@ function CheckboxField({
           padding: 0
         }}
         css={composeCheckableInputStyle(styles)}
+        ref={ref}
       />
       {children}
     </div>
   );
 }
 
-export default CheckboxField;
+export default React.forwardRef(CheckboxField);

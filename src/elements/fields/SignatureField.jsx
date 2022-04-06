@@ -1,15 +1,18 @@
 import React from 'react';
 import SignatureCanvas from 'react-signature-canvas';
 
-function SignatureField({
-  element,
-  fieldLabel,
-  applyStyles,
-  signatureRef = {},
-  elementProps = {},
-  onEnd,
-  children
-}) {
+function SignatureField(
+  {
+    element,
+    fieldLabel,
+    applyStyles,
+    signatureRef = {},
+    elementProps = {},
+    onEnd,
+    children
+  },
+  parentRef
+) {
   const servar = element.servar;
   return (
     <div
@@ -33,6 +36,7 @@ function SignatureField({
         }}
         ref={(ref) => {
           signatureRef[servar.key] = ref;
+          parentRef(ref);
         }}
         onEnd={onEnd}
       />
@@ -41,4 +45,4 @@ function SignatureField({
   );
 }
 
-export default SignatureField;
+export default React.forwardRef(SignatureField);

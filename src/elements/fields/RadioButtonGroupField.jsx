@@ -12,19 +12,22 @@ const applyRadioGroupStyles = (element, applyStyles) => {
   return applyStyles;
 };
 
-function RadioButtonGroupField({
-  element,
-  applyStyles,
-  fieldLabel,
-  required = false,
-  fieldVal = '',
-  otherVal = '',
-  onChange = () => {},
-  onOtherChange = () => {},
-  onClick = () => {},
-  elementProps = {},
-  children
-}) {
+function RadioButtonGroupField(
+  {
+    element,
+    applyStyles,
+    fieldLabel,
+    required = false,
+    fieldVal = '',
+    otherVal = '',
+    onChange = () => {},
+    onOtherChange = () => {},
+    onClick = () => {},
+    elementProps = {},
+    children
+  },
+  ref
+) {
   const servar = element.servar;
   const [otherSelect, setOtherSelect] = useState({});
   const otherChecked =
@@ -40,6 +43,7 @@ function RadioButtonGroupField({
   return (
     <div
       css={{ ...applyStyles.getTarget('fc'), position: 'relative' }}
+      ref={ref}
       {...elementProps}
     >
       {fieldLabel}
@@ -126,4 +130,4 @@ function RadioButtonGroupField({
   );
 }
 
-export default RadioButtonGroupField;
+export default React.forwardRef(RadioButtonGroupField);

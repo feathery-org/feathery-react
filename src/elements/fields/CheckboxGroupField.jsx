@@ -12,18 +12,21 @@ const applyCheckboxGroupStyles = (element, applyStyles) => {
   return applyStyles;
 };
 
-function CheckboxGroupField({
-  element,
-  applyStyles,
-  fieldLabel,
-  fieldVal = [],
-  otherVal = '',
-  onChange = () => {},
-  onOtherChange = () => {},
-  onClick = () => {},
-  elementProps = {},
-  children
-}) {
+function CheckboxGroupField(
+  {
+    element,
+    applyStyles,
+    fieldLabel,
+    fieldVal = [],
+    otherVal = '',
+    onChange = () => {},
+    onOtherChange = () => {},
+    onClick = () => {},
+    elementProps = {},
+    children
+  },
+  ref
+) {
   const servar = element.servar;
   const otherChecked = fieldVal.includes(otherVal);
 
@@ -40,6 +43,7 @@ function CheckboxGroupField({
         position: 'relative',
         ...applyStyles.getTarget('fc')
       }}
+      ref={ref}
       {...elementProps}
     >
       {fieldLabel}
@@ -120,4 +124,4 @@ function CheckboxGroupField({
   );
 }
 
-export default CheckboxGroupField;
+export default React.forwardRef(CheckboxGroupField);
