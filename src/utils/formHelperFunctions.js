@@ -405,34 +405,6 @@ async function fetchS3File(url) {
   });
 }
 
-/**
- * If customers provide files through context.setValues
- * we need to explicitly convert any files to file Promises
- * since they may not have done so
- */
-function convertFilesToFilePromises(values, fileKeys) {
-  const result = {};
-
-  Object.entries(values).forEach(([key, value]) => {
-    // If the servar is a file type, convert the file or files (if repeated) to Promises
-    if (fileKeys[key]) {
-      result[key] = Array.isArray(value)
-        ? value.map((v) => Promise.resolve(v))
-        : Promise.resolve(value);
-    } else {
-      result[key] = value;
-    }
-  });
-
-  return result;
-}
-
-function findServars(steps, matcher) {
-  return Object.values(steps || {}).flatMap((step) => {
-    return step.servar_fields.map((field) => field.servar).filter(matcher);
-  });
-}
-
 function textFieldShouldSubmit(servar, value) {
   let methods, onlyPhone;
   switch (servar.type) {
@@ -494,8 +466,6 @@ export {
   setFormElementError,
   objectMap,
   fetchS3File,
-  convertFilesToFilePromises,
-  findServars,
   textFieldShouldSubmit,
   isFieldActuallyRequired,
   phonePattern,

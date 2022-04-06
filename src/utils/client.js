@@ -288,7 +288,7 @@ export default class Client {
       }
     });
     formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
-    formData.set('form_key', this.formKey);
+    if (this.formKey) formData.set('form_key', this.formKey);
     if (userKey) formData.set('fuser_key', userKey);
 
     return this._fetch(url, { method: 'POST', body: formData });
