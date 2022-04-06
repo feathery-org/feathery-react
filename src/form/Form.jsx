@@ -76,6 +76,8 @@ function Form({
   onSkip = null,
   onError = null,
   onCustomAction = null,
+  onView = null,
+  onViewElements = [],
   initialValues = {},
   initialStepId = '',
   usePreviousUserData = null,
@@ -1165,6 +1167,19 @@ function Form({
     } else handleRedirect({ metadata });
   };
 
+  const elementOnView =
+    typeof onView === 'function'
+      ? (elementId, isVisible) => {
+          callbackRef.current.addCallback(
+            onView({
+              ...getCommonCallbackProps(),
+              visibilityStatus: { elementId, isVisible }
+            }),
+            loaders
+          );
+        }
+      : undefined;
+
   let fieldCounter = 0;
   return (
     <>
@@ -1211,6 +1226,12 @@ function Form({
             else return 0;
           })
           .map(([el, type]) => {
+            const fieldId = el.servar?.key ?? el.id;
+            let onView;
+            if (elementOnView && onViewElements.includes(fieldId)) {
+              onView = (isVisible) => elementOnView(fieldId, isVisible);
+            }
+
             if (type === 'progress_bar')
               return (
                 <Elements.ProgressBarElement
@@ -1221,6 +1242,7 @@ function Form({
                   curDepth={curDepth}
                   maxDepth={maxDepth}
                   elementProps={elementProps[el.id]}
+                  onView={onView}
                 />
               );
             else if (type === 'image')
@@ -1230,6 +1252,7 @@ function Form({
                   componentOnly={false}
                   element={el}
                   elementProps={elementProps[el.id]}
+                  onView={onView}
                 />
               );
             else if (type === 'text')
@@ -1242,6 +1265,7 @@ function Form({
                   handleRedirect={handleRedirect}
                   conditions={activeStep.next_conditions}
                   elementProps={elementProps[el.id]}
+                  onView={onView}
                 />
               );
             else if (type === 'button')
@@ -1258,6 +1282,7 @@ function Form({
                   handleRedirect={handleRedirect}
                   onClick={() => buttonOnClick(el)}
                   elementProps={elementProps[el.id]}
+                  onView={onView}
                 />
               );
             else if (type === 'field') {
@@ -1315,7 +1340,8 @@ function Form({
                 componentOnly: false,
                 elementProps: elementProps[servar.key],
                 autoComplete: formSettings.autocomplete,
-                required
+                required,
+                onView
               };
 
               let changeHandler;
