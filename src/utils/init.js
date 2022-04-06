@@ -137,11 +137,34 @@ function updateUserKey(newUserKey, merge = false) {
   });
 }
 
+function _parseUserVal(userVal) {
+  // If the value is a file type, convert the file or files (if repeated) to Promises
+  return userVal instanceof File ? Promise.resolve(userVal) : userVal;
+}
+
+/**
+ * If customers provide files through setValues
+ * we need to explicitly convert any files to file Promises
+ * since they may not have done so
+ */
+function setValues(userVals) {
+  const result = {};
+  Object.entries(userVals).forEach(([key, value]) => {
+    if (Array.isArray(value))
+      result[key] = value.map((entry) => _parseUserVal(entry));
+    else result[key] = _parseUserVal(value);
+  });
+
+  Object.assign(fieldValues, result);
+  defaultClient.submitCustom(result);
+}
+
 export {
   init,
   initInfo,
   initializeIntegrations,
   updateUserKey,
+  setValues,
   initState,
   initFormsPromise,
   fieldValues,

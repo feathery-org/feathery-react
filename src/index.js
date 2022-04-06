@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import Elements from './elements';
 import Form from './form/Form';
-import { init, updateUserKey } from './utils/init';
+import { init, updateUserKey, setValues } from './utils/init';
 
 /**
  * Utility function which renders a form with the provided props in the DOM element with the provided ID.
@@ -15,6 +15,6 @@ function renderAt(elementId, props) {
 }
 
 // Entrypoint for globally namespaced JS library
-const Feathery = { Form, Elements, init, updateUserKey, renderAt };
+const Feathery = { Form, Elements, init, updateUserKey, setValues, renderAt };
 
-export { Form, Elements, init, updateUserKey, renderAt, Feathery };
+export { Form, Elements, init, updateUserKey, setValues, renderAt, Feathery };

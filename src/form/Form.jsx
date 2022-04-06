@@ -14,8 +14,6 @@ import {
 } from '../utils/hydration';
 import {
   changeStep,
-  convertFilesToFilePromises,
-  findServars,
   formatAllStepFields,
   formatStepFields,
   getAllElements,
@@ -39,7 +37,8 @@ import {
   initState,
   initializeIntegrations,
   fieldValues,
-  filePathMap
+  filePathMap,
+  setValues
 } from '../utils/init';
 import { justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
@@ -61,12 +60,6 @@ import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
-
-const FILE_UPLOADERS = [
-  'file_upload',
-  'rich_file_upload',
-  'rich_multi_file_upload'
-];
 
 function Form({
   formKey,
@@ -133,15 +126,6 @@ function Form({
       data.loader
     );
   }, [loaders]);
-
-  const fileServarKeys = useMemo(
-    () =>
-      findServars(steps, (s) => FILE_UPLOADERS.includes(s.type)).reduce(
-        (keys, servar) => ({ ...keys, [servar.key]: true }),
-        {}
-      ),
-    [steps]
-  );
 
   const formRef = useRef(null);
   const signatureRef = useRef({}).current;
@@ -409,12 +393,8 @@ function Form({
 
   const getCommonCallbackProps = (newStep = activeStep) => {
     return {
+      setValues,
       setOptions: updateFieldOptions(steps),
-      setValues: (userVals) => {
-        const values = convertFilesToFilePromises(userVals, fileServarKeys);
-        updateFieldValues(values);
-        client.submitCustom(values);
-      },
       setProgress: (val) => setUserProgress(val),
       setStep: (stepKey) => {
         changeStep(stepKey, newStep.key, steps, history);
