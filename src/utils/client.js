@@ -6,6 +6,7 @@ import {
   initInfo,
   initState
 } from './init';
+import { dataURLToFile, isBase64PNG } from './image';
 import { encodeGetParams } from './primitives';
 import {
   fetchS3File,
@@ -177,7 +178,16 @@ export default class Client {
     steps.forEach((step) => {
       step.servar_fields.forEach((field) => {
         const val = getDefaultFieldValue(field);
-        values[field.servar.key] = field.servar.repeated ? [val] : val;
+        const { key, repeated, type } = field.servar;
+        if (type === 'signature' && val !== '') {
+          if (isBase64PNG(additionalValues[key])) {
+            additionalValues[key] = dataURLToFile(
+              additionalValues[key],
+              `${key}.png`
+            );
+          } else console.error(`${key} expects a base64 PNG`);
+        }
+        values[key] = repeated ? [val] : val;
       });
     });
     values = { ...values, ...additionalValues };
@@ -273,14 +283,22 @@ export default class Client {
     });
   }
 
-  submitCustom(customKeyValues) {
+  async submitCustom(customKeyValues) {
     const { userKey } = initInfo();
     const url = `${API_URL}panel/custom/submit/v2/`;
 
     const jsonKeyVals = {};
     const formData = new FormData();
-    Object.entries(customKeyValues).forEach(([key, val]) => {
+    const promiseResults = await Promise.all(
+      Object.entries(customKeyValues).map(([key, val]) =>
+        Promise.all([key, Promise.resolve(val)])
+      )
+    );
+    promiseResults.forEach(([key, val]) => {
       if (val instanceof Blob) {
+        // If you use val from customKeyValues instead of value from
+        // promiseResults, the files don't actually save to the BE. Need to
+        // resolve the promises for successful file upload.
         formData.append('files', val);
         formData.append('file_keys', key);
       } else {

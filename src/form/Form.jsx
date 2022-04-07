@@ -60,6 +60,7 @@ import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
+import { dataURLToFile, isBase64PNG, toBase64 } from '../utils/image';
 
 function Form({
   formKey,
@@ -209,6 +210,14 @@ function Form({
   // Logic to run every time step changes
   useEffect(() => {
     if (!activeStep) return;
+
+    activeStep.servar_fields.forEach(async ({ servar: { key, type } }) => {
+      if (type !== 'signature') return;
+
+      const signatureFile = await fieldValues[key];
+      const base64 = await toBase64(signatureFile);
+      signatureRef[key].fromDataURL(base64);
+    });
 
     const hasLoginField = activeStep.servar_fields.some((field) => {
       const servar = field.servar;
@@ -412,11 +421,7 @@ function Form({
 
   const getErrorCallback = (props1) => async (props2) => {
     if (typeof onError === 'function') {
-      const formattedFields = formatAllStepFields(
-        steps,
-        fieldValues,
-        signatureRef
-      );
+      const formattedFields = formatAllStepFields(steps, fieldValues, true);
       await onError({
         fields: formattedFields,
         ...props1,
@@ -471,11 +476,7 @@ function Form({
     }
 
     if (typeof onLoad === 'function') {
-      const formattedFields = formatAllStepFields(
-        steps,
-        fieldValues,
-        signatureRef
-      );
+      const formattedFields = formatAllStepFields(steps, fieldValues, true);
 
       const integrationData = {};
       if (initState.authId) {
@@ -729,11 +730,7 @@ function Form({
     activeStep.servar_fields.forEach(
       (field) => (servarMap[field.servar.key] = field.servar)
     );
-    const formattedFields = formatStepFields(
-      activeStep,
-      fieldValues,
-      signatureRef
-    );
+    const formattedFields = formatStepFields(activeStep, fieldValues, false);
     const elementType = metadata.elementType;
     const trigger = {
       ...lookUpTrigger(activeStep, metadata.elementIDs[0], elementType),
@@ -744,7 +741,7 @@ function Form({
     const newInlineErrors = {};
     Object.entries(formattedFields).map(async ([fieldKey, { value }]) => {
       const servar = servarMap[fieldKey];
-      const message = getFieldError(value, servar, signatureRef);
+      const message = getFieldError(value, servar);
       await setFormElementError({
         formRef,
         errorCallback: getErrorCallback({ trigger }),
@@ -795,7 +792,7 @@ function Form({
         integrationData.firebaseAuthToken = initState.authToken;
       }
 
-      const allFields = formatAllStepFields(steps, fieldValues, signatureRef);
+      const allFields = formatAllStepFields(steps, fieldValues, true);
       const plaidFieldValues = getPlaidFieldValues(
         integrations.plaid,
         fieldValues
@@ -1112,11 +1109,7 @@ function Form({
       });
     }
     if (typeof onChange === 'function') {
-      const formattedFields = formatAllStepFields(
-        steps,
-        fieldValues,
-        signatureRef
-      );
+      const formattedFields = formatAllStepFields(steps, fieldValues, true);
       callbackRef.current.addCallback(
         onChange({
           ...getCommonCallbackProps(),
@@ -1336,6 +1329,14 @@ function Form({
                           servar.key,
                           servar.repeated ? index : null
                         );
+                        const base64Img = signatureRef[servar.key].toDataURL(
+                          'image/png'
+                        );
+                        const newFile = dataURLToFile(
+                          base64Img,
+                          `${servar.key}.png`
+                        );
+                        fieldValues[servar.key] = Promise.resolve(newFile);
                         onChange();
                       }}
                     />

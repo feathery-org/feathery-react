@@ -1,5 +1,7 @@
 import React from 'react';
 import SignatureCanvas from 'react-signature-canvas';
+import { dataURLToFile } from '../../utils/image';
+import { fieldValues } from '../../utils/init';
 
 function SignatureField({
   element,
@@ -34,7 +36,9 @@ function SignatureField({
         ref={(ref) => {
           signatureRef[servar.key] = ref;
         }}
-        onEnd={onEnd}
+        onEnd={() => {
+          onEnd();
+        }}
       />
       {children}
     </div>

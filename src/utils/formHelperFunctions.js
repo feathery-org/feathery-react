@@ -1,6 +1,7 @@
 import getRandomBoolean from './random';
 import libphonenumber from 'google-libphonenumber';
 import { initInfo } from './init';
+import { toBase64 } from './image';
 
 const phoneValidator = libphonenumber.PhoneNumberUtil.getInstance();
 
@@ -24,21 +25,16 @@ const validators = {
   }
 };
 
-const dataURLToFile = (dataURL, name) => {
-  const arr = dataURL.split(',');
-  const mime = arr[0].match(/:(.*?);/)[1];
-  const bstr = atob(arr[1]);
-  let n = bstr.length;
-  const u8arr = new Uint8Array(n);
-
-  while (n--) {
-    u8arr[n] = bstr.charCodeAt(n);
-  }
-
-  return new File([u8arr], name, { type: mime });
-};
-
-const formatStepFields = (step, fieldValues, signatureRef) => {
+/**
+ *
+ * @param {*} step
+ * @param {*} fieldValues
+ * @param {boolean} forUser indicate whether the result of this function is
+ * meant for the user, or Feathery's BE. Presently the only difference is
+ * whether signature field values are base64 or a JS File obj
+ * @returns Formatted fields for the step
+ */
+const formatStepFields = (step, fieldValues, forUser) => {
   const formattedFields = {};
   step.servar_fields.forEach((field) => {
     if (
@@ -52,15 +48,14 @@ const formatStepFields = (step, fieldValues, signatureRef) => {
 
     const servar = field.servar;
     let value;
-    if (servar.type === 'signature') {
+    // Only use base64 for signature if these values will be presented to the user
+    const val = fieldValues[servar.key];
+    if (forUser && servar.type === 'signature') {
       value =
-        signatureRef && signatureRef[servar.key]
-          ? dataURLToFile(
-              signatureRef[servar.key].toDataURL('image/png'),
-              `${servar.key}.png`
-            )
-          : '';
-    } else value = fieldValues[servar.key];
+        val !== ''
+          ? Promise.resolve(val).then((file) => toBase64(file))
+          : Promise.resolve('');
+    } else value = val;
     formattedFields[servar.key] = {
       value,
       type: servar.type,
@@ -70,10 +65,10 @@ const formatStepFields = (step, fieldValues, signatureRef) => {
   return formattedFields;
 };
 
-const formatAllStepFields = (steps, fieldValues, signatureRef) => {
+const formatAllStepFields = (steps, fieldValues, forUser) => {
   let formattedFields = {};
   Object.values(steps).forEach((step) => {
-    const stepFields = formatStepFields(step, fieldValues, signatureRef);
+    const stepFields = formatStepFields(step, fieldValues, forUser);
     formattedFields = { ...formattedFields, ...stepFields };
   });
   return formattedFields;
@@ -236,19 +231,17 @@ function getFieldValue(field, values) {
  * Returns the error message for a field value if it's invalid.
  * Returns an empty string if it's valid.
  */
-function getFieldError(value, servar, signatureRef) {
+function getFieldError(value, servar) {
   let noVal;
   switch (servar.type) {
     case 'file_upload':
     case 'select':
+    case 'signature':
       noVal = !value;
       break;
     case 'checkbox':
       // eslint-disable-next-line camelcase
       noVal = !value && servar.metadata?.must_check;
-      break;
-    case 'signature':
-      noVal = signatureRef[servar.key].isEmpty();
       break;
     default:
       noVal = value === '';
