@@ -2,7 +2,13 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import Elements from './elements';
 import Form from './form/Form';
-import { init, updateUserKey, setValues, fieldValues } from './utils/init';
+import {
+  init,
+  updateUserKey,
+  setValues,
+  validateStep,
+  fieldValues
+} from './utils/init';
 
 function getAllValues() {
   // Make a copy so users can't set fieldValues directly
@@ -25,6 +31,7 @@ const Feathery = {
   Elements,
   init,
   updateUserKey,
+  validateStep,
   setValues,
   getAllValues,
   renderAt
@@ -35,6 +42,7 @@ export {
   Elements,
   init,
   updateUserKey,
+  validateStep,
   setValues,
   getAllValues,
   renderAt,

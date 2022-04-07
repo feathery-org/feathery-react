@@ -475,6 +475,41 @@ function Form({
       });
     }
 
+    initState.validateCallbacks[formKey] = (trigger) => {
+      const inlineErrors = {};
+      const errors = newStep.servar_fields.reduce((errors, field) => {
+        const servar = field.servar;
+        const message = getFieldError(
+          fieldValues[servar.key],
+          servar,
+          signatureRef
+        );
+        errors[servar.key] = message;
+        if (trigger) {
+          setFormElementError({
+            formRef,
+            errorCallback: getErrorCallback({ trigger }),
+            fieldKey: servar.key,
+            message,
+            errorType: formSettings.errorType,
+            servarType: servar.type,
+            inlineErrors
+          });
+        }
+        return errors;
+      }, {});
+      if (trigger) {
+        setFormElementError({
+          formRef,
+          errorType: formSettings.errorType,
+          inlineErrors,
+          setInlineErrors,
+          triggerErrors: true
+        });
+      }
+      return errors;
+    };
+
     if (typeof onLoad === 'function') {
       const formattedFields = formatAllFormFields(steps, fieldValues, true);
 
