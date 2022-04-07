@@ -7,6 +7,7 @@ import * as errors from './error';
 import { emailLogin, installFirebase } from '../integrations/firebase';
 import { installPlaid } from '../integrations/plaid';
 import { initializeTagManager } from '../integrations/googleTagManager';
+import { dataURLToFile, isBase64PNG } from './image';
 
 const fpPromise = FingerprintJS.load();
 let initFormsPromise = Promise.resolve();
@@ -152,7 +153,9 @@ function setValues(userVals) {
   Object.entries(userVals).forEach(([key, value]) => {
     if (Array.isArray(value))
       result[key] = value.map((entry) => _parseUserVal(entry));
-    else result[key] = _parseUserVal(value);
+    else if (isBase64PNG(value)) {
+      result[key] = _parseUserVal(dataURLToFile(value, `${key}.png`));
+    } else result[key] = _parseUserVal(value);
   });
 
   Object.assign(fieldValues, result);

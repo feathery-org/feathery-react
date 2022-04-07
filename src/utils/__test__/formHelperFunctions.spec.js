@@ -67,6 +67,7 @@ describe('formHelperFunctions', () => {
       };
 
       // Act
+      // even before I changed formatStepFields, it did not take a file for the 3rd param
       const actual = formatStepFields(step, fieldValues, fileObject);
 
       // Assert
@@ -133,6 +134,7 @@ describe('formHelperFunctions', () => {
       };
 
       // Act
+      // same issue
       const actual = formatAllStepFields(steps, fieldValues, fileObject);
 
       // Assert

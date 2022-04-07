@@ -182,7 +182,17 @@ export default class Client {
     steps.forEach((step) => {
       step.servar_fields.forEach((field) => {
         const val = getDefaultFieldValue(field);
-        values[field.servar.key] = field.servar.repeated ? [val] : val;
+        // This can't be done when the canvas is hydrated with initial value
+        // because that runs after the Form onSubmit callback is initialized,
+        // which expects a File, not the base64 supplied by the user
+        const { key, repeated, type } = field.servar;
+        if (type === 'signature' && additionalValues[key]) {
+          additionalValues[key] = dataURLToFile(
+            additionalValues[key],
+            `${key}.png`
+          );
+        }
+        values[key] = repeated ? [val] : val;
       });
     });
     values = { ...values, ...additionalValues };
@@ -278,18 +288,25 @@ export default class Client {
     });
   }
 
-  submitCustom(customKeyValues) {
+  async submitCustom(customKeyValues) {
     const { userKey } = initInfo();
     const url = `${API_URL}panel/custom/submit/v2/`;
 
     const jsonKeyVals = {};
     const formData = new FormData();
-    Object.entries(customKeyValues).forEach(([key, val]) => {
-      if (val instanceof Blob) {
-        formData.append('files', val);
+    const promiseResults = await Promise.all(
+      Object.entries(customKeyValues).map(([key, val]) => Promise.resolve(val))
+    );
+    Object.entries(customKeyValues).forEach(([key, val], index) => {
+      const value = promiseResults[index];
+      if (value instanceof Blob) {
+        // If you use val from customKeyValues, instead of value from
+        // promiseResults, the files don't actually save to the BE. Need to
+        // resolve the promises for successful file upload.
+        formData.append('files', value);
         formData.append('file_keys', key);
       } else {
-        jsonKeyVals[key] = val;
+        jsonKeyVals[key] = value;
       }
     });
     formData.set('custom_key_values', JSON.stringify(jsonKeyVals));

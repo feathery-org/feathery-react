@@ -1,5 +1,7 @@
 import React from 'react';
 import SignatureCanvas from 'react-signature-canvas';
+import { dataURLToFile } from '../../utils/image';
+import { fieldValues } from '../../utils/init';
 
 function SignatureField({
   element,
@@ -34,7 +36,12 @@ function SignatureField({
         ref={(ref) => {
           signatureRef[servar.key] = ref;
         }}
-        onEnd={onEnd}
+        onEnd={() => {
+          const base64Img = signatureRef[servar.key].toDataURL('image/png');
+          const newFile = dataURLToFile(base64Img, `${servar.key}.png`);
+          fieldValues[servar.key] = newFile;
+          onEnd();
+        }}
       />
       {children}
     </div>

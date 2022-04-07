@@ -1,6 +1,7 @@
 import getRandomBoolean from './random';
 import libphonenumber from 'google-libphonenumber';
 import { initInfo } from './init';
+import { toBase64 } from './image';
 
 const phoneValidator = libphonenumber.PhoneNumberUtil.getInstance();
 
@@ -24,9 +25,18 @@ const validators = {
   }
 };
 
-const formatStepFields = (step, fieldValues, signatureRef) => {
+/**
+ *
+ * @param {*} step
+ * @param {*} fieldValues
+ * @param {boolean} forUser indicate whether the result of this function is
+ * meant for the user, or Feathery's BE. Presently the only difference is
+ * whether signature field values are base64 or a JS File obj
+ * @returns Formatted fields for the step
+ */
+const formatStepFields = (step, fieldValues, forUser) => {
   const formattedFields = {};
-  step.servar_fields.forEach((field) => {
+  step.servar_fields.forEach(async (field) => {
     if (
       shouldElementHide({
         fields: step.servar_fields,
@@ -38,11 +48,14 @@ const formatStepFields = (step, fieldValues, signatureRef) => {
 
     const servar = field.servar;
     let value;
-    if (servar.type === 'signature') {
+    // Only use base64 for signature if these values will be presented to the user
+    if (servar.type === 'signature' && forUser) {
       value =
-        signatureRef && signatureRef[servar.key]
-          ? signatureRef[servar.key].toDataURL('image/png')
-          : '';
+        fieldValues[servar.key] !== ''
+          ? Promise.resolve(fieldValues[servar.key]).then((file) =>
+              toBase64(file)
+            )
+          : Promise.resolve('');
     } else value = fieldValues[servar.key];
     formattedFields[servar.key] = {
       value,
@@ -53,10 +66,10 @@ const formatStepFields = (step, fieldValues, signatureRef) => {
   return formattedFields;
 };
 
-const formatAllStepFields = (steps, fieldValues, signatureRef) => {
+const formatAllStepFields = (steps, fieldValues, forUser) => {
   let formattedFields = {};
   Object.values(steps).forEach((step) => {
-    const stepFields = formatStepFields(step, fieldValues, signatureRef);
+    const stepFields = formatStepFields(step, fieldValues, forUser);
     formattedFields = { ...formattedFields, ...stepFields };
   });
   return formattedFields;
@@ -219,7 +232,7 @@ function getFieldValue(field, values) {
  * Returns the error message for a field value if it's invalid.
  * Returns an empty string if it's valid.
  */
-function getFieldError(value, servar, signatureRef) {
+function getFieldError(value, servar) {
   let noVal;
   switch (servar.type) {
     case 'file_upload':
@@ -231,7 +244,7 @@ function getFieldError(value, servar, signatureRef) {
       noVal = !value && servar.metadata?.must_check;
       break;
     case 'signature':
-      noVal = signatureRef[servar.key].isEmpty();
+      noVal = value.isEmpty();
       break;
     default:
       noVal = value === '';

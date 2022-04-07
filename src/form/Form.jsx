@@ -215,16 +215,24 @@ function Form({
     activeStep.servar_fields.forEach(async ({ servar: { key, type } }) => {
       if (type !== 'signature') return;
 
-      const { url } = filePathMap[key];
+      // First try to populate signature canvas with previous submission. If that
+      // doesn't exist, try to populate canvas from fieldValues, which could've
+      // already been set by setValues in a user provided onLoad function. If that
+      // doesn't exist, use the user supplied initial value.
       const initialValue = initialValues[key];
-      if (url) {
-        fetchS3File(url).then(async (previousSignature) => {
-          const base64 = await toBase64(previousSignature);
+      if (filePathMap[key]) {
+        const { url } = filePathMap[key];
+        fetchS3File(url).then(async (previousSignatureFile) => {
+          fieldValues[key] = previousSignatureFile;
+          const base64 = await toBase64(previousSignatureFile);
           signatureRef[key].fromDataURL(base64);
         });
+      } else if (fieldValues[key]) {
+        const signatureFile = await fieldValues[key];
+        const base64 = await toBase64(signatureFile);
+        signatureRef[key].fromDataURL(base64);
       } else if (isBase64PNG(initialValue) && signatureRef[key]) {
         signatureRef[key].fromDataURL(initialValue);
-        // need to set filePathMap here?
       }
     });
 
@@ -430,11 +438,7 @@ function Form({
 
   const getErrorCallback = (props1) => async (props2) => {
     if (typeof onError === 'function') {
-      const formattedFields = formatAllStepFields(
-        steps,
-        fieldValues,
-        signatureRef
-      );
+      const formattedFields = formatAllStepFields(steps, fieldValues, true);
       await onError({
         fields: formattedFields,
         ...props1,
@@ -489,11 +493,7 @@ function Form({
     }
 
     if (typeof onLoad === 'function') {
-      const formattedFields = formatAllStepFields(
-        steps,
-        fieldValues,
-        signatureRef
-      );
+      const formattedFields = formatAllStepFields(steps, fieldValues, true);
 
       const integrationData = {};
       if (initState.authId) {
@@ -747,11 +747,7 @@ function Form({
     activeStep.servar_fields.forEach(
       (field) => (servarMap[field.servar.key] = field.servar)
     );
-    const formattedFields = formatStepFields(
-      activeStep,
-      fieldValues,
-      signatureRef
-    );
+    const formattedFields = formatStepFields(activeStep, fieldValues, false);
     const elementType = metadata.elementType;
     const trigger = {
       ...lookUpTrigger(activeStep, metadata.elementIDs[0], elementType),
@@ -762,7 +758,7 @@ function Form({
     const newInlineErrors = {};
     Object.entries(formattedFields).map(async ([fieldKey, { value }]) => {
       const servar = servarMap[fieldKey];
-      const message = getFieldError(value, servar, signatureRef);
+      const message = getFieldError(value, servar);
       await setFormElementError({
         formRef,
         errorCallback: getErrorCallback({ trigger }),
@@ -813,7 +809,7 @@ function Form({
         integrationData.firebaseAuthToken = initState.authToken;
       }
 
-      const allFields = formatAllStepFields(steps, fieldValues, signatureRef);
+      const allFields = formatAllStepFields(steps, fieldValues, true);
       const plaidFieldValues = getPlaidFieldValues(
         integrations.plaid,
         fieldValues
@@ -1130,11 +1126,7 @@ function Form({
       });
     }
     if (typeof onChange === 'function') {
-      const formattedFields = formatAllStepFields(
-        steps,
-        fieldValues,
-        signatureRef
-      );
+      const formattedFields = formatAllStepFields(steps, fieldValues, true);
       callbackRef.current.addCallback(
         onChange({
           ...getCommonCallbackProps(),
