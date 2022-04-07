@@ -215,6 +215,8 @@ function Form({
       if (type !== 'signature') return;
 
       const signatureFile = await fieldValues[key];
+      if (!signatureFile) return;
+
       const base64 = await toBase64(signatureFile);
       signatureRef[key].fromDataURL(base64);
     });
