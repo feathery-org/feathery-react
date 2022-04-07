@@ -8,6 +8,9 @@ export const THUMBNAIL_TYPE = {
   UNKNOWN: 'unknown'
 };
 
+// eslint-disable-next-line no-useless-escape
+export const BASE64_PNG_REGEX = /(data:image\/png;base64,)([0-9a-zA-Z+\/]{4})*(([0-9a-zA-Z+\/]{2}==)|([0-9a-zA-Z+\/]{3}=))?$/gm;
+
 export function getThumbnailType(file) {
   let thumbnailType = THUMBNAIL_TYPE.UNKNOWN;
 
@@ -104,7 +107,5 @@ export const toBase64 = (file) =>
   });
 
 export const isBase64PNG = (string) => {
-  // eslint-disable-next-line no-useless-escape
-  const base64regex = /(data:image\/png;base64,)([0-9a-zA-Z+\/]{4})*(([0-9a-zA-Z+\/]{2}==)|([0-9a-zA-Z+\/]{3}=))?$/gm;
-  return base64regex.test(string);
+  return BASE64_PNG_REGEX.test(string);
 };

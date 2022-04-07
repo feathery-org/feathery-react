@@ -6,7 +6,7 @@ import {
   initInfo,
   initState
 } from './init';
-import { dataURLToFile } from './image';
+import { dataURLToFile, isBase64PNG } from './image';
 import { encodeGetParams } from './primitives';
 import {
   fetchS3File,
@@ -137,11 +137,7 @@ export default class Client {
     const files = await Promise.all(
       servars.map(async (servar) => {
         const file = await this._getFileValue(servar);
-        let fileToReturn = file;
-        if (servar.signature) {
-          fileToReturn = dataURLToFile(file, `${servar.key}.png`);
-        }
-        return [servar.key, fileToReturn];
+        return [servar.key, file];
       })
     );
 
@@ -182,15 +178,14 @@ export default class Client {
     steps.forEach((step) => {
       step.servar_fields.forEach((field) => {
         const val = getDefaultFieldValue(field);
-        // This can't be done when the canvas is hydrated with initial value
-        // because that runs after the Form onSubmit callback is initialized,
-        // which expects a File, not the base64 supplied by the user
         const { key, repeated, type } = field.servar;
-        if (type === 'signature' && additionalValues[key]) {
-          additionalValues[key] = dataURLToFile(
-            additionalValues[key],
-            `${key}.png`
-          );
+        if (type === 'signature' && val !== '') {
+          if (isBase64PNG(additionalValues[key])) {
+            additionalValues[key] = dataURLToFile(
+              additionalValues[key],
+              `${key}.png`
+            );
+          } else console.error(`${key} expects a base64 PNG`);
         }
         values[key] = repeated ? [val] : val;
       });
@@ -295,18 +290,19 @@ export default class Client {
     const jsonKeyVals = {};
     const formData = new FormData();
     const promiseResults = await Promise.all(
-      Object.entries(customKeyValues).map(([key, val]) => Promise.resolve(val))
+      Object.entries(customKeyValues).map(([key, val]) =>
+        Promise.all([key, Promise.resolve(val)])
+      )
     );
-    Object.entries(customKeyValues).forEach(([key, val], index) => {
-      const value = promiseResults[index];
-      if (value instanceof Blob) {
-        // If you use val from customKeyValues, instead of value from
+    promiseResults.forEach(([key, val]) => {
+      if (val instanceof Blob) {
+        // If you use val from customKeyValues instead of value from
         // promiseResults, the files don't actually save to the BE. Need to
         // resolve the promises for successful file upload.
-        formData.append('files', value);
+        formData.append('files', val);
         formData.append('file_keys', key);
       } else {
-        jsonKeyVals[key] = value;
+        jsonKeyVals[key] = val;
       }
     });
     formData.set('custom_key_values', JSON.stringify(jsonKeyVals));

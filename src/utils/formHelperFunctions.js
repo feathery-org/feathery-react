@@ -36,7 +36,7 @@ const validators = {
  */
 const formatStepFields = (step, fieldValues, forUser) => {
   const formattedFields = {};
-  step.servar_fields.forEach(async (field) => {
+  step.servar_fields.forEach((field) => {
     if (
       shouldElementHide({
         fields: step.servar_fields,
@@ -49,14 +49,13 @@ const formatStepFields = (step, fieldValues, forUser) => {
     const servar = field.servar;
     let value;
     // Only use base64 for signature if these values will be presented to the user
-    if (servar.type === 'signature' && forUser) {
+    const val = fieldValues[servar.key];
+    if (forUser && servar.type === 'signature') {
       value =
-        fieldValues[servar.key] !== ''
-          ? Promise.resolve(fieldValues[servar.key]).then((file) =>
-              toBase64(file)
-            )
+        val !== ''
+          ? Promise.resolve(val).then((file) => toBase64(file))
           : Promise.resolve('');
-    } else value = fieldValues[servar.key];
+    } else value = val;
     formattedFields[servar.key] = {
       value,
       type: servar.type,
@@ -237,14 +236,12 @@ function getFieldError(value, servar) {
   switch (servar.type) {
     case 'file_upload':
     case 'select':
+    case 'signature':
       noVal = !value;
       break;
     case 'checkbox':
       // eslint-disable-next-line camelcase
       noVal = !value && servar.metadata?.must_check;
-      break;
-    case 'signature':
-      noVal = value.isEmpty();
       break;
     default:
       noVal = value === '';

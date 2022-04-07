@@ -138,9 +138,11 @@ function updateUserKey(newUserKey, merge = false) {
   });
 }
 
-function _parseUserVal(userVal) {
+function _parseUserVal(userVal, key) {
+  let val = userVal;
+  if (isBase64PNG(val)) val = dataURLToFile(val, `${key}.png`);
   // If the value is a file type, convert the file or files (if repeated) to Promises
-  return userVal instanceof File ? Promise.resolve(userVal) : userVal;
+  return val instanceof File ? Promise.resolve(val) : val;
 }
 
 /**
@@ -152,10 +154,8 @@ function setValues(userVals) {
   const result = {};
   Object.entries(userVals).forEach(([key, value]) => {
     if (Array.isArray(value))
-      result[key] = value.map((entry) => _parseUserVal(entry));
-    else if (isBase64PNG(value)) {
-      result[key] = _parseUserVal(dataURLToFile(value, `${key}.png`));
-    } else result[key] = _parseUserVal(value);
+      result[key] = value.map((entry) => _parseUserVal(entry, key));
+    else result[key] = _parseUserVal(value, key);
   });
 
   Object.assign(fieldValues, result);

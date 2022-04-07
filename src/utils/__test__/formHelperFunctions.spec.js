@@ -67,8 +67,7 @@ describe('formHelperFunctions', () => {
       };
 
       // Act
-      // even before I changed formatStepFields, it did not take a file for the 3rd param
-      const actual = formatStepFields(step, fieldValues, fileObject);
+      const actual = formatStepFields(step, fieldValues);
 
       // Assert
       expect(actual).toMatchObject(expected);
@@ -134,8 +133,7 @@ describe('formHelperFunctions', () => {
       };
 
       // Act
-      // same issue
-      const actual = formatAllStepFields(steps, fieldValues, fileObject);
+      const actual = formatAllStepFields(steps, fieldValues);
 
       // Assert
       expect(actual).toMatchObject(expected);

@@ -14,7 +14,6 @@ import {
 } from '../utils/hydration';
 import {
   changeStep,
-  fetchS3File,
   formatAllStepFields,
   formatStepFields,
   getAllElements,
@@ -61,7 +60,7 @@ import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
-import { isBase64PNG, toBase64 } from '../utils/image';
+import { dataURLToFile, isBase64PNG, toBase64 } from '../utils/image';
 
 function Form({
   formKey,
@@ -215,25 +214,9 @@ function Form({
     activeStep.servar_fields.forEach(async ({ servar: { key, type } }) => {
       if (type !== 'signature') return;
 
-      // First try to populate signature canvas with previous submission. If that
-      // doesn't exist, try to populate canvas from fieldValues, which could've
-      // already been set by setValues in a user provided onLoad function. If that
-      // doesn't exist, use the user supplied initial value.
-      const initialValue = initialValues[key];
-      if (filePathMap[key]) {
-        const { url } = filePathMap[key];
-        fetchS3File(url).then(async (previousSignatureFile) => {
-          fieldValues[key] = previousSignatureFile;
-          const base64 = await toBase64(previousSignatureFile);
-          signatureRef[key].fromDataURL(base64);
-        });
-      } else if (fieldValues[key]) {
-        const signatureFile = await fieldValues[key];
-        const base64 = await toBase64(signatureFile);
-        signatureRef[key].fromDataURL(base64);
-      } else if (isBase64PNG(initialValue) && signatureRef[key]) {
-        signatureRef[key].fromDataURL(initialValue);
-      }
+      const signatureFile = await fieldValues[key];
+      const base64 = await toBase64(signatureFile);
+      signatureRef[key].fromDataURL(base64);
     });
 
     const hasLoginField = activeStep.servar_fields.some((field) => {
@@ -1346,6 +1329,14 @@ function Form({
                           servar.key,
                           servar.repeated ? index : null
                         );
+                        const base64Img = signatureRef[servar.key].toDataURL(
+                          'image/png'
+                        );
+                        const newFile = dataURLToFile(
+                          base64Img,
+                          `${servar.key}.png`
+                        );
+                        fieldValues[servar.key] = Promise.resolve(newFile);
                         onChange();
                       }}
                     />

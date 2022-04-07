@@ -37,9 +37,6 @@ function SignatureField({
           signatureRef[servar.key] = ref;
         }}
         onEnd={() => {
-          const base64Img = signatureRef[servar.key].toDataURL('image/png');
-          const newFile = dataURLToFile(base64Img, `${servar.key}.png`);
-          fieldValues[servar.key] = newFile;
           onEnd();
         }}
       />
