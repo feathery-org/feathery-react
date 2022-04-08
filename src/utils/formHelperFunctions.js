@@ -65,7 +65,7 @@ const formatStepFields = (step, fieldValues, forUser) => {
   return formattedFields;
 };
 
-const formatAllStepFields = (steps, fieldValues, forUser) => {
+const formatAllFormFields = (steps, fieldValues, forUser) => {
   let formattedFields = {};
   Object.values(steps).forEach((step) => {
     const stepFields = formatStepFields(step, fieldValues, forUser);
@@ -440,7 +440,7 @@ function getNewStepUrl(stepKey) {
 
 export {
   changeStep,
-  formatAllStepFields,
+  formatAllFormFields,
   formatStepFields,
   getABVariant,
   getAllElements,
