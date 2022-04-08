@@ -92,7 +92,7 @@ function Form({
   const [steps, setSteps] = useState(null);
   const [rawActiveStep, setRawActiveStep] = useState(null);
   const [stepKey, setStepKey] = useState('');
-  const [shouldScrollToTop, setShouldScrollToTop] = useState(true);
+  const [shouldScrollToTop, setShouldScrollToTop] = useState(false);
   const [finished, setFinished] = useState(false);
   const [userProgress, setUserProgress] = useState(null);
   const [curDepth, setCurDepth] = useState(0);
