@@ -4,6 +4,11 @@ import Elements from './elements';
 import Form from './form/Form';
 import { init, updateUserKey, setValues, fieldValues } from './utils/init';
 
+function getAllValues() {
+  // Make a copy so users can't set fieldValues directly
+  return { ...fieldValues };
+}
+
 /**
  * Utility function which renders a form with the provided props in the DOM element with the provided ID.
  * @param {string} elementId The ID of the DOM element to hold the form
@@ -21,7 +26,7 @@ const Feathery = {
   init,
   updateUserKey,
   setValues,
-  fieldValues,
+  getAllValues,
   renderAt
 };
 
@@ -31,7 +36,7 @@ export {
   init,
   updateUserKey,
   setValues,
-  fieldValues,
+  getAllValues,
   renderAt,
   Feathery
 };
