@@ -28,7 +28,8 @@ const initState = {
   authPhoneNumber: '',
   forms: {},
   sessions: {},
-  fieldValuesInitialized: false
+  fieldValuesInitialized: false,
+  validateCallbacks: {}
 };
 const fieldValues = {};
 const filePathMap = {};
@@ -162,12 +163,19 @@ function setValues(userVals) {
   defaultClient.submitCustom(result);
 }
 
+function validateStep(formKey, trigger = true) {
+  const callback = initState.validateCallbacks[formKey];
+  if (!callback) return;
+  return callback(trigger);
+}
+
 export {
   init,
   initInfo,
   initializeIntegrations,
   updateUserKey,
   setValues,
+  validateStep,
   initState,
   initFormsPromise,
   fieldValues,
