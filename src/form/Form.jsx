@@ -60,7 +60,7 @@ import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
-import { dataURLToFile, isBase64PNG, toBase64 } from '../utils/image';
+import { dataURLToFile, toBase64 } from '../utils/image';
 
 function Form({
   formKey,
