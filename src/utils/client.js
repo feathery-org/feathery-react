@@ -178,14 +178,13 @@ export default class Client {
     steps.forEach((step) => {
       step.servar_fields.forEach((field) => {
         const val = getDefaultFieldValue(field);
-        const { key, repeated, type } = field.servar;
-        if (type === 'signature' && val !== '') {
-          if (isBase64PNG(additionalValues[key])) {
-            additionalValues[key] = dataURLToFile(
-              additionalValues[key],
-              `${key}.png`
-            );
-          } else console.error(`${key} expects a base64 PNG`);
+        const { key, repeated } = field.servar;
+        if (isBase64PNG(additionalValues[key])) {
+          // All base64 strings need to be wrapped in a File
+          additionalValues[key] = dataURLToFile(
+            additionalValues[key],
+            `${key}.png`
+          );
         }
         values[key] = repeated ? [val] : val;
       });
