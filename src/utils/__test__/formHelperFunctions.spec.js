@@ -1,5 +1,5 @@
 import {
-  formatAllStepFields,
+  formatAllFormFields,
   formatStepFields,
   getABVariant,
   nextStepKey,
@@ -81,7 +81,7 @@ describe('formHelperFunctions', () => {
       const expected = {};
 
       // Act
-      const actual = formatAllStepFields(steps);
+      const actual = formatAllFormFields(steps);
 
       // Assert
       expect(actual).toMatchObject(expected);
@@ -133,7 +133,7 @@ describe('formHelperFunctions', () => {
       };
 
       // Act
-      const actual = formatAllStepFields(steps, fieldValues);
+      const actual = formatAllFormFields(steps, fieldValues);
 
       // Assert
       expect(actual).toMatchObject(expected);

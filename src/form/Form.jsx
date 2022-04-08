@@ -14,7 +14,7 @@ import {
 } from '../utils/hydration';
 import {
   changeStep,
-  formatAllStepFields,
+  formatAllFormFields,
   formatStepFields,
   getAllElements,
   getDefaultFieldValue,
@@ -421,7 +421,7 @@ function Form({
 
   const getErrorCallback = (props1) => async (props2) => {
     if (typeof onError === 'function') {
-      const formattedFields = formatAllStepFields(steps, fieldValues, true);
+      const formattedFields = formatAllFormFields(steps, fieldValues, true);
       await onError({
         fields: formattedFields,
         ...props1,
@@ -476,7 +476,7 @@ function Form({
     }
 
     if (typeof onLoad === 'function') {
-      const formattedFields = formatAllStepFields(steps, fieldValues, true);
+      const formattedFields = formatAllFormFields(steps, fieldValues, true);
 
       const integrationData = {};
       if (initState.authId) {
@@ -792,7 +792,7 @@ function Form({
         integrationData.firebaseAuthToken = initState.authToken;
       }
 
-      const allFields = formatAllStepFields(steps, fieldValues, true);
+      const allFields = formatAllFormFields(steps, fieldValues, true);
       const plaidFieldValues = getPlaidFieldValues(
         integrations.plaid,
         fieldValues
@@ -1109,7 +1109,7 @@ function Form({
       });
     }
     if (typeof onChange === 'function') {
-      const formattedFields = formatAllStepFields(steps, fieldValues, true);
+      const formattedFields = formatAllFormFields(steps, fieldValues, true);
       callbackRef.current.addCallback(
         onChange({
           ...getCommonCallbackProps(),
