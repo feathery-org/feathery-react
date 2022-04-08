@@ -112,7 +112,7 @@ function _fetchFormData(formKeys) {
     formKeys.map((key) => {
       const formClient = new Client(key);
       return Promise.all([
-        formClient.fetchForm().then((stepsResponse) => {
+        formClient.fetchCacheForm().then((stepsResponse) => {
           initState.forms[key] = stepsResponse;
         }),
         formClient.fetchSession().then(async (session) => {

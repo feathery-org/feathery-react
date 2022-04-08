@@ -194,7 +194,7 @@ export default class Client {
     Object.assign(fieldValues, values);
   }
 
-  _fetchCacheForm() {
+  fetchCacheForm() {
     const { forms } = initInfo();
     if (this.formKey in forms) return Promise.resolve(forms[this.formKey]);
 
@@ -210,7 +210,7 @@ export default class Client {
   }
 
   async fetchForm(initialValues) {
-    const result = await this._fetchCacheForm();
+    const result = await this.fetchCacheForm();
     const steps = getABVariant(result);
     this.setDefaultFormValues({ steps, additionalValues: initialValues });
     return [steps, result];
