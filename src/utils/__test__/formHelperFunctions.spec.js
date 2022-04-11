@@ -74,7 +74,7 @@ describe('formHelperFunctions', () => {
     });
   });
 
-  describe('formatAllStepFields', () => {
+  describe('formatAllFormFields', () => {
     it('formats zero steps correctly', () => {
       // Arrange
       const steps = [];
