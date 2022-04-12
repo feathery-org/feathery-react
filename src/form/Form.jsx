@@ -128,9 +128,15 @@ function Form({
     );
   }, [loaders]);
 
+  // Tracks overall form HTML component
   const formRef = useRef(null);
+  // Tracks signature elements
   const signatureRef = useRef({}).current;
+  // Tracks element to focus
+  const focusRef = useRef();
+  // Tracks the execution of user-provided callback functions
   const callbackRef = useRef(new CallbackQueue(null, setLoaders));
+  // Tracks if the form has redirected
   const hasRedirected = useRef(false);
 
   // Determine if there is a field with a custom repeat_trigger configuration anywhere in the step
@@ -210,6 +216,13 @@ function Form({
   // Logic to run every time step changes
   useEffect(() => {
     if (!activeStep) return;
+
+    if (focusRef.current) {
+      focusRef.current.focus({
+        preventScroll: true
+      });
+      focusRef.current = null;
+    }
 
     activeStep.servar_fields.forEach(async ({ servar: { key, type } }) => {
       if (type !== 'signature') return;
@@ -1299,6 +1312,7 @@ function Form({
               );
             else if (type === 'field') {
               fieldCounter++;
+              const thisCounter = fieldCounter;
               const index = el.repeat ?? null;
               const servar = el.servar;
               const { value: fieldVal } = getFieldValue(el, fieldValues);
@@ -1589,7 +1603,9 @@ function Form({
                           onChange({ submitData });
                         }
                       }}
-                      autoFocus={fieldCounter === 1}
+                      setRef={(ref) => {
+                        if (thisCounter === 1) focusRef.current = ref;
+                      }}
                       inlineError={inlineErr}
                     />
                   );
