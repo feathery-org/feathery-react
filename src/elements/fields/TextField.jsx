@@ -142,8 +142,8 @@ function TextField({
   onAccept = () => {},
   onBlur = () => {},
   onClick = () => {},
+  setRef = () => {},
   rawValue = '',
-  autoFocus,
   inlineError,
   children
 }) {
@@ -196,8 +196,8 @@ function TextField({
           onClick={onClick}
           autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
-          autoFocus={autoFocus}
           value={rawValue}
+          inputRef={setRef}
           {...inputProps}
           {...getMaskProps(servar, rawValue)}
           onAccept={onAccept}
