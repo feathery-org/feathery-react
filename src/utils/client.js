@@ -212,7 +212,11 @@ export default class Client {
   async fetchForm(initialValues) {
     const result = await this.fetchCacheForm();
     const steps = getABVariant(result);
-    this.setDefaultFormValues({ steps, additionalValues: initialValues });
+    this.setDefaultFormValues({
+      steps,
+      additionalValues: initialValues,
+      override: true
+    });
     return [steps, result];
   }
 

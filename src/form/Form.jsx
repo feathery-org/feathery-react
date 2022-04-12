@@ -595,8 +595,10 @@ function Form({
                     ? saveUserData
                     : usePreviousUserData;
                 if (!usePrevious)
+                  // Pass initial values to overwrite values when form history is off
                   clientInstance.setDefaultFormValues({
                     steps: Object.values(steps),
+                    additionalValues: initialValues,
                     override: true
                   });
                 if (!isObjectEmpty(initialValues))
