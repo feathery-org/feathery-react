@@ -492,27 +492,36 @@ function Form({
 
     initState.validateCallbacks[formKey] = (trigger) => {
       const inlineErrors = {};
-      const errors = newStep.servar_fields.reduce((errors, field) => {
-        const servar = field.servar;
-        const message = getFieldError(
-          fieldValues[servar.key],
-          servar,
-          signatureRef
-        );
-        errors[servar.key] = message;
-        if (trigger) {
-          setFormElementError({
-            formRef,
-            errorCallback: getErrorCallback({ trigger }),
-            fieldKey: servar.key,
-            message,
-            errorType: formSettings.errorType,
-            servarType: servar.type,
-            inlineErrors
-          });
-        }
-        return errors;
-      }, {});
+      const errors = newStep.servar_fields
+        .filter(
+          (field) =>
+            !shouldElementHide({
+              fields: newStep.servar_fields,
+              values: fieldValues,
+              element: field
+            })
+        )
+        .reduce((errors, field) => {
+          const servar = field.servar;
+          const message = getFieldError(
+            fieldValues[servar.key],
+            servar,
+            signatureRef
+          );
+          errors[servar.key] = message;
+          if (trigger) {
+            setFormElementError({
+              formRef,
+              errorCallback: getErrorCallback({ trigger }),
+              fieldKey: servar.key,
+              message,
+              errorType: formSettings.errorType,
+              servarType: servar.type,
+              inlineErrors
+            });
+          }
+          return errors;
+        }, {});
       if (trigger) {
         setFormElementError({
           formRef,
