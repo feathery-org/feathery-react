@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { getNewStepUrl, getStepDepthMap } from '../utils/formHelperFunctions';
 import {
   LeftChevronIcon,
-  RightChevronIcon
+  RightChevronIcon,
+  DiagonalArrowIcon
 } from '../elements/components/icons';
 
 const lightGrey = 'rgb(235, 239, 242)';
@@ -13,6 +14,7 @@ function handleBoth(prevData, nextData, func) {
 
 export default function DevNavBar({ allSteps, curStep, history }) {
   const [activeNav, setActiveNav] = useState('');
+  const [isVisible, setIsVisible] = useState(true);
 
   const [prevStepKeys, nextStepKeys] = useMemo(() => {
     const [prevStepKeys, nextStepKeys] = handleBoth(
@@ -106,47 +108,121 @@ export default function DevNavBar({ allSteps, curStep, history }) {
     );
   }, [prevStepKeys, nextStepKeys, activeNav]);
 
-  return (
+  return isVisible ? (
+    <>
+      <div
+        css={{
+          position: 'fixed',
+          top: '0',
+          height: '55px',
+          width: '100%',
+          backgroundColor: 'white',
+          boxShadow: '-3px 3px 4px #575c8214',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}
+      >
+        <span
+          css={{
+            fontWeight: 700
+          }}
+        >
+          Preview
+        </span>
+        <div
+          css={{
+            position: 'absolute',
+            top: '12px',
+            right: '16px',
+            width: '32px',
+            height: '32px',
+            border: '1px solid #DBDFE8',
+            boxSizing: 'border-box',
+            boxShadow: '0px 1px 2px #2b36471a',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+          onClick={() => setIsVisible(false)}
+        >
+          <DiagonalArrowIcon />
+        </div>
+      </div>
+      <div
+        css={{
+          position: 'fixed',
+          bottom: '30px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '288px',
+          height: '56px',
+          backgroundColor: 'white',
+          borderRadius: '6px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          boxShadow: '0 4px 14px #00000040'
+        }}
+      >
+        <div
+          css={navArrowCSS}
+          onClick={() => {
+            if (prevStepKeys.length === 1) navigate(prevStepKeys[0]);
+            else setActiveNav(activeNav === 'back' ? '' : 'back');
+          }}
+          style={{
+            visibility: prevStepKeys.length === 0 ? 'hidden' : 'visible'
+          }}
+        >
+          <LeftChevronIcon />
+        </div>
+        <span css={{ marginBottom: '4px', userSelect: 'none' }}>
+          {curStep.key}
+        </span>
+        <div
+          css={navArrowCSS}
+          onClick={() => {
+            if (nextStepKeys.length === 1) navigate(nextStepKeys[0]);
+            else setActiveNav(activeNav === 'forward' ? '' : 'forward');
+          }}
+          style={{
+            visibility: nextStepKeys.length === 0 ? 'hidden' : 'visible'
+          }}
+        >
+          <RightChevronIcon />
+        </div>
+        {stepSelector}
+      </div>
+    </>
+  ) : (
     <div
       css={{
         position: 'fixed',
-        bottom: '30px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: '288px',
-        height: '56px',
+        top: '0',
         backgroundColor: 'white',
-        borderRadius: '6px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        boxShadow: '0 4px 14px #00000040'
+        // Specific values required for this to be the same height as the Preview header
+        right: '-2px',
+        width: '108px',
+        height: '52px',
+        transform: 'rotate(45deg) translate(4px,-42px)',
+        boxShadow: '-3px 3px 4px #575c8214',
+        cursor: 'pointer'
       }}
+      onClick={() => setIsVisible(true)}
     >
       <div
-        css={navArrowCSS}
-        onClick={() => {
-          if (prevStepKeys.length === 1) navigate(prevStepKeys[0]);
-          else setActiveNav(activeNav === 'back' ? '' : 'back');
+        css={{
+          transform: 'rotate(135deg)',
+          position: 'fixed',
+          right: '28px',
+          bottom: '4px'
         }}
-        style={{ visibility: prevStepKeys.length === 0 ? 'hidden' : 'visible' }}
       >
-        <LeftChevronIcon />
+        <DiagonalArrowIcon />
       </div>
-      <span css={{ marginBottom: '4px', userSelect: 'none' }}>
-        {curStep.key}
-      </span>
-      <div
-        css={navArrowCSS}
-        onClick={() => {
-          if (nextStepKeys.length === 1) navigate(nextStepKeys[0]);
-          else setActiveNav(activeNav === 'forward' ? '' : 'forward');
-        }}
-        style={{ visibility: nextStepKeys.length === 0 ? 'hidden' : 'visible' }}
-      >
-        <RightChevronIcon />
-      </div>
-      {stepSelector}
     </div>
   );
 }
