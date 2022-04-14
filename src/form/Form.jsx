@@ -60,7 +60,6 @@ import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
-import { dataURLToFile, toBase64 } from '../utils/image';
 
 function Form({
   formKey,
@@ -130,8 +129,6 @@ function Form({
 
   // Tracks overall form HTML component
   const formRef = useRef(null);
-  // Tracks signature elements
-  const signatureRef = useRef({}).current;
   // Tracks element to focus
   const focusRef = useRef();
   // Tracks the execution of user-provided callback functions
@@ -223,16 +220,6 @@ function Form({
       });
       focusRef.current = null;
     }
-
-    activeStep.servar_fields.forEach(async ({ servar: { key, type } }) => {
-      if (type !== 'signature') return;
-
-      const signatureFile = await fieldValues[key];
-      if (!signatureFile) return;
-
-      const base64 = await toBase64(signatureFile);
-      signatureRef[key].fromDataURL(base64);
-    });
 
     const hasLoginField = activeStep.servar_fields.some((field) => {
       const servar = field.servar;
@@ -503,11 +490,7 @@ function Form({
         )
         .reduce((errors, field) => {
           const servar = field.servar;
-          const message = getFieldError(
-            fieldValues[servar.key],
-            servar,
-            signatureRef
-          );
+          const message = getFieldError(fieldValues[servar.key], servar);
           errors[servar.key] = message;
           if (trigger) {
             setFormElementError({
@@ -1385,22 +1368,16 @@ function Form({
                   return (
                     <Elements.SignatureField
                       {...fieldProps}
-                      signatureRef={signatureRef}
-                      onEnd={() => {
+                      defaultValue={fieldValues[servar.key]}
+                      onEnd={(newFile) => {
                         clearFilePathMapEntry(
                           servar.key,
                           servar.repeated ? index : null
                         );
-                        const base64Img = signatureRef[servar.key].toDataURL(
-                          'image/png'
-                        );
-                        const newFile = dataURLToFile(
-                          base64Img,
-                          `${servar.key}.png`
-                        );
                         fieldValues[servar.key] = Promise.resolve(newFile);
                         onChange();
                       }}
+                      onClear={() => (fieldValues[servar.key] = null)}
                     />
                   );
                 case 'file_upload':
