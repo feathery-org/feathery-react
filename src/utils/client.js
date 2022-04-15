@@ -9,11 +9,11 @@ import {
 import { dataURLToFile, isBase64PNG } from './image';
 import { encodeGetParams } from './primitives';
 import {
-  fetchS3File,
   getABVariant,
   getDefaultFieldValue,
-  objectMap
+  updateSessionValues
 } from './formHelperFunctions';
+import { initializeIntegrations } from '../integrations/utils';
 
 // Convenience boolean for urls - manually change for testing
 const API_URL_OPTIONS = {
@@ -220,7 +220,7 @@ export default class Client {
     return [steps, result];
   }
 
-  fetchSession() {
+  fetchSession(formPromise = null) {
     const {
       userKey,
       sessions,
@@ -240,26 +240,11 @@ export default class Client {
     const options = { importance: 'high' };
     return this._fetch(url, options).then(async (response) => {
       const session = await response.json();
-      if (!noData) this.updateSessionValues(session);
-      return session;
+      initializeIntegrations(session.integrations, this, Boolean(formPromise));
+      const formData = await (formPromise || Promise.resolve());
+      if (!noData) updateSessionValues(session);
+      return [session, formData];
     });
-  }
-
-  updateSessionValues(session) {
-    // Convert files of the format { url, path } to Promise<File>
-    const filePromises = objectMap(session.file_values, (fileOrFiles) =>
-      Array.isArray(fileOrFiles)
-        ? fileOrFiles.map((f) => fetchS3File(f.url))
-        : fetchS3File(fileOrFiles.url)
-    );
-
-    // Create a map of servar keys to S3 paths so we know which files have been uploaded already
-    const newFilePathMap = objectMap(session.file_values, (fileOrFiles) =>
-      Array.isArray(fileOrFiles) ? fileOrFiles.map((f) => f.path) : fileOrFiles
-    );
-
-    Object.assign(fieldValues, { ...session.field_values, ...filePromises });
-    Object.assign(filePathMap, newFilePathMap);
   }
 
   submitAuthInfo({ authId, authToken = '', authPhone = '', authEmail = '' }) {

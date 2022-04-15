@@ -74,7 +74,10 @@ describe('client', () => {
           headers: { Authorization: 'Token apiKey' }
         }
       );
-      expect(response).toEqual({ field_values: {}, file_values: {} });
+      expect(response).toEqual([
+        { field_values: {}, file_values: {} },
+        undefined
+      ]);
     });
   });
 
