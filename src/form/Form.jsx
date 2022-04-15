@@ -182,6 +182,17 @@ function Form({
   }, [activeStep]);
 
   useEffect(() => {
+    initState.renderCallbacks[formKey] = () => {
+      setRender((render) => !render);
+    };
+
+    return () => {
+      delete initState.renderCallbacks[formKey];
+      delete initState.validateCallbacks[formKey];
+    };
+  }, []);
+
+  useEffect(() => {
     if (gMapFilled) clearTimeout(gMapTimeoutId);
     else if (gMapBlurKey) {
       // Delay by 0.5 seconds to ensure onChange finishes running first if it needs to
