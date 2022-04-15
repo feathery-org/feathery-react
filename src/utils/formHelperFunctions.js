@@ -52,7 +52,7 @@ const formatStepFields = (step, fieldValues, forUser) => {
     const val = fieldValues[servar.key];
     if (forUser && servar.type === 'signature') {
       value =
-        val !== ''
+        val !== null
           ? Promise.resolve(val).then((file) => toBase64(file))
           : Promise.resolve('');
     } else value = val;
@@ -94,13 +94,12 @@ function getDefaultFieldValue(field) {
     case 'hex_color':
       return 'FFFFFFFF';
     case 'select':
-      return null;
     case 'file_upload':
+    case 'rich_file_upload':
+    case 'signature':
       return null;
     case 'rich_multi_file_upload':
       return [];
-    case 'rich_file_upload':
-      return null;
     default:
       return '';
   }
