@@ -4,9 +4,6 @@ import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { v4 as uuidv4 } from 'uuid';
 
 import * as errors from './error';
-import { emailLogin, installFirebase } from '../integrations/firebase';
-import { installPlaid } from '../integrations/plaid';
-import { initializeTagManager } from '../integrations/googleTagManager';
 import { dataURLToFile, isBase64PNG } from './image';
 
 const fpPromise = FingerprintJS.load();
@@ -28,6 +25,8 @@ const initState = {
   authPhoneNumber: '',
   forms: {},
   sessions: {},
+  // Since all field values are fetched with each session, only fetch field
+  // values on the first session request
   fieldValuesInitialized: false,
   validateCallbacks: {}
 };
@@ -88,24 +87,6 @@ function init(apiKey, options = {}) {
   return initFormsPromise;
 }
 
-const initializeIntegrations = async (
-  integrations,
-  clientArg,
-  init = false
-) => {
-  const gtm = integrations['google-tag-manager'];
-  const fb = integrations.firebase;
-  const plaid = integrations.plaid;
-
-  const [, firebase] = await Promise.all([
-    installPlaid(!!plaid),
-    installFirebase(fb)
-  ]);
-
-  if (gtm) initializeTagManager(gtm);
-  if (fb && !init) emailLogin(fb, firebase, clientArg);
-};
-
 // must be called after userKey loads
 function _fetchFormData(formKeys) {
   return Promise.all(
@@ -115,10 +96,9 @@ function _fetchFormData(formKeys) {
         formClient.fetchCacheForm().then((stepsResponse) => {
           initState.forms[key] = stepsResponse;
         }),
-        formClient.fetchSession().then(async (session) => {
-          initState.sessions[key] = session;
-          await initializeIntegrations(session.integrations, formClient, true);
-        })
+        formClient
+          .fetchSession()
+          .then((session) => (initState.sessions[key] = session))
       ]);
     })
   );
@@ -172,7 +152,6 @@ function validateStep(formKey, trigger = true) {
 export {
   init,
   initInfo,
-  initializeIntegrations,
   updateUserKey,
   setValues,
   validateStep,

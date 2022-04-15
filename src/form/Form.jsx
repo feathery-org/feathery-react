@@ -35,7 +35,6 @@ import {
 import {
   initInfo,
   initState,
-  initializeIntegrations,
   fieldValues,
   filePathMap,
   setValues
@@ -554,7 +553,7 @@ function Form({
       setFirst(true);
 
       // render form without values first for speed
-      const fetchPromise = clientInstance
+      const formPromise = clientInstance
         .fetchForm(initialValues)
         .then(([steps, res]) => {
           if (res.fonts?.length)
@@ -577,63 +576,48 @@ function Form({
       // goes to Feathery origin, while the previous
       // request goes to our CDN
       clientInstance
-        .fetchSession()
-        .then(async (session) => {
-          setIntegrations(session.integrations);
-          const newSession = await initializeIntegrations(
-            session.integrations,
-            clientInstance
-          );
-          if (newSession) session = newSession;
-
-          fetchPromise
-            .then(
-              async ([
-                steps,
-                {
-                  save_user_location: saveUserLocation,
-                  save_user_data: saveUserData
-                }
-              ]) => {
-                const usePrevious =
-                  usePreviousUserData === null
-                    ? saveUserData
-                    : usePreviousUserData;
-                if (!usePrevious)
-                  // Pass initial values to overwrite values when form history is off
-                  clientInstance.setDefaultFormValues({
-                    steps: Object.values(steps),
-                    additionalValues: initialValues,
-                    override: true
-                  });
-                if (!isObjectEmpty(initialValues))
-                  clientInstance.submitCustom(initialValues);
-                const hashKey = decodeURI(location.hash.substr(1));
-                const newKey =
-                  initialStepId ||
-                  (hashKey && hashKey in steps && hashKey) ||
-                  (saveUserLocation && session.current_step_key) ||
-                  getOrigin(steps).key;
-                setFirstStep(newKey);
-                history.replace(
-                  location.pathname + location.search + `#${newKey}`
-                );
+        .fetchSession(formPromise)
+        .then(
+          ([
+            session,
+            [
+              steps,
+              {
+                save_user_location: saveUserLocation,
+                save_user_data: saveUserData
               }
-            )
-            .catch((err) => console.log(err));
-        })
-        .catch((error) => {
+            ]
+          ]) => {
+            setIntegrations(session.integrations);
+            const usePrevious =
+              usePreviousUserData === null ? saveUserData : usePreviousUserData;
+            if (!usePrevious) {
+              // Pass initial values to overwrite values when form history is off
+              clientInstance.setDefaultFormValues({
+                steps: Object.values(steps),
+                additionalValues: initialValues,
+                override: true
+              });
+            }
+            if (!isObjectEmpty(initialValues))
+              clientInstance.submitCustom(initialValues);
+            const hashKey = decodeURI(location.hash.substr(1));
+            const newKey =
+              initialStepId ||
+              (hashKey && hashKey in steps && hashKey) ||
+              (saveUserLocation && session.current_step_key) ||
+              getOrigin(steps).key;
+            setFirstStep(newKey);
+            history.replace(location.pathname + location.search + `#${newKey}`);
+          }
+        )
+        .catch(async (error) => {
           console.log(error);
           // Go to first step if origin fails
-          fetchPromise
-            .then(async ([data]) => {
-              const newKey = getOrigin(data).key;
-              setFirstStep(newKey);
-              history.replace(
-                location.pathname + location.search + `#${newKey}`
-              );
-            })
-            .catch((err) => console.log(err));
+          const [data] = await formPromise;
+          const newKey = getOrigin(data).key;
+          setFirstStep(newKey);
+          history.replace(location.pathname + location.search + `#${newKey}`);
         });
     }
   }, [client, activeStep, setClient, setFirst, setSteps, updateFieldValues]);

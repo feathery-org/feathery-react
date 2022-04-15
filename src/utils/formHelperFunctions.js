@@ -1,6 +1,6 @@
 import getRandomBoolean from './random';
 import libphonenumber from 'google-libphonenumber';
-import { initInfo } from './init';
+import { fieldValues, filePathMap, initInfo } from './init';
 import { toBase64 } from './image';
 
 const phoneValidator = libphonenumber.PhoneNumberUtil.getInstance();
@@ -224,6 +224,24 @@ function getFieldValue(field, values) {
         repeated: false,
         value: values[servar.key]
       };
+}
+
+/** Update the fieldvaleus cache with a backend session */
+function updateSessionValues(session) {
+  // Convert files of the format { url, path } to Promise<File>
+  const filePromises = objectMap(session.file_values, (fileOrFiles) =>
+    Array.isArray(fileOrFiles)
+      ? fileOrFiles.map((f) => fetchS3File(f.url))
+      : fetchS3File(fileOrFiles.url)
+  );
+
+  // Create a map of servar keys to S3 paths so we know which files have been uploaded already
+  const newFilePathMap = objectMap(session.file_values, (fileOrFiles) =>
+    Array.isArray(fileOrFiles) ? fileOrFiles.map((f) => f.path) : fileOrFiles
+  );
+
+  Object.assign(fieldValues, { ...session.field_values, ...filePromises });
+  Object.assign(filePathMap, newFilePathMap);
 }
 
 /**
@@ -452,6 +470,7 @@ export {
   recurseProgressDepth,
   reactFriendlyKey,
   getFieldValue,
+  updateSessionValues,
   getFieldError,
   getInlineError,
   shouldElementHide,

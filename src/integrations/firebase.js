@@ -1,5 +1,9 @@
 import { dynamicImport } from './utils';
-import { emailPattern, phonePattern } from '../utils/formHelperFunctions';
+import {
+  emailPattern,
+  phonePattern,
+  updateSessionValues
+} from '../utils/formHelperFunctions';
 
 let firebasePromise = null;
 
@@ -121,7 +125,7 @@ export async function verifySMSCode(fieldVal, servar, client) {
             authPhone: window.firebasePhoneNumber
           })
           .then((session) => {
-            client.updateSessionValues(session);
+            updateSessionValues(session);
             return { loggedIn: true };
           });
       })
