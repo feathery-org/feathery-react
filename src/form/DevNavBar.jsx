@@ -113,6 +113,7 @@ export default function DevNavBar({ allSteps, curStep, history }) {
       <div
         css={{
           position: 'fixed',
+          left: '0',
           top: '0',
           height: '55px',
           width: '100%',
