@@ -28,7 +28,8 @@ const initState = {
   // Since all field values are fetched with each session, only fetch field
   // values on the first session request
   fieldValuesInitialized: false,
-  validateCallbacks: {}
+  validateCallbacks: {},
+  renderCallbacks: {}
 };
 const fieldValues = {};
 const filePathMap = {};
@@ -131,7 +132,7 @@ function _parseUserVal(userVal, key) {
  * we need to explicitly convert any files to file Promises
  * since they may not have done so
  */
-function setValues(userVals) {
+function setValues(userVals, rerender = true) {
   const result = {};
   Object.entries(userVals).forEach(([key, value]) => {
     if (Array.isArray(value))
@@ -141,6 +142,8 @@ function setValues(userVals) {
 
   Object.assign(fieldValues, result);
   defaultClient.submitCustom(result);
+
+  if (rerender) Object.values(initState.renderCallbacks).forEach((cb) => cb());
 }
 
 function validateStep(formKey, trigger = true) {
