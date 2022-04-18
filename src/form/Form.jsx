@@ -1575,12 +1575,13 @@ function Form({
                           setGMapBlurKey(servar.key);
                       }}
                       onClick={onClick}
-                      onAccept={(val) => {
-                        const change = changeValue(val, el, index, false);
+                      onAccept={(val, mask) => {
+                        const newVal = mask._unmaskedValue === '' ? '' : val;
+                        const change = changeValue(newVal, el, index, false);
                         if (change) {
                           const submitData =
                             el.properties.submit_trigger === 'auto' &&
-                            textFieldShouldSubmit(servar, val);
+                            textFieldShouldSubmit(servar, newVal);
                           onChange({ submitData });
                         }
                       }}
