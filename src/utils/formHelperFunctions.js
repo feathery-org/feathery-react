@@ -387,7 +387,7 @@ function calculateHide(hideIf, fields, values, repeat) {
   if (Array.isArray(value)) value = value[repeat];
 
   // If the hideIf value is an empty string, we want to match on the "empty" value of a field
-  // This could be null, undefined, an empty array, or an empty string
+  // This could be null, undefined, an empty array, an empty string, or false
   // Otherwise, just match the hideIf value
   const matchValues =
     hideIf.value === '' ? [null, undefined, [], '', false] : [hideIf.value];
