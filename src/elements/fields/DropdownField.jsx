@@ -75,7 +75,7 @@ export default function DropdownField({
           onChange={onChange}
           onClick={onClick}
         >
-          <option key='' value='' disabled />
+          <option key='' value='' />
           {options}
         </ReactForm.Control>
         <span
