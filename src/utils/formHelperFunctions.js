@@ -390,7 +390,7 @@ function calculateHide(hideIf, fields, values, repeat) {
   // This could be null, undefined, an empty array, or an empty string
   // Otherwise, just match the hideIf value
   const matchValues =
-    hideIf.value === '' ? [null, undefined, [], ''] : [hideIf.value];
+    hideIf.value === '' ? [null, undefined, [], '', false] : [hideIf.value];
 
   return hideIf.comparison === 'equal'
     ? matchValues.includes(value)
