@@ -61,7 +61,8 @@ import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
 
 function Form({
-  formKey,
+  formKey: _formKey,
+  formName: _formName,
   onChange = null,
   onLoad = null,
   onSubmit = null,
@@ -78,6 +79,7 @@ function Form({
   className = '',
   children
 }) {
+  const formKey = _formName ?? _formKey;
   const [client, setClient] = useState(null);
   const history = useHistory();
 
@@ -181,10 +183,16 @@ function Form({
     ];
   }, [activeStep]);
 
+  // All mount and unmount logic should live here
   useEffect(() => {
     initState.renderCallbacks[formKey] = () => {
       setRender((render) => !render);
     };
+
+    if (_formKey)
+      console.warn(
+        "<Form/>'s formKey prop has been deprecated. Use formName instead."
+      );
 
     return () => {
       delete initState.renderCallbacks[formKey];
