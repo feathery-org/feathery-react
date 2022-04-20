@@ -35,6 +35,8 @@ function TextElement({
   element,
   applyStyles,
   values = null,
+  editable = false,
+  textCallbacks = {},
   handleRedirect = () => {},
   conditions = [],
   elementProps = {},
@@ -45,7 +47,11 @@ function TextElement({
   ]);
   return (
     <div
-      css={{ ...styles.getTarget('text'), position: 'relative' }}
+      css={{
+        ...styles.getTarget('text'),
+        position: 'relative',
+        maxWidth: '100%'
+      }}
       {...elementProps}
     >
       <TextNodes
@@ -54,6 +60,8 @@ function TextElement({
         applyStyles={applyStyles}
         handleRedirect={handleRedirect}
         conditions={conditions}
+        editable={editable}
+        textCallbacks={textCallbacks}
       />
       {children}
     </div>

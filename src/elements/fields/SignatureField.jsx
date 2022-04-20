@@ -8,6 +8,7 @@ function SignatureField({
   fieldLabel,
   applyStyles,
   defaultValue = null,
+  editable = false,
   elementProps = {},
   onEnd = () => {},
   onClear = () => {},
@@ -35,7 +36,8 @@ function SignatureField({
       css={{
         ...applyStyles.getTarget('fc'),
         maxWidth: '100%',
-        position: 'relative'
+        position: 'relative',
+        pointerEvents: editable ? 'none' : 'auto'
       }}
       {...elementProps}
     >

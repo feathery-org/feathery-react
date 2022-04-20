@@ -253,13 +253,21 @@ function PinInputField({
   inlineError,
   shouldFocus = false,
   fieldVal = '',
+  editable = false,
   onClick = () => {},
   onChange = () => {},
   elementProps = {},
   children
 }) {
   return (
-    <div style={{ display: 'flex', position: 'relative' }} {...elementProps}>
+    <div
+      style={{
+        display: 'flex',
+        position: 'relative',
+        pointerEvents: editable ? 'none' : 'auto'
+      }}
+      {...elementProps}
+    >
       {fieldLabel}
       <OtpInput
         shouldFocus={shouldFocus}

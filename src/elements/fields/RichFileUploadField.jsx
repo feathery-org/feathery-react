@@ -9,6 +9,7 @@ function RichFileUploadField({
   element,
   applyStyles,
   required = false,
+  editable = false,
   onChange: customOnChange = () => {},
   onClick: customOnClick = () => {},
   initialFile = null,
@@ -65,6 +66,7 @@ function RichFileUploadField({
       css={{
         position: 'relative',
         cursor: 'pointer',
+        pointerEvents: editable ? 'none' : 'auto',
         maxHeight: '100%',
         display: 'flex',
         justifyContent:
