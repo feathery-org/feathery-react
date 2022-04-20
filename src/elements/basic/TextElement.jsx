@@ -36,6 +36,7 @@ function TextElement({
   applyStyles,
   values = null,
   editable = false,
+  focused = false,
   textCallbacks = {},
   handleRedirect = () => {},
   conditions = [],
@@ -61,6 +62,7 @@ function TextElement({
         handleRedirect={handleRedirect}
         conditions={conditions}
         editable={editable}
+        focused={focused}
         textCallbacks={textCallbacks}
       />
       {children}

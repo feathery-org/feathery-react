@@ -1,22 +1,10 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo } from 'react';
 import { isNum } from '../../utils/primitives';
 import Delta from 'quill-delta';
 import { stringifyWithNull } from '../../utils/string';
+import useTextEdit from './useTextEdit';
 
 const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
-
-const editableProps = ({
-  onTextSelect = () => {},
-  onTextKeyDown = () => {},
-  onTextBlur = () => {},
-  spanRef
-}) => ({
-  contentEditable: true,
-  suppressContentEditableWarning: true,
-  onSelect: () => onTextSelect(window.getSelection()),
-  onKeyDown: (e) => onTextKeyDown(e, spanRef.current, window.getSelection()),
-  onBlur: onTextBlur
-});
 
 function TextNodes({
   element,
@@ -25,9 +13,14 @@ function TextNodes({
   handleRedirect,
   conditions = [],
   editable = false,
+  focused = false,
   textCallbacks = {}
 }) {
-  const spanRef = useRef();
+  const { spanRef, editableProps } = useTextEdit({
+    editable,
+    focused,
+    ...textCallbacks
+  });
 
   return useMemo(() => {
     const text = element.properties.text;
@@ -50,16 +43,8 @@ function TextNodes({
         );
       }
     });
-    const spanProps = editable
-      ? editableProps({ ...textCallbacks, spanRef })
-      : {};
     return (
-      <span
-        ref={spanRef}
-        {...spanProps}
-        css={{ outline: 'none', minWidth: '5px', display: 'inline-block' }}
-        key={text}
-      >
+      <span ref={spanRef} {...editableProps} key={text}>
         {delta
           .filter((op) => op.insert)
           .map((op, i) => {
@@ -88,9 +73,8 @@ function TextNodes({
 
             const attrs = op.attributes || {};
             let onClick = () => {};
-            let cursor = 'text';
+            let cursor = 'inherit';
             if (!editable) {
-              cursor = 'inherit';
               if (attrs.font_link) {
                 onClick = () =>
                   window.open(attrs.font_link, '_blank', 'noopener noreferrer');
@@ -129,7 +113,7 @@ function TextNodes({
           })}
       </span>
     );
-  }, [element, applyStyles]);
+  }, [element, applyStyles, editableProps]);
 }
 
 export default TextNodes;

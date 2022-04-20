@@ -76,6 +76,7 @@ function ButtonElement({
   values = null,
   loader = null,
   editable = false,
+  focused = false,
   textCallbacks = {},
   handleRedirect = () => {},
   onClick = () => {},
@@ -137,6 +138,7 @@ function ButtonElement({
             applyStyles={applyStyles}
             handleRedirect={handleRedirect}
             editable={editable}
+            focused={focused}
             textCallbacks={textCallbacks}
           />
         </>
