@@ -9,8 +9,8 @@ function SignatureField({
   applyStyles,
   defaultValue = null,
   elementProps = {},
-  onEnd,
-  onClear,
+  onEnd = () => {},
+  onClear = () => {},
   children
 }) {
   const servar = element.servar;
