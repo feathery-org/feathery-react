@@ -3,9 +3,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 function useTextEdit({
   editable,
   focused,
-  onTextSelect = () => {},
-  onTextKeyDown = () => {},
-  onTextBlur = () => {}
+  onTextSelect = null,
+  onTextKeyDown = null,
+  onTextBlur = null
 }) {
   const spanRef = useRef();
   const [editMode, setEditMode] = useState('hover');
@@ -44,12 +44,13 @@ function useTextEdit({
           editableProps = {
             contentEditable: true,
             suppressContentEditableWarning: true,
-            onSelect: () => onTextSelect(window.getSelection()),
+            onSelect: () => onTextSelect && onTextSelect(window.getSelection()),
             onKeyDown: (e) =>
+              onTextKeyDown &&
               onTextKeyDown(e, spanRef.current, window.getSelection()),
             onBlur: (e) => {
               setEditMode('hover');
-              onTextBlur(e);
+              onTextBlur && onTextBlur(e);
             }
           };
           css.cursor = 'text';
@@ -58,7 +59,15 @@ function useTextEdit({
     }
     editableProps.css = css;
     return editableProps;
-  }, [editable, focused, editMode, spanRef]);
+  }, [
+    editable,
+    focused,
+    editMode,
+    spanRef,
+    onTextBlur,
+    onTextSelect,
+    onTextKeyDown
+  ]);
 
   return { spanRef, editableProps };
 }
