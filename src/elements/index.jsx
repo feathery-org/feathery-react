@@ -6,11 +6,13 @@ import TextElement from './basic/TextElement';
 import ButtonElement from './basic/ButtonElement';
 import ImageElement from './basic/ImageElement';
 import ProgressBarElement from './basic/ProgressBarElement';
+import VideoElement from './basic/VideoElement';
 
 import ApplyStyles, { mobileBreakpointKey } from './styles';
 
 const Basic = {
   ImageElement,
+  VideoElement,
   TextElement,
   ButtonElement,
   ProgressBarElement
