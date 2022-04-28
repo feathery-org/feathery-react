@@ -36,6 +36,21 @@ function applyButtonStyles(element, applyStyles) {
   applyStyles.applyWidth('button');
   applyStyles.applyCorners('button');
   applyStyles.applyBorders('button');
+  applyStyles.applyFlexDirection('button');
+  applyStyles.apply(
+    'button',
+    [
+      'uploader_padding_top',
+      'uploader_padding_right',
+      'uploader_padding_bottom',
+      'uploader_padding_left'
+    ],
+    (a, b, c, d) => ({
+      padding: `${a}px ${b}px ${c}px ${d}px`
+    })
+  );
+  applyStyles.applyWidth('img', 'image_');
+  applyStyles.applyMargin('img', 'image_');
 
   applyStyles.applyBorders('buttonHover', 'hover_');
   if (element.properties.link !== LINK_NONE) {
@@ -101,8 +116,7 @@ function ButtonElement({
             : 'pointer',
         boxShadow: 'none',
         maxWidth: '100%',
-        position: 'relative',
-        padding: '1px 6px'
+        position: 'relative'
       }}
       css={{
         '&:disabled': { cursor: 'default !important' },
@@ -128,7 +142,8 @@ function ButtonElement({
               style={{
                 objectFit: 'contain',
                 maxWidth: '80%',
-                maxHeight: '100%'
+                maxHeight: '100%',
+                ...applyStyles.getTargets('img')
               }}
             />
           )}
