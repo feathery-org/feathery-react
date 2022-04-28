@@ -7,7 +7,9 @@ const mobileIndices = {
   gridRowEnd: 'mobile_row_index_end'
 };
 
-export const mobileBreakpointKey = '@media (max-width: 478px)';
+export const mobileBreakpointValue = 478;
+
+export const mobileBreakpointKey = `@media (max-width: ${mobileBreakpointValue}px)`;
 
 /**
  * Handles the translation of server-side properties into responsive CSS
@@ -92,9 +94,9 @@ class ApplyStyles {
   // Translate a set of server-side properties into CSS for a particular
   // target
   apply(target, properties, get) {
+    if (!this.styles) return;
     // if not array, assume user passed in 1 element
     if (!Array.isArray(properties)) properties = [properties];
-
     const styles = properties.map((p) => this.styles[p]);
     this.targets[target] = { ...this.targets[target], ...get(...styles) };
 
@@ -122,6 +124,7 @@ class ApplyStyles {
 
   applyBorders(target, prefix = '', important = true) {
     // If color isn't defined on one of the sides, that means there's no border
+    if (!this.styles) return;
     if (!this.styles[`${prefix}border_top_color`]) return;
     const i = prefix && important ? '!important' : '';
     this.apply(

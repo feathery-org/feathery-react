@@ -223,9 +223,7 @@ const calculateDimensionsHelper = (step, p = '') => {
   dimensions.minWidth = isNum(gridWidth) ? undefined : dimensions.gridWidth;
 
   // min and max height must be 100% to prevent fit-content from collapsing, which would break fill's non-collapsing intent
-  dimensions.minHeight = dimensions.maxHeight = isFill(gridHeight)
-    ? '100%'
-    : dimensions.gridHeight;
+  dimensions.minHeight = isFill(gridHeight) ? '100%' : dimensions.gridHeight;
 
   return dimensions;
 };

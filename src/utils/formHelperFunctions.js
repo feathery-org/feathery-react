@@ -213,6 +213,9 @@ function reactFriendlyKey(field) {
  */
 function getFieldValue(field, values) {
   const { servar, repeat } = field;
+
+  if (!values[servar?.key]) return { value: '' };
+
   return repeat !== undefined
     ? {
         repeated: true,
