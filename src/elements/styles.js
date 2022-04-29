@@ -114,6 +114,12 @@ class ApplyStyles {
     }
   }
 
+  applyFlexDirection(target, prefix = '') {
+    this.apply(target, `${prefix}flex_direction`, (a) => ({
+      flexDirection: a
+    }));
+  }
+
   applyBorders(target, prefix = '', important = true) {
     // If color isn't defined on one of the sides, that means there's no border
     if (!this.styles[`${prefix}border_top_color`]) return;
@@ -167,12 +173,32 @@ class ApplyStyles {
     }
   }
 
-  applyPadding(target, margin = false) {
+  applyPadding(target, prefix = '', margin = false) {
     this.apply(
       target,
-      ['padding_top', 'padding_right', 'padding_bottom', 'padding_left'],
+      [
+        `${prefix}padding_top`,
+        `${prefix}padding_right`,
+        `${prefix}padding_bottom`,
+        `${prefix}padding_left`
+      ],
       (a, b, c, d) => ({
         [margin ? 'margin' : 'padding']: `${a}px ${b}px ${c}px ${d}px`
+      })
+    );
+  }
+
+  applyMargin(target, prefix = '') {
+    this.apply(
+      target,
+      [
+        `${prefix}margin_top`,
+        `${prefix}margin_right`,
+        `${prefix}margin_bottom`,
+        `${prefix}margin_left`
+      ],
+      (a, b, c, d) => ({
+        margin: `${a}px ${b}px ${c}px ${d}px`
       })
     );
   }
@@ -207,8 +233,8 @@ class ApplyStyles {
     );
   }
 
-  applyHeight(target, force = false) {
-    this.apply(target, ['height', 'height_unit'], (a, b) => {
+  applyHeight(target, prefix = '', force = false) {
+    this.apply(target, [`${prefix}height`, `${prefix}height_unit`], (a, b) => {
       const value = `${a}${b}`;
       const style = { height: value };
       if (force) {
@@ -219,8 +245,8 @@ class ApplyStyles {
     });
   }
 
-  applyWidth(target, force = false) {
-    this.apply(target, ['width', 'width_unit'], (a, b) => {
+  applyWidth(target, prefix = '', force = false) {
+    this.apply(target, [`${prefix}width`, `${prefix}width_unit`], (a, b) => {
       const value = `${a}${b}`;
       const style = { width: value };
       if (force) {

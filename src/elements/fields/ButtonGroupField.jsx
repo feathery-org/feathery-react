@@ -34,7 +34,6 @@ function ButtonGroupField({
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
-                flexDirection: 'column',
                 cursor: editable ? 'default' : 'pointer',
                 ...applyStyles.getTargets(
                   'field',
@@ -50,7 +49,8 @@ function ButtonGroupField({
                   style={{
                     // Setting min-height to 0 prevents vertical image overflow
                     minHeight: 0,
-                    objectFit: 'contain'
+                    objectFit: 'contain',
+                    ...applyStyles.getTargets('img')
                   }}
                 />
               )}

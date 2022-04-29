@@ -115,13 +115,28 @@ function applyFieldStyles(field, styles) {
           };
         }
       );
-      styles.applyHeight('field', true);
-      styles.applyWidth('field', true);
+      styles.applyHeight('field', '', true);
+      styles.applyWidth('field', '', true);
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
       styles.applyBorders('field');
-      styles.applyPadding('field', true);
+      styles.applyPadding('field', '', true);
+      styles.applyFlexDirection('field');
+      styles.apply(
+        'field',
+        [
+          'uploader_padding_top',
+          'uploader_padding_right',
+          'uploader_padding_bottom',
+          'uploader_padding_left'
+        ],
+        (a, b, c, d) => ({
+          padding: `${a}px ${b}px ${c}px ${d}px`
+        })
+      );
+      styles.applyWidth('img', 'image_');
+      styles.applyMargin('img', 'image_');
       break;
     case 'dropdown':
     case 'gmap_state':
