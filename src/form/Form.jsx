@@ -1252,48 +1252,39 @@ function Form({
               onView = (isVisible) => elementOnView(fieldId, isVisible);
             }
 
+            const basicProps = {
+              key: reactFriendlyKey(el),
+              componentOnly: false,
+              element: el,
+              elementProps: elementProps[el.id],
+              onView
+            };
             if (type === 'progress_bar')
               return (
                 <Elements.ProgressBarElement
+                  {...basicProps}
                   key={`pb-${el.column_index}-${el.column_index_end}-${el.row_index}-${el.row_index_end}`}
-                  componentOnly={false}
-                  element={el}
                   progress={userProgress}
                   curDepth={curDepth}
                   maxDepth={maxDepth}
-                  elementProps={elementProps[el.id]}
-                  onView={onView}
                 />
               );
             else if (type === 'image')
-              return (
-                <Elements.ImageElement
-                  key={reactFriendlyKey(el)}
-                  componentOnly={false}
-                  element={el}
-                  elementProps={elementProps[el.id]}
-                  onView={onView}
-                />
-              );
+              return <Elements.ImageElement {...basicProps} />;
+            else if (type === 'video')
+              return <Elements.VideoElement {...basicProps} />;
             else if (type === 'text')
               return (
                 <Elements.TextElement
-                  key={reactFriendlyKey(el)}
-                  componentOnly={false}
-                  element={el}
                   values={fieldValues}
                   handleRedirect={handleRedirect}
                   conditions={activeStep.next_conditions}
-                  elementProps={elementProps[el.id]}
-                  onView={onView}
+                  {...basicProps}
                 />
               );
             else if (type === 'button')
               return (
                 <Elements.ButtonElement
-                  key={reactFriendlyKey(el)}
-                  componentOnly={false}
-                  element={el}
                   values={fieldValues}
                   loader={
                     loaders[el.id]?.showOn === 'on_button' &&
@@ -1301,8 +1292,7 @@ function Form({
                   }
                   handleRedirect={handleRedirect}
                   onClick={() => buttonOnClick(el)}
-                  elementProps={elementProps[el.id]}
-                  onView={onView}
+                  {...basicProps}
                 />
               );
             else if (type === 'field') {
