@@ -27,7 +27,14 @@ function adjustColor(color, amount) {
 }
 
 function applyButtonStyles(element, applyStyles) {
-  applyStyles.addTargets('button', 'buttonActive', 'buttonHover', 'loader');
+  applyStyles.addTargets(
+    'button',
+    'buttonActive',
+    'buttonHover',
+    'loader',
+    'img',
+    'tc'
+  );
 
   applyStyles.apply('button', 'background_color', (a) => ({
     backgroundColor: `#${a}`
@@ -49,6 +56,7 @@ function applyButtonStyles(element, applyStyles) {
       padding: `${a}px ${b}px ${c}px ${d}px`
     })
   );
+  applyStyles.apply('tc', 'text_align', (a) => ({ justifyContent: a }));
   applyStyles.applyWidth('img', 'image_');
   applyStyles.applyMargin('img', 'image_');
 
@@ -147,15 +155,23 @@ function ButtonElement({
               }}
             />
           )}
-          <TextNodes
-            element={element}
-            values={values}
-            applyStyles={applyStyles}
-            handleRedirect={handleRedirect}
-            editable={editable}
-            focused={focused}
-            textCallbacks={textCallbacks}
-          />
+          <div
+            css={{
+              display: 'flex',
+              width: '100%',
+              ...styles.getTarget('tc')
+            }}
+          >
+            <TextNodes
+              element={element}
+              values={values}
+              applyStyles={applyStyles}
+              handleRedirect={handleRedirect}
+              editable={editable}
+              focused={focused}
+              textCallbacks={textCallbacks}
+            />
+          </div>
         </>
       )}
       {children}

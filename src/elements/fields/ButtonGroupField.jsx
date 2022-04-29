@@ -54,7 +54,15 @@ function ButtonGroupField({
                   }}
                 />
               )}
-              {opt}
+              <div
+                css={{
+                  display: 'flex',
+                  width: '100%',
+                  ...applyStyles.getTarget('tc')
+                }}
+              >
+                {opt}
+              </div>
             </div>
           );
         })}

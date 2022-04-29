@@ -99,6 +99,7 @@ function applyFieldStyles(field, styles) {
       styles.applyColor('add', 'background_color', 'backgroundColor');
       break;
     case 'button_group':
+      styles.addTargets('img', 'tc');
       styles.apply('fc', 'layout', (a) => ({
         alignItems: a
       }));
@@ -137,6 +138,7 @@ function applyFieldStyles(field, styles) {
       );
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
+      styles.apply('tc', 'text_align', (a) => ({ justifyContent: a }));
       break;
     case 'dropdown':
     case 'gmap_state':
