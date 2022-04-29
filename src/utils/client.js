@@ -28,7 +28,7 @@ const CDN_URL_OPTIONS = {
   production: 'https://cdn.feathery.io/api/'
 };
 
-const environment = 'local';
+const environment = 'production';
 
 export const API_URL = API_URL_OPTIONS[environment];
 export const CDN_URL = CDN_URL_OPTIONS[environment];
