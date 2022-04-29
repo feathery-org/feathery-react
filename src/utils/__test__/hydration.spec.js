@@ -21,6 +21,7 @@ describe('hydration', () => {
           }
         ],
         images: [],
+        videos: [],
         grid_rows: ['50px', '150px', '50px'],
         grid_columns: ['150px', '1fr'],
         mobile_grid_columns: ['30px'],
@@ -106,6 +107,7 @@ describe('hydration', () => {
         ],
         servar_fields: [],
         images: [],
+        videos: [],
         grid_rows: ['50px', '150px', '150px', '150px', '50px'],
         grid_columns: ['150px', '50px'],
         width: 'fit',
