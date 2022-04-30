@@ -64,6 +64,7 @@ function SignatureField({
         )}
         <SignatureCanvas
           penColor='black'
+          clearOnResize={false}
           canvasProps={{
             id: servar.key,
             height: element.styles.height,

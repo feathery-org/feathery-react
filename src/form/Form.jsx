@@ -1370,7 +1370,10 @@ function Form({
                         fieldValues[servar.key] = Promise.resolve(newFile);
                         onChange();
                       }}
-                      onClear={() => (fieldValues[servar.key] = null)}
+                      onClear={() => {
+                        fieldValues[servar.key] = null;
+                        onChange();
+                      }}
                     />
                   );
                 case 'file_upload':
