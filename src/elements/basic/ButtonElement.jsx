@@ -155,23 +155,25 @@ function ButtonElement({
               }}
             />
           )}
-          <div
-            css={{
-              display: 'flex',
-              width: '100%',
-              ...styles.getTarget('tc')
-            }}
-          >
-            <TextNodes
-              element={element}
-              values={values}
-              applyStyles={applyStyles}
-              handleRedirect={handleRedirect}
-              editable={editable}
-              focused={focused}
-              textCallbacks={textCallbacks}
-            />
-          </div>
+          {element.properties.text && (
+            <div
+              css={{
+                display: 'flex',
+                width: '100%',
+                ...styles.getTarget('tc')
+              }}
+            >
+              <TextNodes
+                element={element}
+                values={values}
+                applyStyles={applyStyles}
+                handleRedirect={handleRedirect}
+                editable={editable}
+                focused={focused}
+                textCallbacks={textCallbacks}
+              />
+            </div>
+          )}
         </>
       )}
       {children}

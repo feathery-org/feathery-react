@@ -54,15 +54,17 @@ function ButtonGroupField({
                   }}
                 />
               )}
-              <div
-                css={{
-                  display: 'flex',
-                  width: '100%',
-                  ...applyStyles.getTarget('tc')
-                }}
-              >
-                {opt}
-              </div>
+              {opt && (
+                <div
+                  css={{
+                    display: 'flex',
+                    width: '100%',
+                    ...applyStyles.getTarget('tc')
+                  }}
+                >
+                  {opt}
+                </div>
+              )}
             </div>
           );
         })}
