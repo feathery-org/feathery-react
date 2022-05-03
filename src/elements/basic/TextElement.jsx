@@ -15,8 +15,7 @@ function legacyAlignment(alignment) {
 }
 
 function applyTextStyles(element, applyStyles) {
-  applyStyles.addTargets('text', 'tc');
-  applyStyles.apply('tc', 'text_align', (a) => ({ justifyContent: a }));
+  applyStyles.addTargets('text');
   applyStyles.apply('text', 'layout', (a) => ({
     textAlign: legacyAlignment(a)
   }));
@@ -50,31 +49,23 @@ function TextElement({
   return (
     <div
       css={{
-        display: 'flex',
-        width: '100%',
-        ...styles.getTarget('tc')
+        ...styles.getTarget('text'),
+        position: 'relative',
+        maxWidth: '100%'
       }}
+      {...elementProps}
     >
-      <div
-        css={{
-          ...styles.getTarget('text'),
-          position: 'relative',
-          maxWidth: '100%'
-        }}
-        {...elementProps}
-      >
-        <TextNodes
-          element={element}
-          values={values}
-          applyStyles={applyStyles}
-          handleRedirect={handleRedirect}
-          conditions={conditions}
-          editable={editable}
-          focused={focused}
-          textCallbacks={textCallbacks}
-        />
-        {children}
-      </div>
+      <TextNodes
+        element={element}
+        values={values}
+        applyStyles={applyStyles}
+        handleRedirect={handleRedirect}
+        conditions={conditions}
+        editable={editable}
+        focused={focused}
+        textCallbacks={textCallbacks}
+      />
+      {children}
     </div>
   );
 }
