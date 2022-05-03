@@ -47,8 +47,6 @@ function TextElement({
   const styles = useMemo(() => applyTextStyles(element, applyStyles), [
     applyStyles
   ]);
-  const x = styles.getTarget('tc');
-  console.log('textElement', x);
   return (
     <div
       css={{
