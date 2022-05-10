@@ -33,6 +33,8 @@ export function getThumbnailType(file) {
 export function useFileData(initialFiles, onSetFiles = () => {}) {
   const [files, setFiles] = useState(toList(initialFiles));
   useEffect(() => {
+    // prevent infinite loop of setting a new empty array as the value
+    if (files.length === 0 && initialFiles.length === 0) return;
     setFiles(toList(initialFiles));
     onSetFiles();
   }, [initialFiles]);

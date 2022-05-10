@@ -333,10 +333,10 @@ function Form({
     const fieldKeys = [];
     repeatedServarFields.forEach((field) => {
       const { servar } = field;
-      updatedValues[servar.key] = [
-        ...fieldValues[servar.key],
-        getDefaultFieldValue(field)
-      ];
+      updatedValues[servar.key] =
+        servar.type === 'file_upload'
+          ? fieldValues[servar.key]
+          : [...fieldValues[servar.key], getDefaultFieldValue(field)];
       fieldIDs.push(field.id);
       fieldKeys.push(servar.key);
     });
@@ -678,9 +678,14 @@ function Form({
 
       // Add a repeated row if the value went from unset to set
       // And this is the last field in a set of repeated fields
+      const isPreviousValueDefaultArray =
+        Array.isArray(previousValue) &&
+        Array.isArray(defaultValue) &&
+        previousValue.length === 0 &&
+        defaultValue.length === 0;
       if (
         index === repeatedRowCount - 1 &&
-        previousValue === defaultValue &&
+        (previousValue === defaultValue || isPreviousValueDefaultArray) &&
         value !== defaultValue
       )
         repeatRowOperation = 'add';
@@ -702,7 +707,11 @@ function Form({
     updateValues[servar.key] =
       index === null
         ? value
-        : justInsert(fieldValues[servar.key], value, index);
+        : justInsert(
+            fieldValues[servar.key],
+            servar.type === 'file_upload' ? value[0] : value,
+            index
+          );
 
     if (clearGMaps) {
       activeStep.servar_fields.forEach((field) => {
@@ -1384,49 +1393,6 @@ function Form({
                   return (
                     <Elements.FileUploadField
                       {...fieldProps}
-                      onChange={(e) => {
-                        const file = e.target.files[0];
-                        clearFilePathMapEntry(
-                          servar.key,
-                          servar.repeated ? index : null
-                        );
-                        changeValue(
-                          file ? Promise.resolve(file) : file,
-                          el,
-                          index
-                        );
-                        onChange({
-                          submitData:
-                            el.properties.submit_trigger === 'auto' && file
-                        });
-                      }}
-                      onClick={onClick}
-                    />
-                  );
-                case 'rich_file_upload':
-                  return (
-                    <Elements.RichFileUploadField
-                      {...fieldProps}
-                      onChange={(files) => {
-                        const fileVal = files[0];
-                        clearFilePathMapEntry(
-                          servar.key,
-                          servar.repeated ? index : null
-                        );
-                        changeValue(fileVal, el, index);
-                        onChange({
-                          submitData:
-                            el.properties.submit_trigger === 'auto' && fileVal
-                        });
-                      }}
-                      onClick={onClick}
-                      initialFile={fieldVal}
-                    />
-                  );
-                case 'rich_multi_file_upload':
-                  return (
-                    <Elements.MultiFileUploadField
-                      {...fieldProps}
                       onChange={(files, fieldIndex) => {
                         clearFilePathMapEntry(
                           servar.key,
@@ -1435,7 +1401,10 @@ function Form({
                         changeValue(files, el, index);
                         onChange({
                           valueRepeatIndex: fieldIndex,
-                          submitData: false
+                          submitData:
+                            el.properties.submit_trigger === 'auto' &&
+                            el.properties.multiple &&
+                            files.length > 0
                         });
                       }}
                       onClick={onClick}
