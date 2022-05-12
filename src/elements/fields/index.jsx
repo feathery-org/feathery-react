@@ -47,10 +47,22 @@ function applyFieldStyles(field, styles) {
       break;
     case 'file_upload':
       styles.addTargets('ac', 'add');
-      styles.applyPadding('fc');
+      if (field.servar.metadata.multiple) {
+        styles.applyHeight('ac');
+        styles.applyWidth('ac');
+      } else {
+        styles.applyHeight('fc');
+        styles.applyWidth('fc');
+      }
       styles.applyHeight('field');
       styles.applyWidth('field');
+      styles.applyBorders('field');
+      styles.applyCorners('field');
+      styles.applyBoxShadow('field');
       styles.applyColor('ac', 'background_color', 'backgroundColor');
+      styles.applyBorders('ac');
+      styles.applyCorners('ac');
+      styles.applyBoxShadow('ac');
       styles.applyFlexDirection('ac');
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');

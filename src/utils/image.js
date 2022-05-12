@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { toList } from './array';
+import { isEmptyArray, toList } from './array';
 
 export const THUMBNAIL_TYPE = {
   PDF: 'pdf',
@@ -33,8 +33,8 @@ export function getThumbnailType(file) {
 export function useFileData(initialFiles, onSetFiles = () => {}) {
   const [files, setFiles] = useState(toList(initialFiles));
   useEffect(() => {
-    // prevent infinite loop of setting a new empty array as the value
-    if (files.length === 0 && initialFiles.length === 0) return;
+    // Prevent infinite loop of setting a new empty array as the value
+    if (isEmptyArray(files) && isEmptyArray(initialFiles)) return;
     setFiles(toList(initialFiles));
     onSetFiles();
   }, [initialFiles]);

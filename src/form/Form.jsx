@@ -39,7 +39,7 @@ import {
   filePathMap,
   setValues
 } from '../utils/init';
-import { justInsert, justRemove } from '../utils/array';
+import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { stringifyWithNull } from '../utils/string';
 import Elements from '../elements';
@@ -679,10 +679,7 @@ function Form({
       // Add a repeated row if the value went from unset to set
       // And this is the last field in a set of repeated fields
       const isPreviousValueDefaultArray =
-        Array.isArray(previousValue) &&
-        Array.isArray(defaultValue) &&
-        previousValue.length === 0 &&
-        defaultValue.length === 0;
+        isEmptyArray(previousValue) && isEmptyArray(defaultValue);
       if (
         index === repeatedRowCount - 1 &&
         (previousValue === defaultValue || isPreviousValueDefaultArray) &&
@@ -1403,7 +1400,7 @@ function Form({
                           valueRepeatIndex: fieldIndex,
                           submitData:
                             el.properties.submit_trigger === 'auto' &&
-                            el.properties.multiple &&
+                            !el.properties.multiple &&
                             files.length > 0
                         });
                       }}

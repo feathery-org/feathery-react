@@ -7,7 +7,10 @@ import { IconContext } from 'react-icons';
 import { Image } from 'react-bootstrap';
 import { FileUploadIcon } from '../components/icons';
 
-function RichFileUploadField({
+const FILE_SIZE_LIMIT = 1024 * 1024 * 10;
+const NUM_FILES_LIMIT = 20;
+
+function FileUploadField({
   element,
   applyStyles,
   required = false,
@@ -38,9 +41,18 @@ function RichFileUploadField({
   // When the user uploads files to the multi-file upload, we just append to the existing set
   // By default the input element would just replace all the uploaded files (we don't want that)
   async function onChange(event) {
-    const uploadedFiles = Array.from(event.target.files).map((file) =>
-      Promise.resolve(file)
+    const files = Array.from(event.target.files).filter(
+      (file) => file.size <= FILE_SIZE_LIMIT
     );
+
+    // @Peter - Should I pass in setFormElementError?
+
+    if (files.length + rawFiles.length > NUM_FILES_LIMIT) {
+      // Splice off the uploaded files past the upload count
+      files.splice(NUM_FILES_LIMIT - rawFiles.length);
+    }
+
+    const uploadedFiles = files.map((file) => Promise.resolve(file));
     const newRawFiles = [...rawFiles, ...uploadedFiles];
     setRawFiles(newRawFiles);
     customOnChange(newRawFiles, rawFiles.length);
@@ -70,12 +82,12 @@ function RichFileUploadField({
   if (usingDefaultIcon && Number.isNaN(Number.parseInt(imgStyles.width))) {
     imgStyles.width = '32px';
   }
-  const icon = !usingDefaultIcon ? (
-    <Image src={element.properties.icon} fluid style={imgStyles} />
-  ) : (
+  const icon = usingDefaultIcon ? (
     <div css={imgStyles}>
       <FileUploadIcon />
     </div>
+  ) : (
+    <Image src={element.properties.icon} fluid style={imgStyles} />
   );
 
   return (
@@ -94,10 +106,9 @@ function RichFileUploadField({
           key={index}
           css={{
             position: 'relative',
+            // Margin used for space between each thumbnail
             margin: '0 6px 6px 0',
             maxHeight: '100%',
-            border: '1px solid lightgrey',
-            borderRadius: '4px',
             overflow: 'hidden',
             display: 'flex',
             justifyContent: 'center',
@@ -106,7 +117,7 @@ function RichFileUploadField({
             ...applyStyles.getTarget('field')
           }}
         >
-          {thumbnail && (
+          {thumbnail ? (
             <Image
               src={thumbnail}
               style={{
@@ -115,8 +126,7 @@ function RichFileUploadField({
                 objectFit: 'contain'
               }}
             />
-          )}
-          {!thumbnail && (
+          ) : (
             <span
               style={{
                 color: 'black',
@@ -165,49 +175,38 @@ function RichFileUploadField({
           onClick={onClick}
           css={{
             position: 'relative',
+            // Need same spacing as each thumbnail so divs are consistently sized
+            margin: '0 6px 6px 0',
             cursor: 'pointer',
             maxHeight: '100%',
             display: 'flex',
             justifyContent: showLabel ? 'space-between' : 'center',
             alignItems: 'center',
             flexDirection: 'column',
-            border: '1px solid lightgrey',
-            borderRadius: '4px',
-            background: 'white',
             overflow: 'hidden',
-            margin: '0 6px 6px 0',
             ...applyStyles.getTarget('ac')
           }}
         >
-          <div
-            css={{
-              display: 'flex',
-              alignItems: 'center',
-              overflow: 'hidden',
-              ...applyStyles.getTarget('ac')
+          {icon}
+          {showLabel && (
+            <div css={applyStyles.getTarget('add')}>{servar.name}</div>
+          )}
+          {/* Input component must be hidden, and it also remains empty since we track files in state here */}
+          {/* Since the input is always empty, we have to check for existing data and ignore the required attribute */}
+          <input
+            ref={fileInput}
+            type='file'
+            onChange={onChange}
+            required={required && !fileExists}
+            accept={servar.metadata.file_types}
+            style={{
+              position: 'absolute',
+              height: 1,
+              width: 1,
+              bottom: 0,
+              opacity: 0
             }}
-          >
-            {icon}
-            {showLabel && (
-              <div css={applyStyles.getTarget('add')}>{servar.name}</div>
-            )}
-            {/* Input component must be hidden, and it also remains empty since we track files in state here */}
-            {/* Since the input is always empty, we have to check for existing data and ignore the required attribute */}
-            <input
-              ref={fileInput}
-              type='file'
-              onChange={onChange}
-              required={required && !fileExists}
-              accept={servar.metadata.file_types}
-              style={{
-                position: 'absolute',
-                height: 1,
-                width: 1,
-                bottom: 0,
-                opacity: 0
-              }}
-            />
-          </div>
+          />
         </div>
       )}
       {children}
@@ -215,4 +214,4 @@ function RichFileUploadField({
   );
 }
 
-export default RichFileUploadField;
+export default FileUploadField;

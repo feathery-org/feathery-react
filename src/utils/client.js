@@ -182,6 +182,7 @@ export default class Client {
             `${key}.png`
           );
         }
+        // Value should not be put into an array if the field value is already an array
         values[key] = repeated && type !== 'file_upload' ? [val] : val;
       });
     });
@@ -197,7 +198,7 @@ export default class Client {
     const params = encodeGetParams({
       form_key: this.formKey
     });
-    const url = `${CDN_URL}panel/v6/?${params}`;
+    const url = `${CDN_URL}panel/v7/?${params}`;
     const options = {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
