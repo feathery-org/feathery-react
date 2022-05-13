@@ -53,12 +53,14 @@ import {
   LINK_SEND_SMS,
   LINK_SKIP,
   LINK_SUBMIT,
-  LINK_TRIGGER_PLAID
+  LINK_TRIGGER_PLAID,
+  LINK_URL
 } from '../elements/basic/ButtonElement';
 import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
+import { openTab } from '../utils/network';
 
 function Form({
   formKey: _formKey,
@@ -1111,6 +1113,8 @@ function Form({
           () => clearLoaders()
         );
       }
+    } else if (link === LINK_URL) {
+      openTab(button.properties.link_url);
     } else if (link === LINK_CUSTOM) {
       if (typeof onCustomAction === 'function') {
         onCustomAction({
