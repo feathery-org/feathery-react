@@ -3,6 +3,7 @@ import { isNum } from '../../utils/primitives';
 import Delta from 'quill-delta';
 import { stringifyWithNull } from '../../utils/string';
 import useTextEdit from './useTextEdit';
+import { openTab } from '../../utils/network';
 
 const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 
@@ -76,8 +77,7 @@ function TextNodes({
             let cursor = 'inherit';
             if (!editable) {
               if (attrs.font_link) {
-                onClick = () =>
-                  window.open(attrs.font_link, '_blank', 'noopener noreferrer');
+                onClick = () => openTab(attrs.font_link);
                 cursor = 'pointer';
               } else if (isNum(attrs.start) && isNum(attrs.end)) {
                 onClick = () => {

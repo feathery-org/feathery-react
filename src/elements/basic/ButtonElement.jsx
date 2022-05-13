@@ -7,6 +7,7 @@ const LINK_CUSTOM = 'custom';
 const LINK_NONE = 'none';
 const LINK_SKIP = 'skip';
 const LINK_SUBMIT = 'submit';
+const LINK_URL = 'url';
 const LINK_ADD_REPEATED_ROW = 'add_repeated_row';
 const LINK_REMOVE_REPEATED_ROW = 'remove_repeated_row';
 const LINK_SEND_SMS = 'send_sms_code';
@@ -188,6 +189,7 @@ export {
   LINK_NONE,
   LINK_SKIP,
   LINK_SUBMIT,
+  LINK_URL,
   LINK_ADD_REPEATED_ROW,
   LINK_REMOVE_REPEATED_ROW,
   LINK_SEND_SMS,

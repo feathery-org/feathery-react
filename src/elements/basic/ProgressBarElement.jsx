@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import { isNum } from '../../utils/primitives';
+import { openTab } from '../../utils/network';
 
 function applyProgressBarStyles(element, applyStyles) {
   applyStyles.addTargets('barContainer', 'bar');
@@ -67,7 +68,7 @@ function ProgressBarElement({
       key='completionPercentage'
       style={{ width: '100%', textAlign: 'center', ...cursorStyle }}
       onClick={() => {
-        if (link) window.open(link, '_blank');
+        if (link) openTab(link);
       }}
     >
       {`${percent}% completed`}

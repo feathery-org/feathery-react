@@ -32,7 +32,7 @@ function useTextEdit({
       outline: 'none',
       minWidth: '5px',
       display: 'inline-block',
-      cursor: 'text'
+      cursor: 'inherit'
     };
 
     if (editable) {
