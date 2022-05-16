@@ -335,7 +335,7 @@ function Form({
       const { servar } = field;
       updatedValues[servar.key] =
         servar.type === 'file_upload'
-          ? fieldValues[servar.key]
+          ? [...fieldValues[servar.key], null]
           : [...fieldValues[servar.key], getDefaultFieldValue(field)];
       fieldIDs.push(field.id);
       fieldKeys.push(servar.key);
@@ -364,9 +364,12 @@ function Form({
     repeatedServarFields.forEach((field) => {
       const { servar } = field;
       const newRepeatedValues = justRemove(fieldValues[servar.key], index);
-      const defaultValue = getDefaultFieldValue(field);
+      const defaultValue =
+        servar.type === 'file_upload'
+          ? getDefaultFieldValue(field)
+          : [getDefaultFieldValue(field)];
       updatedValues[servar.key] =
-        newRepeatedValues.length === 0 ? [defaultValue] : newRepeatedValues;
+        newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
       fieldIDs.push(field.id);
       fieldKeys.push(servar.key);
     });
@@ -688,12 +691,19 @@ function Form({
         repeatRowOperation = 'add';
 
       // Remove a repeated row if the value went from set to unset
-      if (previousValue !== defaultValue && value === defaultValue)
+      if (
+        previousValue !== defaultValue &&
+        (value === defaultValue ||
+          (!isEmptyArray(previousValue) && isEmptyArray(value)))
+      )
         repeatRowOperation = 'remove';
     }
 
     if (servar.type === 'integer_field') value = parseInt(value);
     else if (servar.type === 'gmap_line_1' && !value) clearGMaps = true;
+    else if (servar.type === 'file_upload')
+      // If empty array, insert null . Otherwise de-reference the single file in the array
+      value = isEmptyArray(value) ? null : value[0];
     else if (
       servar.type === 'checkbox' &&
       // eslint-disable-next-line camelcase
@@ -704,11 +714,7 @@ function Form({
     updateValues[servar.key] =
       index === null
         ? value
-        : justInsert(
-            fieldValues[servar.key],
-            servar.type === 'file_upload' ? value[0] : value,
-            index
-          );
+        : justInsert(fieldValues[servar.key], value, index);
 
     if (clearGMaps) {
       activeStep.servar_fields.forEach((field) => {

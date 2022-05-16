@@ -28,9 +28,8 @@ function FileUploadField({
 
   const [rawFiles, setRawFiles] = useFileData(initialFiles);
   const thumbnailData = useThumbnailData(rawFiles);
-  // verify that thumbnail data still has length when there's no thumbnail for a text file
   const allowMoreFiles = isMultiple || thumbnailData.length === 0;
-  const fileExists = thumbnailData.length > 0 || rawFiles.length > 0;
+  const fileExists = thumbnailData.length > 0;
 
   function onClick(event) {
     if (!allowMoreFiles) return;
@@ -97,6 +96,7 @@ function FileUploadField({
         flexWrap: 'wrap',
         position: 'relative',
         pointerEvents: editable ? 'none' : 'auto',
+        margin: isMultiple ? undefined : '0 6px 6px 0',
         ...applyStyles.getTarget('fc')
       }}
       {...elementProps}
@@ -106,14 +106,13 @@ function FileUploadField({
           key={index}
           css={{
             position: 'relative',
-            // Margin used for space between each thumbnail
-            margin: '0 6px 6px 0',
             maxHeight: '100%',
             overflow: 'hidden',
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
             boxSizing: 'border-box',
+            margin: isMultiple ? '0 6px 6px 0' : undefined,
             ...applyStyles.getTarget('field')
           }}
         >
@@ -159,6 +158,7 @@ function FileUploadField({
               alignItems: 'center'
             }}
             onClick={(event) => {
+              // Stop propagation so window doesn't open up to pick another file to upload
               event.stopPropagation();
               onClear(index)();
             }}
@@ -175,8 +175,7 @@ function FileUploadField({
           onClick={onClick}
           css={{
             position: 'relative',
-            // Need same spacing as each thumbnail so divs are consistently sized
-            margin: '0 6px 6px 0',
+            margin: isMultiple ? '0 6px 6px 0' : undefined,
             cursor: 'pointer',
             maxHeight: '100%',
             display: 'flex',
