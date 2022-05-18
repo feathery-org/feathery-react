@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 
 import ReactButton from 'react-bootstrap/Button';
 import TextNodes from '../components/TextNodes';
+import { imgMaxSizeStyles } from '../styles';
 
 const LINK_CUSTOM = 'custom';
 const LINK_NONE = 'none';
@@ -149,9 +150,7 @@ function ButtonElement({
             <img
               src={element.properties.image}
               style={{
-                objectFit: 'contain',
-                maxWidth: '80%',
-                maxHeight: '100%',
+                ...imgMaxSizeStyles,
                 ...applyStyles.getTargets('img')
               }}
             />

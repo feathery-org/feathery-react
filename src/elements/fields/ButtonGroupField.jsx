@@ -1,4 +1,5 @@
 import React from 'react';
+import { imgMaxSizeStyles } from '../styles';
 
 function ButtonGroupField({
   element,
@@ -47,9 +48,7 @@ function ButtonGroupField({
                 <img
                   src={imageUrl}
                   style={{
-                    // Setting min-height to 0 prevents vertical image overflow
-                    minHeight: 0,
-                    objectFit: 'contain',
+                    ...imgMaxSizeStyles,
                     ...applyStyles.getTargets('img')
                   }}
                 />
