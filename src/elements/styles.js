@@ -380,5 +380,13 @@ const bootstrapStyles = {
   outline: 'none'
 };
 
+const imgMaxSizeStyles = {
+  // Setting min-height to 0 prevents vertical image overflow
+  minHeight: 0,
+  objectFit: 'contain',
+  maxWidth: '80%',
+  maxHeight: '100%'
+};
+
 export default ApplyStyles;
-export { bootstrapStyles };
+export { bootstrapStyles, imgMaxSizeStyles };
