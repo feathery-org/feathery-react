@@ -577,8 +577,6 @@ function Form({
       const formPromise = clientInstance
         .fetchForm(initialValues)
         .then(([steps, res]) => {
-          if (res.fonts?.length)
-            WebFont.load({ google: { families: res.fonts } });
           steps = steps.reduce((result, step) => {
             result[step.key] = step;
             return result;

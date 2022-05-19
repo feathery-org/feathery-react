@@ -14,6 +14,7 @@ import {
   updateSessionValues
 } from './formHelperFunctions';
 import { initializeIntegrations } from '../integrations/utils';
+import WebFont from 'webfontloader';
 
 // Convenience boolean for urls - manually change for testing
 const API_URL_OPTIONS = {
@@ -216,7 +217,21 @@ export default class Client {
       additionalValues: initialValues,
       override: true
     });
+    this._loadFonts(result);
     return [steps, result];
+  }
+
+  _loadFonts(res) {
+    // Load default fonts
+    if (res.fonts.length) WebFont.load({ google: { families: res.fonts } });
+    // Load user-uploaded fonts
+    Object.entries(res.uploaded_fonts).forEach((family, fontStyles) => {
+      fontStyles.forEach(({ source, style, weight }) =>
+        new FontFace(family, `url(${source})`, { style, weight })
+          .load()
+          .then((font) => document.fonts.add(font))
+      );
+    });
   }
 
   fetchSession(formPromise = null) {
