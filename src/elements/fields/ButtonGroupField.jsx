@@ -55,9 +55,16 @@ function ButtonGroupField({
               )}
               {opt && (
                 <div
+                  id={servar.key}
                   css={{
                     display: 'flex',
                     width: '100%',
+                    // Do not highlight text when clicking the button
+                    webkitTouchCallout: 'none' /* iOS Safari */,
+                    webkitUserSelect: 'none' /* Safari */,
+                    mozUserSelect: 'none' /* Old versions of Firefox */,
+                    msUserSelect: 'none' /* Internet Explorer / Edge */,
+                    userSelect: 'none' /* Chrome, Firefox, etc. */,
                     ...applyStyles.getTarget('tc')
                   }}
                 >
