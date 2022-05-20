@@ -89,8 +89,6 @@ function getDefaultFieldValue(field) {
     case 'checkbox':
       // eslint-disable-next-line camelcase
       return !!field.servar.metadata?.always_checked;
-    case 'multiselect':
-      return [];
     case 'hex_color':
       return 'FFFFFFFF';
     case 'select':
@@ -98,7 +96,9 @@ function getDefaultFieldValue(field) {
     case 'rich_file_upload':
     case 'signature':
       return null;
+    case 'multiselect':
     case 'rich_multi_file_upload':
+    case 'button_group':
       return [];
     default:
       return '';
@@ -150,7 +150,15 @@ const nextStepKey = (nextConditions, metadata, fieldValues) => {
         const userVal = fieldValues[rule.field_key] || '';
         const ruleVal = rule.value || '';
         let ruleMet;
-        if (Array.isArray(userVal)) {
+        // 2D array of values happens when a multi select row is repeated
+        if (Array.isArray(userVal) && Array.isArray(userVal[0])) {
+          ruleMet = userVal.some((val) => {
+            const equal = val.includes(ruleVal) && rule.comparison === 'equal';
+            const notEqual =
+              !val.includes(ruleVal) && rule.comparison === 'not_equal';
+            return equal || notEqual;
+          });
+        } else if (Array.isArray(userVal)) {
           const equal =
             userVal.includes(ruleVal) && rule.comparison === 'equal';
           const notEqual =
@@ -376,7 +384,7 @@ function shouldElementHide({ fields, values, element }) {
   Object.values(hideIfMap).forEach((hideIfs) => {
     if (shouldHide) return;
     shouldHide = hideIfs.every((hideIf) =>
-      calculateHide(hideIf, fields, values, element.repeat ?? 0)
+      calculateHide(hideIf, fields, values, element.repeat)
     );
   });
   return shouldHide;
@@ -385,7 +393,7 @@ function shouldElementHide({ fields, values, element }) {
 function calculateHide(hideIf, fields, values, repeat) {
   // Get the target value (taking repeated elements into account)
   let value = values[hideIf.field_key];
-  if (Array.isArray(value)) value = value[repeat];
+  if (repeat !== undefined && Array.isArray(value)) value = value[repeat];
 
   // If the hideIf value is an empty string, we want to match on the "empty" value of a field
   // This could be null, undefined, an empty array, an empty string, or false
@@ -393,9 +401,16 @@ function calculateHide(hideIf, fields, values, repeat) {
   const matchValues =
     hideIf.value === '' ? [null, undefined, [], '', false] : [hideIf.value];
 
-  return hideIf.comparison === 'equal'
-    ? matchValues.includes(value)
-    : !matchValues.includes(value);
+  const matchFn = (val) =>
+    hideIf.comparison === 'equal'
+      ? matchValues.includes(val)
+      : !matchValues.includes(val);
+
+  if (Array.isArray(value)) {
+    return value.some(matchFn);
+  } else {
+    return matchFn(value);
+  }
 }
 
 function objectMap(obj, transform) {

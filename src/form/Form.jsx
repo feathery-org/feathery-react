@@ -1448,14 +1448,31 @@ function Form({
                       {...fieldProps}
                       fieldVal={fieldVal}
                       onClick={(e) => {
-                        const fieldKey = e.target.id;
-                        activeStep.servar_fields.forEach((field) => {
-                          const servar = field.servar;
-                          if (servar.key !== fieldKey) return;
-                          updateFieldValues({
-                            [servar.key]: e.target.textContent
-                          });
-                        });
+                        const newVal = e.target.textContent;
+                        const {
+                          metadata: { multiple },
+                          required
+                        } = fieldProps.element.servar;
+                        if (multiple) {
+                          const existingIndex = fieldVal.indexOf(newVal);
+                          if (existingIndex === -1) {
+                            changeValue([...fieldVal, newVal], el, index);
+                          } else {
+                            changeValue(
+                              justRemove(fieldVal, existingIndex),
+                              el,
+                              index
+                            );
+                          }
+                        } else {
+                          changeValue(
+                            // Allow de-selection if field is optional
+                            !required && fieldVal[0] === newVal ? [] : [newVal],
+                            el,
+                            index
+                          );
+                        }
+                        onChange();
                         onClick(e, el.properties.submit_trigger === 'auto');
                       }}
                     />
