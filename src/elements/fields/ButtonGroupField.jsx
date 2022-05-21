@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { imgMaxSizeStyles } from '../styles';
 
 function ButtonGroupField({
@@ -12,6 +12,16 @@ function ButtonGroupField({
   children
 }) {
   const servar = element.servar;
+  const selectedOptMap = useMemo(
+    () =>
+      fieldVal === null
+        ? {}
+        : fieldVal.reduce((map, selected) => {
+            map[selected] = true;
+            return map;
+          }, {}),
+    [fieldVal]
+  );
   return (
     <div css={{ position: 'relative' }}>
       {fieldLabel}
@@ -27,7 +37,6 @@ function ButtonGroupField({
           const imageUrl = servar.metadata.option_images[index];
           return (
             <div
-              id={servar.key}
               onClick={onClick}
               key={`${servar.key}-${index}`}
               css={{
@@ -38,7 +47,7 @@ function ButtonGroupField({
                 cursor: editable ? 'default' : 'pointer',
                 ...applyStyles.getTargets(
                   'field',
-                  fieldVal === opt ? 'active' : ''
+                  selectedOptMap[opt] ? 'active' : ''
                 ),
                 '&:active': applyStyles.getTarget('active'),
                 '&:hover': editable ? {} : applyStyles.getTarget('hover')
@@ -55,7 +64,6 @@ function ButtonGroupField({
               )}
               {opt && (
                 <div
-                  id={servar.key}
                   css={{
                     display: 'flex',
                     width: '100%',
