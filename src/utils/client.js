@@ -173,8 +173,8 @@ export default class Client {
     let values = {};
     steps.forEach((step) => {
       step.servar_fields.forEach((field) => {
-        const val = getDefaultFieldValue(field);
         const { key, repeated, type } = field.servar;
+        const val = getDefaultFieldValue(field);
         if (isBase64PNG(additionalValues[key])) {
           // All base64 strings need to be wrapped in a File
           additionalValues[key] = dataURLToFile(
@@ -182,8 +182,10 @@ export default class Client {
             `${key}.png`
           );
         }
-        // Value should not be put into an array if the field value is already an array
-        values[key] = repeated && type !== 'file_upload' ? [val] : val;
+        values[key] = repeated ? [val] : val;
+        // Default value is null for file_upload, but value should always be an
+        // array regardless if repeated or not
+        if (type === 'file_upload') values[key] = [];
       });
     });
     values = { ...values, ...additionalValues };

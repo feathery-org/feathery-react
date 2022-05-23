@@ -74,10 +74,7 @@ function calculateRepeatedRowCount({ step, values }) {
       // But don't append if a trailing value already exists
       const value = values[field.servar.key];
       const trailingValueExists =
-        // File upload default value is [], but null is inserted
-        field.servar.type === 'file_upload'
-          ? value[value.length - 1] === null
-          : value[value.length - 1] === getDefaultFieldValue(field);
+        value[value.length - 1] === getDefaultFieldValue(field);
       const repeatTriggerExists = field.servar.repeat_trigger === 'set_value';
 
       count = Math.max(

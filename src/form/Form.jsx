@@ -333,10 +333,10 @@ function Form({
     const fieldKeys = [];
     repeatedServarFields.forEach((field) => {
       const { servar } = field;
-      updatedValues[servar.key] =
-        servar.type === 'file_upload'
-          ? [...fieldValues[servar.key], null]
-          : [...fieldValues[servar.key], getDefaultFieldValue(field)];
+      updatedValues[servar.key] = [
+        ...fieldValues[servar.key],
+        getDefaultFieldValue(field)
+      ];
       fieldIDs.push(field.id);
       fieldKeys.push(servar.key);
     });
@@ -364,10 +364,7 @@ function Form({
     repeatedServarFields.forEach((field) => {
       const { servar } = field;
       const newRepeatedValues = justRemove(fieldValues[servar.key], index);
-      const defaultValue =
-        servar.type === 'file_upload'
-          ? getDefaultFieldValue(field)
-          : [getDefaultFieldValue(field)];
+      const defaultValue = [getDefaultFieldValue(field)];
       updatedValues[servar.key] =
         newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
       fieldIDs.push(field.id);
@@ -701,8 +698,9 @@ function Form({
 
     if (servar.type === 'integer_field') value = parseInt(value);
     else if (servar.type === 'gmap_line_1' && !value) clearGMaps = true;
-    else if (servar.type === 'file_upload')
-      // If empty array, insert null . Otherwise de-reference the single file in the array
+    else if (servar.type === 'file_upload' && index !== null)
+      // For file_upload in repeating rows
+      // If empty array, insert null. Otherwise de-reference the single file in the array
       value = isEmptyArray(value) ? null : value[0];
     else if (
       servar.type === 'checkbox' &&

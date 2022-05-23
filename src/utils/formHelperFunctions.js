@@ -93,8 +93,8 @@ function getDefaultFieldValue(field) {
       return 'FFFFFFFF';
     case 'select':
     case 'signature':
-      return null;
     case 'file_upload':
+      return null;
     case 'button_group':
     case 'multiselect':
       return [];

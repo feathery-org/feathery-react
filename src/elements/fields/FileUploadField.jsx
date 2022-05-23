@@ -44,17 +44,24 @@ function FileUploadField({
       (file) => file.size <= FILE_SIZE_LIMIT
     );
 
-    // @Peter - Should I pass in setFormElementError?
-
     if (files.length + rawFiles.length > NUM_FILES_LIMIT) {
       // Splice off the uploaded files past the upload count
       files.splice(NUM_FILES_LIMIT - rawFiles.length);
     }
 
     const uploadedFiles = files.map((file) => Promise.resolve(file));
-    const newRawFiles = [...rawFiles, ...uploadedFiles];
+    // If the value is [null] (initial state of repeating rows), we want to replace the null with the file
+    const isRawFilesNull = rawFiles.length === 1 && rawFiles[0] === null;
+    let newRawFiles, length;
+    if (isRawFilesNull) {
+      newRawFiles = [...uploadedFiles];
+      length = 0;
+    } else {
+      newRawFiles = [...rawFiles, ...uploadedFiles];
+      length = rawFiles.length;
+    }
     setRawFiles(newRawFiles);
-    customOnChange(newRawFiles, rawFiles.length);
+    customOnChange(newRawFiles, length);
 
     // Wipe the value of the upload element so we can upload multiple copies of the same file
     // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
