@@ -23,7 +23,9 @@ describe('client', () => {
       });
       global.fetch = jest.fn().mockResolvedValue({
         status: 200,
-        json: jest.fn().mockResolvedValue({ data: [] })
+        json: jest
+          .fn()
+          .mockResolvedValue({ data: [], fonts: [], uploaded_fonts: {} })
       });
 
       // Act
@@ -41,7 +43,10 @@ describe('client', () => {
           }
         }
       );
-      expect(response).toEqual([[], { data: [] }]);
+      expect(response).toEqual([
+        [],
+        { data: [], fonts: [], uploaded_fonts: {} }
+      ]);
     });
   });
 
