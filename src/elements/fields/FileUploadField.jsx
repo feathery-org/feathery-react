@@ -189,6 +189,7 @@ function FileUploadField({
             alignItems: 'center',
             flexDirection: 'column',
             overflow: 'hidden',
+            boxSizing: 'border-box',
             ...applyStyles.getTarget('ac')
           }}
         >

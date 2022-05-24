@@ -47,10 +47,9 @@ function applyFieldStyles(field, styles) {
       break;
     case 'file_upload':
       styles.addTargets('ac', 'add');
-      if (field.servar.metadata.multiple) {
-        styles.applyHeight('ac');
-        styles.applyWidth('ac');
-      } else {
+      styles.applyHeight('ac');
+      styles.applyWidth('ac');
+      if (!field.servar.metadata.multiple) {
         styles.applyHeight('fc');
         styles.applyWidth('fc');
       }
