@@ -104,10 +104,6 @@ export default class Client {
     let fileValue;
     if ('file_upload' in servar) {
       fileValue = servar.file_upload;
-    } else if ('rich_file_upload' in servar) {
-      fileValue = servar.rich_file_upload;
-    } else if ('rich_multi_file_upload' in servar) {
-      fileValue = servar.rich_multi_file_upload;
     } else if ('signature' in servar) {
       fileValue = servar.signature;
     }
@@ -177,8 +173,8 @@ export default class Client {
     let values = {};
     steps.forEach((step) => {
       step.servar_fields.forEach((field) => {
+        const { key, repeated, type } = field.servar;
         const val = getDefaultFieldValue(field);
-        const { key, repeated } = field.servar;
         if (isBase64PNG(additionalValues[key])) {
           // All base64 strings need to be wrapped in a File
           additionalValues[key] = dataURLToFile(
@@ -187,6 +183,9 @@ export default class Client {
           );
         }
         values[key] = repeated ? [val] : val;
+        // Default value is null for file_upload, but value should always be an
+        // array regardless if repeated or not
+        if (type === 'file_upload') values[key] = [];
       });
     });
     values = { ...values, ...additionalValues };
@@ -201,7 +200,7 @@ export default class Client {
     const params = encodeGetParams({
       form_key: this.formKey
     });
-    const url = `${CDN_URL}panel/v6/?${params}`;
+    const url = `${CDN_URL}panel/v7/?${params}`;
     const options = {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
@@ -303,12 +302,7 @@ export default class Client {
   // servars = [{key: <servarKey>, <type>: <value>}]
   async submitStep(servars) {
     const isFileServar = (servar) =>
-      [
-        'file_upload',
-        'rich_file_upload',
-        'rich_multi_file_upload',
-        'signature'
-      ].some((type) => type in servar);
+      ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
 

@@ -92,13 +92,11 @@ function getDefaultFieldValue(field) {
     case 'hex_color':
       return 'FFFFFFFF';
     case 'select':
-    case 'file_upload':
-    case 'rich_file_upload':
     case 'signature':
+    case 'file_upload':
       return null;
-    case 'multiselect':
-    case 'rich_multi_file_upload':
     case 'button_group':
+    case 'multiselect':
       return [];
     default:
       return '';

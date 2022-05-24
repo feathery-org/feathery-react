@@ -39,7 +39,7 @@ import {
   filePathMap,
   setValues
 } from '../utils/init';
-import { justInsert, justRemove } from '../utils/array';
+import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { stringifyWithNull } from '../utils/string';
 import Elements from '../elements';
@@ -364,9 +364,9 @@ function Form({
     repeatedServarFields.forEach((field) => {
       const { servar } = field;
       const newRepeatedValues = justRemove(fieldValues[servar.key], index);
-      const defaultValue = getDefaultFieldValue(field);
+      const defaultValue = [getDefaultFieldValue(field)];
       updatedValues[servar.key] =
-        newRepeatedValues.length === 0 ? [defaultValue] : newRepeatedValues;
+        newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
       fieldIDs.push(field.id);
       fieldKeys.push(servar.key);
     });
@@ -678,20 +678,29 @@ function Form({
 
       // Add a repeated row if the value went from unset to set
       // And this is the last field in a set of repeated fields
+      const isPreviousValueDefaultArray =
+        isEmptyArray(previousValue) && isEmptyArray(defaultValue);
       if (
         index === repeatedRowCount - 1 &&
-        previousValue === defaultValue &&
+        (previousValue === defaultValue || isPreviousValueDefaultArray) &&
         value !== defaultValue
       )
         repeatRowOperation = 'add';
 
       // Remove a repeated row if the value went from set to unset
-      if (previousValue !== defaultValue && value === defaultValue)
+      if (
+        (previousValue !== defaultValue && value === defaultValue) ||
+        (!isEmptyArray(previousValue) && isEmptyArray(value))
+      )
         repeatRowOperation = 'remove';
     }
 
     if (servar.type === 'integer_field') value = parseInt(value);
     else if (servar.type === 'gmap_line_1' && !value) clearGMaps = true;
+    else if (servar.type === 'file_upload' && index !== null)
+      // For file_upload in repeating rows
+      // If empty array, insert null. Otherwise de-reference the single file in the array
+      value = isEmptyArray(value) ? null : value[0];
     else if (
       servar.type === 'checkbox' &&
       // eslint-disable-next-line camelcase
@@ -1384,49 +1393,6 @@ function Form({
                   return (
                     <Elements.FileUploadField
                       {...fieldProps}
-                      onChange={(e) => {
-                        const file = e.target.files[0];
-                        clearFilePathMapEntry(
-                          servar.key,
-                          servar.repeated ? index : null
-                        );
-                        changeValue(
-                          file ? Promise.resolve(file) : file,
-                          el,
-                          index
-                        );
-                        onChange({
-                          submitData:
-                            el.properties.submit_trigger === 'auto' && file
-                        });
-                      }}
-                      onClick={onClick}
-                    />
-                  );
-                case 'rich_file_upload':
-                  return (
-                    <Elements.RichFileUploadField
-                      {...fieldProps}
-                      onChange={(files) => {
-                        const fileVal = files[0];
-                        clearFilePathMapEntry(
-                          servar.key,
-                          servar.repeated ? index : null
-                        );
-                        changeValue(fileVal, el, index);
-                        onChange({
-                          submitData:
-                            el.properties.submit_trigger === 'auto' && fileVal
-                        });
-                      }}
-                      onClick={onClick}
-                      initialFile={fieldVal}
-                    />
-                  );
-                case 'rich_multi_file_upload':
-                  return (
-                    <Elements.MultiFileUploadField
-                      {...fieldProps}
                       onChange={(files, fieldIndex) => {
                         clearFilePathMapEntry(
                           servar.key,
@@ -1435,7 +1401,10 @@ function Form({
                         changeValue(files, el, index);
                         onChange({
                           valueRepeatIndex: fieldIndex,
-                          submitData: false
+                          submitData:
+                            el.properties.submit_trigger === 'auto' &&
+                            !el.properties.multiple &&
+                            files.length > 0
                         });
                       }}
                       onClick={onClick}

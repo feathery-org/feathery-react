@@ -20,4 +20,8 @@ function toList(itemOrList) {
   return Array.isArray(itemOrList) ? itemOrList : [itemOrList];
 }
 
-export { justInsert, justRemove, toList };
+function isEmptyArray(arr) {
+  return Array.isArray(arr) && arr.length === 0;
+}
+
+export { justInsert, justRemove, toList, isEmptyArray };
