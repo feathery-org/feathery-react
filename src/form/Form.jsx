@@ -689,9 +689,8 @@ function Form({
 
       // Remove a repeated row if the value went from set to unset
       if (
-        previousValue !== defaultValue &&
-        (value === defaultValue ||
-          (!isEmptyArray(previousValue) && isEmptyArray(value)))
+        (previousValue !== defaultValue && value === defaultValue) ||
+        (!isEmptyArray(previousValue) && isEmptyArray(value))
       )
         repeatRowOperation = 'remove';
     }

@@ -6,6 +6,7 @@ import { FiX } from 'react-icons/fi';
 import { IconContext } from 'react-icons';
 import { Image } from 'react-bootstrap';
 import { FileUploadIcon } from '../components/icons';
+import { imgMaxSizeStyles } from '../styles';
 
 const FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 const NUM_FILES_LIMIT = 20;
@@ -54,7 +55,7 @@ function FileUploadField({
     const isRawFilesNull = rawFiles.length === 1 && rawFiles[0] === null;
     let newRawFiles, length;
     if (isRawFilesNull) {
-      newRawFiles = [...uploadedFiles];
+      newRawFiles = uploadedFiles;
       length = 0;
     } else {
       newRawFiles = [...rawFiles, ...uploadedFiles];
@@ -77,9 +78,7 @@ function FileUploadField({
   }
 
   const imgStyles = {
-    maxWidth: '100%',
-    maxHeight: '100%',
-    minHeight: 0,
+    ...imgMaxSizeStyles,
     ...applyStyles.getTarget('img')
   };
   const usingDefaultIcon = !element.properties.icon;
