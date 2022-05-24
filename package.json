@@ -20,8 +20,8 @@
     "lint": "eslint ."
   },
   "peerDependencies": {
-    "react": "^16.13.1",
-    "react-dom": "^16.13.1"
+    "react": "16 - 17",
+    "react-dom": "16 - 17"
   },
   "devDependencies": {
     "@babel/core": "^7.12.10",
