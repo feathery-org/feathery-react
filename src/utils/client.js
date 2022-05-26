@@ -261,7 +261,7 @@ export default class Client {
     });
   }
 
-  submitAuthInfo({ authId, authToken = '', authPhone = '', authEmail = '' }) {
+  submitAuthInfo({ authId, authPhone = '', authEmail = '' }) {
     const { userKey } = initInfo();
 
     const data = {
@@ -278,7 +278,6 @@ export default class Client {
     };
     return this._fetch(url, options).then((response) => {
       initState.authId = authId;
-      if (authToken) initState.authToken = authToken;
       if (authPhone) initState.authPhoneNumber = authPhone;
       if (authEmail) initState.authEmail = authEmail;
       return response.json();
