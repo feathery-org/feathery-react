@@ -544,9 +544,6 @@ function Form({
       if (initState.authId) {
         integrationData.firebaseAuthId = initState.authId;
       }
-      if (initState.authToken) {
-        integrationData.firebaseAuthToken = initState.authToken;
-      }
       let stepChanged = false;
       await onLoad({
         ...getCommonCallbackProps(newStep),
@@ -843,9 +840,6 @@ function Form({
       const integrationData = {};
       if (initState.authId) {
         integrationData.firebaseAuthId = initState.authId;
-      }
-      if (initState.authToken) {
-        integrationData.firebaseAuthToken = initState.authToken;
       }
 
       const allFields = formatAllFormFields(steps, fieldValues, true);

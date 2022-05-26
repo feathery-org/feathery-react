@@ -20,7 +20,6 @@ const initState = {
   apiKey: '',
   userKey: '',
   authId: '',
-  authToken: '',
   authEmail: '',
   authPhoneNumber: '',
   forms: {},
@@ -48,16 +47,11 @@ function init(apiKey, options = {}) {
   }
 
   initState.apiKey = apiKey;
-  [
-    'authId',
-    'authToken',
-    'authEmail',
-    'authPhoneNumber',
-    'userKey',
-    'tracking'
-  ].forEach((key) => {
-    if (options[key]) initState[key] = options[key];
-  });
+  ['authId', 'authEmail', 'authPhoneNumber', 'userKey', 'tracking'].forEach(
+    (key) => {
+      if (options[key]) initState[key] = options[key];
+    }
+  );
 
   if (!initState.userKey) {
     if (options.tracking === 'fingerprint') {

@@ -47,11 +47,9 @@ export function emailLogin(firebaseConfig, firebase, clientArg) {
         .auth()
         .signInWithEmailLink(authEmail, window.location.href)
         .then(async (result) => {
-          const authToken = await result.user.getIdToken();
           return await clientArg
             .submitAuthInfo({
               authId: result.user.uid,
-              authToken,
               authEmail
             })
             .then((session) => {
@@ -121,7 +119,6 @@ export async function verifySMSCode(fieldVal, servar, client) {
         return await client
           .submitAuthInfo({
             authId: result.user.uid,
-            authToken: await result.user.getIdToken(),
             authPhone: window.firebasePhoneNumber
           })
           .then((session) => {
