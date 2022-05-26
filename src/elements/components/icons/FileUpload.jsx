@@ -1,7 +1,12 @@
 import React from 'react';
-export default function FileUploadIcon() {
+export default function FileUploadIcon({ width }) {
   return (
-    <svg viewBox='0 0 48 48' fill='none' xmlns='http://www.w3.org/2000/svg'>
+    <svg
+      width={width}
+      viewBox='0 0 48 48'
+      fill='none'
+      xmlns='http://www.w3.org/2000/svg'
+    >
       <path
         d='m18.101 30.078 5.9-5.888 5.898 5.888M24 40.3V24.19'
         stroke='#414859'

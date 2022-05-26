@@ -81,18 +81,10 @@ function FileUploadField({
     ...imgMaxSizeStyles,
     ...applyStyles.getTarget('img')
   };
-  const usingDefaultIcon = !element.properties.icon;
-  // Default img width is '', which causes the default icon to have no width
-  // and not appear. Set a default width if the user hasn't set one
-  if (usingDefaultIcon && Number.isNaN(Number.parseInt(imgStyles.width))) {
-    imgStyles.width = '32px';
-  }
-  const icon = usingDefaultIcon ? (
-    <div css={imgStyles}>
-      <FileUploadIcon />
-    </div>
-  ) : (
+  const icon = element.properties.icon ? (
     <Image src={element.properties.icon} fluid style={imgStyles} />
+  ) : (
+    <FileUploadIcon width={imgStyles.width} />
   );
 
   return (
