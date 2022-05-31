@@ -12,7 +12,7 @@ const defaultClient = new Client();
 const defaultOptions = {
   userKey: null,
   formKeys: [],
-  tracking: 'cookie'
+  tracking: 'fingerprint'
 };
 const initState = {
   initialized: false,
