@@ -15,6 +15,12 @@ module.exports = {
   module: {
     rules: [
       {
+        // .d.ts files get matched by ts
+        test: /\.(ts|tsx)?$/,
+        exclude: /node_modules/,
+        use: 'ts-loader'
+      },
+      {
         test: /\.(js|jsx)$/,
         exclude: /node_modules/,
         use: ['babel-loader']
@@ -27,6 +33,6 @@ module.exports = {
     ]
   },
   resolve: {
-    extensions: ['*', '.js', '.jsx']
+    extensions: ['*', '.js', '.jsx', '.ts', '.tsx', '.d.ts']
   }
 };

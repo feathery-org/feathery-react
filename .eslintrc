@@ -1,11 +1,16 @@
 {
-  "parser": "babel-eslint",
+  // not 100% sure if we want to stay with the babel parser
+  // https://www.npmjs.com/package/@babel/eslint-parser - I think TS section says that it can coexist with TS linting rules?
+  // but https://typescript-eslint.io/docs/linting/#details says that I need to use the TS parser
+  "parser": "@babel/eslint-parser",
+  "plugins": ["@typescript-eslint"],
   "extends": [
     "standard",
     "standard-react",
     "plugin:prettier/recommended",
     "prettier/standard",
-    "prettier/react"
+    "prettier/react",
+    "plugin:@typescript-eslint/recommended"
   ],
   "env": {
     "node": true
