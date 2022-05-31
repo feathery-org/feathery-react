@@ -1002,8 +1002,9 @@ function Form({
     if (!redirectKey) {
       if (submitData || ['button', 'text'].includes(metadata.elementType)) {
         eventData.completed = true;
-        client.registerEvent(eventData, submitPromise);
-        setFinished(true);
+        client
+          .registerEvent(eventData, submitPromise)
+          .then(() => setFinished(true));
         return true;
       }
     } else {
