@@ -2,15 +2,16 @@ import React from 'react';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { HelpIcon } from './icons';
 
-export default function InlineTooltip({ id, text, applyStyles }) {
-  return (
+export default function InlineTooltip({ element, applyStyles }) {
+  const text = element.properties.tooltipText;
+  return text ? (
     <OverlayTrigger
       placement='top-end'
       trigger='click'
       rootClose
       overlay={
         <Tooltip
-          id={`tooltip-${id}`}
+          id={`tooltip-${element.id}`}
           css={{
             opacity: 0.9,
             padding: '.4rem 0',
@@ -43,5 +44,5 @@ export default function InlineTooltip({ id, text, applyStyles }) {
         }}
       />
     </OverlayTrigger>
-  );
+  ) : null;
 }

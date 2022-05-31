@@ -1549,6 +1549,23 @@ function Form({
                       onClick={onClick}
                     />
                   );
+                case 'text_area':
+                  return (
+                    <Elements.TextArea
+                      {...fieldProps}
+                      rawValue={stringifyWithNull(fieldVal)}
+                      onClick={onClick}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const change = changeValue(val, el, index);
+                        if (change) onChange();
+                      }}
+                      setRef={(ref) => {
+                        if (thisCounter === 1) focusRef.current = ref;
+                      }}
+                      inlineError={inlineErr}
+                    />
+                  );
                 default:
                   return (
                     <Elements.TextField
