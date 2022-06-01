@@ -13,7 +13,7 @@ export default function Placeholder({
         pointerEvents: 'none',
         left: '0.75rem',
         transition: '0.2s ease all',
-        top: '0.375rem',
+        top: type === 'input' ? '50%' : '0.375rem',
         ...applyStyles.getTarget('placeholder'),
         ...(value ? applyStyles.getTarget('placeholderFocus') : {}),
         [`${type}:focus + &`]: {
