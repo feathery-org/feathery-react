@@ -8,6 +8,7 @@ import PinInputField from './PinInputField';
 import RadioButtonGroupField from './RadioButtonGroupField';
 import SignatureField from './SignatureField';
 import TextField from './TextField';
+import TextArea from './TextArea';
 import React, { memo, useMemo } from 'react';
 
 const Fields = {
@@ -20,7 +21,8 @@ const Fields = {
   PinInputField,
   RadioButtonGroupField,
   SignatureField,
-  TextField
+  TextField,
+  TextArea
 };
 
 function applyFieldStyles(field, styles) {

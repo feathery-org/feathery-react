@@ -1,6 +1,7 @@
 import { IMaskInput } from 'react-imask';
 import React, { memo } from 'react';
 
+import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/Tooltip';
 import { bootstrapStyles } from '../styles';
 import { emailPatternStr } from '../../utils/formHelperFunctions';
@@ -121,11 +122,6 @@ function getInputProps(servar, styles) {
       return { type: 'tel' };
     case 'ssn':
       return { type: 'tel' };
-    case 'text_area':
-      return {
-        as: 'textarea',
-        rows: styles.num_rows
-      };
     case 'url':
       return { type: 'url' };
     default:
@@ -151,7 +147,6 @@ function TextField({
   const servar = element.servar;
 
   const inputProps = getInputProps(servar, element.styles);
-  const inputType = inputProps.as === 'textarea' ? 'textarea' : 'input';
   return (
     <div
       css={{
@@ -167,12 +162,8 @@ function TextField({
         css={{
           position: 'relative',
           width: '100%',
-          ...(inputType === 'textarea'
-            ? {}
-            : {
-                whiteSpace: 'nowrap',
-                overflowX: 'hidden'
-              }),
+          whiteSpace: 'nowrap',
+          overflowX: 'hidden',
           ...applyStyles.getTarget('sub-fc')
         }}
       >
@@ -204,30 +195,12 @@ function TextField({
           {...getMaskProps(servar, rawValue)}
           onAccept={onAccept}
         />
-        <span
-          css={{
-            position: 'absolute',
-            pointerEvents: 'none',
-            left: '0.75rem',
-            transition: '0.2s ease all',
-            top: inputType === 'textarea' ? '0.375rem' : '50%',
-            ...applyStyles.getTarget('placeholder'),
-            ...(rawValue ? applyStyles.getTarget('placeholderFocus') : {}),
-            [`${inputType}:focus + &`]: {
-              ...applyStyles.getTarget('placeholderFocus'),
-              ...applyStyles.getTarget('placeholderActive')
-            }
-          }}
-        >
-          {element.properties.placeholder || ''}
-        </span>
-        {element.properties.tooltipText && (
-          <InlineTooltip
-            id={`tooltip-${element.id}`}
-            text={element.properties.tooltipText}
-            applyStyles={applyStyles}
-          />
-        )}
+        <Placeholder
+          value={rawValue}
+          element={element}
+          applyStyles={applyStyles}
+        />
+        <InlineTooltip element={element} applyStyles={applyStyles} />
       </div>
       {children}
     </div>
