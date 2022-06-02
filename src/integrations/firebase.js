@@ -39,11 +39,11 @@ export function installFirebase(firebaseConfig) {
   }
 }
 
-export function emailLogin(firebaseConfig, firebase, clientArg) {
-  if (firebase.auth().isSignInWithEmailLink(window.location.href)) {
+export function emailLogin(clientArg) {
+  if (global.firebase.auth().isSignInWithEmailLink(window.location.href)) {
     const authEmail = window.localStorage.getItem('featheryFirebaseEmail');
     if (authEmail) {
-      return firebase
+      return global.firebase
         .auth()
         .signInWithEmailLink(authEmail, window.location.href)
         .then(async (result) => {
