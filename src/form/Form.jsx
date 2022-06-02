@@ -1144,7 +1144,7 @@ function Form({
   const fieldOnChange = ({ fieldIDs, fieldKeys, elementRepeatIndex = 0 }) => ({
     trigger = 'field',
     submitData = false,
-    integrationData = null,
+    integrationData = {},
     // Multi-file upload is not a repeated row but a repeated field
     valueRepeatIndex = null
   } = {}) => {
