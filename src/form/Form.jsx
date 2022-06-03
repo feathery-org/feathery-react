@@ -592,7 +592,7 @@ function Form({
       // goes to Feathery origin, while the previous
       // request goes to our CDN
       clientInstance
-        .fetchSession(formPromise)
+        .fetchSession(formPromise, true)
         .then(
           ([
             session,
