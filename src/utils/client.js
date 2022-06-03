@@ -234,7 +234,8 @@ export default class Client {
     });
   }
 
-  fetchSession(formPromise = null) {
+  async fetchSession(formPromise = null) {
+    await initFormsPromise;
     const {
       userKey,
       sessions,
@@ -252,13 +253,13 @@ export default class Client {
     params = encodeGetParams(params);
     const url = `${API_URL}panel/session/?${params}`;
     const options = { importance: 'high' };
-    return this._fetch(url, options).then(async (response) => {
-      const session = await response.json();
-      initializeIntegrations(session.integrations, this, Boolean(formPromise));
-      const formData = await (formPromise || Promise.resolve());
-      if (!noData) updateSessionValues(session);
-      return [session, formData];
-    });
+
+    const response = await this._fetch(url, options);
+    const session = await response.json();
+    initializeIntegrations(session.integrations, this, Boolean(formPromise));
+    const formData = await (formPromise || Promise.resolve());
+    if (!noData) updateSessionValues(session);
+    return [session, formData];
   }
 
   submitAuthInfo({ authId, authPhone = '', authEmail = '' }) {
