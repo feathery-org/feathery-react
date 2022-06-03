@@ -121,7 +121,7 @@ export default function GooglePlaces({
     autocomplete.addListener('place_changed', handlePlaceSelect);
   }, [googleLoad, activeStep.key]);
 
-  return googleKey && googlePreload ? (
+  return googlePreload ? (
     <Script
       url={`https://maps.googleapis.com/maps/api/js?key=${googleKey}&libraries=places`}
       onLoad={() => setGoogleLoad(true)}

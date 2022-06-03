@@ -93,7 +93,7 @@ function _fetchFormData(formKeys) {
         }),
         formClient
           .fetchSession()
-          .then((session) => (initState.sessions[key] = session))
+          .then(([session]) => (initState.sessions[key] = session))
       ]);
     })
   );

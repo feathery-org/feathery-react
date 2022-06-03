@@ -234,16 +234,18 @@ export default class Client {
     });
   }
 
-  async fetchSession(formPromise = null) {
-    await initFormsPromise;
+  async fetchSession(formPromise = null, block = false) {
+    // Block if there's a chance user id isn't available yet
+    await (block ? initFormsPromise : Promise.resolve());
     const {
       userKey,
       sessions,
       authId,
       fieldValuesInitialized: noData
     } = initInfo();
-    if (this.formKey in sessions)
-      return Promise.resolve(sessions[this.formKey]);
+    const formData = await (formPromise ?? Promise.resolve());
+
+    if (this.formKey in sessions) return [sessions[this.formKey], formData];
 
     initState.fieldValuesInitialized = true;
     let params = { form_key: this.formKey };
@@ -256,8 +258,7 @@ export default class Client {
 
     const response = await this._fetch(url, options);
     const session = await response.json();
-    initializeIntegrations(session.integrations, this, Boolean(formPromise));
-    const formData = await (formPromise || Promise.resolve());
+    initializeIntegrations(session.integrations, this, Boolean(formData));
     if (!noData) updateSessionValues(session);
     return [session, formData];
   }
