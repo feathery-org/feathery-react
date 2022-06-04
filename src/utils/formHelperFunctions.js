@@ -181,7 +181,10 @@ const nextStepKey = (nextConditions, metadata, fieldValues) => {
   return newKey;
 };
 
-const getOrigin = (steps) => Object.values(steps).find((step) => step.origin);
+// No origin is possible if there are no steps, e.g. form is disabled
+const NO_ORIGIN_DEFAULT = { key: '' };
+const getOrigin = (steps) =>
+  Object.values(steps).find((step) => step.origin) ?? NO_ORIGIN_DEFAULT;
 
 const getStepDepthMap = (steps, hasProgressBar = false) => {
   const depthMap = {};

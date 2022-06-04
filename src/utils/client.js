@@ -211,6 +211,9 @@ export default class Client {
 
   async fetchForm(initialValues) {
     const result = await this.fetchCacheForm();
+    // If form is disabled, data will equal `null`
+    // TODO(eric): return form disabled state screen
+    if (!result.data) return [[], {}];
     const steps = getABVariant(result);
     this.setDefaultFormValues({
       steps,
