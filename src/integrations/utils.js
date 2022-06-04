@@ -1,4 +1,3 @@
-import $script from 'scriptjs';
 import { installPlaid } from './plaid';
 import { emailLogin, installFirebase } from './firebase';
 import { initializeTagManager } from './googleTagManager';
@@ -6,11 +5,15 @@ import { initializeTagManager } from './googleTagManager';
 export function dynamicImport(dependency, async = true, index = 0) {
   if (async) {
     return new Promise((resolve) => {
-      $script(dependency, resolve);
+      global.scriptjsLoadPromise.then(($script) => {
+        $script.default(dependency, resolve);
+      });
     });
   } else if (index < dependency.length) {
     return new Promise((resolve) => {
-      $script(dependency[index], resolve);
+      global.scriptjsLoadPromise.then(($script) => {
+        $script.default(dependency[index], resolve);
+      });
     }).then(() => dynamicImport(dependency, false, index + 1));
   }
 }

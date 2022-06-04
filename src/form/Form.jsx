@@ -1,7 +1,6 @@
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import WebFont from 'webfontloader';
 import ReactForm from 'react-bootstrap/Form';
 import TagManager from 'react-gtm-module';
 import Lottie from 'lottie-react';
@@ -61,6 +60,7 @@ import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
 import { openTab } from '../utils/network';
+import { runningInClient } from '../utils/browser.js';
 
 function Form({
   formKey: _formKey,
@@ -1614,10 +1614,17 @@ function Form({
 
 export default function FormWithRouter(props) {
   return (
-    <BrowserRouter>
-      <Route path='/'>
-        <Form {...props} />
-      </Route>
-    </BrowserRouter>
+    <>
+    { runningInClient()  /* NextJS support */
+      ? (
+        <BrowserRouter>
+          <Route path='/'>
+            <Form {...props} />
+          </Route>
+        </BrowserRouter>
+      )
+      : null
+    }
+    </>
   );
 }

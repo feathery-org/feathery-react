@@ -14,7 +14,6 @@ import {
   updateSessionValues
 } from './formHelperFunctions';
 import { initializeIntegrations } from '../integrations/utils';
-import WebFont from 'webfontloader';
 
 // Convenience boolean for urls - manually change for testing
 const API_URL_OPTIONS = {
@@ -226,7 +225,11 @@ export default class Client {
 
   _loadFonts(res) {
     // Load default fonts
-    if (res.fonts.length) WebFont.load({ google: { families: res.fonts } });
+    if (res.fonts.length && global.webfontloaderPromise) {
+      global.webfontloaderPromise.then((WebFont) => {
+        WebFont.load({ google: { families: res.fonts } });
+      });
+    }
     // Load user-uploaded fonts
     Object.entries(res.uploaded_fonts).forEach((family, fontStyles) => {
       fontStyles.forEach(({ source, style, weight }) =>
