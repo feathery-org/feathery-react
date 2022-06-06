@@ -34,8 +34,7 @@ function applyButtonStyles(element, applyStyles) {
     'buttonActive',
     'buttonHover',
     'loader',
-    'img',
-    'tc'
+    'img'
   );
 
   applyStyles.apply('button', 'background_color', (a) => ({
@@ -46,6 +45,7 @@ function applyButtonStyles(element, applyStyles) {
   applyStyles.applyCorners('button');
   applyStyles.applyBorders('button');
   applyStyles.applyFlexDirection('button');
+  applyStyles.apply('button', 'text_align', (a) => ({ justifyContent: a }));
   applyStyles.apply(
     'button',
     [
@@ -58,7 +58,6 @@ function applyButtonStyles(element, applyStyles) {
       padding: `${a}px ${b}px ${c}px ${d}px`
     })
   );
-  applyStyles.apply('tc', 'text_align', (a) => ({ justifyContent: a }));
   applyStyles.applyWidth('img', 'image_');
   applyStyles.applyMargin('img', 'image_');
 
@@ -118,7 +117,6 @@ function ButtonElement({
       key={element.id}
       style={{
         display: 'flex',
-        justifyContent: 'center',
         alignItems: 'center',
         cursor:
           editable || element.properties.link === LINK_NONE
@@ -156,23 +154,15 @@ function ButtonElement({
             />
           )}
           {element.properties.text && (
-            <div
-              css={{
-                display: 'flex',
-                width: '100%',
-                ...styles.getTarget('tc')
-              }}
-            >
-              <TextNodes
-                element={element}
-                values={values}
-                applyStyles={applyStyles}
-                handleRedirect={handleRedirect}
-                editable={editable}
-                focused={focused}
-                textCallbacks={textCallbacks}
-              />
-            </div>
+            <TextNodes
+              element={element}
+              values={values}
+              applyStyles={applyStyles}
+              handleRedirect={handleRedirect}
+              editable={editable}
+              focused={focused}
+              textCallbacks={textCallbacks}
+            />
           )}
         </>
       )}

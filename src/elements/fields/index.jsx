@@ -118,6 +118,7 @@ function applyFieldStyles(field, styles) {
       styles.applyBorders('field');
       styles.applyPadding('field', '', true);
       styles.applyFlexDirection('field');
+      styles.apply('field', 'text_align', (a) => ({ justifyContent: a }));
       styles.apply(
         'field',
         [
@@ -132,7 +133,6 @@ function applyFieldStyles(field, styles) {
       );
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
-      styles.apply('tc', 'text_align', (a) => ({ justifyContent: a }));
       break;
     case 'dropdown':
     case 'gmap_state':

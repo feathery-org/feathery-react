@@ -66,7 +66,7 @@ function ButtonGroupField({
                 <div
                   css={{
                     display: 'flex',
-                    width: '100%',
+                    maxWidth: '100%',
                     // Do not highlight text when clicking the button
                     webkitTouchCallout: 'none' /* iOS Safari */,
                     webkitUserSelect: 'none' /* Safari */,
