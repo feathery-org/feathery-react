@@ -138,6 +138,7 @@ function Form({
   const callbackRef = useRef(new CallbackQueue(null, setLoaders));
   // Tracks if the form has redirected
   const hasRedirected = useRef(false);
+  const buttonClicks = useRef({}).current;
 
   // Determine if there is a field with a custom repeat_trigger configuration anywhere in the step
   const repeatTriggerExists = useMemo(
@@ -1087,6 +1088,11 @@ function Form({
   };
 
   const buttonOnClick = async (button) => {
+    // Prevent same button from being clicked multiple times while still running
+    if (buttonClicks[button.id]) return;
+    buttonClicks[button.id] = true;
+    let clickPromise = Promise.resolve();
+
     const link = button.properties.link;
     if ([LINK_ADD_REPEATED_ROW, LINK_REMOVE_REPEATED_ROW].includes(link)) {
       let data;
@@ -1103,7 +1109,7 @@ function Form({
       }
     } else if (link === LINK_TRIGGER_PLAID) {
       if (!plaidLinked) {
-        await openPlaidLink(
+        clickPromise = openPlaidLink(
           client,
           async () => {
             setPlaidLinked(true);
@@ -1129,16 +1135,21 @@ function Form({
         });
       }
     } else if (link === LINK_SEND_SMS) {
-      await setButtonLoader(button);
-      await sendLoginCode(
-        fieldValues[button.properties.sms_code_field_key],
-        null,
-        ['phone']
-      );
-      clearLoaders();
+      clickPromise = setButtonLoader(button)
+        .then(
+          async () =>
+            await sendLoginCode(
+              fieldValues[button.properties.sms_code_field_key],
+              null,
+              ['phone']
+            )
+        )
+        .then(() => clearLoaders());
     } else if ([LINK_SUBMIT, LINK_SKIP].includes(link)) {
-      await buttonOnSubmit(link === LINK_SUBMIT, button);
+      clickPromise = buttonOnSubmit(link === LINK_SUBMIT, button);
     }
+    await clickPromise;
+    buttonClicks[button.id] = false;
   };
 
   const fieldOnChange = ({ fieldIDs, fieldKeys, elementRepeatIndex = 0 }) => ({
@@ -1615,16 +1626,13 @@ function Form({
 export default function FormWithRouter(props) {
   return (
     <>
-    { runningInClient()  /* NextJS support */
-      ? (
+      {runningInClient() /* NextJS support */ ? (
         <BrowserRouter>
           <Route path='/'>
             <Form {...props} />
           </Route>
         </BrowserRouter>
-      )
-      : null
-    }
+      ) : null}
     </>
   );
 }
