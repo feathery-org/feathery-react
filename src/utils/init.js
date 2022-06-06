@@ -5,8 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 
 import * as errors from './error';
 import { dataURLToFile, isBase64PNG } from './image';
+import { runningInClient } from './browser.js';
 
-const fpPromise = FingerprintJS.load();
 let initFormsPromise = Promise.resolve();
 const defaultClient = new Client();
 const defaultOptions = {
@@ -53,9 +53,16 @@ function init(apiKey, options = {}) {
     }
   );
 
-  if (!initState.userKey) {
+  // dynamically load libraries that must be client side only for NextJs support
+  if (runningInClient()) {
+    global.scriptjsLoadPromise = import('scriptjs');
+    global.webfontloaderPromise = import('webfontloader');
+  }
+
+  // NextJS support - FingerprintJS.load cannot run server side
+  if (!initState.userKey && runningInClient()) {
     if (options.tracking === 'fingerprint') {
-      initFormsPromise = fpPromise
+      initFormsPromise = FingerprintJS.load()
         .then((fp) => fp.get())
         .then((result) => (initState.userKey = result.visitorId));
     } else if (options.tracking === 'cookie') {

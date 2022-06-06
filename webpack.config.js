@@ -5,6 +5,7 @@ module.exports = {
   entry: './src/index.js',
   output: {
     filename: 'index.js',
+    globalObject: 'this' /* Important!  Needed for NextJS support */,
     library: {
       name: 'Feathery',
       type: 'umd'
