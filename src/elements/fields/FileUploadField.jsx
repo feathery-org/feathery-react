@@ -177,7 +177,7 @@ function FileUploadField({
             cursor: 'pointer',
             maxHeight: '100%',
             display: 'flex',
-            justifyContent: showLabel ? 'space-between' : 'center',
+            justifyContent: 'center',
             alignItems: 'center',
             flexDirection: 'column',
             overflow: 'hidden',
