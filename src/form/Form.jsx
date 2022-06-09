@@ -61,6 +61,8 @@ import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
 import { openTab } from '../utils/network';
 import { runningInClient } from '../utils/browser.js';
+import FormOff from '../elements/components/FormOff';
+import Watermark from '../elements/components/Watermark';
 
 function Form({
   formKey: _formKey,
@@ -599,7 +601,9 @@ function Form({
           setFormSettings({
             redirectUrl: res.redirect_url,
             errorType: res.error_type,
-            autocomplete: res.autocomplete ? 'on' : 'off'
+            autocomplete: res.autocomplete ? 'on' : 'off',
+            formOff: Boolean(res.formOff),
+            showBrand: Boolean(res.show_brand)
           });
           setProductionEnv(res.production);
           return [steps, res];
@@ -668,7 +672,10 @@ function Form({
     if (stepKey) getNewStep(stepKey);
   }, [stepKey]);
 
-  if (!activeStep) return null;
+  if (!activeStep) {
+    if (formSettings.formOff) return <FormOff />;
+    else return null;
+  }
   if (finished) {
     if (formSettings.redirectUrl) {
       hasRedirected.current = true;
@@ -1253,7 +1260,9 @@ function Form({
         ref={formRef}
         css={{
           ...stepCSS,
-          ...style
+          ...style,
+          position: 'relative',
+          marginBottom: formSettings.showBrand ? '80px' : '0'
         }}
       >
         {children}
@@ -1628,6 +1637,18 @@ function Form({
         )}
         {!productionEnv && (
           <DevNavBar allSteps={steps} curStep={activeStep} history={history} />
+        )}
+        {formSettings.showBrand && (
+          <div
+            css={{
+              position: 'absolute',
+              bottom: -60,
+              right: 40,
+              pointerEvents: 'none'
+            }}
+          >
+            <Watermark />
+          </div>
         )}
       </ReactForm>
     </>
