@@ -20,6 +20,9 @@ export async function openPlaidLink(
   setLoader,
   clearLoader
 ) {
+  // No actions if Plaid hasn't been loaded yet
+  if (!global.Plaid) return;
+
   const linkToken = (await client.fetchPlaidLinkToken()).link_token;
   const handler = global.Plaid.create({
     token: linkToken,
