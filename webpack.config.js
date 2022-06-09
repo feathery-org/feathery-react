@@ -5,7 +5,7 @@ module.exports = {
   entry: './src/index.js',
   output: {
     filename: 'index.js',
-    globalObject: 'this' /* Important!  Needed for NextJS support */,
+    globalObject: 'this' /* So window references don't break in NextJS */,
     library: {
       name: 'Feathery',
       type: 'umd'
