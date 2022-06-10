@@ -231,16 +231,9 @@ function Form({
     }
   }, [gMapTimeoutId, gMapFilled, gMapBlurKey]);
 
-  // Logic to run every time step changes
+  // Logic to run on each step once firebase is loaded
   useEffect(() => {
-    if (!activeStep) return;
-
-    if (focusRef.current) {
-      focusRef.current.focus({
-        preventScroll: true
-      });
-      focusRef.current = null;
-    }
+    if (!activeStep || !global.firebase) return;
 
     const hasLoginField = activeStep.servar_fields.some((field) => {
       const servar = field.servar;
@@ -275,6 +268,18 @@ function Form({
           { size: 'invisible' }
         );
       }
+    }
+  }, [activeStep?.id, global.firebase]);
+
+  // Logic to run every time step changes
+  useEffect(() => {
+    if (!activeStep) return;
+
+    if (focusRef.current) {
+      focusRef.current.focus({
+        preventScroll: true
+      });
+      focusRef.current = null;
     }
 
     setHasPlaid(
