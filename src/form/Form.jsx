@@ -428,33 +428,41 @@ function Form({
     setRawActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
   };
 
-  const getCommonCallbackProps = (newStep = activeStep) => {
-    return {
-      setValues,
-      setOptions: updateFieldOptions(steps),
-      setProgress: (val) => setUserProgress(val),
-      setStep: (stepKey) => {
-        changeStep(stepKey, newStep.key, steps, history);
-      },
-      step: {
-        style: {
-          // eslint-disable-next-line camelcase
-          backgroundColor: newStep?.default_background_color
-        }
-      },
-      userId: initInfo().userKey,
-      stepName: newStep?.key ?? ''
-    };
+  const runUserCallback = async (
+    userCallback,
+    callbackProps,
+    newStep = activeStep
+  ) => {
+    try {
+      await userCallback({
+        setValues,
+        setOptions: updateFieldOptions(steps),
+        setProgress: (val) => setUserProgress(val),
+        setStep: (stepKey) => {
+          changeStep(stepKey, newStep.key, steps, history);
+        },
+        step: {
+          style: {
+            // eslint-disable-next-line camelcase
+            backgroundColor: newStep?.default_background_color
+          }
+        },
+        userId: initInfo().userKey,
+        stepName: newStep?.key ?? '',
+        ...callbackProps
+      });
+    } catch (e) {
+      console.log(e);
+    }
   };
 
   const getErrorCallback = (props1) => async (props2) => {
     if (typeof onError === 'function') {
       const formattedFields = formatAllFormFields(steps, fieldValues, true);
-      await onError({
+      await runUserCallback(onError, {
         fields: formattedFields,
         ...props1,
-        ...props2,
-        ...getCommonCallbackProps()
+        ...props2
       });
     }
   };
@@ -551,18 +559,21 @@ function Form({
         integrationData.firebaseAuthId = initState.authId;
       }
       let stepChanged = false;
-      await onLoad({
-        ...getCommonCallbackProps(newStep),
-        fields: formattedFields,
-        stepName: newStep.key,
-        previousStepName: activeStep?.key,
-        lastStep: steps[newKey].next_conditions.length === 0,
-        setStep: (stepKey) => {
-          stepChanged = changeStep(stepKey, newKey, steps, history);
+      await runUserCallback(
+        onLoad,
+        {
+          fields: formattedFields,
+          stepName: newStep.key,
+          previousStepName: activeStep?.key,
+          lastStep: steps[newKey].next_conditions.length === 0,
+          setStep: (stepKey) => {
+            stepChanged = changeStep(stepKey, newKey, steps, history);
+          },
+          firstStepLoaded: first,
+          integrationData
         },
-        firstStepLoaded: first,
-        integrationData
-      });
+        newStep
+      );
       if (stepChanged) return;
       updateNewStep(newStep);
     } else {
@@ -860,8 +871,7 @@ function Form({
       );
       let stepChanged = false;
       await setLoader();
-      await onSubmit({
-        ...getCommonCallbackProps(),
+      await runUserCallback(onSubmit, {
         submitFields: { ...formattedFields, ...plaidFieldValues },
         elementRepeatIndex: repeat,
         fields: allFields,
@@ -1072,8 +1082,7 @@ function Form({
       } else {
         if (typeof onSkip === 'function') {
           let stepChanged = false;
-          await onSkip({
-            ...getCommonCallbackProps(),
+          await runUserCallback(onSkip, {
             setStep: (stepKey) => {
               stepChanged = changeStep(stepKey, activeStep.key, steps, history);
             },
@@ -1130,8 +1139,7 @@ function Form({
       openTab(button.properties.link_url);
     } else if (link === LINK_CUSTOM) {
       if (typeof onCustomAction === 'function') {
-        onCustomAction({
-          ...getCommonCallbackProps(),
+        await runUserCallback(onCustomAction, {
           trigger: {
             ...lookUpTrigger(activeStep, button.id, 'button'),
             type: 'button',
@@ -1180,8 +1188,7 @@ function Form({
     if (typeof onChange === 'function') {
       const formattedFields = formatAllFormFields(steps, fieldValues, true);
       callbackRef.current.addCallback(
-        onChange({
-          ...getCommonCallbackProps(),
+        runUserCallback(onChange, {
           changeKeys: fieldKeys,
           trigger,
           integrationData,
@@ -1213,8 +1220,7 @@ function Form({
     typeof onView === 'function'
       ? (elementId, isVisible) => {
           callbackRef.current.addCallback(
-            onView({
-              ...getCommonCallbackProps(),
+            runUserCallback(onView, {
               visibilityStatus: { elementId, isVisible }
             }),
             loaders
