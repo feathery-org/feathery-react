@@ -4,6 +4,7 @@ import LeftChevronIcon from './LeftChevron';
 import RightChevronIcon from './RightChevron';
 import DiagonalArrowIcon from './DiagonalArrow';
 import CloseIcon from './Close';
+import FormClosedIcon from './FormClosed';
 
 export {
   FileUploadIcon,
@@ -11,5 +12,6 @@ export {
   LeftChevronIcon,
   RightChevronIcon,
   DiagonalArrowIcon,
-  CloseIcon
+  CloseIcon,
+  FormClosedIcon
 };

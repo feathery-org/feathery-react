@@ -64,7 +64,11 @@ describe('client', () => {
       });
       global.fetch = jest.fn().mockResolvedValue({
         status: 200,
-        json: jest.fn().mockResolvedValue({ file_values: {}, field_values: {} })
+        json: jest.fn().mockResolvedValue({
+          file_values: {},
+          field_values: {},
+          integrations: {}
+        })
       });
 
       // Act
@@ -80,7 +84,7 @@ describe('client', () => {
         }
       );
       expect(response).toEqual([
-        { field_values: {}, file_values: {} },
+        { field_values: {}, file_values: {}, integrations: {} },
         undefined
       ]);
     });
