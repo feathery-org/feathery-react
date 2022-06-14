@@ -49,6 +49,9 @@ function RadioButtonGroupField({
             type='radio'
             id={`${servar.key}-${i}`}
             key={`${servar.key}-${i}`}
+            // All radio buttons in group must have same name to be evaluated
+            // together
+            name={servar.key}
             label={opt}
             checked={fieldVal === opt}
             required={required}
@@ -82,6 +85,7 @@ function RadioButtonGroupField({
             type='radio'
             id={`${servar.key}-`}
             key={`${servar.key}-`}
+            name={servar.key}
             label='Other'
             checked={otherChecked}
             onChange={(e) => {
