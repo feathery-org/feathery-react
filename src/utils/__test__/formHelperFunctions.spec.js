@@ -7,7 +7,7 @@ import {
   recurseProgressDepth,
   getFieldError
 } from '../formHelperFunctions';
-import { initInfo } from '../init';
+import { fieldValues, initInfo } from '../init';
 
 jest.mock('../init');
 
@@ -21,7 +21,7 @@ describe('formHelperFunctions', () => {
       const expected = {};
 
       // Act
-      const actual = formatStepFields(step, {});
+      const actual = formatStepFields(step);
 
       // Assert
       expect(actual).toMatchObject(expected);
@@ -49,9 +49,9 @@ describe('formHelperFunctions', () => {
           }
         ]
       };
-      const fieldValues = {
-        key1: 'value1'
-      };
+
+      Object.assign(fieldValues, { key1: 'value1' });
+
       const fileObject = new Blob();
       const expected = {
         key1: {
@@ -67,7 +67,7 @@ describe('formHelperFunctions', () => {
       };
 
       // Act
-      const actual = formatStepFields(step, fieldValues);
+      const actual = formatStepFields(step);
 
       // Assert
       expect(actual).toMatchObject(expected);
@@ -115,9 +115,9 @@ describe('formHelperFunctions', () => {
           ]
         }
       ];
-      const fieldValues = {
-        key1: 'value1'
-      };
+
+      Object.assign(fieldValues, { key1: 'value1' });
+
       const fileObject = new Blob();
       const expected = {
         key1: {
@@ -133,7 +133,7 @@ describe('formHelperFunctions', () => {
       };
 
       // Act
-      const actual = formatAllFormFields(steps, fieldValues);
+      const actual = formatAllFormFields(steps);
 
       // Assert
       expect(actual).toMatchObject(expected);

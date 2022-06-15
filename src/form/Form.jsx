@@ -460,7 +460,7 @@ function Form({
 
   const getErrorCallback = (props1) => async (props2) => {
     if (typeof onError === 'function') {
-      const formattedFields = formatAllFormFields(steps, fieldValues, true);
+      const formattedFields = formatAllFormFields(steps, true);
       await runUserCallback(onError, {
         fields: formattedFields,
         ...props1,
@@ -554,7 +554,7 @@ function Form({
     };
 
     if (typeof onLoad === 'function') {
-      const formattedFields = formatAllFormFields(steps, fieldValues, true);
+      const formattedFields = formatAllFormFields(steps, true);
 
       const integrationData = {};
       if (initState.authId) {
@@ -807,7 +807,7 @@ function Form({
     activeStep.servar_fields.forEach(
       (field) => (servarMap[field.servar.key] = field.servar)
     );
-    const formattedFields = formatStepFields(activeStep, fieldValues, false);
+    const formattedFields = formatStepFields(activeStep, false);
     const elementType = metadata.elementType;
     const trigger = {
       ...lookUpTrigger(activeStep, metadata.elementIDs[0], elementType),
@@ -866,7 +866,7 @@ function Form({
         integrationData.firebaseAuthId = initState.authId;
       }
 
-      const allFields = formatAllFormFields(steps, fieldValues, true);
+      const allFields = formatAllFormFields(steps, true);
       const plaidFieldValues = getPlaidFieldValues(
         integrations.plaid,
         fieldValues
@@ -1193,7 +1193,7 @@ function Form({
       });
     }
     if (typeof onChange === 'function') {
-      const formattedFields = formatAllFormFields(steps, fieldValues, true);
+      const formattedFields = formatAllFormFields(steps, true);
       callbackRef.current.addCallback(
         runUserCallback(onChange, {
           changeKeys: fieldKeys,
