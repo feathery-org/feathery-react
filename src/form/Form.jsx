@@ -516,6 +516,7 @@ function Form({
     initState.validateCallbacks[formKey] = (trigger) => {
       const inlineErrors = {};
       const errors = newStep.servar_fields
+        // Skip validation on hidden elements
         .filter(
           (field) =>
             !shouldElementHide({
@@ -805,7 +806,7 @@ function Form({
 
     const servarMap = {};
     activeStep.servar_fields.forEach(
-      (field) => (servarMap[field.servar.key] = field.servar)
+      (field) => (servarMap[field.servar.key] = field)
     );
     const formattedFields = formatStepFields(activeStep, false);
     const elementType = metadata.elementType;
@@ -817,15 +818,24 @@ function Form({
 
     const newInlineErrors = {};
     Object.entries(formattedFields).map(async ([fieldKey, { value }]) => {
-      const servar = servarMap[fieldKey];
-      const message = getFieldError(value, servar);
+      const field = servarMap[fieldKey];
+      // Skip validation on hidden elements
+      if (
+        shouldElementHide({
+          fields: activeStep.servar_fields,
+          values: fieldValues,
+          element: field
+        })
+      )
+        return;
+      const message = getFieldError(value, field.servar);
       await setFormElementError({
         formRef,
         errorCallback: getErrorCallback({ trigger }),
         fieldKey,
         message,
         errorType: formSettings.errorType,
-        servarType: servar.type,
+        servarType: field.servar.type,
         inlineErrors: newInlineErrors
       });
     });

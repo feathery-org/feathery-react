@@ -36,15 +36,6 @@ const validators = {
 const formatStepFields = (step, forUser = false) => {
   const formattedFields = {};
   step.servar_fields.forEach((field) => {
-    if (
-      shouldElementHide({
-        fields: step.servar_fields,
-        values: fieldValues,
-        element: field
-      })
-    )
-      return;
-
     const servar = field.servar;
     let value;
     // Only use base64 for signature if these values will be presented to the user
