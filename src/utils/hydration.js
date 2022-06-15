@@ -150,7 +150,8 @@ function injectRepeatedRows({ step, repeatedRowCount }) {
     servar_fields: step.servar_fields.flatMap(unfold),
     texts: step.texts.flatMap(unfold),
     buttons: step.buttons.flatMap(unfold),
-    images: step.images.flatMap(unfold)
+    images: step.images.flatMap(unfold),
+    videos: step.videos.flatMap(unfold)
   };
 }
 
