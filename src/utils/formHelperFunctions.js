@@ -28,13 +28,12 @@ const validators = {
 /**
  *
  * @param {*} step
- * @param {*} fieldValues
  * @param {boolean} forUser indicate whether the result of this function is
  * meant for the user, or Feathery's BE. Presently the only difference is
  * whether signature field values are base64 or a JS File obj
  * @returns Formatted fields for the step
  */
-const formatStepFields = (step, fieldValues, forUser) => {
+const formatStepFields = (step, forUser = false) => {
   const formattedFields = {};
   step.servar_fields.forEach((field) => {
     if (
@@ -65,10 +64,10 @@ const formatStepFields = (step, fieldValues, forUser) => {
   return formattedFields;
 };
 
-const formatAllFormFields = (steps, fieldValues, forUser) => {
+const formatAllFormFields = (steps, forUser) => {
   let formattedFields = {};
   Object.values(steps).forEach((step) => {
-    const stepFields = formatStepFields(step, fieldValues, forUser);
+    const stepFields = formatStepFields(step, forUser);
     formattedFields = { ...formattedFields, ...stepFields };
   });
   return formattedFields;
