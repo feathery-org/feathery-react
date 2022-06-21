@@ -240,27 +240,22 @@ function calculateStepCSS(step) {
     backgroundColor: `#${step.default_background_color}`,
     backgroundImage: `url("${step.background_image_url}")`,
     backgroundSize: 'cover',
-    display: 'grid',
     width: desktop.gridWidth,
     minWidth: desktop.minWidth,
-    maxWidth: desktop.gridWidth,
+    maxWidth: '100vw',
     height: desktop.gridHeight,
     minHeight: desktop.minHeight,
-    maxHeight: desktop.maxHeight,
-    gridTemplateRows: desktop.rows.join(' '),
-    gridTemplateColumns: desktop.columns.join(' ')
+    maxHeight: desktop.maxHeight
   };
 
   // 478
   stepCSS[`@media (max-width: 478px)`] = {
     width: mobile.gridWidth,
     minWidth: mobile.minWidth,
-    maxWidth: mobile.gridWidth,
+    maxWidth: '100vw',
     height: mobile.gridHeight,
     minHeight: mobile.minHeight,
-    maxHeight: desktop.maxHeight,
-    gridTemplateRows: mobile.rows.join(' '),
-    gridTemplateColumns: mobile.columns.join(' ')
+    maxHeight: desktop.maxHeight
   };
 
   return stepCSS;
