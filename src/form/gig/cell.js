@@ -5,6 +5,7 @@ import {
   getInlineError,
   isFieldActuallyRequired,
   reactFriendlyKey,
+  shouldElementHide,
   textFieldShouldSubmit
 } from '../../utils/formHelperFunctions';
 import { stringifyWithNull } from '../../utils/string';
@@ -45,6 +46,16 @@ const Cell = ({ node: el, form }) => {
   let onView;
   if (elementOnView && onViewElements.includes(fieldId)) {
     onView = (isVisible) => elementOnView(fieldId, isVisible);
+  }
+
+  if (
+    shouldElementHide({
+      fields: activeStep.servar_fields,
+      values: fieldValues,
+      element: el
+    })
+  ) {
+    return null;
   }
 
   const basicProps = {
