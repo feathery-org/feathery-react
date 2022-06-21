@@ -106,7 +106,7 @@ const getCellContainerStyle = (axis, layout) => {
     case 'fill':
       return {
         ...common,
-        flexGrow: 1,
+        flex: 1,
         [minDimension]: 0
       };
     default:
