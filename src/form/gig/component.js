@@ -119,23 +119,6 @@ const getCellContainerStyle = (axis, layout) => {
   }
 };
 
-const CellWrapper = ({ children, node, layout }) => {
-  const isElementAndFill = node.isElement && layout === 'fill';
-
-  return (
-    <div
-      style={{
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        position: isElementAndFill ? 'absolute' : 'relative'
-      }}
-    >
-      {children}
-    </div>
-  );
-};
-
 const CellContainer = ({ children, node, axis, layout }) => {
   if (!node.parent) return children;
 
@@ -145,21 +128,11 @@ const CellContainer = ({ children, node, axis, layout }) => {
     const cellStyle = getCellStyle(node.cellData);
 
     return (
-      <div style={{ ...cellContainerStyle, ...cellStyle }}>
-        <CellWrapper node={node} layout={layout}>
-          {children}
-        </CellWrapper>
-      </div>
+      <div style={{ ...cellContainerStyle, ...cellStyle }}>{children}</div>
     );
   }
 
-  return (
-    <div style={cellContainerStyle}>
-      <CellWrapper node={node} layout={layout}>
-        {children}
-      </CellWrapper>
-    </div>
-  );
+  return <div style={cellContainerStyle}>{children}</div>;
 };
 const GridContainer = ({ children, node: { axis } }) => {
   return (
