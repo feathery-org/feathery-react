@@ -61,22 +61,35 @@ Object.entries(Elements).map(([key, Element]) => {
       );
       if (componentOnly) return e;
       else {
-        const layout = applyStyles.getLayout();
         const containerStyles = applyStyles.getTarget('container');
+
+        const cst = { ...applyStyles.getTarget('container') };
+        delete cst.padding;
+
         return (
           <div
-            css={{
+            className={'exp-padding'}
+            style={{
               display: 'flex',
-              flexDirection: 'column',
-              ...layout,
-              ...containerStyles,
-              [mobileBreakpointKey]: {
-                ...layout[mobileBreakpointKey],
-                ...containerStyles[mobileBreakpointKey]
-              }
+              flexGrow: 1,
+              padding: applyStyles.getTarget('container').padding
             }}
           >
-            {e}
+            <div
+              css={{
+                display: 'flex',
+                flexDirection: 'column',
+                width: '100%',
+                height: '100%',
+                ...cst,
+                // ...containerStyles,
+                [mobileBreakpointKey]: {
+                  ...containerStyles[mobileBreakpointKey]
+                }
+              }}
+            >
+              {e}
+            </div>
           </div>
         );
       }

@@ -6,11 +6,7 @@ import TagManager from 'react-gtm-module';
 import Lottie from 'lottie-react';
 import { useHotkeys } from 'react-hotkeys-hook';
 
-import {
-  calculateRepeatedRowCount,
-  calculateStepCSS,
-  injectRepeatedRows
-} from '../utils/hydration';
+import { calculateStepCSS } from '../utils/hydration';
 import {
   changeStep,
   formatAllFormFields,
@@ -19,17 +15,13 @@ import {
   getDefaultFieldValue,
   getFieldError,
   getFieldValue,
-  getInlineError,
   getNewStepUrl,
   getOrigin,
-  isFieldActuallyRequired,
   lookUpTrigger,
   nextStepKey,
-  reactFriendlyKey,
   recurseProgressDepth,
   setFormElementError,
-  shouldElementHide,
-  textFieldShouldSubmit
+  shouldElementHide
 } from '../utils/formHelperFunctions';
 import {
   initInfo,
@@ -40,8 +32,6 @@ import {
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
-import { stringifyWithNull } from '../utils/string';
-import Elements from '../elements';
 import GooglePlaces from './GooglePlaces';
 import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
 import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
@@ -63,6 +53,18 @@ import { openTab } from '../utils/network';
 import { runningInClient } from '../utils/browser.js';
 import FormOff from '../elements/components/FormOff';
 import Watermark from '../elements/components/Watermark';
+import Gig from './gig/component';
+import { mobileBreakpointValue } from '../elements/styles';
+
+const FieldCounter = {
+  value: 0
+};
+
+export const fieldCounter = FieldCounter;
+
+const getViewport = () => {
+  return window.innerWidth > mobileBreakpointValue ? 'desktop' : 'mobile';
+};
 
 function Form({
   formKey: _formKey,
@@ -107,7 +109,7 @@ function Form({
     autocomplete: 'on'
   });
   const [inlineErrors, setInlineErrors] = useState({});
-  const [repeatChanged, setRepeatChanged] = useState(false);
+  const [, setRepeatChanged] = useState(false);
 
   const [integrations, setIntegrations] = useState({});
   const [plaidLinked, setPlaidLinked] = useState(false);
@@ -115,6 +117,9 @@ function Form({
   const [gMapFilled, setGMapFilled] = useState(false);
   const [gMapBlurKey, setGMapBlurKey] = useState('');
   const [gMapTimeoutId, setGMapTimeoutId] = useState(-1);
+  const [viewport, setViewport] = useState(getViewport());
+
+  const [repeats, setRepeats] = useState(0);
 
   // Set to trigger conditional renders on field value updates, no need to use
   // eslint-disable-next-line no-unused-vars
@@ -132,7 +137,10 @@ function Form({
     );
   }, [loaders]);
 
-  // Tracks overall form HTML component
+  const handleResize = () => {
+    setViewport(getViewport());
+  };
+
   const formRef = useRef(null);
   // Tracks element to focus
   const focusRef = useRef();
@@ -154,32 +162,25 @@ function Form({
   );
 
   // Calculate how many repeated rows there are given the current field values
-  const repeatedRowCount = useMemo(
-    () =>
-      rawActiveStep
-        ? calculateRepeatedRowCount({
-            step: rawActiveStep,
-            values: fieldValues
-          })
-        : null,
-    [rawActiveStep, repeatChanged]
-  );
+  // const repeatedRowCount = useMemo(
+  //   () =>
+  //     rawActiveStep
+  //       ? calculateRepeatedRowCount({
+  //           step: rawActiveStep,
+  //           values: fieldValues
+  //         })
+  //       : null,
+  //   [rawActiveStep, repeatChanged]
+  // );
 
   // Create the fully-hydrated activeStep by injecting repeated rows
   // Note: Other hydration transformations can also be included here
   const activeStep = useMemo(() => {
     if (!rawActiveStep) return null;
-    return JSON.parse(
-      JSON.stringify(
-        injectRepeatedRows({
-          step: rawActiveStep,
-          repeatedRowCount
-        })
-      )
-    );
-  }, [rawActiveStep, repeatedRowCount]);
+    return JSON.parse(JSON.stringify(rawActiveStep));
+  }, [rawActiveStep]);
 
-  const [stepCSS, allElements] = useMemo(() => {
+  const [stepCSS] = useMemo(() => {
     if (!activeStep) return [{}, []];
     return [
       // When the active step changes, recalculate the dimensions of the new step
@@ -204,6 +205,13 @@ function Form({
       delete initState.validateCallbacks[formKey];
     };
   }, []);
+
+  useEffect(() => {
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {}, [viewport]);
 
   useEffect(() => {
     if (gMapFilled) clearTimeout(gMapTimeoutId);
@@ -236,6 +244,8 @@ function Form({
   // Logic to run on each step once firebase is loaded
   useEffect(() => {
     if (!activeStep || !global.firebase) return;
+
+    // fieldCounter.value = 0;
 
     const hasLoginField = activeStep.servar_fields.some((field) => {
       const servar = field.servar;
@@ -327,8 +337,8 @@ function Form({
   );
 
   function addRepeatedRow() {
-    if (isNaN(activeStep.repeat_row_start) || isNaN(activeStep.repeat_row_end))
-      return;
+    // if (isNaN(activeStep.repeat_row_start) || isNaN(activeStep.repeat_row_end))
+    //   return;
 
     // Collect a list of all repeated elements
     const repeatedServarFields = rawActiveStep.servar_fields.filter(
@@ -700,12 +710,14 @@ function Form({
       // And this is the last field in a set of repeated fields
       const isPreviousValueDefaultArray =
         isEmptyArray(previousValue) && isEmptyArray(defaultValue);
+
       if (
-        index === repeatedRowCount - 1 &&
+        // index === repeatedRowCount - 1 &&
         (previousValue === defaultValue || isPreviousValueDefaultArray) &&
         value !== defaultValue
-      )
+      ) {
         repeatRowOperation = 'add';
+      }
 
       // Remove a repeated row if the value went from set to unset
       if (
@@ -731,7 +743,7 @@ function Form({
     updateValues[servar.key] =
       index === null
         ? value
-        : justInsert(fieldValues[servar.key], value, index);
+        : justInsert(fieldValues[servar.key] || [], value, index);
 
     if (clearGMaps) {
       activeStep.servar_fields.forEach((field) => {
@@ -750,8 +762,13 @@ function Form({
     }
 
     const change = updateFieldValues(updateValues, rerender);
-    if (repeatRowOperation === 'add') addRepeatedRow();
-    else if (repeatRowOperation === 'remove') removeRepeatedRow(index);
+    if (repeatRowOperation === 'add') {
+      setRepeats(repeats + 1);
+      addRepeatedRow();
+    } else if (repeatRowOperation === 'remove') {
+      setRepeats(repeats - 1);
+      removeRepeatedRow(index);
+    }
     return change;
   };
 
@@ -1245,7 +1262,37 @@ function Form({
         }
       : undefined;
 
-  let fieldCounter = 0;
+  const form = {
+    userProgress,
+    curDepth,
+    maxDepth,
+    elementProps,
+    fieldValues,
+    handleRedirect,
+    activeStep,
+    loaders,
+    buttonOnClick,
+    // fieldCounter,
+    submit,
+    fieldOnChange,
+    // errType,
+    inlineErrors,
+    repeatTriggerExists,
+    // repeatedRowCount,
+    changeValue,
+    updateFieldValues,
+    // updateFilePathMap,
+    handleCheckboxGroupChange,
+    handleOtherStateChange,
+    setGMapBlurKey,
+    elementOnView,
+    onViewElements,
+    formSettings,
+    clearFilePathMapEntry,
+    focusRef
+    // signatureRef
+  };
+
   return (
     <>
       {stepLoader && (
@@ -1272,370 +1319,17 @@ function Form({
           ...stepCSS,
           ...style,
           position: 'relative',
-          marginBottom: formSettings.showBrand ? '80px' : '0'
+          marginBottom: formSettings.showBrand ? '80px' : '0',
+          display: 'flex'
         }}
       >
         {children}
-        {allElements
-          .filter(
-            ([element]) =>
-              !shouldElementHide({
-                fields: activeStep.servar_fields,
-                values: fieldValues,
-                element: element
-              })
-          )
-          .sort(([a], [b]) => {
-            if (a.row_index > b.row_index) return 1;
-            else if (a.row_index < b.row_index) return -1;
-            else if (a.column_index > b.column_index) return 1;
-            else if (a.column_index < b.column_index) return -1;
-            else return 0;
-          })
-          .map(([el, type]) => {
-            const fieldId = el.servar?.key ?? el.id;
-            let onView;
-            if (elementOnView && onViewElements.includes(fieldId)) {
-              onView = (isVisible) => elementOnView(fieldId, isVisible);
-            }
-
-            const basicProps = {
-              key: reactFriendlyKey(el),
-              componentOnly: false,
-              element: el,
-              elementProps: elementProps[el.id],
-              onView
-            };
-            if (type === 'progress_bar')
-              return (
-                <Elements.ProgressBarElement
-                  {...basicProps}
-                  key={`pb-${el.column_index}-${el.column_index_end}-${el.row_index}-${el.row_index_end}`}
-                  progress={userProgress}
-                  curDepth={curDepth}
-                  maxDepth={maxDepth}
-                />
-              );
-            else if (type === 'image')
-              return <Elements.ImageElement {...basicProps} />;
-            else if (type === 'video')
-              return <Elements.VideoElement {...basicProps} />;
-            else if (type === 'text')
-              return (
-                <Elements.TextElement
-                  values={fieldValues}
-                  handleRedirect={handleRedirect}
-                  conditions={activeStep.next_conditions}
-                  {...basicProps}
-                />
-              );
-            else if (type === 'button')
-              return (
-                <Elements.ButtonElement
-                  values={fieldValues}
-                  loader={
-                    loaders[el.id]?.showOn === 'on_button' &&
-                    loaders[el.id]?.loader
-                  }
-                  handleRedirect={handleRedirect}
-                  onClick={() => buttonOnClick(el)}
-                  {...basicProps}
-                />
-              );
-            else if (type === 'field') {
-              fieldCounter++;
-              const thisCounter = fieldCounter;
-              const index = el.repeat ?? null;
-              const servar = el.servar;
-              const { value: fieldVal } = getFieldValue(el, fieldValues);
-
-              let otherVal = '';
-              if (servar.metadata.other) {
-                if (
-                  servar.type === 'select' &&
-                  !servar.metadata.options.includes(fieldVal)
-                ) {
-                  otherVal = fieldVal;
-                } else if (servar.type === 'multiselect') {
-                  fieldVal.forEach((val) => {
-                    if (!servar.metadata.options.includes(val)) otherVal = val;
-                  });
-                }
-              }
-
-              const onClick = (e, submitData = false) => {
-                const metadata = {
-                  elementType: 'field',
-                  elementIDs: [el.id],
-                  trigger: 'click'
-                };
-                if (submitData) {
-                  submit({ metadata, repeat: el.repeat || 0 });
-                } else {
-                  handleRedirect({ metadata });
-                }
-              };
-
-              const onChange = fieldOnChange({
-                fieldIDs: [el.id],
-                fieldKeys: [servar.key],
-                elementRepeatIndex: el.repeat || 0
-              });
-
-              const inlineErr =
-                formSettings.errorType === 'inline' &&
-                getInlineError(el, inlineErrors);
-
-              const required = isFieldActuallyRequired(
-                el,
-                repeatTriggerExists,
-                repeatedRowCount
-              );
-
-              const fieldProps = {
-                key: reactFriendlyKey(el),
-                element: el,
-                componentOnly: false,
-                elementProps: elementProps[servar.key],
-                autoComplete: formSettings.autocomplete,
-                required,
-                onView
-              };
-
-              let changeHandler;
-              switch (servar.type) {
-                case 'signature':
-                  return (
-                    <Elements.SignatureField
-                      {...fieldProps}
-                      defaultValue={fieldValues[servar.key]}
-                      onEnd={(newFile) => {
-                        clearFilePathMapEntry(
-                          servar.key,
-                          servar.repeated ? index : null
-                        );
-                        fieldValues[servar.key] = Promise.resolve(newFile);
-                        onChange();
-                      }}
-                      onClear={() => {
-                        fieldValues[servar.key] = null;
-                        onChange();
-                      }}
-                    />
-                  );
-                case 'file_upload':
-                  return (
-                    <Elements.FileUploadField
-                      {...fieldProps}
-                      onChange={(files, fieldIndex) => {
-                        clearFilePathMapEntry(
-                          servar.key,
-                          servar.repeated ? index : null
-                        );
-                        changeValue(files, el, index);
-                        onChange({
-                          valueRepeatIndex: fieldIndex,
-                          submitData:
-                            el.properties.submit_trigger === 'auto' &&
-                            !el.properties.multiple &&
-                            files.length > 0
-                        });
-                      }}
-                      onClick={onClick}
-                      initialFiles={fieldVal}
-                    />
-                  );
-                case 'button_group':
-                  return (
-                    <Elements.ButtonGroupField
-                      {...fieldProps}
-                      fieldVal={fieldVal}
-                      onClick={(e) => {
-                        const newVal = e.target.textContent;
-                        const {
-                          metadata: { multiple },
-                          required
-                        } = fieldProps.element.servar;
-                        if (multiple) {
-                          const existingIndex = fieldVal.indexOf(newVal);
-                          if (existingIndex === -1) {
-                            changeValue([...fieldVal, newVal], el, index);
-                          } else {
-                            changeValue(
-                              justRemove(fieldVal, existingIndex),
-                              el,
-                              index
-                            );
-                          }
-                        } else {
-                          changeValue(
-                            // Allow de-selection if field is optional
-                            !required && fieldVal[0] === newVal ? [] : [newVal],
-                            el,
-                            index
-                          );
-                        }
-                        onChange();
-                        onClick(e, el.properties.submit_trigger === 'auto');
-                      }}
-                    />
-                  );
-                case 'checkbox':
-                  return (
-                    <Elements.CheckboxField
-                      {...fieldProps}
-                      fieldVal={fieldVal}
-                      onClick={onClick}
-                      onChange={(e) => {
-                        const val = e.target.checked;
-                        changeValue(val, el, index);
-                        onChange();
-                      }}
-                    />
-                  );
-                case 'dropdown':
-                case 'gmap_state':
-                  return (
-                    <Elements.DropdownField
-                      {...fieldProps}
-                      fieldVal={fieldVal}
-                      onClick={onClick}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        changeValue(val, el, index);
-                        onChange({
-                          submitData:
-                            el.properties.submit_trigger === 'auto' && val
-                        });
-                      }}
-                      inlineError={inlineErr}
-                    />
-                  );
-                case 'pin_input':
-                  return (
-                    <Elements.PinInputField
-                      {...fieldProps}
-                      fieldVal={fieldVal}
-                      onClick={onClick}
-                      onChange={(val) => {
-                        changeValue(val, el, index, false);
-                        onChange({
-                          submitData:
-                            el.properties.submit_trigger === 'auto' &&
-                            val.length === el.servar.max_length
-                        });
-                        onChange();
-                      }}
-                      inlineError={inlineErr}
-                      shouldFocus
-                    />
-                  );
-                case 'multiselect':
-                  return (
-                    <Elements.CheckboxGroupField
-                      {...fieldProps}
-                      fieldVal={fieldVal}
-                      otherVal={otherVal}
-                      onChange={(e) => {
-                        handleCheckboxGroupChange(e, servar.key);
-                        onChange();
-                      }}
-                      onOtherChange={(e) => {
-                        handleOtherStateChange(otherVal)(e);
-                        onChange();
-                      }}
-                      onClick={onClick}
-                    />
-                  );
-                case 'select':
-                  changeHandler = (e, change = true) => {
-                    const val = e.target.value;
-                    if (change) changeValue(val, el, index);
-                    onChange({
-                      submitData: el.properties.submit_trigger === 'auto' && val
-                    });
-                  };
-                  return (
-                    <Elements.RadioButtonGroupField
-                      {...fieldProps}
-                      fieldVal={fieldVal}
-                      otherVal={otherVal}
-                      onChange={changeHandler}
-                      onOtherChange={(e) => {
-                        handleOtherStateChange(otherVal)(e);
-                        changeHandler(e, false);
-                      }}
-                      onClick={onClick}
-                    />
-                  );
-                case 'hex_color':
-                  changeHandler = (color) => {
-                    activeStep.servar_fields.forEach((field) => {
-                      const iterServar = field.servar;
-                      if (iterServar.key !== servar.key) return;
-                      updateFieldValues({
-                        [iterServar.key]: color
-                      });
-                    });
-                    onChange({
-                      submitData:
-                        el.properties.submit_trigger === 'auto' && color
-                    });
-                  };
-                  return (
-                    <Elements.ColorPickerField
-                      {...fieldProps}
-                      fieldVal={fieldVal}
-                      onChange={changeHandler}
-                      onClick={onClick}
-                    />
-                  );
-                case 'text_area':
-                  return (
-                    <Elements.TextArea
-                      {...fieldProps}
-                      rawValue={stringifyWithNull(fieldVal)}
-                      onClick={onClick}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const change = changeValue(val, el, index);
-                        if (change) onChange();
-                      }}
-                      setRef={(ref) => {
-                        if (thisCounter === 1) focusRef.current = ref;
-                      }}
-                      inlineError={inlineErr}
-                    />
-                  );
-                default:
-                  return (
-                    <Elements.TextField
-                      {...fieldProps}
-                      rawValue={stringifyWithNull(fieldVal)}
-                      onBlur={() => {
-                        if (servar.type === 'gmap_line_1')
-                          setGMapBlurKey(servar.key);
-                      }}
-                      onClick={onClick}
-                      onAccept={(val, mask) => {
-                        const newVal = mask._unmaskedValue === '' ? '' : val;
-                        const change = changeValue(newVal, el, index, false);
-                        if (change) {
-                          const submitData =
-                            el.properties.submit_trigger === 'auto' &&
-                            textFieldShouldSubmit(servar, newVal);
-                          onChange({ submitData });
-                        }
-                      }}
-                      setRef={(ref) => {
-                        if (thisCounter === 1) focusRef.current = ref;
-                      }}
-                      inlineError={inlineErr}
-                    />
-                  );
-              }
-            }
-          })}
+        <Gig
+          step={activeStep}
+          form={form}
+          values={fieldValues}
+          viewport={viewport}
+        />
         {integrations['google-maps'] && (
           <GooglePlaces
             googleKey={integrations['google-maps']}
