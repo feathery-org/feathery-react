@@ -154,7 +154,7 @@ const GridContainer = ({ children, node: { axis } }) => {
 const formatStep = (step, viewport) => {
   step = convertStepToViewport(step, viewport);
 
-  const map = buildGridMap(step, viewport);
+  const map = buildGridMap(step);
   const tree = buildGridTree(map, [], viewport);
 
   return { map, tree };
@@ -215,15 +215,14 @@ const convertToViewport = (obj, viewport, props) => {
   return obj;
 };
 
-const buildGridMap = (step, viewport) => {
+const buildGridMap = (step) => {
   const map = {};
   let rootSubgrid = {};
   const cells = [];
 
   const addObjectsToMap = (obj, type) => {
     if (typeMap[type]) obj.type = typeMap[type];
-    // TODO: handle grids with mobile positions rather than desktop positions
-    if (type === 'subgrids' && obj.position?.length === 0) {
+    if (type === 'subgrids' && obj.position.length === 0) {
       if (Array.isArray(obj.styles)) {
         obj.styles.forEach((style) => {
           const cellData = { ...style };
