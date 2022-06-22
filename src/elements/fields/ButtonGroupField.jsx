@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { imgMaxSizeStyles } from '../styles';
+import { imgMaxSizeStyles, noTextSelectStyles } from '../styles';
 
 function ButtonGroupField({
   element,
@@ -68,11 +68,7 @@ function ButtonGroupField({
                     display: 'flex',
                     maxWidth: '100%',
                     // Do not highlight text when clicking the button
-                    webkitTouchCallout: 'none' /* iOS Safari */,
-                    webkitUserSelect: 'none' /* Safari */,
-                    mozUserSelect: 'none' /* Old versions of Firefox */,
-                    msUserSelect: 'none' /* Internet Explorer / Edge */,
-                    userSelect: 'none' /* Chrome, Firefox, etc. */,
+                    ...noTextSelectStyles,
                     ...applyStyles.getTarget('tc')
                   }}
                 >
