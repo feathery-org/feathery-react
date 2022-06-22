@@ -37,19 +37,20 @@ function useTextEdit({
 
     if (editable) {
       css.cursor = 'default';
-      editableProps = {
-        contentEditable: true,
-        suppressContentEditableWarning: true,
-        onSelect: () => onTextSelect && onTextSelect(window.getSelection()),
-        onKeyDown: (e) =>
-          onTextKeyDown &&
-          onTextKeyDown(e, spanRef.current, window.getSelection()),
-        onBlur: (e) => {
-          setEditMode('hover');
-          onTextBlur && onTextBlur(e);
-        }
-      };
       if (focused) {
+        editableProps = {
+          contentEditable: true,
+          suppressContentEditableWarning: true,
+          onSelect: () => onTextSelect && onTextSelect(window.getSelection()),
+          onKeyDown: (e) =>
+            onTextKeyDown &&
+            onTextKeyDown(e, spanRef.current, window.getSelection()),
+          onBlur: (e) => {
+            setEditMode('hover');
+            onTextBlur && onTextBlur(e);
+          }
+        };
+
         if (editMode === 'hover') {
           editableProps = { onDoubleClick: () => setEditMode('edit') };
           css['&:hover'] = { backgroundColor: 'rgb(230, 240, 252)' };
