@@ -197,8 +197,8 @@ const convertStepToViewport = (step, viewport) => {
 };
 
 const viewportProperties = {
-  step: ['repeat_position'],
-  subgrids: ['position', 'axis', 'styles'],
+  step: ['width', 'height', 'repeat_position'],
+  subgrids: ['layout', 'position', 'axis', 'styles'],
   elements: ['position']
 };
 
