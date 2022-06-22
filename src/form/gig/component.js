@@ -217,14 +217,13 @@ const convertToViewport = (obj, viewport, props) => {
 
 const buildGridMap = (step, viewport) => {
   const map = {};
-
   let rootSubgrid = {};
-
   const cells = [];
 
   const addObjectsToMap = (obj, type) => {
     if (typeMap[type]) obj.type = typeMap[type];
-    if (type === 'subgrids' && obj.position.length === 0) {
+    // TODO: handle grids with mobile positions rather than desktop positions
+    if (type === 'subgrids' && obj.position?.length === 0) {
       if (Array.isArray(obj.styles)) {
         obj.styles.forEach((style) => {
           const cellData = { ...style };
