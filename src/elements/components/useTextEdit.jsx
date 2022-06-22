@@ -37,20 +37,28 @@ function useTextEdit({
 
     if (editable) {
       css.cursor = 'default';
-      if (focused) {
-        editableProps = {
-          contentEditable: true,
-          suppressContentEditableWarning: true,
-          onSelect: () => onTextSelect && onTextSelect(window.getSelection()),
-          onKeyDown: (e) =>
-            onTextKeyDown &&
-            onTextKeyDown(e, spanRef.current, window.getSelection()),
-          onBlur: (e) => {
-            setEditMode('hover');
-            onTextBlur && onTextBlur(e);
-          }
-        };
+      // Unfocused text can't be selected or edited, but we need to keep
+      // contenteditable = true so when losing focus, blur event is still propagated
+      editableProps = {
+        contentEditable: true,
+        suppressContentEditableWarning: true,
+        onMouseDown: (e) => !focused && e.preventDefault(),
+        onSelect: (e) => {
+          if (!focused) e.preventDefault();
+          onTextSelect && onTextSelect(window.getSelection());
+        },
+        onKeyDown: (e) => {
+          if (!focused) e.preventDefault();
+          if (onTextKeyDown)
+            onTextKeyDown(e, spanRef.current, window.getSelection());
+        },
+        onBlur: (e) => {
+          setEditMode('hover');
+          onTextBlur && onTextBlur(e);
+        }
+      };
 
+      if (focused) {
         if (editMode === 'hover') {
           editableProps = { onDoubleClick: () => setEditMode('edit') };
           css['&:hover'] = { backgroundColor: 'rgb(230, 240, 252)' };

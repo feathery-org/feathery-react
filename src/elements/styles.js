@@ -376,6 +376,14 @@ class ApplyStyles {
   }
 }
 
+const noTextSelectStyles = {
+  webkitTouchCallout: 'none' /* iOS Safari */,
+  webkitUserSelect: 'none' /* Safari */,
+  mozUserSelect: 'none' /* Old versions of Firefox */,
+  msUserSelect: 'none' /* Internet Explorer / Edge */,
+  userSelect: 'none' /* Chrome, Firefox, etc. */
+};
+
 const bootstrapStyles = {
   padding: '0.375rem 0.75rem',
   boxSizing: 'border-box',
@@ -392,4 +400,4 @@ const imgMaxSizeStyles = {
 };
 
 export default ApplyStyles;
-export { bootstrapStyles, imgMaxSizeStyles };
+export { bootstrapStyles, imgMaxSizeStyles, noTextSelectStyles };
