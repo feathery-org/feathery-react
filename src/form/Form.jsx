@@ -161,18 +161,6 @@ function Form({
     [rawActiveStep]
   );
 
-  // Calculate how many repeated rows there are given the current field values
-  // const repeatedRowCount = useMemo(
-  //   () =>
-  //     rawActiveStep
-  //       ? calculateRepeatedRowCount({
-  //           step: rawActiveStep,
-  //           values: fieldValues
-  //         })
-  //       : null,
-  //   [rawActiveStep, repeatChanged]
-  // );
-
   // Create the fully-hydrated activeStep by injecting repeated rows
   // Note: Other hydration transformations can also be included here
   const activeStep = useMemo(() => {
