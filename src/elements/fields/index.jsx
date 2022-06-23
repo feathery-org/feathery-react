@@ -117,8 +117,7 @@ function applyFieldStyles(field, styles) {
       styles.applyCorners('field');
       styles.applyBorders('field');
       styles.applyPadding('field', '', true);
-      styles.applyFlexDirection('field');
-      styles.apply('field', 'text_align', (a) => ({ justifyContent: a }));
+      styles.applyFlexAndTextAlignments('field');
       styles.apply(
         'field',
         [

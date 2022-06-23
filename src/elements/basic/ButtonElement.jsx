@@ -44,8 +44,7 @@ function applyButtonStyles(element, applyStyles) {
   applyStyles.applyWidth('button');
   applyStyles.applyCorners('button');
   applyStyles.applyBorders('button');
-  applyStyles.applyFlexDirection('button');
-  applyStyles.apply('button', 'text_align', (a) => ({ justifyContent: a }));
+  applyStyles.applyFlexAndTextAlignments('button');
   applyStyles.apply(
     'button',
     [
@@ -117,7 +116,6 @@ function ButtonElement({
       key={element.id}
       style={{
         display: 'flex',
-        alignItems: 'center',
         cursor:
           editable || element.properties.link === LINK_NONE
             ? 'default'
@@ -127,6 +125,8 @@ function ButtonElement({
         position: 'relative'
       }}
       css={{
+        justifyContent: 'center',
+        alignItems: 'center',
         '&:disabled': { cursor: 'default !important' },
         '&:active:not(:disabled):not(.disabled)': editable
           ? styles.getTarget('button')
