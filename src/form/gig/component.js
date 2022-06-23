@@ -2,6 +2,7 @@ import React from 'react';
 import Cell from './cell';
 import ApplyStyles from '../../elements/styles';
 import { getDefaultFieldValue } from '../../utils/formHelperFunctions';
+import { TEXT_VARIABLE_PATTERN } from '../../utils/hydration';
 
 const Gig = ({ step, form, values, viewport }) => {
   const formattedStep = formatStep(JSON.parse(JSON.stringify(step)), viewport);
@@ -267,7 +268,7 @@ const buildGridMap = (step) => {
 const addRepeatedCells = (node, values) => {
   const index = [...node.position].pop();
 
-  const numberOfRepeats = simpleRepeatCount(node, values, index);
+  const numberOfRepeats = repeatCount(node, values);
 
   if (!node.parent) return 0;
 
@@ -301,32 +302,76 @@ const repeat = (node, values, repeatIndex) => {
   return node;
 };
 
-const findRepeatTrigger = (node) => {
-  if (node?.servar?.repeated) return node;
-  if (node.children) {
-    for (let i = 0; i < node.children.length; ++i) {
-      const child = node.children[i];
-      const repeatTrigger = findRepeatTrigger(child);
-      if (repeatTrigger) return repeatTrigger;
-    }
+const getTextVariables = (node) => {
+  let textVariables = [];
+
+  const text = node?.properties?.text;
+  if (text) {
+    const match = text.match(TEXT_VARIABLE_PATTERN);
+    if (match) textVariables = match;
   }
-  return null;
+
+  return textVariables.map((variable) => variable.slice(2, -2));
 };
 
-const simpleRepeatCount = (node, values, index) => {
-  node = findRepeatTrigger(node);
-  let count = 0;
-  if (!node) {
-    return count;
+const getAllTextVariables = (node, variables = []) => {
+  const textVariables = getTextVariables(node);
+  if (textVariables)
+    textVariables.forEach((variable) => variables.push(variable));
+
+  if (node.children) {
+    node.children.forEach((child) => getAllTextVariables(child, variables));
   }
+
+  return variables;
+};
+
+const repeatCountByTextVariables = (node, values) => {
+  let count = 0;
+  const textVariables = getAllTextVariables(node);
+  textVariables.forEach((variable) => {
+    const variableValues = values[variable];
+    if (Array.isArray(variableValues))
+      count = Math.max(count, variableValues.length - 1);
+  });
+  return count;
+};
+
+const getRepeatableFields = (node, servars = []) => {
+  if (node?.servar?.repeated) {
+    servars.push(node);
+  }
+  if (node.children) {
+    node.children.forEach((child) => getRepeatableFields(child, servars));
+  }
+  return servars;
+};
+
+const repeatCountByFields = (node, values) => {
+  let count = 0;
+  const repeatableServars = getRepeatableFields(node);
+  repeatableServars.forEach((servar) => {
+    count = Math.max(count, getNonDefaultValues(servar, values).length);
+  });
+  return count;
+};
+
+const getNonDefaultValues = (node, values) => {
+  const nonDefaultValues = [];
   const defaultValue = getDefaultFieldValue(node);
   const v = values[node?.servar?.key];
   if (!v) return 0;
   for (let i = 0; i < v.length; ++i) {
-    const value = v[i];
-    if (value !== defaultValue) count++;
+    if (v[i] !== defaultValue) nonDefaultValues.push(v);
   }
-  return count;
+  return nonDefaultValues;
+};
+
+const repeatCount = (node, values) => {
+  return Math.max(
+    repeatCountByFields(node, values),
+    repeatCountByTextVariables(node, values)
+  );
 };
 
 const buildGridTree = (gridMap, position = [], viewport) => {
