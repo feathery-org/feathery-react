@@ -1,4 +1,5 @@
 import { isNum } from '../utils/primitives';
+import { isDirectionColumn } from '../utils/styles';
 
 const mobileIndices = {
   gridColumnStart: 'mobile_column_index',
@@ -116,9 +117,26 @@ class ApplyStyles {
     }
   }
 
+  applyFlexAndTextAlignments(target, prefix = '') {
+    this.applyFlexDirection(target, prefix);
+    this.applyTextAlign(target, prefix);
+  }
+
   applyFlexDirection(target, prefix = '') {
     this.apply(target, `${prefix}flex_direction`, (a) => ({
       flexDirection: a
+    }));
+  }
+
+  // Text align needs to be applied on the opposite axis from the flex
+  // direction, which specifies the icon position relative to the text, so that
+  // text align behaves as expected when the flex direction is vertical (a
+  // column)
+  applyTextAlign(target, prefix = '') {
+    this.apply(target, `${prefix}text_align`, (a) => ({
+      [isDirectionColumn(this.styles[`${prefix}flex_direction`])
+        ? 'alignItems'
+        : 'justifyContent']: a
     }));
   }
 
