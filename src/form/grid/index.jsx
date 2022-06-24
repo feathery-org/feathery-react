@@ -172,7 +172,8 @@ const typeMap = {
   images: 'image',
   texts: 'text',
   buttons: 'button',
-  servar_fields: 'field'
+  servar_fields: 'field',
+  videos: 'video'
 };
 
 const fields = [
@@ -181,7 +182,8 @@ const fields = [
   'buttons',
   'servar_fields',
   'progress_bars',
-  'images'
+  'images',
+  'videos'
 ];
 
 const convertStepToViewport = (step, viewport) => {
