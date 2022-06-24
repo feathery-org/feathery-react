@@ -36,7 +36,18 @@ const Subgrid = ({
   values,
   viewport = 'desktop'
 }) => {
-  const renderGrid = () => {
+  if (node.isElement || node.isEmpty) {
+    return (
+      <CellContainer
+        key={getMapKey(node)}
+        node={node}
+        axis={axis}
+        layout={layout}
+      >
+        {!node.isEmpty && <Cell form={form} node={node} />}
+      </CellContainer>
+    );
+  } else {
     return (
       <CellContainer node={node} axis={axis} layout={layout}>
         <GridContainer node={node}>
@@ -58,22 +69,7 @@ const Subgrid = ({
         </GridContainer>
       </CellContainer>
     );
-  };
-
-  if (node.isElement || node.isEmpty) {
-    return (
-      <CellContainer
-        key={getMapKey(node)}
-        node={node}
-        axis={axis}
-        layout={layout}
-      >
-        {!node.isEmpty && <Cell form={form} node={node} />}
-      </CellContainer>
-    );
   }
-
-  return renderGrid();
 };
 
 const getCellStyle = (cell) => {
