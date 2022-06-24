@@ -10,8 +10,10 @@ import SignatureField from './SignatureField';
 import TextField from './TextField';
 import TextArea from './TextArea';
 import React, { memo, useMemo } from 'react';
+import AddressLine1 from './AddressLine1';
 
 const Fields = {
+  AddressLine1,
   ButtonGroupField,
   CheckboxField,
   CheckboxGroupField,
