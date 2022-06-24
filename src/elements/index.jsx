@@ -43,11 +43,6 @@ Object.entries(Elements).map(([key, Element]) => {
           alignItems: legacyAlignment(a)
         }));
         as.applyPadding('container');
-        if (key === 'TextElement' && element.styles.border_color) {
-          as.apply('container', 'border_color', (a) => ({
-            border: `1px solid #${a}`
-          }));
-        }
         if (key in Basic) as.applyVisibility('container');
         return as;
       }, [element, componentOnly]);
@@ -68,7 +63,7 @@ Object.entries(Elements).map(([key, Element]) => {
 
         return (
           <div
-            className={'exp-padding'}
+            className='exp-padding'
             style={{
               display: 'flex',
               flexGrow: 1,
