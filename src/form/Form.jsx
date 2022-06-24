@@ -53,7 +53,7 @@ import { openTab } from '../utils/network';
 import { runningInClient } from '../utils/browser.js';
 import FormOff from '../elements/components/FormOff';
 import Watermark from '../elements/components/Watermark';
-import Gig from './gig/component';
+import Grid from './grid';
 import { mobileBreakpointValue } from '../elements/styles';
 
 const FieldCounter = {
@@ -1312,7 +1312,7 @@ function Form({
         }}
       >
         {children}
-        <Gig
+        <Grid
           step={activeStep}
           form={form}
           values={fieldValues}

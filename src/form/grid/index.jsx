@@ -1,10 +1,10 @@
 import React from 'react';
-import Cell from './cell';
+import Cell from './Cell.jsx';
 import ApplyStyles from '../../elements/styles';
 import { getDefaultFieldValue } from '../../utils/formHelperFunctions';
 import { TEXT_VARIABLE_PATTERN } from '../../utils/hydration';
 
-const Gig = ({ step, form, values, viewport }) => {
+const Grid = ({ step, form, values, viewport }) => {
   const formattedStep = formatStep(JSON.parse(JSON.stringify(step)), viewport);
 
   const repeatPosition =
@@ -19,7 +19,7 @@ const Gig = ({ step, form, values, viewport }) => {
   }
 
   return (
-    <Grid
+    <Subgrid
       tree={formattedStep.tree}
       form={form}
       values={values}
@@ -28,7 +28,7 @@ const Gig = ({ step, form, values, viewport }) => {
   );
 };
 
-const Grid = ({
+const Subgrid = ({
   tree: node,
   form,
   layout = null,
@@ -44,7 +44,7 @@ const Grid = ({
             layout = node.layout[i];
             axis = node.axis;
             return (
-              <Grid
+              <Subgrid
                 key={getMapKey(child) + ':' + i}
                 tree={child}
                 axis={axis}
@@ -392,4 +392,4 @@ const buildGridTree = (gridMap, position = [], viewport) => {
   return node;
 };
 
-export default Gig;
+export default Grid;
