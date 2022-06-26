@@ -29,7 +29,6 @@ const Cell = ({ node: el, form }) => {
     fieldOnChange,
     inlineErrors,
     repeatTriggerExists,
-    repeatedRowCount,
     changeValue,
     updateFieldValues,
     handleCheckboxGroupChange,
@@ -144,7 +143,7 @@ const Cell = ({ node: el, form }) => {
     const required = isFieldActuallyRequired(
       el,
       repeatTriggerExists,
-      repeatedRowCount
+      el.lastRepeat
     );
 
     const fieldProps = {
