@@ -444,11 +444,8 @@ function textFieldShouldSubmit(servar, value) {
 // To determine if a field should actually be required, we need to consider the repeat_trigger config
 // If this is the trailing element in a set of repeat_trigger elements, then it shouldn't be required
 // Because we render the trailing element as a way to create a new row, NOT as a required field for the user
-function isFieldActuallyRequired(field, repeatTriggerExists, repeatedRowCount) {
-  const isTrailingRepeatField =
-    repeatTriggerExists &&
-    repeatedRowCount > 1 &&
-    field.repeat === repeatedRowCount - 1;
+function isFieldActuallyRequired(field, repeatTriggerExists, lastRepeat) {
+  const isTrailingRepeatField = repeatTriggerExists && lastRepeat;
   return field.servar.required && !isTrailingRepeatField;
 }
 

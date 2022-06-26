@@ -265,19 +265,23 @@ const buildGridMap = (step) => {
 
 const addRepeatedCells = (node, values) => {
   const index = [...node.position].pop();
-
-  const numberOfRepeats = repeatCount(node, values);
-
   if (!node.parent) return 0;
 
+  const numberOfRepeats = repeatCount(node, values);
   if (numberOfRepeats) {
     node.parent.children[index] = repeat({ ...node }, values, 0);
     for (let i = 0; i < numberOfRepeats; ++i) {
       node.parent.layout.splice(index + i, 0, node.parent.layout[index]);
+      const repeatIndex = i + 1;
       node.parent.children.splice(
-        index + i + 1,
+        index + repeatIndex,
         0,
-        repeat({ ...node.parent.children[index] }, values, i + 1)
+        repeat(
+          { ...node.parent.children[index] },
+          values,
+          repeatIndex,
+          repeatIndex === numberOfRepeats
+        )
       );
     }
   } else {
@@ -287,13 +291,13 @@ const addRepeatedCells = (node, values) => {
   return numberOfRepeats;
 };
 
-const repeat = (node, values, repeatIndex) => {
+const repeat = (node, values, repeatIndex, last) => {
   node.repeat = repeatIndex;
-  if (node.servar) node.servar.repeated = true;
+  node.lastRepeat = last;
   if (node.children) {
     const newChildren = [];
     node.children.forEach((child) => {
-      newChildren.push(repeat({ ...child }, values, repeatIndex));
+      newChildren.push(repeat({ ...child }, values, repeatIndex, last));
     });
     node.children = newChildren;
   }

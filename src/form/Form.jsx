@@ -1260,16 +1260,13 @@ function Form({
     activeStep,
     loaders,
     buttonOnClick,
-    // fieldCounter,
     submit,
     fieldOnChange,
-    // errType,
     inlineErrors,
     repeatTriggerExists,
     // repeatedRowCount,
     changeValue,
     updateFieldValues,
-    // updateFilePathMap,
     handleCheckboxGroupChange,
     handleOtherStateChange,
     setGMapBlurKey,
@@ -1278,7 +1275,6 @@ function Form({
     formSettings,
     clearFilePathMapEntry,
     focusRef
-    // signatureRef
   };
 
   return (
