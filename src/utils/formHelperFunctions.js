@@ -214,7 +214,9 @@ function reactFriendlyKey(field) {
 function getFieldValue(field, values) {
   const { servar, repeat } = field;
 
-  if (!values[servar?.key]) return { value: '' };
+  // Need to check if undefined, rather than !values[servar.key], because null can be a set value
+  if (values[servar?.key] === undefined)
+    return { value: getDefaultFieldValue(field) };
 
   return repeat !== undefined
     ? {
