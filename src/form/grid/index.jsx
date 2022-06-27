@@ -340,12 +340,17 @@ const repeatCountByTextVariables = (node, values) => {
 };
 
 const getRepeatableFields = (node, servars = []) => {
-  if (node?.servar?.repeated) {
-    servars.push(node);
+  if (node.servar) {
+    const { repeated, repeat_trigger: repeatTrigger } = node.servar;
+    if (repeated && repeatTrigger) {
+      servars.push(node);
+    }
   }
+
   if (node.children) {
     node.children.forEach((child) => getRepeatableFields(child, servars));
   }
+
   return servars;
 };
 
