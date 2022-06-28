@@ -379,4 +379,18 @@ export default class Client {
     };
     return this._fetch(url, options).then((response) => response.json());
   }
+
+  addressSearchResults(searchTerm) {
+    const params = encodeGetParams({ search_term: searchTerm });
+    const url = `${API_URL}integration/address/search/?${params}`;
+    const options = { headers: { 'Content-Type': 'application/json' } };
+    return this._fetch(url, options).then((response) => response.json());
+  }
+
+  addressDetail(addressId) {
+    const params = encodeGetParams({ address_id: addressId });
+    const url = `${API_URL}integration/address/detail/?${params}`;
+    const options = { headers: { 'Content-Type': 'application/json' } };
+    return this._fetch(url, options).then((response) => response.json());
+  }
 }

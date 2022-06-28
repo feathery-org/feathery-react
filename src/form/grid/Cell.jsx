@@ -11,6 +11,15 @@ import {
 import { stringifyWithNull } from '../../utils/string';
 import { fieldCounter } from '../Form';
 import { justRemove } from '../../utils/array';
+import { isObjectEmpty } from '../../utils/primitives';
+
+const mapFieldTypes = new Set([
+  'gmap_line_1',
+  'gmap_line_2',
+  'gmap_city',
+  'gmap_state',
+  'gmap_zip'
+]);
 
 const Cell = ({ node: el, form }) => {
   const { type } = el;
@@ -38,7 +47,8 @@ const Cell = ({ node: el, form }) => {
     onViewElements,
     formSettings,
     clearFilePathMapEntry,
-    focusRef
+    focusRef,
+    steps
   } = form;
 
   const fieldId = el.servar?.key ?? el.id;
@@ -349,14 +359,57 @@ const Cell = ({ node: el, form }) => {
             inlineError={inlineErr}
           />
         );
+      case 'gmap_line_1':
+        return (
+          <Elements.AddressLine1
+            {...fieldProps}
+            value={stringifyWithNull(fieldVal)}
+            onBlur={() => setGMapBlurKey(servar.key)}
+            onClick={onClick}
+            onChange={(e) => {
+              const val = e.target.value;
+              const change = changeValue(val, el, index);
+              if (change) onChange();
+            }}
+            onSelect={(address) => {
+              const keyIDMap = {};
+              const addrValues = {};
+
+              const trackMapFields = (step) => {
+                step.servar_fields.forEach((field) => {
+                  const servar = field.servar;
+                  if (servar.type in address) {
+                    addrValues[servar.key] = address[servar.type];
+                    keyIDMap[servar.key] = field.id;
+                  } else if (mapFieldTypes.has(servar.type)) {
+                    addrValues[servar.key] = '';
+                    keyIDMap[servar.key] = field.id;
+                  }
+                });
+              };
+              Object.values(steps).forEach((step) => trackMapFields(step));
+              // register current step field IDs if possible
+              trackMapFields(activeStep);
+
+              if (!isObjectEmpty(Object.keys(addrValues))) {
+                updateFieldValues(addrValues);
+                fieldOnChange({
+                  fieldIDs: Object.values(keyIDMap),
+                  fieldKeys: Object.keys(keyIDMap)
+                })({ trigger: 'googleMaps' });
+              }
+            }}
+            setRef={(ref) => {
+              if (thisCounter === 1) focusRef.current = ref;
+            }}
+            inlineError={inlineErr}
+          />
+        );
       default:
         return (
           <Elements.TextField
             {...fieldProps}
             rawValue={stringifyWithNull(fieldVal)}
-            onBlur={() => {
-              if (servar.type === 'gmap_line_1') setGMapBlurKey(servar.key);
-            }}
             onClick={onClick}
             onAccept={(val, mask) => {
               const newVal = mask._unmaskedValue === '' ? '' : val;

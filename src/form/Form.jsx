@@ -32,7 +32,6 @@ import {
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
-import GooglePlaces from './GooglePlaces';
 import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
 import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
 import {
@@ -232,8 +231,6 @@ function Form({
   // Logic to run on each step once firebase is loaded
   useEffect(() => {
     if (!activeStep || !global.firebase) return;
-
-    // fieldCounter.value = 0;
 
     const hasLoginField = activeStep.servar_fields.some((field) => {
       const servar = field.servar;
@@ -1185,7 +1182,6 @@ function Form({
   const fieldOnChange = ({ fieldIDs, fieldKeys, elementRepeatIndex = 0 }) => ({
     trigger = 'field',
     submitData = false,
-    integrationData = {},
     // Multi-file upload is not a repeated row but a repeated field
     valueRepeatIndex = null
   } = {}) => {
@@ -1208,7 +1204,7 @@ function Form({
         runUserCallback(onChange, {
           changeKeys: fieldKeys,
           trigger,
-          integrationData,
+          integrationData: {},
           fields: formattedFields,
           lastStep: activeStep.next_conditions.length === 0,
           elementRepeatIndex,
@@ -1259,7 +1255,6 @@ function Form({
     fieldOnChange,
     inlineErrors,
     repeatTriggerExists,
-    // repeatedRowCount,
     changeValue,
     updateFieldValues,
     handleCheckboxGroupChange,
@@ -1269,7 +1264,8 @@ function Form({
     onViewElements,
     formSettings,
     clearFilePathMapEntry,
-    focusRef
+    focusRef,
+    steps
   };
 
   return (
@@ -1309,15 +1305,6 @@ function Form({
           values={fieldValues}
           viewport={viewport}
         />
-        {integrations['google-maps'] && (
-          <GooglePlaces
-            googleKey={integrations['google-maps']}
-            activeStep={activeStep}
-            steps={steps}
-            onChange={fieldOnChange}
-            updateFieldValues={updateFieldValues}
-          />
-        )}
         {!productionEnv && (
           <DevNavBar allSteps={steps} curStep={activeStep} history={history} />
         )}
