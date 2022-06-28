@@ -10,7 +10,8 @@ import { debounce } from 'lodash';
 import { OverlayTrigger } from 'react-bootstrap';
 
 // Milliseconds
-const DELAY_TIME = 200;
+const SEARCH_DELAY_TIME = 300;
+const EXIT_DELAY_TIME = 200;
 
 function AddressLine1({
   element,
@@ -112,7 +113,7 @@ function AddressLine1({
             onBlur={(e) => {
               // Blur may be triggered by option selection, and option
               // click logic may need to be run first. So delay option removal.
-              setTimeout(() => setShowOptions(false), DELAY_TIME);
+              setTimeout(() => setShowOptions(false), EXIT_DELAY_TIME);
               onBlur(e);
             }}
             {...props}
@@ -145,7 +146,7 @@ function useAddressSearch(searchTerm, active) {
             setTerm(newTerm);
           }
         }),
-      DELAY_TIME
+      SEARCH_DELAY_TIME
     ),
     [setResults, setTerm]
   );
