@@ -692,27 +692,25 @@ function Form({
     const servar = field.servar;
     if (servar.repeat_trigger === 'set_value') {
       const defaultValue = getDefaultFieldValue(field);
-      const { value: previousValue } = getFieldValue(field, fieldValues);
+      const { value: previousValue, valueList } = getFieldValue(
+        field,
+        fieldValues
+      );
 
       // Add a repeated row if the value went from unset to set
-      // And this is the last field in a set of repeated fields
       const isPreviousValueDefaultArray =
         isEmptyArray(previousValue) && isEmptyArray(defaultValue);
 
+      // And this is the last field in a set of repeated fields
+      const isLastRepeatedField = valueList && index === valueList.length - 1;
+
       if (
-        // index === repeatedRowCount - 1 &&
+        isLastRepeatedField &&
         (previousValue === defaultValue || isPreviousValueDefaultArray) &&
         value !== defaultValue
       ) {
         repeatRowOperation = 'add';
       }
-
-      // Remove a repeated row if the value went from set to unset
-      if (
-        (previousValue !== defaultValue && value === defaultValue) ||
-        (!isEmptyArray(previousValue) && isEmptyArray(value))
-      )
-        repeatRowOperation = 'remove';
     }
 
     if (servar.type === 'integer_field') value = parseInt(value);
@@ -753,9 +751,6 @@ function Form({
     if (repeatRowOperation === 'add') {
       setRepeats(repeats + 1);
       addRepeatedRow();
-    } else if (repeatRowOperation === 'remove') {
-      setRepeats(repeats - 1);
-      removeRepeatedRow(index);
     }
     return change;
   };

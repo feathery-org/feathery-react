@@ -358,20 +358,19 @@ const repeatCountByFields = (node, values) => {
   let count = 0;
   const repeatableServars = getRepeatableFields(node);
   repeatableServars.forEach((servar) => {
-    count = Math.max(count, getNonDefaultValues(servar, values).length);
+    count = Math.max(count, getNumberOfRepeatableValues(servar, values));
   });
   return count;
 };
 
-const getNonDefaultValues = (node, values) => {
-  const nonDefaultValues = [];
+// If the final value is still default, do not render another repeat
+const getNumberOfRepeatableValues = (node, values) => {
   const defaultValue = getDefaultFieldValue(node);
-  const v = values[node?.servar?.key];
-  if (!v) return 0;
-  for (let i = 0; i < v.length; ++i) {
-    if (v[i] !== defaultValue) nonDefaultValues.push(v);
-  }
-  return nonDefaultValues;
+  const fieldValues = values[node?.servar?.key];
+  if (!Array.isArray(fieldValues)) return 0;
+  const hasDefaultLastValue =
+    fieldValues[fieldValues.length - 1] === defaultValue;
+  return hasDefaultLastValue ? fieldValues.length - 1 : fieldValues.length;
 };
 
 const repeatCount = (node, values) => {
