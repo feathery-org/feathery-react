@@ -64,9 +64,9 @@
     "umd"
   ],
   "dependencies": {
-    "@emotion/babel-preset-css-prop": "^11.0.0",
-    "@emotion/react": "^11.0.0",
-    "@emotion/styled": "^11.0.0",
+    "@emotion/babel-preset-css-prop": "^11.2.0",
+    "@emotion/react": "^11.9.3",
+    "@emotion/styled": "^11.9.3",
     "@fingerprintjs/fingerprintjs": "^3.1.0",
     "google-libphonenumber": "^3.2.22",
     "lottie-react": "^2.1.0",
