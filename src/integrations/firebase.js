@@ -73,12 +73,16 @@ export async function sendLoginCode(fieldVal, servar, methods = null) {
         return {};
       })
       .catch((error) => {
+        console.log(error);
         // Error; SMS not sent. Reset Recaptcha
-        window.firebaseRecaptchaVerifier.render().then(function (widgetId) {
-          // Reset reCaptcha
-          // eslint-disable-next-line no-undef
-          grecaptcha.reset(widgetId);
-        });
+        window.firebaseRecaptchaVerifier
+          .render()
+          .then(function (widgetId) {
+            // Reset reCaptcha
+            // eslint-disable-next-line no-undef
+            grecaptcha.reset(widgetId);
+          })
+          .catch((e) => console.log(e));
         return {
           errorMessage: error.message,
           errorField: servar
