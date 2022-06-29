@@ -53,17 +53,22 @@ function getMaskProps(servar, value) {
   switch (servar.type) {
     case 'integer_field':
       maskProps = {
-        mask: servar.format === 'currency' ? '$num' : 'num',
+        mask: 'num',
         blocks: {
           num: {
             mask: Number,
+            radix: '.',
             thousandsSeparator: ',',
-            scale: 0,
-            signed: false
+            signed: false,
+            scale: 0
           }
         },
         value: value.toString()
       };
+      if (servar.format === 'currency') {
+        maskProps.mask = '$num';
+        maskProps.blocks.num.scale = 2;
+      }
       break;
     case 'login':
       methods = servar.metadata.login_methods;
@@ -104,7 +109,7 @@ function getMaskProps(servar, value) {
   };
 }
 
-function getInputProps(servar, styles) {
+function getInputProps(servar) {
   let methods, onlyPhone;
   switch (servar.type) {
     case 'integer_field':
@@ -145,8 +150,7 @@ function TextField({
   children
 }) {
   const servar = element.servar;
-
-  const inputProps = getInputProps(servar, element.styles);
+  const inputProps = getInputProps(servar);
   return (
     <div
       css={{
