@@ -710,7 +710,8 @@ function Form({
       }
     }
 
-    if (servar.type === 'integer_field') value = parseInt(value);
+    if (servar.type === 'integer_field' && value !== '')
+      value = parseInt(value);
     else if (servar.type === 'gmap_line_1' && !value) clearGMaps = true;
     else if (servar.type === 'file_upload' && index !== null)
       // For file_upload in repeating rows
