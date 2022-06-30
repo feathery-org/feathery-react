@@ -147,21 +147,20 @@ const Cell = ({ node: el, form }) => {
       elementRepeatIndex: el.repeat || 0
     });
 
-    const inlineErr =
+    const inlineError =
       formSettings.errorType === 'inline' && getInlineError(el, inlineErrors);
-
     const required = isFieldActuallyRequired(
       el,
       repeatTriggerExists,
       el.lastRepeat
     );
-
     const fieldProps = {
       key: reactFriendlyKey(el),
       element: el,
       componentOnly: false,
       elementProps: elementProps[servar.key],
       autoComplete: formSettings.autocomplete,
+      inlineError,
       required,
       onView
     };
@@ -261,7 +260,6 @@ const Cell = ({ node: el, form }) => {
                 submitData: el.properties.submit_trigger === 'auto' && val
               });
             }}
-            inlineError={inlineErr}
           />
         );
       case 'pin_input':
@@ -279,7 +277,6 @@ const Cell = ({ node: el, form }) => {
               });
               onChange();
             }}
-            inlineError={inlineErr}
             shouldFocus
           />
         );
@@ -356,7 +353,6 @@ const Cell = ({ node: el, form }) => {
             setRef={(ref) => {
               if (thisCounter === 1) focusRef.current = ref;
             }}
-            inlineError={inlineErr}
           />
         );
       case 'gmap_line_1':
@@ -402,7 +398,6 @@ const Cell = ({ node: el, form }) => {
             setRef={(ref) => {
               if (thisCounter === 1) focusRef.current = ref;
             }}
-            inlineError={inlineErr}
           />
         );
       default:
@@ -424,7 +419,6 @@ const Cell = ({ node: el, form }) => {
             setRef={(ref) => {
               if (thisCounter === 1) focusRef.current = ref;
             }}
-            inlineError={inlineErr}
           />
         );
     }
