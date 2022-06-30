@@ -256,7 +256,6 @@ function updateSessionValues(session) {
 function getFieldError(value, servar) {
   let noVal;
   switch (servar.type) {
-    case 'file_upload':
     case 'select':
     case 'signature':
       noVal = !value;
@@ -264,6 +263,10 @@ function getFieldError(value, servar) {
     case 'checkbox':
       // eslint-disable-next-line camelcase
       noVal = !value && servar.metadata?.must_check;
+      break;
+    case 'file_upload':
+    case 'button_group':
+      noVal = value.length === 0;
       break;
     default:
       noVal = value === '';
