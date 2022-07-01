@@ -34,10 +34,9 @@ const fieldValues = {};
 const filePathMap = {};
 
 function init(apiKey, options = {}) {
+  options = { ...defaultOptions, ...options };
   // TODO: deprecate legacy formKeys option
   options.formKeys = options.formKeys ?? options.forms;
-
-  options = { ...defaultOptions, ...options };
 
   if (initState.initialized) return; // can only be initialized one time per load
   initState.initialized = true;
