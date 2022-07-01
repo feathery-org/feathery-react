@@ -1,13 +1,6 @@
 import { isNum } from '../utils/primitives';
 import { isDirectionColumn } from '../utils/styles';
 
-const mobileIndices = {
-  gridColumnStart: 'mobile_column_index',
-  gridColumnEnd: 'mobile_column_index_end',
-  gridRowStart: 'mobile_row_index',
-  gridRowEnd: 'mobile_row_index_end'
-};
-
 export const mobileBreakpointValue = 478;
 
 export const mobileBreakpointKey = `@media (max-width: ${mobileBreakpointValue}px)`;
@@ -26,36 +19,6 @@ class ApplyStyles {
       this.mobileStyles = element.mobile_styles;
       this.mobileTargets = Object.fromEntries(targets.map((t) => [t, {}]));
     }
-  }
-
-  // Return CSS for the step dimensions / layout
-  getLayout() {
-    const layout = {
-      gridColumnStart: this.element.column_index + 1,
-      gridRowStart: this.element.row_index + 1,
-      gridColumnEnd: this.element.column_index_end + 2,
-      gridRowEnd: this.element.row_index_end + 2
-    };
-
-    if (
-      this.handleMobile &&
-      Object.values(mobileIndices).some((index) => isNum(this.element[index]))
-    ) {
-      const mobileLayout = {};
-      Object.entries(mobileIndices).forEach(([key, i]) => {
-        let mVal = parseInt(this.element[i]);
-        if (isNaN(mVal)) mobileLayout[key] = layout[key];
-        else {
-          if (['gridColumnEnd', 'gridRowEnd'].includes(key)) {
-            mVal += 2;
-          } else mVal++;
-          mobileLayout[key] = mVal;
-        }
-      });
-      layout[mobileBreakpointKey] = mobileLayout;
-    }
-
-    return layout;
   }
 
   addTargets(...targets) {

@@ -78,7 +78,6 @@ const Cell = ({ node: el, form }) => {
     return (
       <Elements.ProgressBarElement
         {...basicProps}
-        key={`pb-${el.column_index}-${el.column_index_end}-${el.row_index}-${el.row_index_end}`}
         progress={userProgress}
         curDepth={curDepth}
         maxDepth={maxDepth}
