@@ -192,6 +192,8 @@ const convertStepToViewport = (step, viewport) => {
     });
   });
 
+  step.subgrids = step.subgrids.filter((subgrid) => subgrid.position);
+
   return step;
 };
 
