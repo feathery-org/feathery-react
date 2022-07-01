@@ -169,7 +169,6 @@ function FileUploadField({
       ))}
       {allowMoreFiles && (
         <div
-          id={servar.key}
           onClick={onClick}
           css={{
             position: 'relative',
@@ -192,6 +191,7 @@ function FileUploadField({
           {/* Input component must be hidden, and it also remains empty since we track files in state here */}
           {/* Since the input is always empty, we have to check for existing data and ignore the required attribute */}
           <input
+            id={servar.key}
             ref={fileInput}
             type='file'
             onChange={onChange}
