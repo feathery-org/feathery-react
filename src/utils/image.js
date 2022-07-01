@@ -9,7 +9,7 @@ export const THUMBNAIL_TYPE = {
 };
 
 // eslint-disable-next-line no-useless-escape
-export const BASE64_PNG_REGEX = /(data:image\/png;base64,)([0-9a-zA-Z+\/]{4})*(([0-9a-zA-Z+\/]{2}==)|([0-9a-zA-Z+\/]{3}=))?$/gm;
+export const BASE64_REGEX = /(data:image\/(png|jpg|jpeg);base64,)([0-9a-zA-Z+\/]{4})*(([0-9a-zA-Z+\/]{2}==)|([0-9a-zA-Z+\/]{3}=))?$/gm;
 
 export function getThumbnailType(file) {
   let thumbnailType = THUMBNAIL_TYPE.UNKNOWN;
@@ -108,6 +108,6 @@ export const toBase64 = (file) =>
     reader.onerror = (error) => reject(error);
   });
 
-export const isBase64PNG = (string) => {
-  return BASE64_PNG_REGEX.test(string);
+export const isBase64Image = (string) => {
+  return BASE64_REGEX.test(string);
 };

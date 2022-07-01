@@ -4,7 +4,7 @@ import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { v4 as uuidv4 } from 'uuid';
 
 import * as errors from './error';
-import { dataURLToFile, isBase64PNG } from './image';
+import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient } from './browser.js';
 
 let initFormsPromise = Promise.resolve();
@@ -123,7 +123,7 @@ function updateUserKey(newUserKey, merge = false) {
 
 function _parseUserVal(userVal, key) {
   let val = userVal;
-  if (isBase64PNG(val)) val = dataURLToFile(val, `${key}.png`);
+  if (isBase64Image(val)) val = dataURLToFile(val, `${key}.png`);
   // If the value is a file type, convert the file or files (if repeated) to Promises
   return val instanceof File ? Promise.resolve(val) : val;
 }
