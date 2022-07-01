@@ -123,7 +123,6 @@ function AddressLine1({
           value={value}
           element={element}
           applyStyles={applyStyles}
-          type='textarea'
         />
         <InlineTooltip element={element} applyStyles={applyStyles} />
       </div>
