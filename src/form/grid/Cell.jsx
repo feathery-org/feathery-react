@@ -207,29 +207,28 @@ const Cell = ({ node: el, form }) => {
           <Elements.ButtonGroupField
             {...fieldProps}
             fieldVal={fieldVal}
-            onClick={(e) => {
-              const newVal = e.target.textContent;
+            onClick={(option) => {
               const {
                 metadata: { multiple },
                 required
               } = fieldProps.element.servar;
               if (multiple) {
-                const existingIndex = fieldVal.indexOf(newVal);
+                const existingIndex = fieldVal.indexOf(option);
                 if (existingIndex === -1) {
-                  changeValue([...fieldVal, newVal], el, index);
+                  changeValue([...fieldVal, option], el, index);
                 } else {
                   changeValue(justRemove(fieldVal, existingIndex), el, index);
                 }
               } else {
                 changeValue(
                   // Allow de-selection if field is optional
-                  !required && fieldVal[0] === newVal ? [] : [newVal],
+                  !required && fieldVal[0] === option ? [] : [option],
                   el,
                   index
                 );
               }
               onChange();
-              onClick(e, el.properties.submit_trigger === 'auto');
+              onClick(null, el.properties.submit_trigger === 'auto');
             }}
           />
         );

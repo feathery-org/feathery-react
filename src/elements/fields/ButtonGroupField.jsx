@@ -37,7 +37,7 @@ function ButtonGroupField({
           const imageUrl = servar.metadata.option_images[index];
           return (
             <div
-              onClick={onClick}
+              onClick={() => onClick(opt)}
               key={`${servar.key}-${index}`}
               css={{
                 boxSizing: 'border-box',
