@@ -221,7 +221,7 @@ const buildGridMap = (step) => {
 
   const addObjectsToMap = (obj, type) => {
     if (typeMap[type]) obj.type = typeMap[type];
-    if (type === 'subgrids' && obj.position.length === 0) {
+    if (type === 'subgrids' && obj?.position?.length === 0) {
       if (Array.isArray(obj.styles)) {
         obj.styles.forEach((style) => {
           const cellData = { ...style };
