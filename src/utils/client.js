@@ -6,7 +6,7 @@ import {
   initInfo,
   initState
 } from './init';
-import { dataURLToFile, isBase64PNG } from './image';
+import { dataURLToFile, isBase64Image } from './image';
 import { encodeGetParams } from './primitives';
 import {
   getABVariant,
@@ -175,7 +175,7 @@ export default class Client {
       step.servar_fields.forEach((field) => {
         const { key, repeated, type } = field.servar;
         const val = getDefaultFieldValue(field);
-        if (isBase64PNG(additionalValues[key])) {
+        if (isBase64Image(additionalValues[key])) {
           // All base64 strings need to be wrapped in a File
           additionalValues[key] = dataURLToFile(
             additionalValues[key],
