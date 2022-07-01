@@ -35,14 +35,18 @@ Object.entries(Elements).map(([key, Element]) => {
   Elements[key] = memo(
     ({ element, componentOnly = true, onView, ...props }) => {
       const applyStyles = useMemo(() => {
-        const as = new ApplyStyles(element, ['container'], !componentOnly);
+        const as = new ApplyStyles(
+          element,
+          ['container', 'containerWrapper'],
+          !componentOnly
+        );
         as.apply('container', 'vertical_layout', (a) => ({
           justifyContent: a
         }));
         as.apply('container', 'layout', (a) => ({
           alignItems: legacyAlignment(a)
         }));
-        as.applyPadding('container');
+        as.applyPadding('containerWrapper');
         if (key in Basic) as.applyVisibility('container');
         return as;
       }, [element, componentOnly]);
@@ -57,17 +61,30 @@ Object.entries(Elements).map(([key, Element]) => {
       if (componentOnly) return e;
       else {
         const containerStyles = applyStyles.getTarget('container');
+        const containerWrapperStyles = applyStyles.getTarget(
+          'containerWrapper'
+        );
 
-        const cst = { ...applyStyles.getTarget('container') };
-        delete cst.padding;
+        const containerCSS = {
+          ...containerStyles,
+          [mobileBreakpointKey]: {
+            ...containerStyles[mobileBreakpointKey]
+          }
+        };
+
+        const containerWrapperCSS = {
+          ...containerWrapperStyles,
+          [mobileBreakpointKey]: {
+            ...containerWrapperStyles[mobileBreakpointKey]
+          }
+        };
 
         return (
           <div
-            className='exp-padding'
-            style={{
+            css={{
               display: 'flex',
               flexGrow: 1,
-              padding: applyStyles.getTarget('container').padding
+              ...containerWrapperCSS
             }}
           >
             <div
@@ -76,11 +93,7 @@ Object.entries(Elements).map(([key, Element]) => {
                 flexDirection: 'column',
                 width: '100%',
                 height: '100%',
-                ...cst,
-                // ...containerStyles,
-                [mobileBreakpointKey]: {
-                  ...containerStyles[mobileBreakpointKey]
-                }
+                ...containerCSS
               }}
             >
               {e}
