@@ -11,7 +11,6 @@ let initFormsPromise = Promise.resolve();
 const defaultClient = new Client();
 const defaultOptions = {
   userKey: null,
-  formKeys: [],
   tracking: 'cookie'
 };
 const initState = {
@@ -34,10 +33,9 @@ const fieldValues = {};
 const filePathMap = {};
 
 function init(apiKey, options = {}) {
-  // TODO: deprecate legacy formKeys option
-  options.formKeys = options.formKeys ?? options.forms;
-
   options = { ...defaultOptions, ...options };
+  // TODO: deprecate legacy formKeys option
+  options.forms = options.formKeys ?? options.forms ?? [];
 
   if (initState.initialized) return; // can only be initialized one time per load
   initState.initialized = true;
@@ -86,9 +84,7 @@ function init(apiKey, options = {}) {
       })
     );
   }
-  initFormsPromise = initFormsPromise.then(() =>
-    _fetchFormData(options.formKeys)
-  );
+  initFormsPromise = initFormsPromise.then(() => _fetchFormData(options.forms));
   return initFormsPromise;
 }
 
