@@ -288,7 +288,6 @@ function Form({
         (f) => f.servar.type === 'gmap_line_1' && fieldValues[f.servar.key]
       )
     );
-    callbackRef.current = new CallbackQueue(activeStep, setLoaders);
   }, [activeStep?.id]);
 
   const scrollToRef = (ref) =>
@@ -467,6 +466,7 @@ function Form({
   const updateNewStep = (newStep) => {
     clearLoaders();
     setRawActiveStep(newStep);
+    callbackRef.current = new CallbackQueue(newStep, setLoaders);
     client.registerEvent({ step_key: newStep.key, event: 'load' });
   };
 
