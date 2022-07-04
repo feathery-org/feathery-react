@@ -33,10 +33,12 @@ import {
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
+import { googleOauthRedirect, sendMagicLink } from '../integrations/stytch';
 import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
 import {
   LINK_ADD_REPEATED_ROW,
   LINK_CUSTOM,
+  LINK_GOOGLE_OAUTH,
   LINK_REMOVE_REPEATED_ROW,
   LINK_SEND_SMS,
   LINK_SKIP,
@@ -480,6 +482,9 @@ function Form({
         const notAuth =
           cond.rules.find((r) => r.comparison === 'not_authenticated') &&
           !initState.authId &&
+          // Re: firebaseConfirmationResult, the user hasn't authenticated yet
+          // but they're in the process of doing so and we don't want to
+          // consider them "unauthenticated" for the purposes of redirecting
           !window.firebaseConfirmationResult;
         const auth =
           cond.rules.find((r) => r.comparison === 'authenticated') &&
@@ -946,22 +951,28 @@ function Form({
     }
   };
 
-  async function handleActions(setLoader) {
+  function handleActions(setLoader) {
     for (let i = 0; i < activeStep.servar_fields.length; i++) {
       const servar = activeStep.servar_fields[i].servar;
       const fieldVal = fieldValues[servar.key];
       if (servar.type === 'login') {
         setLoader();
-        return await sendLoginCode(fieldVal, servar);
+        // Unless we want to do something more complex here we need to make a
+        // choice and can't just return both. Prioritize stytch
+        if (integrations.stytch) {
+          return sendMagicLink(fieldVal);
+        } else {
+          return sendLoginCode(fieldVal, servar);
+        }
       } else if (
         servar.type === 'pin_input' &&
         servar.metadata.verify_sms_code
       ) {
         setLoader();
-        return await verifySMSCode(fieldVal, servar, client);
+        return verifySMSCode(fieldVal, servar, client);
       }
     }
-    return {};
+    return Promise.resolve({});
   }
 
   function handleSubmitRedirect({
@@ -1173,6 +1184,8 @@ function Form({
             )
         )
         .then(() => clearLoaders());
+    } else if (link === LINK_GOOGLE_OAUTH) {
+      clickPromise = googleOauthRedirect();
     } else if ([LINK_SUBMIT, LINK_SKIP].includes(link)) {
       clickPromise = buttonOnSubmit(link === LINK_SUBMIT, button);
     }

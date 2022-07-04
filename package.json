@@ -1,10 +1,9 @@
 {
   "name": "@feathery/react",
-  "version": "1.0.417",
+  "version": "1.0.418",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
-  "repository": "https://github.com/feathery-org/feathery-react",
   "main": "dist/index.js",
   "jsdelivr": "umd/index.js",
   "engines": {

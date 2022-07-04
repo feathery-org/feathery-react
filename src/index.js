@@ -7,7 +7,9 @@ import {
   updateUserKey,
   setValues,
   validateStep,
-  fieldValues
+  fieldValues,
+  setAuthClient,
+  getAuthClient
 } from './utils/init';
 
 function getAllValues() {
@@ -34,6 +36,8 @@ const Feathery = {
   validateStep,
   setValues,
   getAllValues,
+  setAuthClient,
+  getAuthClient,
   renderAt
 };
 
@@ -45,6 +49,8 @@ export {
   validateStep,
   setValues,
   getAllValues,
+  setAuthClient,
+  getAuthClient,
   renderAt,
   Feathery
 };

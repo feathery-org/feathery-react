@@ -1,6 +1,7 @@
 import { installPlaid } from './plaid';
-import { emailLogin, installFirebase } from './firebase';
+import { installFirebase, emailLogin as emailLoginFirebase } from './firebase';
 import { initializeTagManager } from './googleTagManager';
+import { installStytch, emailLogin as emailLoginStytch } from './stytch';
 
 export function dynamicImport(dependency, async = true, index = 0) {
   if (async) {
@@ -18,16 +19,21 @@ export function dynamicImport(dependency, async = true, index = 0) {
   }
 }
 
-export async function initializeIntegrations(integrations, clientArg, init) {
+export async function initializeIntegrations(integrations, clientArg) {
   const gtm = integrations['google-tag-manager'];
   const fb = integrations.firebase;
   const plaid = integrations.plaid;
+  const stytch = integrations.stytch;
 
-  const [, firebase] = await Promise.all([
+  await Promise.all([
     installPlaid(!!plaid),
-    installFirebase(fb)
+    installFirebase(fb),
+    installStytch(stytch)
   ]);
 
   if (gtm) initializeTagManager(gtm);
-  if (fb && !init) emailLogin(fb, firebase, clientArg);
+  // Unless we want to do something more complex here we need to make a
+  // choice and can't just return both. Prioritize stytch
+  if (stytch) return await emailLoginStytch(clientArg);
+  if (fb) return await emailLoginFirebase(clientArg);
 }

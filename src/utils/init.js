@@ -10,6 +10,7 @@ import { runningInClient } from './browser.js';
 let initFormsPromise = Promise.resolve();
 const defaultClient = new Client();
 const defaultOptions = {
+  authClient: null,
   userKey: null,
   tracking: 'cookie'
 };
@@ -48,11 +49,16 @@ function init(apiKey, options = {}) {
   }
 
   initState.apiKey = apiKey;
-  ['authId', 'authEmail', 'authPhoneNumber', 'userKey', 'tracking'].forEach(
-    (key) => {
-      if (options[key]) initState[key] = options[key];
-    }
-  );
+  [
+    'authClient',
+    'authId',
+    'authEmail',
+    'authPhoneNumber',
+    'userKey',
+    'tracking'
+  ].forEach((key) => {
+    if (options[key]) initState[key] = options[key];
+  });
 
   // dynamically load libraries that must be client side only for NextJs support
   if (runningInClient()) {
@@ -152,6 +158,14 @@ function validateStep(formKey, trigger = true) {
   return callback(trigger);
 }
 
+function setAuthClient(client) {
+  initState.authClient = client;
+}
+
+function getAuthClient() {
+  return initState.authClient;
+}
+
 export {
   init,
   initInfo,
@@ -161,5 +175,7 @@ export {
   initState,
   initFormsPromise,
   fieldValues,
-  filePathMap
+  filePathMap,
+  getAuthClient,
+  setAuthClient
 };
