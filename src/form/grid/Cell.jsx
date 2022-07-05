@@ -164,7 +164,6 @@ const Cell = ({ node: el, form }) => {
       onView
     };
 
-    let changeHandler;
     switch (servar.type) {
       case 'signature':
         return (
@@ -267,13 +266,13 @@ const Cell = ({ node: el, form }) => {
             fieldVal={fieldVal}
             onClick={onClick}
             onChange={(val) => {
-              changeValue(val, el, index, false);
-              onChange({
-                submitData:
-                  el.properties.submit_trigger === 'auto' &&
-                  val.length === el.servar.max_length
-              });
-              onChange();
+              const change = changeValue(val, el, index, false);
+              if (change)
+                onChange({
+                  submitData:
+                    el.properties.submit_trigger === 'auto' &&
+                    val.length === el.servar.max_length
+                });
             }}
             shouldFocus
           />
@@ -296,44 +295,39 @@ const Cell = ({ node: el, form }) => {
           />
         );
       case 'select':
-        changeHandler = (e, change = true) => {
-          const val = e.target.value;
-          if (change) changeValue(val, el, index);
-          onChange({
-            submitData: el.properties.submit_trigger === 'auto' && val
-          });
-        };
         return (
           <Elements.RadioButtonGroupField
             {...fieldProps}
             fieldVal={fieldVal}
             otherVal={otherVal}
-            onChange={changeHandler}
+            onChange={(e) => {
+              const val = e.target.value;
+              changeValue(val, el, index);
+              onChange({
+                submitData: el.properties.submit_trigger === 'auto' && val
+              });
+            }}
             onOtherChange={(e) => {
               handleOtherStateChange(otherVal)(e);
-              changeHandler(e, false);
+              onChange({
+                submitData:
+                  el.properties.submit_trigger === 'auto' && e.target.value
+              });
             }}
             onClick={onClick}
           />
         );
       case 'hex_color':
-        changeHandler = (color) => {
-          activeStep.servar_fields.forEach((field) => {
-            const iterServar = field.servar;
-            if (iterServar.key !== servar.key) return;
-            updateFieldValues({
-              [iterServar.key]: color
-            });
-          });
-          onChange({
-            submitData: el.properties.submit_trigger === 'auto' && color
-          });
-        };
         return (
           <Elements.ColorPickerField
             {...fieldProps}
             fieldVal={fieldVal}
-            onChange={changeHandler}
+            onChange={(color) => {
+              changeValue(color, el, index);
+              onChange({
+                submitData: el.properties.submit_trigger === 'auto' && color
+              });
+            }}
             onClick={onClick}
           />
         );
