@@ -323,9 +323,6 @@ function Form({
   );
 
   function addRepeatedRow() {
-    // if (isNaN(activeStep.repeat_row_start) || isNaN(activeStep.repeat_row_end))
-    //   return;
-
     // Collect a list of all repeated elements
     const repeatedServarFields = rawActiveStep.servar_fields.filter(
       (field) => field.servar.repeated
