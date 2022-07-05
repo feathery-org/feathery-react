@@ -464,8 +464,11 @@ function Form({
 
   const updateNewStep = (newStep) => {
     clearLoaders();
-    setRawActiveStep(newStep);
     callbackRef.current = new CallbackQueue(newStep, setLoaders);
+    // setRawActiveStep, apparently, must go after setting the callbackRef
+    // because it triggers a new render, before this fn finishes execution,
+    // which can cause onView to fire before the callbackRef is set
+    setRawActiveStep(newStep);
     client.registerEvent({ step_key: newStep.key, event: 'load' });
   };
 
