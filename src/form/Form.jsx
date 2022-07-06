@@ -1200,7 +1200,7 @@ function Form({
     // Multi-file upload is not a repeated row but a repeated field
     valueRepeatIndex = null
   } = {}) => {
-    if (trigger === 'googleMaps') {
+    if (trigger === 'addressSelect') {
       setGMapFilled(true);
       fieldKeys.forEach((fieldKey) => {
         setFormElementError({

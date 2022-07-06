@@ -385,7 +385,7 @@ const Cell = ({ node: el, form }) => {
                   fieldIDs: Object.values(keyIDMap),
                   fieldKeys: Object.keys(keyIDMap)
                 })({
-                  trigger: 'googleMaps',
+                  trigger: 'addressSelect',
                   integrationData: address.address_components
                 });
               }
