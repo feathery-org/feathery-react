@@ -384,7 +384,10 @@ const Cell = ({ node: el, form }) => {
                 fieldOnChange({
                   fieldIDs: Object.values(keyIDMap),
                   fieldKeys: Object.keys(keyIDMap)
-                })({ trigger: 'googleMaps' });
+                })({
+                  trigger: 'googleMaps',
+                  integrationData: address.address_components
+                });
               }
             }}
             setRef={(ref) => {
