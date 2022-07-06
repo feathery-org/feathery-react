@@ -1196,6 +1196,7 @@ function Form({
   const fieldOnChange = ({ fieldIDs, fieldKeys, elementRepeatIndex = 0 }) => ({
     trigger = 'field',
     submitData = false,
+    integrationData = {},
     // Multi-file upload is not a repeated row but a repeated field
     valueRepeatIndex = null
   } = {}) => {
@@ -1218,7 +1219,7 @@ function Form({
         runUserCallback(onChange, {
           changeKeys: fieldKeys,
           trigger,
-          integrationData: {},
+          integrationData,
           fields: formattedFields,
           lastStep: activeStep.next_conditions.length === 0,
           elementRepeatIndex,
