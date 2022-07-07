@@ -19,7 +19,9 @@ export function installStytch(stytchConfig) {
         // Bring in stytch dependencies dynamically if this form uses stytch
         return dynamicImport(['https://js.stytch.com/stytch.js'], false).then(
           () => {
-            const initializedClient = global.Stytch(stytchConfig.api_key);
+            const initializedClient = global.Stytch(
+              stytchConfig.metadata.token
+            );
             setAuthClient(initializedClient);
             resolve(initializedClient);
           }
@@ -32,9 +34,9 @@ export function installStytch(stytchConfig) {
 
 export async function sendMagicLink(fieldVal) {
   return getAuthClient().magicLinks.email.loginOrCreate(fieldVal, {
-    login_magic_link_url: config.metadata.login_link,
+    login_magic_link_url: window.location.href,
+    signup_magic_link_url: window.location.href,
     login_expiration_minutes: config.metadata.login_expiration,
-    signup_magic_link_url: config.metadata.signup_link,
     signup_expiration_minutes: config.metadata.signup_expiration
   });
 }
@@ -79,7 +81,7 @@ export function googleOauthRedirect() {
   if (!client) return;
 
   window.location.href = client.oauth.google.start({
-    login_redirect_url: config.metadata.login_link,
-    signup_redirect_url: config.metadata.signup_link
+    login_redirect_url: window.location.href,
+    signup_redirect_url: window.location.href
   });
 }
