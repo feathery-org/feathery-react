@@ -12,6 +12,7 @@ const LINK_URL = 'url';
 const LINK_ADD_REPEATED_ROW = 'add_repeated_row';
 const LINK_REMOVE_REPEATED_ROW = 'remove_repeated_row';
 const LINK_SEND_SMS = 'send_sms_code';
+const LINK_SEND_MAGIC_LINK = 'send_magic_link';
 const LINK_TRIGGER_PLAID = 'trigger_plaid';
 const LINK_GOOGLE_OAUTH = 'trigger_google_oauth';
 
@@ -183,6 +184,7 @@ export {
   LINK_ADD_REPEATED_ROW,
   LINK_REMOVE_REPEATED_ROW,
   LINK_SEND_SMS,
+  LINK_SEND_MAGIC_LINK,
   LINK_TRIGGER_PLAID,
   LINK_GOOGLE_OAUTH
 };

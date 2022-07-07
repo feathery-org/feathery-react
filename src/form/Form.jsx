@@ -41,6 +41,7 @@ import {
   LINK_GOOGLE_OAUTH,
   LINK_REMOVE_REPEATED_ROW,
   LINK_SEND_SMS,
+  LINK_SEND_MAGIC_LINK,
   LINK_SKIP,
   LINK_SUBMIT,
   LINK_TRIGGER_PLAID,
@@ -1175,13 +1176,18 @@ function Form({
       }
     } else if (link === LINK_SEND_SMS) {
       clickPromise = setButtonLoader(button)
-        .then(
-          async () =>
-            await sendLoginCode(
-              fieldValues[button.properties.sms_code_field_key],
-              null,
-              ['phone']
-            )
+        .then(() =>
+          sendLoginCode(
+            fieldValues[button.properties.auth_target_field_key],
+            null,
+            ['phone']
+          )
+        )
+        .then(() => clearLoaders());
+    } else if (link === LINK_SEND_MAGIC_LINK) {
+      clickPromise = setButtonLoader(button)
+        .then(() =>
+          sendMagicLink(fieldValues[button.properties.auth_target_field_key])
         )
         .then(() => clearLoaders());
     } else if (link === LINK_GOOGLE_OAUTH) {
