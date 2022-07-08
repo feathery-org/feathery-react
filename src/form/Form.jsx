@@ -73,6 +73,7 @@ function Form({
   formName: _formName,
   onChange = null,
   onLoad = null,
+  onFormComplete = null,
   onSubmit = null,
   onSkip = null,
   onError = null,
@@ -674,16 +675,24 @@ function Form({
     if (stepKey) getNewStep(stepKey);
   }, [stepKey]);
 
+  useEffect(() => {
+    if (!finished) return;
+    const redirectForm = () => {
+      if (formSettings.redirectUrl) {
+        hasRedirected.current = true;
+        window.location.href = formSettings.redirectUrl;
+      }
+    };
+    if (typeof onFormComplete === 'function') {
+      runUserCallback(onFormComplete).then(redirectForm);
+    } else {
+      redirectForm();
+    }
+  }, [finished]);
+
   if (!activeStep) {
     if (formSettings.formOff) return <FormOff />;
     else return null;
-  }
-  if (finished) {
-    if (formSettings.redirectUrl) {
-      hasRedirected.current = true;
-      window.location.href = formSettings.redirectUrl;
-    }
-    return null;
   }
 
   // Note: If index is provided, handleChange assumes the field is a repeated field
