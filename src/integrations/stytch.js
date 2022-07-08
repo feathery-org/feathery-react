@@ -2,6 +2,8 @@ import { getStytchJwt } from '../utils/browser';
 import { getAuthClient, setAuthClient } from '../utils/init';
 import { dynamicImport } from './utils';
 
+const STYTCH_JS_URL = 'https://js.stytch.com/stytch.js';
+
 let stytchPromise = null;
 let config = null;
 // This guard prevents a second auth attempt to stytch if the form is preloaded
@@ -17,15 +19,20 @@ export function installStytch(stytchConfig) {
       if (stytchClient) resolve(stytchClient);
       else {
         // Bring in stytch dependencies dynamically if this form uses stytch
-        return dynamicImport(['https://js.stytch.com/stytch.js'], false).then(
-          () => {
-            const initializedClient = global.Stytch(
-              stytchConfig.metadata.token
-            );
-            setAuthClient(initializedClient);
-            resolve(initializedClient);
-          }
-        );
+        // When calling `await loadStytch()` with the JS SDK it does this script
+        // check internally. If that loads first and then we do a dynamic import
+        // it causes an error, so don't dynamic import if the script is already
+        // set
+        const isStytchImported = document.querySelectorAll(
+          `script[src="${STYTCH_JS_URL}"]`
+        )[0];
+        if (isStytchImported) return Promise.resolve();
+
+        return dynamicImport([STYTCH_JS_URL], false).then(() => {
+          const initializedClient = global.Stytch(stytchConfig.metadata.token);
+          setAuthClient(initializedClient);
+          resolve(initializedClient);
+        });
       }
     });
     return stytchPromise;
@@ -80,7 +87,7 @@ export function googleOauthRedirect() {
   const client = getAuthClient();
   if (!client) return;
 
-  window.location.href = client.oauth.google.start({
+  client.oauth.google.start({
     login_redirect_url: window.location.href,
     signup_redirect_url: window.location.href
   });
