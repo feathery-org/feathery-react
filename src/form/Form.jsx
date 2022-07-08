@@ -1172,7 +1172,10 @@ function Form({
         );
       }
     } else if (link === LINK_URL) {
-      openTab(button.properties.link_url);
+      const url = button.properties.link_url;
+      button.properties.link_url_open_tab
+        ? openTab(url)
+        : (location.href = url);
     } else if (link === LINK_CUSTOM) {
       if (typeof onCustomAction === 'function') {
         await runUserCallback(onCustomAction, {
