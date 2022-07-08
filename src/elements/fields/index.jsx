@@ -147,6 +147,9 @@ function applyFieldStyles(field, styles) {
       styles.applyColor('field', 'background_color', 'backgroundColor');
       if (field.properties.placeholder)
         styles.applyPlaceholderStyles(type, field.styles);
+      // Override default bootstrap styles
+      styles.applyBoxShadow('active');
+      styles.applyBorders('active');
       break;
     case 'pin_input':
       styles.applyWidth('field');
