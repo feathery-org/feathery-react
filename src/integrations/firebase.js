@@ -46,8 +46,8 @@ export function emailLogin(clientArg) {
       return global.firebase
         .auth()
         .signInWithEmailLink(authEmail, window.location.href)
-        .then(async (result) => {
-          return await clientArg
+        .then((result) => {
+          return clientArg
             .submitAuthInfo({
               authId: result.user.uid,
               authEmail
