@@ -295,6 +295,9 @@ class ApplyStyles {
         'mobile_'
       );
     }
+    if (!('letterSpacing' in fontStyles)) fontStyles.letterSpacing = 'normal';
+    if (!('textTransform' in fontStyles)) fontStyles.textTransform = 'none';
+
     return fontStyles;
   }
 
@@ -311,9 +314,9 @@ class ApplyStyles {
     if (attr) styles.fontWeight = attr;
     if (attrs[`${p}font_italic`]) styles.fontStyle = 'italic';
     attr = attrs[`${p}text_transform`];
-    styles.textTransform = attr || 'none';
+    if (attr) styles.textTransform = attr;
     attr = attrs[`${p}letter_spacing`];
-    styles.letterSpacing = isNum(attr) ? `${attr}px` : 'normal';
+    if (isNum(attr)) styles.letterSpacing = `${attr}px`;
 
     const lines = [];
     if (attrs[`${p}font_strike`]) lines.push('line-through');
