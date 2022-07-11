@@ -186,29 +186,9 @@ function applyFieldStyles(field, styles) {
       styles.applyCorners('field');
       styles.applyBorders('field');
       break;
-    case 'checkbox':
-      /**
-       * NOTE:
-       * This is overriding the default case below to fix a bug
-       * where the width of the field (container around the
-       * checkbox) was not containing the width of the checkbox.
-       */
-      styles.addTargets('sub-fc', 'tooltipIcon');
-      styles.applyHeight('sub-fc');
-      styles.applyBoxShadow('field');
-      styles.applyCorners('field');
-      styles.applyBorders('field');
-      styles.applyFontStyles('field');
-      styles.applyColor('field', 'background_color', 'backgroundColor');
-      if (field.properties.placeholder)
-        styles.applyPlaceholderStyles(type, field.styles);
-      styles.apply('tooltipIcon', 'font_size', (a) => ({
-        width: `${a}px`
-      }));
-      break;
     default:
       styles.addTargets('sub-fc', 'tooltipIcon');
-      styles.applyWidth('fc');
+      if (type !== 'checkbox') styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
