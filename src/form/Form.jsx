@@ -665,7 +665,12 @@ function Form({
   useEffect(() => {
     return steps
       ? history.listen(async () => {
-          const hashKey = decodeURI(location.hash.substr(1));
+          let hashKey;
+          try {
+            hashKey = decodeURI(location.hash.substr(1));
+          } catch (e) {
+            console.log(e);
+          }
           if (hashKey in steps) setStepKey(hashKey);
         })
       : undefined;
