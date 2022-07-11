@@ -186,6 +186,20 @@ function applyFieldStyles(field, styles) {
       styles.applyCorners('field');
       styles.applyBorders('field');
       break;
+    case 'checkbox':
+      styles.addTargets('sub-fc', 'tooltipIcon');
+      styles.applyHeight('sub-fc');
+      styles.applyBoxShadow('field');
+      styles.applyCorners('field');
+      styles.applyBorders('field');
+      styles.applyFontStyles('field');
+      styles.applyColor('field', 'background_color', 'backgroundColor');
+      if (field.properties.placeholder)
+        styles.applyPlaceholderStyles(type, field.styles);
+      styles.apply('tooltipIcon', 'font_size', (a) => ({
+        width: `${a}px`
+      }));
+      break;
     default:
       styles.addTargets('sub-fc', 'tooltipIcon');
       styles.applyWidth('fc');
