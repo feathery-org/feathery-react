@@ -187,6 +187,12 @@ function applyFieldStyles(field, styles) {
       styles.applyBorders('field');
       break;
     case 'checkbox':
+      /**
+       * NOTE:
+       * This is overriding the default case below to fix a bug
+       * where the width of the field (container around the
+       * checkbox) was not containing the width of the checkbox.
+       */
       styles.addTargets('sub-fc', 'tooltipIcon');
       styles.applyHeight('sub-fc');
       styles.applyBoxShadow('field');
