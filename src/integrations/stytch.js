@@ -11,7 +11,8 @@ let authSent = false;
 
 export function installStytch(stytchConfig) {
   if (stytchPromise) return stytchPromise;
-  else if (!stytchConfig) return Promise.resolve();
+  else if (!stytchConfig || stytchConfig.metadata.token === '')
+    return Promise.resolve();
   else {
     config = stytchConfig;
     stytchPromise = new Promise((resolve) => {
@@ -81,7 +82,8 @@ export function emailLogin(featheryClient) {
       return featheryClient
         .submitAuthInfo({
           authId: result.user.user_id,
-          authEmail: result.user.emails[0].email
+          authEmail: result.user.emails[0].email,
+          is_stytch_template_key: config.is_stytch_template_key
         })
         .then((session) => session);
     })
