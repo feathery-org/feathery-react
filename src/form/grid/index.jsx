@@ -76,6 +76,7 @@ const getCellStyle = (cell) => {
   const applyStyles = new ApplyStyles(cell, ['cell']);
   applyStyles.applyBorders('cell');
   applyStyles.applyCorners('cell');
+  applyStyles.applyBackgroundImageStyles('cell');
   applyStyles.apply('cell', 'background_color', (c) => ({
     backgroundColor: `#${c}`
   }));
