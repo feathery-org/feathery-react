@@ -78,7 +78,8 @@ export default class Client {
       .catch((e) => {
         // Ignore TypeErrors if form has redirected because `fetch` in
         // Safari will error after redirect
-        if (!this.ignoreNetworkErrors && e instanceof TypeError) throw e;
+        if (this.ignoreNetworkErrors && e instanceof TypeError) return;
+        throw e;
       });
   }
 
