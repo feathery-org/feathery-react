@@ -37,3 +37,19 @@ export async function initializeIntegrations(integrations, clientArg) {
   if (stytch) return await emailLoginStytch(clientArg);
   if (fb) return await emailLoginFirebase(clientArg);
 }
+
+export function transformUrlToQueryParams() {
+  const { pathname, origin } = window.location;
+
+  const queryParams = new URLSearchParams();
+  if (pathname !== '/') queryParams.set('redirect', pathname);
+  return `${origin}?${queryParams.toString()}`;
+}
+
+export function transformQueryParamsToUrl() {
+  const { origin, search } = window.location;
+
+  const queryParams = new URLSearchParams(search);
+  const redirect = queryParams.get('redirect');
+  return `${origin}${redirect ?? ''}`;
+}
