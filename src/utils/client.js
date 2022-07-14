@@ -231,7 +231,7 @@ export default class Client {
       });
     }
     // Load user-uploaded fonts
-    Object.entries(res.uploaded_fonts).forEach((family, fontStyles) => {
+    Object.entries(res.uploaded_fonts).forEach(([family, fontStyles]) => {
       fontStyles.forEach(({ source, style, weight }) =>
         new FontFace(family, `url(${source})`, { style, weight })
           .load()
