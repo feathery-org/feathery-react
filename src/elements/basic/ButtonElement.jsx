@@ -35,6 +35,7 @@ function applyButtonStyles(element, applyStyles) {
     'button',
     'buttonActive',
     'buttonHover',
+    'buttonDisabled',
     'loader',
     'img'
   );
@@ -65,7 +66,7 @@ function applyButtonStyles(element, applyStyles) {
   applyStyles.applyBorders('buttonHover', 'hover_');
   if (element.properties.link !== LINK_NONE) {
     applyStyles.apply('buttonHover', 'background_color', (a) => {
-      const color = `${adjustColor(a, -30)} !important`;
+      const color = `${adjustColor(a, -45)} !important`;
       return {
         backgroundColor: color,
         borderColor: color,
@@ -78,13 +79,20 @@ function applyButtonStyles(element, applyStyles) {
       backgroundColor: `#${a} !important`
     }));
   }
-
   applyStyles.applyBorders('buttonActive', 'selected_');
   if (element.styles.selected_background_color) {
     applyStyles.apply('buttonHover', 'selected_background_color', (a) => ({
       backgroundColor: `#${a} !important`
     }));
   }
+  applyStyles.apply('buttonDisabled', 'background_color', (a) => {
+    const color = `${adjustColor(a, 45)} !important`;
+    return {
+      backgroundColor: color,
+      borderColor: color,
+      transition: 'background 0.3s !important'
+    };
+  });
 
   applyStyles.apply('loader', ['height', 'height_unit'], (a, b) => {
     const thirdHeight = Math.round(a / 3);
@@ -102,6 +110,7 @@ function ButtonElement({
   loader = null,
   editable = false,
   focused = false,
+  disabled = false,
   textCallbacks = {},
   handleRedirect = () => {},
   onClick = () => {},
@@ -129,7 +138,10 @@ function ButtonElement({
       css={{
         justifyContent: 'center',
         alignItems: 'center',
-        '&:disabled': { cursor: 'default !important' },
+        '&:disabled': {
+          cursor: 'default !important',
+          ...styles.getTarget('buttonDisabled')
+        },
         '&:active:not(:disabled):not(.disabled)': editable
           ? styles.getTarget('button')
           : styles.getTarget('buttonActive'),
@@ -138,7 +150,7 @@ function ButtonElement({
           : styles.getTarget('buttonHover'),
         '&&': styles.getTarget('button')
       }}
-      disabled={element.properties.link === LINK_NONE || loader}
+      disabled={element.properties.link === LINK_NONE || loader || disabled}
       onClick={onClick}
       {...elementProps}
     >

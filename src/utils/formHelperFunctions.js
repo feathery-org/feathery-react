@@ -249,11 +249,7 @@ function updateSessionValues(session) {
   Object.assign(filePathMap, newFilePathMap);
 }
 
-/**
- * Returns the error message for a field value if it's invalid.
- * Returns an empty string if it's valid.
- */
-function getFieldError(value, servar) {
+function isFieldValueEmpty(value, servar) {
   let noVal;
   switch (servar.type) {
     case 'select':
@@ -272,7 +268,15 @@ function getFieldError(value, servar) {
       noVal = value === '';
       break;
   }
-  if (noVal) {
+  return noVal;
+}
+
+/**
+ * Returns the error message for a field value if it's invalid.
+ * Returns an empty string if it's valid.
+ */
+function getFieldError(value, servar) {
+  if (isFieldValueEmpty(value, servar)) {
     // If no value, error if field is required
     return servar.required ? 'This is a required field' : '';
   }
@@ -449,8 +453,8 @@ function textFieldShouldSubmit(servar, value) {
 // To determine if a field should actually be required, we need to consider the repeat_trigger config
 // If this is the trailing element in a set of repeat_trigger elements, then it shouldn't be required
 // Because we render the trailing element as a way to create a new row, NOT as a required field for the user
-function isFieldActuallyRequired(field, repeatTriggerExists, lastRepeat) {
-  const isTrailingRepeatField = repeatTriggerExists && lastRepeat;
+function isFieldActuallyRequired(field, repeatTriggerExists) {
+  const isTrailingRepeatField = repeatTriggerExists && field.lastRepeat;
   return field.servar.required && !isTrailingRepeatField;
 }
 
@@ -491,6 +495,7 @@ export {
   fetchS3File,
   textFieldShouldSubmit,
   isFieldActuallyRequired,
+  isFieldValueEmpty,
   phonePattern,
   emailPattern,
   emailPatternStr
