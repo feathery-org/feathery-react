@@ -78,7 +78,8 @@ export default class Client {
       .catch((e) => {
         // Ignore TypeErrors if form has redirected because `fetch` in
         // Safari will error after redirect
-        if (!this.ignoreNetworkErrors && e instanceof TypeError) throw e;
+        if (this.ignoreNetworkErrors && e instanceof TypeError) return;
+        throw e;
       });
   }
 
@@ -230,7 +231,7 @@ export default class Client {
       });
     }
     // Load user-uploaded fonts
-    Object.entries(res.uploaded_fonts).forEach((family, fontStyles) => {
+    Object.entries(res.uploaded_fonts).forEach(([family, fontStyles]) => {
       fontStyles.forEach(({ source, style, weight }) =>
         new FontFace(family, `url(${source})`, { style, weight })
           .load()

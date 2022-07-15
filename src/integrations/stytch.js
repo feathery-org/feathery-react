@@ -1,6 +1,10 @@
 import { getStytchJwt } from '../utils/browser';
 import { getAuthClient, setAuthClient } from '../utils/init';
-import { dynamicImport } from './utils';
+import {
+  dynamicImport,
+  transformUrlToQueryParams,
+  transformQueryParamsToUrl
+} from './utils';
 
 const STYTCH_JS_URL = 'https://js.stytch.com/stytch.js';
 
@@ -11,7 +15,8 @@ let authSent = false;
 
 export function installStytch(stytchConfig) {
   if (stytchPromise) return stytchPromise;
-  else if (!stytchConfig) return Promise.resolve();
+  else if (!stytchConfig || stytchConfig.metadata.token === '')
+    return Promise.resolve();
   else {
     config = stytchConfig;
     stytchPromise = new Promise((resolve) => {
@@ -26,7 +31,7 @@ export function installStytch(stytchConfig) {
         const isStytchImported = document.querySelectorAll(
           `script[src="${STYTCH_JS_URL}"]`
         )[0];
-        if (isStytchImported) return Promise.resolve();
+        if (isStytchImported) return resolve();
 
         return dynamicImport([STYTCH_JS_URL], false).then(() => {
           const initializedClient = global.Stytch(stytchConfig.metadata.token);
@@ -43,9 +48,11 @@ export function sendMagicLink(fieldVal) {
   const client = getAuthClient();
   if (!client) return;
 
+  const redirectUrl = transformUrlToQueryParams();
+
   return client.magicLinks.email.loginOrCreate(fieldVal, {
-    login_magic_link_url: window.location.href,
-    signup_magic_link_url: window.location.href,
+    login_magic_link_url: redirectUrl,
+    signup_magic_link_url: redirectUrl,
     login_expiration_minutes: config.metadata.login_expiration,
     signup_expiration_minutes: config.metadata.signup_expiration
   });
@@ -53,10 +60,9 @@ export function sendMagicLink(fieldVal) {
 
 export function emailLogin(featheryClient) {
   const jwt = getStytchJwt(false);
-  const type = new URLSearchParams(window.location.search).get(
-    'stytch_token_type'
-  );
-  const token = new URLSearchParams(window.location.search).get('token');
+  const queryParams = new URLSearchParams(window.location.search);
+  const type = queryParams.get('stytch_token_type');
+  const token = queryParams.get('token');
   const stytchClient = getAuthClient();
   // if jwt already exists, but stytch token still in URL params, then don't try
   // to auth again as it will fail due to the info already being used to login
@@ -81,9 +87,13 @@ export function emailLogin(featheryClient) {
       return featheryClient
         .submitAuthInfo({
           authId: result.user.user_id,
-          authEmail: result.user.emails[0].email
+          authEmail: result.user.emails[0].email,
+          is_stytch_template_key: config.is_stytch_template_key
         })
-        .then((session) => session);
+        .then((session) => {
+          window.location.href = transformQueryParamsToUrl();
+          return session;
+        });
     })
     .catch((e) =>
       console.log('Auth failed. Probably because your magic link expired.', e)
@@ -94,8 +104,10 @@ export function googleOauthRedirect() {
   const client = getAuthClient();
   if (!client) return;
 
+  const redirectUrl = transformUrlToQueryParams();
+
   client.oauth.google.start({
-    login_redirect_url: window.location.href,
-    signup_redirect_url: window.location.href
+    login_redirect_url: redirectUrl,
+    signup_redirect_url: redirectUrl
   });
 }

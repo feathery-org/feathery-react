@@ -40,7 +40,7 @@ export function installFirebase(firebaseConfig) {
 }
 
 export function emailLogin(clientArg) {
-  if (global.firebase.auth().isSignInWithEmailLink(window.location.href)) {
+  if (global.firebase?.auth().isSignInWithEmailLink(window.location.href)) {
     const authEmail = window.localStorage.getItem('featheryFirebaseEmail');
     if (authEmail) {
       return global.firebase
