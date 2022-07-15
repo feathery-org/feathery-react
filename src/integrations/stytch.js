@@ -1,4 +1,3 @@
-import { getStytchJwt } from '../utils/browser';
 import { getAuthClient, setAuthClient } from '../utils/init';
 import {
   dynamicImport,
@@ -59,17 +58,63 @@ export function sendMagicLink(fieldVal) {
 }
 
 export function emailLogin(featheryClient) {
-  const jwt = getStytchJwt(false);
+  const stytchClient = getAuthClient();
+  // If there is no auth client, no config or auth has already been sent, then return early
+  if (!stytchClient || !config || authSent) return;
+
+  const stytchSession = stytchClient.session.getSync();
   const queryParams = new URLSearchParams(window.location.search);
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
-  const stytchClient = getAuthClient();
-  // if jwt already exists, but stytch token still in URL params, then don't try
-  // to auth again as it will fail due to the info already being used to login
-  if (jwt || authSent || !stytchClient || !type || !token || !config) return;
 
+  // Flag so that we don't attempt auth again after, if it was successful
   authSent = true;
 
+  // If there is an existing Stytch session when a user returns to an embedded
+  // Feathery form, we need to update the auth info from Feathery's side
+  if (stytchSession) return featherySubmitAuthInfo(featheryClient);
+  // If there is no existing Stytch session & the stytch query params are
+  // present, then attempt auth. If the Stytch query params exist, but a
+  // session also exists, then we don't want to execute stytch auth again as
+  // it will fail due to the token query param already being used
+  else if (!stytchSession && validateStytchQueryParams({ token, type })) {
+    const authFn = determineAuthFn({ token, type });
+
+    return authFn()
+      .then(() =>
+        featherySubmitAuthInfo(featheryClient).then((featherySession) => {
+          const redirect = transformQueryParamsToUrl();
+          if (redirect) window.location.href = redirect;
+          return featherySession;
+        })
+      )
+      .catch((e) =>
+        console.log('Auth failed. Possibly because your magic link expired.', e)
+      );
+  }
+}
+
+function featherySubmitAuthInfo(featheryClient) {
+  const stytchClient = getAuthClient();
+  // eslint-disable-next-line camelcase
+  const authId = stytchClient.session.getSync()?.user_id;
+  const authEmail = stytchClient.user.getSync()?.emails[0].email;
+  removeStytchQueryParams();
+  return featheryClient
+    .submitAuthInfo({
+      authId,
+      authEmail,
+      is_stytch_template_key: config.is_stytch_template_key
+    })
+    .catch(() => (authSent = false));
+}
+
+function validateStytchQueryParams({ token, type }) {
+  return token && (type === 'magic_links' || type === 'oauth');
+}
+
+function determineAuthFn({ token, type }) {
+  const stytchClient = getAuthClient();
   const opts = {
     session_duration_minutes: config.metadata.session_duration
   };
@@ -79,34 +124,30 @@ export function emailLogin(featheryClient) {
   } else if (type === 'magic_links') {
     authFn = () => stytchClient.magicLinks.authenticate(token, opts);
   } else {
-    return;
+    return null;
   }
+  return authFn;
+}
 
-  return authFn()
-    .then((result) => {
-      return featheryClient
-        .submitAuthInfo({
-          authId: result.user.user_id,
-          authEmail: result.user.emails[0].email,
-          is_stytch_template_key: config.is_stytch_template_key
-        })
-        .then((session) => {
-          window.location.href = transformQueryParamsToUrl();
-          return session;
-        });
-    })
-    .catch((e) =>
-      console.log('Auth failed. Probably because your magic link expired.', e)
-    );
+function removeStytchQueryParams() {
+  const queryParams = new URLSearchParams(window.location.search);
+  const type = queryParams.get('stytch_token_type');
+  const token = queryParams.get('token');
+  if (type && token) {
+    queryParams.delete('stytch_token_type');
+    queryParams.delete('token');
+    // Removes stytch query params without triggering page refresh
+    history.replaceState(null, '', '?' + queryParams + window.location.hash);
+  }
 }
 
 export function googleOauthRedirect() {
-  const client = getAuthClient();
-  if (!client) return;
+  const stytchClient = getAuthClient();
+  if (!stytchClient) return;
 
   const redirectUrl = transformUrlToQueryParams();
 
-  client.oauth.google.start({
+  stytchClient.oauth.google.start({
     login_redirect_url: redirectUrl,
     signup_redirect_url: redirectUrl
   });
