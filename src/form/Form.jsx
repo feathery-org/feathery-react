@@ -695,11 +695,6 @@ function Form({
     }
   }, [finished]);
 
-  if (!activeStep) {
-    if (formSettings.formOff) return <FormOff />;
-    else return null;
-  }
-
   // Note: If index is provided, handleChange assumes the field is a repeated field
   const changeValue = (value, field, index = null, rerender = true) => {
     const updateValues = {};
@@ -1305,6 +1300,11 @@ function Form({
     focusRef,
     steps
   };
+
+  if (!activeStep) {
+    if (formSettings.formOff) return <FormOff />;
+    else return null;
+  }
 
   return (
     <>

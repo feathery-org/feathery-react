@@ -4,6 +4,7 @@ import {
   getFieldValue,
   getInlineError,
   isFieldActuallyRequired,
+  isFieldValueEmpty,
   reactFriendlyKey,
   shouldElementHide,
   textFieldShouldSubmit
@@ -12,6 +13,7 @@ import { stringifyWithNull } from '../../utils/string';
 import { fieldCounter } from '../Form';
 import { justRemove } from '../../utils/array';
 import { isObjectEmpty } from '../../utils/primitives';
+import { fieldValues } from '../../utils/init';
 
 const mapFieldTypes = new Set([
   'gmap_line_1',
@@ -94,7 +96,26 @@ const Cell = ({ node: el, form }) => {
         {...basicProps}
       />
     );
-  else if (type === 'button')
+  else if (type === 'button') {
+    let disabled = false;
+    if (el.properties.disable_if_fields_incomplete) {
+      disabled = activeStep.servar_fields
+        .filter(
+          (field) =>
+            !shouldElementHide({
+              fields: activeStep.servar_fields,
+              values: fieldValues,
+              element: field
+            })
+        )
+        .some((field) => {
+          if (isFieldActuallyRequired(field, repeatTriggerExists)) {
+            const servar = field.servar;
+            return isFieldValueEmpty(fieldValues[servar.key], servar);
+          }
+          return false;
+        });
+    }
     return (
       <Elements.ButtonElement
         values={fieldValues}
@@ -103,10 +124,11 @@ const Cell = ({ node: el, form }) => {
         }
         handleRedirect={handleRedirect}
         onClick={() => buttonOnClick(el)}
+        disabled={disabled}
         {...basicProps}
       />
     );
-  else if (type === 'field') {
+  } else if (type === 'field') {
     fieldCounter.value++;
     const thisCounter = fieldCounter.value;
     const index = el.repeat ?? null;
@@ -148,11 +170,7 @@ const Cell = ({ node: el, form }) => {
 
     const inlineError =
       formSettings.errorType === 'inline' && getInlineError(el, inlineErrors);
-    const required = isFieldActuallyRequired(
-      el,
-      repeatTriggerExists,
-      el.lastRepeat
-    );
+    const required = isFieldActuallyRequired(el, repeatTriggerExists);
     const fieldProps = {
       key: reactFriendlyKey(el),
       element: el,

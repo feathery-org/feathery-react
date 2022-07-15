@@ -32,8 +32,29 @@ export async function initializeIntegrations(integrations, clientArg) {
   ]);
 
   if (gtm) initializeTagManager(gtm);
-  // Unless we want to do something more complex here we need to make a
-  // choice and can't just return both. Prioritize stytch
-  if (stytch) return await emailLoginStytch(clientArg);
-  if (fb) return await emailLoginFirebase(clientArg);
+  inferEmailLoginFromURL(clientArg);
+}
+
+export function inferEmailLoginFromURL(featheryClient) {
+  const queryParams = new URLSearchParams(window.location.search);
+  const type = queryParams.get('stytch_token_type');
+  const token = queryParams.get('token');
+  if (type && token) emailLoginStytch(featheryClient);
+  else emailLoginFirebase(featheryClient);
+}
+
+export function transformUrlToQueryParams() {
+  const { pathname, origin } = window.location;
+
+  const queryParams = new URLSearchParams();
+  if (pathname !== '/') queryParams.set('redirect', pathname);
+  return `${origin}?${queryParams.toString()}`;
+}
+
+export function transformQueryParamsToUrl() {
+  const { origin, search } = window.location;
+
+  const queryParams = new URLSearchParams(search);
+  const redirect = queryParams.get('redirect');
+  return `${origin}${redirect ?? ''}`;
 }

@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient } from './browser.js';
+import { inferEmailLoginFromURL } from '../integrations/utils';
 
 let initFormsPromise = Promise.resolve();
 const defaultClient = new Client();
@@ -160,6 +161,9 @@ function validateStep(formKey, trigger = true) {
 
 function setAuthClient(client) {
   initState.authClient = client;
+  // Attempt login after setting auth client, in case the auth client wasn't set
+  // when auth was already attempted after initializing the integrations
+  inferEmailLoginFromURL(defaultClient);
 }
 
 function getAuthClient() {
