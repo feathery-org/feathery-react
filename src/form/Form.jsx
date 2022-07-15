@@ -33,12 +33,15 @@ import {
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
+import { googleOauthRedirect, sendMagicLink } from '../integrations/stytch';
 import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
 import {
   LINK_ADD_REPEATED_ROW,
   LINK_CUSTOM,
+  LINK_GOOGLE_OAUTH,
   LINK_REMOVE_REPEATED_ROW,
   LINK_SEND_SMS,
+  LINK_SEND_MAGIC_LINK,
   LINK_SKIP,
   LINK_SUBMIT,
   LINK_TRIGGER_PLAID,
@@ -70,6 +73,7 @@ function Form({
   formName: _formName,
   onChange = null,
   onLoad = null,
+  onFormComplete = null,
   onSubmit = null,
   onSkip = null,
   onError = null,
@@ -288,7 +292,6 @@ function Form({
         (f) => f.servar.type === 'gmap_line_1' && fieldValues[f.servar.key]
       )
     );
-    callbackRef.current = new CallbackQueue(activeStep, setLoaders);
   }, [activeStep?.id]);
 
   const scrollToRef = (ref) =>
@@ -463,6 +466,10 @@ function Form({
 
   const updateNewStep = (newStep) => {
     clearLoaders();
+    callbackRef.current = new CallbackQueue(newStep, setLoaders);
+    // setRawActiveStep, apparently, must go after setting the callbackRef
+    // because it triggers a new render, before this fn finishes execution,
+    // which can cause onView to fire before the callbackRef is set
     setRawActiveStep(newStep);
     client.registerEvent({ step_key: newStep.key, event: 'load' });
   };
@@ -477,6 +484,9 @@ function Form({
         const notAuth =
           cond.rules.find((r) => r.comparison === 'not_authenticated') &&
           !initState.authId &&
+          // Re: firebaseConfirmationResult, the user hasn't authenticated yet
+          // but they're in the process of doing so and we don't want to
+          // consider them "unauthenticated" for the purposes of redirecting
           !window.firebaseConfirmationResult;
         const auth =
           cond.rules.find((r) => r.comparison === 'authenticated') &&
@@ -655,7 +665,12 @@ function Form({
   useEffect(() => {
     return steps
       ? history.listen(async () => {
-          const hashKey = decodeURI(location.hash.substr(1));
+          let hashKey;
+          try {
+            hashKey = decodeURI(location.hash.substr(1));
+          } catch (e) {
+            console.log(e);
+          }
           if (hashKey in steps) setStepKey(hashKey);
         })
       : undefined;
@@ -665,17 +680,20 @@ function Form({
     if (stepKey) getNewStep(stepKey);
   }, [stepKey]);
 
-  if (!activeStep) {
-    if (formSettings.formOff) return <FormOff />;
-    else return null;
-  }
-  if (finished) {
-    if (formSettings.redirectUrl) {
-      hasRedirected.current = true;
-      window.location.href = formSettings.redirectUrl;
+  useEffect(() => {
+    if (!finished) return;
+    const redirectForm = () => {
+      if (formSettings.redirectUrl) {
+        hasRedirected.current = true;
+        window.location.href = formSettings.redirectUrl;
+      }
+    };
+    if (typeof onFormComplete === 'function') {
+      runUserCallback(onFormComplete).then(redirectForm);
+    } else {
+      redirectForm();
     }
-    return null;
-  }
+  }, [finished]);
 
   // Note: If index is provided, handleChange assumes the field is a repeated field
   const changeValue = (value, field, index = null, rerender = true) => {
@@ -943,22 +961,28 @@ function Form({
     }
   };
 
-  async function handleActions(setLoader) {
+  function handleActions(setLoader) {
     for (let i = 0; i < activeStep.servar_fields.length; i++) {
       const servar = activeStep.servar_fields[i].servar;
       const fieldVal = fieldValues[servar.key];
       if (servar.type === 'login') {
         setLoader();
-        return await sendLoginCode(fieldVal, servar);
+        // Unless we want to do something more complex here we need to make a
+        // choice and can't just return both. Prioritize stytch
+        if (integrations.stytch) {
+          return sendMagicLink(fieldVal);
+        } else {
+          return sendLoginCode(fieldVal, servar);
+        }
       } else if (
         servar.type === 'pin_input' &&
         servar.metadata.verify_sms_code
       ) {
         setLoader();
-        return await verifySMSCode(fieldVal, servar, client);
+        return verifySMSCode(fieldVal, servar, client);
       }
     }
-    return {};
+    return Promise.resolve({});
   }
 
   function handleSubmitRedirect({
@@ -1148,7 +1172,10 @@ function Form({
         );
       }
     } else if (link === LINK_URL) {
-      openTab(button.properties.link_url);
+      const url = button.properties.link_url;
+      button.properties.link_url_open_tab
+        ? openTab(url)
+        : (location.href = url);
     } else if (link === LINK_CUSTOM) {
       if (typeof onCustomAction === 'function') {
         await runUserCallback(onCustomAction, {
@@ -1161,15 +1188,22 @@ function Form({
       }
     } else if (link === LINK_SEND_SMS) {
       clickPromise = setButtonLoader(button)
-        .then(
-          async () =>
-            await sendLoginCode(
-              fieldValues[button.properties.sms_code_field_key],
-              null,
-              ['phone']
-            )
+        .then(() =>
+          sendLoginCode(
+            fieldValues[button.properties.auth_target_field_key],
+            null,
+            ['phone']
+          )
         )
         .then(() => clearLoaders());
+    } else if (link === LINK_SEND_MAGIC_LINK) {
+      clickPromise = setButtonLoader(button)
+        .then(() =>
+          sendMagicLink(fieldValues[button.properties.auth_target_field_key])
+        )
+        .then(() => clearLoaders());
+    } else if (link === LINK_GOOGLE_OAUTH) {
+      clickPromise = googleOauthRedirect();
     } else if ([LINK_SUBMIT, LINK_SKIP].includes(link)) {
       clickPromise = buttonOnSubmit(link === LINK_SUBMIT, button);
     }
@@ -1180,10 +1214,11 @@ function Form({
   const fieldOnChange = ({ fieldIDs, fieldKeys, elementRepeatIndex = 0 }) => ({
     trigger = 'field',
     submitData = false,
+    integrationData = {},
     // Multi-file upload is not a repeated row but a repeated field
     valueRepeatIndex = null
   } = {}) => {
-    if (trigger === 'googleMaps') {
+    if (trigger === 'addressSelect') {
       setGMapFilled(true);
       fieldKeys.forEach((fieldKey) => {
         setFormElementError({
@@ -1202,7 +1237,7 @@ function Form({
         runUserCallback(onChange, {
           changeKeys: fieldKeys,
           trigger,
-          integrationData: {},
+          integrationData,
           fields: formattedFields,
           lastStep: activeStep.next_conditions.length === 0,
           elementRepeatIndex,
@@ -1265,6 +1300,11 @@ function Form({
     focusRef,
     steps
   };
+
+  if (!activeStep) {
+    if (formSettings.formOff) return <FormOff />;
+    else return null;
+  }
 
   return (
     <>

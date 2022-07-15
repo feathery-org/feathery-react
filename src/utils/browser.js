@@ -1,3 +1,19 @@
 export function runningInClient() {
   return typeof window === 'object';
 }
+
+/**
+ * @param key string corresponding to cookie name
+ * @returns cookie value, or undefined if not found
+ */
+export function getCookie(key) {
+  return document.cookie
+    .split('; ')
+    .filter((row) => row.startsWith(`${key}=`))
+    .map((c) => c.split('=')[1])[0];
+}
+
+export function getStytchJwt(async = true) {
+  const jwt = getCookie('stytch_session_jwt');
+  return async ? Promise.resolve(jwt) : jwt;
+}

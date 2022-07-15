@@ -6,10 +6,12 @@ import { v4 as uuidv4 } from 'uuid';
 import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient } from './browser.js';
+import { inferEmailLoginFromURL } from '../integrations/utils';
 
 let initFormsPromise = Promise.resolve();
 const defaultClient = new Client();
 const defaultOptions = {
+  authClient: null,
   userKey: null,
   tracking: 'cookie'
 };
@@ -48,11 +50,16 @@ function init(apiKey, options = {}) {
   }
 
   initState.apiKey = apiKey;
-  ['authId', 'authEmail', 'authPhoneNumber', 'userKey', 'tracking'].forEach(
-    (key) => {
-      if (options[key]) initState[key] = options[key];
-    }
-  );
+  [
+    'authClient',
+    'authId',
+    'authEmail',
+    'authPhoneNumber',
+    'userKey',
+    'tracking'
+  ].forEach((key) => {
+    if (options[key]) initState[key] = options[key];
+  });
 
   // dynamically load libraries that must be client side only for NextJs support
   if (runningInClient()) {
@@ -152,6 +159,17 @@ function validateStep(formKey, trigger = true) {
   return callback(trigger);
 }
 
+function setAuthClient(client) {
+  initState.authClient = client;
+  // Attempt login after setting auth client, in case the auth client wasn't set
+  // when auth was already attempted after initializing the integrations
+  inferEmailLoginFromURL(defaultClient);
+}
+
+function getAuthClient() {
+  return initState.authClient;
+}
+
 export {
   init,
   initInfo,
@@ -161,5 +179,7 @@ export {
   initState,
   initFormsPromise,
   fieldValues,
-  filePathMap
+  filePathMap,
+  getAuthClient,
+  setAuthClient
 };

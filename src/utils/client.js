@@ -78,7 +78,8 @@ export default class Client {
       .catch((e) => {
         // Ignore TypeErrors if form has redirected because `fetch` in
         // Safari will error after redirect
-        if (!this.ignoreNetworkErrors && e instanceof TypeError) throw e;
+        if (this.ignoreNetworkErrors && e instanceof TypeError) return;
+        throw e;
       });
   }
 
@@ -230,7 +231,7 @@ export default class Client {
       });
     }
     // Load user-uploaded fonts
-    Object.entries(res.uploaded_fonts).forEach((family, fontStyles) => {
+    Object.entries(res.uploaded_fonts).forEach(([family, fontStyles]) => {
       fontStyles.forEach(({ source, style, weight }) =>
         new FontFace(family, `url(${source})`, { style, weight })
           .load()
@@ -263,13 +264,19 @@ export default class Client {
 
     const response = await this._fetch(url, options);
     const session = await response.json();
-    initializeIntegrations(session.integrations, this, Boolean(formData));
-    if (!noData) updateSessionValues(session);
+    const authSession = await initializeIntegrations(
+      session.integrations,
+      this
+    );
+    if (!noData) updateSessionValues(authSession ?? session);
     return [session, formData];
   }
 
   submitAuthInfo({ authId, authPhone = '', authEmail = '' }) {
     const { userKey } = initInfo();
+    initState.authId = authId;
+    if (authPhone) initState.authPhoneNumber = authPhone;
+    if (authEmail) initState.authEmail = authEmail;
 
     const data = {
       auth_id: authId,
@@ -284,9 +291,6 @@ export default class Client {
       body: JSON.stringify(data)
     };
     return this._fetch(url, options).then((response) => {
-      initState.authId = authId;
-      if (authPhone) initState.authPhoneNumber = authPhone;
-      if (authEmail) initState.authEmail = authEmail;
       return response.json();
     });
   }

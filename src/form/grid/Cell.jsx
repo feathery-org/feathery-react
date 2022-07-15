@@ -4,6 +4,7 @@ import {
   getFieldValue,
   getInlineError,
   isFieldActuallyRequired,
+  isFieldValueEmpty,
   reactFriendlyKey,
   shouldElementHide,
   textFieldShouldSubmit
@@ -12,6 +13,7 @@ import { stringifyWithNull } from '../../utils/string';
 import { fieldCounter } from '../Form';
 import { justRemove } from '../../utils/array';
 import { isObjectEmpty } from '../../utils/primitives';
+import { fieldValues } from '../../utils/init';
 
 const mapFieldTypes = new Set([
   'gmap_line_1',
@@ -94,7 +96,26 @@ const Cell = ({ node: el, form }) => {
         {...basicProps}
       />
     );
-  else if (type === 'button')
+  else if (type === 'button') {
+    let disabled = false;
+    if (el.properties.disable_if_fields_incomplete) {
+      disabled = activeStep.servar_fields
+        .filter(
+          (field) =>
+            !shouldElementHide({
+              fields: activeStep.servar_fields,
+              values: fieldValues,
+              element: field
+            })
+        )
+        .some((field) => {
+          if (isFieldActuallyRequired(field, repeatTriggerExists)) {
+            const servar = field.servar;
+            return isFieldValueEmpty(fieldValues[servar.key], servar);
+          }
+          return false;
+        });
+    }
     return (
       <Elements.ButtonElement
         values={fieldValues}
@@ -103,10 +124,11 @@ const Cell = ({ node: el, form }) => {
         }
         handleRedirect={handleRedirect}
         onClick={() => buttonOnClick(el)}
+        disabled={disabled}
         {...basicProps}
       />
     );
-  else if (type === 'field') {
+  } else if (type === 'field') {
     fieldCounter.value++;
     const thisCounter = fieldCounter.value;
     const index = el.repeat ?? null;
@@ -148,11 +170,7 @@ const Cell = ({ node: el, form }) => {
 
     const inlineError =
       formSettings.errorType === 'inline' && getInlineError(el, inlineErrors);
-    const required = isFieldActuallyRequired(
-      el,
-      repeatTriggerExists,
-      el.lastRepeat
-    );
+    const required = isFieldActuallyRequired(el, repeatTriggerExists);
     const fieldProps = {
       key: reactFriendlyKey(el),
       element: el,
@@ -164,7 +182,6 @@ const Cell = ({ node: el, form }) => {
       onView
     };
 
-    let changeHandler;
     switch (servar.type) {
       case 'signature':
         return (
@@ -267,13 +284,13 @@ const Cell = ({ node: el, form }) => {
             fieldVal={fieldVal}
             onClick={onClick}
             onChange={(val) => {
-              changeValue(val, el, index, false);
-              onChange({
-                submitData:
-                  el.properties.submit_trigger === 'auto' &&
-                  val.length === el.servar.max_length
-              });
-              onChange();
+              const change = changeValue(val, el, index, false);
+              if (change)
+                onChange({
+                  submitData:
+                    el.properties.submit_trigger === 'auto' &&
+                    val.length === el.servar.max_length
+                });
             }}
             shouldFocus
           />
@@ -296,44 +313,39 @@ const Cell = ({ node: el, form }) => {
           />
         );
       case 'select':
-        changeHandler = (e, change = true) => {
-          const val = e.target.value;
-          if (change) changeValue(val, el, index);
-          onChange({
-            submitData: el.properties.submit_trigger === 'auto' && val
-          });
-        };
         return (
           <Elements.RadioButtonGroupField
             {...fieldProps}
             fieldVal={fieldVal}
             otherVal={otherVal}
-            onChange={changeHandler}
+            onChange={(e) => {
+              const val = e.target.value;
+              changeValue(val, el, index);
+              onChange({
+                submitData: el.properties.submit_trigger === 'auto' && val
+              });
+            }}
             onOtherChange={(e) => {
               handleOtherStateChange(otherVal)(e);
-              changeHandler(e, false);
+              onChange({
+                submitData:
+                  el.properties.submit_trigger === 'auto' && e.target.value
+              });
             }}
             onClick={onClick}
           />
         );
       case 'hex_color':
-        changeHandler = (color) => {
-          activeStep.servar_fields.forEach((field) => {
-            const iterServar = field.servar;
-            if (iterServar.key !== servar.key) return;
-            updateFieldValues({
-              [iterServar.key]: color
-            });
-          });
-          onChange({
-            submitData: el.properties.submit_trigger === 'auto' && color
-          });
-        };
         return (
           <Elements.ColorPickerField
             {...fieldProps}
             fieldVal={fieldVal}
-            onChange={changeHandler}
+            onChange={(color) => {
+              changeValue(color, el, index);
+              onChange({
+                submitData: el.properties.submit_trigger === 'auto' && color
+              });
+            }}
             onClick={onClick}
           />
         );
@@ -390,7 +402,10 @@ const Cell = ({ node: el, form }) => {
                 fieldOnChange({
                   fieldIDs: Object.values(keyIDMap),
                   fieldKeys: Object.keys(keyIDMap)
-                })({ trigger: 'googleMaps' });
+                })({
+                  trigger: 'addressSelect',
+                  integrationData: address.address_components
+                });
               }
             }}
             setRef={(ref) => {

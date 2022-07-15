@@ -295,6 +295,9 @@ class ApplyStyles {
         'mobile_'
       );
     }
+    if (!('letterSpacing' in fontStyles)) fontStyles.letterSpacing = 'normal';
+    if (!('textTransform' in fontStyles)) fontStyles.textTransform = 'none';
+
     return fontStyles;
   }
 
@@ -311,9 +314,9 @@ class ApplyStyles {
     if (attr) styles.fontWeight = attr;
     if (attrs[`${p}font_italic`]) styles.fontStyle = 'italic';
     attr = attrs[`${p}text_transform`];
-    styles.textTransform = attr || 'none';
+    if (attr) styles.textTransform = attr;
     attr = attrs[`${p}letter_spacing`];
-    styles.letterSpacing = isNum(attr) ? `${attr}px` : 'normal';
+    if (isNum(attr)) styles.letterSpacing = `${attr}px`;
 
     const lines = [];
     if (attrs[`${p}font_strike`]) lines.push('line-through');
@@ -354,6 +357,64 @@ class ApplyStyles {
     } else {
       this.setStyle('placeholderFocus', 'display', 'none');
     }
+  }
+
+  applyBackgroundImageStyles(target) {
+    const targetStyles = [
+      'background_image_url',
+      'background_image_display',
+      'background_image_layout',
+      'background_image_vertical_layout',
+      'background_image_size',
+      'background_image_size_x',
+      'background_image_size_y',
+      'background_image_repeat'
+    ];
+
+    this.apply(target, targetStyles, (...styles) => {
+      const [
+        imageUrl,
+        imageDisplay,
+        imageLayout,
+        imageVerticalLayout,
+        imageSize,
+        imageSizeX,
+        imageSizeY,
+        imageRepeat
+      ] = styles;
+
+      if (!imageUrl) {
+        return {};
+      }
+
+      const formattedStyles = {
+        backgroundImage: `url(${imageUrl})`,
+        backgroundRepeat: imageRepeat,
+        backgroundPositionX: imageLayout,
+        backgroundPositionY: imageVerticalLayout
+      };
+
+      switch (imageDisplay) {
+        case 'fill':
+        case 'fit':
+          Object.assign(formattedStyles, {
+            backgroundSize: imageSize
+          });
+          break;
+        case 'tile':
+          Object.assign(formattedStyles, {
+            backgroundSize: `${imageSize}%`
+          });
+          break;
+        case 'set_scale':
+          Object.assign(formattedStyles, {
+            backgroundSize: `${imageSizeX}px ${imageSizeY}px`
+          });
+          break;
+      }
+
+      return formattedStyles;
+    });
   }
 }
 
