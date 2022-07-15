@@ -188,7 +188,7 @@ function applyFieldStyles(field, styles) {
       break;
     default:
       styles.addTargets('sub-fc', 'tooltipIcon');
-      styles.applyWidth('fc');
+      if (type !== 'checkbox') styles.applyWidth('fc'); // Avoid applying width to checkbox to ensure the checkbox width is properly set by the component
       styles.applyHeight('sub-fc');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
