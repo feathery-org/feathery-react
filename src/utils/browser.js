@@ -13,7 +13,6 @@ export function getCookie(key) {
     .map((c) => c.split('=')[1])[0];
 }
 
-export function getStytchJwt(async = true) {
-  const jwt = getCookie('stytch_session_jwt');
-  return async ? Promise.resolve(jwt) : jwt;
+export function getStytchJwt() {
+  return getCookie('stytch_session_jwt');
 }
