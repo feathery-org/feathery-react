@@ -42,7 +42,7 @@ function SignatureField({
       {...elementProps}
     >
       {fieldLabel}
-      <div css={{ position: 'relative' }}>
+      <div css={{ position: 'relative', ...applyStyles.getTarget('sub-fc') }}>
         {isClearVisible && (
           <div
             css={{
@@ -67,10 +67,10 @@ function SignatureField({
           clearOnResize={false}
           canvasProps={{
             id: servar.key,
-            height: element.styles.height,
             style: {
               ...signatureCanvasStyles,
-              width: '100%'
+              width: '100%',
+              height: '100%'
             }
           }}
           ref={(ref) => {

@@ -44,6 +44,7 @@ function applyFieldStyles(field, styles) {
   switch (type) {
     case 'signature':
       styles.applyWidth('fc');
+      styles.applyHeight('sub-fc');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyCorners('field');
       styles.applyBorders('field');
