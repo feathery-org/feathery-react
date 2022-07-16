@@ -183,11 +183,22 @@ const Cell = ({ node: el, form }) => {
     };
 
     switch (servar.type) {
+      case 'date_selector':
+        return (
+          <Elements.DateSelectorField
+            {...fieldProps}
+            value={fieldVal}
+            onChange={(val) => {
+              const change = changeValue(val, el, index);
+              if (change) onChange();
+            }}
+          />
+        );
       case 'signature':
         return (
           <Elements.SignatureField
             {...fieldProps}
-            defaultValue={fieldValues[servar.key]}
+            defaultValue={fieldVal}
             onEnd={(newFile) => {
               clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
               fieldValues[servar.key] = Promise.resolve(newFile);

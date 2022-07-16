@@ -15,13 +15,12 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-          - package-dependencies-{{ checksum "yarn.lock" }}
-          - package-dependencies-
+          - package-dependencies-v2-{{ checksum "yarn.lock" }}
       - run: yarn install
       - save_cache:
           paths:
             - node_modules
-          key: package-dependencies-{{ checksum "yarn.lock" }}
+          key: package-dependencies-v2-{{ checksum "yarn.lock" }}
       - persist_to_workspace:
           root: ~/feathery-react
           paths: .
