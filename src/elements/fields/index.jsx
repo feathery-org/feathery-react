@@ -2,6 +2,7 @@ import ButtonGroupField from './ButtonGroupField';
 import CheckboxField from './CheckboxField';
 import CheckboxGroupField from './CheckboxGroupField';
 import ColorPickerField from './ColorPickerField';
+import DateSelectorField from './DateSelectorField';
 import DropdownField from './DropdownField';
 import FileUploadField from './FileUploadField';
 import PinInputField from './PinInputField';
@@ -18,6 +19,7 @@ const Fields = {
   CheckboxField,
   CheckboxGroupField,
   ColorPickerField,
+  DateSelectorField,
   DropdownField,
   FileUploadField,
   PinInputField,
@@ -220,9 +222,10 @@ Object.entries(Fields).map(([key, Field]) => {
         {servar.name}
       </label>
     ) : null;
-    const styles = useMemo(() => applyFieldStyles(element, applyStyles), [
-      element
-    ]);
+    const styles = useMemo(
+      () => applyFieldStyles(element, applyStyles),
+      [element]
+    );
     return (
       <>
         <Field
