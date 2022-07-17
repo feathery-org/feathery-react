@@ -255,19 +255,19 @@ function Form({
       (b) => b.properties.link === LINK_SUBMIT
     );
     if (hasLoginField && submitButton) {
-      window.firebaseRecaptchaVerifier = new global.firebase.auth.RecaptchaVerifier(
-        submitButton.id,
-        { size: 'invisible' }
-      );
+      window.firebaseRecaptchaVerifier =
+        new global.firebase.auth.RecaptchaVerifier(submitButton.id, {
+          size: 'invisible'
+        });
     } else {
       const smsButton = renderedButtons.find(
         (b) => b.properties.link === LINK_SEND_SMS
       );
       if (smsButton) {
-        window.firebaseRecaptchaVerifier = new global.firebase.auth.RecaptchaVerifier(
-          smsButton.id,
-          { size: 'invisible' }
-        );
+        window.firebaseRecaptchaVerifier =
+          new global.firebase.auth.RecaptchaVerifier(smsButton.id, {
+            size: 'invisible'
+          });
       }
     }
   }, [activeStep?.id, global.firebase]);
@@ -402,28 +402,27 @@ function Form({
     return true;
   };
 
-  const updateFieldOptions = (stepData, activeStepData) => (
-    newFieldOptions
-  ) => {
-    Object.values(stepData).forEach((step) => {
-      step.servar_fields.forEach((field) => {
+  const updateFieldOptions =
+    (stepData, activeStepData) => (newFieldOptions) => {
+      Object.values(stepData).forEach((step) => {
+        step.servar_fields.forEach((field) => {
+          const servar = field.servar;
+          if (servar.key in newFieldOptions) {
+            servar.metadata.options = newFieldOptions[servar.key];
+          }
+        });
+      });
+      setSteps(JSON.parse(JSON.stringify(stepData)));
+
+      const newActiveStep = activeStepData || rawActiveStep;
+      newActiveStep.servar_fields.forEach((field) => {
         const servar = field.servar;
         if (servar.key in newFieldOptions) {
           servar.metadata.options = newFieldOptions[servar.key];
         }
       });
-    });
-    setSteps(JSON.parse(JSON.stringify(stepData)));
-
-    const newActiveStep = activeStepData || rawActiveStep;
-    newActiveStep.servar_fields.forEach((field) => {
-      const servar = field.servar;
-      if (servar.key in newFieldOptions) {
-        servar.metadata.options = newFieldOptions[servar.key];
-      }
-    });
-    setRawActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
-  };
+      setRawActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
+    };
 
   const runUserCallback = async (
     userCallback,
@@ -1054,9 +1053,9 @@ function Form({
     if (!redirectKey) {
       if (submitData || ['button', 'text'].includes(metadata.elementType)) {
         eventData.completed = true;
-        client
-          .registerEvent(eventData, submitPromise)
-          .then(() => setFinished(true));
+        client.registerEvent(eventData, submitPromise).then(() => {
+          setFinished(true);
+        });
         return true;
       }
     } else {
@@ -1211,56 +1210,58 @@ function Form({
     buttonClicks[button.id] = false;
   };
 
-  const fieldOnChange = ({ fieldIDs, fieldKeys, elementRepeatIndex = 0 }) => ({
-    trigger = 'field',
-    submitData = false,
-    integrationData = {},
-    // Multi-file upload is not a repeated row but a repeated field
-    valueRepeatIndex = null
-  } = {}) => {
-    if (trigger === 'addressSelect') {
-      setGMapFilled(true);
-      fieldKeys.forEach((fieldKey) => {
-        setFormElementError({
-          formRef,
-          fieldKey,
-          message: '',
-          errorType: formSettings.errorType,
-          setInlineErrors: setInlineErrors,
-          triggerErrors: true
+  const fieldOnChange =
+    ({ fieldIDs, fieldKeys, elementRepeatIndex = 0 }) =>
+    ({
+      trigger = 'field',
+      submitData = false,
+      integrationData = {},
+      // Multi-file upload is not a repeated row but a repeated field
+      valueRepeatIndex = null
+    } = {}) => {
+      if (trigger === 'addressSelect') {
+        setGMapFilled(true);
+        fieldKeys.forEach((fieldKey) => {
+          setFormElementError({
+            formRef,
+            fieldKey,
+            message: '',
+            errorType: formSettings.errorType,
+            setInlineErrors: setInlineErrors,
+            triggerErrors: true
+          });
         });
-      });
-    }
-    if (typeof onChange === 'function') {
-      const formattedFields = formatAllFormFields(steps, true);
-      callbackRef.current.addCallback(
-        runUserCallback(onChange, {
-          changeKeys: fieldKeys,
-          trigger,
-          integrationData,
-          fields: formattedFields,
-          lastStep: activeStep.next_conditions.length === 0,
-          elementRepeatIndex,
-          valueRepeatIndex
-        }),
-        loaders
-      );
-      setShouldScrollToTop(false);
-    }
-    const metadata = {
-      elementType: 'field',
-      elementIDs: fieldIDs,
-      trigger: 'change'
+      }
+      if (typeof onChange === 'function') {
+        const formattedFields = formatAllFormFields(steps, true);
+        callbackRef.current.addCallback(
+          runUserCallback(onChange, {
+            changeKeys: fieldKeys,
+            trigger,
+            integrationData,
+            fields: formattedFields,
+            lastStep: activeStep.next_conditions.length === 0,
+            elementRepeatIndex,
+            valueRepeatIndex
+          }),
+          loaders
+        );
+        setShouldScrollToTop(false);
+      }
+      const metadata = {
+        elementType: 'field',
+        elementIDs: fieldIDs,
+        trigger: 'change'
+      };
+      if (submitData) {
+        // Simulate button click if available
+        const submitButton = activeStep.buttons.find(
+          (b) => b.properties.link === LINK_SUBMIT
+        );
+        if (submitButton) buttonOnClick(submitButton);
+        else submit({ metadata, repeat: elementRepeatIndex });
+      } else handleRedirect({ metadata });
     };
-    if (submitData) {
-      // Simulate button click if available
-      const submitButton = activeStep.buttons.find(
-        (b) => b.properties.link === LINK_SUBMIT
-      );
-      if (submitButton) buttonOnClick(submitButton);
-      else submit({ metadata, repeat: elementRepeatIndex });
-    } else handleRedirect({ metadata });
-  };
 
   const elementOnView =
     typeof onView === 'function'
@@ -1301,7 +1302,7 @@ function Form({
     steps
   };
 
-  if (!activeStep) {
+  if (!activeStep || finished) {
     if (formSettings.formOff) return <FormOff />;
     else return null;
   }
