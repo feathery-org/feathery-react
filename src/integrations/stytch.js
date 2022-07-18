@@ -1,9 +1,5 @@
 import { getAuthClient, setAuthClient } from '../utils/init';
-import {
-  dynamicImport,
-  transformUrlToQueryParams,
-  transformQueryParamsToUrl
-} from './utils';
+import { dynamicImport } from './utils';
 
 const STYTCH_JS_URL = 'https://js.stytch.com/stytch.js';
 
@@ -47,11 +43,9 @@ export function sendMagicLink(fieldVal) {
   const client = getAuthClient();
   if (!client) return;
 
-  const redirectUrl = transformUrlToQueryParams();
-
   return client.magicLinks.email.loginOrCreate(fieldVal, {
-    login_magic_link_url: redirectUrl,
-    signup_magic_link_url: redirectUrl,
+    login_magic_link_url: window.location.href,
+    signup_magic_link_url: window.location.href,
     login_expiration_minutes: config.metadata.login_expiration,
     signup_expiration_minutes: config.metadata.signup_expiration
   });
@@ -81,13 +75,7 @@ export function emailLogin(featheryClient) {
     const authFn = determineAuthFn({ token, type });
 
     return authFn()
-      .then(() =>
-        featherySubmitAuthInfo(featheryClient).then((featherySession) => {
-          const redirect = transformQueryParamsToUrl();
-          if (redirect) window.location.href = redirect;
-          return featherySession;
-        })
-      )
+      .then(() => featherySubmitAuthInfo(featheryClient))
       .catch((e) =>
         console.log('Auth failed. Possibly because your magic link expired.', e)
       );
@@ -145,10 +133,8 @@ export function googleOauthRedirect() {
   const stytchClient = getAuthClient();
   if (!stytchClient) return;
 
-  const redirectUrl = transformUrlToQueryParams();
-
   stytchClient.oauth.google.start({
-    login_redirect_url: redirectUrl,
-    signup_redirect_url: redirectUrl
+    login_redirect_url: window.location.href,
+    signup_redirect_url: window.location.href
   });
 }
