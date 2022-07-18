@@ -109,7 +109,8 @@ function Form({
   const [formSettings, setFormSettings] = useState({
     redirectUrl: '',
     errorType: 'html5',
-    autocomplete: 'on'
+    autocomplete: 'on',
+    autofocus: true
   });
   const [inlineErrors, setInlineErrors] = useState({});
   const [, setRepeatChanged] = useState(false);
@@ -276,7 +277,7 @@ function Form({
   useEffect(() => {
     if (!activeStep) return;
 
-    if (focusRef.current) {
+    if (formSettings.autofocus && focusRef.current) {
       focusRef.current.focus({
         preventScroll: true
       });
@@ -604,6 +605,7 @@ function Form({
             redirectUrl: res.redirect_url,
             errorType: res.error_type,
             autocomplete: res.autocomplete ? 'on' : 'off',
+            autofocus: res.autofocus,
             formOff: Boolean(res.formOff),
             showBrand: Boolean(res.show_brand)
           });
