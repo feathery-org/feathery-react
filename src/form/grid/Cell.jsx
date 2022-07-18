@@ -192,6 +192,9 @@ const Cell = ({ node: el, form }) => {
               const change = changeValue(val, el, index);
               if (change) onChange();
             }}
+            setRef={(ref) => {
+              if (thisCounter === 1) focusRef.current = ref;
+            }}
           />
         );
       case 'signature':

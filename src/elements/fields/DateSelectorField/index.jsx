@@ -26,6 +26,7 @@ function DateSelectorField({
   required = false,
   editable = false,
   onChange = () => {},
+  setRef = () => {},
   value = '',
   inlineError,
   children
@@ -84,6 +85,7 @@ function DateSelectorField({
               type='tel'
               mask='00/00/0000'
               unmask={false}
+              inputRef={setRef}
             />
           }
         />
