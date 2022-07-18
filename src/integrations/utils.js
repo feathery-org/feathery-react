@@ -44,19 +44,3 @@ export function inferEmailLoginFromURL(featheryClient) {
   if (stytchJwt || (type && token)) emailLoginStytch(featheryClient);
   else emailLoginFirebase(featheryClient);
 }
-
-export function transformUrlToQueryParams() {
-  const { pathname, origin } = window.location;
-
-  const queryParams = new URLSearchParams();
-  if (pathname !== '/') queryParams.set('redirect', pathname);
-  return `${origin}?${queryParams.toString()}`;
-}
-
-export function transformQueryParamsToUrl() {
-  const { origin, search } = window.location;
-
-  const queryParams = new URLSearchParams(search);
-  const redirect = queryParams.get('redirect');
-  return redirect ? `${origin}${redirect}` : null;
-}
