@@ -6,7 +6,7 @@ import TagManager from 'react-gtm-module';
 import Lottie from 'lottie-react';
 import { useHotkeys } from 'react-hotkeys-hook';
 
-import { calculateStepCSS } from '../utils/hydration';
+import { calculateStepCSS, isFill } from '../utils/hydration';
 import {
   changeStep,
   formatAllFormFields,
@@ -1350,16 +1350,7 @@ function Form({
           <DevNavBar allSteps={steps} curStep={activeStep} history={history} />
         )}
         {formSettings.showBrand && (
-          <div
-            css={{
-              position: 'absolute',
-              bottom: -60,
-              right: 40,
-              pointerEvents: 'none'
-            }}
-          >
-            <Watermark />
-          </div>
+          <Watermark addChin={isFill(activeStep.gridHeight)} />
         )}
       </ReactForm>
     </>

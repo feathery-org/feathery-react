@@ -5,7 +5,7 @@ const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 const FIT = 'fit';
 const FILL = 'fill';
 
-const isFill = (v) => {
+export const isFill = (v) => {
   return v === FILL;
 };
 
