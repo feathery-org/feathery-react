@@ -1204,7 +1204,7 @@ function Form({
         )
         .then(() => clearLoaders());
     } else if (link === LINK_GOOGLE_OAUTH) {
-      clickPromise = googleOauthRedirect();
+      googleOauthRedirect();
     } else if ([LINK_SUBMIT, LINK_SKIP].includes(link)) {
       clickPromise = buttonOnSubmit(link === LINK_SUBMIT, button);
     }
