@@ -1350,7 +1350,7 @@ function Form({
           <DevNavBar allSteps={steps} curStep={activeStep} history={history} />
         )}
         {formSettings.showBrand && (
-          <Watermark addChin={isFill(activeStep.gridHeight)} />
+          <Watermark addChin={!isFill(activeStep.height)} />
         )}
       </ReactForm>
     </>

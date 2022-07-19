@@ -7,7 +7,7 @@ export default function Watermark({ addChin, width = 135, height = 40 }) {
       css={{
         position: 'absolute',
         bottom: addChin ? -60 : 0,
-        right: 40
+        right: 0
       }}
     >
       <div
