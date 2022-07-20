@@ -1,13 +1,20 @@
 import React from 'react';
 import { openTab } from '../../utils/network';
 
-export default function Watermark({ addChin, width = 135, height = 40 }) {
+export default function Watermark({
+  addChin,
+  brandPosition = 'bottom_right',
+  width = 135,
+  height = 40
+}) {
+  const alignment =
+    brandPosition === 'bottom_right' ? { right: 0 } : { left: 0 };
   return (
     <div
       css={{
         position: 'absolute',
         bottom: addChin ? -60 : 0,
-        right: 0
+        ...alignment
       }}
     >
       <div

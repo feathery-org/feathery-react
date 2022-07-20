@@ -607,7 +607,8 @@ function Form({
             autocomplete: res.autocomplete ? 'on' : 'off',
             autofocus: res.autofocus,
             formOff: Boolean(res.formOff),
-            showBrand: Boolean(res.show_brand)
+            showBrand: Boolean(res.show_brand),
+            brandPosition: res.brand_position
           });
           setProductionEnv(res.production);
           return [steps, res];
@@ -1350,7 +1351,10 @@ function Form({
           <DevNavBar allSteps={steps} curStep={activeStep} history={history} />
         )}
         {formSettings.showBrand && (
-          <Watermark addChin={!isFill(activeStep.height)} />
+          <Watermark
+            addChin={!isFill(activeStep.height)}
+            brandPosition={formSettings.brandPosition}
+          />
         )}
       </ReactForm>
     </>
