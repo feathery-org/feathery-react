@@ -7,14 +7,18 @@ export default function Watermark({
   width = 135,
   height = 40
 }) {
-  const alignment =
-    brandPosition === 'bottom_right' ? { right: 0 } : { left: 0 };
+  const horizontalAlignment = brandPosition.endsWith('right')
+    ? { right: 0 }
+    : { left: 0 };
+  const verticalAlignment = brandPosition.startsWith('bottom')
+    ? { bottom: addChin ? -60 : 0 }
+    : { top: 0 };
   return (
     <div
       css={{
         position: 'absolute',
-        bottom: addChin ? -60 : 0,
-        ...alignment
+        ...horizontalAlignment,
+        ...verticalAlignment
       }}
     >
       <div
