@@ -196,7 +196,7 @@ class ApplyStyles {
         'corner_bottom_right_radius',
         'corner_bottom_left_radius'
       ],
-      (a, b, c, d) => ({
+      (a = 0, b = 0, c = 0, d = 0) => ({
         borderRadius: `${a}px ${b}px ${c}px ${d}px`
       })
     );
