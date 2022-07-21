@@ -37,7 +37,7 @@ function DateSelectorField({
   const onDateChange = (newDate) => {
     newDate = newDate ?? '';
     setInternalDate(newDate);
-    onChange(formatDateString(newDate));
+    // onChange(formatDateString(newDate));
   };
 
   const servar = element.servar;
@@ -66,6 +66,7 @@ function DateSelectorField({
           required={required}
           autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
+          dateFormat='yyyy-MM-dd'
           customInput={
             <IMaskInput
               id={servar.key}
