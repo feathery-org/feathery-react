@@ -6,7 +6,7 @@ import { bootstrapStyles } from '../styles';
 import Client from '../../utils/client';
 import useMounted from '../../utils/useMounted';
 
-import { debounce } from 'lodash';
+import debounce from 'lodash.debounce';
 import { OverlayTrigger } from 'react-bootstrap';
 
 // Milliseconds
