@@ -12,4 +12,13 @@ function isObjectEmpty(obj) {
   return Object.keys(obj).length === 0;
 }
 
-export { encodeGetParams, isNum, isObjectEmpty };
+// This is a polyfill of Object.fromEntries.
+// Needed due to https://sentry.io/organizations/feathery-forms/issues/3446152280
+function objectFromEntries(arr) {
+  return [...arr].reduce((obj, [key, val]) => {
+    obj[key] = val;
+    return obj;
+  }, {});
+}
+
+export { encodeGetParams, isNum, isObjectEmpty, objectFromEntries };
