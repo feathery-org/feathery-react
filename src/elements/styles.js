@@ -1,4 +1,4 @@
-import { isNum } from '../utils/primitives';
+import { isNum, objectFromEntries } from '../utils/primitives';
 import { isDirectionColumn } from '../utils/styles';
 
 export const mobileBreakpointValue = 478;
@@ -13,11 +13,11 @@ class ApplyStyles {
   constructor(element, targets, handleMobile) {
     this.element = element;
     this.styles = element.styles;
-    this.targets = Object.fromEntries(targets.map((t) => [t, {}]));
+    this.targets = objectFromEntries(targets.map((t) => [t, {}]));
     this.handleMobile = handleMobile;
     if (handleMobile) {
       this.mobileStyles = element.mobile_styles;
-      this.mobileTargets = Object.fromEntries(targets.map((t) => [t, {}]));
+      this.mobileTargets = objectFromEntries(targets.map((t) => [t, {}]));
     }
   }
 
