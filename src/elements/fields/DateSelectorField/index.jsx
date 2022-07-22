@@ -3,11 +3,10 @@ import React, { memo, useState } from 'react';
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/Tooltip';
 import DatePicker from 'react-datepicker';
+import DateSelectorStyles from './styles';
 
 import { bootstrapStyles } from '../../styles';
 import { IMaskInput } from 'react-imask';
-
-import './dateSelector.css';
 
 function formatDateString(date) {
   if (!date) return '';
@@ -37,7 +36,7 @@ function DateSelectorField({
   const onDateChange = (newDate) => {
     newDate = newDate ?? '';
     setInternalDate(newDate);
-    // onChange(formatDateString(newDate));
+    onChange(formatDateString(newDate));
   };
 
   const servar = element.servar;
@@ -59,6 +58,7 @@ function DateSelectorField({
           ...applyStyles.getTarget('sub-fc')
         }}
       >
+        <DateSelectorStyles />
         <DatePicker
           selected={internalDate}
           onSelect={onDateChange} // when day is clicked
