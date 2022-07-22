@@ -66,7 +66,6 @@ function DateSelectorField({
           required={required}
           autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
-          dateFormat='yyyy-MM-dd'
           customInput={
             <IMaskInput
               id={servar.key}
@@ -84,7 +83,7 @@ function DateSelectorField({
                     : { color: 'transparent !important' }
               }}
               type='tel'
-              mask='0000-00-00'
+              mask='00/00/0000'
               unmask={false}
               inputRef={setRef}
             />
