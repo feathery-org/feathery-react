@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isNum } from '../../utils/primitives';
 import { useHotkeys } from 'react-hotkeys-hook';
+import { ERROR_COLOR } from '../styles';
 
 function SingleOtpInput({
   index,
@@ -86,7 +87,7 @@ function SingleOtpInput({
           marginLeft: '8px',
           outline: 'none',
           ...applyStyles.getTarget('field'),
-          ...(inlineError ? { borderColor: '#F42525' } : {}),
+          ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
           '&:hover': applyStyles.getTarget('hover')
         }}
         type='tel'

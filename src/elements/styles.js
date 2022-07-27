@@ -142,18 +142,18 @@ class ApplyStyles {
     );
   }
 
-  applySelectorStyles(target, prefix) {
+  applySelectorStyles(target, prefix, important = false) {
     this.applyBorders(target, prefix);
     if (this.styles[`${prefix}background_color`]) {
       this.applyColor(
         target,
         `${prefix}background_color`,
         'backgroundColor',
-        true
+        important
       );
     }
     if (this.styles[`${prefix}font_color`]) {
-      this.applyColor(target, `${prefix}font_color`, 'color', true);
+      this.applyColor(target, `${prefix}font_color`, 'color', important);
     }
   }
 
@@ -441,5 +441,7 @@ const imgMaxSizeStyles = {
   maxHeight: '100%'
 };
 
+const ERROR_COLOR = '#F42525';
+
 export default ApplyStyles;
-export { bootstrapStyles, imgMaxSizeStyles, noTextSelectStyles };
+export { bootstrapStyles, imgMaxSizeStyles, noTextSelectStyles, ERROR_COLOR };

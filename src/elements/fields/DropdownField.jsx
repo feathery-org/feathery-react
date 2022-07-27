@@ -1,4 +1,4 @@
-import { bootstrapStyles } from '../styles';
+import { bootstrapStyles, ERROR_COLOR } from '../styles';
 
 import React from 'react';
 import ReactForm from 'react-bootstrap/Form';
@@ -56,7 +56,7 @@ export default function DropdownField({
           css={{
             ...bootstrapStyles,
             ...applyStyles.getTarget('field'),
-            ...(inlineError ? { borderColor: '#F42525' } : {}),
+            ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
             pointerEvents: editable ? 'none' : 'auto',
             width: '100%',
             appearance: 'none',

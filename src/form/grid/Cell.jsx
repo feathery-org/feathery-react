@@ -2,6 +2,7 @@ import React from 'react';
 import Elements from '../../elements';
 import {
   getFieldValue,
+  setFormElementError,
   getInlineError,
   isFieldActuallyRequired,
   isFieldValueEmpty,
@@ -36,6 +37,7 @@ const Cell = ({ node: el, form }) => {
     buttonOnClick,
     fieldOnChange,
     inlineErrors,
+    setInlineErrors,
     repeatTriggerExists,
     changeValue,
     updateFieldValues,
@@ -46,8 +48,10 @@ const Cell = ({ node: el, form }) => {
     onViewElements,
     formSettings,
     clearFilePathMapEntry,
+    formRef,
     focusRef,
-    steps
+    steps,
+    setCardElement
   } = form;
 
   const fieldId = el.servar?.key ?? el.id;
@@ -388,6 +392,30 @@ const Cell = ({ node: el, form }) => {
             setRef={(ref) => {
               if (thisCounter === 1) focusRef.current = ref;
             }}
+          />
+        );
+      case 'payment_method':
+        return (
+          <Elements.PaymentMethodField
+            {...fieldProps}
+            setCardElement={setCardElement}
+            setFieldError={(message) =>
+              setFormElementError({
+                formRef,
+                fieldKey: el.servar.key,
+                message,
+                errorType: formSettings.errorType,
+                servarType: el.servar.type,
+                inlineErrors: { ...inlineErrors },
+                setInlineErrors: setInlineErrors,
+                triggerErrors: true
+              })
+            }
+            onChange={(val) => {
+              const change = changeValue(val, el, index);
+              if (change) onChange();
+            }}
+            errorDisplayMode={formSettings.errorType}
           />
         );
       default:

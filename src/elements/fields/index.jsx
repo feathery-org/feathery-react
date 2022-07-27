@@ -12,6 +12,7 @@ import TextField from './TextField';
 import TextArea from './TextArea';
 import React, { memo, useMemo } from 'react';
 import AddressLine1 from './AddressLine1';
+import PaymentMethodField from './PaymentMethodField';
 
 const Fields = {
   AddressLine1,
@@ -22,6 +23,7 @@ const Fields = {
   DateSelectorField,
   DropdownField,
   FileUploadField,
+  PaymentMethodField,
   PinInputField,
   RadioButtonGroupField,
   SignatureField,
@@ -33,8 +35,8 @@ function applyFieldStyles(field, styles) {
   styles.addTargets('fc', 'field', 'error', 'active', 'hover');
 
   styles.applyFontStyles('fc');
-  styles.applySelectorStyles('active', 'selected_');
-  styles.applySelectorStyles('hover', 'hover_');
+  styles.applySelectorStyles('active', 'selected_', true);
+  styles.applySelectorStyles('hover', 'hover_', true);
   styles.apply('error', 'font_family', (a) => ({
     fontFamily: a
   }));
@@ -189,6 +191,40 @@ function applyFieldStyles(field, styles) {
       styles.applyCorners('field');
       styles.applyBorders('field');
       break;
+    case 'payment_method':
+      styles.addTargets('sub-fc', 'tooltipIcon', 'completed');
+      styles.addTargets('active', 'hover');  // resetting these targets here
+      styles.applyHeight('sub-fc');
+      styles.applyWidth('fc');
+      styles.applyCorners('sub-fc');
+      styles.applyBorders('sub-fc');
+      styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
+      styles.applyBoxShadow('sub-fc');
+      styles.applyFontStyles('field');
+
+      styles.applySelectorStyles('active', 'selected_', false);  // no !important allowed
+      styles.applySelectorStyles('hover', 'hover_', false); // no !important allowed
+      // iconColor is specific to stripe card element
+      styles.apply('field', 'placeholder_color', (a) => ({
+        iconColor: `#${a}`
+      }));
+      styles.apply('hover', 'hover_placeholder_color', (a) => ({
+        iconColor: `#${a}`
+      }));
+      styles.apply('active', 'selected_placeholder_color', (a) => ({
+        iconColor: `#${a}`
+      }));
+      styles.apply('completed', 'completed_placeholder_color', (a) => ({
+        iconColor: `#${a}`
+      }));
+      styles.applyPlaceholderStyles(type, field.styles);
+      styles.apply('tooltipIcon', 'font_size', (a) => ({
+        width: `${a}px`
+      }));
+      styles.apply('completed', 'completed_font_color', (a) => ({
+        color: `#${a}`
+      }));
+      break;
     default:
       styles.addTargets('sub-fc', 'tooltipIcon');
       // Avoid applying width to checkbox to ensure the checkbox width is properly set by the component
@@ -223,10 +259,9 @@ Object.entries(Fields).map(([key, Field]) => {
         {servar.name}
       </label>
     ) : null;
-    const styles = useMemo(
-      () => applyFieldStyles(element, applyStyles),
-      [element]
-    );
+    const styles = useMemo(() => applyFieldStyles(element, applyStyles), [
+      element
+    ]);
     return (
       <>
         <Field

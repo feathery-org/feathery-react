@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useState } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/Tooltip';
-import { bootstrapStyles } from '../styles';
+import { bootstrapStyles, ERROR_COLOR } from '../styles';
 import Client from '../../utils/client';
 import useMounted from '../../utils/useMounted';
 
@@ -94,7 +94,7 @@ function AddressLine1({
               width: '100%',
               ...bootstrapStyles,
               ...applyStyles.getTarget('field'),
-              ...(inlineError ? { borderColor: '#F42525' } : {}),
+              ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
               '&:focus': applyStyles.getTarget('active'),
               '&:hover': applyStyles.getTarget('hover'),
               '&:not(:focus)':

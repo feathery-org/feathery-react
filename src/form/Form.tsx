@@ -33,9 +33,14 @@ import {
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
-import { sendLoginCode, verifySMSCode } from '../integrations/firebase';
+import { sendLoginCode } from '../integrations/firebase';
 import { googleOauthRedirect, sendMagicLink } from '../integrations/stytch';
 import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
+import { usePayments } from '../integrations/stripe';
+import {
+  getIntegrationActionConfiguration,
+  ActionData
+} from '../integrations/utils';
 import {
   LINK_ADD_REPEATED_ROW,
   LINK_CUSTOM,
@@ -954,7 +959,8 @@ function Form({
     if (invalid) return;
 
     const { loggedIn, errorMessage, errorField } = await handleActions(
-      setLoader
+      setLoader,
+      formattedFields
     );
     if (errorMessage && errorField) {
       clearLoaders();
@@ -1053,29 +1059,53 @@ function Form({
     }
   };
 
-  function handleActions(setLoader: any) {
-    for (let i = 0; i < activeStep.servar_fields.length; i++) {
-      const servar = activeStep.servar_fields[i].servar;
-      const fieldVal = fieldValues[servar.key];
-      if (servar.type === 'login') {
-        setLoader();
-        // Unless we want to do something more complex here we need to make a
-        // choice and can't just return both. Prioritize stytch
-        // @ts-expect-error
-        if (integrations.stytch) {
-          return sendMagicLink(fieldVal);
-        } else {
-          return sendLoginCode(fieldVal, servar);
+  // usePayments (Stripe)
+  const [getCardElement, setCardElement] = usePayments();
+
+  async function handleActions(
+    setLoader: any,
+    formattedFields: any,
+    // memoizing actionConfigurations provided no real benefit here because it we need a fresh getCardElement
+    actionConfigurations = getIntegrationActionConfiguration(getCardElement)
+  ) {
+    // Run through all action types for any relevant fields and execute them.
+    // Actions have a priority sequence and some actions must be exclusive (don't run any other
+    // actions after them).
+    for (const actionConfig of actionConfigurations) {
+      for (let i = 0; i < activeStep.servar_fields.length; i++) {
+        const servar = activeStep.servar_fields[i].servar;
+        if (servar.type === actionConfig.servarType) {
+          const actionData: ActionData = {
+            fieldVal: fieldValues[servar.key],
+            servar,
+            client,
+            formattedFields,
+            updateFieldValues,
+            step: activeStep,
+            // @ts-expect-error
+            integrationData: integrations[actionConfig.integrationKey],
+            targetElement:
+              actionConfig.targetElementFn &&
+              actionConfig.targetElementFn(servar.key)
+          };
+
+          if (
+            // @ts-expect-error
+            integrations[actionConfig.integrationKey] &&
+            (!actionConfig.isMatch ||
+              (actionConfig.isMatch && actionConfig.isMatch(actionData)))
+          ) {
+            setLoader();
+            const actionResult = await actionConfig.actionFn(actionData);
+            // Return right now if this action is not configured to continue to the next or there was an error
+            if (!actionConfig.continue || actionResult !== null) {
+              return actionResult ?? {};
+            }
+          }
         }
-      } else if (
-        servar.type === 'pin_input' &&
-        servar.metadata.verify_sms_code
-      ) {
-        setLoader();
-        return verifySMSCode(fieldVal, servar, client);
       }
     }
-    return Promise.resolve({});
+    return {};
   }
 
   function handleSubmitRedirect({
@@ -1284,12 +1314,12 @@ function Form({
     } else if (link === LINK_SEND_SMS) {
       clickPromise = setButtonLoader(button)
         .then(() =>
-          sendLoginCode(
-            fieldValues[button.properties.auth_target_field_key],
-            null,
+          sendLoginCode({
+            fieldVal: fieldValues[button.properties.auth_target_field_key],
+            servar: null,
             // @ts-expect-error
-            ['phone']
-          )
+            methods: ['phone']
+          })
         )
         .then(() => clearLoaders());
     } else if (link === LINK_SEND_MAGIC_LINK) {
@@ -1297,7 +1327,7 @@ function Form({
       const email = fieldValues[fieldKey];
       if (validators.email(email)) {
         clickPromise = setButtonLoader(button)
-          .then(() => sendMagicLink(email))
+          .then(() => sendMagicLink({ fieldVal: email }))
           .then(() => clearLoaders());
       } else {
         setFormElementError({
@@ -1403,6 +1433,7 @@ function Form({
     buttonOnClick,
     fieldOnChange,
     inlineErrors,
+    setInlineErrors,
     repeatTriggerExists,
     changeValue,
     updateFieldValues,
@@ -1414,7 +1445,9 @@ function Form({
     formSettings,
     clearFilePathMapEntry,
     focusRef,
-    steps
+    formRef,
+    steps,
+    setCardElement
   };
 
   if (!activeStep || finished) {

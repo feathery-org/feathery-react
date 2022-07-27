@@ -8,7 +8,7 @@ import ImageElement from './basic/ImageElement';
 import ProgressBarElement from './basic/ProgressBarElement';
 import VideoElement from './basic/VideoElement';
 
-import ApplyStyles, { mobileBreakpointKey } from './styles';
+import ApplyStyles, { mobileBreakpointKey, ERROR_COLOR } from './styles';
 
 const Basic = {
   ImageElement,
@@ -104,7 +104,7 @@ Object.entries(Elements).map(([key, Element]) => {
                   <span
                     css={{
                       alignSelf: 'flex-start',
-                      color: '#F42525',
+                      color: ERROR_COLOR,
                       ...applyStyles.getTarget('error')
                     }}
                   >

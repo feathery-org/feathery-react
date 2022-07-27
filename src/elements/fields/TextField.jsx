@@ -3,7 +3,7 @@ import React, { memo } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/Tooltip';
-import { bootstrapStyles } from '../styles';
+import { bootstrapStyles, ERROR_COLOR } from '../styles';
 import { emailPatternStr } from '../../utils/formHelperFunctions';
 
 const MAX_TEXT_FIELD_LENGTH = 512;
@@ -177,7 +177,7 @@ function TextField({
             width: '100%',
             ...bootstrapStyles,
             ...applyStyles.getTarget('field'),
-            ...(inlineError ? { borderColor: '#F42525' } : {}),
+            ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
             '&:focus': applyStyles.getTarget('active'),
             '&:hover': applyStyles.getTarget('hover'),
             '&:not(:focus)':
