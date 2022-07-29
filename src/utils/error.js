@@ -1,6 +1,6 @@
 export class SDKKeyError extends Error {
-  constructor() {
-    super('Invalid SDK Key');
+  constructor(message = 'Invalid SDK Key') {
+    super(message);
     this.name = 'SDKKeyError';
   }
 }

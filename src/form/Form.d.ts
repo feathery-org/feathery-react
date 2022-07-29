@@ -1,3 +1,4 @@
+// CRA added this next line to feathery-frontend as an env file - should I do the same here?
 /// <reference types="react" />
 import { FeatheryFieldTypes, FieldValues, setValues } from '../utils/init';
 

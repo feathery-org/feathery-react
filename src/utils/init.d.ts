@@ -3,22 +3,12 @@ export function init(
   options?: {
     userKey?: null | string;
     formKeys?: string[];
-    tracking?: 'cookie' | 'fingerprint';
+    tracking?: 'cookie' | 'fingerprint' | '';
     authId?: string;
     authEmail?: string;
     authPhoneNumber?: string;
   }
-  // not totally sure about this return type - <void> is the current implicit type
 ): Promise<void>;
-
-export function updateUserKey(newUserKey: string, merge?: boolean): void;
-export function setValues(userVals: FieldValues, rerender?: boolean): void;
-export function validateStep(
-  formKey: string,
-  trigger?: boolean
-): { [fieldKey: string]: errorMessage };
-export function setAuthClient(authClient: any): void;
-export function getAuthClient(): any;
 
 export type FeatheryFieldTypes =
   | null
@@ -34,3 +24,12 @@ export type FieldValues = {
   [fieldKey: string]: FeatheryFieldTypes;
 };
 export const fieldValues: FieldValues;
+
+export function updateUserKey(newUserKey: string, merge?: boolean): void;
+export function setValues(userVals: FieldValues, rerender?: boolean): void;
+export function validateStep(
+  formKey: string,
+  trigger?: boolean
+): { [fieldKey: string]: string };
+export function setAuthClient(authClient: any): void;
+export function getAuthClient(): any;
