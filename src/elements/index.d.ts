@@ -1,3 +1,3 @@
-const Elements: JSX.Element[];
+declare const Elements: JSX.Element[];
 
 export default Elements;

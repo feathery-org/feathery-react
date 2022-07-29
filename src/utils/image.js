@@ -31,7 +31,7 @@ export function getThumbnailType(file) {
  * This custom hook maintains a referentially-stable list of files,
  * and will execute a callback every time that list changes.
  */
-export function useFileData(initialFiles, onSetFiles = () => {}) {
+export function useFileData(initialFiles, onSetFiles = () => undefined) {
   const [files, setFiles] = useState(toList(initialFiles));
   useEffect(() => {
     // Prevent infinite loop of setting a new empty array as the value
