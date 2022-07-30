@@ -149,7 +149,7 @@ describe('formHelperFunctions', () => {
         data: 'data'
       };
       initInfo.mockReturnValue({
-        apiKey: 'apiKey',
+        sdkKey: 'sdkKey',
         userKey: 'userKey'
       });
 

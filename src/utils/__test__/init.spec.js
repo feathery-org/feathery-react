@@ -4,12 +4,12 @@ describe('init', () => {
   describe('init', () => {
     it('initializes with API and user keys', () => {
       // Arrange
-      const apiKey = 'apiKey';
+      const sdkKey = 'sdkKey';
       const userKey = 'userKey';
-      const expected = { apiKey, userKey };
+      const expected = { sdkKey, userKey };
 
       // Act
-      init(apiKey, { userKey: userKey });
+      init(sdkKey, { userKey: userKey });
       const actual = initInfo();
 
       // Assert

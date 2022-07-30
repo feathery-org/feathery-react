@@ -1,7 +1,7 @@
-export class APIKeyError extends Error {
+export class SDKKeyError extends Error {
   constructor() {
-    super('Invalid API Key');
-    this.name = 'APIKeyError';
+    super('Invalid SDK Key');
+    this.name = 'SDKKeyError';
   }
 }
 
