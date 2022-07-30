@@ -18,7 +18,7 @@ const defaultOptions = {
 const initState = {
   initialized: false,
   tracking: '',
-  apiKey: '',
+  sdkKey: '',
   userKey: '',
   authId: '',
   authEmail: '',
@@ -34,7 +34,7 @@ const initState = {
 const fieldValues = {};
 const filePathMap = {};
 
-function init(apiKey, options = {}) {
+function init(sdkKey, options = {}) {
   options = { ...defaultOptions, ...options };
   // TODO: deprecate legacy formKeys option
   options.forms = options.formKeys ?? options.forms ?? [];
@@ -42,14 +42,14 @@ function init(apiKey, options = {}) {
   if (initState.initialized) return; // can only be initialized one time per load
   initState.initialized = true;
 
-  if (!apiKey || typeof apiKey !== 'string') {
-    throw new errors.APIKeyError('Invalid API Key');
+  if (!sdkKey || typeof sdkKey !== 'string') {
+    throw new errors.SDKKeyError('Invalid SDK Key');
   }
   if (options.userKey && typeof options.userKey !== 'string') {
     throw new errors.UserKeyError();
   }
 
-  initState.apiKey = apiKey;
+  initState.sdkKey = sdkKey;
   [
     'authClient',
     'authId',
@@ -76,10 +76,10 @@ function init(apiKey, options = {}) {
     } else if (options.tracking === 'cookie') {
       document.cookie.split(/; */).map((c) => {
         const [key, v] = c.split('=', 2);
-        if (key === `feathery-user-id-${apiKey}`) initState.userKey = v;
+        if (key === `feathery-user-id-${sdkKey}`) initState.userKey = v;
       });
       if (!initState.userKey) initState.userKey = uuidv4();
-      document.cookie = `feathery-user-id-${apiKey}=${initState.userKey}; max-age=31536000; SameSite=strict`;
+      document.cookie = `feathery-user-id-${sdkKey}=${initState.userKey}; max-age=31536000; SameSite=strict`;
     }
   }
   if (initState.authId) {
@@ -113,8 +113,8 @@ function _fetchFormData(formKeys) {
 }
 
 function initInfo() {
-  const { apiKey } = initState;
-  if (apiKey === '') throw new errors.APIKeyError('API key has not been set');
+  const { sdkKey } = initState;
+  if (sdkKey === '') throw new errors.SDKKeyError('SDK key has not been set');
   return initState;
 }
 

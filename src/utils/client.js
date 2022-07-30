@@ -49,7 +49,7 @@ export default class Client {
         payload = JSON.stringify(await response.text());
         throw new errors.FetchError(`Invalid parameters: ${payload}`);
       case 401:
-        throw new errors.APIKeyError();
+        throw new errors.SDKKeyError();
       case 404:
         throw new errors.FetchError("Can't find object");
       case 500:
@@ -60,12 +60,12 @@ export default class Client {
   }
 
   _fetch(url, options) {
-    const { apiKey } = initInfo();
+    const { sdkKey } = initInfo();
     const { headers, ...otherOptions } = options;
     options = {
       cache: 'no-store',
       headers: {
-        Authorization: 'Token ' + apiKey,
+        Authorization: 'Token ' + sdkKey,
         ...headers
       },
       ...otherOptions

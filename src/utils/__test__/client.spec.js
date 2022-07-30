@@ -16,7 +16,7 @@ describe('client', () => {
       const formKey = 'formKey';
       const client = new Client(formKey);
       initInfo.mockReturnValue({
-        apiKey: 'apiKey',
+        sdkKey: 'sdkKey',
         userKey: 'userKey',
         sessions: {},
         forms: {}
@@ -38,7 +38,7 @@ describe('client', () => {
           cache: 'no-store',
           importance: 'high',
           headers: {
-            Authorization: 'Token apiKey',
+            Authorization: 'Token sdkKey',
             'Accept-Encoding': 'gzip'
           }
         }
@@ -56,7 +56,7 @@ describe('client', () => {
       const formKey = 'formKey';
       const client = new Client(formKey);
       initInfo.mockReturnValue({
-        apiKey: 'apiKey',
+        sdkKey: 'sdkKey',
         userKey: 'userKey',
         sessions: {},
         forms: {},
@@ -80,7 +80,7 @@ describe('client', () => {
         {
           cache: 'no-store',
           importance: 'high',
-          headers: { Authorization: 'Token apiKey' }
+          headers: { Authorization: 'Token sdkKey' }
         }
       );
       expect(response).toEqual([
@@ -96,7 +96,7 @@ describe('client', () => {
       const formKey = 'formKey';
       const client = new Client(formKey);
       const customKeyValues = { foo: 'bar' };
-      initInfo.mockReturnValue({ apiKey: 'apiKey', userKey: 'userKey' });
+      initInfo.mockReturnValue({ sdkKey: 'sdkKey', userKey: 'userKey' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
@@ -107,7 +107,7 @@ describe('client', () => {
         `${API_URL}panel/custom/submit/v2/`,
         {
           cache: 'no-store',
-          headers: { Authorization: 'Token apiKey' },
+          headers: { Authorization: 'Token sdkKey' },
           method: 'POST',
           body: expect.any(FormData)
         }
@@ -136,7 +136,7 @@ describe('client', () => {
         }
       ];
       const body = { fuser_key: 'userKey', servars, panel_key: formKey };
-      initInfo.mockReturnValue({ apiKey: 'apiKey', userKey: 'userKey' });
+      initInfo.mockReturnValue({ sdkKey: 'sdkKey', userKey: 'userKey' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
@@ -148,7 +148,7 @@ describe('client', () => {
         {
           cache: 'no-store',
           headers: {
-            Authorization: 'Token apiKey',
+            Authorization: 'Token sdkKey',
             'Content-Type': 'application/json'
           },
           method: 'POST',
@@ -174,7 +174,7 @@ describe('client', () => {
         event,
         fuser_key: 'userKey'
       };
-      initInfo.mockReturnValue({ apiKey: 'apiKey', userKey: 'userKey' });
+      initInfo.mockReturnValue({ sdkKey: 'sdkKey', userKey: 'userKey' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
@@ -189,7 +189,7 @@ describe('client', () => {
       expect(global.fetch).toHaveBeenCalledWith(`${API_URL}event/`, {
         cache: 'no-store',
         headers: {
-          Authorization: 'Token apiKey',
+          Authorization: 'Token sdkKey',
           'Content-Type': 'application/json'
         },
         method: 'POST',
