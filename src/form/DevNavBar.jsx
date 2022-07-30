@@ -57,7 +57,7 @@ export default function DevNavBar({ allSteps, curStep, history }) {
 
     // If step is the first, add floating steps to the previous navigation
     if (curStep.origin) {
-      Object.keys(allSteps).map((stepKey) => {
+      Object.keys(allSteps).forEach((stepKey) => {
         if (!(stepKey in depthMap)) prevStepKeys.add(stepKey);
       });
     }
