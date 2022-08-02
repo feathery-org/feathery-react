@@ -27,7 +27,8 @@ function ImageElement({ element, applyStyles, elementProps = {}, children }) {
         alt='Form Image'
         css={{
           objectFit: 'contain',
-          width: '100%'
+          width: '100%',
+          maxHeight: '100%'
         }}
         {...elementProps}
       />
