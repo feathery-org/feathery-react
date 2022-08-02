@@ -15,7 +15,13 @@ function ImageElement({ element, applyStyles, elementProps = {}, children }) {
     [applyStyles]
   );
   return (
-    <div css={{ ...styles.getTarget('image'), position: 'relative' }}>
+    <div
+      css={{
+        ...styles.getTarget('image'),
+        maxHeight: '100%',
+        position: 'relative'
+      }}
+    >
       <img
         src={element.properties.source_image || PLACEHOLDER_IMAGE}
         alt='Form Image'
