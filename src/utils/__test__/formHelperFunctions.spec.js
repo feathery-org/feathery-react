@@ -358,6 +358,7 @@ describe('formHelperFunctions', () => {
         step1: {
           key: 'step1',
           next_conditions: [],
+          previous_conditions: [],
           progress_bars: [{}],
           origin: true
         }
@@ -382,12 +383,14 @@ describe('formHelperFunctions', () => {
               next_step_key: 'step2'
             }
           ],
+          previous_conditions: [],
           progress_bars: [{}],
           origin: true
         },
         step2: {
           key: 'step2',
           next_conditions: [],
+          previous_conditions: [],
           progress_bars: [{}]
         }
       };
@@ -414,12 +417,14 @@ describe('formHelperFunctions', () => {
               next_step_key: 'step3'
             }
           ],
+          previous_conditions: [],
           progress_bars: [{}],
           origin: true
         },
         step2: {
           key: 'step2',
           next_conditions: [],
+          previous_conditions: [],
           progress_bars: [{}]
         },
         step3: {
@@ -429,11 +434,13 @@ describe('formHelperFunctions', () => {
               next_step_key: 'step4'
             }
           ],
+          previous_conditions: [],
           progress_bars: [{}]
         },
         step4: {
           key: 'step4',
           next_conditions: [],
+          previous_conditions: [],
           progress_bars: [{}]
         }
       };
