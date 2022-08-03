@@ -1,4 +1,4 @@
-import global from '../global';
+import '../types/global';
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -72,14 +72,13 @@ const initState: InitState = {
 const fieldValues: FieldValues = {};
 const filePathMap = {};
 
-// TODO(ts) type form options
-function init(sdkKey: string, options: InitOptions = {}) {
+function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
   options = { ...defaultOptions, ...options };
   // TODO: deprecate legacy formKeys option
   options.forms =
     (options as DeprecatedInitOptions).formKeys ?? options.forms ?? [];
 
-  if (initState.initialized) return; // can only be initialized one time per load
+  if (initState.initialized) return Promise.resolve(); // can only be initialized one time per load
   initState.initialized = true;
 
   if (!sdkKey || typeof sdkKey !== 'string') {
@@ -162,7 +161,7 @@ function initInfo() {
   return initState;
 }
 
-function updateUserKey(newUserKey: string, merge = false) {
+function updateUserKey(newUserKey: string, merge = false): void {
   defaultClient.updateUserKey(newUserKey, merge).then(() => {
     initState.userKey = newUserKey;
     if (initState.tracking === 'cookie') {
@@ -184,7 +183,7 @@ function _parseUserVal(userVal: FeatheryFieldTypes, key: string) {
  * we need to explicitly convert any files to file Promises
  * since they may not have done so
  */
-function setValues(userVals: FieldValues, rerender = true) {
+function setValues(userVals: FieldValues, rerender = true): void {
   const result: FieldValues = {};
   Object.entries(userVals).forEach(([key, value]) => {
     if (Array.isArray(value))

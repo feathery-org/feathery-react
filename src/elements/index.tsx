@@ -20,7 +20,7 @@ const Basic = {
 const Elements = { ...Basic, ...Fields };
 
 // TODO(peter): deprecate once customers have upgraded and backend migrated
-function legacyAlignment(alignment) {
+function legacyAlignment(alignment: any) {
   switch (alignment) {
     case 'left':
       return 'flex-start';
@@ -32,7 +32,9 @@ function legacyAlignment(alignment) {
 }
 
 Object.entries(Elements).map(([key, Element]) => {
+  // @ts-expect-error need to type arrow fn params
   Elements[key] = memo(
+    // @ts-expect-error need to type arrow fn params
     ({ element, componentOnly = true, onView, ...props }) => {
       const applyStyles = useMemo(() => {
         const as = new ApplyStyles(
@@ -40,10 +42,10 @@ Object.entries(Elements).map(([key, Element]) => {
           ['container', 'containerWrapper'],
           !componentOnly
         );
-        as.apply('container', 'vertical_layout', (a) => ({
+        as.apply('container', 'vertical_layout', (a: any) => ({
           justifyContent: a
         }));
-        as.apply('container', 'layout', (a) => ({
+        as.apply('container', 'layout', (a: any) => ({
           alignItems: legacyAlignment(a)
         }));
         as.applyPadding('containerWrapper');
@@ -51,6 +53,7 @@ Object.entries(Elements).map(([key, Element]) => {
         return as;
       }, [element, componentOnly]);
       const featheryElement = (
+        // @ts-expect-error I think we need to mark children as an option param for Element
         <Element element={element} applyStyles={applyStyles} {...props} />
       );
       const e = onView ? (
@@ -61,9 +64,8 @@ Object.entries(Elements).map(([key, Element]) => {
       if (componentOnly) return e;
       else {
         const containerStyles = applyStyles.getTarget('container');
-        const containerWrapperStyles = applyStyles.getTarget(
-          'containerWrapper'
-        );
+        const containerWrapperStyles =
+          applyStyles.getTarget('containerWrapper');
 
         const containerCSS = {
           ...containerStyles,
