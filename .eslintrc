@@ -1,7 +1,4 @@
 {
-  // not 100% sure if we want to stay with the babel parser
-  // https://www.npmjs.com/package/@babel/eslint-parser - I think TS section says that it can coexist with TS linting rules?
-  // but https://typescript-eslint.io/docs/linting/#details says that I need to use the TS parser
   "parser": "@typescript-eslint/parser",
   "plugins": ["@typescript-eslint", "react", "typescript"],
   "extends": [
@@ -34,6 +31,16 @@
     "react/jsx-fragments": 0,
     "react/no-unused-prop-types": 0,
     "import/export": 0,
-    "@typescript-eslint/no-explicit-any": 0 // Turn this back on after typing complete
+    "@typescript-eslint/no-explicit-any": 0, // Turn this back on after typing complete
+    "@typescript-eslint/no-empty-function": 0,
+    "@typescript-eslint/ban-ts-comment": [
+      "error",
+      {
+        "ts-expect-error": false,
+        "ts-ignore": true,
+        "ts-nocheck": true,
+        "ts-check": true
+      }
+    ]
   }
 }

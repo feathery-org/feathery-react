@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import Elements from './elements';
-import Form from './form/Form';
+import Form, { Props as FormProps } from './form/Form';
 import {
   init,
   updateUserKey,
@@ -22,8 +22,9 @@ function getAllValues() {
  * @param {string} elementId The ID of the DOM element to hold the form
  * @param {Object} props The props defined on the *Form* component
  */
-function renderAt(elementId, props) {
+function renderAt(elementId: any, props: FormProps<any>) {
   const container = document.getElementById(elementId);
+
   ReactDOM.render(<Form {...props} />, container);
 }
 

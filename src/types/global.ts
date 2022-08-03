@@ -3,6 +3,12 @@
 declare global {
   var scriptjsLoadPromise: any;
   var webfontloaderPromise: any;
+  var firebase: any;
+
+  interface Window {
+    firebaseRecaptchaVerifier: any;
+    firebaseConfirmationResult: any;
+  }
 }
 
-export default global;
+export {};
