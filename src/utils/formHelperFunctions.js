@@ -191,6 +191,9 @@ const getStepDepthMap = (steps, hasProgressBar = false) => {
     step.next_conditions.forEach((condition) => {
       stepQueue.push([steps[condition.next_step_key], depth + 1]);
     });
+    step.previous_conditions.forEach((condition) => {
+      stepQueue.push([steps[condition.previous_step_key], depth + 1]);
+    });
   }
   return depthMap;
 };

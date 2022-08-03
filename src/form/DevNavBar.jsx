@@ -79,7 +79,7 @@ export default function DevNavBar({ allSteps, curStep, history }) {
         css={{
           position: 'absolute',
           bottom: '-10px',
-          height: '300px',
+          maxHeight: '300px',
           width: '200px',
           backgroundColor: 'white',
           boxShadow: '0 4px 14px #00000040',
