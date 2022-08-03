@@ -43,9 +43,10 @@ function TextElement({
   elementProps = {},
   children
 }) {
-  const styles = useMemo(() => applyTextStyles(element, applyStyles), [
-    applyStyles
-  ]);
+  const styles = useMemo(
+    () => applyTextStyles(element, applyStyles),
+    [applyStyles]
+  );
   return (
     <div
       css={{
