@@ -25,7 +25,8 @@ describe('hydration', () => {
         backgroundColor: '#000000FF',
         width: 'auto',
         '@media (max-width: 478px)': {
-          width: 30
+          width: '100%',
+          maxWidth: 30
         }
       };
 
@@ -78,7 +79,7 @@ describe('hydration', () => {
         backgroundColor: '#000000FF',
         width: 'auto',
         '@media (max-width: 478px)': {
-          width: 'auto'
+          width: '100%'
         }
       };
 

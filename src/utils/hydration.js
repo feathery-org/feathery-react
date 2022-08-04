@@ -61,7 +61,8 @@ function calculateStepCSS(step) {
 
   // 478
   stepCSS[`@media (max-width: 478px)`] = {
-    width: mobile.gridWidth,
+    // width will be controlled by maxWidth in the case it is fixed below 478px
+    width: '100%',
     minWidth: mobile.minWidth,
     maxWidth: mobile.gridWidth,
     height: mobile.gridHeight,
