@@ -1442,7 +1442,6 @@ function Form({
         autoComplete={formSettings.autocomplete}
         className={className}
         ref={formRef}
-        // @ts-expect-error
         css={{
           ...stepCSS,
           ...style,
