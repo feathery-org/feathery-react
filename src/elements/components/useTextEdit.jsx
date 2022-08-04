@@ -60,7 +60,7 @@ function useTextEdit({
 
       if (focused) {
         if (editMode === 'hover') {
-          editableProps = { onDoubleClick: () => setEditMode('edit') };
+          editableProps = { onClick: () => setEditMode('edit') };
           css['&:hover'] = { backgroundColor: 'rgb(230, 240, 252)' };
         } else if (editMode === 'edit') css.cursor = 'text';
       }
