@@ -45,7 +45,12 @@ function TextNodes({
       }
     });
     return (
-      <span ref={spanRef} {...editableProps} key={text}>
+      <span
+        id={`span-${element.id}`}
+        ref={spanRef}
+        {...editableProps}
+        key={text}
+      >
         {delta
           .filter((op) => op.insert)
           .map((op, i) => {
