@@ -100,6 +100,10 @@
     "uuid": "^8.3.2",
     "webfontloader": "^1.6.28"
   },
+  "resolutions": {
+    "@types/react": "~16.14.1"
+  },
+  "types": "./dist/index.d.ts",
   "babel": {
     "presets": [
       "@babel/preset-env",
@@ -120,6 +124,5 @@
     "moduleNameMapper": {
       "\\.(css|less|scss|sass)$": "identity-obj-proxy"
     }
-  },
-  "typings": "./src/index.d.ts"
+  }
 }

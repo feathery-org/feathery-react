@@ -1,10 +1,12 @@
 {
   "compilerOptions": {
     "sourceMap": true,
+    "declaration": true,
+    "outDir": "dist",
+    "declarationMap": true,
     "strictNullChecks": true,
     "module": "esnext",
-    "jsx": "react-jsx",
-    "jsxImportSource": "@emotion/react",
+    "jsx": "react",
     "target": "es5",
     "allowJs": true,
     "moduleResolution": "node",

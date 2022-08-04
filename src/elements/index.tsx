@@ -83,6 +83,7 @@ Object.entries(Elements).map(([key, Element]) => {
 
         return (
           <div
+            // @ts-expect-error
             css={{
               display: 'flex',
               flexGrow: 1,
@@ -90,6 +91,7 @@ Object.entries(Elements).map(([key, Element]) => {
             }}
           >
             <div
+              // @ts-expect-error
               css={{
                 display: 'flex',
                 flexDirection: 'column',

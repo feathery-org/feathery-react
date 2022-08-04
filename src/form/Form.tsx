@@ -1,4 +1,4 @@
-import '../types/global';
+import type * as globalType from '../types/global';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -1442,6 +1442,7 @@ function Form({
         autoComplete={formSettings.autocomplete}
         className={className}
         ref={formRef}
+        // @ts-expect-error
         css={{
           ...stepCSS,
           ...style,
