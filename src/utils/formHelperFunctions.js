@@ -318,14 +318,14 @@ function getFieldError(value, servar) {
 async function setFormElementError({
   formRef,
   errorType,
-  errorCallback = () => undefined,
+  errorCallback = () => {},
   fieldKey = '',
   // Empty message means no error / clearing the error
   message = '',
   index = null,
   servarType = '',
   inlineErrors = {},
-  setInlineErrors = () => undefined,
+  setInlineErrors = () => {},
   triggerErrors = false
 }) {
   let invalid = false;

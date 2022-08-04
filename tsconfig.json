@@ -1,6 +1,9 @@
 {
   "compilerOptions": {
     "sourceMap": true,
+    "declaration": true,
+    "outDir": "dist",
+    "declarationMap": true,
     "strictNullChecks": true,
     "module": "esnext",
     "jsx": "react-jsx",

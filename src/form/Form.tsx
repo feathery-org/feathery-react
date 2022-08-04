@@ -1,4 +1,5 @@
-import '../types/global';
+/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
+import type * as globalType from '../types/global';
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -110,14 +111,14 @@ function Form({
   // @ts-expect-error - this prop is deprecated so don't want to type it
   formKey: _formKey,
   formName: _formName,
-  onChange = () => undefined,
-  onLoad = () => undefined,
-  onFormComplete = () => undefined,
-  onSubmit = () => undefined,
-  onSkip = () => undefined,
-  onError = () => undefined,
-  onCustomAction = () => undefined,
-  onView = () => undefined,
+  onChange = () => {},
+  onLoad = () => {},
+  onFormComplete = () => {},
+  onSubmit = () => {},
+  onSkip = () => {},
+  onError = () => {},
+  onCustomAction = () => {},
+  onView = () => {},
   onViewElements = [],
   initialValues = {},
   initialStepId = '',
@@ -169,7 +170,7 @@ function Form({
   const [repeats, setRepeats] = useState(0);
 
   // Set to trigger conditional renders on field value updates, no need to use
-  // eslint-disable-next-line no-unused-vars
+  /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
   const [render, setRender] = useState(false);
 
   const [loaders, setLoaders] = useState({});
@@ -893,7 +894,7 @@ function Form({
     });
   };
 
-  const getNextStepKey = (metadata) =>
+  const getNextStepKey = (metadata: any) =>
     nextStepKey(activeStep.next_conditions, metadata, fieldValues);
 
   const submit = async ({

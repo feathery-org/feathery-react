@@ -31,7 +31,7 @@
     "react/jsx-fragments": 0,
     "react/no-unused-prop-types": 0,
     "import/export": 0,
-    "@typescript-eslint/no-explicit-any": 0, // Turn this back on after typing complete
+    "@typescript-eslint/no-explicit-any": 0, // TODO(ts): Turn this back on after typing complete
     "@typescript-eslint/no-empty-function": 0,
     "@typescript-eslint/ban-ts-comment": [
       "error",
