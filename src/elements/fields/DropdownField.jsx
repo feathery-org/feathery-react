@@ -11,7 +11,6 @@ export default function DropdownField({
   required = false,
   fieldVal = '',
   editable = false,
-  onClick = () => {},
   onChange = () => {},
   elementProps = {},
   children
@@ -75,7 +74,6 @@ export default function DropdownField({
           value={fieldVal}
           required={required}
           onChange={onChange}
-          onClick={onClick}
         >
           <option key='' value='' />
           {options}

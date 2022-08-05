@@ -479,8 +479,7 @@ function Form({
     while (true) {
       let logOut = false;
       const loadCond = newStep.next_conditions.find((cond) => {
-        if (cond.trigger !== 'load' || cond.element_type !== 'step')
-          return false;
+        if (cond.element_type !== 'step') return false;
         const notAuth =
           cond.rules.find((r) => r.comparison === 'not_authenticated') &&
           !initState.authId &&
@@ -810,6 +809,9 @@ function Form({
     });
   };
 
+  const getNextStepKey = (metadata) =>
+    nextStepKey(activeStep.next_conditions, metadata, fieldValues);
+
   const submit = async ({
     metadata,
     repeat = 0,
@@ -828,7 +830,7 @@ function Form({
     const trigger = {
       ...lookUpTrigger(activeStep, metadata.elementIDs[0], elementType),
       type: elementType,
-      action: metadata.trigger
+      action: metadata.elementType === 'field' ? 'change' : 'click'
     };
 
     const newInlineErrors = {};
@@ -896,11 +898,7 @@ function Form({
         integrations.plaid,
         fieldValues
       );
-      const lastStep = !nextStepKey(
-        activeStep.next_conditions,
-        metadata,
-        fieldValues
-      );
+      const lastStep = !getNextStepKey(metadata);
       let stepChanged = false;
       await setLoader();
       await runUserCallback(onSubmit, {
@@ -1042,14 +1040,8 @@ function Form({
     };
 
     if (!redirectKey) {
-      const newStepKey = nextStepKey(
-        activeStep.next_conditions,
-        metadata,
-        fieldValues
-      );
-
-      redirectKey = newStepKey;
-      eventData = { ...eventData, next_step_key: newStepKey };
+      redirectKey = getNextStepKey(metadata);
+      eventData = { ...eventData, next_step_key: redirectKey };
     }
 
     await callbackRef.current.all();
@@ -1067,12 +1059,7 @@ function Form({
         eventData.completed = true;
       client.registerEvent(eventData, submitPromise);
       const newURL = getNewStepUrl(redirectKey);
-      if (
-        submitData ||
-        (metadata.elementType === 'text' && metadata.trigger === 'click')
-      )
-        setShouldScrollToTop(true);
-      else setShouldScrollToTop(false);
+      setShouldScrollToTop(submitData || metadata.elementType === 'text');
       if (submitData || ['button', 'text'].includes(metadata.elementType))
         history.push(newURL);
       else history.replace(newURL);
@@ -1106,8 +1093,7 @@ function Form({
     try {
       const metadata = {
         elementType: 'button',
-        elementIDs: [button.id],
-        trigger: 'click'
+        elementIDs: [button.id]
       };
       if (submitData) {
         await submit({
@@ -1253,15 +1239,21 @@ function Form({
       }
       const metadata = {
         elementType: 'field',
-        elementIDs: fieldIDs,
-        trigger: 'change'
+        elementIDs: fieldIDs
       };
       if (submitData) {
-        // Simulate button click if available
         const submitButton = activeStep.buttons.find(
           (b) => b.properties.link === LINK_SUBMIT
         );
-        if (submitButton) buttonOnClick(submitButton);
+        // Simulate button submit if available and valid to trigger button loader
+        if (
+          submitButton &&
+          getNextStepKey({
+            elementType: 'button',
+            elementIDs: [submitButton.id]
+          })
+        )
+          buttonOnSubmit(submitButton);
         else submit({ metadata, repeat: elementRepeatIndex });
       } else handleRedirect({ metadata });
     };
@@ -1288,7 +1280,6 @@ function Form({
     activeStep,
     loaders,
     buttonOnClick,
-    submit,
     fieldOnChange,
     inlineErrors,
     repeatTriggerExists,

@@ -21,7 +21,6 @@ function RadioButtonGroupField({
   otherVal = '',
   onChange = () => {},
   onOtherChange = () => {},
-  onClick = () => {},
   elementProps = {},
   children
 }) {
@@ -56,7 +55,6 @@ function RadioButtonGroupField({
             checked={fieldVal === opt}
             required={required}
             onChange={onChange}
-            onClick={onClick}
             value={opt}
             style={{
               display: 'flex',
@@ -95,7 +93,6 @@ function RadioButtonGroupField({
               });
               onChange(e);
             }}
-            onClick={onClick}
             value={otherVal || ''}
             style={{
               display: 'flex',
@@ -117,7 +114,6 @@ function RadioButtonGroupField({
             id={servar.key}
             value={otherVal || ''}
             onChange={onOtherChange}
-            onClick={onClick}
             maxLength={servar.max_length}
             minLength={servar.min_length}
             required={otherChecked}

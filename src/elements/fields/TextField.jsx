@@ -143,7 +143,6 @@ function TextField({
   editable = false,
   onAccept = () => {},
   onBlur = () => {},
-  onClick = () => {},
   setRef = () => {},
   rawValue = '',
   inlineError,
@@ -190,7 +189,6 @@ function TextField({
           minLength={servar.min_length}
           required={required}
           onBlur={onBlur}
-          onClick={onClick}
           autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
           value={rawValue}

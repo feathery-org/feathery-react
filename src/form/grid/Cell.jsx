@@ -13,7 +13,6 @@ import { stringifyWithNull } from '../../utils/string';
 import { fieldCounter } from '../Form';
 import { justRemove } from '../../utils/array';
 import { isObjectEmpty } from '../../utils/primitives';
-import { fieldValues } from '../../utils/init';
 
 const mapFieldTypes = new Set([
   'gmap_line_1',
@@ -36,7 +35,6 @@ const Cell = ({ node: el, form }) => {
     activeStep,
     loaders,
     buttonOnClick,
-    submit,
     fieldOnChange,
     inlineErrors,
     repeatTriggerExists,
@@ -149,19 +147,6 @@ const Cell = ({ node: el, form }) => {
       }
     }
 
-    const onClick = (e, submitData = false) => {
-      const metadata = {
-        elementType: 'field',
-        elementIDs: [el.id],
-        trigger: 'click'
-      };
-      if (submitData) {
-        submit({ metadata, repeat: el.repeat || 0 });
-      } else {
-        handleRedirect({ metadata });
-      }
-    };
-
     const onChange = fieldOnChange({
       fieldIDs: [el.id],
       fieldKeys: [servar.key],
@@ -228,7 +213,6 @@ const Cell = ({ node: el, form }) => {
                   files.length > 0
               });
             }}
-            onClick={onClick}
             initialFiles={fieldVal}
           />
         );
@@ -258,7 +242,6 @@ const Cell = ({ node: el, form }) => {
                 );
               }
               onChange();
-              onClick(null, el.properties.submit_trigger === 'auto');
             }}
           />
         );
@@ -267,7 +250,6 @@ const Cell = ({ node: el, form }) => {
           <Elements.CheckboxField
             {...fieldProps}
             fieldVal={fieldVal}
-            onClick={onClick}
             onChange={(e) => {
               const val = e.target.checked;
               changeValue(val, el, index);
@@ -281,7 +263,6 @@ const Cell = ({ node: el, form }) => {
           <Elements.DropdownField
             {...fieldProps}
             fieldVal={fieldVal}
-            onClick={onClick}
             onChange={(e) => {
               const val = e.target.value;
               changeValue(val, el, index);
@@ -296,7 +277,6 @@ const Cell = ({ node: el, form }) => {
           <Elements.PinInputField
             {...fieldProps}
             fieldVal={fieldVal}
-            onClick={onClick}
             onChange={(val) => {
               const change = changeValue(val, el, index, false);
               if (change)
@@ -323,7 +303,6 @@ const Cell = ({ node: el, form }) => {
               handleOtherStateChange(otherVal)(e);
               onChange();
             }}
-            onClick={onClick}
           />
         );
       case 'select':
@@ -346,7 +325,6 @@ const Cell = ({ node: el, form }) => {
                   el.properties.submit_trigger === 'auto' && e.target.value
               });
             }}
-            onClick={onClick}
           />
         );
       case 'hex_color':
@@ -360,7 +338,6 @@ const Cell = ({ node: el, form }) => {
                 submitData: el.properties.submit_trigger === 'auto' && color
               });
             }}
-            onClick={onClick}
           />
         );
       case 'text_area':
@@ -368,7 +345,6 @@ const Cell = ({ node: el, form }) => {
           <Elements.TextArea
             {...fieldProps}
             rawValue={stringifyWithNull(fieldVal)}
-            onClick={onClick}
             onChange={(e) => {
               const val = e.target.value;
               const change = changeValue(val, el, index);
@@ -385,7 +361,6 @@ const Cell = ({ node: el, form }) => {
             {...fieldProps}
             value={stringifyWithNull(fieldVal)}
             onBlur={() => setGMapBlurKey(servar.key)}
-            onClick={onClick}
             onChange={(e) => {
               const val = e.target.value;
               const change = changeValue(val, el, index);
@@ -432,7 +407,6 @@ const Cell = ({ node: el, form }) => {
           <Elements.TextField
             {...fieldProps}
             rawValue={stringifyWithNull(fieldVal)}
-            onClick={onClick}
             onAccept={(val, mask) => {
               const newVal = mask._unmaskedValue === '' ? '' : val;
               const change = changeValue(newVal, el, index, false);
