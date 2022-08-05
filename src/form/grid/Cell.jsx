@@ -132,6 +132,7 @@ const Cell = ({ node: el, form }) => {
     const index = el.repeat ?? null;
     const servar = el.servar;
     const { value: fieldVal } = getFieldValue(el, fieldValues);
+    const autosubmit = el.properties.submit_trigger === 'auto';
 
     let otherVal = '';
     if (servar.metadata.other) {
@@ -208,9 +209,7 @@ const Cell = ({ node: el, form }) => {
               onChange({
                 valueRepeatIndex: fieldIndex,
                 submitData:
-                  el.properties.submit_trigger === 'auto' &&
-                  !el.properties.multiple &&
-                  files.length > 0
+                  autosubmit && !el.properties.multiple && files.length > 0
               });
             }}
             initialFiles={fieldVal}
@@ -225,7 +224,7 @@ const Cell = ({ node: el, form }) => {
               const {
                 metadata: { multiple },
                 required
-              } = fieldProps.element.servar;
+              } = el.servar;
               if (multiple) {
                 const existingIndex = fieldVal.indexOf(option);
                 if (existingIndex === -1) {
@@ -241,7 +240,7 @@ const Cell = ({ node: el, form }) => {
                   index
                 );
               }
-              onChange();
+              onChange({ submitData: !multiple && autosubmit && option });
             }}
           />
         );
@@ -266,9 +265,7 @@ const Cell = ({ node: el, form }) => {
             onChange={(e) => {
               const val = e.target.value;
               changeValue(val, el, index);
-              onChange({
-                submitData: el.properties.submit_trigger === 'auto' && val
-              });
+              onChange({ submitData: autosubmit && val });
             }}
           />
         );
@@ -281,9 +278,7 @@ const Cell = ({ node: el, form }) => {
               const change = changeValue(val, el, index, false);
               if (change)
                 onChange({
-                  submitData:
-                    el.properties.submit_trigger === 'auto' &&
-                    val.length === el.servar.max_length
+                  submitData: autosubmit && val.length === el.servar.max_length
                 });
             }}
             shouldFocus
@@ -314,16 +309,11 @@ const Cell = ({ node: el, form }) => {
             onChange={(e) => {
               const val = e.target.value;
               changeValue(val, el, index);
-              onChange({
-                submitData: el.properties.submit_trigger === 'auto' && val
-              });
+              onChange({ submitData: autosubmit && val });
             }}
             onOtherChange={(e) => {
               handleOtherStateChange(otherVal)(e);
-              onChange({
-                submitData:
-                  el.properties.submit_trigger === 'auto' && e.target.value
-              });
+              onChange({ submitData: autosubmit && e.target.value });
             }}
           />
         );
@@ -334,9 +324,7 @@ const Cell = ({ node: el, form }) => {
             fieldVal={fieldVal}
             onChange={(color) => {
               changeValue(color, el, index);
-              onChange({
-                submitData: el.properties.submit_trigger === 'auto' && color
-              });
+              onChange({ submitData: autosubmit && color });
             }}
           />
         );
@@ -412,8 +400,7 @@ const Cell = ({ node: el, form }) => {
               const change = changeValue(newVal, el, index, false);
               if (change) {
                 const submitData =
-                  el.properties.submit_trigger === 'auto' &&
-                  textFieldShouldSubmit(servar, newVal);
+                  autosubmit && textFieldShouldSubmit(servar, newVal);
                 onChange({ submitData });
               }
             }}
