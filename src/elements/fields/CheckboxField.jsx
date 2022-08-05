@@ -204,7 +204,6 @@ function CheckboxField({
   fieldLabel,
   fieldVal = true,
   onChange = () => {},
-  onClick = () => {},
   elementProps = {},
   children
 }) {
@@ -226,7 +225,6 @@ function CheckboxField({
         type='checkbox'
         checked={fieldVal}
         onChange={onChange}
-        onClick={onClick}
         style={{
           display: 'flex',
           alignItems: 'center',

@@ -12,7 +12,6 @@ function TextArea({
   required = false,
   editable = false,
   onChange = () => {},
-  onClick = () => {},
   setRef = () => {},
   rawValue = '',
   inlineError,
@@ -56,7 +55,6 @@ function TextArea({
           maxLength={servar.max_length}
           minLength={servar.min_length}
           required={required}
-          onClick={onClick}
           onChange={onChange}
           autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''

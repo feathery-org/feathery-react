@@ -17,7 +17,6 @@ function FileUploadField({
   required = false,
   editable = false,
   onChange: customOnChange = () => {},
-  onClick: customOnClick = () => {},
   initialFiles = [],
   elementProps = {},
   children
@@ -32,10 +31,9 @@ function FileUploadField({
   const allowMoreFiles = isMultiple || thumbnailData.length === 0;
   const fileExists = thumbnailData.length > 0;
 
-  function onClick(event) {
+  function onClick() {
     if (!allowMoreFiles) return;
     fileInput.current.click();
-    customOnClick(event);
   }
 
   // When the user uploads files to the multi-file upload, we just append to the existing set

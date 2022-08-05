@@ -124,7 +124,6 @@ const nextStepKey = (nextConditions, metadata, fieldValues) => {
       (cond) =>
         cond.element_type === metadata.elementType &&
         metadata.elementIDs.includes(cond.element_id) &&
-        cond.trigger === metadata.trigger &&
         cond.metadata.start === metadata.start &&
         cond.metadata.end === metadata.end
     )
