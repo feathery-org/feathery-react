@@ -15,7 +15,7 @@ const formatDimensionValue = (value, type = 'col') => {
     case FILL:
       return type === 'col' ? '100%' : 'fit-content';
     case FIT:
-      return type === 'col' ? 'auto' : 'fit-content';
+      return 'fit-content';
     default:
       return parseInt(value);
   }
