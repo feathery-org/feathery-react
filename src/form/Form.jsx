@@ -810,6 +810,9 @@ function Form({
     });
   };
 
+  const getNextStepKey = (metadata) =>
+    nextStepKey(activeStep.next_conditions, metadata, fieldValues);
+
   const submit = async ({
     metadata,
     repeat = 0,
@@ -896,11 +899,7 @@ function Form({
         integrations.plaid,
         fieldValues
       );
-      const lastStep = !nextStepKey(
-        activeStep.next_conditions,
-        metadata,
-        fieldValues
-      );
+      const lastStep = !getNextStepKey(metadata);
       let stepChanged = false;
       await setLoader();
       await runUserCallback(onSubmit, {
@@ -1042,11 +1041,12 @@ function Form({
     };
 
     if (!redirectKey) {
-      const newStepKey = nextStepKey(
-        activeStep.next_conditions,
-        metadata,
-        fieldValues
-      );
+      // TODO: remove deprecation logic once backend is backfilled.
+      // For fields, consider click and change actions equivalent.
+      if (metadata.elementType === 'field' && metadata.trigger === 'click') {
+        metadata.trigger = 'change';
+      }
+      const newStepKey = getNextStepKey(metadata);
 
       redirectKey = newStepKey;
       eventData = { ...eventData, next_step_key: newStepKey };
@@ -1257,11 +1257,19 @@ function Form({
         trigger: 'change'
       };
       if (submitData) {
-        // Simulate button click if available
         const submitButton = activeStep.buttons.find(
           (b) => b.properties.link === LINK_SUBMIT
         );
-        if (submitButton) buttonOnClick(submitButton);
+        // Simulate button submit if available and valid to trigger button loader
+        if (
+          submitButton &&
+          getNextStepKey({
+            elementType: 'button',
+            elementIDs: [submitButton.id],
+            trigger: 'click'
+          })
+        )
+          buttonOnSubmit(submitButton);
         else submit({ metadata, repeat: elementRepeatIndex });
       } else handleRedirect({ metadata });
     };
@@ -1288,7 +1296,6 @@ function Form({
     activeStep,
     loaders,
     buttonOnClick,
-    submit,
     fieldOnChange,
     inlineErrors,
     repeatTriggerExists,

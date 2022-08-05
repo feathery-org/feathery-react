@@ -111,7 +111,6 @@ function ColorPickerField({
   fieldVal = 'FFFFFFFF',
   editable = false,
   onChange = () => {},
-  onClick = () => {},
   elementProps = {},
   children
 }) {
@@ -130,8 +129,7 @@ function ColorPickerField({
           cursor: editable ? 'default' : 'pointer',
           ...applyStyles.getTarget('field')
         }}
-        onClick={(e) => {
-          onClick(e);
+        onClick={() => {
           if (!editable) setShowPicker((showPicker) => !showPicker);
         }}
       />

@@ -12,7 +12,6 @@ function SingleOtpInput({
   onPaste,
   onFocus,
   onBlur,
-  onClick,
   element,
   applyStyles,
   inlineError,
@@ -98,7 +97,6 @@ function SingleOtpInput({
         onPaste={onPaste}
         onFocus={onFocus}
         onBlur={onBlur}
-        onClick={onClick}
       />
     </div>
   );
@@ -109,7 +107,6 @@ function OtpInput({
   applyStyles,
   shouldFocus,
   onChange,
-  onClick,
   value,
   inlineError
 }) {
@@ -218,7 +215,6 @@ function OtpInput({
             e.target.select();
           }}
           onBlur={() => setActiveInput(-1)}
-          onClick={onClick}
           element={element}
           applyStyles={applyStyles}
           inlineError={inlineError}
@@ -254,7 +250,6 @@ function PinInputField({
   shouldFocus = false,
   fieldVal = '',
   editable = false,
-  onClick = () => {},
   onChange = () => {},
   elementProps = {},
   children
@@ -275,7 +270,6 @@ function PinInputField({
         applyStyles={applyStyles}
         element={element}
         onChange={onChange}
-        onClick={onClick}
         inlineError={inlineError}
       />
       {children}

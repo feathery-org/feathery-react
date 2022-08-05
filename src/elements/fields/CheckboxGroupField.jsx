@@ -20,7 +20,6 @@ function CheckboxGroupField({
   otherVal = '',
   onChange = () => {},
   onOtherChange = () => {},
-  onClick = () => {},
   elementProps = {},
   children
 }) {
@@ -53,7 +52,6 @@ function CheckboxGroupField({
             label={opt}
             checked={fieldVal.includes(opt)}
             onChange={onChange}
-            onClick={onClick}
             style={{
               display: 'flex',
               alignItems: 'flex-start',
@@ -85,7 +83,6 @@ function CheckboxGroupField({
             label='Other'
             checked={otherChecked}
             onChange={onChange}
-            onClick={onClick}
             style={{
               display: 'flex',
               alignItems: 'flex-start',
@@ -107,7 +104,6 @@ function CheckboxGroupField({
             id={servar.key}
             value={otherVal || ''}
             onChange={onOtherChange}
-            onClick={onClick}
             maxLength={servar.max_length}
             minLength={servar.min_length}
             required={otherChecked}
