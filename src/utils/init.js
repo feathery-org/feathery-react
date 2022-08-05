@@ -35,19 +35,25 @@ const fieldValues = {};
 const filePathMap = {};
 
 function init(sdkKey, options = {}) {
+  if (!sdkKey || typeof sdkKey !== 'string') {
+    throw new errors.SDKKeyError('Invalid SDK Key');
+  }
+
+  // If client attempts to set userKey but it's not yet valid, don't initialize
+  // until it becomes valid
+  if (
+    options.userKey !== undefined &&
+    (!options.userKey || typeof options.userKey !== 'string')
+  ) {
+    throw new errors.UserKeyError();
+  }
+
   options = { ...defaultOptions, ...options };
   // TODO: deprecate legacy formKeys option
   options.forms = options.formKeys ?? options.forms ?? [];
 
   if (initState.initialized) return; // can only be initialized one time per load
   initState.initialized = true;
-
-  if (!sdkKey || typeof sdkKey !== 'string') {
-    throw new errors.SDKKeyError('Invalid SDK Key');
-  }
-  if (options.userKey && typeof options.userKey !== 'string') {
-    throw new errors.UserKeyError();
-  }
 
   initState.sdkKey = sdkKey;
   [
