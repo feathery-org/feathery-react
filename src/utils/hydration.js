@@ -51,7 +51,7 @@ function calculateStepCSS(step) {
     backgroundColor: `#${step.default_background_color}`,
     backgroundImage: `url("${step.background_image_url}")`,
     backgroundSize: 'cover',
-    width: desktop.gridWidth,
+    width: '100%',
     minWidth: desktop.minWidth,
     maxWidth: desktop.gridWidth,
     height: desktop.gridHeight,
