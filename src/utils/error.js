@@ -7,7 +7,7 @@ export class SDKKeyError extends Error {
 
 export class UserKeyError extends Error {
   constructor() {
-    super('Invalid User Key');
+    super('Invalid User ID');
     this.name = 'UserKeyError';
   }
 }
