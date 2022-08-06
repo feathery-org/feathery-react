@@ -233,7 +233,7 @@ function getFieldValue(field, values) {
       };
 }
 
-/** Update the fieldvaleus cache with a backend session */
+/** Update the fieldValues cache with a backend session */
 function updateSessionValues(session) {
   // Convert files of the format { url, path } to Promise<File>
   const filePromises = objectMap(session.file_values, (fileOrFiles) =>
