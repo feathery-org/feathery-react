@@ -214,11 +214,7 @@ export default class Client {
     // If form is disabled, data will equal `null`
     if (!result.data) return [[], { formOff: true }];
     const steps = getABVariant(result);
-    this.setDefaultFormValues({
-      steps,
-      additionalValues: initialValues,
-      override: true
-    });
+    this.setDefaultFormValues({ steps, additionalValues: initialValues });
     this._loadFonts(result);
     return [steps, result];
   }
