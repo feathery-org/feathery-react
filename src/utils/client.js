@@ -291,7 +291,7 @@ export default class Client {
     });
   }
 
-  async submitCustom(customKeyValues) {
+  async submitCustom(customKeyValues, override = true) {
     const { userKey } = initInfo();
     const url = `${API_URL}panel/custom/submit/v2/`;
 
@@ -314,6 +314,7 @@ export default class Client {
       }
     });
     formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
+    formData.set('override', override);
     if (this.formKey) formData.set('form_key', this.formKey);
     if (userKey) formData.set('fuser_key', userKey);
 

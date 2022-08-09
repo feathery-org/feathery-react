@@ -641,7 +641,7 @@ function Form({
               });
             }
             if (!isObjectEmpty(initialValues))
-              clientInstance.submitCustom(initialValues);
+              clientInstance.submitCustom(initialValues, false);
             const hashKey = decodeURI(location.hash.substr(1));
             const newKey =
               initialStepId ||
