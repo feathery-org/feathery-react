@@ -1089,7 +1089,7 @@ function Form({
     }));
   };
 
-  const buttonOnSubmit = async (submitData, button) => {
+  const buttonOnSubmit = async (button, submitData) => {
     try {
       const metadata = {
         elementType: 'button',
@@ -1152,7 +1152,7 @@ function Form({
           async () => {
             setPlaidLinked(true);
             if (activeStep.servar_fields.length === 0)
-              await buttonOnSubmit(true, button);
+              await buttonOnSubmit(button, true);
           },
           updateFieldValues,
           () => setButtonLoader(button),
@@ -1193,7 +1193,7 @@ function Form({
     } else if (link === LINK_GOOGLE_OAUTH) {
       googleOauthRedirect();
     } else if ([LINK_SUBMIT, LINK_SKIP].includes(link)) {
-      clickPromise = buttonOnSubmit(link === LINK_SUBMIT, button);
+      clickPromise = buttonOnSubmit(button, link === LINK_SUBMIT);
     }
     await clickPromise;
     buttonClicks[button.id] = false;
@@ -1253,7 +1253,7 @@ function Form({
             elementIDs: [submitButton.id]
           })
         )
-          buttonOnSubmit(submitButton);
+          buttonOnSubmit(submitButton, true);
         else submit({ metadata, repeat: elementRepeatIndex });
       } else handleRedirect({ metadata });
     };
