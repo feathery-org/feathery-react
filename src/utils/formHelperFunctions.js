@@ -12,7 +12,7 @@ const emailPattern = new RegExp(
 );
 const phonePattern = /^\d{10}$/;
 
-const validators = {
+export const validators = {
   email: (a) => emailPattern.test(a),
   phone: (a) => {
     try {
@@ -155,6 +155,7 @@ const nextStepKey = (nextConditions, metadata, fieldValues) => {
           if (rule.comparison === 'is_type') {
             ruleMet =
               (ruleVal === 'email' && emailPattern.test(userVal)) ||
+              // use phonePattern rather than validator for nav rules. Validation hasn't necessarily run, so safer to use the regex
               (ruleVal === 'phone' && phonePattern.test(userVal));
           } else {
             const equal = userVal === ruleVal;
@@ -286,7 +287,7 @@ function getFieldError(value, servar) {
   // Check if value is badly formatted
   if (servar.type === 'phone_number' && !validators.phone(value)) {
     return 'Invalid phone number';
-  } else if (servar.type === 'email' && !emailPattern.test(value)) {
+  } else if (servar.type === 'email' && !validators.email(value)) {
     return 'Invalid email format';
   } else if (servar.type === 'ssn' && value.length !== 9) {
     return 'Invalid social security number';
@@ -367,7 +368,7 @@ async function setFormElementError({
  * @param inlineErrors
  */
 function getInlineError(field, inlineErrors) {
-  const data = inlineErrors[field.servar.key];
+  const data = inlineErrors[field.servar ? field.servar.key : field.id];
   if (!data) return;
   if (Number.isInteger(data.index) && data.index !== field.repeat) return;
   return data.message;

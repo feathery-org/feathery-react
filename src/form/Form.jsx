@@ -21,7 +21,8 @@ import {
   nextStepKey,
   recurseProgressDepth,
   setFormElementError,
-  shouldElementHide
+  shouldElementHide,
+  validators
 } from '../utils/formHelperFunctions';
 import {
   initInfo,
@@ -1185,11 +1186,22 @@ function Form({
         )
         .then(() => clearLoaders());
     } else if (link === LINK_SEND_MAGIC_LINK) {
-      clickPromise = setButtonLoader(button)
-        .then(() =>
-          sendMagicLink(fieldValues[button.properties.auth_target_field_key])
-        )
-        .then(() => clearLoaders());
+      const fieldKey = button.properties.auth_target_field_key;
+      const email = fieldValues[fieldKey];
+      if (validators.email(email)) {
+        clickPromise = setButtonLoader(button)
+          .then(() => sendMagicLink(email))
+          .then(() => clearLoaders());
+      } else {
+        setFormElementError({
+          formRef,
+          fieldKey: button.id,
+          message: 'An email is needed to send your magic link.',
+          errorType: formSettings.errorType,
+          setInlineErrors: setInlineErrors,
+          triggerErrors: true
+        });
+      }
     } else if (link === LINK_GOOGLE_OAUTH) {
       googleOauthRedirect();
     } else if ([LINK_SUBMIT, LINK_SKIP].includes(link)) {

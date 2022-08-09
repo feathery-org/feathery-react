@@ -191,7 +191,8 @@ function applyFieldStyles(field, styles) {
       break;
     default:
       styles.addTargets('sub-fc', 'tooltipIcon');
-      if (type !== 'checkbox') styles.applyWidth('fc'); // Avoid applying width to checkbox to ensure the checkbox width is properly set by the component
+      // Avoid applying width to checkbox to ensure the checkbox width is properly set by the component
+      if (type !== 'checkbox') styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
@@ -209,7 +210,7 @@ function applyFieldStyles(field, styles) {
 }
 
 Object.entries(Fields).map(([key, Field]) => {
-  Fields[key] = memo(({ element, applyStyles, inlineError = '', ...props }) => {
+  Fields[key] = memo(({ element, applyStyles, ...props }) => {
     const servar = element.servar;
     const fieldLabel = servar.name ? (
       <label
@@ -231,21 +232,9 @@ Object.entries(Fields).map(([key, Field]) => {
         <Field
           element={element}
           fieldLabel={fieldLabel}
-          inlineError={inlineError}
           applyStyles={styles}
           {...props}
         />
-        {inlineError && (
-          <span
-            css={{
-              alignSelf: 'flex-start',
-              color: '#F42525',
-              ...applyStyles.getTarget('error')
-            }}
-          >
-            {inlineError}
-          </span>
-        )}
       </>
     );
   });

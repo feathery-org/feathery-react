@@ -115,11 +115,13 @@ function ButtonElement({
   handleRedirect = () => {},
   onClick = () => {},
   elementProps = {},
+  inlineError,
   children
 }) {
-  const styles = useMemo(() => applyButtonStyles(element, applyStyles), [
-    applyStyles
-  ]);
+  const styles = useMemo(
+    () => applyButtonStyles(element, applyStyles),
+    [applyStyles]
+  );
 
   return (
     <ReactButton
@@ -137,6 +139,7 @@ function ButtonElement({
       }}
       css={{
         justifyContent: 'center',
+        ...(inlineError ? { borderColor: '#F42525' } : {}),
         alignItems: 'center',
         '&:disabled': {
           cursor: 'default !important',
