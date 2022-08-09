@@ -39,13 +39,25 @@ export function installStytch(stytchConfig) {
   }
 }
 
+export function googleOauthRedirect() {
+  const stytchClient = getAuthClient();
+  if (!stytchClient) return;
+
+  const redirectUrl = getRedirectUrl();
+  stytchClient.oauth.google.start({
+    login_redirect_url: redirectUrl,
+    signup_redirect_url: redirectUrl
+  });
+}
+
 export function sendMagicLink(fieldVal) {
   const client = getAuthClient();
   if (!client) return;
 
+  const redirectUrl = getRedirectUrl();
   return client.magicLinks.email.loginOrCreate(fieldVal, {
-    login_magic_link_url: window.location.href,
-    signup_magic_link_url: window.location.href,
+    login_magic_link_url: redirectUrl,
+    signup_magic_link_url: redirectUrl,
     login_expiration_minutes: config.metadata.login_expiration,
     signup_expiration_minutes: config.metadata.signup_expiration
   });
@@ -129,12 +141,7 @@ function removeStytchQueryParams() {
   }
 }
 
-export function googleOauthRedirect() {
-  const stytchClient = getAuthClient();
-  if (!stytchClient) return;
-
-  stytchClient.oauth.google.start({
-    login_redirect_url: window.location.href,
-    signup_redirect_url: window.location.href
-  });
+function getRedirectUrl() {
+  const { origin, pathname, hash } = window.location;
+  return `${origin}${pathname}${hash}`;
 }
