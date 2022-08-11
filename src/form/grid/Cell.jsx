@@ -67,12 +67,15 @@ const Cell = ({ node: el, form }) => {
     return null;
   }
 
+  const inlineError =
+    formSettings.errorType === 'inline' && getInlineError(el, inlineErrors);
   const basicProps = {
     key: reactFriendlyKey(el),
     componentOnly: false,
     element: el,
     elementProps: elementProps[el.id],
-    onView
+    onView,
+    inlineError
   };
   if (type === 'progress_bar')
     return (
@@ -154,8 +157,6 @@ const Cell = ({ node: el, form }) => {
       elementRepeatIndex: el.repeat || 0
     });
 
-    const inlineError =
-      formSettings.errorType === 'inline' && getInlineError(el, inlineErrors);
     const required = isFieldActuallyRequired(el, repeatTriggerExists);
     const fieldProps = {
       key: reactFriendlyKey(el),

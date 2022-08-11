@@ -33,7 +33,7 @@ function legacyAlignment(alignment) {
 
 Object.entries(Elements).map(([key, Element]) => {
   Elements[key] = memo(
-    ({ element, componentOnly = true, onView, ...props }) => {
+    ({ element, componentOnly = true, inlineError = '', onView, ...props }) => {
       const applyStyles = useMemo(() => {
         const as = new ApplyStyles(
           element,
@@ -61,9 +61,8 @@ Object.entries(Elements).map(([key, Element]) => {
       if (componentOnly) return e;
       else {
         const containerStyles = applyStyles.getTarget('container');
-        const containerWrapperStyles = applyStyles.getTarget(
-          'containerWrapper'
-        );
+        const containerWrapperStyles =
+          applyStyles.getTarget('containerWrapper');
 
         const containerCSS = {
           ...containerStyles,
@@ -96,7 +95,20 @@ Object.entries(Elements).map(([key, Element]) => {
                 ...containerCSS
               }}
             >
-              {e}
+              <>
+                {e}
+                {inlineError && (
+                  <span
+                    css={{
+                      alignSelf: 'flex-start',
+                      color: '#F42525',
+                      ...applyStyles.getTarget('error')
+                    }}
+                  >
+                    {inlineError}
+                  </span>
+                )}
+              </>
             </div>
           </div>
         );
