@@ -19,7 +19,7 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": false, // not sure if this can be true?
+    "noEmit": false, // This is true in feathery-frontend, but needs to be false here
     "noImplicitAny": true
   },
   "exclude": ["node_modules", "src/**/*.spec.ts", "src/**/*.spec.js"],

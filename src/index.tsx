@@ -22,7 +22,7 @@ function getAllValues() {
  * @param {string} elementId The ID of the DOM element to hold the form
  * @param {Object} props The props defined on the *Form* component
  */
-function renderAt(elementId: any, props: FormProps<any>) {
+function renderAt(elementId: any, props: FormProps) {
   const container = document.getElementById(elementId);
 
   ReactDOM.render(<Form {...props} />, container);

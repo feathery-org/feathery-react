@@ -42,5 +42,13 @@
         "ts-check": true
       }
     ]
-  }
+  },
+  "overrides": [
+    {
+      "files": ["webpack.*.js"],
+      "rules": {
+        "@typescript-eslint/no-var-requires": 0
+      }
+    }
+  ]
 }

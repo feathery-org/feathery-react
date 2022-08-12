@@ -75,18 +75,18 @@ import {
   SetErrors
 } from '../types/Form';
 
-// Not sure about how we should type the promises - it depends on what the user returns from their function, right?
-// I would use a generic, but every CB could have a different return type...and I don't think we really want to add 8 generics (1 for each)
-export interface Props<unkown> {
+export interface Props {
   formName: string;
-  onChange?: (context: ContextOnChange) => Promise<unkown> | void;
-  onLoad?: (context: ContextOnLoad) => Promise<unkown> | void;
-  onFormComplete?: (context: Context) => Promise<unkown> | void;
-  onSubmit?: (context: ContextOnSubmit) => Promise<unkown> | void;
-  onSkip?: (context: ContextOnSkip) => Promise<unkown> | void;
-  onError?: (context: ContextOnError) => Promise<unkown> | void;
-  onCustomAction?: (context: ContextOnCustomAction) => Promise<unkown> | void;
-  onView?: (context: ContextOnView) => Promise<unkown> | void;
+  onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
+  onLoad?: null | ((context: ContextOnLoad) => Promise<any> | void);
+  onFormComplete?: null | ((context: Context) => Promise<any> | void);
+  onSubmit?: null | ((context: ContextOnSubmit) => Promise<any> | void);
+  onSkip?: null | ((context: ContextOnSkip) => Promise<any> | void);
+  onError?: null | ((context: ContextOnError) => Promise<any> | void);
+  onCustomAction?:
+    | null
+    | ((context: ContextOnCustomAction) => Promise<any> | void);
+  onView?: null | ((context: ContextOnView) => Promise<any> | void);
   onViewElements?: string[];
   initialValues?: FieldValues;
   initialStepId?: string;
@@ -111,14 +111,14 @@ function Form({
   // @ts-expect-error - this prop is deprecated so don't want to type it
   formKey: _formKey,
   formName: _formName,
-  onChange = () => {},
-  onLoad = () => {},
-  onFormComplete = () => {},
-  onSubmit = () => {},
-  onSkip = () => {},
-  onError = () => {},
-  onCustomAction = () => {},
-  onView = () => {},
+  onChange = null,
+  onLoad = null,
+  onFormComplete = null,
+  onSubmit = null,
+  onSkip = null,
+  onError = null,
+  onCustomAction = null,
+  onView = null,
   onViewElements = [],
   initialValues = {},
   initialStepId = '',
@@ -128,7 +128,7 @@ function Form({
   style = {},
   className = '',
   children
-}: Props<any>) {
+}: Props) {
   const formKey = _formName ?? _formKey;
   const [client, setClient] = useState(null);
   const history = useHistory();
@@ -176,15 +176,15 @@ function Form({
   const [loaders, setLoaders] = useState({});
   const clearLoaders = () => setLoaders({});
   const stepLoader = useMemo(() => {
-    // @ts-expect-error need to handle unkown type
+    // @ts-expect-error need to handle unknown type
     const data = Object.values(loaders).find((l) => l?.showOn === 'full_page');
     if (!data) return null;
-    // @ts-expect-error need to handle unkown type
+    // @ts-expect-error need to handle unknown type
     return data.type === 'default' ? (
-      // @ts-expect-error need to handle unkown type
+      // @ts-expect-error need to handle unknown type
       <div style={{ height: '20vh', width: '20vh' }}>{data.loader}</div>
     ) : (
-      // @ts-expect-error need to handle unkown type
+      // @ts-expect-error need to handle unknown type
       data.loader
     );
   }, [loaders]);
@@ -1308,6 +1308,7 @@ function Form({
           fieldKey: button.id,
           message: 'An email is needed to send your magic link.',
           errorType: formSettings.errorType,
+          // @ts-expect-error
           setInlineErrors: setInlineErrors,
           triggerErrors: true
         });
@@ -1475,7 +1476,7 @@ function Form({
   );
 }
 
-export default function FormWithRouter(props: Props<any>): JSX.Element {
+export default function FormWithRouter(props: Props): JSX.Element {
   return (
     <>
       {runningInClient() /* NextJS support */ ? (

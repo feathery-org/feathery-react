@@ -58,8 +58,7 @@ export interface ContextOnLoad extends Context {
 }
 
 export interface ContextOnSubmit extends Context {
-  // I haven't used the plaid integration so not quite sure how to type submitFields
-  // does including Plaid field values change the type or is it still fine as FieldData
+  // Need to figure out how to better convey the possible Plaid information in submitFields
   submitFields: FieldData;
   fields: FieldData;
   elementRepeatIndex: number;
