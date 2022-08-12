@@ -4,19 +4,19 @@ import { initializeTagManager } from './googleTagManager';
 import { installStytch, emailLogin as emailLoginStytch } from './stytch';
 import { getStytchJwt } from '../utils/browser';
 
-export function dynamicImport(dependency, async = true, index = 0) {
-  if (async) {
+export function dynamicImport(dependencies, parallel = true, index = 0) {
+  if (parallel) {
     return new Promise((resolve) => {
       global.scriptjsLoadPromise.then(($script) => {
-        $script.default(dependency, resolve);
+        $script.default(dependencies, resolve);
       });
     });
-  } else if (index < dependency.length) {
+  } else if (index < dependencies.length) {
     return new Promise((resolve) => {
       global.scriptjsLoadPromise.then(($script) => {
-        $script.default(dependency[index], resolve);
+        $script.default(dependencies[index], resolve);
       });
-    }).then(() => dynamicImport(dependency, false, index + 1));
+    }).then(() => dynamicImport(dependencies, false, index + 1));
   }
 }
 
