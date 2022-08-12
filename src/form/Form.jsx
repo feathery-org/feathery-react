@@ -899,14 +899,13 @@ function Form({
         integrations.plaid,
         fieldValues
       );
-      const lastStep = !getNextStepKey(metadata);
       let stepChanged = false;
       await setLoader();
       await runUserCallback(onSubmit, {
         submitFields: { ...formattedFields, ...plaidFieldValues },
         elementRepeatIndex: repeat,
         fields: allFields,
-        lastStep,
+        lastStep: !getNextStepKey(metadata),
         setErrors: (errors) => {
           if (!isObjectEmpty(errors)) clearLoaders();
           Object.entries(errors).forEach(([fieldKey, error]) => {
@@ -1115,7 +1114,8 @@ function Form({
               ...lookUpTrigger(activeStep, button.id, 'button'),
               type: 'button',
               action: 'click'
-            }
+            },
+            lastStep: !getNextStepKey(metadata)
           });
           if (stepChanged) return;
         }
