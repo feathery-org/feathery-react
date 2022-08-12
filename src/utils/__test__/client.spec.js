@@ -43,10 +43,7 @@ describe('client', () => {
           }
         }
       );
-      expect(response).toEqual([
-        [],
-        { data: [], fonts: [], uploaded_fonts: {} }
-      ]);
+      expect(response).toEqual({ steps: [], fonts: [], uploaded_fonts: {} });
     });
   });
 
