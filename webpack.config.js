@@ -2,7 +2,7 @@ const path = require('path');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
 
 module.exports = {
-  entry: './src/index.js',
+  entry: './src/index.tsx',
   output: {
     filename: 'index.js',
     globalObject: 'this' /* So window references don't break in NextJS */,
@@ -14,6 +14,12 @@ module.exports = {
   plugins: [new CleanWebpackPlugin()],
   module: {
     rules: [
+      {
+        // .d.ts files get matched by ts
+        test: /\.(ts|tsx)?$/,
+        exclude: /node_modules/,
+        use: 'ts-loader'
+      },
       {
         test: /\.(js|jsx)$/,
         exclude: /node_modules/,
@@ -27,6 +33,6 @@ module.exports = {
     ]
   },
   resolve: {
-    extensions: ['*', '.js', '.jsx']
+    extensions: ['*', '.js', '.jsx', '.ts', '.tsx', '.d.ts']
   }
 };

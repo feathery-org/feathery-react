@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "sourceMap": true,
+    "declaration": true,
+    "outDir": "dist",
+    "declarationMap": true,
+    "strictNullChecks": true,
+    "module": "esnext",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@emotion/react",
+    "target": "es5",
+    "allowJs": true,
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": false, // This is true in feathery-frontend, but needs to be false here
+    "noImplicitAny": true
+  },
+  "exclude": ["node_modules", "src/**/*.spec.ts", "src/**/*.spec.js"],
+  "include": ["src/**/*"]
+}

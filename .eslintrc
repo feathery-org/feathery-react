@@ -1,11 +1,13 @@
 {
-  "parser": "babel-eslint",
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["@typescript-eslint", "react", "typescript"],
   "extends": [
     "standard",
     "standard-react",
     "plugin:prettier/recommended",
     "prettier/standard",
-    "prettier/react"
+    "prettier/react",
+    "plugin:@typescript-eslint/recommended"
   ],
   "env": {
     "node": true
@@ -28,6 +30,25 @@
     "react/jsx-handler-names": 0,
     "react/jsx-fragments": 0,
     "react/no-unused-prop-types": 0,
-    "import/export": 0
-  }
+    "import/export": 0,
+    "@typescript-eslint/no-explicit-any": 0, // TODO(ts): Turn this back on after typing complete
+    "@typescript-eslint/no-empty-function": 0,
+    "@typescript-eslint/ban-ts-comment": [
+      "error",
+      {
+        "ts-expect-error": false,
+        "ts-ignore": true,
+        "ts-nocheck": true,
+        "ts-check": true
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["webpack.*.js"],
+      "rules": {
+        "@typescript-eslint/no-var-requires": 0
+      }
+    }
+  ]
 }
