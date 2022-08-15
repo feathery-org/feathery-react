@@ -4,7 +4,16 @@ import { initializeTagManager } from './googleTagManager';
 import { installStytch, emailLogin as emailLoginStytch } from './stytch';
 import { getStytchJwt } from '../utils/browser';
 
+const IMPORTED_URLS = new Set();
+
 export function dynamicImport(dependencies, parallel = true, index = 0) {
+  if (typeof dependencies === 'string') dependencies = [dependencies];
+  dependencies = dependencies.filter((d) => {
+    const dup = IMPORTED_URLS.has(d);
+    IMPORTED_URLS.add(d);
+    return !dup;
+  });
+
   if (parallel) {
     return new Promise((resolve) => {
       global.scriptjsLoadPromise.then(($script) => {
