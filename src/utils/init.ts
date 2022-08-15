@@ -1,5 +1,3 @@
-/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
-import type * as globalType from '../types/global';
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { v4 as uuidv4 } from 'uuid';
 
