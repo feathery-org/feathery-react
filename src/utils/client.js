@@ -14,6 +14,7 @@ import {
   updateSessionValues
 } from './formHelperFunctions';
 import { initializeIntegrations } from '../integrations/utils';
+import { loadLottieLight } from '../elements/components/Lottie';
 
 // Convenience boolean for urls - manually change for testing
 const API_URL_OPTIONS = {
@@ -194,32 +195,7 @@ export default class Client {
     Object.assign(fieldValues, values);
   }
 
-  fetchCacheForm() {
-    const { forms } = initInfo();
-    if (this.formKey in forms) return Promise.resolve(forms[this.formKey]);
-
-    const params = encodeGetParams({
-      form_key: this.formKey
-    });
-    const url = `${CDN_URL}panel/v7/?${params}`;
-    const options = {
-      importance: 'high',
-      headers: { 'Accept-Encoding': 'gzip' }
-    };
-    return this._fetch(url, options).then((response) => response.json());
-  }
-
-  async fetchForm(initialValues) {
-    const result = await this.fetchCacheForm();
-    // If form is disabled, data will equal `null`
-    if (!result.data) return [[], { formOff: true }];
-    const steps = getABVariant(result);
-    this.setDefaultFormValues({ steps, additionalValues: initialValues });
-    this._loadFonts(result);
-    return [steps, result];
-  }
-
-  _loadFonts(res) {
+  _loadFormPackages(res) {
     // Load default fonts
     if (res.fonts.length && global.webfontloaderPromise) {
       global.webfontloaderPromise.then((WebFont) => {
@@ -234,6 +210,47 @@ export default class Client {
           .then((font) => document.fonts.add(font))
       );
     });
+    // Load Lottie if form needs animations
+    const needLottie = false;
+    res.steps.forEach((step) =>
+      step.buttons.forEach((button) => {
+        if (needLottie) return; // Already loaded
+
+        const { loading_icon: li, loading_icon_type: lit } = button.properties;
+        if (li && lit === 'application/json') loadLottieLight();
+      })
+    );
+  }
+
+  fetchCacheForm() {
+    const { forms } = initInfo();
+    if (this.formKey in forms) return Promise.resolve(forms[this.formKey]);
+
+    const params = encodeGetParams({
+      form_key: this.formKey
+    });
+    const url = `${CDN_URL}panel/v7/?${params}`;
+    const options = {
+      importance: 'high',
+      headers: { 'Accept-Encoding': 'gzip' }
+    };
+    return this._fetch(url, options).then(async (response) => {
+      const res = await response.json();
+      if (res.data) {
+        res.steps = getABVariant(res);
+        delete res.data;
+        this._loadFormPackages(res);
+      }
+      return res;
+    });
+  }
+
+  async fetchForm(initVals) {
+    const res = await this.fetchCacheForm();
+    // If form is disabled, data will equal `null`
+    if (!res.steps) return { formOff: true };
+    this.setDefaultFormValues({ steps: res.steps, additionalValues: initVals });
+    return res;
   }
 
   async fetchSession(formPromise = null, block = false) {

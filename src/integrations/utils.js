@@ -13,6 +13,7 @@ export function dynamicImport(dependencies, parallel = true, index = 0) {
     IMPORTED_URLS.add(d);
     return !dup;
   });
+  if (dependencies.length === 0) return Promise.resolve();
 
   if (parallel) {
     return new Promise((resolve) => {

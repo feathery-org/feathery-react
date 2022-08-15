@@ -84,7 +84,6 @@
     "@fingerprintjs/fingerprintjs": "^3.1.0",
     "google-libphonenumber": "^3.2.22",
     "lodash.debounce": "^4.0.8",
-    "lottie-react": "^2.1.0",
     "quill-delta": "^4.2.2",
     "react-bootstrap": "^1.6.1",
     "react-color": "^2.19.3",

@@ -3,7 +3,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import ReactForm from 'react-bootstrap/Form';
 import TagManager from 'react-gtm-module';
-import Lottie from 'lottie-react';
 import { useHotkeys } from 'react-hotkeys-hook';
 
 import { calculateStepCSS, isFill } from '../utils/hydration';
@@ -56,6 +55,7 @@ import CallbackQueue from '../utils/callbackQueue';
 import { openTab } from '../utils/network';
 import { runningInClient } from '../utils/browser.js';
 import FormOff from '../elements/components/FormOff';
+import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
 import Grid from './grid';
 import { mobileBreakpointValue } from '../elements/styles';
@@ -664,7 +664,7 @@ function Form({
       // render form without values first for speed
       const formPromise = clientInstance
         .fetchForm(initialValues)
-        .then(([steps, res]) => {
+        .then(({ steps, ...res }) => {
           steps = steps.reduce((result: any, step: any) => {
             result[step.key] = step;
             return result;
@@ -1183,7 +1183,7 @@ function Form({
       const animationData = await fetch(bp.loading_icon).then((response) =>
         response.json()
       );
-      loader = <Lottie animationData={animationData} loop autoplay />;
+      loader = <Lottie animationData={animationData} />;
     }
     setLoaders((loaders) => ({
       ...loaders,
