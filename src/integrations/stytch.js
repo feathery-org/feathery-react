@@ -28,7 +28,7 @@ export function installStytch(stytchConfig) {
         )[0];
         if (isStytchImported) return resolve();
 
-        return dynamicImport([STYTCH_JS_URL], false).then(() => {
+        return dynamicImport(STYTCH_JS_URL).then(() => {
           const initializedClient = global.Stytch(stytchConfig.metadata.token);
           setAuthClient(initializedClient);
           resolve(initializedClient);

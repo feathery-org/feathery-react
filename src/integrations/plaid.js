@@ -6,9 +6,9 @@ export function installPlaid(isPlaidActive) {
   if (plaidPromise) return plaidPromise;
   else if (!isPlaidActive) return Promise.resolve();
   else {
-    plaidPromise = dynamicImport([
+    plaidPromise = dynamicImport(
       'https://cdn.plaid.com/link/v2/stable/link-initialize.js'
-    ]);
+    );
     return plaidPromise;
   }
 }
