@@ -1,9 +1,7 @@
 import getRandomBoolean from './random';
-import libphonenumber from 'google-libphonenumber';
 import { fieldValues, filePathMap, initInfo } from './init';
 import { toBase64 } from './image';
-
-const phoneValidator = libphonenumber.PhoneNumberUtil.getInstance();
+import { isValidPhoneNumber } from 'libphonenumber-js';
 
 const emailPatternStr =
   "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:.[a-zA-Z0-9-]+)+$";
@@ -16,8 +14,7 @@ export const validators = {
   email: (a) => emailPattern.test(a),
   phone: (a) => {
     try {
-      const number = phoneValidator.parseAndKeepRawInput(a, 'US');
-      return phoneValidator.isValidNumberForRegion(number, 'US');
+      return isValidPhoneNumber(a, 'US');
     } catch (e) {
       // Invalid phone number
       return false;
