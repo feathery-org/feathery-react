@@ -146,19 +146,15 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
 
 // must be called after userKey loads
 function _fetchFormData(formKeys: string[]) {
-  return Promise.all(
-    formKeys.map((key) => {
-      const formClient = new Client(key);
-      return Promise.all([
-        formClient.fetchCacheForm().then((stepsResponse: any) => {
-          initState.forms[key] = stepsResponse;
-        }),
-        formClient
-          .fetchSession()
-          .then(([session]: any) => (initState.sessions[key] = session))
-      ]);
-    })
-  );
+  formKeys.forEach((key) => {
+    const formClient = new Client(key);
+    formClient.fetchCacheForm().then((stepsResponse: any) => {
+      initState.forms[key] = stepsResponse;
+    });
+    formClient
+      .fetchSession()
+      .then(([session]: any) => (initState.sessions[key] = session));
+  });
 }
 
 function initInfo() {
