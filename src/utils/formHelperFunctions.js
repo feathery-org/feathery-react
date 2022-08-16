@@ -1,7 +1,10 @@
 import getRandomBoolean from './random';
 import { fieldValues, filePathMap, initInfo } from './init';
 import { toBase64 } from './image';
-import { isValidPhoneNumber } from 'libphonenumber-js';
+import { dynamicImport } from '../integrations/utils';
+
+const LIB_PHONE_NUMBER_URL =
+  'https://cdn.jsdelivr.net/npm/libphonenumber-js@1.10.12/bundle/libphonenumber-js.min.js';
 
 const emailPatternStr =
   "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:.[a-zA-Z0-9-]+)+$";
@@ -10,17 +13,19 @@ const emailPattern = new RegExp(
 );
 const phonePattern = /^\d{10}$/;
 
-export const validators = {
+const validators = {
   email: (a) => emailPattern.test(a),
   phone: (a) => {
     try {
-      return isValidPhoneNumber(a, 'US');
+      return global.libphonenumber.isValidPhoneNumber(a, 'US');
     } catch (e) {
       // Invalid phone number
       return false;
     }
   }
 };
+
+const loadPhoneValidator = () => dynamicImport(LIB_PHONE_NUMBER_URL);
 
 /**
  *
@@ -498,5 +503,7 @@ export {
   isFieldValueEmpty,
   phonePattern,
   emailPattern,
-  emailPatternStr
+  emailPatternStr,
+  validators,
+  loadPhoneValidator
 };
