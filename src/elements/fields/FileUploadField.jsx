@@ -2,10 +2,8 @@ import React, { useRef } from 'react';
 import { useFileData, useThumbnailData } from '../../utils/image';
 import { justRemove } from '../../utils/array';
 
-import { FiX } from 'react-icons/fi';
-import { IconContext } from 'react-icons';
 import { Image } from 'react-bootstrap';
-import { FileUploadIcon } from '../components/icons';
+import { CloseIcon, FileUploadIcon } from '../components/icons';
 import { imgMaxSizeStyles } from '../styles';
 
 const FILE_SIZE_LIMIT = 1024 * 1024 * 10;
@@ -159,9 +157,7 @@ function FileUploadField({
               onClear(index)();
             }}
           >
-            <IconContext.Provider value={{ className: 'clear' }}>
-              <FiX size='12px' />
-            </IconContext.Provider>
+            <CloseIcon fill='white' width={12} height={12} />
           </div>
         </div>
       ))}
