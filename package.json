@@ -82,7 +82,7 @@
     "@emotion/react": "^11.9.3",
     "@emotion/styled": "^11.9.3",
     "@fingerprintjs/fingerprintjs": "^3.1.0",
-    "google-libphonenumber": "^3.2.22",
+    "libphonenumber-js": "^1.10.12",
     "lodash.debounce": "^4.0.8",
     "quill-delta": "^4.2.2",
     "react-bootstrap": "^1.6.1",
