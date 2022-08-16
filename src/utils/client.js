@@ -11,6 +11,7 @@ import { encodeGetParams } from './primitives';
 import {
   getABVariant,
   getDefaultFieldValue,
+  loadPhoneValidator,
   updateSessionValues
 } from './formHelperFunctions';
 import { initializeIntegrations } from '../integrations/utils';
@@ -211,15 +212,23 @@ export default class Client {
       );
     });
     // Load Lottie if form needs animations
-    const needLottie = false;
-    res.steps.forEach((step) =>
+    let needLottie = false;
+    // Load phone number validator for phone and login fields
+    let needPhoneVal = false;
+
+    res.steps.forEach((step) => {
       step.buttons.forEach((button) => {
         if (needLottie) return; // Already loaded
-
         const { loading_icon: li, loading_icon_type: lit } = button.properties;
-        if (li && lit === 'application/json') loadLottieLight();
-      })
-    );
+        needLottie = li && lit === 'application/json';
+        if (needLottie) loadLottieLight();
+      });
+      step.servar_fields.forEach((field) => {
+        if (needPhoneVal) return; // Already loaded
+        needPhoneVal = ['phone', 'phone_number'].includes(field.servar.type);
+        if (needPhoneVal) loadPhoneValidator();
+      });
+    });
   }
 
   fetchCacheForm() {
