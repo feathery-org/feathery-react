@@ -216,15 +216,17 @@ export default class Client {
     // Load phone number validator for phone and login fields
     let needPhoneVal = false;
 
-    res.steps.forEach((step) => {
-      step.buttons.forEach((button) => {
-        if (needLottie) return; // Already loaded
+    res.steps.some((step) => {
+      // If we've loaded everything available, we don't need to keep looking
+      if (needLottie && needPhoneVal) return true;
+      step.buttons.some((button) => {
+        if (needLottie) return true; // Already loaded
         const { loading_icon: li, loading_icon_type: lit } = button.properties;
         needLottie = li && lit === 'application/json';
         if (needLottie) loadLottieLight();
       });
-      step.servar_fields.forEach((field) => {
-        if (needPhoneVal) return; // Already loaded
+      step.servar_fields.some((field) => {
+        if (needPhoneVal) return true; // Already loaded
         needPhoneVal = ['phone', 'phone_number'].includes(field.servar.type);
         if (needPhoneVal) loadPhoneValidator();
       });
