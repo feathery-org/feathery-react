@@ -21,4 +21,14 @@ function objectFromEntries(arr) {
   }, {});
 }
 
-export { encodeGetParams, isNum, isObjectEmpty, objectFromEntries };
+function stringifyWithNull(value) {
+  return value === null || value === undefined ? '' : value.toString();
+}
+
+export {
+  encodeGetParams,
+  isNum,
+  isObjectEmpty,
+  objectFromEntries,
+  stringifyWithNull
+};

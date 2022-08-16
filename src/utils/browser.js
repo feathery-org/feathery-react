@@ -16,3 +16,6 @@ export function getCookie(key) {
 export function getStytchJwt() {
   return getCookie('stytch_session_jwt');
 }
+
+export const openTab = (url) =>
+  window.open(url, '_blank', 'noopener noreferrer');

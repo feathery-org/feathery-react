@@ -1,9 +1,8 @@
 import React, { useMemo } from 'react';
-import { isNum } from '../../utils/primitives';
+import { isNum, stringifyWithNull } from '../../utils/primitives';
 import Delta from 'quill-delta';
-import { stringifyWithNull } from '../../utils/string';
 import useTextEdit from './useTextEdit';
-import { openTab } from '../../utils/network';
+import { openTab } from '../../utils/browser';
 
 const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 

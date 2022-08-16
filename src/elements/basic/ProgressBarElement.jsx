@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import { isNum } from '../../utils/primitives';
-import { openTab } from '../../utils/network';
+import { openTab } from '../../utils/browser';
 
 function applyProgressBarStyles(element, applyStyles) {
   applyStyles.addTargets('barContainer', 'bar');
@@ -33,9 +33,10 @@ function ProgressBarElement({
   elementProps = {},
   children
 }) {
-  const styles = useMemo(() => applyProgressBarStyles(element, applyStyles), [
-    applyStyles
-  ]);
+  const styles = useMemo(
+    () => applyProgressBarStyles(element, applyStyles),
+    [applyStyles]
+  );
 
   const actualProgress = progress ?? element.properties?.progress;
   const percent = isNum(actualProgress)

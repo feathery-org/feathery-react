@@ -9,10 +9,9 @@ import {
   shouldElementHide,
   textFieldShouldSubmit
 } from '../../utils/formHelperFunctions';
-import { stringifyWithNull } from '../../utils/string';
 import { fieldCounter } from '../Form';
 import { justRemove } from '../../utils/array';
-import { isObjectEmpty } from '../../utils/primitives';
+import { isObjectEmpty, stringifyWithNull } from '../../utils/primitives';
 
 const mapFieldTypes = new Set([
   'gmap_line_1',

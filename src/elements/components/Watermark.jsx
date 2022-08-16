@@ -1,5 +1,5 @@
 import React from 'react';
-import { openTab } from '../../utils/network';
+import { openTab } from '../../utils/browser';
 
 export default function Watermark({
   addChin,
