@@ -245,15 +245,20 @@ export default class Client {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
     };
-    return this._fetch(url, options).then(async (response) => {
-      const res = await response.json();
-      if (res.data) {
-        res.steps = getABVariant(res);
-        delete res.data;
-        this._loadFormPackages(res);
-      }
-      return res;
-    });
+    return this._fetch(url, options)
+      .then(async (response) => {
+        const res = await response.json();
+        if (res.data) {
+          res.steps = getABVariant(res);
+          delete res.data;
+          this._loadFormPackages(res);
+        }
+        return res;
+      })
+      .catch((e) => {
+        console.error(`Failed to fetch form from ${url}`, e);
+        throw e;
+      });
   }
 
   async fetchForm(initVals) {
@@ -286,7 +291,14 @@ export default class Client {
     const url = `${API_URL}panel/session/?${params}`;
     const options = { importance: 'high' };
 
-    const response = await this._fetch(url, options);
+    let response;
+    try {
+      response = await this._fetch(url, options);
+    } catch (e) {
+      console.log(`Failed to fetch session from ${url}`, e);
+      throw e;
+    }
+    if (!response) return [null, null]; // return what?
     const session = await response.json();
     const authSession = await initializeIntegrations(
       session.integrations,
