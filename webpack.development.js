@@ -1,19 +1,21 @@
 const config = require('./webpack.config');
 const webpack = require('webpack');
 
-config.devtool = 'eval-cheap-module-source-map';
-config.externals = ['react'];
-config.plugins.push(
-  new webpack.optimize.LimitChunkCountPlugin({
-    maxChunks: 1
-  })
-);
+module.exports = (env) => {
+  if (env.analyze) {
+    const BundleAnalyzerPlugin =
+      require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
+    config.plugins.push(
+      new BundleAnalyzerPlugin({ defaultSizes: 'stat', openAnalyzer: true })
+    );
+  }
 
-// Uncomment to view interactive bundle size breakdown
-// const BundleAnalyzerPlugin =
-//   require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
-// config.plugins.push(
-//   new BundleAnalyzerPlugin({ defaultSizes: 'stat', openAnalyzer: true })
-// );
-
-module.exports = config;
+  config.devtool = 'eval-cheap-module-source-map';
+  config.externals = ['react'];
+  config.plugins.push(
+    new webpack.optimize.LimitChunkCountPlugin({
+      maxChunks: 1
+    })
+  );
+  return config;
+};

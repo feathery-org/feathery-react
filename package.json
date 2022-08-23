@@ -15,6 +15,7 @@
     "build:node": "webpack --mode production --config webpack.node.js",
     "build:umd": "webpack --mode production --config webpack.umd.js",
     "dev": "webpack --mode development --config webpack.development.js --watch",
+    "analyze-bundle": "webpack --mode development --config webpack.development.js --env analyze",
     "prepublishOnly": "yarn build",
     "test": "jest --coverage",
     "lint": "eslint ."
@@ -91,7 +92,7 @@
     "react-imask": "^6.2.2",
     "react-load-script": "^0.0.6",
     "react-router-dom": "^5.2.0",
-    "react-signature-canvas": "^1.0.3",
+    "react-signature-canvas": "^1.0.5",
     "react-visibility-sensor": "^5.1.1",
     "sass": "^1.49.11",
     "scriptjs": "^2.5.9",
