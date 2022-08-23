@@ -60,7 +60,7 @@ export function emailLogin(clientArg) {
   }
 }
 
-export async function sendLoginCode(fieldVal, servar, methods = null) {
+export async function sendLoginCode({ fieldVal, servar, methods = null }) {
   methods = methods || servar.metadata.login_methods;
   if (methods.includes('phone') && phonePattern.test(fieldVal)) {
     return await global.firebase
@@ -113,7 +113,7 @@ export async function sendLoginCode(fieldVal, servar, methods = null) {
   }
 }
 
-export async function verifySMSCode(fieldVal, servar, client) {
+export async function verifySMSCode({ fieldVal, servar, client }) {
   const fcr = window.firebaseConfirmationResult;
   if (fcr) {
     return await fcr

@@ -269,6 +269,9 @@ function isFieldValueEmpty(value, servar) {
     case 'button_group':
       noVal = value.length === 0;
       break;
+    case 'payment_method':
+      noVal = !value?.complete;
+      break;
     default:
       noVal = value === '';
       break;

@@ -422,4 +422,38 @@ export default class Client {
     const options = { headers: { 'Content-Type': 'application/json' } };
     return this._fetch(url, options).then((response) => response.json());
   }
+
+  // Stripe
+  async setupPaymentIntent(paymentMethodFieldId) {
+    await initFormsPromise;
+    const { userKey } = initInfo();
+    const url = `${API_URL}stripe/payment_method/`;
+    const data = {
+      form_key: this.formKey,
+      ...(userKey ? { user_id: userKey } : {}),
+      field_id: paymentMethodFieldId,
+      customer_info: { name: 'Test Customer' } // TODO: Remove when BE changed to no longer require this.
+    };
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data)
+    };
+    return this._fetch(url, options).then((response) => response.json());
+  }
+
+  // Stripe
+  async retrievePaymentMethodData(paymentMethodFieldId, stripePaymentMethodId) {
+    await initFormsPromise;
+    const { userKey } = initInfo();
+    const params = encodeGetParams({
+      field_id: paymentMethodFieldId,
+      form_key: this.formKey,
+      ...(userKey ? { user_id: userKey } : {}),
+      stripe_payment_method_id: stripePaymentMethodId
+    });
+    const url = `${API_URL}stripe/payment_method/card/?${params}`;
+    const options = { headers: { 'Content-Type': 'application/json' } };
+    return this._fetch(url, options).then((response) => response.json());
+  }
 }

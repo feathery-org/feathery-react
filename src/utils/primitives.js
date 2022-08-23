@@ -25,10 +25,19 @@ function stringifyWithNull(value) {
   return value === null || value === undefined ? '' : value.toString();
 }
 
+function filterKeys(obj, allowedKeys) {
+  return Object.keys(obj)
+    .filter((key) => allowedKeys.includes(key))
+    .reduce((cur, key) => {
+      return Object.assign(cur, { [key]: obj[key] });
+    }, {});
+}
+
 export {
   encodeGetParams,
   isNum,
   isObjectEmpty,
   objectFromEntries,
-  stringifyWithNull
+  stringifyWithNull,
+  filterKeys
 };

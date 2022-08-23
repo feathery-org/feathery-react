@@ -5,7 +5,7 @@ import InlineTooltip from '../../components/Tooltip';
 import DatePicker from 'react-datepicker';
 import DateSelectorStyles from './styles';
 
-import { bootstrapStyles } from '../../styles';
+import { bootstrapStyles, ERROR_COLOR } from '../../styles';
 import { IMaskInput } from 'react-imask';
 
 function formatDateString(date) {
@@ -74,7 +74,7 @@ function DateSelectorField({
                 width: '100%',
                 ...bootstrapStyles,
                 ...applyStyles.getTarget('field'),
-                ...(inlineError ? { borderColor: '#F42525' } : {}),
+                ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
                 '&:focus': applyStyles.getTarget('active'),
                 '&:hover': applyStyles.getTarget('hover'),
                 '&:not(:focus)':

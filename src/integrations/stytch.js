@@ -50,7 +50,7 @@ export function googleOauthRedirect() {
   });
 }
 
-export function sendMagicLink(fieldVal) {
+export function sendMagicLink({ fieldVal }) {
   const client = getAuthClient();
   if (!client) return;
 

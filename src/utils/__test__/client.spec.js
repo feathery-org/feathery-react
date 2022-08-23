@@ -195,4 +195,100 @@ describe('client', () => {
       expect(response).toEqual({ status: 200 });
     });
   });
+
+  describe('setupPaymentIntent', () => {
+    it('sets up a payment intent and returns the intent secret', async () => {
+      // Arrange
+      const formKey = 'formKey';
+      const client = new Client(formKey);
+      const paymentMethodFieldId = 'payment_method_field_id';
+      const body = {
+        form_key: formKey,
+        user_id: 'userKey',
+        field_id: paymentMethodFieldId,
+        customer_info: { name: 'Test Customer' } // TODO: Remove when BE changed to no longer require this.
+      };
+      initInfo.mockReturnValue({
+        sdkKey: 'sdkKey',
+        userKey: 'userKey',
+        sessions: {},
+        forms: {}
+      });
+      const intentSecret = 'intent_secret';
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 200,
+        json: jest.fn().mockResolvedValue(intentSecret)
+      });
+
+      // Act
+      const response = await client.setupPaymentIntent(paymentMethodFieldId);
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}stripe/payment_method/`,
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            Authorization: 'Token sdkKey',
+            'Content-Type': 'application/json'
+          },
+          method: 'POST'
+        }
+      );
+      expect(response).toEqual(intentSecret);
+    });
+  });
+
+  describe('retrievePaymentMethodData', () => {
+    it('retrieves the payment method  info', async () => {
+      // Arrange
+      const formKey = 'formKey';
+      const userKey = 'userKey';
+      const client = new Client(formKey);
+      initInfo.mockReturnValue({
+        sdkKey: 'sdkKey',
+        userKey: userKey,
+        sessions: {},
+        forms: {}
+      });
+      const stripePaymentMethodId = 'stripe_payment_method_id';
+      const paymentMethodFieldId = 'payment_method_field_id';
+      const paymentMethodData = {
+        card_data: {
+          brand: 'mastercard',
+          last4: '6685',
+          country: 'US',
+          exp_year: 2024,
+          exp_month: 4,
+          postal_code: '46814'
+        },
+        stripe_customer_id: 'stripe_customer_id',
+        stripe_payment_method_id: stripePaymentMethodId
+      };
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 200,
+        json: jest.fn().mockResolvedValue(paymentMethodData)
+      });
+
+      // Act
+      const result = await client.retrievePaymentMethodData(
+        paymentMethodFieldId,
+        stripePaymentMethodId
+      );
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}stripe/payment_method/card/?field_id=${paymentMethodFieldId}&form_key=${formKey}&user_id=${userKey}&stripe_payment_method_id=${stripePaymentMethodId}`,
+        {
+          cache: 'no-store',
+          headers: {
+            Authorization: 'Token sdkKey',
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      expect(result).toEqual(paymentMethodData);
+    });
+  });
 });

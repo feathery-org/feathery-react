@@ -1,4 +1,4 @@
-import { encodeGetParams, isNum } from '../primitives';
+import { encodeGetParams, isNum, filterKeys } from '../primitives';
 
 describe('primitives', () => {
   describe('encodeGetParams', () => {
@@ -55,5 +55,27 @@ describe('primitives', () => {
       // Assert
       expect(actual).toEqual(false);
     });
+  });
+});
+
+describe('filterKeys', () => {
+  it('removes excess non-allowed keys from an object', () => {
+    // Arrange
+    const obj = {
+      key1: '1',
+      key2: '2',
+      key3: '3',
+      key4: '4'
+    };
+    const expected = {
+      key1: '1',
+      key4: '4'
+    };
+
+    // Act
+    const actual = filterKeys(obj, ['key1', 'key4', 'key5']);
+
+    // Assert
+    expect(actual).toMatchObject(expected);
   });
 });

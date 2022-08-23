@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/Tooltip';
-import { bootstrapStyles } from '../styles';
+import { bootstrapStyles, ERROR_COLOR } from '../styles';
 
 function TextArea({
   element,
@@ -44,7 +44,7 @@ function TextArea({
             resize: 'none',
             ...bootstrapStyles,
             ...applyStyles.getTarget('field'),
-            ...(inlineError ? { borderColor: '#F42525' } : {}),
+            ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
             '&:focus': applyStyles.getTarget('active'),
             '&:hover': applyStyles.getTarget('hover'),
             '&:not(:focus)':

@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 
 import ReactButton from 'react-bootstrap/Button';
 import TextNodes from '../components/TextNodes';
-import { imgMaxSizeStyles } from '../styles';
+import { imgMaxSizeStyles, ERROR_COLOR } from '../styles';
 
 const LINK_CUSTOM = 'custom';
 const LINK_NONE = 'none';
@@ -139,7 +139,7 @@ function ButtonElement({
       }}
       css={{
         justifyContent: 'center',
-        ...(inlineError ? { borderColor: '#F42525' } : {}),
+        ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
         alignItems: 'center',
         '&:disabled': {
           cursor: 'default !important',
