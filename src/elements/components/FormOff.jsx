@@ -25,7 +25,7 @@ export default function FormOff({ width = 392 }) {
           marginTop: '50px'
         }}
       >
-        This form is not currently collecting responses.
+        This form isn't currently collecting responses.
       </div>
     </div>
   );
