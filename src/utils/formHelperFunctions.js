@@ -335,6 +335,8 @@ async function setFormElementError({
 }) {
   let invalid = false;
   if (errorType === 'html5') {
+    if (!formRef.current) return false;
+
     if (fieldKey) {
       if (['pin_input', 'select', 'multiselect'].includes(servarType))
         fieldKey = `${fieldKey}-0`;
