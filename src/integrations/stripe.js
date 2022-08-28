@@ -21,6 +21,7 @@ export function installStripe(stripeConfig) {
       })
     );
   }
+  return Promise.resolve();
 }
 
 // Returns mapping of servar key (or hidden field key) to value
