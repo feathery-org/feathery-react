@@ -64,7 +64,7 @@ export async function initializeIntegrations(
   ]);
 
   if (gtm) initializeTagManager(gtm);
-  inferEmailLoginFromURL(clientArg);
+  if (fb || stytch) inferEmailLoginFromURL(clientArg);
 }
 
 export function inferEmailLoginFromURL(featheryClient: any) {
