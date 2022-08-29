@@ -15,6 +15,11 @@ import {
 import { installStripe, setupPaymentMethod } from './stripe';
 import { getStytchJwt } from '../utils/browser';
 import TagManager from 'react-gtm-module';
+import {
+  gaInstalled,
+  installGoogleAnalytics,
+  trackGAEvent
+} from './googleAnalytics';
 
 const IMPORTED_URLS = new Set();
 
@@ -52,7 +57,8 @@ export async function initializeIntegrations(integs: any, clientArg: any) {
     installFirebase(integs.fb),
     installStytch(integs.stytch),
     installStripe(integs.stripe),
-    installSegment(integs.segment)
+    installSegment(integs.segment),
+    installGoogleAnalytics(integs.google_analytics)
   ]);
 
   const gtm = integs['google-tag-manager'];
@@ -118,6 +124,8 @@ export function trackEvent(title: string, metadata: Record<string, any>) {
   if (TagManager.initialized) {
     TagManager.dataLayer({ dataLayer: { ...metadata, event: title } });
   }
+  // Google Analytics
+  if (gaInstalled) trackGAEvent(title, metadata);
   // Segment
   if (window.analytics) window.analytics.track(title, metadata);
 }
