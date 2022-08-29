@@ -2,7 +2,6 @@ import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import ReactForm from 'react-bootstrap/Form';
-import TagManager from 'react-gtm-module';
 import { useHotkeys } from 'react-hotkeys-hook';
 
 import { calculateStepCSS, isFill } from '../utils/hydration';
@@ -39,7 +38,8 @@ import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
 import { usePayments } from '../integrations/stripe';
 import {
   getIntegrationActionConfiguration,
-  ActionData
+  ActionData,
+  trackEvent
 } from '../integrations/utils';
 import {
   LINK_ADD_REPEATED_ROW,
@@ -572,17 +572,11 @@ function Form({
     setCurDepth(curDepth);
     setMaxDepth(maxDepth);
 
-    // @ts-expect-error TODO(ts) - investigate - typing claims that initialized isn't a property
-    if (TagManager.initialized) {
-      TagManager.dataLayer({
-        dataLayer: {
-          stepId: newKey,
-          // @ts-expect-error
-          formId: client.formKey,
-          event: 'FeatheryStepLoad'
-        }
-      });
-    }
+    trackEvent('FeatheryStepLoad', {
+      stepId: newKey,
+      // @ts-expect-error
+      formId: client.formKey
+    });
 
     initState.validateCallbacks[formKey] = (trigger: any) => {
       const inlineErrors = {};
@@ -1136,17 +1130,12 @@ function Form({
     if (featheryFields.length > 0)
       // @ts-expect-error
       submitPromise = client.submitStep(featheryFields);
-    // @ts-expect-error TODO(ts) - investigate - typing claims that initialized isn't a property
-    if (TagManager.initialized) {
-      TagManager.dataLayer({
-        dataLayer: {
-          stepId: activeStep.key,
-          // @ts-expect-error
-          formId: client.formKey,
-          event: 'FeatheryStepSubmit'
-        }
-      });
-    }
+
+    trackEvent('FeatheryStepSubmit', {
+      stepId: activeStep.key,
+      // @ts-expect-error
+      formId: client.formKey
+    });
 
     return handleRedirect({
       metadata,

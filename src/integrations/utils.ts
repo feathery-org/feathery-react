@@ -6,6 +6,7 @@ import {
   verifySMSCode
 } from './firebase';
 import { initializeTagManager } from './googleTagManager';
+import { installSegment } from './segment';
 import {
   installStytch,
   emailLogin as emailLoginStytch,
@@ -13,8 +14,7 @@ import {
 } from './stytch';
 import { installStripe, setupPaymentMethod } from './stripe';
 import { getStytchJwt } from '../utils/browser';
-
-import React from 'react';
+import TagManager from 'react-gtm-module';
 
 const IMPORTED_URLS = new Set();
 
@@ -46,25 +46,18 @@ export function dynamicImport(
   }
 }
 
-export async function initializeIntegrations(
-  integrations: any,
-  clientArg: any
-) {
-  const gtm = integrations['google-tag-manager'];
-  const fb = integrations.firebase;
-  const plaid = integrations.plaid;
-  const stytch = integrations.stytch;
-  const stripe = integrations.stripe;
-
+export async function initializeIntegrations(integs: any, clientArg: any) {
   await Promise.all([
-    installPlaid(!!plaid),
-    installFirebase(fb),
-    installStytch(stytch),
-    installStripe(stripe)
+    installPlaid(!!integs.plaid),
+    installFirebase(integs.fb),
+    installStytch(integs.stytch),
+    installStripe(integs.stripe),
+    installSegment(integs.segment)
   ]);
 
+  const gtm = integs['google-tag-manager'];
   if (gtm) initializeTagManager(gtm);
-  if (fb || stytch) inferEmailLoginFromURL(clientArg);
+  if (integs.fb || integs.stytch) inferEmailLoginFromURL(clientArg);
 }
 
 export function inferEmailLoginFromURL(featheryClient: any) {
@@ -117,4 +110,14 @@ export function getIntegrationActionConfiguration(getCardElement: any) {
       continue: false
     }
   ];
+}
+
+export function trackEvent(title: string, metadata: Record<string, any>) {
+  // Google Tag Manager
+  // @ts-expect-error TODO(ts) - investigate - typing claims that initialized isn't a property
+  if (TagManager.initialized) {
+    TagManager.dataLayer({ dataLayer: { ...metadata, event: title } });
+  }
+  // Segment
+  if (window.analytics) window.analytics.track(title, metadata);
 }
