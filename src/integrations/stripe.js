@@ -1,13 +1,15 @@
 import { loadStripe } from '@stripe/stripe-js';
 import { useState } from 'react';
+import { runningInClient } from '../utils/browser.js';
 
 const stripePromise = new Promise((resolve) => {
-  document.addEventListener('stripe_key_loaded', (e) => {
-    const promise = loadStripe(e.detail.key);
-    promise.then((stripe) => {
-      resolve(stripe);
+  if (runningInClient())
+    document.addEventListener('stripe_key_loaded', (e) => {
+      const promise = loadStripe(e.detail.key);
+      promise.then((stripe) => {
+        resolve(stripe);
+      });
     });
-  });
 });
 
 export const getStripe = () => stripePromise;
