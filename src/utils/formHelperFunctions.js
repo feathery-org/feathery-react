@@ -413,11 +413,12 @@ function calculateHide(hideIf, fields, values, repeat) {
   // Otherwise, just match the hideIf value
   const matchValues =
     hideIf.value === '' ? [null, undefined, [], '', false] : [hideIf.value];
+  if (hideIf.value === 'true') matchValues.push(true);
+  else if (hideIf.value === 'false') matchValues.push(false);
 
   const matchFn = (val) => {
-    return hideIf.comparison === 'equal'
-      ? matchValues.includes(val)
-      : !matchValues.includes(val);
+    const comparison = matchValues.includes(val);
+    return hideIf.comparison === 'equal' ? comparison : !comparison;
   };
 
   if (Array.isArray(value)) {
