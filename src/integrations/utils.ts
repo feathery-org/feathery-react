@@ -12,7 +12,7 @@ import {
   emailLogin as emailLoginStytch,
   sendMagicLink
 } from './stytch';
-import { installStripe, setupPaymentMethod } from './stripe';
+import { installStripe, setupPaymentMethodAndPay } from './stripe';
 import { getStytchJwt } from '../utils/browser';
 import TagManager from 'react-gtm-module';
 import {
@@ -92,7 +92,7 @@ export function getIntegrationActionConfiguration(getCardElement: any) {
     {
       servarType: 'payment_method',
       integrationKey: 'stripe',
-      actionFn: setupPaymentMethod,
+      actionFn: setupPaymentMethodAndPay,
       targetElementFn: getCardElement,
       continue: true
     },

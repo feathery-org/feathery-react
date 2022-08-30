@@ -36,11 +36,20 @@ function filterKeys(obj: any, allowedKeys: any) {
     }, {});
 }
 
+function formatNumeric(number: number, intlOptions = {}, locales = ['en-US']) {
+  return new Intl.NumberFormat(locales, intlOptions).format(number);
+}
+function formatMoneyUSD(number: number, locales = ['en-US']) {
+  return formatNumeric(number, { style: 'currency', currency: 'USD' }, locales);
+}
+
 export {
   encodeGetParams,
   isNum,
   isObjectEmpty,
   objectFromEntries,
   stringifyWithNull,
-  filterKeys
+  filterKeys,
+  formatNumeric,
+  formatMoneyUSD
 };

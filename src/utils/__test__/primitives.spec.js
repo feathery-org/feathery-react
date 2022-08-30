@@ -1,4 +1,10 @@
-import { encodeGetParams, isNum, filterKeys } from '../primitives';
+import {
+  encodeGetParams,
+  isNum,
+  filterKeys,
+  formatNumeric,
+  formatMoneyUSD
+} from '../primitives';
 
 describe('primitives', () => {
   describe('encodeGetParams', () => {
@@ -54,6 +60,21 @@ describe('primitives', () => {
 
       // Assert
       expect(actual).toEqual(false);
+    });
+  });
+  describe('formatNumeric', () => {
+    it('handles grouping in en-US (default)', () => {
+      expect(formatNumeric(23000)).toEqual('23,000');
+    });
+    it('formats decimal currency without the symbol', () => {
+      expect(
+        formatNumeric(23000, { style: 'decimal', minimumFractionDigits: 2 })
+      ).toEqual('23,000.00');
+    });
+  });
+  describe('formatMoneyUSD', () => {
+    it('handles grouping in en-US and USD (default)', () => {
+      expect(formatMoneyUSD(23000)).toEqual('$23,000.00');
     });
   });
 });
