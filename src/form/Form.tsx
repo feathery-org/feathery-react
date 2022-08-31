@@ -57,7 +57,7 @@ import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
-import { openTab, runningInClient } from '../utils/browser.js';
+import { openTab, runningInClient } from '../utils/browser';
 import FormOff from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
@@ -166,7 +166,9 @@ function Form({
   const [hasPlaid, setHasPlaid] = useState(false);
   const [gMapFilled, setGMapFilled] = useState(false);
   const [gMapBlurKey, setGMapBlurKey] = useState('');
-  const [gMapTimeoutId, setGMapTimeoutId] = useState(-1);
+  const [gMapTimeoutId, setGMapTimeoutId] = useState<NodeJS.Timeout | number>(
+    -1
+  );
   const [viewport, setViewport] = useState(getViewport());
 
   const [repeats, setRepeats] = useState(0);
@@ -285,7 +287,6 @@ function Form({
 
   // Logic to run on each step once firebase is loaded
   useEffect(() => {
-    // @ts-expect-error TS(2304): Cannot find name 'global'.
     if (!activeStep || !global.firebase) return;
 
     const hasLoginField = activeStep.servar_fields.some((field: any) => {
@@ -308,7 +309,6 @@ function Form({
     );
     if (hasLoginField && submitButton) {
       window.firebaseRecaptchaVerifier =
-        // @ts-expect-error TS(2304): Cannot find name 'global'.
         new global.firebase.auth.RecaptchaVerifier(submitButton.id, {
           size: 'invisible'
         });
@@ -318,13 +318,11 @@ function Form({
       );
       if (smsButton) {
         window.firebaseRecaptchaVerifier =
-          // @ts-expect-error TS(2304): Cannot find name 'global'.
           new global.firebase.auth.RecaptchaVerifier(smsButton.id, {
             size: 'invisible'
           });
       }
     }
-    // @ts-expect-error TS(2304): Cannot find name 'global'.
   }, [activeStep?.id, global.firebase]);
 
   // Logic to run every time step changes

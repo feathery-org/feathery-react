@@ -35,7 +35,7 @@ export default function DevNavBar({ allSteps, curStep, history }: any) {
       [nextCondKeys, nextStepKeys],
       // @ts-expect-error TS(7031): Binding element 'prevCondKeys' implicitly has an '... Remove this comment to see the full error message
       ([prevCondKeys, prevStepKeys], [nextCondKeys]) =>
-        [...prevCondKeys].filter((key) => {
+        Array.from(prevCondKeys).filter((key) => {
           const bidirectional = nextCondKeys.has(key);
           if (!bidirectional) prevStepKeys.add(key);
           return bidirectional;

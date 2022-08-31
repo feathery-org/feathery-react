@@ -4,6 +4,10 @@ declare global {
   var scriptjsLoadPromise: any;
   var webfontloaderPromise: any;
   var firebase: any;
+  var lottie: any;
+  var libphonenumber: any;
+  var Plaid: any;
+  var Stytch: any;
 
   interface Window {
     firebaseRecaptchaVerifier: any;

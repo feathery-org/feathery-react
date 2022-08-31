@@ -40,6 +40,7 @@ export function installSegment(segmentConfig: any) {
     // stored as the first argument, so we can replay the data.
     analytics.factory = function (method: any) {
       return function () {
+        // eslint-disable-next-line prefer-rest-params
         const args = Array.prototype.slice.call(arguments);
         args.unshift(method);
         analytics.push(args);

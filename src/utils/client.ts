@@ -208,9 +208,7 @@ export default class Client {
 
   _loadFormPackages(res: any) {
     // Load default fonts
-    // @ts-expect-error TS(2304): Cannot find name 'global'.
     if (res.fonts.length && global.webfontloaderPromise) {
-      // @ts-expect-error TS(2304): Cannot find name 'global'.
       global.webfontloaderPromise.then((WebFont: any) => {
         WebFont.load({ google: { families: res.fonts } });
       });

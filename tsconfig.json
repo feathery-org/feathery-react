@@ -9,7 +9,7 @@
     "jsx": "react-jsx",
     "jsxImportSource": "@emotion/react",
     "target": "es5",
-    "allowJs": true,
+    "allowJs": false,
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
     "lib": ["dom", "dom.iterable", "esnext"],

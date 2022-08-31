@@ -30,7 +30,6 @@ export function installStytch(stytchConfig: any) {
         if (isStytchImported) return resolve();
 
         return dynamicImport(STYTCH_JS_URL).then(() => {
-          // @ts-expect-error TS(2304): Cannot find name 'global'.
           const initializedClient = global.Stytch(stytchConfig.metadata.token);
           setAuthClient(initializedClient);
           resolve(initializedClient);

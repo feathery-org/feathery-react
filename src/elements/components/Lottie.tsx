@@ -16,7 +16,6 @@ export default function Lottie({ animationData }: any) {
 
   useEffect(() => {
     LOTTIE_PROMISE.then(() =>
-      // @ts-expect-error TS(2304): Cannot find name 'global'.
       global.lottie.loadAnimation({
         container: lottieRef.current,
         renderer: 'svg',

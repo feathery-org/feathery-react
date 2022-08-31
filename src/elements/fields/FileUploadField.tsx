@@ -29,15 +29,15 @@ function FileUploadField({
   const allowMoreFiles = isMultiple || thumbnailData.length === 0;
   const fileExists = thumbnailData.length > 0;
 
-  function onClick() {
+  const onClick = () => {
     if (!allowMoreFiles) return;
     // @ts-expect-error TS(2532): Object is possibly 'undefined'.
     fileInput.current.click();
-  }
+  };
 
   // When the user uploads files to the multi-file upload, we just append to the existing set
   // By default the input element would just replace all the uploaded files (we don't want that)
-  async function onChange(event: any) {
+  const onChange = async (event: any) => {
     const files = Array.from(event.target.files).filter(
       (file) => (file as any).size <= FILE_SIZE_LIMIT
     );
@@ -68,7 +68,7 @@ function FileUploadField({
     // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
     // @ts-expect-error TS(2532): Object is possibly 'undefined'.
     fileInput.current.value = [];
-  }
+  };
 
   function onClear(index: any) {
     return () => {

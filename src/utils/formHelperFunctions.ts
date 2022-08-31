@@ -17,7 +17,6 @@ const validators = {
   email: (a: any) => emailPattern.test(a),
   phone: (a: any) => {
     try {
-      // @ts-expect-error TS(2304): Cannot find name 'global'.
       return global.libphonenumber.isValidPhoneNumber(a, 'US');
     } catch (e) {
       // Invalid phone number

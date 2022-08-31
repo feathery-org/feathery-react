@@ -21,11 +21,9 @@ export async function openPlaidLink(
   clearLoader: any
 ) {
   // No actions if Plaid hasn't been loaded yet
-  // @ts-expect-error TS(2304): Cannot find name 'global'.
   if (!global.Plaid) return;
 
   const linkToken = (await client.fetchPlaidLinkToken()).link_token;
-  // @ts-expect-error TS(2304): Cannot find name 'global'.
   const handler = global.Plaid.create({
     token: linkToken,
     onSuccess: async (publicToken: any) => {

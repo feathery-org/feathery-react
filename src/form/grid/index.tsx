@@ -1,5 +1,5 @@
 import React from 'react';
-import Cell from './Cell.jsx';
+import Cell from './Cell';
 import ApplyStyles from '../../elements/styles';
 import { getDefaultFieldValue } from '../../utils/formHelperFunctions';
 import { TEXT_VARIABLE_PATTERN } from '../../utils/hydration';

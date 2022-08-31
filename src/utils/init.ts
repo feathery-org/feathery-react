@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Client from './client';
 import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
-import { runningInClient } from './browser.js';
+import { runningInClient } from './browser';
 import { inferEmailLoginFromURL } from '../integrations/utils';
 
 export type FeatheryFieldTypes =
@@ -111,9 +111,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
 
   // dynamically load libraries that must be client side only for NextJs support
   if (runningInClient()) {
-    // @ts-expect-error TS(2304): Cannot find name 'global'.
     global.scriptjsLoadPromise = import('scriptjs');
-    // @ts-expect-error TS(2304): Cannot find name 'global'.
     global.webfontloaderPromise = import('webfontloader');
   }
 

@@ -12,7 +12,6 @@ export function installFirebase(firebaseConfig: any) {
   else if (!firebaseConfig) return Promise.resolve();
   else {
     firebasePromise = new Promise((resolve) => {
-      // @ts-expect-error TS(2304): Cannot find name 'global'.
       if (global.firebase) resolve(global.firebase);
       else {
         // Bring in Firebase dependencies dynamically if this form uses Firebase
@@ -23,7 +22,6 @@ export function installFirebase(firebaseConfig: any) {
           ],
           false
         ).then(() => {
-          // @ts-expect-error TS(2304): Cannot find name 'global'.
           global.firebase.initializeApp({
             apiKey: firebaseConfig.api_key,
             authDomain: `${firebaseConfig.metadata.project_id}.firebaseapp.com`,
@@ -33,7 +31,6 @@ export function installFirebase(firebaseConfig: any) {
             messagingSenderId: firebaseConfig.metadata.sender_id,
             appId: firebaseConfig.metadata.app_id
           });
-          // @ts-expect-error TS(2304): Cannot find name 'global'.
           resolve(global.firebase);
         });
       }
@@ -43,11 +40,9 @@ export function installFirebase(firebaseConfig: any) {
 }
 
 export function emailLogin(clientArg: any) {
-  // @ts-expect-error TS(2304): Cannot find name 'global'.
   if (global.firebase?.auth().isSignInWithEmailLink(window.location.href)) {
     const authEmail = window.localStorage.getItem('featheryFirebaseEmail');
     if (authEmail) {
-      // @ts-expect-error TS(2304): Cannot find name 'global'.
       return global.firebase
         .auth()
         .signInWithEmailLink(authEmail, window.location.href)
@@ -68,7 +63,6 @@ export function emailLogin(clientArg: any) {
 export async function sendLoginCode({ fieldVal, servar, methods = null }: any) {
   methods = methods || servar.metadata.login_methods;
   if (methods.includes('phone') && phonePattern.test(fieldVal)) {
-    // @ts-expect-error TS(2304): Cannot find name 'global'.
     return await global.firebase
       .auth()
       .signInWithPhoneNumber(`+1${fieldVal}`, window.firebaseRecaptchaVerifier)
@@ -96,7 +90,6 @@ export async function sendLoginCode({ fieldVal, servar, methods = null }: any) {
         };
       });
   } else if (methods.includes('email') && emailPattern.test(fieldVal)) {
-    // @ts-expect-error TS(2304): Cannot find name 'global'.
     return await global.firebase
       .auth()
       .sendSignInLinkToEmail(fieldVal, {

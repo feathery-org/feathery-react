@@ -1,6 +1,6 @@
 import { loadStripe } from '@stripe/stripe-js';
 import { useState } from 'react';
-import { runningInClient } from '../utils/browser.js';
+import { runningInClient } from '../utils/browser';
 
 const stripePromise = new Promise((resolve) => {
   if (runningInClient())
@@ -50,7 +50,7 @@ function getObjectMappingValues(
   fieldValues: any,
   servarMap: any
 ) {
-  return Object.entries(mappingObj).reduce((result, [key, mappingInfo]) => {
+  return Object.entries(mappingObj).reduce((result, [, mappingInfo]) => {
     if ((mappingInfo as any).id) {
       let key = (mappingInfo as any).id;
       if ((mappingInfo as any).type === 'servar')
