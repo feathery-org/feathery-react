@@ -16,12 +16,12 @@ const LINK_SEND_MAGIC_LINK = 'send_magic_link';
 const LINK_TRIGGER_PLAID = 'trigger_plaid';
 const LINK_GOOGLE_OAUTH = 'trigger_google_oauth';
 
-function adjustColor(color, amount) {
+function adjustColor(color: any, amount: any) {
   return (
     '#' +
     color
       .replace(/^#/, '')
-      .replace(/../g, (color) =>
+      .replace(/../g, (color: any) =>
         (
           '0' +
           Math.min(255, Math.max(0, parseInt(color, 16) + amount)).toString(16)
@@ -30,7 +30,7 @@ function adjustColor(color, amount) {
   );
 }
 
-function applyButtonStyles(element, applyStyles) {
+function applyButtonStyles(element: any, applyStyles: any) {
   applyStyles.addTargets(
     'button',
     'buttonActive',
@@ -40,7 +40,7 @@ function applyButtonStyles(element, applyStyles) {
     'img'
   );
 
-  applyStyles.apply('button', 'background_color', (a) => ({
+  applyStyles.apply('button', 'background_color', (a: any) => ({
     backgroundColor: `#${a}`
   }));
   applyStyles.applyHeight('button');
@@ -56,6 +56,7 @@ function applyButtonStyles(element, applyStyles) {
       'uploader_padding_bottom',
       'uploader_padding_left'
     ],
+    // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
     (a, b, c, d) => ({
       padding: `${a}px ${b}px ${c}px ${d}px`
     })
@@ -65,7 +66,7 @@ function applyButtonStyles(element, applyStyles) {
 
   applyStyles.applyBorders('buttonHover', 'hover_');
   if (element.properties.link !== LINK_NONE) {
-    applyStyles.apply('buttonHover', 'background_color', (a) => {
+    applyStyles.apply('buttonHover', 'background_color', (a: any) => {
       const color = `${adjustColor(a, -45)} !important`;
       return {
         backgroundColor: color,
@@ -75,17 +76,17 @@ function applyButtonStyles(element, applyStyles) {
     });
   }
   if (element.styles.hover_background_color) {
-    applyStyles.apply('buttonHover', 'hover_background_color', (a) => ({
+    applyStyles.apply('buttonHover', 'hover_background_color', (a: any) => ({
       backgroundColor: `#${a} !important`
     }));
   }
   applyStyles.applyBorders('buttonActive', 'selected_');
   if (element.styles.selected_background_color) {
-    applyStyles.apply('buttonHover', 'selected_background_color', (a) => ({
+    applyStyles.apply('buttonHover', 'selected_background_color', (a: any) => ({
       backgroundColor: `#${a} !important`
     }));
   }
-  applyStyles.apply('buttonDisabled', 'background_color', (a) => {
+  applyStyles.apply('buttonDisabled', 'background_color', (a: any) => {
     const color = `${adjustColor(a, 45)} !important`;
     return {
       backgroundColor: color,
@@ -94,7 +95,7 @@ function applyButtonStyles(element, applyStyles) {
     };
   });
 
-  applyStyles.apply('loader', ['height', 'height_unit'], (a, b) => {
+  applyStyles.apply('loader', ['height', 'height_unit'], (a: any, b: any) => {
     const thirdHeight = Math.round(a / 3);
     const dimension = `${thirdHeight}${b}`;
     return { width: dimension, height: dimension };
@@ -117,7 +118,7 @@ function ButtonElement({
   elementProps = {},
   inlineError,
   children
-}) {
+}: any) {
   const styles = useMemo(
     () => applyButtonStyles(element, applyStyles),
     [applyStyles]

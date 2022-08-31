@@ -22,7 +22,7 @@ const mapFieldTypes = new Set([
   'gmap_zip'
 ]);
 
-const Cell = ({ node: el, form }) => {
+const Cell = ({ node: el, form }: any) => {
   const { type } = el;
 
   const {
@@ -57,7 +57,7 @@ const Cell = ({ node: el, form }) => {
   const fieldId = el.servar?.key ?? el.id;
   let onView;
   if (elementOnView && onViewElements.includes(fieldId)) {
-    onView = (isVisible) => elementOnView(fieldId, isVisible);
+    onView = (isVisible: any) => elementOnView(fieldId, isVisible);
   }
 
   if (
@@ -105,14 +105,14 @@ const Cell = ({ node: el, form }) => {
     if (el.properties.disable_if_fields_incomplete) {
       disabled = activeStep.servar_fields
         .filter(
-          (field) =>
+          (field: any) =>
             !shouldElementHide({
               fields: activeStep.servar_fields,
               values: fieldValues,
               element: field
             })
         )
-        .some((field) => {
+        .some((field: any) => {
           if (isFieldActuallyRequired(field, repeatTriggerExists)) {
             const servar = field.servar;
             return isFieldValueEmpty(fieldValues[servar.key], servar);
@@ -148,7 +148,7 @@ const Cell = ({ node: el, form }) => {
       ) {
         otherVal = fieldVal;
       } else if (servar.type === 'multiselect') {
-        fieldVal.forEach((val) => {
+        fieldVal.forEach((val: any) => {
           if (!servar.metadata.options.includes(val)) otherVal = val;
         });
       }
@@ -178,11 +178,11 @@ const Cell = ({ node: el, form }) => {
           <Elements.DateSelectorField
             {...fieldProps}
             value={fieldVal}
-            onChange={(val) => {
+            onChange={(val: any) => {
               const change = changeValue(val, el, index);
               if (change) onChange();
             }}
-            setRef={(ref) => {
+            setRef={(ref: any) => {
               if (thisCounter === 1) focusRef.current = ref;
             }}
           />
@@ -192,7 +192,7 @@ const Cell = ({ node: el, form }) => {
           <Elements.SignatureField
             {...fieldProps}
             defaultValue={fieldVal}
-            onEnd={(newFile) => {
+            onEnd={(newFile: any) => {
               clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
               fieldValues[servar.key] = Promise.resolve(newFile);
               onChange();
@@ -207,7 +207,7 @@ const Cell = ({ node: el, form }) => {
         return (
           <Elements.FileUploadField
             {...fieldProps}
-            onChange={(files, fieldIndex) => {
+            onChange={(files: any, fieldIndex: any) => {
               clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
               changeValue(files, el, index);
               onChange({
@@ -224,7 +224,7 @@ const Cell = ({ node: el, form }) => {
           <Elements.ButtonGroupField
             {...fieldProps}
             fieldVal={fieldVal}
-            onClick={(option) => {
+            onClick={(option: any) => {
               const {
                 metadata: { multiple },
                 required
@@ -253,7 +253,7 @@ const Cell = ({ node: el, form }) => {
           <Elements.CheckboxField
             {...fieldProps}
             fieldVal={fieldVal}
-            onChange={(e) => {
+            onChange={(e: any) => {
               const val = e.target.checked;
               changeValue(val, el, index);
               onChange();
@@ -266,7 +266,7 @@ const Cell = ({ node: el, form }) => {
           <Elements.DropdownField
             {...fieldProps}
             fieldVal={fieldVal}
-            onChange={(e) => {
+            onChange={(e: any) => {
               const val = e.target.value;
               changeValue(val, el, index);
               onChange({ submitData: autosubmit && val });
@@ -278,7 +278,7 @@ const Cell = ({ node: el, form }) => {
           <Elements.PinInputField
             {...fieldProps}
             fieldVal={fieldVal}
-            onChange={(val) => {
+            onChange={(val: any) => {
               const change = changeValue(val, el, index, false);
               if (change)
                 onChange({
@@ -294,11 +294,11 @@ const Cell = ({ node: el, form }) => {
             {...fieldProps}
             fieldVal={fieldVal}
             otherVal={otherVal}
-            onChange={(e) => {
+            onChange={(e: any) => {
               handleCheckboxGroupChange(e, servar.key);
               onChange();
             }}
-            onOtherChange={(e) => {
+            onOtherChange={(e: any) => {
               handleOtherStateChange(otherVal)(e);
               onChange();
             }}
@@ -310,12 +310,12 @@ const Cell = ({ node: el, form }) => {
             {...fieldProps}
             fieldVal={fieldVal}
             otherVal={otherVal}
-            onChange={(e) => {
+            onChange={(e: any) => {
               const val = e.target.value;
               changeValue(val, el, index);
               onChange({ submitData: autosubmit && val });
             }}
-            onOtherChange={(e) => {
+            onOtherChange={(e: any) => {
               handleOtherStateChange(otherVal)(e);
               onChange({ submitData: autosubmit && e.target.value });
             }}
@@ -326,7 +326,7 @@ const Cell = ({ node: el, form }) => {
           <Elements.ColorPickerField
             {...fieldProps}
             fieldVal={fieldVal}
-            onChange={(color) => {
+            onChange={(color: any) => {
               changeValue(color, el, index);
               onChange({ submitData: autosubmit && color });
             }}
@@ -337,12 +337,12 @@ const Cell = ({ node: el, form }) => {
           <Elements.TextArea
             {...fieldProps}
             rawValue={stringifyWithNull(fieldVal)}
-            onChange={(e) => {
+            onChange={(e: any) => {
               const val = e.target.value;
               const change = changeValue(val, el, index);
               if (change) onChange();
             }}
-            setRef={(ref) => {
+            setRef={(ref: any) => {
               if (thisCounter === 1) focusRef.current = ref;
             }}
           />
@@ -353,23 +353,27 @@ const Cell = ({ node: el, form }) => {
             {...fieldProps}
             value={stringifyWithNull(fieldVal)}
             onBlur={() => setGMapBlurKey(servar.key)}
-            onChange={(e) => {
+            onChange={(e: any) => {
               const val = e.target.value;
               const change = changeValue(val, el, index);
               if (change) onChange();
             }}
-            onSelect={(address) => {
+            onSelect={(address: any) => {
               const keyIDMap = {};
               const addrValues = {};
 
-              const trackMapFields = (step) => {
-                step.servar_fields.forEach((field) => {
+              const trackMapFields = (step: any) => {
+                step.servar_fields.forEach((field: any) => {
                   const servar = field.servar;
                   if (servar.type in address) {
+                    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
                     addrValues[servar.key] = address[servar.type];
+                    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
                     keyIDMap[servar.key] = field.id;
                   } else if (mapFieldTypes.has(servar.type)) {
+                    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
                     addrValues[servar.key] = '';
+                    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
                     keyIDMap[servar.key] = field.id;
                   }
                 });
@@ -389,7 +393,7 @@ const Cell = ({ node: el, form }) => {
                 });
               }
             }}
-            setRef={(ref) => {
+            setRef={(ref: any) => {
               if (thisCounter === 1) focusRef.current = ref;
             }}
           />
@@ -399,7 +403,7 @@ const Cell = ({ node: el, form }) => {
           <Elements.PaymentMethodField
             {...fieldProps}
             setCardElement={setCardElement}
-            setFieldError={(message) =>
+            setFieldError={(message: any) =>
               setFormElementError({
                 formRef,
                 fieldKey: el.servar.key,
@@ -411,7 +415,7 @@ const Cell = ({ node: el, form }) => {
                 triggerErrors: true
               })
             }
-            onChange={(val) => {
+            onChange={(val: any) => {
               const change = changeValue(val, el, index);
               if (change) onChange();
             }}
@@ -423,7 +427,7 @@ const Cell = ({ node: el, form }) => {
           <Elements.TextField
             {...fieldProps}
             rawValue={stringifyWithNull(fieldVal)}
-            onAccept={(val, mask) => {
+            onAccept={(val: any, mask: any) => {
               const newVal = mask._unmaskedValue === '' ? '' : val;
               const change = changeValue(newVal, el, index, false);
               if (change) {
@@ -432,7 +436,7 @@ const Cell = ({ node: el, form }) => {
                 onChange({ submitData });
               }
             }}
-            setRef={(ref) => {
+            setRef={(ref: any) => {
               if (thisCounter === 1) focusRef.current = ref;
             }}
           />

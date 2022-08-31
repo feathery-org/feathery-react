@@ -36,12 +36,14 @@ export const API_URL = API_URL_OPTIONS[environment];
 export const CDN_URL = CDN_URL_OPTIONS[environment];
 
 export default class Client {
-  constructor(formKey, ignoreNetworkErrors) {
+  formKey: any;
+  ignoreNetworkErrors: any;
+  constructor(formKey: any, ignoreNetworkErrors: any) {
     this.formKey = formKey;
     this.ignoreNetworkErrors = ignoreNetworkErrors;
   }
 
-  async _checkResponseSuccess(response) {
+  async _checkResponseSuccess(response: any) {
     let payload;
     switch (response.status) {
       case 200:
@@ -61,7 +63,7 @@ export default class Client {
     }
   }
 
-  _fetch(url, options) {
+  _fetch(url: any, options: any) {
     const { sdkKey } = initInfo();
     const { headers, ...otherOptions } = options;
     options = {
@@ -85,7 +87,7 @@ export default class Client {
       });
   }
 
-  _submitJSONData(servars) {
+  _submitJSONData(servars: any) {
     const { userKey } = initInfo();
     const url = `${API_URL}panel/step/submit/`;
     const data = {
@@ -103,7 +105,7 @@ export default class Client {
     return this._fetch(url, options);
   }
 
-  async _getFileValue(servar) {
+  async _getFileValue(servar: any) {
     let fileValue;
     if ('file_upload' in servar) {
       fileValue = servar.file_upload;
@@ -118,23 +120,25 @@ export default class Client {
     // If we've already stored the file from a previous session
     // There will be an entry in filePathMap for it
     // If so we just need to send the S3 path to the backend, not the full file
-    const resolveFile = async (file, index = null) => {
+    const resolveFile = async (file: any, index = null) => {
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       let path = filePathMap[servar.key];
       if (path && index !== null) path = path[index];
       return path ?? (await file);
     };
     return Array.isArray(fileValue)
-      ? Promise.all(fileValue.map(resolveFile))
+      ? // @ts-expect-error TS(2345): Argument of type '(file: any, index?: null) => Pro... Remove this comment to see the full error message
+        Promise.all(fileValue.map(resolveFile))
       : resolveFile(fileValue);
   }
 
-  async _submitFileData(servars) {
+  async _submitFileData(servars: any) {
     const { userKey } = initInfo();
     const url = `${API_URL}panel/step/submit/file/${userKey}/`;
 
     const formData = new FormData();
     const files = await Promise.all(
-      servars.map(async (servar) => {
+      servars.map(async (servar: any) => {
         const file = await this._getFileValue(servar);
         return [servar.key, file];
       })
@@ -156,7 +160,7 @@ export default class Client {
     await this._fetch(url, { method: 'POST', body: formData });
   }
 
-  updateUserKey(newUserKey, merge = false) {
+  updateUserKey(newUserKey: any, merge = false) {
     const { userKey: oldUserKey } = initInfo();
     const data = {
       new_fuser_key: newUserKey,
@@ -172,10 +176,14 @@ export default class Client {
     return this._fetch(url, options);
   }
 
-  setDefaultFormValues({ steps, additionalValues = {}, override = false }) {
+  setDefaultFormValues({
+    steps,
+    additionalValues = {},
+    override = false
+  }: any) {
     let values = {};
-    steps.forEach((step) => {
-      step.servar_fields.forEach((field) => {
+    steps.forEach((step: any) => {
+      step.servar_fields.forEach((field: any) => {
         const { key, repeated, type } = field.servar;
         const val = getDefaultFieldValue(field);
         if (isBase64Image(additionalValues[key])) {
@@ -185,9 +193,11 @@ export default class Client {
             `${key}.png`
           );
         }
+        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
         values[key] = repeated ? [val] : val;
         // Default value is null for file_upload, but value should always be an
         // array regardless if repeated or not
+        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
         if (type === 'file_upload') values[key] = [];
       });
     });
@@ -196,16 +206,18 @@ export default class Client {
     Object.assign(fieldValues, values);
   }
 
-  _loadFormPackages(res) {
+  _loadFormPackages(res: any) {
     // Load default fonts
+    // @ts-expect-error TS(2304): Cannot find name 'global'.
     if (res.fonts.length && global.webfontloaderPromise) {
-      global.webfontloaderPromise.then((WebFont) => {
+      // @ts-expect-error TS(2304): Cannot find name 'global'.
+      global.webfontloaderPromise.then((WebFont: any) => {
         WebFont.load({ google: { families: res.fonts } });
       });
     }
     // Load user-uploaded fonts
     Object.entries(res.uploaded_fonts).forEach(([family, fontStyles]) => {
-      fontStyles.forEach(({ source, style, weight }) =>
+      (fontStyles as any).forEach(({ source, style, weight }: any) =>
         new FontFace(family, `url(${source})`, { style, weight })
           .load()
           .then((font) => document.fonts.add(font))
@@ -216,16 +228,16 @@ export default class Client {
     // Load phone number validator for phone and login fields
     let needPhoneVal = false;
 
-    res.steps.some((step) => {
+    res.steps.some((step: any) => {
       // If we've loaded everything available, we don't need to keep looking
       if (needLottie && needPhoneVal) return true;
-      step.buttons.some((button) => {
+      step.buttons.some((button: any) => {
         if (needLottie) return true; // Already loaded
         const { loading_icon: li, loading_icon_type: lit } = button.properties;
         needLottie = li && lit === 'application/json';
         if (needLottie) loadLottieLight();
       });
-      step.servar_fields.some((field) => {
+      step.servar_fields.some((field: any) => {
         if (needPhoneVal) return true; // Already loaded
         needPhoneVal = ['phone', 'phone_number'].includes(field.servar.type);
         if (needPhoneVal) loadPhoneValidator();
@@ -248,7 +260,7 @@ export default class Client {
     return this._fetch(url, options).then(async (response) => {
       if (!response) return {};
 
-      const res = await response.json();
+      const res = await (response as any).json();
       if (res.data) {
         res.steps = getABVariant(res);
         delete res.data;
@@ -258,7 +270,7 @@ export default class Client {
     });
   }
 
-  async fetchForm(initVals) {
+  async fetchForm(initVals: any) {
     const res = await this.fetchCacheForm();
     // If form is disabled, data will equal `null`
     if (!res.steps) return { steps: [], formOff: true };
@@ -281,9 +293,10 @@ export default class Client {
 
     initState.fieldValuesInitialized = true;
     let params = { form_key: this.formKey };
-    if (userKey) params.fuser_key = userKey;
-    if (authId) params.auth_id = authId;
-    if (noData) params.no_data = 'true';
+    if (userKey) (params as any).fuser_key = userKey;
+    if (authId) (params as any).auth_id = authId;
+    if (noData) (params as any).no_data = 'true';
+    // @ts-expect-error TS(2322): Type 'string' is not assignable to type '{ form_ke... Remove this comment to see the full error message
     params = encodeGetParams(params);
     const url = `${API_URL}panel/session/?${params}`;
     const options = { importance: 'high' };
@@ -291,16 +304,17 @@ export default class Client {
     const response = await this._fetch(url, options);
     if (!response) return [];
 
-    const session = await response.json();
+    const session = await (response as any).json();
     const authSession = await initializeIntegrations(
       session.integrations,
       this
     );
+    // @ts-expect-error TS(1345): An expression of type 'void' cannot be tested for ... Remove this comment to see the full error message
     if (!noData) updateSessionValues(authSession ?? session);
     return [session, formData];
   }
 
-  submitAuthInfo({ authId, authPhone = '', authEmail = '' }) {
+  submitAuthInfo({ authId, authPhone = '', authEmail = '' }: any) {
     const { userKey } = initInfo();
     initState.authId = authId;
     if (authPhone) initState.authPhoneNumber = authPhone;
@@ -319,11 +333,11 @@ export default class Client {
       body: JSON.stringify(data)
     };
     return this._fetch(url, options).then((response) => {
-      return response.json();
+      return (response as any).json();
     });
   }
 
-  async submitCustom(customKeyValues, override = true) {
+  async submitCustom(customKeyValues: any, override = true) {
     const { userKey } = initInfo();
     const url = `${API_URL}panel/custom/submit/v2/`;
 
@@ -342,10 +356,12 @@ export default class Client {
         formData.append('files', val);
         formData.append('file_keys', key);
       } else {
+        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
         jsonKeyVals[key] = val;
       }
     });
     formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
+    // @ts-expect-error TS(2345): Argument of type 'boolean' is not assignable to pa... Remove this comment to see the full error message
     formData.set('override', override);
     if (this.formKey) formData.set('form_key', this.formKey);
     if (userKey) formData.set('fuser_key', userKey);
@@ -354,10 +370,10 @@ export default class Client {
   }
 
   // servars = [{key: <servarKey>, <type>: <value>}]
-  async submitStep(servars) {
-    const isFileServar = (servar) =>
+  async submitStep(servars: any) {
+    const isFileServar = (servar: any) =>
       ['file_upload', 'signature'].some((type) => type in servar);
-    const jsonServars = servars.filter((servar) => !isFileServar(servar));
+    const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
 
     const toAwait = [this._submitJSONData(jsonServars)];
@@ -365,7 +381,7 @@ export default class Client {
     await Promise.all(toAwait);
   }
 
-  async registerEvent(eventData, promise = null) {
+  async registerEvent(eventData: any, promise = null) {
     await initFormsPromise;
     const { userKey } = initInfo();
     const url = `${API_URL}event/`;
@@ -379,7 +395,7 @@ export default class Client {
       method: 'POST',
       body: JSON.stringify(data)
     };
-    if (promise) return promise.then(() => this._fetch(url, options));
+    if (promise) return (promise as any).then(() => this._fetch(url, options));
     else return this._fetch(url, options);
   }
 
@@ -393,10 +409,12 @@ export default class Client {
     });
     const url = `${API_URL}plaid/link_token/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
-    return this._fetch(url, options).then((response) => response.json());
+    return this._fetch(url, options).then((response) =>
+      (response as any).json()
+    );
   }
 
-  async submitPlaidUserData(publicToken) {
+  async submitPlaidUserData(publicToken: any) {
     await initFormsPromise;
     const { userKey } = initInfo();
     const url = `${API_URL}plaid/user_data/`;
@@ -410,25 +428,31 @@ export default class Client {
       method: 'POST',
       body: JSON.stringify(data)
     };
-    return this._fetch(url, options).then((response) => response.json());
+    return this._fetch(url, options).then((response) =>
+      (response as any).json()
+    );
   }
 
-  addressSearchResults(searchTerm) {
+  addressSearchResults(searchTerm: any) {
     const params = encodeGetParams({ search_term: searchTerm });
     const url = `${API_URL}integration/address/search/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
-    return this._fetch(url, options).then((response) => response.json());
+    return this._fetch(url, options).then((response) =>
+      (response as any).json()
+    );
   }
 
-  addressDetail(addressId) {
+  addressDetail(addressId: any) {
     const params = encodeGetParams({ address_id: addressId });
     const url = `${API_URL}integration/address/detail/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
-    return this._fetch(url, options).then((response) => response.json());
+    return this._fetch(url, options).then((response) =>
+      (response as any).json()
+    );
   }
 
   // Stripe
-  async setupPaymentIntent(paymentMethodFieldId) {
+  async setupPaymentIntent(paymentMethodFieldId: any) {
     await initFormsPromise;
     const { userKey } = initInfo();
     const url = `${API_URL}stripe/payment_method/`;
@@ -443,11 +467,16 @@ export default class Client {
       method: 'POST',
       body: JSON.stringify(data)
     };
-    return this._fetch(url, options).then((response) => response.json());
+    return this._fetch(url, options).then((response) =>
+      (response as any).json()
+    );
   }
 
   // Stripe
-  async retrievePaymentMethodData(paymentMethodFieldId, stripePaymentMethodId) {
+  async retrievePaymentMethodData(
+    paymentMethodFieldId: any,
+    stripePaymentMethodId: any
+  ) {
     await initFormsPromise;
     const { userKey } = initInfo();
     const params = encodeGetParams({
@@ -458,6 +487,8 @@ export default class Client {
     });
     const url = `${API_URL}stripe/payment_method/card/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
-    return this._fetch(url, options).then((response) => response.json());
+    return this._fetch(url, options).then((response) =>
+      (response as any).json()
+    );
   }
 }

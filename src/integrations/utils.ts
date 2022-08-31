@@ -38,12 +38,14 @@ export function dynamicImport(
 
   if (parallel) {
     return new Promise((resolve) => {
+      // @ts-expect-error TS(2304): Cannot find name 'global'.
       global.scriptjsLoadPromise.then(($script: any) => {
         $script.default(dependencies, resolve);
       });
     });
   } else if (index < dependencies.length) {
     return new Promise((resolve) => {
+      // @ts-expect-error TS(2304): Cannot find name 'global'.
       global.scriptjsLoadPromise.then(($script: any) => {
         $script.default(dependencies[index], resolve);
       });
@@ -120,7 +122,7 @@ export function getIntegrationActionConfiguration(getCardElement: any) {
 
 export function trackEvent(title: string, metadata: Record<string, any>) {
   // Google Tag Manager
-  // @ts-expect-error TODO(ts) - investigate - typing claims that initialized isn't a property
+  // @ts-expect-error TS(2551): Property 'initialized' does not exist on type '{ d... Remove this comment to see the full error message
   if (TagManager.initialized) {
     TagManager.dataLayer({ dataLayer: { ...metadata, event: title } });
   }

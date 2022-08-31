@@ -14,7 +14,7 @@ export default function DropdownField({
   onChange = () => {},
   elementProps = {},
   children
-}) {
+}: any) {
   const servar = element.servar;
 
   let options;
@@ -25,7 +25,7 @@ export default function DropdownField({
       </option>
     ));
   } else {
-    options = servar.metadata.options.map((option) => (
+    options = servar.metadata.options.map((option: any) => (
       <option key={option} value={option}>
         {option}
       </option>

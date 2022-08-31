@@ -18,7 +18,7 @@ function FileUploadField({
   initialFiles = [],
   elementProps = {},
   children
-}) {
+}: any) {
   const servar = element.servar;
   const showLabel = servar.name !== '';
   const isMultiple = servar.metadata.multiple;
@@ -31,14 +31,15 @@ function FileUploadField({
 
   function onClick() {
     if (!allowMoreFiles) return;
+    // @ts-expect-error TS(2532): Object is possibly 'undefined'.
     fileInput.current.click();
   }
 
   // When the user uploads files to the multi-file upload, we just append to the existing set
   // By default the input element would just replace all the uploaded files (we don't want that)
-  async function onChange(event) {
+  async function onChange(event: any) {
     const files = Array.from(event.target.files).filter(
-      (file) => file.size <= FILE_SIZE_LIMIT
+      (file) => (file as any).size <= FILE_SIZE_LIMIT
     );
 
     if (files.length + rawFiles.length > NUM_FILES_LIMIT) {
@@ -48,26 +49,31 @@ function FileUploadField({
 
     const uploadedFiles = files.map((file) => Promise.resolve(file));
     // If the value is [null] (initial state of repeating rows), we want to replace the null with the file
+    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     const isRawFilesNull = rawFiles.length === 1 && rawFiles[0] === null;
     let newRawFiles, length;
     if (isRawFilesNull) {
       newRawFiles = uploadedFiles;
       length = 0;
     } else {
+      // @ts-expect-error TS(2461): Type 'any[] | Dispatch<SetStateAction<any[]>>' is ... Remove this comment to see the full error message
       newRawFiles = [...rawFiles, ...uploadedFiles];
       length = rawFiles.length;
     }
+    // @ts-expect-error TS(2349): This expression is not callable.
     setRawFiles(newRawFiles);
     customOnChange(newRawFiles, length);
 
     // Wipe the value of the upload element so we can upload multiple copies of the same file
     // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
+    // @ts-expect-error TS(2532): Object is possibly 'undefined'.
     fileInput.current.value = [];
   }
 
-  function onClear(index) {
+  function onClear(index: any) {
     return () => {
       const newRawFiles = justRemove(rawFiles, index);
+      // @ts-expect-error TS(2349): This expression is not callable.
       setRawFiles(newRawFiles);
       customOnChange(newRawFiles, index);
     };
@@ -95,7 +101,7 @@ function FileUploadField({
       }}
       {...elementProps}
     >
-      {thumbnailData.map(({ filename, thumbnail }, index) => (
+      {thumbnailData.map(({ filename, thumbnail }: any, index: any) => (
         <div
           key={index}
           css={{
@@ -189,6 +195,7 @@ function FileUploadField({
       {/* This input must always be rendered even if no files can be added so we can set field errors */}
       <input
         id={servar.key}
+        // @ts-expect-error TS(2322): Type 'MutableRefObject<undefined>' is not assignab... Remove this comment to see the full error message
         ref={fileInput}
         type='file'
         onChange={onChange}

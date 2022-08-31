@@ -8,7 +8,7 @@ const YOUTUBE_URL_REGEX =
 const VIMEO_URL_REGEX =
   /(?:http?s?:\/\/)?(?:www\.)?vimeo\.com(?:\/video)?\/?(.+)/;
 
-function getEmbedUrl(url) {
+function getEmbedUrl(url: any) {
   let match = url.match(YOUTUBE_URL_REGEX);
   if (match && match[2].length === 11) {
     return `https://www.youtube.com/embed/${match[2]}`;
@@ -22,14 +22,19 @@ function getEmbedUrl(url) {
   return url;
 }
 
-function applyVideoStyles(element, applyStyles) {
+function applyVideoStyles(element: any, applyStyles: any) {
   applyStyles.addTargets('video');
   applyStyles.applyWidth('video');
   applyStyles.applyHeight('video');
   return applyStyles;
 }
 
-function VideoElement({ element, applyStyles, elementProps = {}, children }) {
+function VideoElement({
+  element,
+  applyStyles,
+  elementProps = {},
+  children
+}: any) {
   const styles = useMemo(
     () => applyVideoStyles(element, applyStyles),
     [applyStyles]

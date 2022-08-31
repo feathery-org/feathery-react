@@ -16,7 +16,7 @@ function TextArea({
   rawValue = '',
   inlineError,
   children
-}) {
+}: any) {
   const servar = element.servar;
   return (
     <div

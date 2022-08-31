@@ -1,7 +1,7 @@
 /**
  * Inserts an element into a list without side effects.
  */
-function justInsert(list, element, index, replace = true) {
+function justInsert(list: any, element: any, index: any, replace = true) {
   return [
     ...list.slice(0, index),
     element,
@@ -12,15 +12,15 @@ function justInsert(list, element, index, replace = true) {
 /**
  * Removes an element from a list without side effects.
  */
-function justRemove(list, index) {
+function justRemove(list: any, index: any) {
   return [...list.slice(0, index), ...list.slice(index + 1)];
 }
 
-function toList(itemOrList) {
+function toList(itemOrList: any) {
   return Array.isArray(itemOrList) ? itemOrList : [itemOrList];
 }
 
-function isEmptyArray(arr) {
+function isEmptyArray(arr: any) {
   return Array.isArray(arr) && arr.length === 0;
 }
 

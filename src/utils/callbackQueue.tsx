@@ -4,14 +4,18 @@ import { LINK_SUBMIT } from '../elements/basic/ButtonElement';
 import React from 'react';
 
 export default class CallbackQueue {
-  constructor(step, setLoaders) {
+  awaiting: any;
+  queue: any;
+  setLoaders: any;
+  step: any;
+  constructor(step: any, setLoaders: any) {
     this.queue = [];
     this.awaiting = false;
     this.step = step;
     this.setLoaders = setLoaders;
   }
 
-  addCallback(promise, loaders) {
+  addCallback(promise: any, loaders: any) {
     if (promise) {
       if (isObjectEmpty(loaders)) {
         const payload = {
@@ -20,18 +24,18 @@ export default class CallbackQueue {
           type: 'default'
         };
         const newLoaders = this.step.buttons
-          .filter((button) => {
+          .filter((button: any) => {
             const bp = button.properties;
             return (
               bp.link === LINK_SUBMIT && bp.show_loading_icon === 'on_button'
             );
           })
-          .reduce((loaders, button) => {
+          .reduce((loaders: any, button: any) => {
             loaders[button.id] = payload;
             return loaders;
           }, {});
         if (!isObjectEmpty(newLoaders)) {
-          this.setLoaders((loaders) => ({
+          this.setLoaders((loaders: any) => ({
             ...loaders,
             ...newLoaders
           }));
@@ -49,7 +53,7 @@ export default class CallbackQueue {
     }
   }
 
-  _clearQueueLoader(oldLen) {
+  _clearQueueLoader(oldLen: any) {
     return this.all().then(async () => {
       const newLen = this.queue.length;
       if (newLen > oldLen) await this._clearQueueLoader(newLen);

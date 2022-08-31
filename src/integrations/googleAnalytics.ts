@@ -2,14 +2,14 @@ import { dynamicImport } from './utils';
 
 export let gaInstalled = false;
 
-export function installGoogleAnalytics(gaConfig) {
+export function installGoogleAnalytics(gaConfig: any) {
   if (gaConfig && !gaInstalled) {
     gaInstalled = true;
 
     dynamicImport(
       `https://www.googletagmanager.com/gtag/js?id=${gaConfig.metadata.api_key}`
     );
-    window.dataLayer = window.dataLayer || [];
+    (window as any).dataLayer = (window as any).dataLayer || [];
     triggerGTag('js', new Date());
     triggerGTag('config', gaConfig.metadata.api_key);
   }
@@ -17,10 +17,10 @@ export function installGoogleAnalytics(gaConfig) {
   return Promise.resolve();
 }
 
-function triggerGTag(...args) {
-  window.dataLayer.push(args);
+function triggerGTag(...args: any[]) {
+  (window as any).dataLayer.push(args);
 }
 
-export function trackGAEvent(title, metadata) {
+export function trackGAEvent(title: any, metadata: any) {
   triggerGTag('event', title, metadata);
 }

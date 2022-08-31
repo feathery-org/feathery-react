@@ -1,8 +1,8 @@
 import { dynamicImport } from './utils';
 
-let plaidPromise = null;
+let plaidPromise: any = null;
 
-export function installPlaid(isPlaidActive) {
+export function installPlaid(isPlaidActive: any) {
   if (plaidPromise) return plaidPromise;
   else if (!isPlaidActive) return Promise.resolve();
   else {
@@ -14,19 +14,21 @@ export function installPlaid(isPlaidActive) {
 }
 
 export async function openPlaidLink(
-  client,
-  onSuccess,
-  updateFieldValues,
-  setLoader,
-  clearLoader
+  client: any,
+  onSuccess: any,
+  updateFieldValues: any,
+  setLoader: any,
+  clearLoader: any
 ) {
   // No actions if Plaid hasn't been loaded yet
+  // @ts-expect-error TS(2304): Cannot find name 'global'.
   if (!global.Plaid) return;
 
   const linkToken = (await client.fetchPlaidLinkToken()).link_token;
+  // @ts-expect-error TS(2304): Cannot find name 'global'.
   const handler = global.Plaid.create({
     token: linkToken,
-    onSuccess: async (publicToken) => {
+    onSuccess: async (publicToken: any) => {
       setLoader();
       const fieldVals = await client.submitPlaidUserData(publicToken);
       updateFieldValues(fieldVals);
@@ -39,11 +41,12 @@ export async function openPlaidLink(
   handler.open();
 }
 
-export function getPlaidFieldValues(plaidConfig, fieldValues) {
+export function getPlaidFieldValues(plaidConfig: any, fieldValues: any) {
   // eslint-disable-next-line camelcase
   const keys = plaidConfig?.metadata?.plaid_field_map || [];
   return Object.values(keys).reduce((result, key) => {
-    result[key] = fieldValues[key];
+    // @ts-expect-error TS(2538): Type 'unknown' cannot be used as an index type.
+    (result as any)[key] = fieldValues[key];
     return result;
   }, {});
 }

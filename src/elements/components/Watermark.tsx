@@ -6,7 +6,7 @@ export default function Watermark({
   brandPosition = 'bottom_right',
   width = 135,
   height = 40
-}) {
+}: any) {
   const horizontalAlignment = brandPosition.endsWith('right')
     ? { right: 0 }
     : { left: 0 };
@@ -33,6 +33,7 @@ export default function Watermark({
           borderRadius: '6px',
           color: '#6c7589',
           fontFamily: 'Axiforma, sans-serif',
+          // @ts-expect-error TS(2322): Type '{ width: string; height: string; display: "f... Remove this comment to see the full error message
           fontSmoothing: 'antialiased',
           fontWeight: 400,
           fontSize: '11px',

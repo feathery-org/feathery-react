@@ -20,19 +20,18 @@ function SingleOtpInput({
   focusPrevInput,
   focusNextInput,
   shouldFocus
-}) {
+}: any) {
   const input = useRef(null);
 
   useEffect(() => {
     const { current: inputEl } = input;
-
     // Check if focusedInput changed
     // Prevent calling function if input already in focus
     if (inputEl && focus) {
-      inputEl.focus();
-      inputEl.select();
+      (inputEl as any).focus();
+      (inputEl as any).select();
       if (paste) {
-        inputEl.selectionStart = inputEl.selectionEnd;
+        (inputEl as any).selectionStart = (inputEl as any).selectionEnd;
       }
     }
   }, [focus, input]);
@@ -110,25 +109,26 @@ function OtpInput({
   onChange,
   value,
   inlineError
-}) {
+}: any) {
   const [activeInput, setActiveInput] = useState(shouldFocus ? 0 : -1);
   const [pasted, setPasted] = useState(false);
   const [rawValue, setRawValue] = useState(value.toString().split(''));
 
   // Helper to return OTP from input
-  const handleOtpChange = (otp) => {
+  const handleOtpChange = (otp: any) => {
     setRawValue(otp);
     onChange(otp.filter(Boolean).join(''));
   };
 
-  const isInputValueValid = (value) => {
+  const isInputValueValid = (value: any) => {
+    // @ts-expect-error TS(2554): Expected 1 arguments, but got 2.
     return isNum(value, 10) && value.trim().length === 1;
   };
 
   const numInputs = element.servar.max_length;
 
   // Focus on input by index
-  const focusInput = (input) => {
+  const focusInput = (input: any) => {
     setActiveInput(Math.max(Math.min(numInputs - 1, input), 0));
   };
 
@@ -143,13 +143,13 @@ function OtpInput({
   };
 
   // Change OTP value at focused input
-  const changeCodeAtFocus = (value) => {
+  const changeCodeAtFocus = (value: any) => {
     const newVal = JSON.parse(JSON.stringify(rawValue));
     newVal[activeInput] = value[0];
     handleOtpChange(newVal);
   };
 
-  const handleMultipleValues = (vals) => {
+  const handleMultipleValues = (vals: any) => {
     if (isNaN(parseInt(vals, 10))) return;
 
     const newVal = JSON.parse(JSON.stringify(rawValue));
@@ -169,7 +169,7 @@ function OtpInput({
   };
 
   // Handle pasted OTP
-  const handleOnPaste = (e) => {
+  const handleOnPaste = (e: any) => {
     e.preventDefault();
 
     // Get pastedData in an array of max size (num of inputs - current position)
@@ -177,20 +177,20 @@ function OtpInput({
       .getData('text/plain')
       .slice(0, numInputs - activeInput)
       .split('');
-    var inputLength = pastedData.length;
+    const inputLength = pastedData.length;
     handleMultipleValues(pastedData);
     if (activeInput + inputLength >= numInputs) {
       setPasted(true);
     }
   };
 
-  const handleOnChange = (e) => {
+  const handleOnChange = (e: any) => {
     const { value } = e.target;
     handleMultipleValues(value.split(''));
   };
 
   // The content may not have changed, but some input took place hence change the focus
-  const handleOnInput = (e) => {
+  const handleOnInput = (e: any) => {
     if (isInputValueValid(e.target.value)) {
       focusNextInput();
     }
@@ -210,7 +210,7 @@ function OtpInput({
           onInput={handleOnInput}
           paste={pasted}
           onPaste={handleOnPaste}
-          onFocus={(e) => {
+          onFocus={(e: any) => {
             setActiveInput(i);
             setPasted(false);
             e.target.select();
@@ -254,7 +254,7 @@ function PinInputField({
   onChange = () => {},
   elementProps = {},
   children
-}) {
+}: any) {
   return (
     <div
       style={{

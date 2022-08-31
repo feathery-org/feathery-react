@@ -8,11 +8,11 @@ import {
 
 const lightGrey = 'rgb(235, 239, 242)';
 
-function handleBoth(prevData, nextData, func) {
+function handleBoth(prevData: any, nextData: any, func: any) {
   return [func(prevData, nextData), func(nextData, prevData)];
 }
 
-export default function DevNavBar({ allSteps, curStep, history }) {
+export default function DevNavBar({ allSteps, curStep, history }: any) {
   const [activeNav, setActiveNav] = useState('');
   const [isVisible, setIsVisible] = useState(true);
 
@@ -25,13 +25,15 @@ export default function DevNavBar({ allSteps, curStep, history }) {
     let [prevCondKeys, nextCondKeys] = handleBoth(
       [curStep.previous_conditions, 'previous_step_key'],
       [curStep.next_conditions, 'next_step_key'],
-      ([conditions, attr]) => new Set(conditions.map((cond) => cond[attr]))
+      // @ts-expect-error TS(7031): Binding element 'conditions' implicitly has an 'an... Remove this comment to see the full error message
+      ([conditions, attr]) => new Set(conditions.map((cond: any) => cond[attr]))
     );
 
     // Sort by branches
     [prevCondKeys, nextCondKeys] = handleBoth(
       [prevCondKeys, prevStepKeys],
       [nextCondKeys, nextStepKeys],
+      // @ts-expect-error TS(7031): Binding element 'prevCondKeys' implicitly has an '... Remove this comment to see the full error message
       ([prevCondKeys, prevStepKeys], [nextCondKeys]) =>
         [...prevCondKeys].filter((key) => {
           const bidirectional = nextCondKeys.has(key);
@@ -43,16 +45,20 @@ export default function DevNavBar({ allSteps, curStep, history }) {
     const depthMap = getStepDepthMap(allSteps);
     if (curStep.key in depthMap) {
       // Then sort by step depth
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       const curDepth = depthMap[curStep.key];
       [...prevCondKeys, ...nextCondKeys].forEach((key) => {
+        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
         const depth = depthMap[key];
         if (depth < curDepth) prevStepKeys.add(key);
         else nextStepKeys.add(key);
       });
     } else {
       // If step is floating, allow forward navigation to go to origin step
-      const originStep = Object.values(allSteps).find((step) => step.origin);
-      nextStepKeys.add(originStep.key);
+      const originStep = Object.values(allSteps).find(
+        (step) => (step as any).origin
+      );
+      nextStepKeys.add((originStep as any).key);
     }
 
     // If step is the first, add floating steps to the previous navigation
@@ -65,7 +71,7 @@ export default function DevNavBar({ allSteps, curStep, history }) {
     return [Array.from(prevStepKeys), Array.from(nextStepKeys)];
   }, [curStep.id]);
 
-  const navigate = (stepKey) => {
+  const navigate = (stepKey: any) => {
     setActiveNav('');
     history.push(getNewStepUrl(stepKey));
   };
@@ -90,6 +96,7 @@ export default function DevNavBar({ allSteps, curStep, history }) {
       >
         {stepKeys.map((key) => (
           <div
+            // @ts-expect-error TS(2322): Type 'unknown' is not assignable to type 'Key | nu... Remove this comment to see the full error message
             key={key}
             css={{
               height: '38px',
@@ -102,6 +109,7 @@ export default function DevNavBar({ allSteps, curStep, history }) {
             }}
             onClick={() => navigate(key)}
           >
+            {/* @ts-expect-error TS(2322): Type 'unknown' is not assignable to type 'ReactNod... Remove this comment to see the full error message */}
             {key}
           </div>
         ))}

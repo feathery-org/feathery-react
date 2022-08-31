@@ -31,16 +31,16 @@ const Fields = {
   TextArea
 };
 
-function applyFieldStyles(field, styles) {
+function applyFieldStyles(field: any, styles: any) {
   styles.addTargets('fc', 'field', 'error', 'active', 'hover');
 
   styles.applyFontStyles('fc');
   styles.applySelectorStyles('active', 'selected_', true);
   styles.applySelectorStyles('hover', 'hover_', true);
-  styles.apply('error', 'font_family', (a) => ({
+  styles.apply('error', 'font_family', (a: any) => ({
     fontFamily: a
   }));
-  styles.apply('error', 'font_size', (a) => ({
+  styles.apply('error', 'font_size', (a: any) => ({
     fontSize: `${a}px`
   }));
 
@@ -82,6 +82,7 @@ function applyFieldStyles(field, styles) {
           'uploader_padding_bottom',
           'uploader_padding_left'
         ],
+        // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
         (a, b, c, d) => ({
           padding: `${a}px ${b}px ${c}px ${d}px`
         })
@@ -94,6 +95,7 @@ function applyFieldStyles(field, styles) {
           'cta_padding_bottom',
           'cta_padding_left'
         ],
+        // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
         (a, b, c, d) => ({
           padding: `${a}px ${b}px ${c}px ${d}px`
         })
@@ -101,17 +103,17 @@ function applyFieldStyles(field, styles) {
       break;
     case 'button_group':
       styles.addTargets('img', 'tc');
-      styles.apply('fc', 'layout', (a) => ({
+      styles.apply('fc', 'layout', (a: any) => ({
         alignItems: a
       }));
-      styles.apply('fc', 'vertical_layout', (a) => ({
+      styles.apply('fc', 'vertical_layout', (a: any) => ({
         justifyContent: a
       }));
       // Cancel out extra per-button margins on the edges
       styles.apply(
         'fc',
         ['padding_top', 'padding_right', 'padding_bottom', 'padding_left'],
-        (a, b, c, d) => {
+        (a: any, b: any, c: any, d: any) => {
           return {
             margin: `${-a}px ${-b}px ${-c}px ${-d}px`
           };
@@ -133,6 +135,7 @@ function applyFieldStyles(field, styles) {
           'uploader_padding_bottom',
           'uploader_padding_left'
         ],
+        // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
         (a, b, c, d) => ({
           padding: `${a}px ${b}px ${c}px ${d}px`
         })
@@ -162,7 +165,7 @@ function applyFieldStyles(field, styles) {
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
-      styles.apply('field', 'font_size', (a) => ({
+      styles.apply('field', 'font_size', (a: any) => ({
         fontSize: `${a}px`
       }));
       styles.applyColor('field', 'font_color', 'color');
@@ -173,7 +176,7 @@ function applyFieldStyles(field, styles) {
       styles.applyBoxShadow('field');
       styles.applyFontStyles('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
-      styles.apply('field', 'font_size', (a) => ({
+      styles.apply('field', 'font_size', (a: any) => ({
         height: `${parseInt(a) + 4}px`
       }));
       break;
@@ -183,7 +186,7 @@ function applyFieldStyles(field, styles) {
       styles.applyBoxShadow('field');
       styles.applyFontStyles('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
-      styles.apply('field', 'font_size', (a) => ({
+      styles.apply('field', 'font_size', (a: any) => ({
         height: `${parseInt(a) + 4}px`
       }));
       break;
@@ -193,7 +196,7 @@ function applyFieldStyles(field, styles) {
       break;
     case 'payment_method':
       styles.addTargets('sub-fc', 'tooltipIcon', 'completed');
-      styles.addTargets('active', 'hover');  // resetting these targets here
+      styles.addTargets('active', 'hover'); // resetting these targets here
       styles.applyHeight('sub-fc');
       styles.applyWidth('fc');
       styles.applyCorners('sub-fc');
@@ -202,26 +205,26 @@ function applyFieldStyles(field, styles) {
       styles.applyBoxShadow('sub-fc');
       styles.applyFontStyles('field');
 
-      styles.applySelectorStyles('active', 'selected_', false);  // no !important allowed
+      styles.applySelectorStyles('active', 'selected_', false); // no !important allowed
       styles.applySelectorStyles('hover', 'hover_', false); // no !important allowed
       // iconColor is specific to stripe card element
-      styles.apply('field', 'placeholder_color', (a) => ({
+      styles.apply('field', 'placeholder_color', (a: any) => ({
         iconColor: `#${a}`
       }));
-      styles.apply('hover', 'hover_placeholder_color', (a) => ({
+      styles.apply('hover', 'hover_placeholder_color', (a: any) => ({
         iconColor: `#${a}`
       }));
-      styles.apply('active', 'selected_placeholder_color', (a) => ({
+      styles.apply('active', 'selected_placeholder_color', (a: any) => ({
         iconColor: `#${a}`
       }));
-      styles.apply('completed', 'completed_placeholder_color', (a) => ({
+      styles.apply('completed', 'completed_placeholder_color', (a: any) => ({
         iconColor: `#${a}`
       }));
       styles.applyPlaceholderStyles(type, field.styles);
-      styles.apply('tooltipIcon', 'font_size', (a) => ({
+      styles.apply('tooltipIcon', 'font_size', (a: any) => ({
         width: `${a}px`
       }));
-      styles.apply('completed', 'completed_font_color', (a) => ({
+      styles.apply('completed', 'completed_font_color', (a: any) => ({
         color: `#${a}`
       }));
       break;
@@ -237,7 +240,7 @@ function applyFieldStyles(field, styles) {
       styles.applyColor('field', 'background_color', 'backgroundColor');
       if (field.properties.placeholder)
         styles.applyPlaceholderStyles(type, field.styles);
-      styles.apply('tooltipIcon', 'font_size', (a) => ({
+      styles.apply('tooltipIcon', 'font_size', (a: any) => ({
         width: `${a}px`
       }));
       break;
@@ -246,6 +249,7 @@ function applyFieldStyles(field, styles) {
 }
 
 Object.entries(Fields).map(([key, Field]) => {
+  // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
   Fields[key] = memo(({ element, applyStyles, ...props }) => {
     const servar = element.servar;
     const fieldLabel = servar.name ? (
@@ -259,9 +263,10 @@ Object.entries(Fields).map(([key, Field]) => {
         {servar.name}
       </label>
     ) : null;
-    const styles = useMemo(() => applyFieldStyles(element, applyStyles), [
-      element
-    ]);
+    const styles = useMemo(
+      () => applyFieldStyles(element, applyStyles),
+      [element]
+    );
     return (
       <>
         <Field

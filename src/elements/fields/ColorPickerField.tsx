@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+// @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
 import { SketchPicker } from 'react-color';
 
 const transparencyMap = {
@@ -113,7 +114,7 @@ function ColorPickerField({
   onChange = () => {},
   elementProps = {},
   children
-}) {
+}: any) {
   const [showPicker, setShowPicker] = useState(false);
   return (
     <div
@@ -152,7 +153,8 @@ function ColorPickerField({
           />
           <SketchPicker
             color={`#${fieldVal}`}
-            onChange={(color) => {
+            onChange={(color: any) => {
+              // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
               const a = transparencyMap[color.rgb.a * 100];
               color = color.hex.substr(1, 6) + a;
               onChange(color);

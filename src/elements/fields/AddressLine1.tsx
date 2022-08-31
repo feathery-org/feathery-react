@@ -6,6 +6,7 @@ import { bootstrapStyles, ERROR_COLOR } from '../styles';
 import Client from '../../utils/client';
 import useMounted from '../../utils/useMounted';
 
+// @ts-expect-error TS(7016): Could not find a declaration file for module 'loda... Remove this comment to see the full error message
 import debounce from 'lodash.debounce';
 import { OverlayTrigger } from 'react-bootstrap';
 
@@ -26,7 +27,7 @@ function AddressLine1({
   inlineError,
   children,
   ...props
-}) {
+}: any) {
   const servar = element.servar;
   const options = useAddressSearch(value, servar.metadata.address_autocomplete);
   const [showOptions, setShowOptions] = useState(false);
@@ -74,9 +75,11 @@ function AddressLine1({
                     }
                   }}
                   onClick={async () => {
+                    // @ts-expect-error TS(2532): Object is possibly 'undefined'.
                     const addressId = options.find(
-                      (opt) => opt.display === display
+                      (opt) => (opt as any).display === display
                     ).address_id;
+                    // @ts-expect-error TS(2554): Expected 2 arguments, but got 0.
                     const details = await new Client().addressDetail(addressId);
                     onSelect(details);
                   }}
@@ -131,14 +134,15 @@ function AddressLine1({
   );
 }
 
-function useAddressSearch(searchTerm, active) {
+function useAddressSearch(searchTerm: any, active: any) {
   const mounted = useMounted();
   const [term, setTerm] = useState(searchTerm);
   const [results, setResults] = React.useState([]);
 
   const fetchAddresses = useCallback(
     debounce(
-      (newTerm) =>
+      (newTerm: any) =>
+        // @ts-expect-error TS(2554): Expected 2 arguments, but got 0.
         new Client().addressSearchResults(newTerm).then((addresses) => {
           if (mounted.current) {
             setResults(addresses);

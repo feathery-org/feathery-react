@@ -6,7 +6,7 @@ import {
   composeCheckableInputStyle
 } from './CheckboxField';
 
-const applyCheckboxGroupStyles = (element, applyStyles) => {
+const applyCheckboxGroupStyles = (element: any, applyStyles: any) => {
   applyStyles.addTargets(['checkboxGroup']);
   applyStyles.applyWidth('checkboxGroup');
   return applyStyles;
@@ -22,7 +22,7 @@ function CheckboxGroupField({
   onOtherChange = () => {},
   elementProps = {},
   children
-}) {
+}: any) {
   const servar = element.servar;
   const otherChecked = fieldVal.includes(otherVal);
 
@@ -42,7 +42,7 @@ function CheckboxGroupField({
       {...elementProps}
     >
       {fieldLabel}
-      {servar.metadata.options.map((opt, i) => {
+      {servar.metadata.options.map((opt: any, i: any) => {
         return (
           <ReactForm.Check
             type='checkbox'

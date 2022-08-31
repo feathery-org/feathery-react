@@ -6,18 +6,21 @@ function useTextEdit({
   onTextSelect = null,
   onTextKeyDown = null,
   onTextBlur = null
-}) {
+}: any) {
   const spanRef = useRef();
   const [editMode, setEditMode] = useState('hover');
 
   useEffect(() => {
     if (editMode === 'edit') {
+      // @ts-expect-error TS(2532): Object is possibly 'undefined'.
       const node = spanRef.current.childNodes[0];
       const range = document.createRange();
       range.setStart(node, 0);
       range.setEnd(node, 0);
       const sel = window.getSelection();
+      // @ts-expect-error TS(2531): Object is possibly 'null'.
       sel.removeAllRanges();
+      // @ts-expect-error TS(2531): Object is possibly 'null'.
       sel.addRange(range);
     }
   }, [editMode]);
@@ -42,17 +45,17 @@ function useTextEdit({
       editableProps = {
         contentEditable: true,
         suppressContentEditableWarning: true,
-        onMouseDown: (e) => !focused && e.preventDefault(),
-        onSelect: (e) => {
+        onMouseDown: (e: any) => !focused && e.preventDefault(),
+        onSelect: (e: any) => {
           if (!focused) e.preventDefault();
           onTextSelect && onTextSelect(window.getSelection());
         },
-        onKeyDown: (e) => {
+        onKeyDown: (e: any) => {
           if (!focused) e.preventDefault();
           if (onTextKeyDown)
             onTextKeyDown(e, spanRef.current, window.getSelection());
         },
-        onBlur: (e) => {
+        onBlur: (e: any) => {
           setEditMode('hover');
           onTextBlur && onTextBlur(e);
         }
@@ -61,11 +64,12 @@ function useTextEdit({
       if (focused) {
         if (editMode === 'hover') {
           editableProps = { onClick: () => setEditMode('edit') };
+          // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
           css['&:hover'] = { backgroundColor: 'rgb(230, 240, 252)' };
         } else if (editMode === 'edit') css.cursor = 'text';
       }
     }
-    editableProps.css = css;
+    (editableProps as any).css = css;
     return editableProps;
   }, [
     editable,

@@ -15,7 +15,7 @@ function TextNodes({
   editable = false,
   focused = false,
   textCallbacks = {}
-}) {
+}: any) {
   const { spanRef, editableProps } = useTextEdit({
     editable,
     focused,
@@ -26,6 +26,7 @@ function TextNodes({
     const text = element.properties.text;
     let delta = new Delta(element.properties.text_formatted);
 
+    // @ts-expect-error TS(7006): Parameter 'cond' implicitly has an 'any' type.
     conditions.forEach((cond) => {
       if (cond.element_type === 'text' && cond.element_id === element.id) {
         let start = cond.metadata.start;
@@ -46,34 +47,39 @@ function TextNodes({
     return (
       <span
         id={`span-${element.id}`}
+        // @ts-expect-error TS(2322): Type 'MutableRefObject<undefined>' is not assignab... Remove this comment to see the full error message
         ref={spanRef}
         {...editableProps}
         key={text}
       >
         {delta
+          // @ts-expect-error TS(2322): Type 'string | object | undefined' is not assignab... Remove this comment to see the full error message
           .filter((op) => op.insert)
           .map((op, i) => {
             let text = op.insert;
             if (values) {
               // replace placeholder variables and populate newlines
-              text = text.replace(TEXT_VARIABLE_PATTERN, (pattern) => {
-                const pStr = pattern.slice(2, -2);
-                if (pStr in values) {
-                  const pVal = values[pStr];
-                  if (Array.isArray(pVal)) {
-                    if (pVal.length === 0) {
-                      return pattern;
-                    } else if (
-                      isNaN(element.repeat) ||
-                      element.repeat >= pVal.length
-                    ) {
-                      return stringifyWithNull(pVal[0]);
-                    } else {
-                      return stringifyWithNull(pVal[element.repeat]);
-                    }
-                  } else return stringifyWithNull(pVal);
-                } else return pattern;
-              });
+              text = (text as any).replace(
+                TEXT_VARIABLE_PATTERN,
+                (pattern: any) => {
+                  const pStr = pattern.slice(2, -2);
+                  if (pStr in values) {
+                    const pVal = values[pStr];
+                    if (Array.isArray(pVal)) {
+                      if (pVal.length === 0) {
+                        return pattern;
+                      } else if (
+                        isNaN(element.repeat) ||
+                        element.repeat >= pVal.length
+                      ) {
+                        return stringifyWithNull(pVal[0]);
+                      } else {
+                        return stringifyWithNull(pVal[element.repeat]);
+                      }
+                    } else return stringifyWithNull(pVal);
+                  } else return pattern;
+                }
+              );
             }
 
             const attrs = op.attributes || {};

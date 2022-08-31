@@ -1,3 +1,3 @@
-export function isDirectionColumn(flexDirection) {
+export function isDirectionColumn(flexDirection: any) {
   return flexDirection.includes('column');
 }

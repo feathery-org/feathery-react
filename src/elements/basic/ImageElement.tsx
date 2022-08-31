@@ -3,13 +3,18 @@ import React, { useMemo } from 'react';
 const PLACEHOLDER_IMAGE =
   'https://feathery.s3.us-west-1.amazonaws.com/theme-image-preview.png';
 
-function applyImageStyles(element, applyStyles) {
+function applyImageStyles(element: any, applyStyles: any) {
   applyStyles.addTargets('image');
   applyStyles.applyWidth('image');
   return applyStyles;
 }
 
-function ImageElement({ element, applyStyles, elementProps = {}, children }) {
+function ImageElement({
+  element,
+  applyStyles,
+  elementProps = {},
+  children
+}: any) {
   const styles = useMemo(
     () => applyImageStyles(element, applyStyles),
     [applyStyles]

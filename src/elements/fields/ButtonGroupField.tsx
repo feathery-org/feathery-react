@@ -10,13 +10,13 @@ function ButtonGroupField({
   onClick = () => {},
   elementProps = {},
   children
-}) {
+}: any) {
   const servar = element.servar;
   const selectedOptMap = useMemo(
     () =>
       fieldVal === null
         ? {}
-        : fieldVal.reduce((map, selected) => {
+        : fieldVal.reduce((map: any, selected: any) => {
             map[selected] = true;
             return map;
           }, {}),
@@ -33,7 +33,7 @@ function ButtonGroupField({
         }}
         {...elementProps}
       >
-        {servar.metadata.options.map((opt, index) => {
+        {servar.metadata.options.map((opt: any, index: any) => {
           const imageUrl = servar.metadata.option_images[index];
           return (
             <div

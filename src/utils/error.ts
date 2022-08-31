@@ -13,7 +13,7 @@ export class UserKeyError extends Error {
 }
 
 export class FetchError extends Error {
-  constructor(message) {
+  constructor(message: any) {
     super(message);
     this.name = 'FetchError';
   }

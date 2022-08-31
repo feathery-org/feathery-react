@@ -48,7 +48,7 @@ const CardField = ({
   editable = false,
   inlineError,
   errorDisplayMode
-}) => {
+}: any) => {
   const stripe = useStripe();
   const elements = useElements();
 
@@ -96,7 +96,7 @@ const CardField = ({
       base: element.servar.key
     }
   };
-  const handleCardChange = (event) => {
+  const handleCardChange = (event: any) => {
     // Listen for changes in the CardElement
     // and display any errors as the customer types their card details
     setFieldError(event.error?.message ?? '');
@@ -149,6 +149,7 @@ const CardField = ({
                   outline: 'none'
                 }
               }}
+              // @ts-expect-error TS(2322): Type 'string' is not assignable to type 'number'.
               tabIndex='-1'
             />
           )}
@@ -184,6 +185,7 @@ function PaymentMethodField({ editable = false, ...props }) {
   }, [editable]);
 
   return (
+    // @ts-expect-error TS(2322): Type 'Promise<unknown>' is not assignable to type ... Remove this comment to see the full error message
     <Elements stripe={stripePromise}>
       <CardField editable={editable} {...props} />
     </Elements>

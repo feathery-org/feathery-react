@@ -3,21 +3,21 @@ import ProgressBar from 'react-bootstrap/ProgressBar';
 import { isNum } from '../../utils/primitives';
 import { openTab } from '../../utils/browser';
 
-function applyProgressBarStyles(element, applyStyles) {
+function applyProgressBarStyles(element: any, applyStyles: any) {
   applyStyles.addTargets('barContainer', 'bar');
 
   applyStyles.applyFontStyles('barContainer');
-  applyStyles.apply('barContainer', 'vertical_layout', (a) => ({
+  applyStyles.apply('barContainer', 'vertical_layout', (a: any) => ({
     justifyContent: a
   }));
-  applyStyles.apply('barContainer', 'layout', (a) => ({
+  applyStyles.apply('barContainer', 'layout', (a: any) => ({
     alignItems: a
   }));
-  applyStyles.apply('barContainer', 'width', (a) => ({
+  applyStyles.apply('barContainer', 'width', (a: any) => ({
     width: `${a}%`
   }));
 
-  applyStyles.apply('bar', 'bar_color', (a) => ({
+  applyStyles.apply('bar', 'bar_color', (a: any) => ({
     backgroundColor: `#${a}`
   }));
 
@@ -32,7 +32,7 @@ function ProgressBarElement({
   maxDepth = 1,
   elementProps = {},
   children
-}) {
+}: any) {
   const styles = useMemo(
     () => applyProgressBarStyles(element, applyStyles),
     [applyStyles]

@@ -11,11 +11,12 @@ export function loadLottieLight() {
   LOTTIE_PROMISE = LOTTIE_PROMISE.then(() => dynamicImport(LOTTIE_URL));
 }
 
-export default function Lottie({ animationData }) {
+export default function Lottie({ animationData }: any) {
   const lottieRef = useRef();
 
   useEffect(() => {
     LOTTIE_PROMISE.then(() =>
+      // @ts-expect-error TS(2304): Cannot find name 'global'.
       global.lottie.loadAnimation({
         container: lottieRef.current,
         renderer: 'svg',
@@ -26,5 +27,6 @@ export default function Lottie({ animationData }) {
     );
   }, []);
 
+  // @ts-expect-error TS(2322): Type 'MutableRefObject<undefined>' is not assignab... Remove this comment to see the full error message
   return <div ref={lottieRef} css={{ pointerEvents: 'none' }} />;
 }

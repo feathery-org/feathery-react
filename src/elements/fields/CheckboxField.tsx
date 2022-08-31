@@ -8,7 +8,7 @@ const checkmarkClipPath =
 const MIN_CHECKBOX_PX = 13;
 
 // Possibly extract this to its own file, however the radio type is nearly identical to checkbox
-const radio = (size, color) => {
+const radio = (size: any, color: any) => {
   size = Math.floor(size / 1.7);
   return {
     height: size,
@@ -21,19 +21,19 @@ const radio = (size, color) => {
   };
 };
 
-const checkbox = (size, color) => {
+const checkbox = (size: any, color: any) => {
   return {
     boxShadow: `inset ${size}px ${size}px #${color}`,
     clipPath: checkmarkClipPath
   };
 };
 
-const scaleCheckboxSize = (fontSize) => {
+const scaleCheckboxSize = (fontSize: any) => {
   return Math.max(Math.floor(fontSize * 0.5), MIN_CHECKBOX_PX);
 };
 
-const applyHeightAndWidthByFontSize = (applyStyles, target) => {
-  applyStyles.apply(target, ['font_size'], (fontSize) => {
+const applyHeightAndWidthByFontSize = (applyStyles: any, target: any) => {
+  applyStyles.apply(target, ['font_size'], (fontSize: any) => {
     const scaledSize = `${scaleCheckboxSize(fontSize)}px`;
     return {
       minHeight: scaledSize,
@@ -45,22 +45,26 @@ const applyHeightAndWidthByFontSize = (applyStyles, target) => {
 };
 
 const applyCheckmarkByFontSize = (
-  applyStyles,
-  target,
-  colorProperty,
-  isRadio
+  applyStyles: any,
+  target: any,
+  colorProperty: any,
+  isRadio: any
 ) => {
-  applyStyles.apply(target, ['font_size', colorProperty], (fontSize, color) => {
-    const scaledSize = scaleCheckboxSize(fontSize);
-    return isRadio ? radio(scaledSize, color) : checkbox(scaledSize, color);
-  });
+  applyStyles.apply(
+    target,
+    ['font_size', colorProperty],
+    (fontSize: any, color: any) => {
+      const scaledSize = scaleCheckboxSize(fontSize);
+      return isRadio ? radio(scaledSize, color) : checkbox(scaledSize, color);
+    }
+  );
 };
 
-const applyCheckmark = (applyStyles, target, colorProperty) => {
+const applyCheckmark = (applyStyles: any, target: any, colorProperty: any) => {
   applyStyles.apply(
     target,
     ['height', 'height_unit', 'width', 'width_unit', colorProperty],
-    (height, heightUnit, width, widthUnit, color) => {
+    (height: any, heightUnit: any, width: any, widthUnit: any, color: any) => {
       return {
         boxShadow: `inset ${width}${widthUnit} ${height}${heightUnit} #${color}`,
         clipPath: checkmarkClipPath
@@ -69,7 +73,7 @@ const applyCheckmark = (applyStyles, target, colorProperty) => {
   );
 };
 
-export function applyCheckableInputStyles(element, applyStyles) {
+export function applyCheckableInputStyles(element: any, applyStyles: any) {
   applyStyles.addTargets(
     'checkbox',
     'checkboxCheckmark',
@@ -115,12 +119,14 @@ export function applyCheckableInputStyles(element, applyStyles) {
       applyStyles,
       'checkboxCheckmark',
       'selected_font_color',
+      // @ts-expect-error TS(2554): Expected 3 arguments, but got 4.
       isRadioGroup
     );
     applyCheckmark(
       applyStyles,
       'checkboxCheckmarkHover',
       'hover_font_color',
+      // @ts-expect-error TS(2554): Expected 3 arguments, but got 4.
       isRadioGroup
     );
   }
@@ -159,7 +165,7 @@ export function applyCheckableInputStyles(element, applyStyles) {
 }
 
 export const composeCheckableInputStyle = (
-  styles,
+  styles: any,
   group = false,
   type = 'checkbox'
 ) => {
@@ -206,7 +212,7 @@ function CheckboxField({
   onChange = () => {},
   elementProps = {},
   children
-}) {
+}: any) {
   const styles = useMemo(
     () => applyCheckableInputStyles(element, applyStyles),
     [applyStyles]

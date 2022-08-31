@@ -10,18 +10,24 @@ export const mobileBreakpointKey = `@media (max-width: ${mobileBreakpointValue}p
  * attributes
  */
 class ApplyStyles {
-  constructor(element, targets, handleMobile) {
+  element: any;
+  handleMobile: any;
+  mobileStyles: any;
+  mobileTargets: any;
+  styles: any;
+  targets: any;
+  constructor(element: any, targets: any, handleMobile: any) {
     this.element = element;
     this.styles = element.styles;
-    this.targets = objectFromEntries(targets.map((t) => [t, {}]));
+    this.targets = objectFromEntries(targets.map((t: any) => [t, {}]));
     this.handleMobile = handleMobile;
     if (handleMobile) {
       this.mobileStyles = element.mobile_styles;
-      this.mobileTargets = objectFromEntries(targets.map((t) => [t, {}]));
+      this.mobileTargets = objectFromEntries(targets.map((t: any) => [t, {}]));
     }
   }
 
-  addTargets(...targets) {
+  addTargets(...targets: any[]) {
     targets.forEach((target) => {
       this.targets[target] = {};
       if (this.handleMobile) this.mobileTargets[target] = {};
@@ -29,7 +35,7 @@ class ApplyStyles {
   }
 
   // Return CSS for a particular target HTML element
-  getTarget(targetId, desktopOnly = false) {
+  getTarget(targetId: any, desktopOnly = false) {
     const target = { ...this.targets[targetId] };
     if (!desktopOnly && this.handleMobile) {
       target[mobileBreakpointKey] = this.mobileTargets[targetId];
@@ -37,13 +43,15 @@ class ApplyStyles {
     return target;
   }
 
-  getTargets(...targets) {
+  getTargets(...targets: any[]) {
     let targetStyles = {};
     targets.forEach((targetId) => {
       if (!targetId) return;
       targetStyles = { ...targetStyles, ...this.targets[targetId] };
       if (this.handleMobile)
+        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
         targetStyles[mobileBreakpointKey] = {
+          // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
           ...targetStyles[mobileBreakpointKey],
           ...this.mobileTargets[targetId]
         };
@@ -51,25 +59,25 @@ class ApplyStyles {
     return targetStyles;
   }
 
-  setStyle(target, key, val) {
+  setStyle(target: any, key: any, val: any) {
     this.targets[target][key] = val;
   }
 
   // Translate a set of server-side properties into CSS for a particular
   // target
-  apply(target, properties, get) {
+  apply(target: any, properties: any, get: any) {
     if (!this.styles) return;
     // if not array, assume user passed in 1 element
     if (!Array.isArray(properties)) properties = [properties];
-    const styles = properties.map((p) => this.styles[p]);
+    const styles = properties.map((p: any) => this.styles[p]);
     this.targets[target] = { ...this.targets[target], ...get(...styles) };
 
     if (this.handleMobile) {
-      let mobileStyles = properties.map((p) => this.mobileStyles[p]);
+      let mobileStyles = properties.map((p: any) => this.mobileStyles[p]);
       // If no mobile overrides, don't set breakpoint style
-      if (mobileStyles.every((s) => s === undefined)) return;
+      if (mobileStyles.every((s: any) => s === undefined)) return;
       // Fall back to default style if a mobile style doesn't exist
-      mobileStyles = properties.map((p) => {
+      mobileStyles = properties.map((p: any) => {
         const ms = this.mobileStyles[p];
         return ms !== undefined ? ms : this.styles[p];
       });
@@ -80,13 +88,13 @@ class ApplyStyles {
     }
   }
 
-  applyFlexAndTextAlignments(target, prefix = '') {
+  applyFlexAndTextAlignments(target: any, prefix = '') {
     this.applyFlexDirection(target, prefix);
     this.applyTextAlign(target, prefix);
   }
 
-  applyFlexDirection(target, prefix = '') {
-    this.apply(target, `${prefix}flex_direction`, (a) => ({
+  applyFlexDirection(target: any, prefix = '') {
+    this.apply(target, `${prefix}flex_direction`, (a: any) => ({
       flexDirection: a
     }));
   }
@@ -95,15 +103,15 @@ class ApplyStyles {
   // direction, which specifies the icon position relative to the text, so that
   // text align behaves as expected when the flex direction is vertical (a
   // column)
-  applyTextAlign(target, prefix = '') {
-    this.apply(target, `${prefix}text_align`, (a) => ({
+  applyTextAlign(target: any, prefix = '') {
+    this.apply(target, `${prefix}text_align`, (a: any) => ({
       [isDirectionColumn(this.styles[`${prefix}flex_direction`])
         ? 'alignItems'
         : 'justifyContent']: a
     }));
   }
 
-  applyBorders(target, prefix = '', important = true) {
+  applyBorders(target: any, prefix = '', important = true) {
     // If color isn't defined on one of the sides, that means there's no border
     if (!this.styles) return;
     if (!this.styles[`${prefix}border_top_color`]) return;
@@ -116,7 +124,10 @@ class ApplyStyles {
         `${prefix}border_bottom_color`,
         `${prefix}border_left_color`
       ],
-      (a, b, c, d) => ({ borderColor: `#${a} #${b} #${c} #${d} ${i}` })
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
+      (a, b, c, d) => ({
+        borderColor: `#${a} #${b} #${c} #${d} ${i}`
+      })
     );
     this.apply(
       target,
@@ -126,6 +137,7 @@ class ApplyStyles {
         `${prefix}border_bottom_width`,
         `${prefix}border_left_width`
       ],
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
       (a, b, c, d) => ({
         borderWidth: `${a}px ${b}px ${c}px ${d}px ${i}`
       })
@@ -138,11 +150,14 @@ class ApplyStyles {
         `${prefix}border_bottom_pattern`,
         `${prefix}border_left_pattern`
       ],
-      (a, b, c, d) => ({ borderStyle: `${a} ${b} ${c} ${d} ${i}` })
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
+      (a, b, c, d) => ({
+        borderStyle: `${a} ${b} ${c} ${d} ${i}`
+      })
     );
   }
 
-  applySelectorStyles(target, prefix, important = false) {
+  applySelectorStyles(target: any, prefix: any, important = false) {
     this.applyBorders(target, prefix);
     if (this.styles[`${prefix}background_color`]) {
       this.applyColor(
@@ -157,7 +172,7 @@ class ApplyStyles {
     }
   }
 
-  applyPadding(target, prefix = '', margin = false) {
+  applyPadding(target: any, prefix = '', margin = false) {
     this.apply(
       target,
       [
@@ -166,13 +181,14 @@ class ApplyStyles {
         `${prefix}padding_bottom`,
         `${prefix}padding_left`
       ],
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
       (a, b, c, d) => ({
         [margin ? 'margin' : 'padding']: `${a}px ${b}px ${c}px ${d}px`
       })
     );
   }
 
-  applyMargin(target, prefix = '') {
+  applyMargin(target: any, prefix = '') {
     this.apply(
       target,
       [
@@ -181,13 +197,14 @@ class ApplyStyles {
         `${prefix}margin_bottom`,
         `${prefix}margin_left`
       ],
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
       (a, b, c, d) => ({
         margin: `${a}px ${b}px ${c}px ${d}px`
       })
     );
   }
 
-  applyCorners(target) {
+  applyCorners(target: any) {
     this.apply(
       target,
       [
@@ -196,13 +213,14 @@ class ApplyStyles {
         'corner_bottom_right_radius',
         'corner_bottom_left_radius'
       ],
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
       (a, b, c, d) => ({
         borderRadius: `${a}px ${b}px ${c}px ${d}px`
       })
     );
   }
 
-  applyBoxShadow(target) {
+  applyBoxShadow(target: any) {
     this.apply(
       target,
       [
@@ -211,75 +229,94 @@ class ApplyStyles {
         'shadow_blur_radius',
         'shadow_color'
       ],
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
       (a, b, c, d) => ({
         boxShadow: `${a}px ${b}px ${c}px #${d}`
       })
     );
   }
 
-  applyHeight(target, prefix = '', force = false) {
-    this.apply(target, [`${prefix}height`, `${prefix}height_unit`], (a, b) => {
-      const value = `${a}${b}`;
-      const style = { height: value };
-      if (force) {
-        style.minHeight = value;
-        style.maxHeight = value;
+  applyHeight(target: any, prefix = '', force = false) {
+    this.apply(
+      target,
+      [`${prefix}height`, `${prefix}height_unit`],
+      (a: any, b: any) => {
+        const value = `${a}${b}`;
+        const style = { height: value };
+        if (force) {
+          (style as any).minHeight = value;
+          (style as any).maxHeight = value;
+        }
+        return style;
       }
-      return style;
-    });
+    );
   }
 
-  applyWidth(target, prefix = '', force = false) {
-    this.apply(target, [`${prefix}width`, `${prefix}width_unit`], (a, b) => {
-      const value = `${a}${b}`;
-      const style = { width: value };
-      if (force) {
-        style.minWidth = value;
-        style.maxWidth = value;
+  applyWidth(target: any, prefix = '', force = false) {
+    this.apply(
+      target,
+      [`${prefix}width`, `${prefix}width_unit`],
+      (a: any, b: any) => {
+        const value = `${a}${b}`;
+        const style = { width: value };
+        if (force) {
+          (style as any).minWidth = value;
+          (style as any).maxWidth = value;
+        }
+        return style;
       }
-      return style;
-    });
+    );
   }
 
-  applyVisibility(target) {
-    this.apply(target, 'visibility', (a) => ({
+  applyVisibility(target: any) {
+    this.apply(target, 'visibility', (a: any) => ({
       visibility: a
     }));
   }
 
-  applyColor(target, jsonProp, cssProp, important = false) {
-    this.apply(target, jsonProp, (color) => {
+  applyColor(target: any, jsonProp: any, cssProp: any, important = false) {
+    this.apply(target, jsonProp, (color: any) => {
       color = `${color === 'transparent' ? color : `#${color}`}`;
       if (important) color = `${color} !important`;
       return { [cssProp]: color };
     });
   }
 
-  applyFontStyles(target, placeholder = false) {
-    this.apply(target, 'font_weight', (a) => ({ fontWeight: a }));
-    this.apply(target, 'font_family', (a) => ({ fontFamily: a }));
-    this.apply(target, 'font_size', (a) => ({ fontSize: `${a}px` }));
-    this.apply(target, 'line_height', (a) => ({
+  applyFontStyles(target: any, placeholder = false) {
+    this.apply(target, 'font_weight', (a: any) => ({
+      fontWeight: a
+    }));
+    this.apply(target, 'font_family', (a: any) => ({
+      fontFamily: a
+    }));
+    this.apply(target, 'font_size', (a: any) => ({
+      fontSize: `${a}px`
+    }));
+    this.apply(target, 'line_height', (a: any) => ({
       lineHeight: isNum(a) ? `${a}px` : 'normal'
     }));
-    this.apply(target, 'letter_spacing', (a) => ({
+    this.apply(target, 'letter_spacing', (a: any) => ({
       letterSpacing: isNum(a) ? `${a}px` : 'normal'
     }));
-    this.apply(target, 'text_transform', (a) => ({
+    this.apply(target, 'text_transform', (a: any) => ({
       textTransform: a || 'none'
     }));
     this.apply(
       target,
       placeholder ? 'placeholder_italic' : 'font_italic',
-      (a) => ({ fontStyle: a ? 'italic' : 'normal' })
+      (a: any) => ({
+        fontStyle: a ? 'italic' : 'normal'
+      })
     );
     this.apply(
       target,
       placeholder ? 'placeholder_color' : 'font_color',
-      (a) => ({ color: `#${a}` })
+      (a: any) => ({
+        color: `#${a}`
+      })
     );
 
-    this.apply(target, ['font_strike', 'font_underline'], (a, b) => {
+    this.apply(target, ['font_strike', 'font_underline'], (a: any, b: any) => {
       const lines = [];
       if (a) lines.push('line-through');
       if (b) lines.push('underline');
@@ -287,58 +324,61 @@ class ApplyStyles {
     });
   }
 
-  getRichFontStyles(attrs) {
+  getRichFontStyles(attrs: any) {
     const fontStyles = this._getRichFontScreenStyles(attrs);
     if (this.handleMobile) {
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       fontStyles[mobileBreakpointKey] = this._getRichFontScreenStyles(
         attrs,
         'mobile_'
       );
     }
-    if (!('letterSpacing' in fontStyles)) fontStyles.letterSpacing = 'normal';
-    if (!('textTransform' in fontStyles)) fontStyles.textTransform = 'none';
+    if (!('letterSpacing' in fontStyles))
+      (fontStyles as any).letterSpacing = 'normal';
+    if (!('textTransform' in fontStyles))
+      (fontStyles as any).textTransform = 'none';
 
     return fontStyles;
   }
 
-  _getRichFontScreenStyles(attrs, p = '') {
+  _getRichFontScreenStyles(attrs: any, p = '') {
     const styles = {};
 
     let attr = attrs[`${p}font_size`];
-    if (attr) styles.fontSize = `${attr}px`;
+    if (attr) (styles as any).fontSize = `${attr}px`;
     attr = attrs[`${p}font_family`];
-    if (attr) styles.fontFamily = attr.replace(/"/g, "'");
+    if (attr) (styles as any).fontFamily = attr.replace(/"/g, "'");
     attr = attrs[`${p}font_color`];
-    if (attr) styles.color = `#${attr}`;
+    if (attr) (styles as any).color = `#${attr}`;
     attr = attrs[`${p}font_weight`];
-    if (attr) styles.fontWeight = attr;
-    if (attrs[`${p}font_italic`]) styles.fontStyle = 'italic';
+    if (attr) (styles as any).fontWeight = attr;
+    if (attrs[`${p}font_italic`]) (styles as any).fontStyle = 'italic';
     attr = attrs[`${p}text_transform`];
-    if (attr) styles.textTransform = attr;
+    if (attr) (styles as any).textTransform = attr;
     attr = attrs[`${p}letter_spacing`];
-    if (isNum(attr)) styles.letterSpacing = `${attr}px`;
+    if (isNum(attr)) (styles as any).letterSpacing = `${attr}px`;
 
     const lines = [];
     if (attrs[`${p}font_strike`]) lines.push('line-through');
     if (attrs[`${p}font_underline`]) lines.push('underline');
-    if (lines.length > 0) styles.textDecoration = lines.join(' ');
+    if (lines.length > 0) (styles as any).textDecoration = lines.join(' ');
 
     return styles;
   }
 
-  applyPlaceholderStyles(type, styles) {
+  applyPlaceholderStyles(type: any, styles: any) {
     this.addTargets('placeholder', 'placeholderActive', 'placeholderFocus');
     this.applyFontStyles('placeholder', true);
-    this.apply('placeholder', 'font_size', (a) => ({
+    this.apply('placeholder', 'font_size', (a: any) => ({
       lineHeight: `${a}px`
     }));
     if (type !== 'text_area') {
-      this.apply('placeholder', 'font_size', (a) => ({
+      this.apply('placeholder', 'font_size', (a: any) => ({
         marginTop: `-${a / 2}px`
       }));
     }
     if (styles.placeholder_transition === 'shrink_top') {
-      this.apply('placeholderFocus', 'font_size', (a) => {
+      this.apply('placeholderFocus', 'font_size', (a: any) => {
         const minFontSize = Math.min(a, 10);
         return {
           top: 0,
@@ -347,10 +387,15 @@ class ApplyStyles {
         };
       });
       if (styles.selected_placeholder_color) {
-        this.apply('placeholderActive', 'selected_placeholder_color', (a) => ({
-          color: `#${a}`
-        }));
+        this.apply(
+          'placeholderActive',
+          'selected_placeholder_color',
+          (a: any) => ({
+            color: `#${a}`
+          })
+        );
       }
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
       this.apply('field', ['height', 'height_unit'], (a, b) => ({
         paddingTop: `${a / 3}${b}`
       }));
@@ -359,7 +404,7 @@ class ApplyStyles {
     }
   }
 
-  applyBackgroundImageStyles(target) {
+  applyBackgroundImageStyles(target: any) {
     const targetStyles = [
       'background_image_url',
       'background_image_display',
@@ -371,7 +416,7 @@ class ApplyStyles {
       'background_image_repeat'
     ];
 
-    this.apply(target, targetStyles, (...styles) => {
+    this.apply(target, targetStyles, (...styles: any[]) => {
       const [
         imageUrl,
         imageDisplay,

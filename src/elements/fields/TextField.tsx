@@ -8,7 +8,7 @@ import { emailPatternStr } from '../../utils/formHelperFunctions';
 
 const MAX_TEXT_FIELD_LENGTH = 512;
 
-function escapeDefinitionChars(str) {
+function escapeDefinitionChars(str: any) {
   return str
     .replace('0', '\\0')
     .replace('a', '\\a')
@@ -16,7 +16,7 @@ function escapeDefinitionChars(str) {
     .replace('*', '\\*');
 }
 
-function constraintChar(allowed) {
+function constraintChar(allowed: any) {
   switch (allowed) {
     case 'letters':
       return 'a';
@@ -29,7 +29,7 @@ function constraintChar(allowed) {
   }
 }
 
-function getTextFieldMask(servar) {
+function getTextFieldMask(servar: any) {
   const data = servar.metadata;
   const prefix = escapeDefinitionChars(data.prefix || '');
   const suffix = escapeDefinitionChars(data.suffix || '');
@@ -48,7 +48,7 @@ function getTextFieldMask(servar) {
   return `${prefix}${mask}${suffix}`;
 }
 
-function getMaskProps(servar, value) {
+function getMaskProps(servar: any, value: any) {
   let methods, maskProps;
   switch (servar.type) {
     case 'integer_field':
@@ -73,7 +73,7 @@ function getMaskProps(servar, value) {
     case 'login':
       methods = servar.metadata.login_methods;
       maskProps = {
-        mask: methods.map((method) => {
+        mask: methods.map((method: any) => {
           return {
             method,
             mask: method === 'phone' ? '(000) 000-0000' : /.+/
@@ -109,7 +109,7 @@ function getMaskProps(servar, value) {
   };
 }
 
-function getInputProps(servar) {
+function getInputProps(servar: any) {
   let methods, onlyPhone;
   switch (servar.type) {
     case 'integer_field':
@@ -147,7 +147,7 @@ function TextField({
   rawValue = '',
   inlineError,
   children
-}) {
+}: any) {
   const servar = element.servar;
   const inputProps = getInputProps(servar);
   return (

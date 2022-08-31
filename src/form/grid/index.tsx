@@ -4,7 +4,7 @@ import ApplyStyles from '../../elements/styles';
 import { getDefaultFieldValue } from '../../utils/formHelperFunctions';
 import { TEXT_VARIABLE_PATTERN } from '../../utils/hydration';
 
-const Grid = ({ step, form, values, viewport }) => {
+const Grid = ({ step, form, values, viewport }: any) => {
   const formattedStep = formatStep(JSON.parse(JSON.stringify(step)), viewport);
 
   const repeatPosition =
@@ -14,6 +14,7 @@ const Grid = ({ step, form, values, viewport }) => {
 
   if (Array.isArray(repeatPosition) && repeatPosition.length > 0) {
     const repeatNode =
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       formattedStep.map[getMapKey({ position: repeatPosition })];
     if (repeatNode) addRepeatedCells(repeatNode, values);
   }
@@ -35,7 +36,7 @@ const Subgrid = ({
   axis = null,
   values,
   viewport = 'desktop'
-}) => {
+}: any) => {
   if (node.isElement || node.isEmpty) {
     return (
       <CellContainer
@@ -51,7 +52,7 @@ const Subgrid = ({
     return (
       <CellContainer node={node} axis={axis} layout={layout}>
         <GridContainer node={node}>
-          {node.children.map((child, i) => {
+          {node.children.map((child: any, i: any) => {
             layout = node.layout[i];
             axis = node.axis;
             return (
@@ -72,18 +73,19 @@ const Subgrid = ({
   }
 };
 
-const getCellStyle = (cell) => {
+const getCellStyle = (cell: any) => {
+  // @ts-expect-error TS(2554): Expected 3 arguments, but got 2.
   const applyStyles = new ApplyStyles(cell, ['cell']);
   applyStyles.applyBorders('cell');
   applyStyles.applyCorners('cell');
   applyStyles.applyBackgroundImageStyles('cell');
-  applyStyles.apply('cell', 'background_color', (c) => ({
+  applyStyles.apply('cell', 'background_color', (c: any) => ({
     backgroundColor: `#${c}`
   }));
   return applyStyles.getTarget('cell');
 };
 
-const getCellContainerStyle = (axis, layout) => {
+const getCellContainerStyle = (axis: any, layout: any) => {
   const dimension = axis === 'column' ? 'width' : 'height';
 
   const common = {
@@ -117,7 +119,7 @@ const getCellContainerStyle = (axis, layout) => {
   }
 };
 
-const CellContainer = ({ children, node, axis, layout }) => {
+const CellContainer = ({ children, node, axis, layout }: any) => {
   if (!node.parent) return children;
 
   const cellContainerStyle = getCellContainerStyle(axis, layout);
@@ -132,7 +134,7 @@ const CellContainer = ({ children, node, axis, layout }) => {
 
   return <div style={cellContainerStyle}>{children}</div>;
 };
-const GridContainer = ({ children, node: { axis } }) => {
+const GridContainer = ({ children, node: { axis } }: any) => {
   return (
     <div
       style={{
@@ -149,7 +151,7 @@ const GridContainer = ({ children, node: { axis } }) => {
   );
 };
 
-const formatStep = (step, viewport) => {
+const formatStep = (step: any, viewport: any) => {
   step = convertStepToViewport(step, viewport);
 
   const map = buildGridMap(step);
@@ -158,7 +160,7 @@ const formatStep = (step, viewport) => {
   return { map, tree };
 };
 
-const getMapKey = (node) => {
+const getMapKey = (node: any) => {
   if (!node.position) return null;
   return node.position.join(',') || 'root';
 };
@@ -183,9 +185,9 @@ const fields = [
   'videos'
 ];
 
-const convertStepToViewport = (step, viewport) => {
+const convertStepToViewport = (step: any, viewport: any) => {
   fields.forEach((field) => {
-    step[field].forEach((obj, i) => {
+    step[field].forEach((obj: any, i: any) => {
       step[field][i] =
         field === 'subgrids'
           ? convertToViewport(obj, viewport, viewportProperties.subgrids)
@@ -193,7 +195,7 @@ const convertStepToViewport = (step, viewport) => {
     });
   });
 
-  step.subgrids = step.subgrids.filter((subgrid) => subgrid.position);
+  step.subgrids = step.subgrids.filter((subgrid: any) => subgrid.position);
 
   return step;
 };
@@ -204,10 +206,10 @@ const viewportProperties = {
   elements: ['position']
 };
 
-const convertToViewport = (obj, viewport, props) => {
+const convertToViewport = (obj: any, viewport: any, props: any) => {
   if (viewport === 'desktop') return obj;
 
-  props.forEach((prop) => {
+  props.forEach((prop: any) => {
     const viewportProp = `${viewport}_${prop}`;
     if (obj[viewportProp]) {
       obj[prop] = obj[viewportProp];
@@ -217,16 +219,17 @@ const convertToViewport = (obj, viewport, props) => {
   return obj;
 };
 
-const buildGridMap = (step) => {
+const buildGridMap = (step: any) => {
   const map = {};
   let rootSubgrid = {};
-  const cells = [];
+  const cells: any = [];
 
-  const addObjectsToMap = (obj, type) => {
+  const addObjectsToMap = (obj: any, type: any) => {
+    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     if (typeMap[type]) obj.type = typeMap[type];
     if (type === 'subgrids' && obj.position.length === 0) {
       if (Array.isArray(obj.styles)) {
-        obj.styles.forEach((style) => {
+        obj.styles.forEach((style: any) => {
           const cellData = { ...style };
           cellData.position = [...obj.position, cellData.position];
           cells.push(cellData);
@@ -235,10 +238,11 @@ const buildGridMap = (step) => {
 
       return (rootSubgrid = obj);
     }
+    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     map[getMapKey(obj)] = obj;
     if (type === 'subgrids') {
       if (Array.isArray(obj.styles)) {
-        obj.styles.forEach((style) => {
+        obj.styles.forEach((style: any) => {
           const cellData = { ...style };
           cellData.position = [...obj.position, cellData.position];
           cells.push(cellData);
@@ -248,30 +252,35 @@ const buildGridMap = (step) => {
   };
 
   fields.forEach((field) =>
-    step[field]?.forEach((obj) => addObjectsToMap(obj, field))
+    step[field]?.forEach((obj: any) => addObjectsToMap(obj, field))
   );
 
   if (cells) {
+    // @ts-expect-error TS(7006): Parameter 'cell' implicitly has an 'any' type.
     cells.forEach((cell) => {
       const key = getMapKey(cell);
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       if (!map[key]) {
+        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
         map[key] = { isEmpty: true, position: cell.position };
       }
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       map[key].cellData = cell;
     });
   }
 
-  map.root = { step, ...rootSubgrid };
+  (map as any).root = { step, ...rootSubgrid };
 
   return map;
 };
 
-const addRepeatedCells = (node, values) => {
+const addRepeatedCells = (node: any, values: any) => {
   const index = [...node.position].pop();
   if (!node.parent) return 0;
 
   const numberOfRepeats = repeatCount(node, values);
   if (numberOfRepeats) {
+    // @ts-expect-error TS(2554): Expected 4 arguments, but got 3.
     node.parent.children[index] = repeat({ ...node }, values, 0);
     for (let i = 0; i < numberOfRepeats; ++i) {
       node.parent.layout.splice(index + i, 0, node.parent.layout[index]);
@@ -288,18 +297,19 @@ const addRepeatedCells = (node, values) => {
       );
     }
   } else {
+    // @ts-expect-error TS(2554): Expected 4 arguments, but got 3.
     node.parent.children[index] = repeat({ ...node }, values, 0);
   }
 
   return numberOfRepeats;
 };
 
-const repeat = (node, values, repeatIndex, last) => {
+const repeat = (node: any, values: any, repeatIndex: any, last: any) => {
   node.repeat = repeatIndex;
   node.lastRepeat = last;
   if (node.children) {
-    const newChildren = [];
-    node.children.forEach((child) => {
+    const newChildren: any = [];
+    node.children.forEach((child: any) => {
       newChildren.push(repeat({ ...child }, values, repeatIndex, last));
     });
     node.children = newChildren;
@@ -307,7 +317,7 @@ const repeat = (node, values, repeatIndex, last) => {
   return node;
 };
 
-const getTextVariables = (node) => {
+const getTextVariables = (node: any) => {
   let textVariables = [];
 
   const text = node?.properties?.text;
@@ -316,22 +326,25 @@ const getTextVariables = (node) => {
     if (match) textVariables = match;
   }
 
-  return textVariables.map((variable) => variable.slice(2, -2));
+  return textVariables.map((variable: any) => variable.slice(2, -2));
 };
 
-const getAllTextVariables = (node, variables = []) => {
+const getAllTextVariables = (node: any, variables = []) => {
   const textVariables = getTextVariables(node);
   if (textVariables)
-    textVariables.forEach((variable) => variables.push(variable));
+    // @ts-expect-error TS(2345): Argument of type 'any' is not assignable to parame... Remove this comment to see the full error message
+    textVariables.forEach((variable: any) => variables.push(variable));
 
   if (node.children) {
-    node.children.forEach((child) => getAllTextVariables(child, variables));
+    node.children.forEach((child: any) =>
+      getAllTextVariables(child, variables)
+    );
   }
 
   return variables;
 };
 
-const repeatCountByTextVariables = (node, values) => {
+const repeatCountByTextVariables = (node: any, values: any) => {
   let count = 0;
   const textVariables = getAllTextVariables(node);
   textVariables.forEach((variable) => {
@@ -342,22 +355,23 @@ const repeatCountByTextVariables = (node, values) => {
   return count;
 };
 
-const getRepeatableFields = (node, servars = []) => {
+const getRepeatableFields = (node: any, servars = []) => {
   if (node.servar) {
     const { repeated, repeat_trigger: repeatTrigger } = node.servar;
     if (repeated && repeatTrigger) {
+      // @ts-expect-error TS(2345): Argument of type 'any' is not assignable to parame... Remove this comment to see the full error message
       servars.push(node);
     }
   }
 
   if (node.children) {
-    node.children.forEach((child) => getRepeatableFields(child, servars));
+    node.children.forEach((child: any) => getRepeatableFields(child, servars));
   }
 
   return servars;
 };
 
-const repeatCountByFields = (node, values) => {
+const repeatCountByFields = (node: any, values: any) => {
   let count = 0;
   const repeatableServars = getRepeatableFields(node);
   repeatableServars.forEach((servar) => {
@@ -367,7 +381,7 @@ const repeatCountByFields = (node, values) => {
 };
 
 // If the final value is still default, do not render another repeat
-const getNumberOfRepeatableValues = (node, values) => {
+const getNumberOfRepeatableValues = (node: any, values: any) => {
   const defaultValue = getDefaultFieldValue(node);
   const fieldValues = values[node?.servar?.key];
   if (!Array.isArray(fieldValues)) return 0;
@@ -376,21 +390,22 @@ const getNumberOfRepeatableValues = (node, values) => {
   return hasDefaultLastValue ? fieldValues.length - 1 : fieldValues.length;
 };
 
-const repeatCount = (node, values) => {
+const repeatCount = (node: any, values: any) => {
   return Math.max(
     repeatCountByFields(node, values),
     repeatCountByTextVariables(node, values)
   );
 };
 
-const buildGridTree = (gridMap, position = [], viewport) => {
+const buildGridTree = (gridMap: any, position = [], viewport: any) => {
   const node = gridMap[getMapKey({ position })];
   if (!node) return { isEmpty: true, position };
   if (node.layout) {
     if (position.length > 0) node.isSubgrid = true;
     node.children = [];
-    node.layout.forEach((layout, i) => {
+    node.layout.forEach((layout: any, i: any) => {
       const nextPosition = [...position, i];
+      // @ts-expect-error TS(2345): Argument of type 'any[]' is not assignable to para... Remove this comment to see the full error message
       const child = buildGridTree(gridMap, nextPosition, viewport);
       child.parent = node;
       node.children.push(child);

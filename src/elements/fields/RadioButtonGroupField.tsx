@@ -6,7 +6,7 @@ import {
   composeCheckableInputStyle
 } from './CheckboxField';
 
-const applyRadioGroupStyles = (element, applyStyles) => {
+const applyRadioGroupStyles = (element: any, applyStyles: any) => {
   applyStyles.addTargets(['radioGroup']);
   applyStyles.applyWidth('radioGroup');
   return applyStyles;
@@ -23,10 +23,11 @@ function RadioButtonGroupField({
   onOtherChange = () => {},
   elementProps = {},
   children
-}) {
+}: any) {
   const servar = element.servar;
   const [otherSelect, setOtherSelect] = useState({});
   const otherChecked =
+    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     (otherSelect[servar.key] || fieldVal) && fieldVal === otherVal;
 
   const styles = useMemo(() => {
@@ -42,7 +43,7 @@ function RadioButtonGroupField({
       {...elementProps}
     >
       {fieldLabel}
-      {servar.metadata.options.map((opt, i) => {
+      {servar.metadata.options.map((opt: any, i: any) => {
         return (
           <ReactForm.Check
             type='radio'

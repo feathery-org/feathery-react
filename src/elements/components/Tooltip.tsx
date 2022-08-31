@@ -2,7 +2,7 @@ import React from 'react';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { HelpIcon } from './icons';
 
-export default function InlineTooltip({ element, applyStyles }) {
+export default function InlineTooltip({ element, applyStyles }: any) {
   const text = element.properties.tooltipText;
   return text ? (
     <OverlayTrigger

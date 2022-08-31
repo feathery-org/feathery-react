@@ -1,4 +1,4 @@
-export function installSegment(segmentConfig) {
+export function installSegment(segmentConfig: any) {
   if (segmentConfig) {
     // Script from https://segment.com/docs/connections/sources/catalog/libraries/website/javascript/quickstart/#step-2-add-the-segment-snippet
     // Create a queue, but don't obliterate an existing one!
@@ -38,7 +38,7 @@ export function installSegment(segmentConfig) {
     // for methods in Analytics.js so that you never have to wait
     // for it to load to actually record data. The `method` is
     // stored as the first argument, so we can replay the data.
-    analytics.factory = function (method) {
+    analytics.factory = function (method: any) {
       return function () {
         const args = Array.prototype.slice.call(arguments);
         args.unshift(method);
@@ -53,7 +53,7 @@ export function installSegment(segmentConfig) {
     }
     // Define a method to load Analytics.js from our CDN,
     // and that will be sure to only ever load it once.
-    analytics.load = function (key, options) {
+    analytics.load = function (key: any, options: any) {
       // Create an async script element based on your key.
       const script = document.createElement('script');
       script.type = 'text/javascript';
@@ -62,6 +62,7 @@ export function installSegment(segmentConfig) {
         'https://cdn.segment.com/analytics.js/v1/' + key + '/analytics.min.js';
       // Insert our script next to the first script element.
       const first = document.getElementsByTagName('script')[0];
+      // @ts-expect-error TS(2531): Object is possibly 'null'.
       first.parentNode.insertBefore(script, first);
       analytics._loadOptions = options;
     };

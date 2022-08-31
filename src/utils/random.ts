@@ -1,4 +1,4 @@
-function xmur3Hash(str) {
+function xmur3Hash(str: any) {
   let i = 0;
   let h = 1779033703 ^ str.length;
   for (; i < str.length; i++) {
@@ -12,7 +12,7 @@ function xmur3Hash(str) {
   };
 }
 
-function sfc32RNG(a, b, c, d) {
+function sfc32RNG(a: any, b: any, c: any, d: any) {
   return function () {
     a >>>= 0;
     b >>>= 0;
@@ -29,7 +29,7 @@ function sfc32RNG(a, b, c, d) {
   };
 }
 
-export default function getRandomBoolean(userID, testName) {
+export default function getRandomBoolean(userID: any, testName: any) {
   const userIDSeed = xmur3Hash(userID);
   const testSeed = xmur3Hash(testName);
   const rng = sfc32RNG(userIDSeed(), userIDSeed(), testSeed(), testSeed());

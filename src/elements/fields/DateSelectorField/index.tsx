@@ -2,13 +2,14 @@ import React, { memo, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/Tooltip';
+// @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
 import DatePicker from 'react-datepicker';
 import DateSelectorStyles from './styles';
 
 import { bootstrapStyles, ERROR_COLOR } from '../../styles';
 import { IMaskInput } from 'react-imask';
 
-function formatDateString(date) {
+function formatDateString(date: any) {
   if (!date) return '';
 
   const day = date.getDate().toString().padStart(2, '0');
@@ -29,11 +30,11 @@ function DateSelectorField({
   value = '',
   inlineError,
   children
-}) {
+}: any) {
   const [internalDate, setInternalDate] = useState(
     value ? new Date(value) : ''
   );
-  const onDateChange = (newDate) => {
+  const onDateChange = (newDate: any) => {
     newDate = newDate ?? '';
     setInternalDate(newDate);
     onChange(formatDateString(newDate));

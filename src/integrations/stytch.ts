@@ -3,12 +3,12 @@ import { dynamicImport } from './utils';
 
 const STYTCH_JS_URL = 'https://js.stytch.com/stytch.js';
 
-let stytchPromise = null;
-let config = null;
+let stytchPromise: any = null;
+let config: any = null;
 // This guard prevents a second auth attempt to stytch if the form is preloaded
 let authSent = false;
 
-export function installStytch(stytchConfig) {
+export function installStytch(stytchConfig: any) {
   if (stytchPromise) return stytchPromise;
   else if (!stytchConfig || stytchConfig.metadata.token === '')
     return Promise.resolve();
@@ -26,9 +26,11 @@ export function installStytch(stytchConfig) {
         const isStytchImported = document.querySelectorAll(
           `script[src="${STYTCH_JS_URL}"]`
         )[0];
+        // @ts-expect-error TS(2794): Expected 1 arguments, but got 0. Did you forget to... Remove this comment to see the full error message
         if (isStytchImported) return resolve();
 
         return dynamicImport(STYTCH_JS_URL).then(() => {
+          // @ts-expect-error TS(2304): Cannot find name 'global'.
           const initializedClient = global.Stytch(stytchConfig.metadata.token);
           setAuthClient(initializedClient);
           resolve(initializedClient);
@@ -50,7 +52,7 @@ export function googleOauthRedirect() {
   });
 }
 
-export function sendMagicLink({ fieldVal }) {
+export function sendMagicLink({ fieldVal }: any) {
   const client = getAuthClient();
   if (!client) return;
 
@@ -63,7 +65,7 @@ export function sendMagicLink({ fieldVal }) {
   });
 }
 
-export function emailLogin(featheryClient) {
+export function emailLogin(featheryClient: any) {
   const stytchClient = getAuthClient();
   // If there is no auth client, no config or auth has already been sent, then return early
   if (!stytchClient || !config || authSent) return;
@@ -86,15 +88,16 @@ export function emailLogin(featheryClient) {
   else if (!stytchSession && validateStytchQueryParams({ token, type })) {
     const authFn = determineAuthFn({ token, type });
 
+    // @ts-expect-error TS(2721): Cannot invoke an object which is possibly 'null'.
     return authFn()
       .then(() => featherySubmitAuthInfo(featheryClient))
-      .catch((e) =>
+      .catch((e: any) =>
         console.log('Auth failed. Possibly because your magic link expired.', e)
       );
   }
 }
 
-function featherySubmitAuthInfo(featheryClient) {
+function featherySubmitAuthInfo(featheryClient: any) {
   const stytchClient = getAuthClient();
   // eslint-disable-next-line camelcase
   const authId = stytchClient.session.getSync()?.user_id;
@@ -109,11 +112,11 @@ function featherySubmitAuthInfo(featheryClient) {
     .catch(() => (authSent = false));
 }
 
-function validateStytchQueryParams({ token, type }) {
+function validateStytchQueryParams({ token, type }: any) {
   return token && (type === 'magic_links' || type === 'oauth');
 }
 
-function determineAuthFn({ token, type }) {
+function determineAuthFn({ token, type }: any) {
   const stytchClient = getAuthClient();
   const opts = {
     session_duration_minutes: config.metadata.session_duration

@@ -1,5 +1,5 @@
 import React from 'react';
-export default function FileUploadIcon({ width }) {
+export default function FileUploadIcon({ width }: any) {
   return (
     <svg
       width={width}

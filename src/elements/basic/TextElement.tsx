@@ -3,7 +3,7 @@ import TextNodes from '../components/TextNodes';
 import { isNum } from '../../utils/primitives';
 
 // TODO(peter): deprecate once customers have upgraded and backend migrated
-function legacyAlignment(alignment) {
+function legacyAlignment(alignment: any) {
   switch (alignment) {
     case 'flex-start':
       return 'left';
@@ -14,18 +14,18 @@ function legacyAlignment(alignment) {
   }
 }
 
-function applyTextStyles(element, applyStyles) {
+function applyTextStyles(element: any, applyStyles: any) {
   applyStyles.addTargets('text');
-  applyStyles.apply('text', 'layout', (a) => ({
+  applyStyles.apply('text', 'layout', (a: any) => ({
     textAlign: legacyAlignment(a)
   }));
-  applyStyles.apply('text', 'line_height', (a) => ({
+  applyStyles.apply('text', 'line_height', (a: any) => ({
     lineHeight: isNum(a) ? `${a}px` : 'normal'
   }));
-  applyStyles.apply('text', 'letter_spacing', (a) => ({
+  applyStyles.apply('text', 'letter_spacing', (a: any) => ({
     letterSpacing: isNum(a) ? `${a}px` : 'normal'
   }));
-  applyStyles.apply('text', 'text_transform', (a) => ({
+  applyStyles.apply('text', 'text_transform', (a: any) => ({
     textTransform: a || 'none'
   }));
   return applyStyles;
@@ -42,7 +42,7 @@ function TextElement({
   conditions = [],
   elementProps = {},
   children
-}) {
+}: any) {
   const styles = useMemo(
     () => applyTextStyles(element, applyStyles),
     [applyStyles]

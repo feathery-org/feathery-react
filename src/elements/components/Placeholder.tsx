@@ -5,7 +5,7 @@ export default function Placeholder({
   element,
   applyStyles,
   type = 'input'
-}) {
+}: any) {
   return (
     <span
       css={{

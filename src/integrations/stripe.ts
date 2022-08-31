@@ -5,7 +5,7 @@ import { runningInClient } from '../utils/browser.js';
 const stripePromise = new Promise((resolve) => {
   if (runningInClient())
     document.addEventListener('stripe_key_loaded', (e) => {
-      const promise = loadStripe(e.detail.key);
+      const promise = loadStripe((e as any).detail.key);
       promise.then((stripe) => {
         resolve(stripe);
       });
@@ -14,7 +14,7 @@ const stripePromise = new Promise((resolve) => {
 
 export const getStripe = () => stripePromise;
 
-export function installStripe(stripeConfig) {
+export function installStripe(stripeConfig: any) {
   // eslint-disable-next-line camelcase
   if (stripeConfig?.metadata?.client_key) {
     document.dispatchEvent(
@@ -28,13 +28,14 @@ export function installStripe(stripeConfig) {
 
 // Returns mapping of servar key (or hidden field key) to value
 export function getFlatStripeCustomerFieldValues(
-  stripeConfig,
-  fieldValues,
-  servarFields
+  stripeConfig: any,
+  fieldValues: any,
+  servarFields: any
 ) {
   const servarMap = {};
   servarFields.forEach(
-    (field) => (servarMap[field.servar.id] = field.servar.key)
+    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
+    (field: any) => (servarMap[field.servar.id] = field.servar.key)
   );
 
   if (!stripeConfig?.metadata?.customer_field_mappings) return {};
@@ -44,11 +45,17 @@ export function getFlatStripeCustomerFieldValues(
     servarMap
   );
 }
-function getObjectMappingValues(mappingObj, fieldValues, servarMap) {
+function getObjectMappingValues(
+  mappingObj: any,
+  fieldValues: any,
+  servarMap: any
+) {
   return Object.entries(mappingObj).reduce((result, [key, mappingInfo]) => {
-    if (mappingInfo.id) {
-      let key = mappingInfo.id;
-      if (mappingInfo.type === 'servar') key = servarMap[mappingInfo.id];
+    if ((mappingInfo as any).id) {
+      let key = (mappingInfo as any).id;
+      if ((mappingInfo as any).type === 'servar')
+        key = servarMap[(mappingInfo as any).id];
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       if (key && key in fieldValues) result[key] = fieldValues[key].value;
     }
     // sub-object
@@ -71,7 +78,7 @@ export async function setupPaymentMethod(
     step,
     integrationData,
     targetElement
-  },
+  }: any,
   stripePromise = getStripe()
 ) {
   if (formattedFields[servar.key]?.value?.complete) {
@@ -94,7 +101,7 @@ export async function setupPaymentMethod(
         servar.key
       );
 
-      const result = await stripe.confirmCardSetup(intentSecret, {
+      const result = await (stripe as any).confirmCardSetup(intentSecret, {
         payment_method: {
           card: targetElement
           // Not supplying billing details for now but we could later if needed...
@@ -135,13 +142,14 @@ export function usePayments() {
   // Stripe - the card elements on the active step, if any
   const [cardElementMappings, setCardElementMappings] = useState({});
 
-  const setCardElement = (key, cardElement) => {
+  const setCardElement = (key: any, cardElement: any) => {
     setCardElementMappings((cardElementMappings) => ({
       ...cardElementMappings,
       [key]: cardElement
     }));
   };
-  const getCardElement = (key) => cardElementMappings[key];
+  // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
+  const getCardElement = (key: any) => cardElementMappings[key];
 
   return [getCardElement, setCardElement];
 }

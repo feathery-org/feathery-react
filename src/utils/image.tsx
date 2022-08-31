@@ -12,7 +12,7 @@ export const THUMBNAIL_TYPE = {
 export const BASE64_REGEX =
   /(data:image\/(png|jpg|jpeg);base64,)([0-9a-zA-Z+/]{4})*(([0-9a-zA-Z+/]{2}==)|([0-9a-zA-Z+/]{3}=))?$/gm;
 
-export function getThumbnailType(file) {
+export function getThumbnailType(file: any) {
   let thumbnailType = THUMBNAIL_TYPE.UNKNOWN;
 
   if (file) {
@@ -31,7 +31,7 @@ export function getThumbnailType(file) {
  * This custom hook maintains a referentially-stable list of files,
  * and will execute a callback every time that list changes.
  */
-export function useFileData(initialFiles, onSetFiles = () => {}) {
+export function useFileData(initialFiles: any, onSetFiles = () => {}) {
   const [files, setFiles] = useState(toList(initialFiles));
   useEffect(() => {
     // Prevent infinite loop of setting a new empty array as the value
@@ -47,7 +47,7 @@ export function useFileData(initialFiles, onSetFiles = () => {}) {
  * Given a File (or a Promise<File>), convert the file to a filename and thumbnail.
  * Filename will be a plaintext string and thumbnail will be a base64 encoded image.
  */
-export async function getThumbnailData(filePromise) {
+export async function getThumbnailData(filePromise: any) {
   const file = await filePromise;
   const thumbnailType = getThumbnailType(file);
   if (thumbnailType === THUMBNAIL_TYPE.IMAGE) {
@@ -55,6 +55,7 @@ export async function getThumbnailData(filePromise) {
       const reader = new FileReader();
 
       reader.addEventListener('load', (event) => {
+        // @ts-expect-error TS(2531): Object is possibly 'null'.
         resolve(event.target.result);
       });
 
@@ -70,7 +71,7 @@ export async function getThumbnailData(filePromise) {
 /**
  * Utility hook for converting a list of files into a list of thumbnail information.
  */
-export function useThumbnailData(files) {
+export function useThumbnailData(files: any) {
   const [thumbnailData, setThumbnailData] = useState(
     files.map(() => ({ filename: '', thumbnail: '' }))
   );
@@ -87,7 +88,7 @@ export function useThumbnailData(files) {
   return thumbnailData;
 }
 
-export const dataURLToFile = (dataURL, name) => {
+export const dataURLToFile = (dataURL: any, name: any) => {
   const arr = dataURL.split(',');
   const mime = arr[0].match(/:(.*?);/)[1];
   const bstr = atob(arr[1]);
@@ -101,7 +102,7 @@ export const dataURLToFile = (dataURL, name) => {
   return new File([u8arr], name, { type: mime });
 };
 
-export const toBase64 = (file) =>
+export const toBase64 = (file: any) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -109,6 +110,6 @@ export const toBase64 = (file) =>
     reader.onerror = (error) => reject(error);
   });
 
-export const isBase64Image = (string) => {
+export const isBase64Image = (string: any) => {
   return BASE64_REGEX.test(string);
 };
