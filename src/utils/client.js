@@ -246,6 +246,8 @@ export default class Client {
       headers: { 'Accept-Encoding': 'gzip' }
     };
     return this._fetch(url, options).then(async (response) => {
+      if (!response) return {};
+
       const res = await response.json();
       if (res.data) {
         res.steps = getABVariant(res);
@@ -287,6 +289,8 @@ export default class Client {
     const options = { importance: 'high' };
 
     const response = await this._fetch(url, options);
+    if (!response) return [];
+
     const session = await response.json();
     const authSession = await initializeIntegrations(
       session.integrations,
