@@ -365,6 +365,8 @@ function Form({
   useHotkeys(
     'enter',
     (e) => {
+      if (!activeStep) return;
+
       e.preventDefault();
       e.stopPropagation();
       // Submit steps by pressing `Enter`
