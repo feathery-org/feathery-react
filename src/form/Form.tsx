@@ -412,7 +412,7 @@ function Form({
     };
   }
 
-  function removeRepeatedRow(index: any) {
+  function removeRepeatedRow(index: number) {
     if (isNaN(index)) return;
 
     // Collect a list of all repeated elements
@@ -423,8 +423,8 @@ function Form({
 
     // Update the values by removing the specified index from each field
     const updatedValues = {};
-    const fieldIDs: any[] = [];
-    const fieldKeys: any[] = [];
+    const fieldIDs: string[] = [];
+    const fieldKeys: string[] = [];
     repeatedServarFields.forEach((field: any) => {
       const { servar } = field;
       const newRepeatedValues = justRemove(fieldValues[servar.key], index);
@@ -1261,10 +1261,8 @@ function Form({
     if ([LINK_ADD_REPEATED_ROW, LINK_REMOVE_REPEATED_ROW].includes(link)) {
       let data: any;
       if (link === LINK_ADD_REPEATED_ROW) data = addRepeatedRow();
-      else if (link === LINK_REMOVE_REPEATED_ROW) {
-        data = removeRepeatedRow(button.repeat);
-      }
-      if (data.fieldKeys.length > 0) {
+      else data = removeRepeatedRow(button.repeat);
+      if (data && data.fieldKeys.length > 0) {
         fieldOnChange({
           fieldIds: data.fieldIDs,
           fieldKeys: data.fieldKeys,
