@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Client from './client';
 import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
-import { runningInClient } from './browser.js';
+import { runningInClient } from './browser';
 import { inferEmailLoginFromURL } from '../integrations/utils';
 
 export type FeatheryFieldTypes =
@@ -46,6 +46,7 @@ type InitState = {
 } & Omit<InitOptions, 'forms'>;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
+// @ts-expect-error TS(2554): Expected 2 arguments, but got 0.
 const defaultClient = new Client();
 const defaultOptions: InitOptions = {
   authClient: null,
@@ -104,7 +105,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
     'tracking'
   ].forEach((key) => {
     if (options[key as keyof InitOptions])
-      // @ts-expect-error TODO(ts) - we need to improve the typings here
+      // @ts-expect-error TS(2322): Type 'any' is not assignable to type 'never'.
       initState[key as keyof InitState] = options[key as keyof InitOptions];
   });
 
@@ -147,6 +148,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
 // must be called after userKey loads
 function _fetchFormData(formKeys: string[]) {
   formKeys.forEach((key) => {
+    // @ts-expect-error TS(2554): Expected 2 arguments, but got 1.
     const formClient = new Client(key);
     formClient.fetchCacheForm().then((stepsResponse: any) => {
       initState.forms[key] = stepsResponse;
@@ -189,7 +191,7 @@ function setValues(userVals: FieldValues, rerender = true): void {
   const result: FieldValues = {};
   Object.entries(userVals).forEach(([key, value]) => {
     if (Array.isArray(value))
-      // @ts-expect-error TODO(ts) - we need to improve the typings here
+      // @ts-expect-error TS(2322): Type 'FeatheryFieldTypes[]' is not assignable to t... Remove this comment to see the full error message
       result[key] = value.map((entry) => _parseUserVal(entry, key));
     else result[key] = _parseUserVal(value, key);
   });

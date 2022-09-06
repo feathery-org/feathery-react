@@ -57,7 +57,7 @@ import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
-import { openTab, runningInClient } from '../utils/browser.js';
+import { openTab, runningInClient } from '../utils/browser';
 import FormOff from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
@@ -110,7 +110,7 @@ const getViewport = () => {
 };
 
 function Form({
-  // @ts-expect-error - this prop is deprecated so don't want to type it
+  // @ts-expect-error TS(2339): Property 'formKey' does not exist on type 'Props'.
   formKey: _formKey,
   formName: _formName,
   onChange = null,
@@ -124,7 +124,7 @@ function Form({
   onViewElements = [],
   initialValues = {},
   initialStepId = '',
-  // @ts-expect-error
+  // @ts-expect-error TS(2322): Type 'null' is not assignable to type 'boolean'.
   usePreviousUserData = null,
   elementProps = {},
   style = {},
@@ -166,7 +166,9 @@ function Form({
   const [hasPlaid, setHasPlaid] = useState(false);
   const [gMapFilled, setGMapFilled] = useState(false);
   const [gMapBlurKey, setGMapBlurKey] = useState('');
-  const [gMapTimeoutId, setGMapTimeoutId] = useState(-1);
+  const [gMapTimeoutId, setGMapTimeoutId] = useState<NodeJS.Timeout | number>(
+    -1
+  );
   const [viewport, setViewport] = useState(getViewport());
 
   const [repeats, setRepeats] = useState(0);
@@ -178,16 +180,16 @@ function Form({
   const [loaders, setLoaders] = useState({});
   const clearLoaders = () => setLoaders({});
   const stepLoader = useMemo(() => {
-    // @ts-expect-error need to handle unknown type
-    const data = Object.values(loaders).find((l) => l?.showOn === 'full_page');
+    const data = Object.values(loaders).find(
+      (l) => (l as any)?.showOn === 'full_page'
+    );
     if (!data) return null;
-    // @ts-expect-error need to handle unknown type
-    return data.type === 'default' ? (
-      // @ts-expect-error need to handle unknown type
-      <div style={{ height: '20vh', width: '20vh' }}>{data.loader}</div>
+    return (data as any).type === 'default' ? (
+      <div style={{ height: '20vh', width: '20vh' }}>
+        {(data as any).loader}
+      </div>
     ) : (
-      // @ts-expect-error need to handle unknown type
-      data.loader
+      (data as any).loader
     );
   }, [loaders]);
 
@@ -208,8 +210,7 @@ function Form({
   const repeatTriggerExists = useMemo(
     () =>
       rawActiveStep
-        ? // @ts-expect-error need to type rawActiveStep
-          rawActiveStep.servar_fields.some(
+        ? (rawActiveStep as any).servar_fields.some(
             (field: any) => field.servar.repeat_trigger
           )
         : false,
@@ -264,7 +265,6 @@ function Form({
         () =>
           setFormElementError({
             formRef,
-            // @ts-expect-error
             errorCallback: getErrorCallback({
               trigger: {
                 id: gMapBlurKey,
@@ -275,14 +275,12 @@ function Form({
             fieldKey: gMapBlurKey,
             message: 'An address must be selected',
             errorType: formSettings.errorType,
-            // @ts-expect-error
             setInlineErrors: setInlineErrors,
             triggerErrors: true
           }),
         500
       );
       setGMapBlurKey('');
-      // @ts-expect-error
       setGMapTimeoutId(timeoutId);
     }
   }, [gMapTimeoutId, gMapFilled, gMapBlurKey]);
@@ -385,8 +383,7 @@ function Form({
 
   function addRepeatedRow() {
     // Collect a list of all repeated elements
-    // @ts-expect-error
-    const repeatedServarFields = rawActiveStep?.servar_fields.filter(
+    const repeatedServarFields = (rawActiveStep as any)?.servar_fields.filter(
       (field: any) => field.servar.repeated
     );
 
@@ -396,9 +393,9 @@ function Form({
     const fieldKeys: any[] = [];
     repeatedServarFields.forEach((field: any) => {
       const { servar } = field;
-      // @ts-expect-error
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       updatedValues[servar.key] = [
-        // @ts-expect-error
+        // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
         ...fieldValues[servar.key],
         getDefaultFieldValue(field)
       ];
@@ -418,7 +415,7 @@ function Form({
     if (isNaN(index)) return;
 
     // Collect a list of all repeated elements
-    // @ts-expect-error
+    // @ts-expect-error TS(2531): Object is possibly 'null'.
     const repeatedServarFields = rawActiveStep.servar_fields.filter(
       (field: any) => field.servar.repeated
     );
@@ -431,7 +428,7 @@ function Form({
       const { servar } = field;
       const newRepeatedValues = justRemove(fieldValues[servar.key], index);
       const defaultValue = [getDefaultFieldValue(field)];
-      // @ts-expect-error
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       updatedValues[servar.key] =
         newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
       fieldIDs.push(field.id);
@@ -447,12 +444,12 @@ function Form({
   // This means nulling the existing mapping because the user uploaded a new file
   function clearFilePathMapEntry(key: any, index = null) {
     if (index !== null) {
-      // @ts-expect-error
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       if (!filePathMap[key]) filePathMap[key] = [];
-      // @ts-expect-error
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       filePathMap[key][index] = null;
     } else {
-      // @ts-expect-error
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       filePathMap[key] = null;
     }
   }
@@ -472,8 +469,7 @@ function Form({
   const updateFieldOptions =
     (stepData: any, activeStepData: any) => (newFieldOptions: any) => {
       Object.values(stepData).forEach((step) => {
-        // @ts-expect-error
-        step.servar_fields.forEach((field: any) => {
+        (step as any).servar_fields.forEach((field: any) => {
           const servar = field.servar;
           if (servar.key in newFieldOptions) {
             servar.metadata.options = newFieldOptions[servar.key];
@@ -500,7 +496,7 @@ function Form({
     try {
       await userCallback({
         setValues,
-        // @ts-expect-error
+        // @ts-expect-error TS(2554): Expected 2 arguments, but got 1.
         setOptions: updateFieldOptions(steps),
         setProgress: (val: any) => setUserProgress(val),
         setStep: (stepKey: any) => {
@@ -539,12 +535,12 @@ function Form({
     // because it triggers a new render, before this fn finishes execution,
     // which can cause onView to fire before the callbackRef is set
     setRawActiveStep(newStep);
-    // @ts-expect-error
+    // @ts-expect-error TS(2531): Object is possibly 'null'.
     client.registerEvent({ step_key: newStep.key, event: 'load' });
   };
 
   const getNewStep = async (newKey: any) => {
-    // @ts-expect-error
+    // @ts-expect-error TS(2531): Object is possibly 'null'.
     let newStep = steps[newKey];
     while (true) {
       let logOut = false;
@@ -576,7 +572,7 @@ function Form({
 
     trackEvent('FeatheryStepLoad', {
       stepId: newKey,
-      // @ts-expect-error
+      // @ts-expect-error TS(2531): Object is possibly 'null'.
       formId: client.formKey
     });
 
@@ -599,7 +595,6 @@ function Form({
           if (trigger) {
             setFormElementError({
               formRef,
-              // @ts-expect-error
               errorCallback: getErrorCallback({ trigger }),
               fieldKey: servar.key,
               message,
@@ -615,7 +610,6 @@ function Form({
           formRef,
           errorType: formSettings.errorType,
           inlineErrors,
-          // @ts-expect-error
           setInlineErrors,
           triggerErrors: true
         });
@@ -637,7 +631,7 @@ function Form({
           fields: formattedFields,
           stepName: newStep.key,
           previousStepName: activeStep?.key,
-          // @ts-expect-error
+          // @ts-expect-error TS(2531): Object is possibly 'null'.
           lastStep: steps[newKey].next_conditions.length === 0,
           setStep: (stepKey: any) => {
             stepChanged = changeStep(stepKey, newKey, steps, history);
@@ -657,10 +651,9 @@ function Form({
   useEffect(() => {
     if (client === null) {
       const clientInstance = new Client(formKey, hasRedirected);
-      // @ts-expect-error
+      // @ts-expect-error TS(2345): Argument of type 'Client' is not assignable to par... Remove this comment to see the full error message
       setClient(clientInstance);
       setFirst(true);
-
       // render form without values first for speed
       const formPromise = clientInstance
         .fetchForm(initialValues)
@@ -675,7 +668,7 @@ function Form({
             errorType: res.error_type,
             autocomplete: res.autocomplete ? 'on' : 'off',
             autofocus: res.autofocus,
-            // @ts-expect-error
+            // @ts-expect-error TS(2322): Type 'boolean' is not assignable to type 'undefine... Remove this comment to see the full error message
             formOff: Boolean(res.formOff),
             showBrand: Boolean(res.show_brand),
             brandPosition: res.brand_position
@@ -683,12 +676,11 @@ function Form({
           setProductionEnv(res.production);
           return [steps, res];
         });
-
       // fetch values separately because this request
       // goes to Feathery origin, while the previous
       // request goes to our CDN
       clientInstance
-        // @ts-expect-error
+        // @ts-expect-error TS(2345): Argument of type 'Promise<any[]>' is not assignabl... Remove this comment to see the full error message
         .fetchSession(formPromise, true)
         .then(
           ([
@@ -719,7 +711,7 @@ function Form({
               initialStepId ||
               (hashKey && hashKey in steps && hashKey) ||
               (saveUserLocation && session.current_step_key) ||
-              getOrigin(steps).key;
+              (getOrigin as any)(steps).key;
             setFirstStep(newKey);
             history.replace(location.pathname + location.search + `#${newKey}`);
           }
@@ -728,7 +720,7 @@ function Form({
           console.log(error);
           // Go to first step if origin fails
           const [data] = await formPromise;
-          const newKey = getOrigin(data).key;
+          const newKey = (getOrigin as any)(data).key;
           setFirstStep(newKey);
           history.replace(location.pathname + location.search + `#${newKey}`);
         });
@@ -744,7 +736,7 @@ function Form({
           } catch (e) {
             console.log(e);
           }
-          // @ts-expect-error
+          // @ts-expect-error TS(2532): Object is possibly 'undefined'.
           if (hashKey in steps) setStepKey(hashKey);
         })
       : undefined;
@@ -763,7 +755,7 @@ function Form({
       }
     };
     if (typeof onFormComplete === 'function') {
-      // @ts-expect-error
+      // @ts-expect-error TS(2554): Expected 2-3 arguments, but got 1.
       runUserCallback(onFormComplete).then(redirectForm);
     } else {
       redirectForm();
@@ -819,7 +811,7 @@ function Form({
     )
       value = true;
 
-    // @ts-expect-error
+    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     updateValues[servar.key] =
       index === null
         ? value
@@ -833,7 +825,7 @@ function Form({
             servar.type
           )
         ) {
-          // @ts-expect-error
+          // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
           updateValues[servar.key] =
             index === null
               ? ''
@@ -856,12 +848,11 @@ function Form({
     let curFieldVal = fieldValues[target.id];
     if (Array.isArray(curFieldVal)) {
       if (oldOtherVal) {
-        // @ts-expect-error
+        // @ts-expect-error TS(2349): This expression is not callable.
         curFieldVal = curFieldVal.filter((val: any) => val !== oldOtherVal);
       }
       if (curOtherVal) {
-        // @ts-expect-error
-        curFieldVal.push(curOtherVal);
+        (curFieldVal as any).push(curOtherVal);
       }
     } else {
       if (curFieldVal === oldOtherVal) curFieldVal = curOtherVal;
@@ -906,7 +897,7 @@ function Form({
 
     const servarMap = {};
     activeStep.servar_fields.forEach(
-      // @ts-expect-error
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       (field: any) => (servarMap[field.servar.key] = field)
     );
     const formattedFields = formatStepFields(activeStep, false);
@@ -918,8 +909,9 @@ function Form({
     };
 
     const newInlineErrors = {};
+    // @ts-expect-error TS(2339): Property 'value' does not exist on type 'unknown'.
     Object.entries(formattedFields).map(async ([fieldKey, { value }]) => {
-      // @ts-expect-error
+      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       const field = servarMap[fieldKey];
       // Skip validation on hidden elements
       if (
@@ -933,7 +925,6 @@ function Form({
       const message = getFieldError(value, field.servar);
       await setFormElementError({
         formRef,
-        // @ts-expect-error
         errorCallback: getErrorCallback({ trigger }),
         fieldKey,
         message,
@@ -948,7 +939,6 @@ function Form({
       formRef,
       errorType: formSettings.errorType,
       inlineErrors: newInlineErrors,
-      // @ts-expect-error
       setInlineErrors,
       triggerErrors: true
     });
@@ -962,14 +952,12 @@ function Form({
       clearLoaders();
       await setFormElementError({
         formRef,
-        // @ts-expect-error
         errorCallback: getErrorCallback({ trigger }),
         fieldKey: errorField.key,
         message: errorMessage,
         servarType: errorField.type,
         errorType: formSettings.errorType,
         inlineErrors: newInlineErrors,
-        // @ts-expect-error
         setInlineErrors: setInlineErrors,
         triggerErrors: true
       });
@@ -980,19 +968,18 @@ function Form({
     if (typeof onSubmit === 'function') {
       const integrationData = {};
       if (initState.authId) {
-        // @ts-expect-error
-        integrationData.firebaseAuthId = initState.authId;
+        (integrationData as any).firebaseAuthId = initState.authId;
       }
 
       const allFields = formatAllFormFields(steps, true);
       const plaidFieldValues = getPlaidFieldValues(
-        // @ts-expect-error
-        integrations.plaid,
+        (integrations as any).plaid,
         fieldValues
       );
       let stepChanged = false;
       await setLoader();
       await runUserCallback(onSubmit, {
+        // @ts-expect-error TS(2698): Spread types may only be created from object types... Remove this comment to see the full error message
         submitFields: { ...formattedFields, ...plaidFieldValues },
         elementRepeatIndex: repeat,
         fields: allFields,
@@ -1011,9 +998,7 @@ function Form({
             setFormElementError({
               formRef,
               fieldKey,
-              // @ts-expect-error
               message,
-              // @ts-expect-error
               index,
               errorType: formSettings.errorType,
               inlineErrors: newInlineErrors
@@ -1034,7 +1019,6 @@ function Form({
         formRef,
         errorType: formSettings.errorType,
         inlineErrors: newInlineErrors,
-        // @ts-expect-error
         setInlineErrors,
         triggerErrors: true
       });
@@ -1078,7 +1062,7 @@ function Form({
             formattedFields,
             updateFieldValues,
             step: activeStep,
-            // @ts-expect-error
+            // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
             integrationData: integrations[actionConfig.integrationKey],
             targetElement:
               actionConfig.targetElementFn &&
@@ -1086,7 +1070,7 @@ function Form({
           };
 
           if (
-            // @ts-expect-error
+            // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
             integrations[actionConfig.integrationKey] &&
             (!actionConfig.isMatch ||
               (actionConfig.isMatch && actionConfig.isMatch(actionData)))
@@ -1112,30 +1096,28 @@ function Form({
     let redirectKey = '';
     if (loggedIn && firstLoggedOut && firstStep !== activeStep.key) {
       setFirstLoggedOut(false);
-      // @ts-expect-error
+      // @ts-expect-error TS(2322): Type 'boolean' is not assignable to type 'string'.
       redirectKey = firstStep;
     }
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
-      // @ts-expect-error
-      let newVal = val.value;
+      let newVal = (val as any).value;
       newVal = Array.isArray(newVal)
         ? newVal.filter((v) => v || v === 0)
         : newVal;
       return {
         key,
-        // @ts-expect-error
-        [val.type]: newVal
+        [(val as any).type]: newVal
       };
     });
     let submitPromise = null;
     if (featheryFields.length > 0)
-      // @ts-expect-error
+      // @ts-expect-error TS(2531): Object is possibly 'null'.
       submitPromise = client.submitStep(featheryFields);
 
     trackEvent('FeatheryStepSubmit', {
       stepId: activeStep.key,
-      // @ts-expect-error
+      // @ts-expect-error TS(2531): Object is possibly 'null'.
       formId: client.formKey
     });
 
@@ -1167,9 +1149,8 @@ function Form({
     await callbackRef.current.all();
     if (!redirectKey) {
       if (submitData || ['button', 'text'].includes(metadata.elementType)) {
-        // @ts-expect-error
-        eventData.completed = true;
-        // @ts-expect-error
+        (eventData as any).completed = true;
+        // @ts-expect-error TS(2531): Object is possibly 'null'.
         client.registerEvent(eventData, submitPromise).then(() => {
           setFinished(true);
         });
@@ -1177,11 +1158,10 @@ function Form({
       }
     } else {
       setFirst(false);
-      // @ts-expect-error
+      // @ts-expect-error TS(2531): Object is possibly 'null'.
       if (steps[redirectKey].next_conditions.length === 0)
-        // @ts-expect-error
-        eventData.completed = true;
-      // @ts-expect-error
+        (eventData as any).completed = true;
+      // @ts-expect-error TS(2531): Object is possibly 'null'.
       client.registerEvent(eventData, submitPromise);
       const newURL = getNewStepUrl(redirectKey);
       setShouldScrollToTop(submitData || metadata.elementType === 'text');
@@ -1194,8 +1174,7 @@ function Form({
 
   const setButtonLoader = async (button: any) => {
     const bp = button.properties;
-    // @ts-expect-error
-    let loader = null;
+    let loader: any = null;
     if (!bp.loading_icon) loader = <Spinner />;
     else if (bp.loading_icon_type === 'image/*') {
       loader = <img src={bp.loading_icon} alt='Button Loader' />;
@@ -1209,7 +1188,6 @@ function Form({
       ...loaders,
       [button.id]: {
         showOn: bp.show_loading_icon,
-        // @ts-expect-error
         loader,
         type: bp.loading_icon ? bp.loading_file_type : 'default'
       }
@@ -1306,7 +1284,6 @@ function Form({
           sendLoginCode({
             fieldVal: fieldValues[button.properties.auth_target_field_key],
             servar: null,
-            // @ts-expect-error
             methods: ['phone']
           })
         )
@@ -1324,7 +1301,6 @@ function Form({
           fieldKey: button.id,
           message: 'An email is needed to send your magic link.',
           errorType: formSettings.errorType,
-          // @ts-expect-error
           setInlineErrors: setInlineErrors,
           triggerErrors: true
         });
@@ -1355,7 +1331,6 @@ function Form({
             fieldKey,
             message: '',
             errorType: formSettings.errorType,
-            // @ts-expect-error
             setInlineErrors: setInlineErrors,
             triggerErrors: true
           });

@@ -32,9 +32,9 @@ function legacyAlignment(alignment: any) {
 }
 
 Object.entries(Elements).map(([key, Element]) => {
-  // @ts-expect-error need to type arrow fn params
+  // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
   Elements[key] = memo(
-    // @ts-expect-error need to type arrow fn params
+    // @ts-expect-error TS(2339): Property 'element' does not exist on type '{ child... Remove this comment to see the full error message
     ({ element, componentOnly = true, inlineError = '', onView, ...props }) => {
       const applyStyles = useMemo(() => {
         const as = new ApplyStyles(
@@ -53,7 +53,6 @@ Object.entries(Elements).map(([key, Element]) => {
         return as;
       }, [element, componentOnly]);
       const featheryElement = (
-        // @ts-expect-error I think we need to mark children as an option param for Element
         <Element element={element} applyStyles={applyStyles} {...props} />
       );
       const e = onView ? (
