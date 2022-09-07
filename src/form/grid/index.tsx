@@ -74,7 +74,6 @@ const Subgrid = ({
 };
 
 const getCellStyle = (cell: any) => {
-  // @ts-expect-error TS(2554): Expected 3 arguments, but got 2.
   const applyStyles = new ApplyStyles(cell, ['cell']);
   applyStyles.applyBorders('cell');
   applyStyles.applyCorners('cell');
@@ -85,7 +84,7 @@ const getCellStyle = (cell: any) => {
   return applyStyles.getTarget('cell');
 };
 
-const getCellContainerStyle = (axis: any, layout: any) => {
+const getCellContainerStyle = (axis: string, layout: string) => {
   const dimension = axis === 'column' ? 'width' : 'height';
 
   const common = {
@@ -100,8 +99,8 @@ const getCellContainerStyle = (axis: any, layout: any) => {
     case 'fit':
       return {
         ...common,
-        [dimension]: 'fit-content',
-        [minDimension]: 0
+        [minDimension]: 0,
+        [dimension]: 'fit-content'
       };
     case 'fill':
       return {
@@ -151,7 +150,7 @@ const GridContainer = ({ children, node: { axis } }: any) => {
   );
 };
 
-const formatStep = (step: any, viewport: any) => {
+const formatStep = (step: any, viewport: string) => {
   step = convertStepToViewport(step, viewport);
 
   const map = buildGridMap(step);

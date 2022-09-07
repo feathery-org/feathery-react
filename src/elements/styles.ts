@@ -11,23 +11,26 @@ export const mobileBreakpointKey = `@media (max-width: ${mobileBreakpointValue}p
  */
 class ApplyStyles {
   element: any;
-  handleMobile: any;
+  handleMobile: boolean;
   mobileStyles: any;
   mobileTargets: any;
   styles: any;
   targets: any;
-  constructor(element: any, targets: any, handleMobile: any) {
+
+  constructor(element: any, targets: string[], handleMobile = true) {
     this.element = element;
     this.styles = element.styles;
-    this.targets = objectFromEntries(targets.map((t: any) => [t, {}]));
+    this.targets = objectFromEntries(targets.map((t: string) => [t, {}]));
     this.handleMobile = handleMobile;
     if (handleMobile) {
       this.mobileStyles = element.mobile_styles;
-      this.mobileTargets = objectFromEntries(targets.map((t: any) => [t, {}]));
+      this.mobileTargets = objectFromEntries(
+        targets.map((t: string) => [t, {}])
+      );
     }
   }
 
-  addTargets(...targets: any[]) {
+  addTargets(...targets: string[]) {
     targets.forEach((target) => {
       this.targets[target] = {};
       if (this.handleMobile) this.mobileTargets[target] = {};
@@ -35,7 +38,7 @@ class ApplyStyles {
   }
 
   // Return CSS for a particular target HTML element
-  getTarget(targetId: any, desktopOnly = false) {
+  getTarget(targetId: string, desktopOnly = false) {
     const target = { ...this.targets[targetId] };
     if (!desktopOnly && this.handleMobile) {
       target[mobileBreakpointKey] = this.mobileTargets[targetId];
@@ -43,7 +46,7 @@ class ApplyStyles {
     return target;
   }
 
-  getTargets(...targets: any[]) {
+  getTargets(...targets: string[]) {
     let targetStyles = {};
     targets.forEach((targetId) => {
       if (!targetId) return;
@@ -59,13 +62,13 @@ class ApplyStyles {
     return targetStyles;
   }
 
-  setStyle(target: any, key: any, val: any) {
+  setStyle(target: string, key: string, val: any) {
     this.targets[target][key] = val;
   }
 
   // Translate a set of server-side properties into CSS for a particular
   // target
-  apply(target: any, properties: any, get: any) {
+  apply(target: string, properties: any, get: any) {
     if (!this.styles) return;
     // if not array, assume user passed in 1 element
     if (!Array.isArray(properties)) properties = [properties];
@@ -88,12 +91,12 @@ class ApplyStyles {
     }
   }
 
-  applyFlexAndTextAlignments(target: any, prefix = '') {
+  applyFlexAndTextAlignments(target: string, prefix = '') {
     this.applyFlexDirection(target, prefix);
     this.applyTextAlign(target, prefix);
   }
 
-  applyFlexDirection(target: any, prefix = '') {
+  applyFlexDirection(target: string, prefix = '') {
     this.apply(target, `${prefix}flex_direction`, (a: any) => ({
       flexDirection: a
     }));
@@ -103,7 +106,7 @@ class ApplyStyles {
   // direction, which specifies the icon position relative to the text, so that
   // text align behaves as expected when the flex direction is vertical (a
   // column)
-  applyTextAlign(target: any, prefix = '') {
+  applyTextAlign(target: string, prefix = '') {
     this.apply(target, `${prefix}text_align`, (a: any) => ({
       [isDirectionColumn(this.styles[`${prefix}flex_direction`])
         ? 'alignItems'
@@ -111,7 +114,7 @@ class ApplyStyles {
     }));
   }
 
-  applyBorders(target: any, prefix = '', important = true) {
+  applyBorders(target: string, prefix = '', important = true) {
     // If color isn't defined on one of the sides, that means there's no border
     if (!this.styles) return;
     if (!this.styles[`${prefix}border_top_color`]) return;
@@ -157,7 +160,7 @@ class ApplyStyles {
     );
   }
 
-  applySelectorStyles(target: any, prefix: any, important = false) {
+  applySelectorStyles(target: string, prefix: string, important = false) {
     this.applyBorders(target, prefix);
     if (this.styles[`${prefix}background_color`]) {
       this.applyColor(
@@ -172,7 +175,7 @@ class ApplyStyles {
     }
   }
 
-  applyPadding(target: any, prefix = '', margin = false) {
+  applyPadding(target: string, prefix = '', margin = false) {
     this.apply(
       target,
       [
@@ -188,7 +191,7 @@ class ApplyStyles {
     );
   }
 
-  applyMargin(target: any, prefix = '') {
+  applyMargin(target: string, prefix = '') {
     this.apply(
       target,
       [
@@ -204,7 +207,7 @@ class ApplyStyles {
     );
   }
 
-  applyCorners(target: any) {
+  applyCorners(target: string) {
     this.apply(
       target,
       [
@@ -220,7 +223,7 @@ class ApplyStyles {
     );
   }
 
-  applyBoxShadow(target: any) {
+  applyBoxShadow(target: string) {
     this.apply(
       target,
       [
@@ -236,7 +239,7 @@ class ApplyStyles {
     );
   }
 
-  applyHeight(target: any, prefix = '', force = false) {
+  applyHeight(target: string, prefix = '', force = false) {
     this.apply(
       target,
       [`${prefix}height`, `${prefix}height_unit`],
@@ -252,7 +255,7 @@ class ApplyStyles {
     );
   }
 
-  applyWidth(target: any, prefix = '', force = false) {
+  applyWidth(target: string, prefix = '', force = false) {
     this.apply(
       target,
       [`${prefix}width`, `${prefix}width_unit`],
@@ -268,13 +271,13 @@ class ApplyStyles {
     );
   }
 
-  applyVisibility(target: any) {
+  applyVisibility(target: string) {
     this.apply(target, 'visibility', (a: any) => ({
       visibility: a
     }));
   }
 
-  applyColor(target: any, jsonProp: any, cssProp: any, important = false) {
+  applyColor(target: string, jsonProp: any, cssProp: any, important = false) {
     this.apply(target, jsonProp, (color: any) => {
       color = `${color === 'transparent' ? color : `#${color}`}`;
       if (important) color = `${color} !important`;
@@ -282,7 +285,7 @@ class ApplyStyles {
     });
   }
 
-  applyFontStyles(target: any, placeholder = false) {
+  applyFontStyles(target: string, placeholder = false) {
     this.apply(target, 'font_weight', (a: any) => ({
       fontWeight: a
     }));
@@ -404,7 +407,7 @@ class ApplyStyles {
     }
   }
 
-  applyBackgroundImageStyles(target: any) {
+  applyBackgroundImageStyles(target: string) {
     const targetStyles = [
       'background_image_url',
       'background_image_display',
