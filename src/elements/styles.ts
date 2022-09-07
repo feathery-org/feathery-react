@@ -23,7 +23,7 @@ class ApplyStyles {
     this.targets = objectFromEntries(targets.map((t: string) => [t, {}]));
     this.handleMobile = handleMobile;
     if (handleMobile) {
-      this.mobileStyles = element.mobile_styles;
+      this.mobileStyles = element.mobile_styles ?? {};
       this.mobileTargets = objectFromEntries(
         targets.map((t: string) => [t, {}])
       );
