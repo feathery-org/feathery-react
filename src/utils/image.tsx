@@ -8,7 +8,6 @@ export const THUMBNAIL_TYPE = {
   UNKNOWN: 'unknown'
 };
 
-// eslint-disable-next-line no-useless-escape
 export const BASE64_REGEX =
   /(data:image\/(png|jpg|jpeg);base64,)([0-9a-zA-Z+/]{4})*(([0-9a-zA-Z+/]{2}==)|([0-9a-zA-Z+/]{3}=))?$/gm;
 
