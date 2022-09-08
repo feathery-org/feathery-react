@@ -11,13 +11,13 @@ export const mobileBreakpointKey = `@media (max-width: ${mobileBreakpointValue}p
  */
 class ApplyStyles {
   element: any;
-  handleMobile: boolean;
+  handleMobile?: boolean;
   mobileStyles: any;
   mobileTargets: any;
   styles: any;
   targets: any;
 
-  constructor(element: any, targets: string[], handleMobile: boolean) {
+  constructor(element: any, targets: string[], handleMobile?: boolean) {
     this.element = element;
     this.styles = element.styles;
     this.targets = objectFromEntries(targets.map((t: string) => [t, {}]));
