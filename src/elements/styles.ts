@@ -17,7 +17,7 @@ class ApplyStyles {
   styles: any;
   targets: any;
 
-  constructor(element: any, targets: string[], handleMobile = true) {
+  constructor(element: any, targets: string[], handleMobile = false) {
     this.element = element;
     this.styles = element.styles;
     this.targets = objectFromEntries(targets.map((t: string) => [t, {}]));
