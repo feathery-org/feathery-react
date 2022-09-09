@@ -35,9 +35,16 @@ const environment = 'production';
 export const API_URL = API_URL_OPTIONS[environment];
 export const CDN_URL = CDN_URL_OPTIONS[environment];
 
+const TYPE_MESSAGES_TO_IGNORE = [
+  // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
+  'Failed to fetch',
+  // e.g. https://sentry.io/organizations/feathery-forms/issues/3529742129/
+  'Load failed'
+];
+
 export default class Client {
   formKey: any;
-  ignoreNetworkErrors: any;
+  ignoreNetworkErrors: any; // this should be a ref
   constructor(formKey: any, ignoreNetworkErrors: any) {
     this.formKey = formKey;
     this.ignoreNetworkErrors = ignoreNetworkErrors;
@@ -82,7 +89,12 @@ export default class Client {
       .catch((e) => {
         // Ignore TypeErrors if form has redirected because `fetch` in
         // Safari will error after redirect
-        if (this.ignoreNetworkErrors && e instanceof TypeError) return;
+        if (
+          (this.ignoreNetworkErrors.current ||
+            TYPE_MESSAGES_TO_IGNORE.includes(e.message)) &&
+          e instanceof TypeError
+        )
+          return;
         throw e;
       });
   }
