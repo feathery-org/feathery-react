@@ -1,5 +1,6 @@
 import { getAuthClient, setAuthClient } from '../utils/init';
 import { dynamicImport } from './utils';
+import { featheryDoc } from '../utils/browser';
 
 const STYTCH_JS_URL = 'https://js.stytch.com/stytch.js';
 
@@ -23,7 +24,7 @@ export function installStytch(stytchConfig: any) {
         // check internally. If that loads first and then we do a dynamic import
         // it causes an error, so don't dynamic import if the script is already
         // set
-        const isStytchImported = document.querySelectorAll(
+        const isStytchImported = featheryDoc().querySelectorAll(
           `script[src="${STYTCH_JS_URL}"]`
         )[0];
         // @ts-expect-error TS(2794): Expected 1 arguments, but got 0. Did you forget to... Remove this comment to see the full error message

@@ -1,10 +1,10 @@
 import { loadStripe } from '@stripe/stripe-js';
 import { useState } from 'react';
-import { runningInClient } from '../utils/browser';
+import { runningInClient, featheryDoc } from '../utils/browser';
 
 const stripePromise = new Promise((resolve) => {
   if (runningInClient())
-    document.addEventListener('stripe_key_loaded', (e) => {
+    featheryDoc().addEventListener('stripe_key_loaded', (e: any) => {
       const promise = loadStripe((e as any).detail.key);
       promise.then((stripe) => {
         resolve(stripe);
@@ -17,7 +17,7 @@ export const getStripe = () => stripePromise;
 export function installStripe(stripeConfig: any) {
   // eslint-disable-next-line camelcase
   if (stripeConfig?.metadata?.client_key) {
-    document.dispatchEvent(
+    featheryDoc().dispatchEvent(
       new CustomEvent('stripe_key_loaded', {
         detail: { key: stripeConfig.metadata.client_key }
       })

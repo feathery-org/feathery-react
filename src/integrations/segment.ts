@@ -1,3 +1,5 @@
+import { featheryDoc } from '../utils/browser';
+
 export function installSegment(segmentConfig: any) {
   if (segmentConfig) {
     // Script from https://segment.com/docs/connections/sources/catalog/libraries/website/javascript/quickstart/#step-2-add-the-segment-snippet
@@ -56,14 +58,13 @@ export function installSegment(segmentConfig: any) {
     // and that will be sure to only ever load it once.
     analytics.load = function (key: any, options: any) {
       // Create an async script element based on your key.
-      const script = document.createElement('script');
+      const script = featheryDoc().createElement('script');
       script.type = 'text/javascript';
       script.async = true;
       script.src =
         'https://cdn.segment.com/analytics.js/v1/' + key + '/analytics.min.js';
       // Insert our script next to the first script element.
-      const first = document.getElementsByTagName('script')[0];
-      // @ts-expect-error TS(2531): Object is possibly 'null'.
+      const first = featheryDoc().getElementsByTagName('script')[0];
       first.parentNode.insertBefore(script, first);
       analytics._loadOptions = options;
     };

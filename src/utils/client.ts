@@ -16,6 +16,7 @@ import {
 } from './formHelperFunctions';
 import { initializeIntegrations } from '../integrations/utils';
 import { loadLottieLight } from '../elements/components/Lottie';
+import { featheryDoc } from './browser';
 
 // Convenience boolean for urls - manually change for testing
 const API_URL_OPTIONS = {
@@ -230,7 +231,7 @@ export default class Client {
       (fontStyles as any).forEach(({ source, style, weight }: any) =>
         new FontFace(family, `url(${source})`, { style, weight })
           .load()
-          .then((font) => document.fonts.add(font))
+          .then((font) => featheryDoc().fonts.add(font))
       );
     });
     // Load Lottie if form needs animations
