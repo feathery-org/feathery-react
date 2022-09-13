@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Client from './client';
 import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
-import { runningInClient } from './browser';
+import { runningInClient, featheryDoc } from './browser';
 import { inferEmailLoginFromURL } from '../integrations/utils';
 
 export type FeatheryFieldTypes =
@@ -122,12 +122,14 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
         .then((fp: any) => fp.get())
         .then((result: any) => (initState.userKey = result.visitorId));
     } else if (options.tracking === 'cookie') {
-      document.cookie.split(/; */).map((c) => {
-        const [key, v] = c.split('=', 2);
-        if (key === `feathery-user-id-${sdkKey}`) initState.userKey = v;
-      });
+      featheryDoc()
+        .cookie.split(/; */)
+        .map((c: any) => {
+          const [key, v] = c.split('=', 2);
+          if (key === `feathery-user-id-${sdkKey}`) initState.userKey = v;
+        });
       if (!initState.userKey) initState.userKey = uuidv4();
-      document.cookie = `feathery-user-id-${sdkKey}=${initState.userKey}; max-age=31536000; SameSite=strict`;
+      featheryDoc().cookie = `feathery-user-id-${sdkKey}=${initState.userKey}; max-age=31536000; SameSite=strict`;
     }
   }
   if (initState.authId) {
@@ -169,7 +171,7 @@ function updateUserKey(newUserKey: string, merge = false): void {
   defaultClient.updateUserKey(newUserKey, merge).then(() => {
     initState.userKey = newUserKey;
     if (initState.tracking === 'cookie') {
-      document.cookie = `feathery-user-id=${newUserKey}; max-age=31536000; SameSite=strict`;
+      featheryDoc().cookie = `feathery-user-id=${newUserKey}; max-age=31536000; SameSite=strict`;
     }
   });
 }

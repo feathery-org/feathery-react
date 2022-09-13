@@ -11,6 +11,7 @@ import {
   setAuthClient,
   getAuthClient
 } from './utils/init';
+import { featheryDoc } from './utils/browser';
 
 function getAllValues() {
   // Make a copy so users can't set fieldValues directly
@@ -23,7 +24,7 @@ function getAllValues() {
  * @param {Object} props The props defined on the *Form* component
  */
 function renderAt(elementId: any, props: FormProps) {
-  const container = document.getElementById(elementId);
+  const container = featheryDoc().getElementById(elementId);
 
   ReactDOM.render(<Form {...props} />, container);
 }
