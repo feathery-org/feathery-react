@@ -154,7 +154,7 @@ const getCellContainerStyle = (axis: string, layout: string) => {
 
 const CellContainer = ({
   children,
-  node: { key, isElement, parent, cellData, properties = {} },
+  node: { key, isElement, parent, cellData, properties = null },
   axis,
   layout,
   selected,
@@ -164,6 +164,7 @@ const CellContainer = ({
 
   const cellContainerStyle = getCellContainerStyle(axis, layout);
 
+  if (!properties) properties = {};
   const onClick = (e: React.MouseEvent) => {
     if (properties.link && properties.link !== LINK_NONE) {
       e.stopPropagation();
