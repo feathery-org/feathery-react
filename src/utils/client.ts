@@ -470,8 +470,7 @@ export default class Client {
     const data = {
       form_key: this.formKey,
       ...(userKey ? { user_id: userKey } : {}),
-      field_id: paymentMethodFieldId,
-      customer_info: { name: 'Test Customer' } // TODO: Remove when BE changed to no longer require this.
+      field_id: paymentMethodFieldId
     };
     const options = {
       headers: { 'Content-Type': 'application/json' },
@@ -501,5 +500,59 @@ export default class Client {
     return this._fetch(url, options).then((response) =>
       (response as any).json()
     );
+  }
+
+  // Stripe
+  async updateProductSelection(
+    productId: string,
+    quantity: number,
+    fieldKey: string
+  ) {
+    await initFormsPromise;
+    const { userKey } = initInfo();
+    const url = `${API_URL}stripe/product/`;
+    const data = {
+      form_key: this.formKey,
+      ...(userKey ? { user_id: userKey } : {}),
+      stripe_product_id: productId,
+      quantity,
+      field_id:
+        fieldKey /* Hidden field containing the selected product id & quantity */
+    };
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'PUT',
+      body: JSON.stringify(data)
+    };
+    return this._fetch(url, options).then((response) =>
+      (response as any).json()
+    );
+  }
+
+  // Stripe
+  async payment(method: 'POST' | 'PUT', extraBodyParams = {}) {
+    await initFormsPromise;
+    const { userKey } = initInfo();
+    const url = `${API_URL}stripe/payment/`;
+    const data = {
+      form_key: this.formKey,
+      ...(userKey ? { user_id: userKey } : {})
+    };
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: method,
+      body: JSON.stringify(Object.assign(data, extraBodyParams))
+    };
+    return this._fetch(url, options).then((response) =>
+      (response as any).json()
+    );
+  }
+
+  createPayment(paymentMethodFieldKey: string) {
+    return this.payment('POST', { field_id: paymentMethodFieldKey });
+  }
+
+  paymentComplete() {
+    return this.payment('PUT');
   }
 }

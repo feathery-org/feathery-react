@@ -196,29 +196,32 @@ describe('client', () => {
     });
   });
 
-  describe('setupPaymentIntent', () => {
-    it('sets up a payment intent and returns the intent secret', async () => {
+  describe('stripe', () => {
+    initInfo.mockReturnValue({
+      sdkKey: 'sdkKey',
+      userKey: 'userKey',
+      sessions: {},
+      forms: {}
+    });
+    const formKey = 'formKey';
+    const userKey = 'userKey';
+    const client = new Client(formKey);
+    const mockFetch = (response) => {
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 200,
+        json: jest.fn().mockResolvedValue(response)
+      });
+    };
+    it('setupPaymentIntent sets up a payment intent and returns the intent secret', async () => {
       // Arrange
-      const formKey = 'formKey';
-      const client = new Client(formKey);
       const paymentMethodFieldId = 'payment_method_field_id';
       const body = {
         form_key: formKey,
-        user_id: 'userKey',
-        field_id: paymentMethodFieldId,
-        customer_info: { name: 'Test Customer' } // TODO: Remove when BE changed to no longer require this.
+        user_id: userKey,
+        field_id: paymentMethodFieldId
       };
-      initInfo.mockReturnValue({
-        sdkKey: 'sdkKey',
-        userKey: 'userKey',
-        sessions: {},
-        forms: {}
-      });
       const intentSecret = 'intent_secret';
-      global.fetch = jest.fn().mockResolvedValue({
-        status: 200,
-        json: jest.fn().mockResolvedValue(intentSecret)
-      });
+      mockFetch(intentSecret);
 
       // Act
       const response = await client.setupPaymentIntent(paymentMethodFieldId);
@@ -238,20 +241,8 @@ describe('client', () => {
       );
       expect(response).toEqual(intentSecret);
     });
-  });
-
-  describe('retrievePaymentMethodData', () => {
-    it('retrieves the payment method  info', async () => {
+    it('retrievePaymentMethodData retrieves the payment method  info', async () => {
       // Arrange
-      const formKey = 'formKey';
-      const userKey = 'userKey';
-      const client = new Client(formKey);
-      initInfo.mockReturnValue({
-        sdkKey: 'sdkKey',
-        userKey: userKey,
-        sessions: {},
-        forms: {}
-      });
       const stripePaymentMethodId = 'stripe_payment_method_id';
       const paymentMethodFieldId = 'payment_method_field_id';
       const paymentMethodData = {
@@ -266,10 +257,7 @@ describe('client', () => {
         stripe_customer_id: 'stripe_customer_id',
         stripe_payment_method_id: stripePaymentMethodId
       };
-      global.fetch = jest.fn().mockResolvedValue({
-        status: 200,
-        json: jest.fn().mockResolvedValue(paymentMethodData)
-      });
+      mockFetch(paymentMethodData);
 
       // Act
       const result = await client.retrievePaymentMethodData(
@@ -289,6 +277,90 @@ describe('client', () => {
         }
       );
       expect(result).toEqual(paymentMethodData);
+    });
+    it('updateProductSelection properly calls the end point', async () => {
+      // Arrange
+      const stripeProductId = 'id';
+      const quantity = 1;
+      const fieldKey = 'some key';
+      const body = {
+        form_key: formKey,
+        user_id: userKey,
+        stripe_product_id: stripeProductId,
+        quantity,
+        field_id: fieldKey
+      };
+      const expResponse = 'some response';
+      mockFetch(expResponse);
+
+      // Act
+      const response = await client.updateProductSelection(
+        stripeProductId,
+        quantity,
+        fieldKey
+      );
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/product/`, {
+        body: JSON.stringify(body),
+        cache: 'no-store',
+        headers: {
+          Authorization: 'Token sdkKey',
+          'Content-Type': 'application/json'
+        },
+        method: 'PUT'
+      });
+      expect(response).toEqual(expResponse);
+    });
+    it('createPayment properly calls the end point', async () => {
+      const paymentMethodFieldKey = 'payment-method-field-servar-key';
+      // Arrange
+      const body = {
+        form_key: formKey,
+        user_id: userKey,
+        field_id: paymentMethodFieldKey
+      };
+      const intentSecret = 'intent_secret';
+      mockFetch(intentSecret);
+
+      // Act
+      const response = await client.createPayment(paymentMethodFieldKey);
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/payment/`, {
+        body: JSON.stringify(body),
+        cache: 'no-store',
+        headers: {
+          Authorization: 'Token sdkKey',
+          'Content-Type': 'application/json'
+        },
+        method: 'POST'
+      });
+      expect(response).toEqual(intentSecret);
+    });
+    it('paymentComplete properly calls the end point', async () => {
+      // Arrange
+      const body = {
+        form_key: formKey,
+        user_id: userKey
+      };
+      const intentSecret = 'intent_secret';
+      mockFetch(intentSecret);
+
+      // Act
+      const response = await client.paymentComplete();
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/payment/`, {
+        body: JSON.stringify(body),
+        cache: 'no-store',
+        headers: {
+          Authorization: 'Token sdkKey',
+          'Content-Type': 'application/json'
+        },
+        method: 'PUT'
+      });
+      expect(response).toEqual(intentSecret);
     });
   });
 });

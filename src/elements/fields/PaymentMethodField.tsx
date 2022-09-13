@@ -1,4 +1,4 @@
-import React, { memo, useEffect } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import {
   CardElement,
   Elements,
@@ -51,6 +51,7 @@ const CardField = ({
 }: any) => {
   const stripe = useStripe();
   const elements = useElements();
+  const [lastError, setLastError] = useState('');
 
   useEffect(() => {
     if (!stripe || !elements) {
@@ -98,8 +99,13 @@ const CardField = ({
   };
   const handleCardChange = (event: any) => {
     // Listen for changes in the CardElement
-    // and display any errors as the customer types their card details
-    setFieldError(event.error?.message ?? '');
+    // and display any errors as the customer types their card details.
+    // Only set the field error if there is a change (Stripe card element is a bit chatty)
+    const error = event.error?.message ?? '';
+    if (lastError !== error) {
+      setLastError(error);
+      setFieldError(error);
+    }
     // also set the field data with complete=true so we know
     // when a card number has been entered and is complete
     onChange(

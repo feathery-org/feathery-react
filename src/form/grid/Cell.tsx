@@ -34,6 +34,7 @@ const Cell = ({ node: el, form }: any) => {
     handleRedirect,
     activeStep,
     loaders,
+    getButtonSelectionState,
     buttonOnClick,
     fieldOnChange,
     inlineErrors,
@@ -123,6 +124,7 @@ const Cell = ({ node: el, form }: any) => {
     return (
       <Elements.ButtonElement
         values={fieldValues}
+        active={getButtonSelectionState(el)}
         loader={
           loaders[el.id]?.showOn === 'on_button' && loaders[el.id]?.loader
         }

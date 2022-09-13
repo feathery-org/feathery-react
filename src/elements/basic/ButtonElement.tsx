@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import ReactButton from 'react-bootstrap/Button';
 import TextNodes from '../components/TextNodes';
 import { imgMaxSizeStyles, ERROR_COLOR } from '../styles';
+import { adjustColor } from '../../utils/styles';
 
 const LINK_CUSTOM = 'custom';
 const LINK_NONE = 'none';
@@ -15,20 +16,7 @@ const LINK_SEND_SMS = 'send_sms_code';
 const LINK_SEND_MAGIC_LINK = 'send_magic_link';
 const LINK_TRIGGER_PLAID = 'trigger_plaid';
 const LINK_GOOGLE_OAUTH = 'trigger_google_oauth';
-
-function adjustColor(color: any, amount: any) {
-  return (
-    '#' +
-    color
-      .replace(/^#/, '')
-      .replace(/../g, (color: any) =>
-        (
-          '0' +
-          Math.min(255, Math.max(0, parseInt(color, 16) + amount)).toString(16)
-        ).substr(-2)
-      )
-  );
-}
+const LINK_STRIPE = 'select_payment_product';
 
 function applyButtonStyles(element: any, applyStyles: any) {
   applyStyles.addTargets(
@@ -82,9 +70,13 @@ function applyButtonStyles(element: any, applyStyles: any) {
   }
   applyStyles.applyBorders('buttonActive', 'selected_');
   if (element.styles.selected_background_color) {
-    applyStyles.apply('buttonHover', 'selected_background_color', (a: any) => ({
-      backgroundColor: `#${a} !important`
-    }));
+    applyStyles.apply(
+      'buttonActive',
+      'selected_background_color',
+      (a: string) => ({
+        backgroundColor: `#${a} !important`
+      })
+    );
   }
   applyStyles.apply('buttonDisabled', 'background_color', (a: any) => {
     const color = `${adjustColor(a, 45)} !important`;
@@ -112,6 +104,7 @@ function ButtonElement({
   editable = false,
   focused = false,
   disabled = false,
+  active = false,
   textCallbacks = {},
   handleRedirect = () => {},
   onClick = () => {},
@@ -128,6 +121,7 @@ function ButtonElement({
     <ReactButton
       id={element.id}
       key={element.id}
+      active={active}
       style={{
         display: 'flex',
         cursor:
@@ -146,6 +140,10 @@ function ButtonElement({
           cursor: 'default !important',
           ...styles.getTarget('buttonDisabled')
         },
+        /* Needed to style active class here to get active prop to work */
+        '&.active': editable
+          ? styles.getTarget('button')
+          : styles.getTarget('buttonActive'),
         '&:active:not(:disabled):not(.disabled)': editable
           ? styles.getTarget('button')
           : styles.getTarget('buttonActive'),
@@ -191,7 +189,6 @@ function ButtonElement({
 
 export default ButtonElement;
 export {
-  adjustColor,
   LINK_CUSTOM,
   LINK_NONE,
   LINK_SKIP,
@@ -202,5 +199,6 @@ export {
   LINK_SEND_SMS,
   LINK_SEND_MAGIC_LINK,
   LINK_TRIGGER_PLAID,
-  LINK_GOOGLE_OAUTH
+  LINK_GOOGLE_OAUTH,
+  LINK_STRIPE
 };

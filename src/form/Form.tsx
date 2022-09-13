@@ -35,7 +35,11 @@ import Client from '../utils/client';
 import { sendLoginCode } from '../integrations/firebase';
 import { googleOauthRedirect, sendMagicLink } from '../integrations/stytch';
 import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
-import { usePayments } from '../integrations/stripe';
+import {
+  usePayments,
+  toggleProductSelection,
+  isProductSelected
+} from '../integrations/stripe';
 import {
   getIntegrationActionConfiguration,
   ActionData,
@@ -51,7 +55,8 @@ import {
   LINK_SKIP,
   LINK_SUBMIT,
   LINK_TRIGGER_PLAID,
-  LINK_URL
+  LINK_URL,
+  LINK_STRIPE
 } from '../elements/basic/ButtonElement';
 import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
@@ -1231,7 +1236,24 @@ function Form({
     }
   };
 
-  const buttonOnClick = async (button: any) => {
+  interface ClickActionElement {
+    id: string;
+    properties: { [key: string]: any };
+    repeat?: any;
+  }
+  const getButtonSelectionState = (button: ClickActionElement) => {
+    const link = button.properties?.link;
+    if (link === LINK_STRIPE) {
+      return isProductSelected({
+        productId: button.properties.product_id,
+        selectedProductIdField: button.properties.selected_product_id_field_key,
+        fieldValues
+      });
+    }
+    return false;
+  };
+
+  const buttonOnClick = async (button: ClickActionElement) => {
     // Prevent same button from being clicked multiple times while still running
     if (buttonClicks[button.id]) return;
     buttonClicks[button.id] = true;
@@ -1309,7 +1331,19 @@ function Form({
       googleOauthRedirect();
     } else if ([LINK_SUBMIT, LINK_SKIP].includes(link)) {
       clickPromise = buttonOnSubmit(button, link === LINK_SUBMIT);
+    } else if (link === LINK_STRIPE) {
+      await toggleProductSelection({
+        productId: button.properties.product_id,
+        selectedProductIdFieldId: button.properties.selected_product_id_field,
+        selectedProductIdFieldKey:
+          button.properties.selected_product_id_field_key,
+        fieldValues,
+        updateFieldValues,
+        client,
+        integrations
+      });
     }
+
     await clickPromise;
     buttonClicks[button.id] = false;
   };
@@ -1394,6 +1428,7 @@ function Form({
     handleRedirect,
     activeStep,
     loaders,
+    getButtonSelectionState,
     buttonOnClick,
     fieldOnChange,
     inlineErrors,

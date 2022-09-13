@@ -3,7 +3,8 @@ import Cell from './Cell';
 import ApplyStyles from '../../elements/styles';
 import { getDefaultFieldValue } from '../../utils/formHelperFunctions';
 import { TEXT_VARIABLE_PATTERN } from '../../utils/hydration';
-
+import { adjustColor } from '../../utils/styles';
+import { LINK_NONE, LINK_STRIPE } from '../../elements/basic/ButtonElement';
 const Grid = ({ step, form, values, viewport }: any) => {
   const formattedStep = formatStep(JSON.parse(JSON.stringify(step)), viewport);
 
@@ -37,6 +38,7 @@ const Subgrid = ({
   values,
   viewport = 'desktop'
 }: any) => {
+  const { buttonOnClick, getButtonSelectionState } = form;
   if (node.isElement || node.isEmpty) {
     return (
       <CellContainer
@@ -50,7 +52,16 @@ const Subgrid = ({
     );
   } else {
     return (
-      <CellContainer node={node} axis={axis} layout={layout}>
+      <CellContainer
+        node={node}
+        axis={axis}
+        layout={layout}
+        selected={getButtonSelectionState({
+          id: node.key,
+          properties: node.properties
+        })}
+        buttonOnClick={buttonOnClick}
+      >
         <GridContainer node={node}>
           {node.children.map((child: any, i: any) => {
             layout = node.layout[i];
@@ -74,14 +85,37 @@ const Subgrid = ({
 };
 
 const getCellStyle = (cell: any) => {
-  const applyStyles = new ApplyStyles(cell, ['cell']);
+  const applyStyles = new ApplyStyles(cell, [
+    'cell',
+    'cellHover',
+    'cellActive'
+  ]);
   applyStyles.applyBorders('cell');
   applyStyles.applyCorners('cell');
   applyStyles.applyBackgroundImageStyles('cell');
   applyStyles.apply('cell', 'background_color', (c: any) => ({
     backgroundColor: `#${c}`
   }));
-  return applyStyles.getTarget('cell');
+  applyStyles.apply('cellHover', 'background_color', (a: any) => {
+    const color = `${adjustColor(a || 'ffffffff', -20)}!important`;
+    return {
+      backgroundColor: color,
+      borderColor: color
+    };
+  });
+  applyStyles.apply('cellActive', 'background_color', (a: any) => {
+    const color = `${adjustColor(a || 'ffffffff', -45)}`;
+    return {
+      backgroundColor: color,
+      borderColor: color
+    };
+  });
+
+  return [
+    applyStyles.getTarget('cell'),
+    applyStyles.getTarget('cellHover'),
+    applyStyles.getTarget('cellActive')
+  ];
 };
 
 const getCellContainerStyle = (axis: string, layout: string) => {
@@ -118,20 +152,61 @@ const getCellContainerStyle = (axis: string, layout: string) => {
   }
 };
 
-const CellContainer = ({ children, node, axis, layout }: any) => {
-  if (!node.parent) return children;
+const CellContainer = ({
+  children,
+  node: { key, isElement, parent, cellData, properties = {} },
+  axis,
+  layout,
+  selected,
+  buttonOnClick = () => {}
+}: any) => {
+  if (!parent) return children;
 
   const cellContainerStyle = getCellContainerStyle(axis, layout);
 
-  if (node.cellData) {
-    const cellStyle = getCellStyle(node.cellData);
+  const onClick = (e: React.MouseEvent) => {
+    if (properties.link && properties.link !== LINK_NONE) {
+      e.stopPropagation();
+      buttonOnClick({ id: key, properties });
+    }
+  };
+
+  if (cellData) {
+    const [cellStyle, cellHoverStyle, cellActiveStyle] = getCellStyle(cellData);
+    const {
+      link = LINK_NONE,
+      product_id: productId,
+      selected_product_id_field: selectedProductIdField
+    } = properties;
+
+    const hasSubGridLink = link && ![LINK_NONE, LINK_STRIPE].includes(link);
+    const hasSubGridStripeLink =
+      link === LINK_STRIPE && productId && selectedProductIdField;
+    const subgridIsSelectable =
+      !isElement && (hasSubGridLink || hasSubGridStripeLink);
 
     return (
-      <div style={{ ...cellContainerStyle, ...cellStyle }}>{children}</div>
+      <div
+        style={{
+          ...cellContainerStyle,
+          ...cellStyle,
+          ...(selected ? cellActiveStyle : {})
+        }}
+        css={{
+          '&:hover': subgridIsSelectable ? cellHoverStyle : {}
+        }}
+        onClick={onClick}
+      >
+        {children}
+      </div>
     );
   }
 
-  return <div style={cellContainerStyle}>{children}</div>;
+  return (
+    <div style={cellContainerStyle} onClick={onClick}>
+      {children}
+    </div>
+  );
 };
 const GridContainer = ({ children, node: { axis } }: any) => {
   return (
