@@ -94,7 +94,7 @@ const getCellStyle = (cell: any) => {
   applyStyles.applyCorners('cell');
   applyStyles.applyBackgroundImageStyles('cell');
   applyStyles.apply('cell', 'background_color', (c: any) => ({
-    backgroundColor: `#${c}`
+    backgroundColor: c ? `#${c}` : null
   }));
   applyStyles.apply('cellHover', 'background_color', (a: any) => {
     const color = `${adjustColor(a || 'ffffffff', -20)}!important`;
