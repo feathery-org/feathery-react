@@ -335,6 +335,7 @@ export default class Client {
       auth_id: authId,
       auth_phone: authPhone,
       auth_email: authEmail,
+      form_key: this.formKey,
       ...(userKey ? { fuser_key: userKey } : {})
     };
     const url = `${API_URL}panel/update_auth/`;
