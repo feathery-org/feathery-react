@@ -19,7 +19,6 @@ const Grid = ({ step, form, viewport }: any) => {
 
   if (Array.isArray(repeatPosition) && repeatPosition.length > 0) {
     const repeatNode =
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       formattedStep.map[getMapKey({ position: repeatPosition })];
     if (repeatNode) addRepeatedCells(repeatNode);
   }
@@ -37,45 +36,27 @@ const Grid = ({ step, form, viewport }: any) => {
 const Subgrid = ({
   tree: node,
   form,
-  layout = null,
   axis = null,
   viewport = 'desktop',
   flags
 }: any) => {
-  const { buttonOnClick, getButtonSelectionState } = form;
   if (node.isElement || node.isEmpty) {
     return (
-      <CellContainer
-        key={getMapKey(node)}
-        node={node}
-        axis={axis}
-        layout={layout}
-      >
+      <CellContainer key={getMapKey(node)} node={node} axis={axis}>
         {!node.isEmpty && <Cell form={form} node={node} flags={flags} />}
       </CellContainer>
     );
   } else {
     return (
-      <CellContainer
-        node={node}
-        axis={axis}
-        layout={layout}
-        selected={getButtonSelectionState({
-          id: node.key,
-          properties: node.properties
-        })}
-        buttonOnClick={buttonOnClick}
-      >
+      <CellContainer node={node} axis={axis}>
         <GridContainer node={node}>
           {node.children.map((child: any, i: any) => {
-            layout = node.layout[i];
             axis = node.axis;
             return (
               <Subgrid
                 key={getMapKey(child) + ':' + i}
                 tree={child}
                 axis={axis}
-                layout={layout}
                 form={form}
                 viewport={viewport}
                 flags={flags}
@@ -156,17 +137,10 @@ const getCellContainerStyle = (axis: string, layout: string) => {
   }
 };
 
-const CellContainer = ({
-  children,
-  node: { key, isElement, parent, cellData, properties = null },
-  axis,
-  layout,
-  selected,
-  buttonOnClick = () => {}
-}: any) => {
-  if (!parent) return children;
+const CellContainer = ({ children, node, axis }: any) => {
+  if (!node.parent) return children;
 
-  const cellContainerStyle = getCellContainerStyle(axis, layout);
+  const cellContainerStyle = getCellContainerStyle(axis, node.grid_size);
 
   if (!properties) properties = {};
   const onClick = (e: React.MouseEvent) => {
@@ -197,6 +171,9 @@ const CellContainer = ({
       ...(selected ? cellActiveStyle : {}),
       '&:hover': cellHoverStyle
     };
+
+  if (node.style) {
+    const cellStyle = getCellStyle({ styles: node.style });
 
     return (
       <div
@@ -239,6 +216,7 @@ const formatStep = (step: any, viewport: string) => {
   step = convertStepToViewport(step, viewport);
 
   const map = buildGridMap(step);
+
   const tree = buildGridTree(map, [], viewport);
 
   return { map, tree };
@@ -286,7 +264,7 @@ const convertStepToViewport = (step: any, viewport: any) => {
 
 const viewportProperties = {
   step: ['width', 'height', 'repeat_position'],
-  subgrids: ['layout', 'position', 'axis', 'styles'],
+  subgrids: ['position', 'axis', 'style', 'grid_size'],
   elements: ['position']
 };
 
@@ -304,7 +282,7 @@ const convertToViewport = (obj: any, viewport: any, props: any) => {
 };
 
 const buildGridMap = (step: any) => {
-  const map = {};
+  const map: any[string] = {};
   let rootSubgrid = {};
   const cells: any = [];
 
@@ -322,8 +300,16 @@ const buildGridMap = (step: any) => {
 
       return (rootSubgrid = obj);
     }
-    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-    map[getMapKey(obj)] = obj;
+
+    const previous = map[getMapKey(obj)];
+    const prevObj: any = {};
+    if (previous) {
+      prevObj.grid_size = previous.grid_size;
+      prevObj.style = previous.style;
+    }
+
+    map[getMapKey(obj)] = { ...obj, ...prevObj };
+
     if (type === 'subgrids') {
       if (Array.isArray(obj.styles)) {
         obj.styles.forEach((style: any) => {
@@ -343,12 +329,9 @@ const buildGridMap = (step: any) => {
     // @ts-expect-error TS(7006): Parameter 'cell' implicitly has an 'any' type.
     cells.forEach((cell) => {
       const key = getMapKey(cell);
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       if (!map[key]) {
-        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
         map[key] = { isEmpty: true, position: cell.position };
       }
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       map[key].cellData = cell;
     });
   }
@@ -366,7 +349,6 @@ const addRepeatedCells = (node: any) => {
   if (numberOfRepeats) {
     node.parent.children[index] = repeat({ ...node }, 0);
     for (let i = 0; i < numberOfRepeats; ++i) {
-      node.parent.layout.splice(index + i, 0, node.parent.layout[index]);
       const repeatIndex = i + 1;
       node.parent.children.splice(
         index + repeatIndex,
@@ -474,21 +456,22 @@ const repeatCount = (node: any) => {
   return Math.max(repeatCountByFields(node), repeatCountByTextVariables(node));
 };
 
-const buildGridTree = (gridMap: any, position = [], viewport: any) => {
+const buildGridTree = (gridMap: any, position: any[] = [], viewport: any) => {
   const node = gridMap[getMapKey({ position })];
   if (!node) return { isEmpty: true, position };
-  if (node.layout) {
-    if (position.length > 0) node.isSubgrid = true;
-    node.children = [];
-    node.layout.forEach((layout: any, i: any) => {
-      const nextPosition = [...position, i];
-      // @ts-expect-error TS(2345): Argument of type 'any[]' is not assignable to para... Remove this comment to see the full error message
-      const child = buildGridTree(gridMap, nextPosition, viewport);
-      child.parent = node;
-      node.children.push(child);
-    });
-  } else {
-    if (!node.isEmpty) node.isElement = true;
+
+  let i = 0;
+  let nextPos = [...position, i];
+  let hasNextChild = gridMap[getMapKey({ position: nextPos })];
+
+  while (hasNextChild) {
+    const actualChild = buildGridTree(gridMap, [...position, i], viewport);
+    actualChild.parent = node;
+    node.children.push(actualChild);
+
+    i = i + 1;
+    nextPos = [...position, i];
+    hasNextChild = gridMap[getMapKey({ position: nextPos })];
   }
   return node;
 };
