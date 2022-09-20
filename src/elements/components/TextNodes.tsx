@@ -47,7 +47,6 @@ function TextNodes({
     return (
       <span
         id={`span-${element.id}`}
-        // @ts-expect-error TS(2322): Type 'MutableRefObject<undefined>' is not assignab... Remove this comment to see the full error message
         ref={spanRef}
         {...editableProps}
         key={text}
@@ -56,30 +55,27 @@ function TextNodes({
           // @ts-expect-error TS(2322): Type 'string | object | undefined' is not assignab... Remove this comment to see the full error message
           .filter((op) => op.insert)
           .map((op, i) => {
-            let text = op.insert;
+            let text: any = op.insert;
             if (values) {
               // replace placeholder variables and populate newlines
-              text = (text as any).replace(
-                TEXT_VARIABLE_PATTERN,
-                (pattern: any) => {
-                  const pStr = pattern.slice(2, -2);
-                  if (pStr in values) {
-                    const pVal = values[pStr];
-                    if (Array.isArray(pVal)) {
-                      if (pVal.length === 0) {
-                        return pattern;
-                      } else if (
-                        isNaN(element.repeat) ||
-                        element.repeat >= pVal.length
-                      ) {
-                        return stringifyWithNull(pVal[0]);
-                      } else {
-                        return stringifyWithNull(pVal[element.repeat]);
-                      }
-                    } else return stringifyWithNull(pVal);
-                  } else return pattern;
-                }
-              );
+              text = text.replace(TEXT_VARIABLE_PATTERN, (pattern: any) => {
+                const pStr = pattern.slice(2, -2);
+                if (pStr in values) {
+                  const pVal = values[pStr];
+                  if (Array.isArray(pVal)) {
+                    if (pVal.length === 0) {
+                      return pattern;
+                    } else if (
+                      isNaN(element.repeat) ||
+                      element.repeat >= pVal.length
+                    ) {
+                      return stringifyWithNull(pVal[0]);
+                    } else {
+                      return stringifyWithNull(pVal[element.repeat]);
+                    }
+                  } else return stringifyWithNull(pVal);
+                } else return pattern;
+              });
             }
 
             const attrs = op.attributes || {};

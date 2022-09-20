@@ -1505,16 +1505,13 @@ function Form({
   );
 }
 
-export default function FormWithRouter(props: Props): JSX.Element {
-  return (
-    <>
-      {runningInClient() /* NextJS support */ ? (
-        <BrowserRouter>
-          <Route path='/'>
-            <Form {...props} />
-          </Route>
-        </BrowserRouter>
-      ) : null}
-    </>
-  );
+export default function FormWithRouter(props: Props): JSX.Element | null {
+  // Check client for NextJS support
+  return runningInClient() ? (
+    <BrowserRouter>
+      <Route path='/'>
+        <Form {...props} />
+      </Route>
+    </BrowserRouter>
+  ) : null;
 }
