@@ -5,10 +5,16 @@ function useTextEdit({
   focused,
   onTextSelect = null,
   onTextKeyDown = null,
-  onTextBlur = null
+  onTextBlur = null,
+  onEditModeChange = null
 }: any) {
   const spanRef = useRef();
   const [editMode, setEditMode] = useState('hover');
+
+  const updateEditMode = (newMode: string) => {
+    setEditMode(newMode);
+    onEditModeChange && onEditModeChange(newMode === 'edit');
+  };
 
   useEffect(() => {
     if (editMode === 'edit') {
@@ -18,19 +24,19 @@ function useTextEdit({
       range.setStart(node, 0);
       range.setEnd(node, 0);
       const sel = window.getSelection();
-      // @ts-expect-error TS(2531): Object is possibly 'null'.
-      sel.removeAllRanges();
-      // @ts-expect-error TS(2531): Object is possibly 'null'.
-      sel.addRange(range);
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
     }
   }, [editMode]);
 
   useEffect(() => {
-    if (!focused) setEditMode('hover');
+    if (!focused) updateEditMode('hover');
   }, [focused]);
 
   const editableProps = useMemo(() => {
-    let editableProps = {};
+    let editableProps: any = {};
     const css = {
       outline: 'none',
       minWidth: '5px',
@@ -45,7 +51,7 @@ function useTextEdit({
       editableProps = {
         contentEditable: true,
         suppressContentEditableWarning: true,
-        onMouseDown: (e: any) => !focused && e.preventDefault(),
+        onMouseDown: (e: MouseEvent) => !focused && e.preventDefault(),
         onSelect: (e: any) => {
           if (!focused) e.preventDefault();
           onTextSelect && onTextSelect(window.getSelection());
@@ -56,20 +62,21 @@ function useTextEdit({
             onTextKeyDown(e, spanRef.current, window.getSelection());
         },
         onBlur: (e: any) => {
-          setEditMode('hover');
+          updateEditMode('hover');
           onTextBlur && onTextBlur(e);
         }
       };
 
       if (focused) {
         if (editMode === 'hover') {
-          editableProps = { onClick: () => setEditMode('edit') };
+          editableProps = { onClick: () => updateEditMode('edit') };
           // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
           css['&:hover'] = { backgroundColor: 'rgb(230, 240, 252)' };
         } else if (editMode === 'edit') css.cursor = 'text';
       }
     }
-    (editableProps as any).css = css;
+
+    editableProps.css = css;
     return editableProps;
   }, [
     editable,
