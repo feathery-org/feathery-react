@@ -495,6 +495,15 @@ function getNewStepUrl(stepKey: any) {
   return location.pathname + location.search + `#${stepKey}`;
 }
 
+function getPrevStepUrl(curStep: any, stepMap: Record<string, string>) {
+  let newStepKey = stepMap[curStep.key];
+  if (!newStepKey) {
+    const prevCondition = curStep.previous_conditions[0];
+    if (prevCondition) newStepKey = prevCondition.previous_step_key;
+  }
+  return newStepKey ? getNewStepUrl(newStepKey) : '';
+}
+
 export {
   changeStep,
   formatAllFormFields,
@@ -503,6 +512,7 @@ export {
   getAllElements,
   getDefaultFieldValue,
   getNewStepUrl,
+  getPrevStepUrl,
   lookUpTrigger,
   nextStepKey,
   getOrigin,

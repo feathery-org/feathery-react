@@ -3,8 +3,24 @@ import { isNum, stringifyWithNull } from '../../utils/primitives';
 import Delta from 'quill-delta';
 import useTextEdit from './useTextEdit';
 import { openTab } from '../../utils/browser';
+import { LINK_NEXT, LINK_NONE } from '../basic/ButtonElement';
 
 const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
+
+const applyNewDelta = (
+  delta: any,
+  start?: number | undefined,
+  end?: number | undefined
+) => {
+  if (start !== undefined && end !== undefined)
+    return delta.compose(
+      new Delta().retain(start).retain(end - start, { start, end })
+    );
+  else
+    return delta.compose(
+      new Delta().retain(delta.length(), { fullSpan: true })
+    );
+};
 
 function TextNodes({
   element,
@@ -25,25 +41,17 @@ function TextNodes({
   return useMemo(() => {
     const text = element.properties.text;
     let delta = new Delta(element.properties.text_formatted);
-
-    // @ts-expect-error TS(7006): Parameter 'cond' implicitly has an 'any' type.
-    conditions.forEach((cond) => {
-      if (cond.element_type === 'text' && cond.element_id === element.id) {
-        let start = cond.metadata.start;
-        let end = cond.metadata.end;
-        let fullSpan = false;
-        if (start === undefined && end === undefined) {
-          start = 0;
-          end = text.length;
-          fullSpan = true;
+    const link = element.properties.link;
+    if (link === LINK_NEXT) {
+      conditions.forEach((cond: any) => {
+        if (cond.element_type === 'text' && cond.element_id === element.id) {
+          const start = cond.metadata.start;
+          const end = cond.metadata.end;
+          delta = applyNewDelta(delta, start, end);
         }
-        delta = delta.compose(
-          new Delta()
-            .retain(start)
-            .retain(end - start, { start, end, fullSpan })
-        );
-      }
-    });
+      });
+    } else if (link !== LINK_NONE) delta = applyNewDelta(delta);
+
     return (
       <span
         id={`span-${element.id}`}
@@ -85,10 +93,12 @@ function TextNodes({
               if (attrs.font_link) {
                 onClick = () => openTab(attrs.font_link);
                 cursor = 'pointer';
-              } else if (isNum(attrs.start) && isNum(attrs.end)) {
-                const start = attrs.fullSpan ? undefined : attrs.start;
-                const end = attrs.fullSpan ? undefined : attrs.end;
-                onClick = () => textSpanOnClick(element, start, end);
+              } else if (
+                attrs.fullSpan ||
+                (isNum(attrs.start) && isNum(attrs.end))
+              ) {
+                onClick = () =>
+                  textSpanOnClick(element, attrs.start, attrs.end);
                 cursor = 'pointer';
               }
             }
