@@ -11,6 +11,7 @@ import {
   setAuthClient,
   getAuthClient
 } from './utils/init';
+import { OPERATOR_CODE } from './utils/logic';
 import { featheryDoc } from './utils/browser';
 
 function getAllValues() {
@@ -54,5 +55,6 @@ export {
   setAuthClient,
   getAuthClient,
   renderAt,
-  Feathery
+  Feathery,
+  type OPERATOR_CODE
 };

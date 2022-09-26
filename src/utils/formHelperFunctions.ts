@@ -1,29 +1,7 @@
 import getRandomBoolean from './random';
 import { fieldValues, filePathMap, initInfo } from './init';
 import { toBase64 } from './image';
-import { dynamicImport } from '../integrations/utils';
-
-const LIB_PHONE_NUMBER_URL =
-  'https://cdn.jsdelivr.net/npm/libphonenumber-js@1.10.12/bundle/libphonenumber-js.min.js';
-
-const emailPatternStr =
-  "^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)+$";
-const emailPattern = new RegExp(emailPatternStr);
-const phonePattern = /^\d{10}$/;
-
-const validators = {
-  email: (a: any) => emailPattern.test(a),
-  phone: (a: any) => {
-    try {
-      return global.libphonenumber.isValidPhoneNumber(a, 'US');
-    } catch (e) {
-      // Invalid phone number
-      return false;
-    }
-  }
-};
-
-const loadPhoneValidator = () => dynamicImport(LIB_PHONE_NUMBER_URL);
+import { emailPattern, phonePattern } from './validation';
 
 /**
  *
@@ -261,70 +239,6 @@ function updateSessionValues(session: any) {
   Object.assign(filePathMap, newFilePathMap);
 }
 
-function isFieldValueEmpty(value: any, servar: any) {
-  let noVal;
-  switch (servar.type) {
-    case 'select':
-    case 'signature':
-      noVal = !value;
-      break;
-    case 'checkbox':
-      // eslint-disable-next-line camelcase
-      noVal = !value && servar.metadata?.must_check;
-      break;
-    case 'file_upload':
-    case 'button_group':
-      noVal = value.length === 0;
-      break;
-    case 'payment_method':
-      noVal = !value?.complete;
-      break;
-    default:
-      noVal = value === '';
-      break;
-  }
-  return noVal;
-}
-
-/**
- * Returns the error message for a field value if it's invalid.
- * Returns an empty string if it's valid.
- */
-function getFieldError(value: any, servar: any) {
-  if (isFieldValueEmpty(value, servar)) {
-    // If no value, error if field is required
-    return servar.required ? 'This is a required field' : '';
-  }
-
-  // Check if value is badly formatted
-  if (servar.type === 'phone_number' && !validators.phone(value)) {
-    return 'Invalid phone number';
-  } else if (servar.type === 'email' && !validators.email(value)) {
-    return 'Invalid email format';
-  } else if (servar.type === 'ssn' && value.length !== 9) {
-    return 'Invalid social security number';
-  } else if (
-    servar.type === 'pin_input' &&
-    value.length !== servar.max_length
-  ) {
-    return 'Please enter a full code';
-  } else if (servar.type === 'login') {
-    let validFormat = true;
-    let invalidType = '';
-    servar.metadata.login_methods.forEach((method: any) => {
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-      if (!validators[method](value)) {
-        validFormat = false;
-        invalidType = method;
-      }
-    });
-    if (!validFormat) return `Please enter a valid ${invalidType}`;
-  }
-
-  // No error
-  return '';
-}
-
 /**
  * Set an error on a particular form DOM node(s).
  */
@@ -521,18 +435,11 @@ export {
   reactFriendlyKey,
   getFieldValue,
   updateSessionValues,
-  getFieldError,
   getInlineError,
   shouldElementHide,
   setFormElementError,
   objectMap,
   fetchS3File,
   textFieldShouldSubmit,
-  isFieldActuallyRequired,
-  isFieldValueEmpty,
-  phonePattern,
-  emailPattern,
-  emailPatternStr,
-  validators,
-  loadPhoneValidator
+  isFieldActuallyRequired
 };

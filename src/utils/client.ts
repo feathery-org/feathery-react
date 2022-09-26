@@ -11,9 +11,9 @@ import { encodeGetParams } from './primitives';
 import {
   getABVariant,
   getDefaultFieldValue,
-  loadPhoneValidator,
   updateSessionValues
 } from './formHelperFunctions';
+import { loadPhoneValidator } from './validation';
 import { initializeIntegrations } from '../integrations/utils';
 import { loadLottieLight } from '../elements/components/Lottie';
 import { featheryDoc } from './browser';

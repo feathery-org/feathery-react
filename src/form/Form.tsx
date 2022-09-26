@@ -1,8 +1,16 @@
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback
+} from 'react';
 
 import ReactForm from 'react-bootstrap/Form';
 import { useHotkeys } from 'react-hotkeys-hook';
+// @ts-expect-error TS(7016): Could not find a declaration file for module 'loda... Remove this comment to see the full error message
+import debounce from 'lodash.debounce';
 
 import { calculateStepCSS, isFill } from '../utils/hydration';
 import {
@@ -11,7 +19,6 @@ import {
   formatStepFields,
   getAllElements,
   getDefaultFieldValue,
-  getFieldError,
   getFieldValue,
   getNewStepUrl,
   getOrigin,
@@ -20,9 +27,9 @@ import {
   nextStepKey,
   recurseProgressDepth,
   setFormElementError,
-  shouldElementHide,
-  validators
+  shouldElementHide
 } from '../utils/formHelperFunctions';
+import { validators, validateElements } from '../utils/validation';
 import {
   initInfo,
   initState,
@@ -142,6 +149,7 @@ function Form({
   const [client, setClient] = useState(null);
   const history = useHistory();
 
+  const [autoValidate, setAutoValidate] = useState(false);
   const [first, setFirst] = useState(true);
   const [firstStep, setFirstStep] = useState(true);
   // If true, will automatically redirect to firstStep if logged back in
@@ -338,6 +346,8 @@ function Form({
   useEffect(() => {
     if (!activeStep) return;
 
+    setAutoValidate(false); // Each step to initially not auto validate
+
     if (formSettings.autofocus && focusRef.current) {
       focusRef.current.focus({
         preventScroll: true
@@ -464,6 +474,29 @@ function Form({
     }
   }
 
+  // Debouncing the validateElements call to rate limit calls
+  const debouncedValidate = useCallback(
+    debounce((fieldValues: any, setInlineErrors: any) => {
+      // validate all step fields and buttons
+      activeStep &&
+        validateElements({
+          elements: [...activeStep.servar_fields, ...activeStep.buttons],
+          servars: activeStep.servar_fields,
+          fieldValues,
+          triggerErrors: true,
+          errorType: formSettings.errorType,
+          formRef,
+          setInlineErrors
+        });
+    }, 750),
+    [activeStep?.id, formRef, validateElements]
+  );
+  useEffect(() => {
+    return () => {
+      debouncedValidate.cancel();
+    };
+  }, [debouncedValidate]);
+
   const updateFieldValues = (newFieldValues: any, rerender = true) => {
     const entries = Object.entries(newFieldValues);
     const noChange = entries.every(([key, val]) => fieldValues[key] === val);
@@ -473,6 +506,12 @@ function Form({
     Object.assign(fieldValues, newFieldValues);
     // Always rerender from empty state for display purposes
     if (rerender || empty) setRender((render) => !render);
+
+    // Only validate on each field change if auto validate is enabled due to prev a submit attempt
+    if (autoValidate) {
+      debouncedValidate(fieldValues, setInlineErrors);
+    }
+
     return true;
   };
 
@@ -587,43 +626,18 @@ function Form({
     });
 
     initState.validateCallbacks[formKey] = (trigger: any) => {
-      const inlineErrors = {};
-      const errors = newStep.servar_fields
-        // Skip validation on hidden elements
-        .filter(
-          (field: any) =>
-            !shouldElementHide({
-              fields: newStep.servar_fields,
-              values: fieldValues,
-              element: field
-            })
-        )
-        .reduce((errors: any, field: any) => {
-          const servar = field.servar;
-          const message = getFieldError(fieldValues[servar.key], servar);
-          errors[servar.key] = message;
-          if (trigger) {
-            setFormElementError({
-              formRef,
-              errorCallback: getErrorCallback({ trigger }),
-              fieldKey: servar.key,
-              message,
-              errorType: formSettings.errorType,
-              servarType: servar.type,
-              inlineErrors
-            });
-          }
-          return errors;
-        }, {});
-      if (trigger) {
-        setFormElementError({
-          formRef,
-          errorType: formSettings.errorType,
-          inlineErrors,
-          setInlineErrors,
-          triggerErrors: true
-        });
-      }
+      // validate all step fields and buttons
+      const { errors } = validateElements({
+        elements: [...newStep.servar_fields, ...newStep.buttons],
+        servars: newStep.servar_fields,
+        fieldValues,
+        triggerErrors: trigger,
+        errorType: formSettings.errorType,
+        formRef,
+        errorCallback: getErrorCallback(trigger),
+        setInlineErrors
+      });
+
       return errors;
     };
 
@@ -906,11 +920,9 @@ function Form({
     // Can't submit step until the user has gone through the Plaid flow if present
     if (hasPlaid && !plaidSuccess) return;
 
-    const servarMap = {};
-    activeStep.servar_fields.forEach(
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-      (field: any) => (servarMap[field.servar.key] = field)
-    );
+    // start auto validation mode now that a submit has been attempted
+    setAutoValidate(true);
+
     const formattedFields = formatStepFields(activeStep, false);
     const elementType = metadata.elementType;
     const trigger = {
@@ -919,41 +931,19 @@ function Form({
       action: metadata.elementType === 'field' ? 'change' : 'click'
     };
 
-    const newInlineErrors = {};
-    // @ts-expect-error TS(2339): Property 'value' does not exist on type 'unknown'.
-    Object.entries(formattedFields).map(async ([fieldKey, { value }]) => {
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-      const field = servarMap[fieldKey];
-      // Skip validation on hidden elements
-      if (
-        shouldElementHide({
-          fields: activeStep.servar_fields,
-          values: fieldValues,
-          element: field
-        })
-      )
-        return;
-      const message = getFieldError(value, field.servar);
-      await setFormElementError({
-        formRef,
-        errorCallback: getErrorCallback({ trigger }),
-        fieldKey,
-        message,
+    // validate all step fields and buttons
+    const { invalidCheckPromise, inlineErrors: newInlineErrors } =
+      validateElements({
+        elements: [...activeStep.servar_fields, ...activeStep.buttons],
+        servars: activeStep.servar_fields,
+        fieldValues,
+        triggerErrors: true,
         errorType: formSettings.errorType,
-        servarType: field.servar.type,
-        inlineErrors: newInlineErrors
+        formRef,
+        errorCallback: getErrorCallback(trigger),
+        setInlineErrors
       });
-    });
-    // do validation check before running user submission function
-    // so user does not access invalid data
-    const invalid = await setFormElementError({
-      formRef,
-      errorType: formSettings.errorType,
-      inlineErrors: newInlineErrors,
-      setInlineErrors,
-      triggerErrors: true
-    });
-    if (invalid) return;
+    if (await invalidCheckPromise) return;
 
     const { loggedIn, errorMessage, errorField } = await handleActions(
       setLoader,

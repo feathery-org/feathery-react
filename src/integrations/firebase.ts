@@ -1,9 +1,6 @@
 import { dynamicImport } from './utils';
-import {
-  emailPattern,
-  phonePattern,
-  updateSessionValues
-} from '../utils/formHelperFunctions';
+import { updateSessionValues } from '../utils/formHelperFunctions';
+import { emailPattern, phonePattern } from '../utils/validation';
 
 let firebasePromise: any = null;
 
