@@ -41,6 +41,7 @@ function CheckboxGroupField({
       }}
       {...elementProps}
     >
+      {children}
       {fieldLabel}
       {servar.metadata.options.map((opt: any, i: any) => {
         return (
@@ -111,7 +112,6 @@ function CheckboxGroupField({
           />
         </div>
       )}
-      {children}
     </div>
   );
 }

@@ -160,6 +160,7 @@ function TextField({
       }}
       {...elementProps}
     >
+      {children}
       {fieldLabel}
       <div
         css={{
@@ -204,7 +205,6 @@ function TextField({
         />
         <InlineTooltip element={element} applyStyles={applyStyles} />
       </div>
-      {children}
     </div>
   );
 }

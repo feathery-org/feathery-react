@@ -101,6 +101,7 @@ function FileUploadField({
       }}
       {...elementProps}
     >
+      {children}
       {thumbnailData.map(({ filename, thumbnail }: any, index: any) => (
         <div
           key={index}
@@ -209,7 +210,6 @@ function FileUploadField({
           opacity: 0
         }}
       />
-      {children}
     </div>
   );
 }

@@ -42,6 +42,7 @@ export default function DropdownField({
       }}
       {...elementProps}
     >
+      {children}
       {fieldLabel}
       <div
         css={{
@@ -96,7 +97,6 @@ export default function DropdownField({
           {element.properties.placeholder || ''}
         </span>
       </div>
-      {children}
     </div>
   );
 }

@@ -42,6 +42,7 @@ function AddressLine1({
       }}
       {...elementProps}
     >
+      {children}
       {fieldLabel}
       <div
         css={{
@@ -129,7 +130,6 @@ function AddressLine1({
         />
         <InlineTooltip element={element} applyStyles={applyStyles} />
       </div>
-      {children}
     </div>
   );
 }

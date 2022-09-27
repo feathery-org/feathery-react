@@ -225,6 +225,7 @@ function CheckboxField({
       css={{ ...applyStyles.getTarget('fc'), position: 'relative' }}
       {...elementProps}
     >
+      {children}
       {fieldLabel}
       <Form.Check
         id={servar.key}
@@ -238,7 +239,6 @@ function CheckboxField({
         }}
         css={composeCheckableInputStyle(styles)}
       />
-      {children}
     </div>
   );
 }

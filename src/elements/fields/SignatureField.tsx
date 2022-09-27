@@ -43,6 +43,7 @@ function SignatureField({
       }}
       {...elementProps}
     >
+      {children}
       {fieldLabel}
       <div css={{ position: 'relative', ...applyStyles.getTarget('sub-fc') }}>
         {isClearVisible && (
@@ -89,7 +90,6 @@ function SignatureField({
           }}
         />
       </div>
-      {children}
     </div>
   );
 }

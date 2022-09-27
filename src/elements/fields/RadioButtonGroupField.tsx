@@ -42,6 +42,7 @@ function RadioButtonGroupField({
       css={{ ...applyStyles.getTarget('fc'), position: 'relative' }}
       {...elementProps}
     >
+      {children}
       {fieldLabel}
       {servar.metadata.options.map((opt: any, i: any) => {
         return (
@@ -122,7 +123,6 @@ function RadioButtonGroupField({
           />
         </div>
       )}
-      {children}
     </div>
   );
 }

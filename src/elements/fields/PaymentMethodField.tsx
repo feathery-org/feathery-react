@@ -179,7 +179,7 @@ const CardField = ({
   );
 };
 
-function PaymentMethodField({ editable = false, ...props }) {
+function PaymentMethodField({ editable = false, children, ...props }: any) {
   useEffect(() => {
     // if ediatble, i.e. running in dashboard, then just load stripe with key so cardElement shows
     if (editable)
@@ -193,6 +193,7 @@ function PaymentMethodField({ editable = false, ...props }) {
   return (
     // @ts-expect-error TS(2322): Type 'Promise<unknown>' is not assignable to type ... Remove this comment to see the full error message
     <Elements stripe={stripePromise}>
+      {children}
       <CardField editable={editable} {...props} />
     </Elements>
   );

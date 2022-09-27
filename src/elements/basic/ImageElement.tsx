@@ -27,6 +27,7 @@ function ImageElement({
         position: 'relative'
       }}
     >
+      {children}
       <img
         src={element.properties.source_image || PLACEHOLDER_IMAGE}
         alt='Form Image'
@@ -37,7 +38,6 @@ function ImageElement({
         }}
         {...elementProps}
       />
-      {children}
     </div>
   );
 }

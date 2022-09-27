@@ -156,6 +156,7 @@ function ButtonElement({
       onClick={onClick}
       {...elementProps}
     >
+      {children}
       {loader ? (
         <div css={styles.getTarget('loader')}>{loader}</div>
       ) : (
@@ -182,7 +183,6 @@ function ButtonElement({
           )}
         </>
       )}
-      {children}
     </ReactButton>
   );
 }

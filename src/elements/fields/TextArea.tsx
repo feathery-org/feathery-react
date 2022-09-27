@@ -28,6 +28,7 @@ function TextArea({
       }}
       {...elementProps}
     >
+      {children}
       {fieldLabel}
       <div
         css={{
@@ -70,7 +71,6 @@ function TextArea({
         />
         <InlineTooltip element={element} applyStyles={applyStyles} />
       </div>
-      {children}
     </div>
   );
 }

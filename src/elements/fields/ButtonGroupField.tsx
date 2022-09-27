@@ -24,6 +24,7 @@ function ButtonGroupField({
   );
   return (
     <div css={{ position: 'relative' }}>
+      {children}
       {fieldLabel}
       <div
         css={{
@@ -79,7 +80,6 @@ function ButtonGroupField({
           );
         })}
       </div>
-      {children}
     </div>
   );
 }

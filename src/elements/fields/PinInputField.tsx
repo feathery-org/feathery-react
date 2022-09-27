@@ -264,6 +264,7 @@ function PinInputField({
       }}
       {...elementProps}
     >
+      {children}
       {fieldLabel}
       <OtpInput
         shouldFocus={shouldFocus}
@@ -273,7 +274,6 @@ function PinInputField({
         onChange={onChange}
         inlineError={inlineError}
       />
-      {children}
     </div>
   );
 }

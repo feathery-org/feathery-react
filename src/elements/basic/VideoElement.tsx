@@ -47,6 +47,7 @@ function VideoElement({
         maxHeight: '100%'
       }}
     >
+      {children}
       {element.properties.source_url ? (
         <iframe
           width='100%'
@@ -67,7 +68,6 @@ function VideoElement({
           {...elementProps}
         />
       )}
-      {children}
     </div>
   );
 }

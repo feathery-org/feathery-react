@@ -51,6 +51,7 @@ function DateSelectorField({
       }}
       {...elementProps}
     >
+      {children}
       {fieldLabel}
       <div
         css={{
@@ -97,7 +98,6 @@ function DateSelectorField({
         />
         <InlineTooltip element={element} applyStyles={applyStyles} />
       </div>
-      {children}
     </div>
   );
 }

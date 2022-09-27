@@ -56,6 +56,7 @@ function TextElement({
       }}
       {...elementProps}
     >
+      {children}
       <TextNodes
         element={element}
         values={values}
@@ -66,7 +67,6 @@ function TextElement({
         focused={focused}
         textCallbacks={textCallbacks}
       />
-      {children}
     </div>
   );
 }

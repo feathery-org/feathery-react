@@ -91,8 +91,8 @@ function ProgressBarElement({
       }}
       {...elementProps}
     >
-      {progressBarElements}
       {children}
+      {progressBarElements}
     </div>
   );
 }

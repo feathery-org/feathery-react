@@ -121,6 +121,7 @@ function ColorPickerField({
       css={{ ...applyStyles.getTarget('fc'), position: 'relative' }}
       {...elementProps}
     >
+      {children}
       {fieldLabel}
       <div
         css={{
@@ -162,7 +163,6 @@ function ColorPickerField({
           />
         </div>
       ) : null}
-      {children}
     </div>
   );
 }
