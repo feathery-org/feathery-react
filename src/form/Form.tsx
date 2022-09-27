@@ -1253,6 +1253,24 @@ function Form({
     return false;
   };
 
+  const textOnClick = (
+    text: ClickActionElement,
+    start: number | undefined,
+    end: number | undefined
+  ) => {
+    const link = button.properties.link;
+    if ()
+    handleRedirect({
+      metadata: {
+        elementType: 'text',
+        elementIDs: [text.id],
+        trigger: 'click',
+        start,
+        end
+      }
+    });
+  };
+
   const buttonOnClick = async (button: ClickActionElement) => {
     // Prevent same button from being clicked multiple times while still running
     if (buttonClicks[button.id]) return;
@@ -1425,11 +1443,11 @@ function Form({
     maxDepth,
     elementProps,
     fieldValues,
-    handleRedirect,
     activeStep,
     loaders,
     getButtonSelectionState,
     buttonOnClick,
+    textOnClick,
     fieldOnChange,
     inlineErrors,
     setInlineErrors,

@@ -31,11 +31,11 @@ const Cell = ({ node: el, form }: any) => {
     maxDepth,
     elementProps,
     fieldValues,
-    handleRedirect,
     activeStep,
     loaders,
     getButtonSelectionState,
     buttonOnClick,
+    textOnClick,
     fieldOnChange,
     inlineErrors,
     setInlineErrors,
@@ -96,7 +96,7 @@ const Cell = ({ node: el, form }: any) => {
     return (
       <Elements.TextElement
         values={fieldValues}
-        handleRedirect={handleRedirect}
+        textSpanOnClick={textOnClick}
         conditions={activeStep.next_conditions}
         {...basicProps}
       />
@@ -128,7 +128,6 @@ const Cell = ({ node: el, form }: any) => {
         loader={
           loaders[el.id]?.showOn === 'on_button' && loaders[el.id]?.loader
         }
-        handleRedirect={handleRedirect}
         onClick={() => buttonOnClick(el)}
         disabled={disabled}
         {...basicProps}

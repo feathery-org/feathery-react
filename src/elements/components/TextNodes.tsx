@@ -10,10 +10,10 @@ function TextNodes({
   element,
   values,
   applyStyles,
-  handleRedirect,
   conditions = [],
   editable = false,
   focused = false,
+  textSpanOnClick = () => {},
   textCallbacks = {}
 }: any) {
   const { spanRef, editableProps } = useTextEdit({
@@ -86,17 +86,9 @@ function TextNodes({
                 onClick = () => openTab(attrs.font_link);
                 cursor = 'pointer';
               } else if (isNum(attrs.start) && isNum(attrs.end)) {
-                onClick = () => {
-                  handleRedirect({
-                    metadata: {
-                      elementType: 'text',
-                      elementIDs: [element.id],
-                      trigger: 'click',
-                      start: attrs.fullSpan ? undefined : attrs.start,
-                      end: attrs.fullSpan ? undefined : attrs.end
-                    }
-                  });
-                };
+                const start = attrs.fullSpan ? undefined : attrs.start;
+                const end = attrs.fullSpan ? undefined : attrs.end;
+                onClick = () => textSpanOnClick(element, start, end);
                 cursor = 'pointer';
               }
             }

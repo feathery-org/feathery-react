@@ -38,7 +38,7 @@ function TextElement({
   editable = false,
   focused = false,
   textCallbacks = {},
-  handleRedirect = () => {},
+  textSpanOnClick = () => {},
   conditions = [],
   elementProps = {},
   children
@@ -61,7 +61,7 @@ function TextElement({
         element={element}
         values={values}
         applyStyles={applyStyles}
-        handleRedirect={handleRedirect}
+        textSpanOnClick={textSpanOnClick}
         conditions={conditions}
         editable={editable}
         focused={focused}

@@ -106,7 +106,6 @@ function ButtonElement({
   disabled = false,
   active = false,
   textCallbacks = {},
-  handleRedirect = () => {},
   onClick = () => {},
   elementProps = {},
   inlineError,
@@ -175,7 +174,6 @@ function ButtonElement({
               element={element}
               values={values}
               applyStyles={applyStyles}
-              handleRedirect={handleRedirect}
               editable={editable}
               focused={focused}
               textCallbacks={textCallbacks}
