@@ -230,8 +230,11 @@ const GridContainer = ({ children, node: { axis } }: any) => {
   );
 };
 
-const formatStep = (step: any, viewport: string) => {
-  step = convertStepToViewport(step, viewport);
+const formatStep = (rawStep: any, viewport: string) => {
+  const step = convertStepToViewport(
+    JSON.parse(JSON.stringify(rawStep)),
+    viewport
+  );
 
   const map = buildGridMap(step);
 
@@ -265,6 +268,12 @@ const fields = [
   'videos'
 ];
 
+const viewportProperties = {
+  step: ['width', 'height', 'repeat_position'],
+  subgrids: ['position', 'axis', 'style', 'grid_size'],
+  elements: ['position']
+};
+
 const convertStepToViewport = (step: any, viewport: any) => {
   fields.forEach((field) => {
     step[field].forEach((obj: any, i: any) => {
@@ -280,20 +289,12 @@ const convertStepToViewport = (step: any, viewport: any) => {
   return step;
 };
 
-const viewportProperties = {
-  step: ['width', 'height', 'repeat_position'],
-  subgrids: ['position', 'axis', 'style', 'grid_size'],
-  elements: ['position']
-};
-
 const convertToViewport = (obj: any, viewport: any, props: any) => {
   if (viewport === 'desktop') return obj;
 
   props.forEach((prop: any) => {
     const viewportProp = `${viewport}_${prop}`;
-    if (obj[viewportProp]) {
-      obj[prop] = obj[viewportProp];
-    }
+    obj[prop] = obj[viewportProp];
   });
 
   return obj;
@@ -482,6 +483,10 @@ const buildGridTree = (gridMap: any, position: any[] = [], viewport: any) => {
   let nextPos = [...position, i];
   let hasNextChild = gridMap[getMapKey({ position: nextPos })];
 
+  if (hasNextChild) {
+    node.children = [];
+  }
+
   while (hasNextChild) {
     const actualChild = buildGridTree(gridMap, [...position, i], viewport);
     actualChild.parent = node;
@@ -491,6 +496,7 @@ const buildGridTree = (gridMap: any, position: any[] = [], viewport: any) => {
     nextPos = [...position, i];
     hasNextChild = gridMap[getMapKey({ position: nextPos })];
   }
+
   return node;
 };
 

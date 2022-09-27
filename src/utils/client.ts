@@ -269,6 +269,7 @@ export default class Client {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
     };
+
     if (language) options.headers['Accept-Language'] = language;
 
     return this._fetch(url, options).then(async (response) => {
