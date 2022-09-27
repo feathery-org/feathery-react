@@ -9,6 +9,7 @@ import {
   LINK_SELECT_PRODUCT
 } from '../../../elements/basic/ButtonElement';
 import { fieldValues } from '../../../utils/init';
+
 const Grid = ({ step, form, viewport }: any) => {
   const formattedStep = formatStep(JSON.parse(JSON.stringify(step)), viewport);
 
@@ -137,10 +138,23 @@ const getCellContainerStyle = (axis: string, layout: string) => {
   }
 };
 
-const CellContainer = ({ children, node, axis }: any) => {
-  if (!node.parent) return children;
+const CellContainer = ({
+  children,
+  node: {
+    key,
+    isElement,
+    parent,
+    style,
+    grid_size: gridSize,
+    properties = null
+  },
+  axis,
+  selected,
+  buttonOnClick = () => {}
+}: any) => {
+  if (!parent) return children;
 
-  const cellContainerStyle = getCellContainerStyle(axis, node.grid_size);
+  const cellContainerStyle = getCellContainerStyle(axis, gridSize);
 
   if (!properties) properties = {};
   const onClick = (e: React.MouseEvent) => {
@@ -150,8 +164,11 @@ const CellContainer = ({ children, node, axis }: any) => {
     }
   };
 
-  if (cellData) {
-    const [cellStyle, cellHoverStyle, cellActiveStyle] = getCellStyle(cellData);
+  if (style) {
+    const [cellStyle, cellHoverStyle, cellActiveStyle] = getCellStyle({
+      styles: style
+    });
+
     const {
       link = LINK_NONE,
       product_id: productId,
@@ -195,6 +212,7 @@ const CellContainer = ({ children, node, axis }: any) => {
     </div>
   );
 };
+
 const GridContainer = ({ children, node: { axis } }: any) => {
   return (
     <div
