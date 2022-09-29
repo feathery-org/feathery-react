@@ -34,8 +34,14 @@ function legacyAlignment(alignment: any) {
 Object.entries(Elements).map(([key, Element]) => {
   // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
   Elements[key] = memo(
-    // @ts-expect-error TS(2339): Property 'element' does not exist on type '{ child... Remove this comment to see the full error message
-    ({ element, componentOnly = true, inlineError = '', onView, ...props }) => {
+    ({
+      element,
+      children,
+      componentOnly = true,
+      inlineError = '',
+      onView,
+      ...props
+    }: any) => {
       const applyStyles = useMemo(() => {
         const as = new ApplyStyles(
           element,
@@ -60,7 +66,13 @@ Object.entries(Elements).map(([key, Element]) => {
       ) : (
         featheryElement
       );
-      if (componentOnly) return e;
+      if (componentOnly)
+        return (
+          <>
+            {children}
+            {e}
+          </>
+        );
       else {
         const containerStyles = applyStyles.getTarget('container');
         const containerWrapperStyles =

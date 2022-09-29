@@ -7,8 +7,8 @@ import { adjustColor } from '../../utils/styles';
 
 const LINK_CUSTOM = 'custom';
 const LINK_NONE = 'none';
-const LINK_SKIP = 'skip';
-const LINK_SUBMIT = 'submit';
+const LINK_BACK = 'back';
+const LINK_NEXT = 'next';
 const LINK_URL = 'url';
 const LINK_ADD_REPEATED_ROW = 'add_repeated_row';
 const LINK_REMOVE_REPEATED_ROW = 'remove_repeated_row';
@@ -106,7 +106,6 @@ function ButtonElement({
   disabled = false,
   active = false,
   textCallbacks = {},
-  handleRedirect = () => {},
   onClick = () => {},
   elementProps = {},
   inlineError,
@@ -175,7 +174,6 @@ function ButtonElement({
               element={element}
               values={values}
               applyStyles={applyStyles}
-              handleRedirect={handleRedirect}
               editable={editable}
               focused={focused}
               textCallbacks={textCallbacks}
@@ -191,8 +189,8 @@ export default ButtonElement;
 export {
   LINK_CUSTOM,
   LINK_NONE,
-  LINK_SKIP,
-  LINK_SUBMIT,
+  LINK_BACK,
+  LINK_NEXT,
   LINK_URL,
   LINK_ADD_REPEATED_ROW,
   LINK_REMOVE_REPEATED_ROW,

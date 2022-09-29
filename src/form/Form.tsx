@@ -15,6 +15,7 @@ import {
   getFieldValue,
   getNewStepUrl,
   getOrigin,
+  getPrevStepUrl,
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
@@ -52,11 +53,11 @@ import {
   LINK_REMOVE_REPEATED_ROW,
   LINK_SEND_SMS,
   LINK_SEND_MAGIC_LINK,
-  LINK_SKIP,
-  LINK_SUBMIT,
   LINK_TRIGGER_PLAID,
   LINK_URL,
-  LINK_STRIPE
+  LINK_STRIPE,
+  LINK_BACK,
+  LINK_NEXT
 } from '../elements/basic/ButtonElement';
 import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
@@ -175,6 +176,7 @@ function Form({
     -1
   );
   const [viewport, setViewport] = useState(getViewport());
+  const handleResize = () => setViewport(getViewport());
 
   const [repeats, setRepeats] = useState(0);
 
@@ -198,9 +200,9 @@ function Form({
     );
   }, [loaders]);
 
-  const handleResize = () => {
-    setViewport(getViewport());
-  };
+  const [backNavMap, setBackNavMap] = useState({});
+  const updateBackNavMap = (newNavs: Record<string, string>) =>
+    newNavs && setBackNavMap({ ...backNavMap, ...newNavs });
 
   const formRef = useRef<any>(null);
   // Tracks element to focus
@@ -310,7 +312,8 @@ function Form({
         })
     );
     const submitButton = renderedButtons.find(
-      (b: any) => b.properties.link === LINK_SUBMIT
+      (b: any) =>
+        b.properties.link === LINK_NEXT && !b.properties.link_no_submit
     );
     if (hasLoginField && submitButton) {
       window.firebaseRecaptchaVerifier =
@@ -374,7 +377,8 @@ function Form({
       e.stopPropagation();
       // Submit steps by pressing `Enter`
       const submitButton = activeStep.buttons.find(
-        (b: any) => b.properties.link === LINK_SUBMIT
+        (b: any) =>
+          b.properties.link === LINK_NEXT && !b.properties.link_no_submit
       );
       if (submitButton) {
         // Simulate button click if available
@@ -698,6 +702,7 @@ function Form({
               }
             ]
           ]) => {
+            updateBackNavMap(session.back_nav_map);
             setIntegrations(session.integrations);
             const usePrevious =
               usePreviousUserData === null ? saveUserData : usePreviousUserData;
@@ -1030,13 +1035,13 @@ function Form({
       if (invalid) return;
 
       // async execution after user's onSubmit
-      return await handleSubmitRedirect({
+      return submitAndNavigate({
         metadata,
         formattedFields,
         loggedIn
       });
     } else {
-      return await handleSubmitRedirect({
+      return submitAndNavigate({
         metadata,
         formattedFields,
         loggedIn
@@ -1093,7 +1098,7 @@ function Form({
     return {};
   }
 
-  function handleSubmitRedirect({
+  function submitAndNavigate({
     metadata,
     formattedFields,
     loggedIn = false
@@ -1126,7 +1131,7 @@ function Form({
       formId: client.formKey
     });
 
-    return handleRedirect({
+    return goToNewStep({
       metadata,
       redirectKey,
       submitPromise,
@@ -1134,7 +1139,7 @@ function Form({
     });
   }
 
-  async function handleRedirect({
+  async function goToNewStep({
     metadata,
     redirectKey = '',
     submitPromise = null,
@@ -1167,7 +1172,9 @@ function Form({
       if (steps[redirectKey].next_conditions.length === 0)
         (eventData as any).completed = true;
       // @ts-expect-error TS(2531): Object is possibly 'null'.
-      client.registerEvent(eventData, submitPromise);
+      client
+        .registerEvent(eventData, submitPromise)
+        .then(() => updateBackNavMap({ [redirectKey]: activeStep.key }));
       const newURL = getNewStepUrl(redirectKey);
       setShouldScrollToTop(submitData || metadata.elementType === 'text');
       if (submitData || ['button', 'text'].includes(metadata.elementType))
@@ -1176,6 +1183,12 @@ function Form({
       return true;
     }
   }
+
+  const goToPreviousStep = async () => {
+    await callbackRef.current.all();
+    const prevStepUrl = getPrevStepUrl(activeStep, backNavMap);
+    if (prevStepUrl) history.push(prevStepUrl);
+  };
 
   const setButtonLoader = async (button: any) => {
     const bp = button.properties;
@@ -1229,7 +1242,7 @@ function Form({
           });
           if (stepChanged) return;
         }
-        await handleRedirect({ metadata });
+        await goToNewStep({ metadata });
       }
     } catch {
       clearLoaders();
@@ -1251,6 +1264,25 @@ function Form({
       });
     }
     return false;
+  };
+
+  const textOnClick = (
+    text: ClickActionElement,
+    start: number | undefined,
+    end: number | undefined
+  ) => {
+    const link = text.properties.link;
+    if (link === LINK_NEXT)
+      goToNewStep({
+        metadata: {
+          elementType: 'text',
+          elementIDs: [text.id],
+          trigger: 'click',
+          start,
+          end
+        }
+      });
+    else if (link === LINK_BACK) goToPreviousStep();
   };
 
   const buttonOnClick = async (button: ClickActionElement) => {
@@ -1329,8 +1361,10 @@ function Form({
       }
     } else if (link === LINK_GOOGLE_OAUTH) {
       googleOauthRedirect();
-    } else if ([LINK_SUBMIT, LINK_SKIP].includes(link)) {
-      clickPromise = buttonOnSubmit(button, link === LINK_SUBMIT);
+    } else if (link === LINK_NEXT) {
+      clickPromise = buttonOnSubmit(button, !button.properties.link_no_submit);
+    } else if (link === LINK_BACK) {
+      await goToPreviousStep();
     } else if (link === LINK_STRIPE) {
       await toggleProductSelection({
         productId: button.properties.product_id,
@@ -1392,7 +1426,8 @@ function Form({
       };
       if (submitData) {
         const submitButton = activeStep.buttons.find(
-          (b: any) => b.properties.link === LINK_SUBMIT
+          (b: any) =>
+            b.properties.link === LINK_NEXT && b.properties.link_no_submit
         );
         // Simulate button submit if available and valid to trigger button loader
         if (
@@ -1404,7 +1439,7 @@ function Form({
         )
           buttonOnSubmit(submitButton, true);
         else submit({ metadata, repeat: elementRepeatIndex });
-      } else handleRedirect({ metadata });
+      } else goToNewStep({ metadata });
     };
 
   const elementOnView =
@@ -1425,11 +1460,11 @@ function Form({
     maxDepth,
     elementProps,
     fieldValues,
-    handleRedirect,
     activeStep,
     loaders,
     getButtonSelectionState,
     buttonOnClick,
+    textOnClick,
     fieldOnChange,
     inlineErrors,
     setInlineErrors,

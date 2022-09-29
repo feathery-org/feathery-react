@@ -263,7 +263,7 @@ export default class Client {
     const params = encodeGetParams({
       form_key: this.formKey
     });
-    const url = `${CDN_URL}panel/v7/?${params}`;
+    const url = `${CDN_URL}panel/v8/?${params}`;
     const options = {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
