@@ -98,8 +98,9 @@ export interface Props {
   onViewElements?: string[];
   initialValues?: FieldValues;
   initialStepId?: string;
-  usePreviousUserData?: boolean;
+  usePreviousUserData?: null | boolean;
   elementProps?: ElementProps;
+  formProps?: Record<string, any>;
   style?: { [cssProperty: string]: string };
   className?: string;
   children?: JSX.Element;
@@ -130,9 +131,9 @@ function Form({
   onViewElements = [],
   initialValues = {},
   initialStepId = '',
-  // @ts-expect-error TS(2322): Type 'null' is not assignable to type 'boolean'.
   usePreviousUserData = null,
   elementProps = {},
+  formProps = {},
   style = {},
   className = '',
   children
@@ -1508,6 +1509,7 @@ function Form({
         </div>
       )}
       <ReactForm
+        {...formProps}
         autoComplete={formSettings.autocomplete}
         className={className}
         ref={formRef}
