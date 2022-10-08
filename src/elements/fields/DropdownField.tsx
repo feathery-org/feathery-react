@@ -1,7 +1,6 @@
 import { bootstrapStyles, ERROR_COLOR } from '../styles';
 
 import React from 'react';
-import ReactForm from 'react-bootstrap/Form';
 
 export default function DropdownField({
   element,
@@ -53,7 +52,7 @@ export default function DropdownField({
           ...applyStyles.getTarget('sub-fc')
         }}
       >
-        <ReactForm.Control
+        <select
           css={{
             ...bootstrapStyles,
             ...applyStyles.getTarget('field'),
@@ -70,7 +69,6 @@ export default function DropdownField({
             '&:focus': applyStyles.getTarget('active'),
             '&:hover': applyStyles.getTarget('hover')
           }}
-          as='select'
           id={servar.key}
           value={fieldVal}
           required={required}
@@ -78,7 +76,7 @@ export default function DropdownField({
         >
           <option key='' value='' />
           {options}
-        </ReactForm.Control>
+        </select>
         <span
           css={{
             position: 'absolute',
