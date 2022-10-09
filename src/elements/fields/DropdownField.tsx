@@ -18,11 +18,19 @@ export default function DropdownField({
 
   let options;
   if (servar.type === 'gmap_state') {
-    options = states.map((state) => (
-      <option key={state} value={state}>
-        {state}
-      </option>
-    ));
+    if (fieldVal && !states.includes(fieldVal))
+      // If user selected an international address
+      options = [
+        <option key={fieldVal} value={fieldVal}>
+          {fieldVal}
+        </option>
+      ];
+    else
+      options = states.map((state) => (
+        <option key={state} value={state}>
+          {state}
+        </option>
+      ));
   } else {
     options = servar.metadata.options.map((option: any) => (
       <option key={option} value={option}>
