@@ -55,6 +55,6 @@ export {
   setAuthClient,
   getAuthClient,
   renderAt,
-  Feathery,
-  type OPERATOR_CODE
+  Feathery
 };
+export type { OPERATOR_CODE };
