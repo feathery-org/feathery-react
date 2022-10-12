@@ -116,11 +116,14 @@ function ButtonElement({
     [applyStyles]
   );
 
+  // type=submit is important for HTML5 type validation messages
+  const type = element.properties.link === LINK_NEXT ? 'submit' : 'button';
   return (
     <ReactButton
       id={element.id}
       key={element.id}
       active={active}
+      type={type}
       style={{
         display: 'flex',
         cursor:

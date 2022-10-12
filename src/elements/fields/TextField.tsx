@@ -4,7 +4,7 @@ import React, { memo } from 'react';
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/Tooltip';
 import { bootstrapStyles, ERROR_COLOR } from '../styles';
-import { emailPatternStr } from '../../utils/formHelperFunctions';
+import { emailPatternStr } from '../../utils/validation';
 
 const MAX_TEXT_FIELD_LENGTH = 512;
 

@@ -5,11 +5,11 @@ import {
   setFormElementError,
   getInlineError,
   isFieldActuallyRequired,
-  isFieldValueEmpty,
   reactFriendlyKey,
   shouldElementHide,
   textFieldShouldSubmit
 } from '../../utils/formHelperFunctions';
+import { isFieldValueEmpty } from '../../utils/validation';
 import { fieldCounter } from '../Form';
 import { justRemove } from '../../utils/array';
 import { isObjectEmpty, stringifyWithNull } from '../../utils/primitives';
@@ -128,7 +128,12 @@ const Cell = ({ node: el, form }: any) => {
         loader={
           loaders[el.id]?.showOn === 'on_button' && loaders[el.id]?.loader
         }
-        onClick={() => buttonOnClick(el)}
+        onClick={(e: MouseEvent) => {
+          // prevent auto submission!
+          e.preventDefault();
+          e.stopPropagation();
+          buttonOnClick(el);
+        }}
         disabled={disabled}
         {...basicProps}
       />

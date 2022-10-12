@@ -4,8 +4,7 @@ import {
   getABVariant,
   nextStepKey,
   getOrigin,
-  recurseProgressDepth,
-  getFieldError
+  recurseProgressDepth
 } from '../formHelperFunctions';
 import { fieldValues, initInfo } from '../init';
 
@@ -448,21 +447,6 @@ describe('formHelperFunctions', () => {
 
       // Act
       const actual = recurseProgressDepth(steps, currentStepKey);
-
-      // Assert
-      expect(actual).toEqual(expected);
-    });
-  });
-
-  describe('getFieldError', () => {
-    it('gets the error for an empty required value', () => {
-      // Arrange
-      const val = '';
-      const servar = { required: true, type: 'text_field' };
-      const expected = 'This is a required field';
-
-      // Act
-      const actual = getFieldError(val, servar);
 
       // Assert
       expect(actual).toEqual(expected);
