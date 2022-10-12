@@ -353,6 +353,20 @@ const Cell = ({ node: el, form }: any) => {
             }}
           />
         );
+      case 'phone_number':
+        return (
+          <Elements.PhoneField
+            {...fieldProps}
+            fullNumber={stringifyWithNull(fieldVal)}
+            onChange={(val: string) => {
+              const change = changeValue(val, el, index);
+              if (change) onChange();
+            }}
+            setRef={(ref: any) => {
+              if (thisCounter === 1) focusRef.current = ref;
+            }}
+          />
+        );
       case 'gmap_line_1':
         return (
           <Elements.AddressLine1

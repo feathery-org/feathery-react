@@ -63,7 +63,7 @@ function AddressLine1({
                 margin: 0,
                 backgroundColor: 'white',
                 cursor: 'pointer',
-                boxShadow: '0 2px 4px rgb(0 0 0 / 15%)'
+                boxShadow: '0 0 4px rgb(0 0 0 / 15%)'
               }}
             >
               {options.map(({ display }) => (
@@ -71,8 +71,9 @@ function AddressLine1({
                   key={display}
                   css={{
                     padding: '16px',
+                    transition: '0.1s ease all',
                     '&:hover': {
-                      backgroundColor: 'lightgrey'
+                      backgroundColor: '#e6e6e6'
                     }
                   }}
                   onClick={async () => {
