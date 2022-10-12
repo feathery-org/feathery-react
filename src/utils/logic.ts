@@ -192,4 +192,5 @@ function coerceType(val: any, type: TYPE = detectType(val)): any {
   return val;
 }
 
-export { evalComparisonRule, type OPERATOR_CODE };
+export { evalComparisonRule };
+export type { OPERATOR_CODE };
