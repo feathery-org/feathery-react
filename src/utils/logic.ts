@@ -18,12 +18,19 @@ type OPERATOR_CODE =
   | 'is_numerical'
   | 'is_text';
 
+export type FieldValueType = {
+  field_type: 'servar' | 'hidden';
+  field_id: string;
+  field_key: string;
+};
+export type ValueType = string | FieldValueType;
+
 export interface ComparisonRule {
   field_type?: '' | 'servar' | 'hidden';
   hidden_field?: string | null;
   servar?: string | null;
   comparison?: OPERATOR_CODE; // always present after the initial state
-  values?: any[];
+  values: ValueType[];
   field_id: string | null; // always non-null after the initial state
   field_key?: string;
 }
@@ -35,6 +42,9 @@ export interface ResolvedComparisonRule extends ComparisonRule {
   field_key: string;
 }
 
+const valueTypeIsField = (v: ValueType): v is FieldValueType =>
+  typeof v === 'object' && 'field_id' in v;
+
 /**
  * Evaluates a comparison rule.
  * Note: The right side field values can be multi-values (array) as well
@@ -42,33 +52,45 @@ export interface ResolvedComparisonRule extends ComparisonRule {
  * The LEFT side field values may be repeating because the field is in a repeat
  * or because the field is multi-valued.  To complicate further, the multi-valued
  * field may be in a repeat, resulting in an array of arrays.
+ * Additionally, the RIGHT side field values could also be existing fields which themselves
+ * might be multi-valued (either a multi-valued type or in a repeat or both).
  * Either way, the logic evaluation is the same:
  * EVERY LEFT SIDE VALUE MUST COMPARE TRUTHY TO AT LEAST ONE (SOME) RIGHT SIDE VALUE
  * FOR THE OVERALL EXPRESSION TO BE TRUE.
+ *
+ * The [undefined] arrays used when flattening the left and right values below are
+ *  to deal with multi-valued repeating fields (e.g. checkbox group) on both the left and right
+ *  that have no values (empty array).  This logic is flattening the values out to feed to
+ *  the "every left value must compare to some right value" comparison logic.
+ *  Since [].every() always returns true, we need to have a value of undefined for each empty
+ *  field value for it to properly evaluate the empty field case.
  */
 const evalComparisonRule = (
   rule: ResolvedComparisonRule,
   fieldValues: { [key: string]: any }
 ): boolean => {
-  const fieldValue = fieldValues[rule.field_key];
-  return (
-    Array.isArray(fieldValue)
-      ? fieldValue.length
-        ? fieldValue
-        : [undefined]
-      : [fieldValue]
-  )
+  // flatten the right side values/fields into flat list of values
+  const flatValues = rule.values.flatMap((value) => {
+    if (value !== null && valueTypeIsField(value))
+      return getValuesAsArray(fieldValues[value.field_key]).flatMap(
+        (v: any) => {
+          if (Array.isArray(v) && !v.length) return [undefined];
+          return v;
+        }
+      );
+    return value;
+  });
+
+  const leftFieldValues = getValuesAsArray(fieldValues[rule.field_key]);
+  return leftFieldValues
     .flatMap((v: any) => {
       if (Array.isArray(v) && !v.length) return [undefined];
       return v;
     })
-    .every((fv: any) =>
-      COMPARISON_FUNCTIONS[rule.comparison](
-        fv,
-        rule.values // TODO: support fields
-      )
-    );
+    .every((fv: any) => COMPARISON_FUNCTIONS[rule.comparison](fv, flatValues));
 };
+const getValuesAsArray = (values: unknown) =>
+  Array.isArray(values) ? (values.length ? values : [undefined]) : [values];
 
 type COMPARISON_FUNCTION = (leftOperand: any, rightOperand?: any) => boolean;
 
