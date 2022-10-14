@@ -146,5 +146,10 @@ function removeStytchQueryParams() {
 
 function getRedirectUrl() {
   const { origin, pathname, hash } = window.location;
-  return `${origin}${pathname}${hash}`;
+  const queryParams = new URLSearchParams(window.location.search);
+  queryParams.forEach((value, key) => {
+    if (key !== 'feathery_1' && key !== 'feathery_2') queryParams.delete(key);
+  });
+  const queryString = queryParams.has('feathery_1') ? `?${queryParams}` : '';
+  return `${origin}${pathname}${queryString}${hash}`;
 }
