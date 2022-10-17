@@ -51,7 +51,8 @@ import {
 import {
   getIntegrationActionConfiguration,
   ActionData,
-  trackEvent
+  trackEvent,
+  inferAuthLogout
 } from '../integrations/utils';
 import {
   LINK_ADD_REPEATED_ROW,
@@ -64,7 +65,8 @@ import {
   LINK_URL,
   LINK_STRIPE,
   LINK_BACK,
-  LINK_NEXT
+  LINK_NEXT,
+  LINK_LOGOUT
 } from '../elements/basic/ButtonElement';
 import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
@@ -1352,6 +1354,8 @@ function Form({
       }
     } else if (link === LINK_GOOGLE_OAUTH) {
       googleOauthRedirect();
+    } else if (link === LINK_LOGOUT) {
+      inferAuthLogout();
     } else if (link === LINK_NEXT) {
       clickPromise = buttonOnSubmit(button, !button.properties.link_no_submit);
     } else if (link === LINK_BACK) {

@@ -20,6 +20,7 @@ import {
   installGoogleAnalytics,
   trackGAEvent
 } from './googleAnalytics';
+import { getAuthClient } from '../utils/init';
 
 const IMPORTED_URLS = new Set();
 
@@ -73,6 +74,16 @@ export function inferEmailLoginFromURL(featheryClient: any) {
   const token = queryParams.get('token');
   if (stytchJwt || (type && token)) emailLoginStytch(featheryClient);
   else emailLoginFirebase(featheryClient);
+}
+
+export function inferAuthLogout() {
+  const stytchJwt = getStytchJwt();
+  if (stytchJwt) {
+    const authClient = getAuthClient();
+    authClient.session.revoke();
+  } else {
+    global.firebase.auth().signOut();
+  }
 }
 
 export interface ActionData {
