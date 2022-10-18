@@ -200,11 +200,11 @@ const Cell = ({ node: el, form }: any) => {
             defaultValue={fieldVal}
             onEnd={(newFile: any) => {
               clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
-              fieldValues[servar.key] = Promise.resolve(newFile);
+              updateFieldValues({ [servar.key]: Promise.resolve(newFile) });
               onChange();
             }}
             onClear={() => {
-              fieldValues[servar.key] = null;
+              updateFieldValues({ [servar.key]: null });
               onChange();
             }}
           />
