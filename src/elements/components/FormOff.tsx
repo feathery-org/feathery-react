@@ -1,7 +1,10 @@
 import React from 'react';
 import { FormClosedIcon } from './icons';
 
-export default function FormOff({ width = 392 }) {
+export default function FormOff({ width = 392, noEdit = false }) {
+  const message = noEdit
+    ? 'You have successfully filled out the form.'
+    : "This form isn't currently collecting responses.";
   return (
     <div
       style={{
@@ -22,10 +25,10 @@ export default function FormOff({ width = 392 }) {
           fontSize: '26px',
           lineHeight: '32px',
           textAlign: 'center',
-          marginTop: '50px'
+          margin: '50px 0'
         }}
       >
-        This form isn't currently collecting responses.
+        {message}
       </div>
     </div>
   );
