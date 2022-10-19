@@ -204,7 +204,7 @@ describe('formHelperFunctions', () => {
           rules: [
             {
               field_key: 'rule-key',
-              value: 'rule-value',
+              values: ['rule-value'],
               comparison: 'equal'
             }
           ],
@@ -240,7 +240,7 @@ describe('formHelperFunctions', () => {
           rules: [
             {
               field_key: 'rule-key',
-              value: 'rule-value',
+              values: ['rule-value'],
               comparison: 'equal'
             }
           ],
@@ -278,12 +278,12 @@ describe('formHelperFunctions', () => {
           rules: [
             {
               field_key: 'rule-key',
-              value: 'rule-value',
+              values: ['rule-value'],
               comparison: 'equal'
             },
             {
               field_key: 'rule-key',
-              value: 'not-rule-value',
+              values: ['not-rule-value'],
               comparison: 'not_equal'
             }
           ],

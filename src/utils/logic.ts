@@ -47,6 +47,12 @@ const valueTypeIsField = (v: ValueType): v is FieldValueType =>
 
 /**
  * Evaluates a comparison rule.
+ * @param rule
+ * @param fieldValues
+ * @param repeatIndex If evaluating for a specific index of a repeat, use the index to
+ * only compare repeating fields (left and right) at THAT index, i.e. only use that indexed
+ * value in the comparison.
+ *
  * Note: The right side field values can be multi-values (array) as well
  * as the left-side field value (repeating field).
  * The LEFT side field values may be repeating because the field is in a repeat
@@ -55,42 +61,58 @@ const valueTypeIsField = (v: ValueType): v is FieldValueType =>
  * Additionally, the RIGHT side field values could also be existing fields which themselves
  * might be multi-valued (either a multi-valued type or in a repeat or both).
  * Either way, the logic evaluation is the same:
- * EVERY LEFT SIDE VALUE MUST COMPARE TRUTHY TO AT LEAST ONE (SOME) RIGHT SIDE VALUE
+ * SOME LEFT SIDE VALUE MUST COMPARE TRUTHY TO AT LEAST ONE (SOME) RIGHT SIDE VALUE
  * FOR THE OVERALL EXPRESSION TO BE TRUE.
  *
- * The [undefined] arrays used when flattening the left and right values below are
+ * Note: The [undefined] arrays used when flattening the left and right values below are
  *  to deal with multi-valued repeating fields (e.g. checkbox group) on both the left and right
  *  that have no values (empty array).  This logic is flattening the values out to feed to
- *  the "every left value must compare to some right value" comparison logic.
+ *  the "some left value must compare to some right value" comparison logic.
  *  Since [].every() always returns true, we need to have a value of undefined for each empty
  *  field value for it to properly evaluate the empty field case.
  */
+
 const evalComparisonRule = (
   rule: ResolvedComparisonRule,
-  fieldValues: { [key: string]: any }
+  fieldValues: { [key: string]: any },
+  repeatIndex?: number
 ): boolean => {
   // flatten the right side values/fields into flat list of values
   const flatValues = rule.values.flatMap((value) => {
     if (value !== null && valueTypeIsField(value))
-      return getValuesAsArray(fieldValues[value.field_key]).flatMap(
-        (v: any) => {
-          if (Array.isArray(v) && !v.length) return [undefined];
-          return v;
-        }
-      );
+      return getValuesAsArray(
+        fieldValues[value.field_key],
+        repeatIndex
+      ).flatMap((v: any) => {
+        if (Array.isArray(v) && !v.length) return [undefined];
+        return v;
+      });
     return value;
   });
 
-  const leftFieldValues = getValuesAsArray(fieldValues[rule.field_key]);
+  const leftFieldValues = getValuesAsArray(
+    fieldValues[rule.field_key],
+    repeatIndex
+  );
   return leftFieldValues
     .flatMap((v: any) => {
       if (Array.isArray(v) && !v.length) return [undefined];
       return v;
     })
-    .every((fv: any) => COMPARISON_FUNCTIONS[rule.comparison](fv, flatValues));
+    .some((fv: any) => COMPARISON_FUNCTIONS[rule.comparison](fv, flatValues));
 };
-const getValuesAsArray = (values: unknown) =>
-  Array.isArray(values) ? (values.length ? values : [undefined]) : [values];
+const getValuesAsArray = (values: unknown, repeatIndex?: number) => {
+  // Array.isArray(values) ? (values.length ? values : [undefined]) : [values];
+  if (Array.isArray(values)) {
+    if (values.length) {
+      if (repeatIndex !== undefined && values.length > repeatIndex)
+        return [values[repeatIndex]];
+      return values;
+    }
+    return [undefined];
+  }
+  return [values];
+};
 
 type COMPARISON_FUNCTION = (leftOperand: any, rightOperand?: any) => boolean;
 

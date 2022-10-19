@@ -6,10 +6,10 @@ import {
   getInlineError,
   isFieldActuallyRequired,
   reactFriendlyKey,
-  shouldElementHide,
   textFieldShouldSubmit,
   clearFilePathMapEntry
 } from '../../utils/formHelperFunctions';
+import { shouldElementHide } from '../../utils/hideIfs';
 import { isFieldValueEmpty } from '../../utils/validation';
 import { fieldCounter } from '../Form';
 import { justRemove } from '../../utils/array';
@@ -63,7 +63,6 @@ const Cell = ({ node: el, form }: any) => {
 
   if (
     shouldElementHide({
-      fields: activeStep.servar_fields,
       element: el
     })
   ) {
@@ -107,7 +106,6 @@ const Cell = ({ node: el, form }: any) => {
         .filter(
           (field: any) =>
             !shouldElementHide({
-              fields: activeStep.servar_fields,
               element: field
             })
         )
