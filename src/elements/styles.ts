@@ -34,31 +34,14 @@ class ApplyStyles {
   constructor(element: any, targets: string[], handleMobile = false) {
     this.element = element;
     this.styles = element.styles;
-    this._handleBorderWidths('styles');
     this.targets = objectFromEntries(targets.map((t: string) => [t, {}]));
     this.handleMobile = handleMobile;
     if (handleMobile) {
       this.mobileStyles = element.mobile_styles ?? {};
-      this._handleBorderWidths('mobileStyles');
       this.mobileTargets = objectFromEntries(
         targets.map((t: string) => [t, {}])
       );
     }
-  }
-
-  // If there is a hover or active border but not a default border,
-  // set a placeholder border so text doesn't shift on hover/select
-  _handleBorderWidths(key: 'styles' | 'mobileStyles') {
-    ['hover_', 'selected_'].forEach((prefix) => {
-      if (borderWidthProps.every((prop) => !this[key][prop])) {
-        borderWidthProps.forEach((prop) => {
-          this[key][prop] = this[key][`${prefix}${prop}`];
-        });
-        borderColorProps.forEach((prop) => {
-          this[key][prop] = 'ffffff00';
-        });
-      }
-    });
   }
 
   addTargets(...targets: string[]) {
