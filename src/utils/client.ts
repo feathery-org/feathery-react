@@ -102,7 +102,7 @@ export default class Client {
 
   _submitJSONData(servars: any) {
     const { userKey } = initInfo();
-    const url = `${API_URL}panel/step/submit/`;
+    const url = `${API_URL}panel/step/submit/v2/`;
     const data = {
       ...(userKey ? { fuser_key: userKey } : {}),
       servars,
@@ -309,7 +309,7 @@ export default class Client {
     if (noData) (params as any).no_data = 'true';
     // @ts-expect-error TS(2322): Type 'string' is not assignable to type '{ form_ke... Remove this comment to see the full error message
     params = encodeGetParams(params);
-    const url = `${API_URL}panel/session/?${params}`;
+    const url = `${API_URL}panel/session/v2/?${params}`;
     const options = { importance: 'high' };
 
     const response = await this._fetch(url, options);
@@ -337,7 +337,7 @@ export default class Client {
       auth_email: authEmail,
       ...(userKey ? { fuser_key: userKey } : {})
     };
-    const url = `${API_URL}panel/update_auth/`;
+    const url = `${API_URL}panel/update_auth/v2/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'PATCH',
@@ -350,7 +350,7 @@ export default class Client {
 
   async submitCustom(customKeyValues: any, override = true) {
     const { userKey } = initInfo();
-    const url = `${API_URL}panel/custom/submit/v2/`;
+    const url = `${API_URL}panel/custom/submit/v3/`;
 
     const jsonKeyVals = {};
     const formData = new FormData();

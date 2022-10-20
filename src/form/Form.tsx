@@ -1341,7 +1341,7 @@ function Form({
         .then(() => clearLoaders());
     } else if (link === LINK_SEND_MAGIC_LINK) {
       const fieldKey = button.properties.auth_target_field_key;
-      const email = fieldValues[fieldKey];
+      const email = fieldValues[fieldKey] as string;
       if (validators.email(email)) {
         clickPromise = setButtonLoader(button)
           .then(() => sendMagicLink({ fieldVal: email }))

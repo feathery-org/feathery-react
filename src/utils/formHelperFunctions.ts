@@ -379,8 +379,6 @@ function textFieldShouldSubmit(servar: any, value: any) {
       methods = servar.metadata.login_methods;
       onlyPhone = methods.length === 1 && methods[0] === 'phone';
       return onlyPhone && value.length === 10;
-    case 'phone_number':
-      return value.length === 10;
     case 'ssn':
       return value.length === 9;
     default:

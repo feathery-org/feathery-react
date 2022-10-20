@@ -5,6 +5,20 @@ export const mobileBreakpointValue = 478;
 
 export const mobileBreakpointKey = `@media (max-width: ${mobileBreakpointValue}px)`;
 
+const borderWidthProps = [
+  'border_top_width',
+  'border_right_width',
+  'border_bottom_width',
+  'border_left_width'
+];
+
+const borderColorProps = [
+  'border_top_color',
+  'border_right_color',
+  'border_bottom_color',
+  'border_left_color'
+];
+
 /**
  * Handles the translation of server-side properties into responsive CSS
  * attributes
@@ -20,14 +34,31 @@ class ApplyStyles {
   constructor(element: any, targets: string[], handleMobile = false) {
     this.element = element;
     this.styles = element.styles;
+    this._handleBorderWidths('styles');
     this.targets = objectFromEntries(targets.map((t: string) => [t, {}]));
     this.handleMobile = handleMobile;
     if (handleMobile) {
       this.mobileStyles = element.mobile_styles ?? {};
+      this._handleBorderWidths('mobileStyles');
       this.mobileTargets = objectFromEntries(
         targets.map((t: string) => [t, {}])
       );
     }
+  }
+
+  // If there is a hover or active border but not a default border,
+  // set a placeholder border so text doesn't shift on hover/select
+  _handleBorderWidths(key: 'styles' | 'mobileStyles') {
+    ['hover_', 'selected_'].forEach((prefix) => {
+      if (borderWidthProps.every((prop) => !this[key][prop])) {
+        borderWidthProps.forEach((prop) => {
+          this[key][prop] = this[key][`${prefix}${prop}`];
+        });
+        borderColorProps.forEach((prop) => {
+          this[key][prop] = 'ffffff00';
+        });
+      }
+    });
   }
 
   addTargets(...targets: string[]) {
@@ -121,28 +152,10 @@ class ApplyStyles {
     const i = prefix && important ? '!important' : '';
     this.apply(
       target,
-      [
-        `${prefix}border_top_color`,
-        `${prefix}border_right_color`,
-        `${prefix}border_bottom_color`,
-        `${prefix}border_left_color`
-      ],
+      borderColorProps.map((prop) => `${prefix}${prop}`),
       // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
       (a, b, c, d) => ({
         borderColor: `#${a} #${b} #${c} #${d} ${i}`
-      })
-    );
-    this.apply(
-      target,
-      [
-        `${prefix}border_top_width`,
-        `${prefix}border_right_width`,
-        `${prefix}border_bottom_width`,
-        `${prefix}border_left_width`
-      ],
-      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
-      (a, b, c, d) => ({
-        borderWidth: `${a}px ${b}px ${c}px ${d}px ${i}`
       })
     );
     this.apply(
@@ -156,6 +169,14 @@ class ApplyStyles {
       // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
       (a, b, c, d) => ({
         borderStyle: `${a} ${b} ${c} ${d} ${i}`
+      })
+    );
+    this.apply(
+      target,
+      borderWidthProps.map((prop) => `${prefix}${prop}`),
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
+      (a, b, c, d) => ({
+        borderWidth: `${a}px ${b}px ${c}px ${d}px ${i}`
       })
     );
   }

@@ -81,9 +81,6 @@ function getMaskProps(servar: any, value: any) {
         })
       };
       break;
-    case 'phone_number':
-      maskProps = { mask: '(000) 000-0000' };
-      break;
     case 'ssn':
       maskProps = { mask: '000 - 00 - 0000' };
       break;
@@ -123,8 +120,6 @@ function getInputProps(servar: any) {
       methods = servar.metadata.login_methods;
       onlyPhone = methods.length === 1 && methods[0] === 'phone';
       return { type: onlyPhone ? 'tel' : 'text' };
-    case 'phone_number':
-      return { type: 'tel' };
     case 'ssn':
       return { type: 'tel' };
     case 'url':

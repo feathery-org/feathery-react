@@ -5,6 +5,7 @@ import ColorPickerField from './ColorPickerField';
 import DateSelectorField from './DateSelectorField';
 import DropdownField from './DropdownField';
 import FileUploadField from './FileUploadField';
+import PhoneField from './PhoneField';
 import PinInputField from './PinInputField';
 import RadioButtonGroupField from './RadioButtonGroupField';
 import SignatureField from './SignatureField';
@@ -24,6 +25,7 @@ const Fields = {
   DropdownField,
   FileUploadField,
   PaymentMethodField,
+  PhoneField,
   PinInputField,
   RadioButtonGroupField,
   SignatureField,
@@ -238,11 +240,33 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyBorders('field');
       styles.applyFontStyles('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
-      if (field.properties.placeholder)
+      if (field.properties.placeholder || type === 'phone_number')
         styles.applyPlaceholderStyles(type, field.styles);
       styles.apply('tooltipIcon', 'font_size', (a: any) => ({
         width: `${a}px`
       }));
+
+      if (type === 'phone_number') {
+        styles.addTargets('fieldToggle', 'dropdown');
+        styles.apply('fieldToggle', 'font_size', (a: any) => ({
+          fontSize: `${1.5 * a}px`,
+          width: `${3 * a}px`
+        }));
+        styles.apply(
+          'fieldToggle',
+          ['corner_top_left_radius', 'corner_bottom_left_radius'],
+          (a: any, b: any) => ({
+            borderTopLeftRadius: `${a}px`,
+            borderBottomLeftRadius: `${b}px`
+          })
+        );
+        styles.apply('field', 'font_size', (a: any) => ({
+          paddingLeft: `${3.5 * a}px`
+        }));
+        styles.apply('placeholder', 'font_size', (a: any) => ({
+          left: `${3.5 * a}px`
+        }));
+      }
       break;
   }
   return styles;

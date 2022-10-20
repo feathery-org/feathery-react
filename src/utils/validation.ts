@@ -124,6 +124,7 @@ function validateElement(
 const emailPatternStr =
   "^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)+$";
 const emailPattern = new RegExp(emailPatternStr);
+// TODO: deprecate and support international format
 const phonePattern = /^\d{10}$/;
 
 const LIB_PHONE_NUMBER_URL =
@@ -132,10 +133,18 @@ const LIB_PHONE_NUMBER_URL =
 const loadPhoneValidator = () => dynamicImport(LIB_PHONE_NUMBER_URL);
 
 const validators = {
-  email: (a: any) => emailPattern.test(a),
-  phone: (a: any) => {
+  email: (a: string) => emailPattern.test(a),
+  phone: (a: string) => {
     try {
       return global.libphonenumber.isValidPhoneNumber(a, 'US');
+    } catch (e) {
+      // Invalid phone number
+      return false;
+    }
+  },
+  internationalPhone: (a: string) => {
+    try {
+      return global.libphonenumber.isValidPhoneNumber(`+${a}`);
     } catch (e) {
       // Invalid phone number
       return false;
@@ -180,7 +189,7 @@ function getStandardFieldError(value: any, servar: any) {
   }
 
   // Check if value is badly formatted
-  if (servar.type === 'phone_number' && !validators.phone(value)) {
+  if (servar.type === 'phone_number' && !validators.internationalPhone(value)) {
     return 'Invalid phone number';
   } else if (servar.type === 'email' && !validators.email(value)) {
     return 'Invalid email format';
