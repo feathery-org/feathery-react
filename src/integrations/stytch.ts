@@ -1,4 +1,4 @@
-import { getAuthClient, setAuthClient } from '../utils/init';
+import { getAuthClient, initState, setAuthClient } from '../utils/init';
 import { dynamicImport } from './utils';
 import { featheryDoc } from '../utils/browser';
 
@@ -65,7 +65,8 @@ export function sendMagicLink({ fieldVal }: any) {
   });
 }
 
-export function emailLogin(featheryClient: any) {
+export function emailLogin() {
+  const featheryClient = initState.currentClient;
   const stytchClient = getAuthClient();
   // If there is no auth client, no config or auth has already been sent, then return early
   if (!stytchClient || !config || authSent) return;

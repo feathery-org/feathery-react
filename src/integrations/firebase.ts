@@ -1,6 +1,7 @@
 import { dynamicImport } from './utils';
 import { updateSessionValues } from '../utils/formHelperFunctions';
 import { emailPattern, phonePattern } from '../utils/validation';
+import { initState } from '../utils/init';
 
 let firebasePromise: any = null;
 
@@ -36,7 +37,8 @@ export function installFirebase(firebaseConfig: any) {
   }
 }
 
-export function emailLogin(clientArg: any) {
+export function emailLogin() {
+  const featheryClient = initState.currentClient;
   if (global.firebase?.auth().isSignInWithEmailLink(window.location.href)) {
     const authEmail = window.localStorage.getItem('featheryFirebaseEmail');
     if (authEmail) {
@@ -44,7 +46,7 @@ export function emailLogin(clientArg: any) {
         .auth()
         .signInWithEmailLink(authEmail, window.location.href)
         .then((result: any) => {
-          return clientArg
+          return featheryClient
             .submitAuthInfo({
               authId: result.user.uid,
               authEmail

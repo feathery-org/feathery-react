@@ -20,7 +20,7 @@ import {
   installGoogleAnalytics,
   trackGAEvent
 } from './googleAnalytics';
-import { getAuthClient } from '../utils/init';
+import { getAuthClient, initState } from '../utils/init';
 
 const IMPORTED_URLS = new Set();
 
@@ -52,7 +52,7 @@ export function dynamicImport(
   }
 }
 
-export async function initializeIntegrations(integs: any, clientArg: any) {
+export async function initializeIntegrations(integs: any) {
   await Promise.all([
     installPlaid(!!integs.plaid),
     installFirebase(integs.fb),
@@ -64,26 +64,31 @@ export async function initializeIntegrations(integs: any, clientArg: any) {
 
   const gtm = integs['google-tag-manager'];
   if (gtm) initializeTagManager(gtm);
-  if (integs.fb || integs.stytch) inferEmailLoginFromURL(clientArg);
+  if (integs.fb || integs.stytch) inferEmailLoginFromURL();
 }
 
-export function inferEmailLoginFromURL(featheryClient: any) {
+export function inferEmailLoginFromURL() {
   const queryParams = new URLSearchParams(window.location.search);
   const stytchJwt = getStytchJwt();
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
-  if (stytchJwt || (type && token)) emailLoginStytch(featheryClient);
-  else emailLoginFirebase(featheryClient);
+  if (stytchJwt || (type && token)) emailLoginStytch();
+  else emailLoginFirebase();
 }
 
 export function inferAuthLogout() {
   const stytchJwt = getStytchJwt();
+  let logout = () => global.firebase?.auth().signOut(); // firebase? because firebase may not exist
   if (stytchJwt) {
-    const authClient = getAuthClient();
-    authClient.session.revoke();
-  } else {
-    global.firebase.auth().signOut();
+    logout = () => getAuthClient().session.revoke();
   }
+
+  logout().then(() => {
+    initState.authId = undefined;
+    initState.authPhoneNumber = undefined;
+    initState.authEmail = undefined;
+    initState.renderCallbacks[initState.currentClient.formKey]();
+  });
 }
 
 export interface ActionData {
