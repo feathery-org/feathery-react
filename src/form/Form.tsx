@@ -175,7 +175,7 @@ function Form({
     formOff: undefined,
     showBrand: false,
     brandPosition: undefined,
-    allowEditAfterCompletion: true
+    allowEdit: 'yes'
   });
   const [inlineErrors, setInlineErrors] = useState({});
   const [, setRepeatChanged] = useState(false);
@@ -698,7 +698,7 @@ function Form({
             autofocus: res.autofocus,
             // @ts-expect-error TS(2322): Type 'boolean' is not assignable to type 'undefine... Remove this comment to see the full error message
             formOff: Boolean(res.formOff),
-            allowEditAfterCompletion: res.allow_edit_after_completion,
+            allowEdit: res.allow_edit_after_completion,
             showBrand: Boolean(res.show_brand),
             brandPosition: res.brand_position
           });
@@ -1488,16 +1488,19 @@ function Form({
     setCardElement
   };
 
+  let noEdit;
+  if (formSettings.allowEdit === 'hide') noEdit = null;
+  else if (formSettings.allowEdit === 'disable') noEdit = <FormOff noEdit />;
+
   if (formSettings.formOff) {
     // Form is turned off
     return <FormOff />;
-  } else if (!formSettings.allowEditAfterCompletion && formCompleted) {
+  } else if (formCompleted && noEdit !== undefined) {
     // Form completed in a previous session
-    return <FormOff noEdit />;
+    return noEdit;
   } else if (finished) {
     // Form completed during this session
-    if (!formSettings.allowEditAfterCompletion) return <FormOff noEdit />;
-    else return null;
+    return noEdit !== undefined ? noEdit : null;
   } else if (!activeStep) {
     // Form has not been loaded yet
     return null;
