@@ -19,7 +19,7 @@ function AddressLine1({
   applyStyles,
   fieldLabel,
   elementProps = {},
-  editable = false,
+  editMode,
   onSelect = () => {},
   onBlur = () => {},
   setRef = () => {},
@@ -37,7 +37,7 @@ function AddressLine1({
       css={{
         maxWidth: '100%',
         position: 'relative',
-        pointerEvents: editable ? 'none' : 'auto',
+        pointerEvents: editMode ? 'none' : 'auto',
         ...applyStyles.getTarget('fc')
       }}
       {...elementProps}

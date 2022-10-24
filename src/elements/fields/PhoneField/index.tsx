@@ -26,7 +26,7 @@ function PhoneField({
   fullNumber,
   elementProps = {},
   required = false,
-  editable = false,
+  editMode,
   onChange = () => {},
   setRef = () => {},
   inlineError,
@@ -213,7 +213,7 @@ function PhoneField({
       css={{
         maxWidth: '100%',
         position: 'relative',
-        pointerEvents: editable ? 'none' : 'auto',
+        pointerEvents: editMode ? 'none' : 'auto',
         ...applyStyles.getTarget('fc')
       }}
       {...elementProps}

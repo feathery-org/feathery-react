@@ -13,7 +13,7 @@ function FileUploadField({
   element,
   applyStyles,
   required = false,
-  editable = false,
+  editMode,
   onChange: customOnChange = () => {},
   initialFiles = [],
   elementProps = {},
@@ -95,7 +95,7 @@ function FileUploadField({
         display: 'flex',
         flexWrap: 'wrap',
         position: 'relative',
-        pointerEvents: editable ? 'none' : 'auto',
+        pointerEvents: editMode ? 'none' : 'auto',
         margin: isMultiple ? undefined : '0 6px 6px 0',
         ...applyStyles.getTarget('fc')
       }}

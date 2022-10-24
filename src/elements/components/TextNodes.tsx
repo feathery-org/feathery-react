@@ -27,13 +27,13 @@ function TextNodes({
   values,
   applyStyles,
   conditions = [],
-  editable = false,
+  editMode,
   focused = false,
   textSpanOnClick = () => {},
   textCallbacks = {}
 }: any) {
   const { spanRef, editableProps } = useTextEdit({
-    editable,
+    editable: editMode === 'editable',
     focused,
     ...textCallbacks
   });
@@ -89,7 +89,7 @@ function TextNodes({
             const attrs = op.attributes || {};
             let onClick = () => {};
             let cursor = 'inherit';
-            if (!editable) {
+            if (!editMode) {
               if (attrs.font_link) {
                 onClick = () => openTab(attrs.font_link);
                 cursor = 'pointer';

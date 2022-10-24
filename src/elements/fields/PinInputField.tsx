@@ -250,7 +250,7 @@ function PinInputField({
   inlineError,
   shouldFocus = false,
   fieldVal = '',
-  editable = false,
+  editMode,
   onChange = () => {},
   elementProps = {},
   children
@@ -260,7 +260,7 @@ function PinInputField({
       style={{
         display: 'flex',
         position: 'relative',
-        pointerEvents: editable ? 'none' : 'auto'
+        pointerEvents: editMode ? 'none' : 'auto'
       }}
       {...elementProps}
     >

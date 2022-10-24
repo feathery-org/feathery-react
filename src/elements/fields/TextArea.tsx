@@ -10,7 +10,7 @@ function TextArea({
   fieldLabel,
   elementProps = {},
   required = false,
-  editable = false,
+  editMode,
   onChange = () => {},
   setRef = () => {},
   rawValue = '',
@@ -23,7 +23,7 @@ function TextArea({
       css={{
         maxWidth: '100%',
         position: 'relative',
-        pointerEvents: editable ? 'none' : 'auto',
+        pointerEvents: editMode ? 'none' : 'auto',
         ...applyStyles.getTarget('fc')
       }}
       {...elementProps}

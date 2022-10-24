@@ -45,7 +45,7 @@ const CardField = ({
   setCardElement = () => {},
   setFieldError = () => {},
   onChange = () => {},
-  editable = false,
+  editMode,
   inlineError,
   errorDisplayMode
 }: any) => {
@@ -120,7 +120,7 @@ const CardField = ({
       css={{
         maxWidth: '100%',
         position: 'relative',
-        pointerEvents: editable ? 'none' : 'auto',
+        pointerEvents: editMode ? 'none' : 'auto',
         ...applyStyles.getTarget('fc')
       }}
       {...elementProps}
@@ -143,7 +143,7 @@ const CardField = ({
       >
         <div css={{ width: '100%', position: 'relative' }}>
           {/* position an input field under the card element to support html5 errors */}
-          {!editable && errorDisplayMode === 'html5' && (
+          {!editMode && errorDisplayMode === 'html5' && (
             <input
               id={element.servar.key}
               css={{
@@ -161,7 +161,7 @@ const CardField = ({
           )}
           <CardElement
             css={
-              !editable
+              !editMode
                 ? {
                     position: 'absolute',
                     top: 0,
@@ -179,22 +179,22 @@ const CardField = ({
   );
 };
 
-function PaymentMethodField({ editable = false, children, ...props }: any) {
+function PaymentMethodField({ editMode, children, ...props }: any) {
   useEffect(() => {
     // if ediatble, i.e. running in dashboard, then just load stripe with key so cardElement shows
-    if (editable)
+    if (editMode)
       document.dispatchEvent(
         new CustomEvent('stripe_key_loaded', {
           detail: { key: stripeKey }
         })
       );
-  }, [editable]);
+  }, [editMode]);
 
   return (
     // @ts-expect-error TS(2322): Type 'Promise<unknown>' is not assignable to type ... Remove this comment to see the full error message
     <Elements stripe={stripePromise}>
       {children}
-      <CardField editable={editable} {...props} />
+      <CardField editMode={editMode} {...props} />
     </Elements>
   );
 }

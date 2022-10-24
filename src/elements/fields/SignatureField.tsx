@@ -9,7 +9,7 @@ function SignatureField({
   fieldLabel,
   applyStyles,
   defaultValue = null,
-  editable = false,
+  editMode,
   elementProps = {},
   onEnd = () => {},
   onClear = () => {},
@@ -39,7 +39,7 @@ function SignatureField({
         ...applyStyles.getTarget('fc'),
         maxWidth: '100%',
         position: 'relative',
-        pointerEvents: editable ? 'none' : 'auto'
+        pointerEvents: editMode ? 'none' : 'auto'
       }}
       {...elementProps}
     >

@@ -9,7 +9,7 @@ export default function DropdownField({
   inlineError,
   required = false,
   fieldVal = '',
-  editable = false,
+  editMode,
   onChange = () => {},
   elementProps = {},
   children
@@ -65,7 +65,7 @@ export default function DropdownField({
             ...bootstrapStyles,
             ...applyStyles.getTarget('field'),
             ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-            pointerEvents: editable ? 'none' : 'auto',
+            pointerEvents: editMode ? 'none' : 'auto',
             width: '100%',
             appearance: 'none',
             WebkitAppearance: 'none',

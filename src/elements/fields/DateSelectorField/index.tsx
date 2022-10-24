@@ -24,7 +24,7 @@ function DateSelectorField({
   fieldLabel,
   elementProps = {},
   required = false,
-  editable = false,
+  editMode,
   onChange = () => {},
   setRef = () => {},
   value = '',
@@ -46,7 +46,7 @@ function DateSelectorField({
       css={{
         maxWidth: '100%',
         position: 'relative',
-        pointerEvents: editable ? 'none' : 'auto',
+        pointerEvents: editMode ? 'none' : 'auto',
         ...applyStyles.getTarget('fc')
       }}
       {...elementProps}
