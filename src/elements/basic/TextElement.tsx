@@ -35,7 +35,7 @@ function TextElement({
   element,
   applyStyles,
   values = null,
-  editable = false,
+  editMode,
   focused = false,
   textCallbacks = {},
   textSpanOnClick = () => {},
@@ -63,7 +63,7 @@ function TextElement({
         applyStyles={applyStyles}
         textSpanOnClick={textSpanOnClick}
         conditions={conditions}
-        editable={editable}
+        editMode={editMode}
         focused={focused}
         textCallbacks={textCallbacks}
       />

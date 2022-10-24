@@ -102,7 +102,7 @@ function ButtonElement({
   applyStyles,
   values = null,
   loader = null,
-  editable = false,
+  editMode,
   focused = false,
   disabled = false,
   active = false,
@@ -128,7 +128,7 @@ function ButtonElement({
       style={{
         display: 'flex',
         cursor:
-          editable || element.properties.link === LINK_NONE
+          editMode || element.properties.link === LINK_NONE
             ? 'default'
             : 'pointer',
         boxShadow: 'none',
@@ -144,13 +144,13 @@ function ButtonElement({
           ...styles.getTarget('buttonDisabled')
         },
         /* Needed to style active class here to get active prop to work */
-        '&.active': editable
+        '&.active': editMode
           ? styles.getTarget('button')
           : styles.getTarget('buttonActive'),
-        '&:active:not(:disabled):not(.disabled)': editable
+        '&:active:not(:disabled):not(.disabled)': editMode
           ? styles.getTarget('button')
           : styles.getTarget('buttonActive'),
-        '&:hover:enabled': editable
+        '&:hover:enabled': editMode
           ? styles.getTarget('button')
           : styles.getTarget('buttonHover'),
         '&&': styles.getTarget('button')
@@ -178,7 +178,7 @@ function ButtonElement({
               element={element}
               values={values}
               applyStyles={applyStyles}
-              editable={editable}
+              editMode={editMode}
               focused={focused}
               textCallbacks={textCallbacks}
             />

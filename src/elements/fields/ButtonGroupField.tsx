@@ -6,7 +6,7 @@ function ButtonGroupField({
   applyStyles,
   fieldLabel,
   fieldVal = null,
-  editable = false,
+  editMode,
   onClick = () => {},
   elementProps = {},
   children
@@ -45,13 +45,13 @@ function ButtonGroupField({
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
-                cursor: editable ? 'default' : 'pointer',
+                cursor: editMode ? 'default' : 'pointer',
                 ...applyStyles.getTargets(
                   'field',
                   selectedOptMap[opt] ? 'active' : ''
                 ),
                 '&:active': applyStyles.getTarget('active'),
-                '&:hover': editable ? {} : applyStyles.getTarget('hover')
+                '&:hover': editMode ? {} : applyStyles.getTarget('hover')
               }}
             >
               {imageUrl && (
