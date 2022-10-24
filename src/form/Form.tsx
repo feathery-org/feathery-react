@@ -744,7 +744,12 @@ function Form({
               (saveUserLocation && session.current_step_key) ||
               (getOrigin as any)(steps).key;
             setFirstStep(newKey);
-            history.replace(location.pathname + location.search + `#${newKey}`);
+            // No hash necessary if form only has one step
+            if (Object.keys(steps).length > 1) {
+              history.replace(
+                location.pathname + location.search + `#${newKey}`
+              );
+            } else setStepKey(newKey);
           }
         )
         .catch(async (error) => {
