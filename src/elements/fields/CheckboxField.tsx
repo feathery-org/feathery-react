@@ -222,23 +222,23 @@ function CheckboxField({
 
   return (
     <div
-      css={{ ...applyStyles.getTarget('fc'), position: 'relative' }}
+      css={{
+        ...applyStyles.getTarget('fc'),
+        position: 'relative',
+        display: 'flex'
+      }}
       {...elementProps}
     >
       {children}
-      {fieldLabel}
       <Form.Check
         id={servar.key}
         type='checkbox'
         checked={fieldVal}
         onChange={onChange}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: 0
-        }}
+        style={{ marginTop: '5px', marginRight: '5px' }}
         css={composeCheckableInputStyle(styles)}
       />
+      {fieldLabel}
     </div>
   );
 }
