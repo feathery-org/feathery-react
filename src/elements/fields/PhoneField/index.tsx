@@ -108,7 +108,7 @@ function PhoneField({
   const supportedCountries = useMemo(() => {
     const filteredData = countryData.filter(
       ({ countryCode, countryName, phoneCode }) => {
-        if (!global.libphonenumber.isSupportedCountry(countryCode))
+        if (!global.libphonenumber?.isSupportedCountry(countryCode))
           return false;
         return (
           !query ||
