@@ -53,7 +53,6 @@ function applyButtonStyles(element: any, applyStyles: any) {
   applyStyles.applyWidth('img', 'image_');
   applyStyles.applyMargin('img', 'image_');
 
-  applyStyles.applyBorders('buttonHover', 'hover_');
   if (element.properties.link !== LINK_NONE) {
     applyStyles.apply('buttonHover', 'background_color', (a: any) => {
       const color = `${adjustColor(a, -45)} !important`;
@@ -69,7 +68,7 @@ function applyButtonStyles(element: any, applyStyles: any) {
       backgroundColor: `#${a} !important`
     }));
   }
-  applyStyles.applyBorders('buttonActive', 'selected_');
+  applyStyles.applyBorders('buttonHover', 'hover_');
   if (element.styles.selected_background_color) {
     applyStyles.apply(
       'buttonActive',
@@ -79,6 +78,7 @@ function applyButtonStyles(element: any, applyStyles: any) {
       })
     );
   }
+  applyStyles.applyBorders('buttonActive', 'selected_');
   applyStyles.apply('buttonDisabled', 'background_color', (a: any) => {
     const color = `${adjustColor(a, 45)} !important`;
     return {
