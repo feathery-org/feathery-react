@@ -542,7 +542,7 @@ function Form({
 
   const runUserCallback = async (
     userCallback: any,
-    getProps: Record<string, any> = () => ({}),
+    getProps: () => Record<string, any> = () => ({}),
     newStep = activeStep
   ) => {
     if (typeof userCallback !== 'function') return;
@@ -1426,9 +1426,9 @@ function Form({
     typeof onView === 'function'
       ? (elementId: any, isVisible: any) => {
           callbackRef.current.addCallback(
-            runUserCallback(onView, {
+            runUserCallback(onView, () => ({
               visibilityStatus: { elementId, isVisible }
-            }),
+            })),
             loaders
           );
         }
