@@ -88,8 +88,7 @@ import {
   ContextOnCustomAction,
   ContextOnView,
   ElementProps,
-  IntegrationData,
-  SetErrors
+  IntegrationData
 } from '../types/Form';
 
 export interface Props {
@@ -543,9 +542,10 @@ function Form({
 
   const runUserCallback = async (
     userCallback: any,
-    callbackProps: { [prop: string]: any; setErrors?: SetErrors },
+    getProps: Record<string, any> = () => ({}),
     newStep = activeStep
   ) => {
+    if (typeof userCallback !== 'function') return;
     try {
       await userCallback({
         setValues,
@@ -563,23 +563,19 @@ function Form({
         },
         userId: initInfo().userKey,
         stepName: newStep?.key ?? '',
-        ...callbackProps
+        ...getProps()
       });
     } catch (e) {
       console.log(e);
     }
   };
 
-  const getErrorCallback = (props1: any) => async (props2: any) => {
-    if (typeof onError === 'function') {
-      const formattedFields = formatAllFormFields(steps, true);
-      await runUserCallback(onError, {
-        fields: formattedFields,
-        ...props1,
-        ...props2
-      });
-    }
-  };
+  const getErrorCallback = (props1: any) => (props2: any) =>
+    runUserCallback(onError, () => ({
+      fields: formatAllFormFields(steps, true),
+      ...props1,
+      ...props2
+    }));
 
   const updateNewStep = (newStep: any) => {
     clearLoaders();
@@ -645,17 +641,17 @@ function Form({
       return errors;
     };
 
-    if (typeof onLoad === 'function') {
-      const formattedFields = formatAllFormFields(steps, true);
+    let stepChanged = false;
+    await runUserCallback(
+      onLoad,
+      () => {
+        const formattedFields = formatAllFormFields(steps, true);
+        const integrationData: IntegrationData = {};
+        if (initState.authId) {
+          integrationData.firebaseAuthId = initState.authId;
+        }
 
-      const integrationData: IntegrationData = {};
-      if (initState.authId) {
-        integrationData.firebaseAuthId = initState.authId;
-      }
-      let stepChanged = false;
-      await runUserCallback(
-        onLoad,
-        {
+        return {
           fields: formattedFields,
           stepName: newStep.key,
           previousStepName: activeStep?.key,
@@ -666,14 +662,13 @@ function Form({
           },
           firstStepLoaded: first,
           integrationData
-        },
-        newStep
-      );
-      if (stepChanged) return;
-      updateNewStep(newStep);
-    } else {
-      updateNewStep(newStep);
-    }
+        };
+      },
+      newStep
+    );
+    if (stepChanged) return;
+
+    updateNewStep(newStep);
   };
 
   useEffect(() => {
@@ -781,22 +776,6 @@ function Form({
   useEffect(() => {
     if (stepKey) getNewStep(stepKey);
   }, [stepKey]);
-
-  useEffect(() => {
-    if (!finished) return;
-    const redirectForm = () => {
-      if (formSettings.redirectUrl) {
-        hasRedirected.current = true;
-        window.location.href = formSettings.redirectUrl;
-      }
-    };
-    if (typeof onFormComplete === 'function') {
-      // @ts-expect-error TS(2554): Expected 2-3 arguments, but got 1.
-      runUserCallback(onFormComplete).then(redirectForm);
-    } else {
-      redirectForm();
-    }
-  }, [finished]);
 
   // Note: If index is provided, handleChange assumes the field is a repeated field
   const changeValue = (
@@ -990,13 +969,15 @@ function Form({
       );
       let stepChanged = false;
       await setLoader();
-      await runUserCallback(onSubmit, {
+      await runUserCallback(onSubmit, () => ({
         // @ts-expect-error TS(2698): Spread types may only be created from object types... Remove this comment to see the full error message
         submitFields: { ...formattedFields, ...plaidFieldValues },
         elementRepeatIndex: repeat,
         fields: allFields,
         lastStep: !getNextStepKey(metadata),
-        setErrors: (errors) => {
+        setErrors: (
+          errors: Record<string, string | { index: number; message: string }>
+        ) => {
           if (!isObjectEmpty(errors)) clearLoaders();
           Object.entries(errors).forEach(([fieldKey, error]) => {
             let index = null;
@@ -1023,7 +1004,7 @@ function Form({
         firstStepSubmitted: first,
         integrationData,
         trigger
-      });
+      }));
       if (stepChanged) return;
 
       // do validation check in case user has manually invalidated the step
@@ -1229,21 +1210,19 @@ function Form({
           clearLoader: () => clearLoaders()
         });
       } else {
-        if (typeof onSkip === 'function') {
-          let stepChanged = false;
-          await runUserCallback(onSkip, {
-            setStep: (stepKey: string) => {
-              stepChanged = changeStep(stepKey, activeStep.key, steps, history);
-            },
-            trigger: {
-              ...lookUpTrigger(activeStep, button.id, 'button'),
-              type: 'button',
-              action: 'click'
-            },
-            lastStep: !getNextStepKey(metadata)
-          });
-          if (stepChanged) return;
-        }
+        let stepChanged = false;
+        await runUserCallback(onSkip, () => ({
+          setStep: (stepKey: string) => {
+            stepChanged = changeStep(stepKey, activeStep.key, steps, history);
+          },
+          trigger: {
+            ...lookUpTrigger(activeStep, button.id, 'button'),
+            type: 'button',
+            action: 'click'
+          },
+          lastStep: !getNextStepKey(metadata)
+        }));
+        if (stepChanged) return;
         await goToNewStep({ metadata });
       }
     } catch {
@@ -1325,15 +1304,13 @@ function Form({
         ? openTab(url)
         : (location.href = url);
     } else if (link === LINK_CUSTOM) {
-      if (typeof onCustomAction === 'function') {
-        await runUserCallback(onCustomAction, {
-          trigger: {
-            ...lookUpTrigger(activeStep, button.id, 'button'),
-            type: 'button',
-            action: 'click'
-          }
-        });
-      }
+      clickPromise = runUserCallback(onCustomAction, () => ({
+        trigger: {
+          ...lookUpTrigger(activeStep, button.id, 'button'),
+          type: 'button',
+          action: 'click'
+        }
+      }));
     } else if (link === LINK_SEND_SMS) {
       clickPromise = setButtonLoader(button)
         .then(() =>
@@ -1409,17 +1386,16 @@ function Form({
         });
       }
       if (typeof onChange === 'function') {
-        const formattedFields = formatAllFormFields(steps, true);
         callbackRef.current.addCallback(
-          runUserCallback(onChange, {
+          runUserCallback(onChange, () => ({
             changeKeys: fieldKeys,
             trigger,
             integrationData,
-            fields: formattedFields,
+            fields: formatAllFormFields(steps, true),
             lastStep: activeStep.next_conditions.length === 0,
             elementRepeatIndex,
             valueRepeatIndex
-          }),
+          })),
           loaders
         );
         setShouldScrollToTop(false);
@@ -1488,19 +1464,32 @@ function Form({
     setCardElement
   };
 
-  let noEdit;
-  if (formSettings.allowEdit === 'hide') noEdit = null;
-  else if (formSettings.allowEdit === 'disable') noEdit = <FormOff noEdit />;
+  let completeState;
+  if (formSettings.allowEdit === 'hide') completeState = null;
+  else if (formSettings.allowEdit === 'disable')
+    completeState = <FormOff noEdit />;
+
+  // If form was completed in a previous session and edits are disabled,
+  // consider the form finished
+  const anyFinished =
+    finished || (formCompleted && completeState !== undefined);
+
+  useEffect(() => {
+    if (!anyFinished) return;
+    const redirectForm = () => {
+      if (formSettings.redirectUrl) {
+        hasRedirected.current = true;
+        window.location.href = formSettings.redirectUrl;
+      }
+    };
+    runUserCallback(onFormComplete).then(redirectForm);
+  }, [anyFinished]);
 
   if (formSettings.formOff) {
     // Form is turned off
     return <FormOff />;
-  } else if (formCompleted && noEdit !== undefined) {
-    // Form completed in a previous session
-    return noEdit;
-  } else if (finished) {
-    // Form completed during this session
-    return noEdit !== undefined ? noEdit : null;
+  } else if (anyFinished) {
+    return completeState ?? null;
   } else if (!activeStep) {
     // Form has not been loaded yet
     return null;
