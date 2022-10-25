@@ -130,7 +130,9 @@ const phonePattern = /^\d{10}$/;
 const LIB_PHONE_NUMBER_URL =
   'https://cdn.jsdelivr.net/npm/libphonenumber-js@1.10.12/bundle/libphonenumber-js.min.js';
 
-const loadPhoneValidator = () => dynamicImport(LIB_PHONE_NUMBER_URL);
+let phoneLibPromise = Promise.resolve();
+const loadPhoneValidator = () =>
+  (phoneLibPromise = dynamicImport(LIB_PHONE_NUMBER_URL));
 
 const validators = {
   email: (a: string) => emailPattern.test(a),
@@ -226,5 +228,6 @@ export {
   emailPattern,
   emailPatternStr,
   loadPhoneValidator,
-  validators
+  validators,
+  phoneLibPromise
 };

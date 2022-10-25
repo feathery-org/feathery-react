@@ -8,6 +8,7 @@ import exampleNumbers from './exampleNumbers';
 import { Overlay } from 'react-bootstrap';
 import { isNum } from '../../../utils/primitives';
 import DropdownArrow from '../../components/DropdownArrow';
+import { phoneLibPromise } from '../../../utils/validation';
 
 const DEFAULT_COUNTRY = 'US';
 
@@ -64,14 +65,16 @@ function PhoneField({
   useEffect(() => {
     if (fullNumber === curFullNumber) return;
 
-    const ayt = new global.libphonenumber.AsYouType();
-    ayt.input(`+${fullNumber}`);
-    const numberObj = ayt.getNumber();
-    if (numberObj) {
-      setRawNumber(numberObj.nationalNumber);
-      setFormattedNumber(numberObj.formatNational());
-      setCurCountryCode(numberObj.country ?? DEFAULT_COUNTRY);
-    }
+    phoneLibPromise.then(() => {
+      const ayt = new global.libphonenumber.AsYouType();
+      ayt.input(`+${fullNumber}`);
+      const numberObj = ayt.getNumber();
+      if (numberObj) {
+        setRawNumber(numberObj.nationalNumber);
+        setFormattedNumber(numberObj.formatNational());
+        setCurCountryCode(numberObj.country ?? DEFAULT_COUNTRY);
+      }
+    });
   }, [fullNumber]);
 
   useEffect(() => {
@@ -89,11 +92,13 @@ function PhoneField({
     if (element.properties.placeholder) return;
 
     const exampleNumber = exampleNumbers[curCountryCode];
-    setPlaceholder(
-      global.libphonenumber
-        .parsePhoneNumber(exampleNumber, curCountryCode)
-        .formatNational()
-    );
+    phoneLibPromise.then(() => {
+      setPlaceholder(
+        global.libphonenumber
+          .parsePhoneNumber(exampleNumber, curCountryCode)
+          .formatNational()
+      );
+    });
   }, [curCountryCode, element]);
 
   useEffect(() => {
