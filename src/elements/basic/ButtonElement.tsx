@@ -87,6 +87,16 @@ function applyButtonStyles(element: any, applyStyles: any) {
       transition: 'background 0.3s !important'
     };
   });
+  applyStyles.applyBorders('buttonDisabled', 'disabled_');
+  if (element.styles.disabled_background_color) {
+    applyStyles.apply(
+      'buttonDisabled',
+      'disabled_background_color',
+      (a: string) => ({
+        backgroundColor: `#${a} !important`
+      })
+    );
+  }
 
   applyStyles.apply('loader', ['height', 'height_unit'], (a: any, b: any) => {
     const thirdHeight = Math.round(a / 3);
