@@ -328,6 +328,8 @@ export default class Client {
   submitAuthInfo({ authId, authPhone = '', authEmail = '' }: any) {
     const { userKey } = initInfo();
     initState.authId = authId;
+    // Execute render callbacks after setting authId, so that form navigation can be evaluated again
+    initState.renderCallbacks[this.formKey]();
     if (authPhone) initState.authPhoneNumber = authPhone;
     if (authEmail) initState.authEmail = authEmail;
 

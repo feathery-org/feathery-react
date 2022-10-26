@@ -6,7 +6,7 @@ function FeatherySpinner() {
     <Spinner
       animation='border'
       style={{
-        color: 'white',
+        color: '#bdc2ce', // gray-50
         border: '0.2em solid currentColor',
         borderRightColor: 'transparent',
         boxSizing: 'border-box',

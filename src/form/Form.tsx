@@ -90,6 +90,7 @@ import {
   ElementProps,
   IntegrationData
 } from '../types/Form';
+import usePrevious from '../hooks/usePrevious';
 
 export interface Props {
   formName: string;
@@ -192,12 +193,20 @@ function Form({
 
   const [repeats, setRepeats] = useState(0);
 
-  // Set to trigger conditional renders on field value updates, no need to use
-  /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
+  const prevAuthId = usePrevious(initState.authId);
+  const prevStepKey = usePrevious(stepKey);
+
+  // Set to trigger conditional renders on field value updates, no need to use the value itself
   const [render, setRender] = useState(false);
 
   const [loaders, setLoaders] = useState({});
-  const clearLoaders = () => setLoaders({});
+  const clearLoaders = (clearAuthLoader = false) => {
+    if (clearAuthLoader) setLoaders({});
+    else
+      setLoaders(({ auth }: any) => ({
+        auth
+      }));
+  };
   const stepLoader = useMemo(() => {
     const data = Object.values(loaders).find(
       (l) => (l as any)?.showOn === 'full_page'
@@ -257,6 +266,19 @@ function Form({
     initState.renderCallbacks[formKey] = () => {
       setRender((render) => !render);
     };
+
+    if (window.location.search.includes('stytch_token_type'))
+      setLoaders((loaders) => ({
+        ...loaders,
+        auth: {
+          showOn: 'full_page',
+          loader: (
+            <div style={{ height: '10vh', width: '10vh' }}>
+              <Spinner />
+            </div>
+          )
+        }
+      }));
 
     if (_formKey)
       console.warn(
@@ -610,7 +632,10 @@ function Form({
       });
       if (loadCond) {
         if (logOut) setFirstLoggedOut(true);
-        if (changeStep(loadCond.next_step_key, newKey, steps, history)) return;
+        if (changeStep(loadCond.next_step_key, newKey, steps, history)) {
+          clearLoaders(true);
+          return;
+        }
       } else break;
     }
     newStep = JSON.parse(JSON.stringify(newStep));
@@ -774,8 +799,11 @@ function Form({
   }, [steps]);
 
   useEffect(() => {
-    if (stepKey) getNewStep(stepKey);
-  }, [stepKey]);
+    // We set render to re-evaluate auth nav rules - but should only getNewStep if either the step or authId has changed.
+    // Should not fetch new step if render was set for another reason
+    if (stepKey && (prevStepKey !== stepKey || prevAuthId !== initState.authId))
+      getNewStep(stepKey);
+  }, [stepKey, render]);
 
   // Note: If index is provided, handleChange assumes the field is a repeated field
   const changeValue = (
