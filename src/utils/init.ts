@@ -43,7 +43,6 @@ type InitState = {
   fieldValuesInitialized: boolean;
   validateCallbacks: any;
   renderCallbacks: any;
-  currentClient: any;
 } & Omit<InitOptions, 'forms'>;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
@@ -68,8 +67,7 @@ const initState: InitState = {
   // values on the first session request
   fieldValuesInitialized: false,
   validateCallbacks: {},
-  renderCallbacks: {},
-  currentClient: null
+  renderCallbacks: {}
 };
 const fieldValues: FieldValues = {};
 const filePathMap = {};
@@ -220,7 +218,7 @@ function setAuthClient(client: any): void {
   initState.authClient = client;
   // Attempt login after setting auth client, in case the auth client wasn't set
   // when auth was already attempted after initializing the integrations
-  inferEmailLoginFromURL();
+  inferEmailLoginFromURL(defaultClient);
 }
 
 function getAuthClient(): any {

@@ -65,8 +65,7 @@ export function sendMagicLink({ fieldVal }: any) {
   });
 }
 
-export function emailLogin() {
-  const featheryClient = initState.currentClient;
+export function emailLogin(featheryClient: any) {
   const stytchClient = getAuthClient();
   // If there is no auth client, no config or auth has already been sent, then return early
   if (!stytchClient || !config || authSent) return;

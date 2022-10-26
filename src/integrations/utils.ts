@@ -21,6 +21,7 @@ import {
   trackGAEvent
 } from './googleAnalytics';
 import { getAuthClient, initState } from '../utils/init';
+import Client from '../utils/client';
 
 const IMPORTED_URLS = new Set();
 
@@ -52,7 +53,10 @@ export function dynamicImport(
   }
 }
 
-export async function initializeIntegrations(integs: any) {
+export async function initializeIntegrations(
+  integs: any,
+  featheryClient: Client
+) {
   await Promise.all([
     installPlaid(!!integs.plaid),
     installFirebase(integs.fb),
@@ -64,16 +68,16 @@ export async function initializeIntegrations(integs: any) {
 
   const gtm = integs['google-tag-manager'];
   if (gtm) initializeTagManager(gtm);
-  if (integs.fb || integs.stytch) inferEmailLoginFromURL();
+  if (integs.fb || integs.stytch) inferEmailLoginFromURL(featheryClient);
 }
 
-export function inferEmailLoginFromURL() {
+export function inferEmailLoginFromURL(featheryClient: Client) {
   const queryParams = new URLSearchParams(window.location.search);
   const stytchJwt = getStytchJwt();
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
-  if (stytchJwt || (type && token)) emailLoginStytch();
-  else emailLoginFirebase();
+  if (stytchJwt || (type && token)) emailLoginStytch(featheryClient);
+  else emailLoginFirebase(featheryClient);
 }
 
 export function inferAuthLogout() {
@@ -87,7 +91,7 @@ export function inferAuthLogout() {
     initState.authId = undefined;
     initState.authPhoneNumber = undefined;
     initState.authEmail = undefined;
-    initState.renderCallbacks[initState.currentClient.formKey]();
+    initState.renderCallbacks.forEach((renderCb: any) => renderCb());
   });
 }
 

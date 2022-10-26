@@ -701,7 +701,6 @@ function Form({
       const clientInstance = new Client(formKey, hasRedirected);
       // @ts-expect-error TS(2345): Argument of type 'Client' is not assignable to par... Remove this comment to see the full error message
       setClient(clientInstance);
-      initState.currentClient = clientInstance;
       setFirst(true);
       // render form without values first for speed
       const formPromise = clientInstance

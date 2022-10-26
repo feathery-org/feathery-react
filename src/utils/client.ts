@@ -316,7 +316,10 @@ export default class Client {
     if (!response) return [];
 
     const session = await (response as any).json();
-    const authSession = await initializeIntegrations(session.integrations);
+    const authSession = await initializeIntegrations(
+      session.integrations,
+      this
+    );
     // @ts-expect-error TS(1345): An expression of type 'void' cannot be tested for ... Remove this comment to see the full error message
     if (!noData) updateSessionValues(authSession ?? session);
     return [session, formData];

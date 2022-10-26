@@ -37,8 +37,7 @@ export function installFirebase(firebaseConfig: any) {
   }
 }
 
-export function emailLogin() {
-  const featheryClient = initState.currentClient;
+export function emailLogin(featheryClient: any) {
   if (global.firebase?.auth().isSignInWithEmailLink(window.location.href)) {
     const authEmail = window.localStorage.getItem('featheryFirebaseEmail');
     if (authEmail) {
