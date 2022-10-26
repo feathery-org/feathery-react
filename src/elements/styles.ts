@@ -30,6 +30,7 @@ class ApplyStyles {
   mobileTargets: any;
   styles: any;
   targets: any;
+  maxBorderWidths: Record<string, number>;
 
   constructor(element: any, targets: string[], handleMobile = false) {
     this.element = element;
@@ -42,6 +43,21 @@ class ApplyStyles {
         targets.map((t: string) => [t, {}])
       );
     }
+
+    this.maxBorderWidths = ['top', 'right', 'bottom', 'left'].reduce(
+      (borderWidths: any, direction) => {
+        borderWidths[direction] = this._getMaxBorderWidth(direction);
+        return borderWidths;
+      },
+      {}
+    );
+  }
+
+  _getMaxBorderWidth(direction: string) {
+    const borderWidths: Array<any> = Object.entries(this.styles)
+      .filter(([key, val]) => key.endsWith(`border_${direction}_width`) && val)
+      .map(([, val]) => val);
+    return Math.max(0, ...borderWidths);
   }
 
   addTargets(...targets: string[]) {
@@ -128,10 +144,16 @@ class ApplyStyles {
     }));
   }
 
-  applyBorders(target: string, prefix = '', important = true) {
+  applyBorders({
+    target = '',
+    prefix = '',
+    important = true,
+    accountForPadding = false
+  }) {
     // If color isn't defined on one of the sides, that means there's no border
-    if (!this.styles) return;
-    if (!this.styles[`${prefix}border_top_color`]) return;
+    if (!this.styles) return false;
+    if (!this.styles[`${prefix}border_top_color`]) return false;
+
     const i = prefix && important ? '!important' : '';
     this.apply(
       target,
@@ -158,15 +180,34 @@ class ApplyStyles {
       target,
       borderWidthProps.map((prop) => `${prefix}${prop}`),
       // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
-      (a, b, c, d) => ({
-        borderWidth: `${a}px ${b}px ${c}px ${d}px ${i}`
-      })
+      (a, b, c, d) => {
+        const styles: any = {
+          borderWidth: `${a}px ${b}px ${c}px ${d}px ${i}`
+        };
+        if (accountForPadding)
+          styles.padding = `${this.maxBorderWidths.top - a}px ${
+            this.maxBorderWidths.right - b
+          }px ${this.maxBorderWidths.bottom - c}px ${
+            this.maxBorderWidths.left - d
+          }px ${i}`;
+        return styles;
+      }
     );
+
+    return true;
   }
 
-  applySelectorStyles(target: string, prefix: string, important = false) {
-    this.applyBorders(target, prefix);
-    if (this.styles[`${prefix}background_color`]) {
+  applySelectorStyles(
+    target: string,
+    prefix: string,
+    important = false,
+    accountForPadding = false
+  ) {
+    const applied = this.applyBorders({ target, prefix, accountForPadding });
+
+    const bc = this.styles[`${prefix}background_color`];
+    const fc = this.styles[`${prefix}font_color`];
+    if (bc) {
       this.applyColor(
         target,
         `${prefix}background_color`,
@@ -174,9 +215,11 @@ class ApplyStyles {
         important
       );
     }
-    if (this.styles[`${prefix}font_color`]) {
+    if (fc) {
       this.applyColor(target, `${prefix}font_color`, 'color', important);
     }
+    if (applied || bc || fc)
+      this.apply(target, '', () => ({ transition: '0.15s ease-in-out all' }));
   }
 
   applyPadding(target: string, prefix = '', margin = false) {

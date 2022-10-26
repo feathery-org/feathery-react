@@ -35,7 +35,7 @@ function applyButtonStyles(element: any, applyStyles: any) {
   applyStyles.applyHeight('button');
   applyStyles.applyWidth('button');
   applyStyles.applyCorners('button');
-  applyStyles.applyBorders('button');
+  applyStyles.applyBorders({ target: 'button' });
   applyStyles.applyFlexAndTextAlignments('button');
   applyStyles.apply(
     'button',
@@ -64,21 +64,23 @@ function applyButtonStyles(element: any, applyStyles: any) {
     });
   }
   if (element.styles.hover_background_color) {
-    applyStyles.apply('buttonHover', 'hover_background_color', (a: any) => ({
-      backgroundColor: `#${a} !important`
-    }));
-  }
-  applyStyles.applyBorders('buttonHover', 'hover_');
-  if (element.styles.selected_background_color) {
-    applyStyles.apply(
-      'buttonActive',
-      'selected_background_color',
-      (a: string) => ({
-        backgroundColor: `#${a} !important`
-      })
+    applyStyles.applyColor(
+      'buttonHover',
+      `hover_background_color`,
+      'backgroundColor',
+      true
     );
   }
-  applyStyles.applyBorders('buttonActive', 'selected_');
+  applyStyles.applyBorders({ target: 'buttonHover', prefix: 'hover_' });
+  if (element.styles.selected_background_color) {
+    applyStyles.applyColor(
+      'buttonActive',
+      `selected_background_color`,
+      'backgroundColor',
+      true
+    );
+  }
+  applyStyles.applyBorders({ target: 'buttonActive', prefix: 'selected_' });
   applyStyles.apply('buttonDisabled', 'background_color', (a: any) => {
     const color = `${adjustColor(a, 45)} !important`;
     return {
@@ -87,14 +89,13 @@ function applyButtonStyles(element: any, applyStyles: any) {
       transition: 'background 0.3s !important'
     };
   });
-  applyStyles.applyBorders('buttonDisabled', 'disabled_');
+  applyStyles.applyBorders({ target: 'buttonDisabled', prefix: 'disabled_' });
   if (element.styles.disabled_background_color) {
-    applyStyles.apply(
+    applyStyles.applyColor(
       'buttonDisabled',
-      'disabled_background_color',
-      (a: string) => ({
-        backgroundColor: `#${a} !important`
-      })
+      `disabled_background_color`,
+      'backgroundColor',
+      true
     );
   }
 

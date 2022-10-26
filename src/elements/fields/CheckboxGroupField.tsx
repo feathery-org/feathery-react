@@ -7,7 +7,7 @@ import {
 } from './CheckboxField';
 
 const applyCheckboxGroupStyles = (element: any, applyStyles: any) => {
-  applyStyles.addTargets(['checkboxGroup']);
+  applyStyles.addTargets('checkboxGroup');
   applyStyles.applyWidth('checkboxGroup');
   return applyStyles;
 };
