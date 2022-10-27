@@ -41,8 +41,8 @@ type InitState = {
   forms: { [formName: string]: any };
   sessions: { [formName: string]: any };
   fieldValuesInitialized: boolean;
-  validateCallbacks: any;
-  renderCallbacks: any;
+  validateCallbacks: { [cbKey: string]: any };
+  renderCallbacks: { [cbKey: string]: any };
 } & Omit<InitOptions, 'forms'>;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
