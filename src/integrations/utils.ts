@@ -91,7 +91,9 @@ export function inferAuthLogout() {
     initState.authId = undefined;
     initState.authPhoneNumber = undefined;
     initState.authEmail = undefined;
-    initState.renderCallbacks.forEach((renderCb: any) => renderCb());
+    Object.values(initState.renderCallbacks).forEach((renderCb: any) =>
+      renderCb()
+    );
   });
 }
 
