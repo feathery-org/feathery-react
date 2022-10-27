@@ -49,7 +49,7 @@ function getTextFieldMask(servar: any) {
 }
 
 function getMaskProps(servar: any, value: any) {
-  let methods, maskProps;
+  let maskProps;
   switch (servar.type) {
     case 'integer_field':
       maskProps = {
@@ -69,17 +69,6 @@ function getMaskProps(servar: any, value: any) {
         maskProps.mask = '$num';
         maskProps.blocks.num.scale = 2;
       }
-      break;
-    case 'login':
-      methods = servar.metadata.login_methods;
-      maskProps = {
-        mask: methods.map((method: any) => {
-          return {
-            method,
-            mask: method === 'phone' ? '(000) 000-0000' : /.+/
-          };
-        })
-      };
       break;
     case 'ssn':
       maskProps = { mask: '000 - 00 - 0000' };
@@ -107,7 +96,6 @@ function getMaskProps(servar: any, value: any) {
 }
 
 function getInputProps(servar: any) {
-  let methods, onlyPhone;
   switch (servar.type) {
     case 'integer_field':
       return { type: 'tel' };
@@ -116,10 +104,6 @@ function getInputProps(servar: any) {
         type: 'email',
         pattern: emailPatternStr
       };
-    case 'login':
-      methods = servar.metadata.login_methods;
-      onlyPhone = methods.length === 1 && methods[0] === 'phone';
-      return { type: onlyPhone ? 'tel' : 'text' };
     case 'ssn':
       return { type: 'tel' };
     case 'url':

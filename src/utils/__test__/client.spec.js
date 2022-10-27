@@ -33,7 +33,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${CDN_URL}panel/v8/?form_key=formKey`,
+        `${CDN_URL}panel/v9/?form_key=formKey`,
         {
           cache: 'no-store',
           importance: 'high',
@@ -141,7 +141,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}panel/step/submit/v2/`,
+        `${API_URL}panel/step/submit/v3/`,
         {
           cache: 'no-store',
           headers: {

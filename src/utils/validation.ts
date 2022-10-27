@@ -113,8 +113,6 @@ function validateElement(element: {
 const emailPatternStr =
   "^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)+$";
 const emailPattern = new RegExp(emailPatternStr);
-// TODO: deprecate and support international format
-const phonePattern = /^\d{10}$/;
 
 const LIB_PHONE_NUMBER_URL =
   'https://cdn.jsdelivr.net/npm/libphonenumber-js@1.10.12/bundle/libphonenumber-js.min.js';
@@ -125,14 +123,6 @@ const loadPhoneValidator = () =>
 
 const validators = {
   email: (a: string) => emailPattern.test(a),
-  phone: (a: string) => {
-    try {
-      return global.libphonenumber.isValidPhoneNumber(a, 'US');
-    } catch (e) {
-      // Invalid phone number
-      return false;
-    }
-  },
   internationalPhone: (a: string) => {
     try {
       return global.libphonenumber.isValidPhoneNumber(`+${a}`);
@@ -191,17 +181,6 @@ function getStandardFieldError(value: any, servar: any) {
     value.length !== servar.max_length
   ) {
     return 'Please enter a full code';
-  } else if (servar.type === 'login') {
-    let validFormat = true;
-    let invalidType = '';
-    servar.metadata.login_methods.forEach((method: any) => {
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-      if (!validators[method](value)) {
-        validFormat = false;
-        invalidType = method;
-      }
-    });
-    if (!validFormat) return `Please enter a valid ${invalidType}`;
   }
 
   // No error
@@ -213,8 +192,6 @@ export {
   validateElements,
   getStandardFieldError,
   isFieldValueEmpty,
-  phonePattern,
-  emailPattern,
   emailPatternStr,
   loadPhoneValidator,
   validators,

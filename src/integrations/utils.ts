@@ -2,16 +2,11 @@ import { installPlaid } from './plaid';
 import {
   installFirebase,
   emailLogin as emailLoginFirebase,
-  sendLoginCode,
   verifySMSCode
 } from './firebase';
 import { initializeTagManager } from './googleTagManager';
 import { installSegment } from './segment';
-import {
-  installStytch,
-  emailLogin as emailLoginStytch,
-  sendMagicLink
-} from './stytch';
+import { installStytch, emailLogin as emailLoginStytch } from './stytch';
 import { installStripe, setupPaymentMethodAndPay } from './stripe';
 import { getStytchJwt } from '../utils/browser';
 import TagManager from 'react-gtm-module';
@@ -82,10 +77,15 @@ export function inferEmailLoginFromURL(featheryClient: Client) {
 
 export function inferAuthLogout() {
   const stytchJwt = getStytchJwt();
-  let logout = () => global.firebase?.auth().signOut(); // firebase? because firebase may not exist
+  let logout;
   if (stytchJwt) {
     logout = () => getAuthClient().session.revoke();
+  } else if (global.firebase) {
+    logout = () => global.firebase.auth().signOut();
   }
+
+  // logout may not have a value in certain cases, i.e. stytch is already logged out so there is no jwt
+  if (!logout) return;
 
   logout().then(() => {
     initState.authId = undefined;
@@ -117,18 +117,6 @@ export function getIntegrationActionConfiguration(getCardElement: any) {
       actionFn: setupPaymentMethodAndPay,
       targetElementFn: getCardElement,
       continue: true
-    },
-    {
-      servarType: 'login',
-      integrationKey: 'stytch',
-      actionFn: sendMagicLink,
-      continue: false
-    },
-    {
-      servarType: 'login',
-      integrationKey: 'firebase',
-      actionFn: sendLoginCode,
-      continue: false
     },
     {
       servarType: 'pin_input',

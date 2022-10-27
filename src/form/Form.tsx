@@ -72,7 +72,7 @@ import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
-import { openTab, runningInClient } from '../utils/browser';
+import { getStytchJwt, openTab, runningInClient } from '../utils/browser';
 import FormOff from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
@@ -328,13 +328,10 @@ function Form({
   useEffect(() => {
     if (!activeStep || !global.firebase) return;
 
-    const hasLoginField = activeStep.servar_fields.some((field: any) => {
-      const servar = field.servar;
-      return (
-        servar.type === 'login' &&
-        servar.metadata.login_methods.includes('phone')
-      );
-    });
+    const hasPhoneField = activeStep.servar_fields.some(
+      ({ servar }: any) => servar.type === 'phone_number'
+    );
+
     const renderedButtons = activeStep.buttons.filter(
       (element: any) =>
         !shouldElementHide({
@@ -344,23 +341,17 @@ function Form({
     );
     const submitButton = renderedButtons.find(
       (b: any) =>
-        b.properties.link === LINK_NEXT && !b.properties.link_no_submit
+        b.properties.link === LINK_SEND_SMS && !b.properties.link_no_submit
     );
-    if (hasLoginField && submitButton) {
+    const smsButton = renderedButtons.find(
+      (b: any) => b.properties.link === LINK_SEND_SMS
+    );
+
+    if ((hasPhoneField && submitButton) || smsButton) {
       window.firebaseRecaptchaVerifier =
         new global.firebase.auth.RecaptchaVerifier(submitButton.id, {
           size: 'invisible'
         });
-    } else {
-      const smsButton = renderedButtons.find(
-        (b: any) => b.properties.link === LINK_SEND_SMS
-      );
-      if (smsButton) {
-        window.firebaseRecaptchaVerifier =
-          new global.firebase.auth.RecaptchaVerifier(smsButton.id, {
-            size: 'invisible'
-          });
-      }
     }
   }, [activeStep?.id, global.firebase]);
 
@@ -1309,7 +1300,7 @@ function Form({
           sendLoginCode({
             fieldVal: fieldValues[button.properties.auth_target_field_key],
             servar: null,
-            methods: ['phone']
+            method: 'phone'
           })
         )
         .then(() => clearLoaders());
@@ -1318,7 +1309,15 @@ function Form({
       const email = fieldValues[fieldKey] as string;
       if (validators.email(email)) {
         clickPromise = setButtonLoader(button)
-          .then(() => sendMagicLink({ fieldVal: email }))
+          .then(() => {
+            if (getStytchJwt()) return sendMagicLink({ fieldVal: email });
+            else
+              return sendLoginCode({
+                fieldVal: fieldValues[button.properties.auth_target_field_key],
+                servar: null,
+                method: 'email'
+              });
+          })
           .then(() => clearLoaders());
       } else {
         setFormElementError({

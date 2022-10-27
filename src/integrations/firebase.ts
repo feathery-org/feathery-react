@@ -1,7 +1,7 @@
 import { dynamicImport } from './utils';
 import { updateSessionValues } from '../utils/formHelperFunctions';
-import { emailPattern, phonePattern } from '../utils/validation';
-import { initState } from '../utils/init';
+import { validators } from '../utils/validation';
+import { FeatheryFieldTypes } from '../utils/init';
 
 let firebasePromise: any = null;
 
@@ -58,9 +58,23 @@ export function emailLogin(featheryClient: any) {
   }
 }
 
-export async function sendLoginCode({ fieldVal, servar, methods = null }: any) {
-  methods = methods || servar.metadata.login_methods;
-  if (methods.includes('phone') && phonePattern.test(fieldVal)) {
+export async function sendLoginCode({
+  fieldVal,
+  servar,
+  method
+}: {
+  fieldVal: FeatheryFieldTypes;
+  servar: any;
+  method: 'phone' | 'email';
+}) {
+  const errorPayload = {
+    errorMessage: 'Invalid login',
+    errorField: servar
+  };
+
+  if (typeof fieldVal !== 'string') {
+    return errorPayload;
+  } else if (method === 'phone' && validators.internationalPhone(fieldVal)) {
     return await global.firebase
       .auth()
       .signInWithPhoneNumber(`+1${fieldVal}`, window.firebaseRecaptchaVerifier)
@@ -87,7 +101,7 @@ export async function sendLoginCode({ fieldVal, servar, methods = null }: any) {
           errorField: servar
         };
       });
-  } else if (methods.includes('email') && emailPattern.test(fieldVal)) {
+  } else if (validators.email(fieldVal)) {
     return await global.firebase
       .auth()
       .sendSignInLinkToEmail(fieldVal, {
@@ -105,10 +119,7 @@ export async function sendLoginCode({ fieldVal, servar, methods = null }: any) {
         };
       });
   } else {
-    return {
-      errorMessage: 'Invalid login',
-      errorField: servar
-    };
+    return errorPayload;
   }
 }
 
