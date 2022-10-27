@@ -30,7 +30,11 @@ describe('ApplyStyles', () => {
 
       // Assert
       const expectedStyle = `#${TEST_COLOR_BACKGROUND} !important`;
-      const expected = { backgroundColor: expectedStyle, color: expectedStyle };
+      const expected = {
+        backgroundColor: expectedStyle,
+        color: expectedStyle,
+        transition: '0.15s ease-in-out all'
+      };
       expect(actual).toEqual(expected);
     });
     it('applies selector styles to target WITHOUT !important', () => {
@@ -49,7 +53,11 @@ describe('ApplyStyles', () => {
 
       // Assert
       const expectedStyle = `#${TEST_COLOR_BACKGROUND}`;
-      const expected = { backgroundColor: expectedStyle, color: expectedStyle };
+      const expected = {
+        backgroundColor: expectedStyle,
+        color: expectedStyle,
+        transition: '0.15s ease-in-out all'
+      };
       expect(actual).toEqual(expected);
     });
   });

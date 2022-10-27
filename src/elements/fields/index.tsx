@@ -53,7 +53,7 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyHeight('sub-fc');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyCorners('field');
-      styles.applyBorders('field');
+      styles.applyBorders({ target: 'field' });
       styles.applyBoxShadow('field');
       break;
     case 'file_upload':
@@ -66,11 +66,11 @@ function applyFieldStyles(field: any, styles: any) {
       }
       styles.applyHeight('field');
       styles.applyWidth('field');
-      styles.applyBorders('field');
+      styles.applyBorders({ target: 'field' });
       styles.applyCorners('field');
       styles.applyBoxShadow('field');
       styles.applyColor('ac', 'background_color', 'backgroundColor');
-      styles.applyBorders('ac');
+      styles.applyBorders({ target: 'ac' });
       styles.applyCorners('ac');
       styles.applyBoxShadow('ac');
       styles.applyFlexDirection('ac');
@@ -126,7 +126,7 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
-      styles.applyBorders('field');
+      styles.applyBorders({ target: 'field' });
       styles.applyPadding('field', '', true);
       styles.applyFlexAndTextAlignments('field');
       styles.apply(
@@ -150,7 +150,7 @@ function applyFieldStyles(field: any, styles: any) {
       styles.addTargets('sub-fc');
       styles.applyHeight('sub-fc');
       styles.applyWidth('fc');
-      styles.applyBorders('field');
+      styles.applyBorders({ target: 'field' });
       styles.applyCorners('field');
       styles.applyHeight('field');
       styles.applyBoxShadow('field');
@@ -159,7 +159,7 @@ function applyFieldStyles(field: any, styles: any) {
         styles.applyPlaceholderStyles(type, field.styles);
       // Override default bootstrap styles
       styles.applyBoxShadow('active');
-      styles.applyBorders('active');
+      styles.applyBorders({ target: 'active' });
       break;
     case 'pin_input':
       styles.applyWidth('field');
@@ -174,7 +174,7 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'multiselect':
       styles.applyCorners('field');
-      styles.applyBorders('field');
+      styles.applyBorders({ target: 'field' });
       styles.applyBoxShadow('field');
       styles.applyFontStyles('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
@@ -184,7 +184,7 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'select':
       styles.applyCorners('field');
-      styles.applyBorders('field');
+      styles.applyBorders({ target: 'field' });
       styles.applyBoxShadow('field');
       styles.applyFontStyles('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
@@ -194,7 +194,7 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'hex_color':
       styles.applyCorners('field');
-      styles.applyBorders('field');
+      styles.applyBorders({ target: 'field' });
       break;
     case 'payment_method':
       styles.addTargets('sub-fc', 'tooltipIcon', 'completed');
@@ -202,7 +202,7 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyHeight('sub-fc');
       styles.applyWidth('fc');
       styles.applyCorners('sub-fc');
-      styles.applyBorders('sub-fc');
+      styles.applyBorders({ target: 'sub-fc' });
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('sub-fc');
       styles.applyFontStyles('field');
@@ -230,6 +230,36 @@ function applyFieldStyles(field: any, styles: any) {
         color: `#${a}`
       }));
       break;
+    case 'phone_number':
+      styles.addTargets('sub-fc', 'tooltipIcon', 'fieldToggle', 'dropdown');
+
+      styles.applyWidth('fc');
+      styles.applyHeight('sub-fc');
+      styles.applyBoxShadow('sub-fc');
+      styles.applyCorners('sub-fc');
+      styles.applyBorders({ target: 'sub-fc', accountForPadding: true });
+      styles.applyFontStyles('field');
+      styles.applyColor('field', 'background_color', 'backgroundColor');
+      styles.applyPlaceholderStyles(type, field.styles);
+      styles.apply('tooltipIcon', 'font_size', (a: any) => ({
+        width: `${a}px`
+      }));
+
+      styles.apply('fieldToggle', 'font_size', (a: any) => ({
+        fontSize: `${1.5 * a}px`,
+        width: `${3 * a}px`
+      }));
+      styles.apply(
+        'fieldToggle',
+        ['corner_top_left_radius', 'corner_bottom_left_radius'],
+        (a: any, b: any) => ({
+          borderTopLeftRadius: `${a}px`,
+          borderBottomLeftRadius: `${b}px`
+        })
+      );
+      styles.applySelectorStyles('active', 'selected_', true, true);
+      styles.applySelectorStyles('hover', 'hover_', true, true);
+      break;
     default:
       styles.addTargets('sub-fc', 'tooltipIcon');
       // Avoid applying width to checkbox to ensure the checkbox width is properly set by the component
@@ -237,36 +267,14 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyHeight('sub-fc');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
-      styles.applyBorders('field');
+      styles.applyBorders({ target: 'field' });
       styles.applyFontStyles('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
-      if (field.properties.placeholder || type === 'phone_number')
+      if (field.properties.placeholder)
         styles.applyPlaceholderStyles(type, field.styles);
       styles.apply('tooltipIcon', 'font_size', (a: any) => ({
         width: `${a}px`
       }));
-
-      if (type === 'phone_number') {
-        styles.addTargets('fieldToggle', 'dropdown');
-        styles.apply('fieldToggle', 'font_size', (a: any) => ({
-          fontSize: `${1.5 * a}px`,
-          width: `${3 * a}px`
-        }));
-        styles.apply(
-          'fieldToggle',
-          ['corner_top_left_radius', 'corner_bottom_left_radius'],
-          (a: any, b: any) => ({
-            borderTopLeftRadius: `${a}px`,
-            borderBottomLeftRadius: `${b}px`
-          })
-        );
-        styles.apply('field', 'font_size', (a: any) => ({
-          paddingLeft: `${3.5 * a}px`
-        }));
-        styles.apply('placeholder', 'font_size', (a: any) => ({
-          left: `${3.5 * a}px`
-        }));
-      }
       break;
   }
   return styles;

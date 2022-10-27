@@ -36,7 +36,11 @@ function SingleOtpInput({
     }
   }, [focus, input]);
 
-  applyStyles.applyBorders('field', focus ? 'selected_' : '', false);
+  applyStyles.applyBorders({
+    target: 'field',
+    prefix: focus ? 'selected_' : '',
+    important: false
+  });
 
   // Handle cases of backspace, delete, left arrow, right arrow, space
   useHotkeys(

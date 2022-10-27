@@ -7,7 +7,7 @@ import {
 } from './CheckboxField';
 
 const applyRadioGroupStyles = (element: any, applyStyles: any) => {
-  applyStyles.addTargets(['radioGroup']);
+  applyStyles.addTargets('radioGroup');
   applyStyles.applyWidth('radioGroup');
   return applyStyles;
 };

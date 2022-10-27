@@ -90,7 +90,7 @@ const getCellStyle = (cell: any) => {
     'cellHover',
     'cellActive'
   ]);
-  applyStyles.applyBorders('cell');
+  applyStyles.applyBorders({ target: 'cell' });
   applyStyles.applyCorners('cell');
   applyStyles.applyBackgroundImageStyles('cell');
   applyStyles.apply('cell', 'background_color', (c: any) => ({

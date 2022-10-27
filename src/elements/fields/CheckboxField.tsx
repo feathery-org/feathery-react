@@ -132,7 +132,7 @@ export function applyCheckableInputStyles(element: any, applyStyles: any) {
   }
 
   // base styles
-  applyStyles.applyBorders('checkbox');
+  applyStyles.applyBorders({ target: 'checkbox' });
   if (!isRadioGroup) applyStyles.applyCorners('checkbox');
   applyStyles.applyBoxShadow('checkbox');
   applyStyles.applyColor(
@@ -143,23 +143,8 @@ export function applyCheckableInputStyles(element: any, applyStyles: any) {
   );
   applyStyles.applyColor('checkbox', 'font_color', 'color', true);
 
-  // hover styles
-  applyStyles.applyBorders('checkboxHover', 'hover_');
-  applyStyles.applyColor(
-    'checkboxHover',
-    'hover_background_color',
-    'backgroundColor',
-    true
-  );
-
-  // selected styles
-  applyStyles.applyBorders('checkboxSelected', 'selected_');
-  applyStyles.applyColor(
-    'checkboxSelected',
-    'selected_background_color',
-    'backgroundColor',
-    true
-  );
+  applyStyles.applySelectorStyles('checkboxHover', 'hover_', true);
+  applyStyles.applySelectorStyles('checkboxSelected', 'selected_', true);
 
   return applyStyles;
 }
