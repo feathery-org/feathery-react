@@ -329,7 +329,7 @@ export default class Client {
     const { userKey } = initInfo();
     initState.authId = authId;
     // Execute render callbacks after setting authId, so that form navigation can be evaluated again
-    initState.renderCallbacks[this.formKey]();
+    initState.renderCallbacks.forEach((renderCb: any) => renderCb());
     if (authPhone) initState.authPhoneNumber = authPhone;
     if (authEmail) initState.authEmail = authEmail;
 
