@@ -58,7 +58,7 @@ function PhoneField({
   }, [inputRef, cursor, cursorChange]);
 
   useEffect(() => {
-    if (fullNumber === curFullNumber) return;
+    if (fullNumber === curFullNumber || editMode) return;
 
     phoneLibPromise.then(() => {
       const ayt = new global.libphonenumber.AsYouType();
@@ -84,7 +84,7 @@ function PhoneField({
   }, []);
 
   useEffect(() => {
-    if (element.properties.placeholder) return;
+    if (element.properties.placeholder || editMode) return;
 
     const exampleNumber = exampleNumbers[curCountryCode];
     phoneLibPromise.then(() => {
