@@ -341,7 +341,6 @@ function Form({
       (element: any) =>
         !shouldElementHide({
           fields: activeStep.servar_fields,
-          values: fieldValues,
           element: element
         })
     );
@@ -501,13 +500,12 @@ function Form({
 
   // Debouncing the validateElements call to rate limit calls
   const debouncedValidate = useCallback(
-    debounce((fieldValues: any, setInlineErrors: any) => {
+    debounce((setInlineErrors: any) => {
       // validate all step fields and buttons
       activeStep &&
         validateElements({
           elements: [...activeStep.servar_fields, ...activeStep.buttons],
           servars: activeStep.servar_fields,
-          fieldValues,
           triggerErrors: true,
           errorType: formSettings.errorType,
           formRef,
@@ -533,9 +531,7 @@ function Form({
     if (rerender || empty) setRender((render) => !render);
 
     // Only validate on each field change if auto validate is enabled due to prev a submit attempt
-    if (autoValidate) {
-      debouncedValidate(fieldValues, setInlineErrors);
-    }
+    if (autoValidate) debouncedValidate(setInlineErrors);
 
     return true;
   };
@@ -655,7 +651,6 @@ function Form({
       const { errors } = validateElements({
         elements: [...newStep.servar_fields, ...newStep.buttons],
         servars: newStep.servar_fields,
-        fieldValues,
         triggerErrors: trigger,
         errorType: formSettings.errorType,
         formRef,
@@ -819,10 +814,7 @@ function Form({
     const servar = field.servar;
     if (servar.repeat_trigger === 'set_value') {
       const defaultValue = getDefaultFieldValue(field);
-      const { value: previousValue, valueList } = getFieldValue(
-        field,
-        fieldValues
-      );
+      const { value: previousValue, valueList } = getFieldValue(field);
 
       // Add a repeated row if the value went from unset to set
       const isPreviousValueDefaultArray =
@@ -910,7 +902,7 @@ function Form({
       const servar = field.servar;
       if (servar.key !== servarKey) return;
 
-      const fieldValue = getFieldValue(field, fieldValues);
+      const fieldValue = getFieldValue(field);
       const { value } = fieldValue;
       const newValue = target.checked
         ? [...value, opt]
@@ -927,7 +919,7 @@ function Form({
   };
 
   const getNextStepKey = (metadata: any) =>
-    nextStepKey(activeStep.next_conditions, metadata, fieldValues);
+    nextStepKey(activeStep.next_conditions, metadata);
 
   const submit = async ({
     metadata,
@@ -954,7 +946,6 @@ function Form({
       validateElements({
         elements: [...activeStep.servar_fields, ...activeStep.buttons],
         servars: activeStep.servar_fields,
-        fieldValues,
         triggerErrors: true,
         errorType: formSettings.errorType,
         formRef,
@@ -1467,7 +1458,6 @@ function Form({
     curDepth,
     maxDepth,
     elementProps,
-    fieldValues,
     activeStep,
     loaders,
     getButtonSelectionState,
@@ -1556,12 +1546,7 @@ function Form({
         }}
       >
         {children}
-        <Grid
-          step={activeStep}
-          form={form}
-          values={fieldValues}
-          viewport={viewport}
-        />
+        <Grid step={activeStep} form={form} viewport={viewport} />
         {!productionEnv && (
           <DevNavBar allSteps={steps} curStep={activeStep} history={history} />
         )}

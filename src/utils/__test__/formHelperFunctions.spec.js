@@ -180,15 +180,11 @@ describe('formHelperFunctions', () => {
       ];
 
       // Act
-      const newStepKey = nextStepKey(
-        conditions,
-        {
-          elementType,
-          elementIDs,
-          trigger
-        },
-        {}
-      );
+      const newStepKey = nextStepKey(conditions, {
+        elementType,
+        elementIDs,
+        trigger
+      });
 
       // Assert
       expect(newStepKey).toEqual(nextKey);
@@ -216,20 +212,15 @@ describe('formHelperFunctions', () => {
           metadata: {}
         }
       ];
-      const fieldValues = {
-        'rule-key': 'rule-value'
-      };
+
+      Object.assign(fieldValues, { 'rule-key': 'rule-value' });
 
       // Act
-      const newStepKey = nextStepKey(
-        conditions,
-        {
-          elementType,
-          elementIDs,
-          trigger
-        },
-        fieldValues
-      );
+      const newStepKey = nextStepKey(conditions, {
+        elementType,
+        elementIDs,
+        trigger
+      });
 
       // Assert
       expect(newStepKey).toEqual(nextKey);
@@ -257,20 +248,17 @@ describe('formHelperFunctions', () => {
           metadata: {}
         }
       ];
-      const fieldValues = {
+
+      Object.assign(fieldValues, {
         'rule-key': ['rule-value', 'not-rule-value']
-      };
+      });
 
       // Act
-      const newStepKey = nextStepKey(
-        conditions,
-        {
-          elementType,
-          elementIDs,
-          trigger
-        },
-        fieldValues
-      );
+      const newStepKey = nextStepKey(conditions, {
+        elementType,
+        elementIDs,
+        trigger
+      });
 
       // Assert
       expect(newStepKey).toEqual(nextKey);
@@ -303,20 +291,15 @@ describe('formHelperFunctions', () => {
           metadata: {}
         }
       ];
-      const fieldValues = {
-        'rule-key': 'rule-value'
-      };
+
+      Object.assign(fieldValues, { 'rule-key': 'rule-value' });
 
       // Act
-      const newStepKey = nextStepKey(
-        conditions,
-        {
-          elementType,
-          elementIDs,
-          trigger
-        },
-        fieldValues
-      );
+      const newStepKey = nextStepKey(conditions, {
+        elementType,
+        elementIDs,
+        trigger
+      });
 
       // Assert
       expect(newStepKey).toEqual(nextKey);

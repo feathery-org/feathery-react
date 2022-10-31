@@ -5,7 +5,8 @@ import { getDefaultFieldValue } from '../../utils/formHelperFunctions';
 import { TEXT_VARIABLE_PATTERN } from '../../utils/hydration';
 import { adjustColor } from '../../utils/styles';
 import { LINK_NONE, LINK_STRIPE } from '../../elements/basic/ButtonElement';
-const Grid = ({ step, form, values, viewport }: any) => {
+import { fieldValues } from '../../utils/init';
+const Grid = ({ step, form, viewport }: any) => {
   const formattedStep = formatStep(JSON.parse(JSON.stringify(step)), viewport);
 
   const repeatPosition =
@@ -17,17 +18,10 @@ const Grid = ({ step, form, values, viewport }: any) => {
     const repeatNode =
       // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       formattedStep.map[getMapKey({ position: repeatPosition })];
-    if (repeatNode) addRepeatedCells(repeatNode, values);
+    if (repeatNode) addRepeatedCells(repeatNode);
   }
 
-  return (
-    <Subgrid
-      tree={formattedStep.tree}
-      form={form}
-      values={values}
-      viewport={viewport}
-    />
-  );
+  return <Subgrid tree={formattedStep.tree} form={form} viewport={viewport} />;
 };
 
 const Subgrid = ({
@@ -35,7 +29,6 @@ const Subgrid = ({
   form,
   layout = null,
   axis = null,
-  values,
   viewport = 'desktop'
 }: any) => {
   const { buttonOnClick, getButtonSelectionState } = form;
@@ -73,7 +66,6 @@ const Subgrid = ({
                 axis={axis}
                 layout={layout}
                 form={form}
-                values={values}
                 viewport={viewport}
               />
             );
@@ -349,11 +341,11 @@ const buildGridMap = (step: any) => {
   return map;
 };
 
-const addRepeatedCells = (node: any, values: any) => {
+const addRepeatedCells = (node: any) => {
   const index = [...node.position].pop();
   if (!node.parent) return 0;
 
-  const numberOfRepeats = repeatCount(node, values);
+  const numberOfRepeats = repeatCount(node);
   if (numberOfRepeats) {
     // @ts-expect-error TS(2554): Expected 4 arguments, but got 3.
     node.parent.children[index] = repeat({ ...node }, values, 0);
@@ -365,7 +357,6 @@ const addRepeatedCells = (node: any, values: any) => {
         0,
         repeat(
           { ...node.parent.children[index] },
-          values,
           repeatIndex,
           repeatIndex === numberOfRepeats
         )
@@ -379,13 +370,13 @@ const addRepeatedCells = (node: any, values: any) => {
   return numberOfRepeats;
 };
 
-const repeat = (node: any, values: any, repeatIndex: any, last: any) => {
+const repeat = (node: any, repeatIndex: any, last: any) => {
   node.repeat = repeatIndex;
   node.lastRepeat = last;
   if (node.children) {
     const newChildren: any = [];
     node.children.forEach((child: any) => {
-      newChildren.push(repeat({ ...child }, values, repeatIndex, last));
+      newChildren.push(repeat({ ...child }, repeatIndex, last));
     });
     node.children = newChildren;
   }
@@ -419,11 +410,11 @@ const getAllTextVariables = (node: any, variables = []) => {
   return variables;
 };
 
-const repeatCountByTextVariables = (node: any, values: any) => {
+const repeatCountByTextVariables = (node: any) => {
   let count = 0;
   const textVariables = getAllTextVariables(node);
   textVariables.forEach((variable) => {
-    const variableValues = values[variable];
+    const variableValues = fieldValues[variable];
     if (Array.isArray(variableValues))
       count = Math.max(count, variableValues.length - 1);
   });
@@ -446,30 +437,27 @@ const getRepeatableFields = (node: any, servars = []) => {
   return servars;
 };
 
-const repeatCountByFields = (node: any, values: any) => {
+const repeatCountByFields = (node: any) => {
   let count = 0;
   const repeatableServars = getRepeatableFields(node);
   repeatableServars.forEach((servar) => {
-    count = Math.max(count, getNumberOfRepeatableValues(servar, values));
+    count = Math.max(count, getNumberOfRepeatableValues(servar));
   });
   return count;
 };
 
 // If the final value is still default, do not render another repeat
-const getNumberOfRepeatableValues = (node: any, values: any) => {
+const getNumberOfRepeatableValues = (node: any) => {
   const defaultValue = getDefaultFieldValue(node);
-  const fieldValues = values[node?.servar?.key];
-  if (!Array.isArray(fieldValues)) return 0;
+  const fieldValue = fieldValues[node?.servar?.key];
+  if (!Array.isArray(fieldValue)) return 0;
   const hasDefaultLastValue =
-    fieldValues[fieldValues.length - 1] === defaultValue;
-  return hasDefaultLastValue ? fieldValues.length - 1 : fieldValues.length;
+    fieldValue[fieldValue.length - 1] === defaultValue;
+  return hasDefaultLastValue ? fieldValue.length - 1 : fieldValue.length;
 };
 
-const repeatCount = (node: any, values: any) => {
-  return Math.max(
-    repeatCountByFields(node, values),
-    repeatCountByTextVariables(node, values)
-  );
+const repeatCount = (node: any) => {
+  return Math.max(repeatCountByFields(node), repeatCountByTextVariables(node));
 };
 
 const buildGridTree = (gridMap: any, position = [], viewport: any) => {
