@@ -47,7 +47,7 @@ function PhoneField({
   const [curCountryCode, setCurCountryCode] = useState(DEFAULT_COUNTRY);
   const [rawNumber, setRawNumber] = useState('');
   const [formattedNumber, setFormattedNumber] = useState('');
-  const [triggerOnChange, setTriggerOnChange] = useState(false);
+  const [triggerOnChange, setTriggerOnChange] = useState<boolean | null>(null);
   const [placeholder, setPlaceholder] = useState(
     element.properties.placeholder
   );
@@ -97,13 +97,15 @@ function PhoneField({
   }, [curCountryCode, element]);
 
   useEffect(() => {
+    if (triggerOnChange === null) return;
+
     const phoneCode = countryMap[curCountryCode].phoneCode;
     const newNumber = `${phoneCode}${rawNumber}`;
     if ((fullNumber || rawNumber) && newNumber !== fullNumber) {
       setCurFullNumber(newNumber);
       onChange(newNumber);
     }
-  }, [onChange, triggerOnChange, curCountryCode]);
+  }, [triggerOnChange]);
 
   const servar = element.servar;
   return (
@@ -164,6 +166,7 @@ function PhoneField({
                   setRawNumber('');
                   setFormattedNumber('');
                   setShow(false);
+                  setTriggerOnChange(!triggerOnChange);
                   inputRef.current.focus();
                 }}
                 dropdownRef={(ref: any) => {

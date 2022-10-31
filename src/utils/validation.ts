@@ -6,6 +6,7 @@ import {
 import { setFormElementError, shouldElementHide } from './formHelperFunctions';
 import { dynamicImport } from '../integrations/utils';
 import React from 'react';
+import { fieldValues } from './init';
 
 export interface CustomValidation {
   message?: string;
@@ -22,7 +23,6 @@ export interface ResolvedCustomValidation {
 function validateElements({
   elements,
   servars,
-  fieldValues,
   triggerErrors,
   errorType,
   formRef,
@@ -31,7 +31,6 @@ function validateElements({
 }: {
   elements: any[];
   servars: any[];
-  fieldValues: { [key: string]: any };
   triggerErrors: boolean;
   errorType: string;
   formRef: React.RefObject<any>;
@@ -45,17 +44,10 @@ function validateElements({
   const inlineErrors = {};
   const errors = elements
     // Skip validation on hidden elements
-    .filter(
-      (element: any) =>
-        !shouldElementHide({
-          fields: servars,
-          values: fieldValues,
-          element
-        })
-    )
+    .filter((element: any) => !shouldElementHide({ fields: servars, element }))
     .reduce((errors: any, element: any) => {
       const { key: servarKey, type = 'button' } = element.servar || {}; // if not a servar, then a button
-      const message = validateElement(element, fieldValues);
+      const message = validateElement(element);
       const key = servarKey || element.id;
       errors[key] = message;
       if (triggerErrors) {
@@ -88,18 +80,15 @@ function validateElements({
  * Performs all default/standard and custom validations on a field/element
  * and returns any validation message.
  */
-function validateElement(
-  element: {
-    servar?: {
-      type: string;
-      key: string;
-      metadata?: any;
-      required: boolean;
-    };
-    validations?: ResolvedCustomValidation[];
-  },
-  fieldValues: { [key: string]: any }
-): string {
+function validateElement(element: {
+  servar?: {
+    type: string;
+    key: string;
+    metadata?: any;
+    required: boolean;
+  };
+  validations?: ResolvedCustomValidation[];
+}): string {
   // First priority is standard validations for servar fields
   const { servar, validations } = element;
   if (servar) {

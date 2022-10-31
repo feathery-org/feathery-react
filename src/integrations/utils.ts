@@ -63,7 +63,7 @@ export async function initializeIntegrations(
     installStytch(integs.stytch),
     installStripe(integs.stripe),
     installSegment(integs.segment),
-    installGoogleAnalytics(integs.google_analytics)
+    installGoogleAnalytics(integs['google-analytics'])
   ]);
 
   const gtm = integs['google-tag-manager'];

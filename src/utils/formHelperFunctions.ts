@@ -35,7 +35,7 @@ const formatStepFields = (step: any, forUser = false) => {
   return formattedFields;
 };
 
-const formatAllFormFields = (steps: any, forUser: any) => {
+const formatAllFormFields = (steps: any, forUser = false) => {
   let formattedFields = {};
   Object.values(steps).forEach((step) => {
     const stepFields = formatStepFields(step, forUser);
@@ -99,7 +99,7 @@ const lookUpTrigger = (step: any, elementID: any, elementType: any) => {
   } else return {};
 };
 
-const nextStepKey = (nextConditions: any, metadata: any, fieldValues: any) => {
+const nextStepKey = (nextConditions: any, metadata: any) => {
   let newKey: any = null;
   nextConditions
     .filter(
@@ -116,8 +116,8 @@ const nextStepKey = (nextConditions: any, metadata: any, fieldValues: any) => {
       if (newKey) return;
       let rulesMet = true;
       cond.rules.forEach((rule: any) => {
-        const userVal = fieldValues[rule.field_key] || '';
-        const ruleVal = rule.value || '';
+        const userVal: any = fieldValues[rule.field_key] || '';
+        const ruleVal: any = rule.value || '';
         let ruleMet;
         // 2D array of values happens when a multi select row is repeated
         if (Array.isArray(userVal) && Array.isArray(userVal[0])) {
@@ -201,23 +201,24 @@ function reactFriendlyKey(field: any) {
  * Retrieves the value of the servar from the provided values.
  * If the servar field is repeated, gets the indexed value.
  */
-function getFieldValue(field: any, values: any) {
+function getFieldValue(field: any) {
   const { servar, repeat } = field;
 
   // Need to check if undefined, rather than !values[servar.key], because null can be a set value
-  if (values[servar?.key] === undefined)
+  if (fieldValues[servar?.key] === undefined)
     return { value: getDefaultFieldValue(field) };
 
+  const fieldValue = fieldValues[servar.key] as any;
   return repeat !== undefined
     ? {
         repeated: true,
         index: repeat,
-        value: values[servar.key][repeat] ?? getDefaultFieldValue(field),
-        valueList: values[servar.key]
+        value: fieldValue[repeat] ?? getDefaultFieldValue(field),
+        valueList: fieldValues[servar.key] as any[]
       }
     : {
         repeated: false,
-        value: values[servar.key]
+        value: fieldValue
       };
 }
 
@@ -308,7 +309,7 @@ function getInlineError(field: any, inlineErrors: any) {
 /**
  * Determines if the provided element should be hidden based on its "hide-if" rules.
  */
-function shouldElementHide({ fields, values, element }: any) {
+function shouldElementHide({ fields, element }: any) {
   // eslint-disable-next-line camelcase
   const hideIfMap = {};
   element.hide_ifs.forEach((hideIf: any) => {
@@ -323,15 +324,15 @@ function shouldElementHide({ fields, values, element }: any) {
   Object.values(hideIfMap).forEach((hideIfs) => {
     if (shouldHide) return;
     shouldHide = (hideIfs as any).every((hideIf: any) =>
-      calculateHide(hideIf, fields, values, element.repeat)
+      calculateHide(hideIf, fields, element.repeat)
     );
   });
   return shouldHide;
 }
 
-function calculateHide(hideIf: any, fields: any, values: any, repeat: any) {
+function calculateHide(hideIf: any, fields: any, repeat: any) {
   // Get the target value (taking repeated elements into account)
-  let value = values[hideIf.field_key];
+  let value = fieldValues[hideIf.field_key];
   if (repeat !== undefined && Array.isArray(value)) value = value[repeat];
 
   // If the hideIf value is an empty string, we want to match on the "empty" value of a field

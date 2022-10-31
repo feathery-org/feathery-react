@@ -13,6 +13,7 @@ import { isFieldValueEmpty } from '../../utils/validation';
 import { fieldCounter } from '../Form';
 import { justRemove } from '../../utils/array';
 import { isObjectEmpty, stringifyWithNull } from '../../utils/primitives';
+import { fieldValues } from '../../utils/init';
 
 const mapFieldTypes = new Set([
   'gmap_line_1',
@@ -30,7 +31,6 @@ const Cell = ({ node: el, form }: any) => {
     curDepth,
     maxDepth,
     elementProps,
-    fieldValues,
     activeStep,
     loaders,
     getButtonSelectionState,
@@ -64,7 +64,6 @@ const Cell = ({ node: el, form }: any) => {
   if (
     shouldElementHide({
       fields: activeStep.servar_fields,
-      values: fieldValues,
       element: el
     })
   ) {
@@ -109,7 +108,6 @@ const Cell = ({ node: el, form }: any) => {
           (field: any) =>
             !shouldElementHide({
               fields: activeStep.servar_fields,
-              values: fieldValues,
               element: field
             })
         )
@@ -143,7 +141,7 @@ const Cell = ({ node: el, form }: any) => {
     const thisCounter = fieldCounter.value;
     const index = el.repeat ?? null;
     const servar = el.servar;
-    const { value: fieldVal } = getFieldValue(el, fieldValues);
+    const { value: fieldVal } = getFieldValue(el);
     const autosubmit = el.properties.submit_trigger === 'auto';
 
     let otherVal = '';

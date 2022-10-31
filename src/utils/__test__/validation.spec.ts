@@ -3,6 +3,7 @@ import {
   ResolvedCustomValidation,
   getStandardFieldError
 } from '../validation';
+import { fieldValues } from '../init';
 
 describe('validation', () => {
   const fieldKey = 'text-field-1';
@@ -29,31 +30,31 @@ describe('validation', () => {
   describe('validateElement', () => {
     it('gets the default error for an empty required value', () => {
       // Arrange
-      const fieldValues = { [fieldKey]: '' };
+      Object.assign(fieldValues, { [fieldKey]: '' });
       const expected = 'This is a required field';
 
       // Act
-      const actual = validateElement(field(), fieldValues);
+      const actual = validateElement(field());
 
       // Assert
       expect(actual).toEqual(expected);
     });
     it('triggers a custom validation message', () => {
       // Arrange
-      const fieldValues = { [fieldKey]: '100' };
+      Object.assign(fieldValues, { [fieldKey]: '100' });
 
       // Act
-      const actual = validateElement({ servar, validations }, fieldValues);
+      const actual = validateElement({ servar, validations });
 
       // Assert
       expect(actual).toEqual(customErrorMessage);
     });
     it('works if the field has no validations property', () => {
       // Arrange
-      const fieldValues = { [fieldKey]: '100' };
+      Object.assign(fieldValues, { [fieldKey]: '100' });
 
       // Act
-      const actual = validateElement({ servar }, fieldValues);
+      const actual = validateElement({ servar });
 
       // Assert
       expect(actual).toEqual('');
