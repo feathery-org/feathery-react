@@ -1505,6 +1505,7 @@ function Form({
   useEffect(() => {
     if (!anyFinished) return;
     const redirectForm = () => {
+      history.replace(location.pathname + location.search);
       if (formSettings.redirectUrl) {
         hasRedirected.current = true;
         window.location.href = formSettings.redirectUrl;
