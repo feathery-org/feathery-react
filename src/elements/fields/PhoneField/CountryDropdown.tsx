@@ -1,14 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 
 import countryData from './countryData';
 
-export default function CountryDropdown({
-  show,
-  hide,
-  itemOnClick,
-  dropdownRef,
-  ...props
-}: any) {
+function CountryDropdown({ show, hide, itemOnClick, ...props }: any, ref: any) {
   const listItemRef = useRef<Record<string, any>>({});
   const [query, setQuery] = useState('');
 
@@ -125,10 +119,12 @@ export default function CountryDropdown({
         overflowX: 'hidden',
         width: '400px'
       }}
-      ref={dropdownRef}
+      ref={ref}
       {...props}
     >
       {countryItems}
     </ul>
   );
 }
+
+export default forwardRef(CountryDropdown);

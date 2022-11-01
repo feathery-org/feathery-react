@@ -169,11 +169,11 @@ function PhoneField({
                   setTriggerOnChange(!triggerOnChange);
                   inputRef.current.focus();
                 }}
-                dropdownRef={(ref: any) => {
+                {...props}
+                ref={(ref: any) => {
                   dropdownRef.current = ref;
                   props.ref(ref);
                 }}
-                {...props}
                 show={show}
               />
             );
