@@ -45,6 +45,7 @@ function PhoneField({
   const [show, setShow] = useState(false);
   const [curFullNumber, setCurFullNumber] = useState('');
   const [curCountryCode, setCurCountryCode] = useState(DEFAULT_COUNTRY);
+  const phoneCode = countryMap[curCountryCode].phoneCode;
   const [rawNumber, setRawNumber] = useState('');
   const [formattedNumber, setFormattedNumber] = useState('');
   const [triggerOnChange, setTriggerOnChange] = useState<boolean | null>(null);
@@ -65,6 +66,7 @@ function PhoneField({
       ayt.input(`+${fullNumber}`);
       const numberObj = ayt.getNumber();
       if (numberObj) {
+        setCurFullNumber(fullNumber);
         setRawNumber(numberObj.nationalNumber);
         setFormattedNumber(numberObj.formatNational());
         setCurCountryCode(numberObj.country ?? DEFAULT_COUNTRY);
@@ -99,7 +101,6 @@ function PhoneField({
   useEffect(() => {
     if (triggerOnChange === null) return;
 
-    const phoneCode = countryMap[curCountryCode].phoneCode;
     const newNumber = `${phoneCode}${rawNumber}`;
     if ((fullNumber || rawNumber) && newNumber !== fullNumber) {
       setCurFullNumber(newNumber);
@@ -220,31 +221,32 @@ function PhoneField({
               if (newNum) {
                 const LPN = global.libphonenumber;
                 const onlyDigits = LPN.parseDigits(newNum, curCountryCode);
+                // Prevent user from starting national number with country code.
+                // This is valid for all countries aside from a few, like Indonesia
+                // We do this because libphonenumber national number parsing
+                // removes the national prefix, so we can't rely on that
+                if (onlyDigits[0] === phoneCode[0]) return;
                 const validate = LPN.validatePhoneNumberLength;
-                if (validate(onlyDigits, curCountryCode) !== 'TOO_LONG') {
-                  const asYouType = new LPN.AsYouType(curCountryCode);
-                  const formatted = asYouType.input(onlyDigits);
-                  // Only update if nationally significant numbers added
-                  if (asYouType.getNumber()) {
-                    const prevNumDigits = LPN.parseDigits(
-                      formattedNumber.slice(0, cursor ?? 0)
-                    ).length;
+                if (validate(onlyDigits, curCountryCode) === 'TOO_LONG') return;
 
-                    setFormattedNumber(formatted);
-                    setRawNumber(onlyDigits);
-                    const diff = formatted.length - formattedNumber.length;
-                    if (start && diff > 0) {
-                      // When inserting characters, skip non-digits
-                      // Also cursor must be in front of at least 1 more digit now
-                      while (
-                        (start <= formatted.length &&
-                          !isNum(formatted[start])) ||
-                        LPN.parseDigits(formatted.slice(0, start)).length <=
-                          prevNumDigits
-                      )
-                        start++;
-                    }
-                  }
+                const asYouType = new LPN.AsYouType(curCountryCode);
+                const formatted = asYouType.input(onlyDigits);
+                const prevNumDigits = LPN.parseDigits(
+                  formattedNumber.slice(0, cursor ?? 0)
+                ).length;
+
+                setFormattedNumber(formatted);
+                setRawNumber(onlyDigits);
+                const diff = formatted.length - formattedNumber.length;
+                if (start && diff > 0) {
+                  // When inserting characters, skip non-digits
+                  // Also cursor must be in front of at least 1 more digit now
+                  while (
+                    (start <= formatted.length && !isNum(formatted[start])) ||
+                    LPN.parseDigits(formatted.slice(0, start)).length <=
+                      prevNumDigits
+                  )
+                    start++;
                 }
               } else {
                 setFormattedNumber('');
