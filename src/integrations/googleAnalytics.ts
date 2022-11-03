@@ -11,6 +11,6 @@ export function installGoogleAnalytics(gaConfig: any) {
   return Promise.resolve();
 }
 
-export function trackGAEvent(title: any, metadata: any) {
-  ReactGA.event(title, metadata);
+export function trackGAEvent(category: string, action: string, label: string) {
+  ReactGA.event({ category, action, label });
 }
