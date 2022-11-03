@@ -123,7 +123,7 @@ const loadPhoneValidator = () =>
 
 const validators = {
   email: (a: string) => emailPattern.test(a),
-  internationalPhone: (a: string) => {
+  phone: (a: string) => {
     try {
       return global.libphonenumber.isValidPhoneNumber(`+${a}`);
     } catch (e) {
@@ -170,7 +170,7 @@ function getStandardFieldError(value: any, servar: any) {
   }
 
   // Check if value is badly formatted
-  if (servar.type === 'phone_number' && !validators.internationalPhone(value)) {
+  if (servar.type === 'phone_number' && !validators.phone(value)) {
     return 'Invalid phone number';
   } else if (servar.type === 'email' && !validators.email(value)) {
     return 'Invalid email format';

@@ -68,17 +68,15 @@ export async function initializeIntegrations(
 
 export function inferEmailLoginFromURL(featheryClient: Client) {
   const queryParams = new URLSearchParams(window.location.search);
-  const stytchJwt = getStytchJwt();
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
-  if (stytchJwt || (type && token)) emailLoginStytch(featheryClient);
+  if (isAuthStytch() || (type && token)) emailLoginStytch(featheryClient);
   else emailLoginFirebase(featheryClient);
 }
 
 export function inferAuthLogout() {
-  const stytchJwt = getStytchJwt();
   let logout;
-  if (stytchJwt) {
+  if (isAuthStytch()) {
     logout = () => getAuthClient().session.revoke();
   } else if (global.firebase) {
     logout = () => global.firebase.auth().signOut();
@@ -95,6 +93,10 @@ export function inferAuthLogout() {
       renderCb()
     );
   });
+}
+
+export function isAuthStytch() {
+  return Boolean(global.Stytch);
 }
 
 export interface ActionData {

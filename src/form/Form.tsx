@@ -40,7 +40,7 @@ import {
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
-import { sendLoginCode } from '../integrations/firebase';
+import { sendFirebaseLogin, verifySMSCode } from '../integrations/firebase';
 import { googleOauthRedirect, sendMagicLink } from '../integrations/stytch';
 import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
 import {
@@ -52,7 +52,8 @@ import {
   getIntegrationActionConfiguration,
   ActionData,
   trackEvent,
-  inferAuthLogout
+  inferAuthLogout,
+  isAuthStytch
 } from '../integrations/utils';
 import {
   LINK_ADD_REPEATED_ROW,
@@ -66,13 +67,14 @@ import {
   LINK_STRIPE,
   LINK_BACK,
   LINK_NEXT,
-  LINK_LOGOUT
+  LINK_LOGOUT,
+  LINK_VERIFY_SMS
 } from '../elements/basic/ButtonElement';
 import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
-import { getStytchJwt, openTab, runningInClient } from '../utils/browser';
+import { openTab, runningInClient } from '../utils/browser';
 import FormOff from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
@@ -328,10 +330,6 @@ function Form({
   useEffect(() => {
     if (!activeStep || !global.firebase) return;
 
-    const hasPhoneField = activeStep.servar_fields.some(
-      ({ servar }: any) => servar.type === 'phone_number'
-    );
-
     const renderedButtons = activeStep.buttons.filter(
       (element: any) =>
         !shouldElementHide({
@@ -339,17 +337,13 @@ function Form({
           element: element
         })
     );
-    const submitButton = renderedButtons.find(
-      (b: any) =>
-        b.properties.link === LINK_SEND_SMS && !b.properties.link_no_submit
-    );
     const smsButton = renderedButtons.find(
       (b: any) => b.properties.link === LINK_SEND_SMS
     );
 
-    if ((hasPhoneField && submitButton) || smsButton) {
+    if (smsButton) {
       window.firebaseRecaptchaVerifier =
-        new global.firebase.auth.RecaptchaVerifier(submitButton.id, {
+        new global.firebase.auth.RecaptchaVerifier(smsButton.id, {
           size: 'invisible'
         });
     }
@@ -924,7 +918,8 @@ function Form({
 
     const { loggedIn, errorMessage, errorField } = await handleActions(
       setLoader,
-      formattedFields
+      formattedFields,
+      elementType
     );
     if (errorMessage && errorField) {
       clearLoaders();
@@ -1025,6 +1020,7 @@ function Form({
   async function handleActions(
     setLoader: any,
     formattedFields: any,
+    elementType: string,
     // memoizing actionConfigurations provided no real benefit here because it we need a fresh getCardElement
     actionConfigurations = getIntegrationActionConfiguration(getCardElement)
   ) {
@@ -1055,6 +1051,12 @@ function Form({
             (!actionConfig.isMatch ||
               (actionConfig.isMatch && actionConfig.isMatch(actionData)))
           ) {
+            // We only want to run firebase submit logic if it is happening via field auto-submit
+            if (
+              actionConfig.integrationKey === 'firebase' &&
+              elementType !== 'field'
+            )
+              return;
             setLoader();
             const actionResult = await actionConfig.actionFn(actionData);
             // Return right now if this action is not configured to continue to the next or there was an error
@@ -1295,35 +1297,73 @@ function Form({
         }
       }));
     } else if (link === LINK_SEND_SMS) {
-      clickPromise = setButtonLoader(button)
-        .then(() =>
-          sendLoginCode({
-            fieldVal: fieldValues[button.properties.auth_target_field_key],
-            servar: null,
-            method: 'phone'
-          })
-        )
-        .then(() => clearLoaders());
-    } else if (link === LINK_SEND_MAGIC_LINK) {
-      const fieldKey = button.properties.auth_target_field_key;
-      const email = fieldValues[fieldKey] as string;
-      if (validators.email(email)) {
+      const phoneNum = fieldValues[
+        button.properties.auth_target_field_key
+      ] as string;
+      if (validators.phone(phoneNum)) {
         clickPromise = setButtonLoader(button)
-          .then(() => {
-            if (getStytchJwt()) return sendMagicLink({ fieldVal: email });
-            else
-              return sendLoginCode({
-                fieldVal: fieldValues[button.properties.auth_target_field_key],
-                servar: null,
-                method: 'email'
-              });
-          })
+          .then(() =>
+            sendFirebaseLogin({
+              fieldVal: phoneNum,
+              servar: null,
+              method: 'phone'
+            })
+          )
+          .then(() => buttonOnSubmit(button, !button.properties.link_no_submit))
           .then(() => clearLoaders());
       } else {
         setFormElementError({
           formRef,
           fieldKey: button.id,
-          message: 'An email is needed to send your magic link.',
+          message: 'A valid phone number is needed to send your login code.',
+          errorType: formSettings.errorType,
+          setInlineErrors: setInlineErrors,
+          triggerErrors: true
+        });
+      }
+    } else if (link === LINK_VERIFY_SMS) {
+      const pin = fieldValues[
+        button.properties.auth_target_field_key
+      ] as string;
+
+      clickPromise = setButtonLoader(button)
+        .then(() =>
+          verifySMSCode({ fieldVal: pin, servar: null, method: client })
+        )
+        .then(() => buttonOnSubmit(button, !button.properties.link_no_submit))
+        .then(() => clearLoaders())
+        .catch(() => {
+          setFormElementError({
+            formRef,
+            fieldKey: button.id,
+            message: 'Your code is not valid.',
+            errorType: formSettings.errorType,
+            setInlineErrors: setInlineErrors,
+            triggerErrors: true
+          });
+        });
+    } else if (link === LINK_SEND_MAGIC_LINK) {
+      const email = fieldValues[
+        button.properties.auth_target_field_key
+      ] as string;
+      if (validators.email(email)) {
+        clickPromise = setButtonLoader(button)
+          .then(() => {
+            if (isAuthStytch()) return sendMagicLink({ fieldVal: email });
+            else
+              return sendFirebaseLogin({
+                fieldVal: email,
+                servar: null,
+                method: 'email'
+              });
+          })
+          .then(() => buttonOnSubmit(button, !button.properties.link_no_submit))
+          .then(() => clearLoaders());
+      } else {
+        setFormElementError({
+          formRef,
+          fieldKey: button.id,
+          message: 'A valid email is needed to send your magic link.',
           errorType: formSettings.errorType,
           setInlineErrors: setInlineErrors,
           triggerErrors: true
