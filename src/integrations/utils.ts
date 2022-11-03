@@ -140,14 +140,16 @@ export function getIntegrationActionConfiguration(getCardElement: any) {
   ];
 }
 
-export function trackEvent(title: string, metadata: Record<string, any>) {
+export function trackEvent(title: string, stepId: string, formId: string) {
+  const metadata = { stepId, formId };
+
   // Google Tag Manager
   // @ts-expect-error TS(2551): Property 'initialized' does not exist on type '{ d... Remove this comment to see the full error message
   if (TagManager.initialized) {
     TagManager.dataLayer({ dataLayer: { ...metadata, event: title } });
   }
   // Google Analytics
-  if (gaInstalled) trackGAEvent(title, metadata);
+  if (gaInstalled) trackGAEvent(formId, title, stepId);
   // Segment
   if (window.analytics) window.analytics.track(title, metadata);
 }

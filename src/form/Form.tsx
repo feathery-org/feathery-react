@@ -640,11 +640,7 @@ function Form({
     setCurDepth(curDepth);
     setMaxDepth(maxDepth);
 
-    trackEvent('FeatheryStepLoad', {
-      stepId: newKey,
-      // @ts-expect-error TS(2531): Object is possibly 'null'.
-      formId: client.formKey
-    });
+    trackEvent('FeatheryStepLoad', newKey, formKey);
 
     initState.validateCallbacks[formKey] = (trigger: any) => {
       // validate all step fields and buttons
@@ -1127,11 +1123,7 @@ function Form({
       // @ts-expect-error TS(2531): Object is possibly 'null'.
       submitPromise = client.submitStep(featheryFields);
 
-    trackEvent('FeatheryStepSubmit', {
-      stepId: activeStep.key,
-      // @ts-expect-error TS(2531): Object is possibly 'null'.
-      formId: client.formKey
-    });
+    trackEvent('FeatheryStepSubmit', activeStep.key, formKey);
 
     return goToNewStep({
       metadata,
