@@ -347,8 +347,7 @@ const addRepeatedCells = (node: any) => {
 
   const numberOfRepeats = repeatCount(node);
   if (numberOfRepeats) {
-    // @ts-expect-error TS(2554): Expected 4 arguments, but got 3.
-    node.parent.children[index] = repeat({ ...node }, values, 0);
+    node.parent.children[index] = repeat({ ...node }, 0, 0);
     for (let i = 0; i < numberOfRepeats; ++i) {
       node.parent.layout.splice(index + i, 0, node.parent.layout[index]);
       const repeatIndex = i + 1;
@@ -363,8 +362,7 @@ const addRepeatedCells = (node: any) => {
       );
     }
   } else {
-    // @ts-expect-error TS(2554): Expected 4 arguments, but got 3.
-    node.parent.children[index] = repeat({ ...node }, values, 0);
+    node.parent.children[index] = repeat({ ...node }, 0, 0);
   }
 
   return numberOfRepeats;
