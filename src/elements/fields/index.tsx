@@ -245,6 +245,7 @@ function applyFieldStyles(field: any, styles: any) {
         width: `${a}px`
       }));
 
+      styles.applyColor('fieldToggle', 'background_color', 'backgroundColor');
       styles.apply('fieldToggle', 'font_size', (a: any) => ({
         fontSize: `${1.5 * a}px`,
         width: `${3 * a}px`
