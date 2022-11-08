@@ -191,8 +191,6 @@ function Form({
   const [viewport, setViewport] = useState(getViewport());
   const handleResize = () => setViewport(getViewport());
 
-  const [repeats, setRepeats] = useState(0);
-
   const prevAuthId = usePrevious(initState.authId);
   const prevStepKey = usePrevious(stepKey);
 
@@ -866,10 +864,7 @@ function Form({
     }
 
     const change = updateFieldValues(updateValues, rerender);
-    if (repeatRowOperation === 'add') {
-      setRepeats(repeats + 1);
-      addRepeatedRow();
-    }
+    if (repeatRowOperation === 'add') addRepeatedRow();
     return change;
   };
 

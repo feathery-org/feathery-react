@@ -419,14 +419,8 @@ const repeatCountByTextVariables = (node: any) => {
   return count;
 };
 
-const getRepeatableFields = (node: any, servars = []) => {
-  if (node.servar) {
-    const { repeated, repeat_trigger: repeatTrigger } = node.servar;
-    if (repeated && repeatTrigger) {
-      // @ts-expect-error TS(2345): Argument of type 'any' is not assignable to parame... Remove this comment to see the full error message
-      servars.push(node);
-    }
-  }
+const getRepeatableFields = (node: any, servars: Array<any>) => {
+  if (node.servar?.repeated) servars.push(node);
 
   if (node.children) {
     node.children.forEach((child: any) => getRepeatableFields(child, servars));
@@ -437,21 +431,26 @@ const getRepeatableFields = (node: any, servars = []) => {
 
 const repeatCountByFields = (node: any) => {
   let count = 0;
-  const repeatableServars = getRepeatableFields(node);
+  const repeatableServars: Array<any> = [];
+  getRepeatableFields(node, repeatableServars);
   repeatableServars.forEach((servar) => {
-    count = Math.max(count, getNumberOfRepeatableValues(servar));
+    count = Math.max(count, getNumberOfRepeatingValues(servar));
   });
   return count;
 };
 
 // If the final value is still default, do not render another repeat
-const getNumberOfRepeatableValues = (node: any) => {
-  const defaultValue = getDefaultFieldValue(node);
-  const fieldValue = fieldValues[node?.servar?.key];
+const getNumberOfRepeatingValues = (node: any) => {
+  const servar = node.servar ?? {};
+  const fieldValue = fieldValues[servar.key ?? ''];
   if (!Array.isArray(fieldValue)) return 0;
+
+  const defaultValue = getDefaultFieldValue(node);
   const hasDefaultLastValue =
     fieldValue[fieldValue.length - 1] === defaultValue;
-  return hasDefaultLastValue ? fieldValue.length - 1 : fieldValue.length;
+  return servar.repeat_trigger === 'set_value' && !hasDefaultLastValue
+    ? fieldValue.length
+    : fieldValue.length - 1;
 };
 
 const repeatCount = (node: any) => {
