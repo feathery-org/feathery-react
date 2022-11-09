@@ -758,7 +758,8 @@ function Form({
               history.replace(
                 location.pathname + location.search + `#${newKey}`
               );
-            } else setStepKey(newKey);
+            }
+            setStepKey(newKey);
           }
         )
         .catch(async (error) => {
@@ -778,11 +779,10 @@ function Form({
           let hashKey;
           try {
             hashKey = decodeURI(location.hash.substr(1));
+            if (hashKey in steps) setStepKey(hashKey);
           } catch (e) {
             console.log(e);
           }
-          // @ts-expect-error TS(2532): Object is possibly 'undefined'.
-          if (hashKey in steps) setStepKey(hashKey);
         })
       : undefined;
   }, [steps]);
