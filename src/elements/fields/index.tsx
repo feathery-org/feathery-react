@@ -105,10 +105,10 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'button_group':
       styles.addTargets('img', 'tc');
-      styles.apply('fc', 'layout', (a: any) => ({
+      styles.apply('fc', 'vertical_layout', (a: any) => ({
         alignItems: a
       }));
-      styles.apply('fc', 'vertical_layout', (a: any) => ({
+      styles.apply('fc', 'layout', (a: any) => ({
         justifyContent: a
       }));
       // Cancel out extra per-button margins on the edges
@@ -122,7 +122,7 @@ function applyFieldStyles(field: any, styles: any) {
         }
       );
       styles.applyHeight('field', '', true);
-      styles.applyWidth('field', '', true);
+      styles.applyWidth('field', '');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
