@@ -1551,7 +1551,11 @@ function Form({
 export default function FormWithRouter(props: Props): JSX.Element | null {
   // Check client for NextJS support
   return runningInClient() ? (
+    /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */
+    /* @ts-ignore */
     <BrowserRouter>
+      {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+      {/* @ts-ignore */}
       <Route path='/'>
         <Form {...props} />
       </Route>
