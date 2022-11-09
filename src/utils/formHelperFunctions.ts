@@ -233,7 +233,9 @@ function updateSessionValues(session: any) {
 
   // Create a map of servar keys to S3 paths so we know which files have been uploaded already
   const newFilePathMap = objectMap(session.file_values, (fileOrFiles: any) =>
-    Array.isArray(fileOrFiles) ? fileOrFiles.map((f) => f.path) : fileOrFiles
+    Array.isArray(fileOrFiles)
+      ? fileOrFiles.map((f) => f.path)
+      : fileOrFiles.path
   );
 
   Object.assign(fieldValues, { ...session.field_values, ...filePromises });
@@ -417,6 +419,20 @@ function getPrevStepUrl(curStep: any, stepMap: Record<string, string>) {
   return newStepKey ? getNewStepUrl(newStepKey) : '';
 }
 
+// Update the map we maintain to track files that have already been uploaded to S3
+// This means nulling the existing mapping because the user uploaded a new file
+function clearFilePathMapEntry(key: any, index = null) {
+  if (index !== null) {
+    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
+    if (!filePathMap[key]) filePathMap[key] = [];
+    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
+    filePathMap[key][index] = null;
+  } else {
+    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
+    filePathMap[key] = null;
+  }
+}
+
 export {
   changeStep,
   formatAllFormFields,
@@ -440,5 +456,6 @@ export {
   objectMap,
   fetchS3File,
   textFieldShouldSubmit,
-  isFieldActuallyRequired
+  isFieldActuallyRequired,
+  clearFilePathMapEntry
 };

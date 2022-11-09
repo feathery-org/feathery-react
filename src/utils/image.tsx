@@ -101,11 +101,11 @@ export const dataURLToFile = (dataURL: any, name: any) => {
   return new File([u8arr], name, { type: mime });
 };
 
-export const toBase64 = (file: any) =>
+export const toBase64 = (file: any): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
+    reader.onload = () => resolve(reader.result as string);
     reader.onerror = (error) => reject(error);
   });
 

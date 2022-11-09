@@ -16,7 +16,7 @@ function SignatureField({
   children
 }: any) {
   const servar = element.servar;
-  const signatureRef = useRef();
+  const signatureRef = useRef<any>();
   const [isClearVisible, setIsClearVisible] = useState(defaultValue !== null);
   const signatureCanvasStyles = applyStyles.getTarget('field', true);
   // Pick top border color for icon color
@@ -27,8 +27,30 @@ function SignatureField({
       if (defaultValue === null) return;
       const signatureFile = await defaultValue;
       const base64 = await toBase64(signatureFile);
-      // @ts-expect-error TS(2532): Object is possibly 'undefined'.
-      signatureRef.current.fromDataURL(base64);
+
+      const img = new Image();
+      img.onload = () => {
+        const sig = signatureRef.current?.getCanvas();
+        if (!sig) return;
+
+        const hRatio = sig.offsetWidth / img.width;
+        const vRatio = sig.offsetHeight / img.height;
+        const ratio = Math.min(hRatio, vRatio, 1);
+        const imgWidth = img.width * ratio;
+        const imgHeight = img.height * ratio;
+        const xOffset = (sig.offsetWidth - imgWidth) / 2;
+        const yOffset = (sig.offsetHeight - imgHeight) / 2;
+        // Preserve aspect ratio when loading signature
+        // TODO: fix offsets. for some reason they're not being respected and
+        //  are treated as 0, 0
+        signatureRef.current.fromDataURL(base64, {
+          width: imgWidth,
+          height: imgHeight,
+          xOffset,
+          yOffset
+        });
+      };
+      img.src = base64;
     }
     setSignatureCanvas();
   }, []);
@@ -54,10 +76,10 @@ function SignatureField({
               top: '1px',
               right: '0',
               borderRadius: '6px',
-              display: 'flex'
+              display: 'flex',
+              cursor: 'pointer'
             }}
             onClick={() => {
-              // @ts-expect-error TS(2532): Object is possibly 'undefined'.
               signatureRef.current.clear();
               onClear();
               setIsClearVisible(false);
@@ -77,15 +99,11 @@ function SignatureField({
               height: '100%'
             }
           }}
-          ref={(ref: any) => {
-            signatureRef.current = ref;
-          }}
+          ref={signatureRef}
           onEnd={() => {
-            // @ts-expect-error TS(2532): Object is possibly 'undefined'.
             const base64Img = signatureRef.current.toDataURL('image/png');
             const newFile = dataURLToFile(base64Img, `${servar.key}.png`);
             onEnd(newFile);
-            // @ts-expect-error TS(2532): Object is possibly 'undefined'.
             setIsClearVisible(!signatureRef.current.isEmpty());
           }}
         />
