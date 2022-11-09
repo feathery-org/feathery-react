@@ -577,7 +577,7 @@ function Form({
             backgroundColor: newStep?.default_background_color
           }
         },
-        userId: initInfo().userKey,
+        userId: initInfo().userId,
         stepName: newStep?.key ?? '',
         ...getProps()
       });

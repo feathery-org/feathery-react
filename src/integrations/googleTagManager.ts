@@ -8,7 +8,7 @@ export function initializeTagManager(gtmConfig: any) {
     TagManager.initialized = true;
     TagManager.initialize({
       gtmId: gtmConfig.api_key,
-      dataLayer: { userId: initState.userKey }
+      dataLayer: { userId: initState.userId }
     });
   }
 }

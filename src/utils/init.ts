@@ -23,7 +23,7 @@ export type FieldValues = {
 
 type InitOptions = {
   authClient?: any;
-  userKey?: null | string;
+  userId?: null | string;
   forms?: string[];
   tracking?: 'cookie' | 'fingerprint' | '';
   authId?: string;
@@ -50,14 +50,14 @@ let initFormsPromise: Promise<void> = Promise.resolve();
 const defaultClient = new Client();
 const defaultOptions: InitOptions = {
   authClient: null,
-  userKey: null,
+  userId: null,
   tracking: 'cookie'
 };
 const initState: InitState = {
   initialized: false,
   tracking: '',
   sdkKey: '',
-  userKey: '',
+  userId: '',
   authId: '',
   authEmail: '',
   authPhoneNumber: '',
@@ -78,13 +78,18 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
     throw new errors.SDKKeyError('Invalid SDK Key');
   }
 
-  // If client attempts to set userKey but it's not yet valid, don't initialize
+  // TODO: deprecate userKey
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  if (options.userKey) options.userId = options.userKey;
+
+  // If client attempts to set userId but it's not yet valid, don't initialize
   // until it becomes valid
   if (
-    options.userKey !== undefined &&
-    (!options.userKey || typeof options.userKey !== 'string')
+    options.userId !== undefined &&
+    (!options.userId || typeof options.userId !== 'string')
   ) {
-    throw new errors.UserKeyError();
+    throw new errors.UserIdError();
   }
 
   options = { ...defaultOptions, ...options };
@@ -101,7 +106,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
     'authId',
     'authEmail',
     'authPhoneNumber',
-    'userKey',
+    'userId',
     'tracking'
   ].forEach((key) => {
     if (options[key as keyof InitOptions])
@@ -116,20 +121,20 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
   }
 
   // NextJS support - FingerprintJS.load cannot run server side
-  if (!initState.userKey && runningInClient()) {
+  if (!initState.userId && runningInClient()) {
     if (options.tracking === 'fingerprint') {
       initFormsPromise = FingerprintJS.load()
         .then((fp: any) => fp.get())
-        .then((result: any) => (initState.userKey = result.visitorId));
+        .then((result: any) => (initState.userId = result.visitorId));
     } else if (options.tracking === 'cookie') {
       featheryDoc()
         .cookie.split(/; */)
         .map((c: any) => {
           const [key, v] = c.split('=', 2);
-          if (key === `feathery-user-id-${sdkKey}`) initState.userKey = v;
+          if (key === `feathery-user-id-${sdkKey}`) initState.userId = v;
         });
-      if (!initState.userKey) initState.userKey = uuidv4();
-      featheryDoc().cookie = `feathery-user-id-${sdkKey}=${initState.userKey}; max-age=31536000; SameSite=strict`;
+      if (!initState.userId) initState.userId = uuidv4();
+      featheryDoc().cookie = `feathery-user-id-${sdkKey}=${initState.userId}; max-age=31536000; SameSite=strict`;
     }
   }
   if (initState.authId) {
@@ -147,7 +152,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
   return initFormsPromise;
 }
 
-// must be called after userKey loads
+// must be called after userId loads
 function _fetchFormData(formKeys: string[]) {
   formKeys.forEach((key) => {
     // @ts-expect-error TS(2554): Expected 2 arguments, but got 1.
@@ -167,11 +172,11 @@ function initInfo() {
   return initState;
 }
 
-function updateUserKey(newUserKey: string, merge = false): void {
-  defaultClient.updateUserKey(newUserKey, merge).then(() => {
-    initState.userKey = newUserKey;
+function updateUserId(newUserId: string, merge = false): void {
+  defaultClient.updateUserId(newUserId, merge).then(() => {
+    initState.userId = newUserId;
     if (initState.tracking === 'cookie') {
-      featheryDoc().cookie = `feathery-user-id=${newUserKey}; max-age=31536000; SameSite=strict`;
+      featheryDoc().cookie = `feathery-user-id=${newUserId}; max-age=31536000; SameSite=strict`;
     }
   });
 }
@@ -228,7 +233,7 @@ function getAuthClient(): any {
 export {
   init,
   initInfo,
-  updateUserKey,
+  updateUserId,
   setValues,
   validateStep,
   initState,
