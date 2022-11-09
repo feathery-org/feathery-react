@@ -5,10 +5,10 @@ export class SDKKeyError extends Error {
   }
 }
 
-export class UserKeyError extends Error {
+export class UserIdError extends Error {
   constructor() {
     super('Invalid User ID');
-    this.name = 'UserKeyError';
+    this.name = 'UserIdError';
   }
 }
 

@@ -101,10 +101,10 @@ export default class Client {
   }
 
   _submitJSONData(servars: any) {
-    const { userKey } = initInfo();
+    const { userId } = initInfo();
     const url = `${API_URL}panel/step/submit/v2/`;
     const data = {
-      ...(userKey ? { fuser_key: userKey } : {}),
+      ...(userId ? { fuser_key: userId } : {}),
       servars,
       panel_key: this.formKey
     };
@@ -146,8 +146,8 @@ export default class Client {
   }
 
   async _submitFileData(servars: any) {
-    const { userKey } = initInfo();
-    const url = `${API_URL}panel/step/submit/file/${userKey}/`;
+    const { userId } = initInfo();
+    const url = `${API_URL}panel/step/submit/file/${userId}/`;
 
     const formData = new FormData();
     const files = await Promise.all(
@@ -173,12 +173,12 @@ export default class Client {
     await this._fetch(url, { method: 'POST', body: formData });
   }
 
-  updateUserKey(newUserKey: any, merge = false) {
-    const { userKey: oldUserKey } = initInfo();
+  updateUserId(newUserId: any, merge = false) {
+    const { userId: oldUserId } = initInfo();
     const data = {
-      new_fuser_key: newUserKey,
+      new_fuser_key: newUserId,
       merge,
-      ...(oldUserKey ? { fuser_key: oldUserKey } : {})
+      ...(oldUserId ? { fuser_key: oldUserId } : {})
     };
     const url = `${API_URL}fuser/update_key/`;
     const options = {
@@ -293,7 +293,7 @@ export default class Client {
     // Block if there's a chance user id isn't available yet
     await (block ? initFormsPromise : Promise.resolve());
     const {
-      userKey,
+      userId,
       sessions,
       authId,
       fieldValuesInitialized: noData
@@ -304,7 +304,7 @@ export default class Client {
 
     initState.fieldValuesInitialized = true;
     let params = { form_key: this.formKey };
-    if (userKey) (params as any).fuser_key = userKey;
+    if (userId) (params as any).fuser_key = userId;
     if (authId) (params as any).auth_id = authId;
     if (noData) (params as any).no_data = 'true';
     // @ts-expect-error TS(2322): Type 'string' is not assignable to type '{ form_ke... Remove this comment to see the full error message
@@ -326,7 +326,7 @@ export default class Client {
   }
 
   submitAuthInfo({ authId, authPhone = '', authEmail = '' }: any) {
-    const { userKey } = initInfo();
+    const { userId } = initInfo();
     initState.authId = authId;
     // Execute render callbacks after setting authId, so that form navigation can be evaluated again
     Object.values(initState.renderCallbacks).forEach((renderCb: any) =>
@@ -339,7 +339,7 @@ export default class Client {
       auth_id: authId,
       auth_phone: authPhone,
       auth_email: authEmail,
-      ...(userKey ? { fuser_key: userKey } : {})
+      ...(userId ? { fuser_key: userId } : {})
     };
     const url = `${API_URL}panel/update_auth/v2/`;
     const options = {
@@ -353,7 +353,7 @@ export default class Client {
   }
 
   async submitCustom(customKeyValues: any, override = true) {
-    const { userKey } = initInfo();
+    const { userId } = initInfo();
     const url = `${API_URL}panel/custom/submit/v3/`;
 
     const jsonKeyVals = {};
@@ -379,7 +379,7 @@ export default class Client {
     // @ts-expect-error TS(2345): Argument of type 'boolean' is not assignable to pa... Remove this comment to see the full error message
     formData.set('override', override);
     if (this.formKey) formData.set('form_key', this.formKey);
-    if (userKey) formData.set('fuser_key', userKey);
+    if (userId) formData.set('fuser_key', userId);
 
     return this._fetch(url, { method: 'POST', body: formData });
   }
@@ -398,12 +398,12 @@ export default class Client {
 
   async registerEvent(eventData: any, promise = null) {
     await initFormsPromise;
-    const { userKey } = initInfo();
+    const { userId } = initInfo();
     const url = `${API_URL}event/`;
     const data = {
       form_key: this.formKey,
       ...eventData,
-      ...(userKey ? { fuser_key: userKey } : {})
+      ...(userId ? { fuser_key: userId } : {})
     };
     const options = {
       headers: { 'Content-Type': 'application/json' },
@@ -417,10 +417,10 @@ export default class Client {
   // THIRD-PARTY INTEGRATIONS
   async fetchPlaidLinkToken() {
     await initFormsPromise;
-    const { userKey } = initInfo();
+    const { userId } = initInfo();
     const params = encodeGetParams({
       form_key: this.formKey,
-      ...(userKey ? { fuser_key: userKey } : {})
+      ...(userId ? { fuser_key: userId } : {})
     });
     const url = `${API_URL}plaid/link_token/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
@@ -431,12 +431,12 @@ export default class Client {
 
   async submitPlaidUserData(publicToken: any) {
     await initFormsPromise;
-    const { userKey } = initInfo();
+    const { userId } = initInfo();
     const url = `${API_URL}plaid/user_data/`;
     const data = {
       public_token: publicToken,
       form_key: this.formKey,
-      ...(userKey ? { fuser_key: userKey } : {})
+      ...(userId ? { fuser_key: userId } : {})
     };
     const options = {
       headers: { 'Content-Type': 'application/json' },
@@ -469,11 +469,11 @@ export default class Client {
   // Stripe
   async setupPaymentIntent(paymentMethodFieldId: any) {
     await initFormsPromise;
-    const { userKey } = initInfo();
+    const { userId } = initInfo();
     const url = `${API_URL}stripe/payment_method/`;
     const data = {
       form_key: this.formKey,
-      ...(userKey ? { user_id: userKey } : {}),
+      ...(userId ? { user_id: userId } : {}),
       field_id: paymentMethodFieldId
     };
     const options = {
@@ -492,11 +492,11 @@ export default class Client {
     stripePaymentMethodId: any
   ) {
     await initFormsPromise;
-    const { userKey } = initInfo();
+    const { userId } = initInfo();
     const params = encodeGetParams({
       field_id: paymentMethodFieldId,
       form_key: this.formKey,
-      ...(userKey ? { user_id: userKey } : {}),
+      ...(userId ? { user_id: userId } : {}),
       stripe_payment_method_id: stripePaymentMethodId
     });
     const url = `${API_URL}stripe/payment_method/card/?${params}`;
@@ -513,11 +513,11 @@ export default class Client {
     fieldKey: string
   ) {
     await initFormsPromise;
-    const { userKey } = initInfo();
+    const { userId } = initInfo();
     const url = `${API_URL}stripe/product/`;
     const data = {
       form_key: this.formKey,
-      ...(userKey ? { user_id: userKey } : {}),
+      ...(userId ? { user_id: userId } : {}),
       stripe_product_id: productId,
       quantity,
       field_id:
@@ -536,11 +536,11 @@ export default class Client {
   // Stripe
   async payment(method: 'POST' | 'PUT', extraBodyParams = {}) {
     await initFormsPromise;
-    const { userKey } = initInfo();
+    const { userId } = initInfo();
     const url = `${API_URL}stripe/payment/`;
     const data = {
       form_key: this.formKey,
-      ...(userKey ? { user_id: userKey } : {})
+      ...(userId ? { user_id: userId } : {})
     };
     const options = {
       headers: { 'Content-Type': 'application/json' },

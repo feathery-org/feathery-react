@@ -46,10 +46,10 @@ const formatAllFormFields = (steps: any, forUser = false) => {
 
 const getABVariant = (stepRes: any) => {
   if (!stepRes.variant) return stepRes.data;
-  const { sdkKey, userKey } = initInfo();
-  // If userKey was not passed in, sdkKey is assumed to be a user admin key
+  const { sdkKey, userId } = initInfo();
+  // If userId was not passed in, sdkKey is assumed to be a user admin key
   // and thus a unique user ID
-  return getRandomBoolean(userKey || sdkKey, stepRes.form_name)
+  return getRandomBoolean(userId || sdkKey, stepRes.form_name)
     ? stepRes.data
     : stepRes.variant;
 };

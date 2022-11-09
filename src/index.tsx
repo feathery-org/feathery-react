@@ -4,7 +4,7 @@ import Elements from './elements';
 import Form, { Props as FormProps } from './form/Form';
 import {
   init,
-  updateUserKey,
+  updateUserId,
   setValues,
   validateStep,
   fieldValues,
@@ -30,12 +30,16 @@ function renderAt(elementId: any, props: FormProps) {
   ReactDOM.render(<Form {...props} />, container);
 }
 
+// TODO: deprecate
+const updateUserKey = updateUserId;
+
 // Entrypoint for globally namespaced JS library
 const Feathery = {
   Form,
   Elements,
   init,
   updateUserKey,
+  updateUserId,
   validateStep,
   setValues,
   getAllValues,
@@ -49,6 +53,7 @@ export {
   Elements,
   init,
   updateUserKey,
+  updateUserId,
   validateStep,
   setValues,
   getAllValues,

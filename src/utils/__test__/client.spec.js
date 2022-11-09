@@ -17,7 +17,7 @@ describe('client', () => {
       const client = new Client(formKey);
       initInfo.mockReturnValue({
         sdkKey: 'sdkKey',
-        userKey: 'userKey',
+        userId: 'userId',
         sessions: {},
         forms: {}
       });
@@ -54,7 +54,7 @@ describe('client', () => {
       const client = new Client(formKey);
       initInfo.mockReturnValue({
         sdkKey: 'sdkKey',
-        userKey: 'userKey',
+        userId: 'userId',
         sessions: {},
         forms: {},
         fieldValuesInitialized: false
@@ -73,7 +73,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}panel/session/v2/?form_key=formKey&fuser_key=userKey`,
+        `${API_URL}panel/session/v2/?form_key=formKey&fuser_key=userId`,
         {
           cache: 'no-store',
           importance: 'high',
@@ -93,7 +93,7 @@ describe('client', () => {
       const formKey = 'formKey';
       const client = new Client(formKey);
       const customKeyValues = { foo: 'bar' };
-      initInfo.mockReturnValue({ sdkKey: 'sdkKey', userKey: 'userKey' });
+      initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
@@ -114,7 +114,7 @@ describe('client', () => {
       ).reduce((acc, f) => ({ ...acc, [f[0]]: f[1] }), {});
       expect(formData).toMatchObject({
         custom_key_values: JSON.stringify(customKeyValues),
-        fuser_key: 'userKey',
+        fuser_key: 'userId',
         form_key: formKey
       });
       expect(response).toEqual({ status: 200 });
@@ -132,8 +132,8 @@ describe('client', () => {
           type: 'type1'
         }
       ];
-      const body = { fuser_key: 'userKey', servars, panel_key: formKey };
-      initInfo.mockReturnValue({ sdkKey: 'sdkKey', userKey: 'userKey' });
+      const body = { fuser_key: 'userId', servars, panel_key: formKey };
+      initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
@@ -169,9 +169,9 @@ describe('client', () => {
         step_key: stepKey,
         next_step_key: nextStepKey,
         event,
-        fuser_key: 'userKey'
+        fuser_key: 'userId'
       };
-      initInfo.mockReturnValue({ sdkKey: 'sdkKey', userKey: 'userKey' });
+      initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
@@ -199,12 +199,12 @@ describe('client', () => {
   describe('stripe', () => {
     initInfo.mockReturnValue({
       sdkKey: 'sdkKey',
-      userKey: 'userKey',
+      userId: 'userId',
       sessions: {},
       forms: {}
     });
     const formKey = 'formKey';
-    const userKey = 'userKey';
+    const userId = 'userId';
     const client = new Client(formKey);
     const mockFetch = (response) => {
       global.fetch = jest.fn().mockResolvedValue({
@@ -217,7 +217,7 @@ describe('client', () => {
       const paymentMethodFieldId = 'payment_method_field_id';
       const body = {
         form_key: formKey,
-        user_id: userKey,
+        user_id: userId,
         field_id: paymentMethodFieldId
       };
       const intentSecret = 'intent_secret';
@@ -267,7 +267,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}stripe/payment_method/card/?field_id=${paymentMethodFieldId}&form_key=${formKey}&user_id=${userKey}&stripe_payment_method_id=${stripePaymentMethodId}`,
+        `${API_URL}stripe/payment_method/card/?field_id=${paymentMethodFieldId}&form_key=${formKey}&user_id=${userId}&stripe_payment_method_id=${stripePaymentMethodId}`,
         {
           cache: 'no-store',
           headers: {
@@ -285,7 +285,7 @@ describe('client', () => {
       const fieldKey = 'some key';
       const body = {
         form_key: formKey,
-        user_id: userKey,
+        user_id: userId,
         stripe_product_id: stripeProductId,
         quantity,
         field_id: fieldKey
@@ -317,7 +317,7 @@ describe('client', () => {
       // Arrange
       const body = {
         form_key: formKey,
-        user_id: userKey,
+        user_id: userId,
         field_id: paymentMethodFieldKey
       };
       const intentSecret = 'intent_secret';
@@ -342,7 +342,7 @@ describe('client', () => {
       // Arrange
       const body = {
         form_key: formKey,
-        user_id: userKey
+        user_id: userId
       };
       const intentSecret = 'intent_secret';
       mockFetch(intentSecret);
