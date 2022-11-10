@@ -915,6 +915,7 @@ function Form({
   const submit = async ({
     metadata,
     repeat = 0,
+    buttonAction = () => {},
     plaidSuccess = plaidLinked,
     setLoader = () => {}
   }: any) => {
@@ -945,10 +946,10 @@ function Form({
       });
     if (await invalidCheckPromise) return;
 
-    const { loggedIn, errorMessage, errorField } = await handleActions(
-      setLoader,
-      formattedFields
-    );
+    // Handle integration actions in submission flow
+    if (buttonAction) buttonAction();
+    if (activeStep.servar_fields.find(...)) handleStepSubmissionPayment(...)
+
     if (errorMessage && errorField) {
       clearLoaders();
       await setFormElementError({
@@ -1045,19 +1046,16 @@ function Form({
   // usePayments (Stripe)
   const [getCardElement, setCardElement] = usePayments();
 
-  async function handleActions(
+  async function handleStepSubmissionPayment(
     setLoader: any,
-    formattedFields: any,
-    // memoizing actionConfigurations provided no real benefit here because it we need a fresh getCardElement
-    actionConfigurations = getIntegrationActionConfiguration(getCardElement)
+    formattedFields: any
   ) {
     // Run through all action types for any relevant fields and execute them.
     // Actions have a priority sequence and some actions must be exclusive (don't run any other
     // actions after them).
-    for (const actionConfig of actionConfigurations) {
       for (let i = 0; i < activeStep.servar_fields.length; i++) {
         const servar = activeStep.servar_fields[i].servar;
-        if (servar.type === actionConfig.servarType) {
+        if (servar.type === 'payment_method') {
           const actionData: ActionData = {
             fieldVal: fieldValues[servar.key],
             servar,
@@ -1086,7 +1084,6 @@ function Form({
             }
           }
         }
-      }
     }
     return {};
   }
@@ -1094,7 +1091,6 @@ function Form({
   function submitAndNavigate({
     metadata,
     formattedFields,
-    loggedIn = false
   }: any) {
     let redirectKey = '';
     if (loggedIn && firstLoggedOut && firstStep !== activeStep.key) {

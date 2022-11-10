@@ -117,25 +117,6 @@ export function getIntegrationActionConfiguration(getCardElement: any) {
       actionFn: setupPaymentMethodAndPay,
       targetElementFn: getCardElement,
       continue: true
-    },
-    {
-      servarType: 'login',
-      integrationKey: 'stytch',
-      actionFn: sendMagicLink,
-      continue: false
-    },
-    {
-      servarType: 'login',
-      integrationKey: 'firebase',
-      actionFn: sendLoginCode,
-      continue: false
-    },
-    {
-      servarType: 'pin_input',
-      integrationKey: 'firebase',
-      isMatch: ({ servar }: ActionData) => servar.metadata.verify_sms_code,
-      actionFn: verifySMSCode,
-      continue: false
     }
   ];
 }
