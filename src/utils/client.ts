@@ -257,16 +257,18 @@ export default class Client {
   }
 
   fetchCacheForm() {
-    const { preloadForms } = initInfo();
+    const { preloadForms, language } = initInfo();
     if (this.formKey in preloadForms)
       return Promise.resolve(preloadForms[this.formKey]);
 
     const params = encodeGetParams({ form_key: this.formKey });
     const url = `${CDN_URL}panel/v8/?${params}`;
-    const options = {
+    const options: Record<string, any> = {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
     };
+    if (language) options.headers['Accept-Language'] = language;
+
     return this._fetch(url, options).then(async (response) => {
       if (!response) return {};
 

@@ -37,6 +37,7 @@ type InitOptions = {
   authId?: string;
   authEmail?: string;
   authPhoneNumber?: string;
+  language?: string;
 } & DeprecatedOptions;
 
 type InitState = {
@@ -60,6 +61,7 @@ const initState: InitState = {
   authId: '',
   authEmail: '',
   authPhoneNumber: '',
+  language: '',
   preloadForms: [],
   sessions: {},
   // Since all field values are fetched with each session, only fetch field
@@ -74,7 +76,8 @@ const optionsAsInitState: (keyof InitOptions & keyof InitState)[] = [
   'authEmail',
   'authPhoneNumber',
   'userId',
-  'userTracking'
+  'userTracking',
+  'language'
 ];
 const fieldValues: FieldValues = {};
 const filePathMap = {};
