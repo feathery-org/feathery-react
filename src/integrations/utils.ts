@@ -2,11 +2,16 @@ import { installPlaid } from './plaid';
 import {
   installFirebase,
   emailLogin as emailLoginFirebase,
-  verifySMSCode
+  verifySMSCode,
+  sendFirebaseLogin
 } from './firebase';
 import { initializeTagManager } from './googleTagManager';
 import { installSegment } from './segment';
-import { installStytch, emailLogin as emailLoginStytch } from './stytch';
+import {
+  installStytch,
+  emailLogin as emailLoginStytch,
+  sendMagicLink
+} from './stytch';
 import { installStripe, setupPaymentMethodAndPay } from './stripe';
 import TagManager from 'react-gtm-module';
 import {
@@ -16,6 +21,10 @@ import {
 } from './googleAnalytics';
 import { getAuthClient, initState } from '../utils/init';
 import Client from '../utils/client';
+import {
+  LINK_SEND_MAGIC_LINK,
+  LINK_SEND_SMS
+} from '../elements/basic/ButtonElement';
 
 const IMPORTED_URLS = new Set();
 
@@ -107,6 +116,7 @@ export interface ActionData {
   step: any;
   integrationData: any;
   targetElement: any;
+  trigger: any;
 }
 
 // Action config that groups actions by servar type, orders them, configures behavior, etc.
@@ -120,9 +130,38 @@ export function getIntegrationActionConfiguration(getCardElement: any) {
       continue: true
     },
     {
+      servarType: 'email',
+      integrationKey: 'stytch',
+      isMatch: ({ trigger }: ActionData) =>
+        trigger.type === 'button' && trigger.link === LINK_SEND_MAGIC_LINK,
+      actionFn: sendMagicLink,
+      continue: false
+    },
+    {
+      servarType: 'email',
+      integrationKey: 'firebase',
+      isMatch: ({ trigger }: ActionData) =>
+        trigger.type === 'button' && trigger.link === LINK_SEND_MAGIC_LINK,
+      actionFn: (params: ActionData) =>
+        sendFirebaseLogin({ ...params, method: 'email' }),
+      continue: false
+    },
+    {
+      servarType: 'phone_number',
+      integrationKey: 'firebase',
+      isMatch: ({ trigger }: ActionData) =>
+        trigger.type === 'button' && trigger.link === LINK_SEND_SMS,
+      actionFn: (params: ActionData) =>
+        sendFirebaseLogin({ ...params, method: 'phone' }),
+      continue: false
+    },
+    {
       servarType: 'pin_input',
       integrationKey: 'firebase',
-      isMatch: ({ servar }: ActionData) => servar.metadata.verify_sms_code,
+      isMatch: ({ servar, trigger }: ActionData) =>
+        servar.metadata.verify_sms_code &&
+        trigger.type === 'button' &&
+        trigger.link === LINK_SEND_SMS,
       actionFn: verifySMSCode,
       continue: false
     }

@@ -68,7 +68,8 @@ import {
   LINK_BACK,
   LINK_NEXT,
   LINK_LOGOUT,
-  LINK_VERIFY_SMS
+  LINK_VERIFY_SMS,
+  AUTH_LINKS
 } from '../elements/basic/ButtonElement';
 import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
@@ -128,6 +129,8 @@ const getViewport = () => {
 };
 const findSubmitButton = (b: any) =>
   b.properties.link === LINK_NEXT && !b.properties.link_no_submit;
+const findAuthButton = (b: any) =>
+  AUTH_LINKS.includes(b.properties.link) && !b.properties.link_no_nav;
 
 function Form({
   // @ts-expect-error TS(2339): Property 'formKey' does not exist on type 'Props'.
@@ -918,7 +921,7 @@ function Form({
     const { loggedIn, errorMessage, errorField } = await handleActions(
       setLoader,
       formattedFields,
-      elementType
+      trigger
     );
     if (errorMessage && errorField) {
       clearLoaders();
@@ -1019,7 +1022,7 @@ function Form({
   async function handleActions(
     setLoader: any,
     formattedFields: any,
-    elementType: string,
+    trigger: any,
     // memoizing actionConfigurations provided no real benefit here because it we need a fresh getCardElement
     actionConfigurations = getIntegrationActionConfiguration(getCardElement)
   ) {
@@ -1041,7 +1044,8 @@ function Form({
             integrationData: integrations[actionConfig.integrationKey],
             targetElement:
               actionConfig.targetElementFn &&
-              actionConfig.targetElementFn(servar.key)
+              actionConfig.targetElementFn(servar.key),
+            trigger
           };
 
           if (
@@ -1050,12 +1054,6 @@ function Form({
             (!actionConfig.isMatch ||
               (actionConfig.isMatch && actionConfig.isMatch(actionData)))
           ) {
-            // We only want to run firebase submit logic if it is happening via field auto-submit
-            if (
-              actionConfig.integrationKey === 'firebase' &&
-              elementType !== 'field'
-            )
-              return;
             setLoader();
             const actionResult = await actionConfig.actionFn(actionData);
             // Return right now if this action is not configured to continue to the next or there was an error
@@ -1256,9 +1254,14 @@ function Form({
     buttonClicks[button.id] = true;
     let clickPromise = Promise.resolve();
 
-    const authNavAndSubmit = () => {
-      if (!button.properties.link_no_nav)
-        buttonOnSubmit(button, !button.properties.link_no_submit);
+    const authNavAndSubmit = (authFn: any) => {
+      if (!button.properties.link_no_nav) {
+        return buttonOnSubmit(button, !button.properties.link_no_submit);
+      } else {
+        return setButtonLoader(button)
+          .then(authFn)
+          .then(() => clearLoaders());
+      }
     };
     const setError = (message: string) =>
       setFormElementError({
@@ -1314,16 +1317,13 @@ function Form({
         button.properties.auth_target_field_key
       ] as string;
       if (validators.phone(phoneNum)) {
-        clickPromise = setButtonLoader(button)
-          .then(() =>
-            sendFirebaseLogin({
-              fieldVal: phoneNum,
-              servar: null,
-              method: 'phone'
-            })
-          )
-          .then(authNavAndSubmit)
-          .then(() => clearLoaders());
+        const authFn = () =>
+          sendFirebaseLogin({
+            fieldVal: phoneNum,
+            servar: null,
+            method: 'phone'
+          });
+        clickPromise = authNavAndSubmit(authFn);
       } else {
         setError('A valid phone number is needed to send your login code.');
       }
@@ -1332,32 +1332,26 @@ function Form({
         button.properties.auth_target_field_key
       ] as string;
 
-      clickPromise = setButtonLoader(button)
-        .then(() =>
-          verifySMSCode({ fieldVal: pin, servar: null, method: client })
-        )
-        .then(authNavAndSubmit)
-        .then(() => clearLoaders())
-        .catch(() => {
-          setError('Your code is not valid.');
-        });
+      const authFn = () =>
+        verifySMSCode({ fieldVal: pin, servar: null, method: client });
+      clickPromise = authNavAndSubmit(authFn).catch(() => {
+        setError('Your code is not valid.');
+      });
     } else if (link === LINK_SEND_MAGIC_LINK) {
       const email = fieldValues[
         button.properties.auth_target_field_key
       ] as string;
       if (validators.email(email)) {
-        clickPromise = setButtonLoader(button)
-          .then(() => {
-            if (isAuthStytch()) return sendMagicLink({ fieldVal: email });
-            else
-              return sendFirebaseLogin({
+        const authFn = isAuthStytch()
+          ? () => sendMagicLink({ fieldVal: email })
+          : () =>
+              sendFirebaseLogin({
                 fieldVal: email,
                 servar: null,
                 method: 'email'
               });
-          })
-          .then(authNavAndSubmit)
-          .then(() => clearLoaders());
+
+        clickPromise = authNavAndSubmit(authFn);
       } else {
         setError('A valid email is needed to send your magic link.');
       }
@@ -1429,6 +1423,7 @@ function Form({
       };
       if (submitData) {
         const submitButton = activeStep.buttons.find(findSubmitButton);
+        const authButton = activeStep.buttons.find(findAuthButton);
         // Simulate button submit if available and valid to trigger button loader
         if (
           submitButton &&
@@ -1436,9 +1431,17 @@ function Form({
             elementType: 'button',
             elementIDs: [submitButton.id]
           })
-        )
-          buttonOnSubmit(submitButton, true);
-        else submit({ metadata, repeat: elementRepeatIndex });
+        ) {
+          buttonOnClick(submitButton);
+        } else if (
+          authButton &&
+          getNextStepKey({
+            elementType: 'button',
+            elementIDs: [authButton.id]
+          })
+        ) {
+          buttonOnClick(authButton);
+        } else submit({ metadata, repeat: elementRepeatIndex });
       } else goToNewStep({ metadata });
     };
 
