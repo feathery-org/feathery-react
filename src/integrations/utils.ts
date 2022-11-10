@@ -8,7 +8,6 @@ import { initializeTagManager } from './googleTagManager';
 import { installSegment } from './segment';
 import { installStytch, emailLogin as emailLoginStytch } from './stytch';
 import { installStripe, setupPaymentMethodAndPay } from './stripe';
-import { getStytchJwt } from '../utils/browser';
 import TagManager from 'react-gtm-module';
 import {
   gaInstalled,

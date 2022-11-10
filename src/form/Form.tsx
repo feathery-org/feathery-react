@@ -126,6 +126,8 @@ export const fieldCounter = FieldCounter;
 const getViewport = () => {
   return window.innerWidth > mobileBreakpointValue ? 'desktop' : 'mobile';
 };
+const findSubmitButton = (b: any) =>
+  b.properties.link === LINK_NEXT && !b.properties.link_no_submit;
 
 function Form({
   // @ts-expect-error TS(2339): Property 'formKey' does not exist on type 'Props'.
@@ -394,10 +396,7 @@ function Form({
       e.preventDefault();
       e.stopPropagation();
       // Submit steps by pressing `Enter`
-      const submitButton = activeStep.buttons.find(
-        (b: any) =>
-          b.properties.link === LINK_NEXT && !b.properties.link_no_submit
-      );
+      const submitButton = activeStep.buttons.find(findSubmitButton);
       if (submitButton) {
         // Simulate button click if available
         buttonOnClick(submitButton);
@@ -1257,6 +1256,20 @@ function Form({
     buttonClicks[button.id] = true;
     let clickPromise = Promise.resolve();
 
+    const authNavAndSubmit = () => {
+      if (!button.properties.link_no_nav)
+        buttonOnSubmit(button, !button.properties.link_no_submit);
+    };
+    const setError = (message: string) =>
+      setFormElementError({
+        formRef,
+        fieldKey: button.id,
+        message,
+        errorType: formSettings.errorType,
+        setInlineErrors: setInlineErrors,
+        triggerErrors: true
+      });
+
     const link = button.properties.link;
     if ([LINK_ADD_REPEATED_ROW, LINK_REMOVE_REPEATED_ROW].includes(link)) {
       let data: any;
@@ -1309,17 +1322,10 @@ function Form({
               method: 'phone'
             })
           )
-          .then(() => buttonOnSubmit(button, !button.properties.link_no_submit))
+          .then(authNavAndSubmit)
           .then(() => clearLoaders());
       } else {
-        setFormElementError({
-          formRef,
-          fieldKey: button.id,
-          message: 'A valid phone number is needed to send your login code.',
-          errorType: formSettings.errorType,
-          setInlineErrors: setInlineErrors,
-          triggerErrors: true
-        });
+        setError('A valid phone number is needed to send your login code.');
       }
     } else if (link === LINK_VERIFY_SMS) {
       const pin = fieldValues[
@@ -1330,17 +1336,10 @@ function Form({
         .then(() =>
           verifySMSCode({ fieldVal: pin, servar: null, method: client })
         )
-        .then(() => buttonOnSubmit(button, !button.properties.link_no_submit))
+        .then(authNavAndSubmit)
         .then(() => clearLoaders())
         .catch(() => {
-          setFormElementError({
-            formRef,
-            fieldKey: button.id,
-            message: 'Your code is not valid.',
-            errorType: formSettings.errorType,
-            setInlineErrors: setInlineErrors,
-            triggerErrors: true
-          });
+          setError('Your code is not valid.');
         });
     } else if (link === LINK_SEND_MAGIC_LINK) {
       const email = fieldValues[
@@ -1357,17 +1356,10 @@ function Form({
                 method: 'email'
               });
           })
-          .then(() => buttonOnSubmit(button, !button.properties.link_no_submit))
+          .then(authNavAndSubmit)
           .then(() => clearLoaders());
       } else {
-        setFormElementError({
-          formRef,
-          fieldKey: button.id,
-          message: 'A valid email is needed to send your magic link.',
-          errorType: formSettings.errorType,
-          setInlineErrors: setInlineErrors,
-          triggerErrors: true
-        });
+        setError('A valid email is needed to send your magic link.');
       }
     } else if (link === LINK_GOOGLE_OAUTH) {
       googleOauthRedirect();
@@ -1436,10 +1428,7 @@ function Form({
         elementIDs: fieldIDs
       };
       if (submitData) {
-        const submitButton = activeStep.buttons.find(
-          (b: any) =>
-            b.properties.link === LINK_NEXT && b.properties.link_no_submit
-        );
+        const submitButton = activeStep.buttons.find(findSubmitButton);
         // Simulate button submit if available and valid to trigger button loader
         if (
           submitButton &&
