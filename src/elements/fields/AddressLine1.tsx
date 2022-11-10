@@ -81,7 +81,6 @@ function AddressLine1({
                     const addressId = options.find(
                       (opt) => (opt as any).display === display
                     ).address_id;
-                    // @ts-expect-error TS(2554): Expected 2 arguments, but got 0.
                     const details = await new Client().addressDetail(addressId);
                     onSelect(details);
                   }}
@@ -143,7 +142,6 @@ function useAddressSearch(searchTerm: any, active: any) {
   const fetchAddresses = useCallback(
     debounce(
       (newTerm: any) =>
-        // @ts-expect-error TS(2554): Expected 2 arguments, but got 0.
         new Client().addressSearchResults(newTerm).then((addresses) => {
           if (mounted.current) {
             setResults(addresses);

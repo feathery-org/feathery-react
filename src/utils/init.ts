@@ -21,47 +21,46 @@ export type FieldValues = {
   [fieldKey: string]: FeatheryFieldTypes;
 };
 
+// TODO: remove these deprecated options
+type DeprecatedOptions = {
+  formKeys?: string[];
+  forms?: string[];
+  userKey?: string;
+  tracking?: 'cookie' | 'fingerprint';
+};
+
 type InitOptions = {
   authClient?: any;
-  userId?: null | string;
-  forms?: string[];
-  tracking?: 'cookie' | 'fingerprint' | '';
+  userId?: string;
+  preloadForms?: string[];
+  userTracking?: 'cookie' | 'fingerprint';
   authId?: string;
   authEmail?: string;
   authPhoneNumber?: string;
-};
-
-type DeprecatedInitOptions = {
-  formKeys?: string[];
-};
+} & DeprecatedOptions;
 
 type InitState = {
   initialized: boolean;
   sdkKey: string;
-  forms: { [formName: string]: any };
+  preloadForms: { [formName: string]: any };
   sessions: { [formName: string]: any };
   fieldValuesInitialized: boolean;
   validateCallbacks: { [cbKey: string]: any };
   renderCallbacks: { [cbKey: string]: any };
-} & Omit<InitOptions, 'forms'>;
+} & Omit<InitOptions, keyof DeprecatedOptions>;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
-// @ts-expect-error TS(2554): Expected 2 arguments, but got 0.
 const defaultClient = new Client();
-const defaultOptions: InitOptions = {
-  authClient: null,
-  userId: null,
-  tracking: 'cookie'
-};
 const initState: InitState = {
   initialized: false,
-  tracking: '',
+  userTracking: 'cookie',
   sdkKey: '',
   userId: '',
+  authClient: null,
   authId: '',
   authEmail: '',
   authPhoneNumber: '',
-  forms: {},
+  preloadForms: [],
   sessions: {},
   // Since all field values are fetched with each session, only fetch field
   // values on the first session request
@@ -69,19 +68,26 @@ const initState: InitState = {
   validateCallbacks: {},
   renderCallbacks: {}
 };
+const optionsAsInitState: (keyof InitOptions & keyof InitState)[] = [
+  'authClient',
+  'authId',
+  'authEmail',
+  'authPhoneNumber',
+  'userId',
+  'userTracking'
+];
 const fieldValues: FieldValues = {};
 const filePathMap = {};
 
-// TODO(ts) type form options
 function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
   if (!sdkKey || typeof sdkKey !== 'string') {
-    throw new errors.SDKKeyError('Invalid SDK Key');
+    throw new errors.SDKKeyError();
   }
 
-  // TODO: deprecate userKey
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
+  if (options.tracking) options.userTracking = options.tracking;
   if (options.userKey) options.userId = options.userKey;
+  options.preloadForms =
+    options.preloadForms ?? options.forms ?? options.formKeys ?? [];
 
   // If client attempts to set userId but it's not yet valid, don't initialize
   // until it becomes valid
@@ -92,26 +98,12 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
     throw new errors.UserIdError();
   }
 
-  options = { ...defaultOptions, ...options };
-  // TODO: deprecate legacy formKeys option
-  options.forms =
-    (options as DeprecatedInitOptions).formKeys ?? options.forms ?? [];
-
   if (initState.initialized) return Promise.resolve(); // can only be initialized one time per load
   initState.initialized = true;
 
   initState.sdkKey = sdkKey;
-  [
-    'authClient',
-    'authId',
-    'authEmail',
-    'authPhoneNumber',
-    'userId',
-    'tracking'
-  ].forEach((key) => {
-    if (options[key as keyof InitOptions])
-      // @ts-expect-error TS(2322): Type 'any' is not assignable to type 'never'.
-      initState[key as keyof InitState] = options[key as keyof InitOptions];
+  optionsAsInitState.forEach((key) => {
+    if (options[key]) initState[key] = options[key];
   });
 
   // dynamically load libraries that must be client side only for NextJs support
@@ -122,11 +114,11 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
 
   // NextJS support - FingerprintJS.load cannot run server side
   if (!initState.userId && runningInClient()) {
-    if (options.tracking === 'fingerprint') {
+    if (initState.userTracking === 'fingerprint') {
       initFormsPromise = FingerprintJS.load()
         .then((fp: any) => fp.get())
         .then((result: any) => (initState.userId = result.visitorId));
-    } else if (options.tracking === 'cookie') {
+    } else if (initState.userTracking === 'cookie') {
       featheryDoc()
         .cookie.split(/; */)
         .map((c: any) => {
@@ -146,19 +138,18 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
       })
     );
   }
-  initFormsPromise = initFormsPromise.then(() => {
-    _fetchFormData(options.forms ?? []);
-  });
+  initFormsPromise = initFormsPromise.then(() =>
+    _fetchFormData(initState.preloadForms)
+  );
   return initFormsPromise;
 }
 
 // must be called after userId loads
-function _fetchFormData(formKeys: string[]) {
-  formKeys.forEach((key) => {
-    // @ts-expect-error TS(2554): Expected 2 arguments, but got 1.
+function _fetchFormData(formIds: string[]) {
+  formIds.forEach((key) => {
     const formClient = new Client(key);
     formClient.fetchCacheForm().then((stepsResponse: any) => {
-      initState.forms[key] = stepsResponse;
+      initState.preloadForms[key] = stepsResponse;
     });
     formClient
       .fetchSession()
@@ -175,7 +166,7 @@ function initInfo() {
 function updateUserId(newUserId: string, merge = false): void {
   defaultClient.updateUserId(newUserId, merge).then(() => {
     initState.userId = newUserId;
-    if (initState.tracking === 'cookie') {
+    if (initState.userTracking === 'cookie') {
       featheryDoc().cookie = `feathery-user-id=${newUserId}; max-age=31536000; SameSite=strict`;
     }
   });

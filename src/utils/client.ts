@@ -46,7 +46,7 @@ const TYPE_MESSAGES_TO_IGNORE = [
 export default class Client {
   formKey: any;
   ignoreNetworkErrors: any; // this should be a ref
-  constructor(formKey: any, ignoreNetworkErrors: any) {
+  constructor(formKey?: any, ignoreNetworkErrors?: any) {
     this.formKey = formKey;
     this.ignoreNetworkErrors = ignoreNetworkErrors;
   }
@@ -257,12 +257,11 @@ export default class Client {
   }
 
   fetchCacheForm() {
-    const { forms } = initInfo();
-    if (this.formKey in forms) return Promise.resolve(forms[this.formKey]);
+    const { preloadForms } = initInfo();
+    if (this.formKey in preloadForms)
+      return Promise.resolve(preloadForms[this.formKey]);
 
-    const params = encodeGetParams({
-      form_key: this.formKey
-    });
+    const params = encodeGetParams({ form_key: this.formKey });
     const url = `${CDN_URL}panel/v8/?${params}`;
     const options = {
       importance: 'high',

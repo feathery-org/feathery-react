@@ -19,7 +19,7 @@ describe('client', () => {
         sdkKey: 'sdkKey',
         userId: 'userId',
         sessions: {},
-        forms: {}
+        preloadForms: {}
       });
       global.fetch = jest.fn().mockResolvedValue({
         status: 200,
@@ -56,7 +56,7 @@ describe('client', () => {
         sdkKey: 'sdkKey',
         userId: 'userId',
         sessions: {},
-        forms: {},
+        preloadForms: {},
         fieldValuesInitialized: false
       });
       global.fetch = jest.fn().mockResolvedValue({
@@ -201,7 +201,7 @@ describe('client', () => {
       sdkKey: 'sdkKey',
       userId: 'userId',
       sessions: {},
-      forms: {}
+      preloadForms: {}
     });
     const formKey = 'formKey';
     const userId = 'userId';
