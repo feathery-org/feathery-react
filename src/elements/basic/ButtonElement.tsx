@@ -19,8 +19,14 @@ const LINK_STRIPE = 'select_payment_product';
 const LINK_TRIGGER_PLAID = 'trigger_plaid';
 const LINK_URL = 'url';
 const LINK_VERIFY_SMS = 'verify_sms';
-// We don't include oauth in this array because oauth causes a redirect to oauth provider rather than step submission
-const AUTH_LINKS = [LINK_SEND_MAGIC_LINK, LINK_SEND_SMS, LINK_VERIFY_SMS];
+const SUBMITTABLE_LINKS = [
+  LINK_NEXT,
+  LINK_TRIGGER_PLAID,
+  LINK_LOGOUT,
+  LINK_SEND_MAGIC_LINK,
+  LINK_SEND_SMS,
+  LINK_VERIFY_SMS
+];
 
 function applyButtonStyles(element: any, applyStyles: any) {
   applyStyles.addTargets(
@@ -205,7 +211,6 @@ function ButtonElement({
 
 export default ButtonElement;
 export {
-  AUTH_LINKS,
   LINK_ADD_REPEATED_ROW,
   LINK_BACK,
   LINK_CUSTOM,
@@ -219,5 +224,6 @@ export {
   LINK_STRIPE,
   LINK_TRIGGER_PLAID,
   LINK_URL,
-  LINK_VERIFY_SMS
+  LINK_VERIFY_SMS,
+  SUBMITTABLE_LINKS
 };

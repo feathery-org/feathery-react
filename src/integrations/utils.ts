@@ -116,56 +116,6 @@ export interface ActionData {
   step: any;
   integrationData: any;
   targetElement: any;
-  trigger: any;
-}
-
-// Action config that groups actions by servar type, orders them, configures behavior, etc.
-export function getIntegrationActionConfiguration(getCardElement: any) {
-  return [
-    {
-      servarType: 'payment_method',
-      integrationKey: 'stripe',
-      actionFn: setupPaymentMethodAndPay,
-      targetElementFn: getCardElement,
-      continue: true
-    },
-    {
-      servarType: 'email',
-      integrationKey: 'stytch',
-      isMatch: ({ trigger }: ActionData) =>
-        trigger.type === 'button' && trigger.link === LINK_SEND_MAGIC_LINK,
-      actionFn: sendMagicLink,
-      continue: false
-    },
-    {
-      servarType: 'email',
-      integrationKey: 'firebase',
-      isMatch: ({ trigger }: ActionData) =>
-        trigger.type === 'button' && trigger.link === LINK_SEND_MAGIC_LINK,
-      actionFn: (params: ActionData) =>
-        sendFirebaseLogin({ ...params, method: 'email' }),
-      continue: false
-    },
-    {
-      servarType: 'phone_number',
-      integrationKey: 'firebase',
-      isMatch: ({ trigger }: ActionData) =>
-        trigger.type === 'button' && trigger.link === LINK_SEND_SMS,
-      actionFn: (params: ActionData) =>
-        sendFirebaseLogin({ ...params, method: 'phone' }),
-      continue: false
-    },
-    {
-      servarType: 'pin_input',
-      integrationKey: 'firebase',
-      isMatch: ({ servar, trigger }: ActionData) =>
-        servar.metadata.verify_sms_code &&
-        trigger.type === 'button' &&
-        trigger.link === LINK_SEND_SMS,
-      actionFn: verifySMSCode,
-      continue: false
-    }
-  ];
 }
 
 export function trackEvent(title: string, stepId: string, formId: string) {

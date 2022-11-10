@@ -86,11 +86,7 @@ const getAllElements = (step: any) => {
 const lookUpTrigger = (step: any, elementID: any, elementType: any) => {
   if (elementType === 'button') {
     const element = step.buttons.find((button: any) => button.id === elementID);
-    return {
-      id: elementID,
-      text: element.properties.text,
-      link: element.properties.link
-    };
+    return { id: elementID, text: element.properties.text };
   } else if (elementType === 'text') {
     const element = step.texts.find((text: any) => text.id === elementID);
     return { id: elementID, text: element.properties.text };

@@ -46,10 +46,10 @@ import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
 import {
   usePayments,
   toggleProductSelection,
-  isProductSelected
+  isProductSelected,
+  setupPaymentMethodAndPay
 } from '../integrations/stripe';
 import {
-  getIntegrationActionConfiguration,
   ActionData,
   trackEvent,
   inferAuthLogout,
@@ -69,7 +69,7 @@ import {
   LINK_NEXT,
   LINK_LOGOUT,
   LINK_VERIFY_SMS,
-  AUTH_LINKS
+  SUBMITTABLE_LINKS
 } from '../elements/basic/ButtonElement';
 import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
@@ -127,10 +127,12 @@ export const fieldCounter = FieldCounter;
 const getViewport = () => {
   return window.innerWidth > mobileBreakpointValue ? 'desktop' : 'mobile';
 };
-const findSubmitButton = (b: any) =>
-  b.properties.link === LINK_NEXT && !b.properties.link_no_submit;
-const findAuthButton = (b: any) =>
-  AUTH_LINKS.includes(b.properties.link) && !b.properties.link_no_nav;
+const findSubmitButton = (step: any) =>
+  step.buttons.find(
+    (b: any) =>
+      !b.properties.link_no_submit &&
+      SUBMITTABLE_LINKS.includes(b.properties.link)
+  );
 
 function Form({
   // @ts-expect-error TS(2339): Property 'formKey' does not exist on type 'Props'.
@@ -160,9 +162,6 @@ function Form({
 
   const [autoValidate, setAutoValidate] = useState(false);
   const [first, setFirst] = useState(true);
-  const [firstStep, setFirstStep] = useState(true);
-  // If true, will automatically redirect to firstStep if logged back in
-  const [firstLoggedOut, setFirstLoggedOut] = useState(false);
 
   const [productionEnv, setProductionEnv] = useState(true);
   const [steps, setSteps] = useState(null);
@@ -399,7 +398,7 @@ function Form({
       e.preventDefault();
       e.stopPropagation();
       // Submit steps by pressing `Enter`
-      const submitButton = activeStep.buttons.find(findSubmitButton);
+      const submitButton = findSubmitButton(activeStep);
       if (submitButton) {
         // Simulate button click if available
         buttonOnClick(submitButton);
@@ -581,7 +580,6 @@ function Form({
     // @ts-expect-error TS(2531): Object is possibly 'null'.
     let newStep = steps[newKey];
     while (true) {
-      let logOut = false;
       const loadCond = newStep.next_conditions.find((cond: any) => {
         if (cond.element_type !== 'step') return false;
         const notAuth =
@@ -594,11 +592,9 @@ function Form({
         const auth =
           cond.rules.find((r: any) => r.comparison === 'authenticated') &&
           initState.authId;
-        if (notAuth) logOut = true;
         return notAuth || auth;
       });
       if (loadCond) {
-        if (logOut) setFirstLoggedOut(true);
         if (changeStep(loadCond.next_step_key, newKey, steps, history)) {
           clearLoaders(true);
           return;
@@ -725,7 +721,6 @@ function Form({
               (hashKey && hashKey in steps && hashKey) ||
               (saveUserLocation && session.current_step_key) ||
               (getOrigin as any)(steps).key;
-            setFirstStep(newKey);
             // No hash necessary if form only has one step
             if (Object.keys(steps).length > 1) {
               history.replace(
@@ -740,7 +735,6 @@ function Form({
           // Go to first step if origin fails
           const [data] = await formPromise;
           const newKey = (getOrigin as any)(data).key;
-          setFirstStep(newKey);
           history.replace(location.pathname + location.search + `#${newKey}`);
         });
     }
@@ -888,6 +882,7 @@ function Form({
   const submit = async ({
     metadata,
     repeat = 0,
+    buttonAction,
     plaidSuccess = plaidLinked,
     setLoader = () => {}
   }: any) => {
@@ -918,11 +913,16 @@ function Form({
       });
     if (await invalidCheckPromise) return;
 
-    const { loggedIn, errorMessage, errorField } = await handleActions(
-      setLoader,
-      formattedFields,
-      trigger
-    );
+    let errors;
+    if (buttonAction) errors = buttonAction();
+    if (
+      activeStep.servar_fields.find(
+        ({ servar: { type } }: any) => type === 'payment_method'
+      )
+    )
+      errors = await handleStepSubmissionPayment(setLoader, formattedFields);
+
+    const { errorMessage, errorField } = errors;
     if (errorMessage && errorField) {
       clearLoaders();
       await setFormElementError({
@@ -1004,14 +1004,12 @@ function Form({
       // async execution after user's onSubmit
       return submitAndNavigate({
         metadata,
-        formattedFields,
-        loggedIn
+        formattedFields
       });
     } else {
       return submitAndNavigate({
         metadata,
-        formattedFields,
-        loggedIn
+        formattedFields
       });
     }
   };
@@ -1019,66 +1017,35 @@ function Form({
   // usePayments (Stripe)
   const [getCardElement, setCardElement] = usePayments();
 
-  async function handleActions(
+  async function handleStepSubmissionPayment(
     setLoader: any,
-    formattedFields: any,
-    trigger: any,
-    // memoizing actionConfigurations provided no real benefit here because it we need a fresh getCardElement
-    actionConfigurations = getIntegrationActionConfiguration(getCardElement)
+    formattedFields: any
   ) {
-    // Run through all action types for any relevant fields and execute them.
-    // Actions have a priority sequence and some actions must be exclusive (don't run any other
-    // actions after them).
-    for (const actionConfig of actionConfigurations) {
-      for (let i = 0; i < activeStep.servar_fields.length; i++) {
-        const servar = activeStep.servar_fields[i].servar;
-        if (servar.type === actionConfig.servarType) {
-          const actionData: ActionData = {
-            fieldVal: fieldValues[servar.key],
-            servar,
-            client,
-            formattedFields,
-            updateFieldValues,
-            step: activeStep,
-            // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-            integrationData: integrations[actionConfig.integrationKey],
-            targetElement:
-              actionConfig.targetElementFn &&
-              actionConfig.targetElementFn(servar.key),
-            trigger
-          };
-
-          if (
-            // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-            integrations[actionConfig.integrationKey] &&
-            (!actionConfig.isMatch ||
-              (actionConfig.isMatch && actionConfig.isMatch(actionData)))
-          ) {
-            setLoader();
-            const actionResult = await actionConfig.actionFn(actionData);
-            // Return right now if this action is not configured to continue to the next or there was an error
-            if (!actionConfig.continue || actionResult !== null) {
-              return actionResult ?? {};
-            }
-          }
-        }
+    for (let i = 0; i < activeStep.servar_fields.length; i++) {
+      const servar = activeStep.servar_fields[i].servar;
+      if (servar.type === 'payment_method') {
+        // @ts-expect-error integrations needs to be typed
+        const integrationData = integrations.stripe;
+        const actionData: ActionData = {
+          fieldVal: fieldValues[servar.key],
+          servar,
+          client,
+          formattedFields,
+          updateFieldValues,
+          step: activeStep,
+          integrationData,
+          targetElement: getCardElement(servar.key)
+        };
+        setLoader();
+        const actionResult = await setupPaymentMethodAndPay(actionData);
+        return actionResult ?? {};
       }
     }
+
     return {};
   }
 
-  function submitAndNavigate({
-    metadata,
-    formattedFields,
-    loggedIn = false
-  }: any) {
-    let redirectKey = '';
-    if (loggedIn && firstLoggedOut && firstStep !== activeStep.key) {
-      setFirstLoggedOut(false);
-      // @ts-expect-error TS(2322): Type 'boolean' is not assignable to type 'string'.
-      redirectKey = firstStep;
-    }
-
+  function submitAndNavigate({ metadata, formattedFields }: any) {
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       let newVal = (val as any).value;
       newVal = Array.isArray(newVal)
@@ -1098,7 +1065,6 @@ function Form({
 
     return goToNewStep({
       metadata,
-      redirectKey,
       submitPromise,
       submitData: true
     });
@@ -1177,7 +1143,11 @@ function Form({
     }));
   };
 
-  const buttonOnSubmit = async (button: any, submitData: any) => {
+  const buttonOnSubmit = async (
+    button: any,
+    submitData: boolean,
+    buttonAction?: any
+  ) => {
     try {
       const metadata = {
         elementType: 'button',
@@ -1187,6 +1157,7 @@ function Form({
         await submit({
           metadata,
           repeat: button.repeat || 0,
+          buttonAction,
           plaidSuccess: true,
           setLoader: () => setButtonLoader(button),
           clearLoader: () => clearLoaders()
@@ -1256,7 +1227,8 @@ function Form({
 
     const authNavAndSubmit = (authFn: any) => {
       if (!button.properties.link_no_nav) {
-        return buttonOnSubmit(button, !button.properties.link_no_submit);
+        // Auth actions always need to validate and submit the current step
+        return buttonOnSubmit(button, true, authFn);
       } else {
         return setButtonLoader(button)
           .then(authFn)
@@ -1422,8 +1394,7 @@ function Form({
         elementIDs: fieldIDs
       };
       if (submitData) {
-        const submitButton = activeStep.buttons.find(findSubmitButton);
-        const authButton = activeStep.buttons.find(findAuthButton);
+        const submitButton = findSubmitButton(activeStep);
         // Simulate button submit if available and valid to trigger button loader
         if (
           submitButton &&
@@ -1433,14 +1404,6 @@ function Form({
           })
         ) {
           buttonOnClick(submitButton);
-        } else if (
-          authButton &&
-          getNextStepKey({
-            elementType: 'button',
-            elementIDs: [authButton.id]
-          })
-        ) {
-          buttonOnClick(authButton);
         } else submit({ metadata, repeat: elementRepeatIndex });
       } else goToNewStep({ metadata });
     };
