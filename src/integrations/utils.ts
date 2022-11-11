@@ -104,7 +104,13 @@ export function inferAuthLogout() {
 }
 
 export function isAuthStytch() {
-  return Boolean(global.Stytch);
+  const authClient = getAuthClient();
+  const isAuthClientStytch = Object.getOwnPropertySymbols(authClient)
+    .map((symbol) => symbol.toString())
+    .includes('Symbol(stytch__internal)');
+  // Still check global.Stytch for back compat, if customer is using old package.
+  // TODO: remove the global.Stytch part of this || once the new package has been out for longer
+  return global.Stytch || isAuthClientStytch;
 }
 
 export interface ActionData {
