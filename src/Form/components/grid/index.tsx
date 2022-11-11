@@ -2,7 +2,12 @@ import React from 'react';
 import Cell from './Cell';
 import ResponsiveStyles from '../../../elements/styles';
 import { getDefaultFieldValue } from '../../../utils/formHelperFunctions';
-import { TEXT_VARIABLE_PATTERN } from '../../../utils/hydration';
+import {
+  isFill,
+  isFit,
+  isPx,
+  TEXT_VARIABLE_PATTERN
+} from '../../../utils/hydration';
 import { adjustColor } from '../../../utils/styles';
 import {
   LINK_NONE,
@@ -104,38 +109,164 @@ const getCellStyle = (cell: any) => {
   ];
 };
 
-const getCellContainerStyle = (axis: string, layout: string) => {
-  const dimension = axis === 'column' ? 'width' : 'height';
+const DEFAULT_MIN_SIZE = 50;
 
-  const common = {
-    display: 'flex'
+const getCellContainerStyle = (node: any, axis: string) => {
+  const parentStyles = node.parent.cellData.styles ?? {};
+
+  const styles: any = {
+    position: 'relative',
+    display: !node.isElement ? 'flex' : 'block',
+    minWidth: !node.isElement ? `${DEFAULT_MIN_SIZE}px` : 'fit-content',
+    minHeight: !node.isElement ? `${DEFAULT_MIN_SIZE}px` : 'fit-content',
+    flexBasis: !node.isElement ? 0 : 'fit-content',
+    boxSizing: 'content-box'
   };
 
-  const dimensionName = dimension[0].toUpperCase() + dimension.substring(1);
-  const minDimension = `min${dimensionName}`;
-  const maxDimension = `max${dimensionName}`;
+  // Apply axis styles
+  styles.flexDirection = axis;
 
-  switch (layout) {
-    case 'fit':
-      return {
-        ...common,
-        [minDimension]: 0,
-        [dimension]: 'fit-content'
-      };
-    case 'fill':
-      return {
-        ...common,
-        flex: 1,
-        [minDimension]: 0
-      };
-    default:
-      return {
-        ...common,
-        [dimension]: parseInt(layout),
-        [maxDimension]: parseInt(layout),
-        [minDimension]: 0
-      };
+  const isEmpty = node.isEmpty;
+  const nodeWidth = node.width;
+  const nodeHeight = node.height;
+  const isAligned =
+    parentStyles.vertical_align || parentStyles.horizontal_align;
+
+  /**
+   * Width styles
+   */
+  if (!node.isElement) {
+    if (isPx(nodeWidth)) {
+      styles.minWidth = 'auto';
+      styles.width = '100%';
+
+      if (axis === 'column') {
+        styles.flexBasis = '100%';
+      }
+
+      styles.maxWidth = nodeWidth;
+    }
+
+    if (isFit(nodeWidth)) {
+      styles.maxWidth = `${DEFAULT_MIN_SIZE}px`;
+
+      if (!isEmpty) {
+        styles.width = 'fit-content !important';
+        styles.maxWidth = 'fit-content';
+        styles.minWidth = 'fit-content';
+      }
+    }
+
+    if (isFill(nodeWidth)) {
+      if (!isAligned) styles.alignSelf = 'stretch';
+      styles.width = 'auto';
+
+      if (axis === 'column') {
+        styles.flexGrow = 1;
+        styles.flexShrink = 0;
+      } else {
+        styles.width = '100%';
+      }
+
+      if (!isEmpty) {
+        styles.minWidth = 'fit-content';
+      }
+    }
+
+    /**
+     * Height styles
+     */
+    if (isPx(nodeHeight)) {
+      styles.minHeight = 'auto';
+      styles.width = '100%';
+
+      if (axis === 'row') {
+        styles.flexBasis = '100%';
+      }
+
+      styles.maxHeight = nodeHeight;
+    }
+
+    if (isFit(nodeHeight)) {
+      styles.maxHeight = `${DEFAULT_MIN_SIZE}px`;
+
+      if (!isEmpty) {
+        styles.height = 'fit-content !important';
+        styles.maxHeight = 'fit-content';
+        styles.minHeight = 'fit-content';
+      }
+    }
+
+    if (isFill(nodeHeight)) {
+      if (!isAligned) styles.alignSelf = 'stretch';
+      styles.height = 'auto';
+
+      if (axis === 'row') {
+        styles.flexGrow = 1;
+        styles.flexShrink = 0;
+      } else {
+        styles.height = '100%';
+      }
+
+      if (!isEmpty) {
+        styles.minHeight = 'fit-content';
+      }
+    }
+  } else {
+    const elementStyles = node.styles;
+    const {
+      width,
+      width_unit: widthUnit,
+      height,
+      height_unit: heightUnit
+    } = elementStyles;
+
+    if (width) styles.width = `${width}${widthUnit}`;
+    else {
+      styles.width = 'fit-content !important';
+      styles.maxWidth = 'fit-content';
+      styles.minWidth = 'fit-content';
+    }
+
+    if (height && node.type !== 'image')
+      styles.height = `${height}${heightUnit}`;
+    else {
+      styles.height = 'fit-content !important';
+      styles.maxHeight = 'fit-content';
+      styles.minHeight = 'fit-content';
+    }
+
+    if (node.type !== 'text') {
+      if (widthUnit === '%' && axis === 'column') {
+        styles.flexBasis = `${width}${widthUnit}`;
+      }
+
+      if (heightUnit === '%' && axis === 'row') {
+        styles.flexBasis = `${height}${heightUnit}`;
+      }
+    }
+
+    if (elementStyles.vertical_layout) {
+      if (axis === 'row') {
+        styles.justifySelf = elementStyles.vertical_layout;
+      } else {
+        styles.alignSelf = elementStyles.vertical_layout;
+      }
+    }
+
+    if (elementStyles.layout) {
+      let targetStyle = elementStyles.layout;
+      if (targetStyle === 'left') targetStyle = 'flex-start';
+      if (targetStyle === 'right') targetStyle = 'flex-end';
+      if (axis === 'row') {
+        styles.alignSelf = targetStyle;
+      } else {
+        styles.justifySelf = targetStyle;
+      }
+    }
   }
+
+  return styles;
 };
 
 const CellContainer = ({
@@ -146,7 +277,7 @@ const CellContainer = ({
     parent,
     style,
     grid_size: gridSize,
-    properties = null
+    properties: _properties = null
   },
   axis,
   selected,
@@ -156,7 +287,7 @@ const CellContainer = ({
 
   const cellContainerStyle = getCellContainerStyle(axis, gridSize);
 
-  if (!properties) properties = {};
+  const properties = _properties ?? {};
   const onClick = (e: React.MouseEvent) => {
     if (properties.link && properties.link !== LINK_NONE) {
       e.stopPropagation();
@@ -209,17 +340,56 @@ const CellContainer = ({
     </div>
   );
 };
+const GridContainer = ({ children, node }: any) => {
+  const styles: any = {};
 
-const GridContainer = ({ children, node: { axis } }: any) => {
+  if (node.children.length) {
+    const nodeStyles = node.cellData.styles;
+    if (node.axis === 'column') {
+      styles.alignItems = nodeStyles.vertical_align || 'flex-start';
+      styles.justifyContent = nodeStyles.horizontal_align || 'left';
+    }
+
+    if (node.axis === 'row') {
+      styles.alignItems = nodeStyles.horizontal_align || 'flex-start';
+      styles.justifyContent = nodeStyles.vertical_align || 'left';
+    }
+
+    if (nodeStyles.gap) {
+      styles.gap = `${nodeStyles.gap}px`;
+    }
+
+    if (nodeStyles.padding_top)
+      styles.paddingTop = `${nodeStyles.padding_top}px`;
+
+    if (nodeStyles.padding_right)
+      styles.paddingRight = `${nodeStyles.padding_right}px`;
+
+    if (nodeStyles.padding_bottom)
+      styles.paddingBottom = `${nodeStyles.padding_bottom}px`;
+
+    if (nodeStyles.padding_left)
+      styles.paddingLeft = `${nodeStyles.padding_left}px`;
+  } else {
+    styles.alignItems = undefined;
+    styles.justifyContent = undefined;
+    styles.paddingTop = undefined;
+    styles.paddingRight = undefined;
+    styles.paddingBottom = undefined;
+    styles.paddingLeft = undefined;
+  }
+
   return (
     <div
       style={{
-        flexDirection: axis === 'column' ? 'row' : 'column',
+        flexDirection: node.axis === 'column' ? 'row' : 'column',
         flexWrap: 'nowrap',
         display: 'flex',
         position: 'relative',
         minHeight: '100%',
-        minWidth: '100%'
+        minWidth: '100%',
+        boxSizing: 'border-box',
+        ...styles
       }}
     >
       {children}

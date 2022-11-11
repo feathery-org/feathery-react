@@ -5,9 +5,11 @@ const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 const FIT = 'fit';
 const FILL = 'fill';
 
-export const isFill = (v: any) => {
-  return v === FILL;
-};
+export const isFill = (v: any) => v === FILL;
+
+export const isFit = (v: any) => v === FIT;
+
+export const isPx = (size: string) => size.indexOf('px') >= 0;
 
 const formatDimensionValue = (value: any, type = 'col') => {
   // fit-content is needed here, for both fill and fit, to allow elements to push beyond the parent container's explicit height.
