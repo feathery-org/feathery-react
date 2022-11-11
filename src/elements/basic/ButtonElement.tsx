@@ -5,19 +5,28 @@ import TextNodes from '../components/TextNodes';
 import { imgMaxSizeStyles, ERROR_COLOR } from '../styles';
 import { adjustColor } from '../../utils/styles';
 
-const LINK_CUSTOM = 'custom';
-const LINK_NONE = 'none';
-const LINK_BACK = 'back';
-const LINK_NEXT = 'next';
-const LINK_URL = 'url';
 const LINK_ADD_REPEATED_ROW = 'add_repeated_row';
-const LINK_REMOVE_REPEATED_ROW = 'remove_repeated_row';
-const LINK_SEND_SMS = 'send_sms_code';
-const LINK_LOGOUT = 'logout';
-const LINK_SEND_MAGIC_LINK = 'send_magic_link';
-const LINK_TRIGGER_PLAID = 'trigger_plaid';
+const LINK_BACK = 'back';
+const LINK_CUSTOM = 'custom';
 const LINK_GOOGLE_OAUTH = 'trigger_google_oauth';
+const LINK_LOGOUT = 'logout';
+const LINK_NEXT = 'next';
+const LINK_NONE = 'none';
+const LINK_REMOVE_REPEATED_ROW = 'remove_repeated_row';
+const LINK_SEND_MAGIC_LINK = 'send_magic_link';
+const LINK_SEND_SMS = 'send_sms_code';
 const LINK_STRIPE = 'select_payment_product';
+const LINK_TRIGGER_PLAID = 'trigger_plaid';
+const LINK_URL = 'url';
+const LINK_VERIFY_SMS = 'verify_sms';
+const SUBMITTABLE_LINKS = [
+  LINK_NEXT,
+  LINK_TRIGGER_PLAID,
+  LINK_LOGOUT,
+  LINK_SEND_MAGIC_LINK,
+  LINK_SEND_SMS,
+  LINK_VERIFY_SMS
+];
 
 function applyButtonStyles(element: any, applyStyles: any) {
   applyStyles.addTargets(
@@ -202,17 +211,19 @@ function ButtonElement({
 
 export default ButtonElement;
 export {
-  LINK_CUSTOM,
-  LINK_NONE,
-  LINK_BACK,
-  LINK_NEXT,
-  LINK_URL,
   LINK_ADD_REPEATED_ROW,
-  LINK_REMOVE_REPEATED_ROW,
-  LINK_SEND_SMS,
-  LINK_LOGOUT,
-  LINK_SEND_MAGIC_LINK,
-  LINK_TRIGGER_PLAID,
+  LINK_BACK,
+  LINK_CUSTOM,
   LINK_GOOGLE_OAUTH,
-  LINK_STRIPE
+  LINK_LOGOUT,
+  LINK_NEXT,
+  LINK_NONE,
+  LINK_REMOVE_REPEATED_ROW,
+  LINK_SEND_MAGIC_LINK,
+  LINK_SEND_SMS,
+  LINK_STRIPE,
+  LINK_TRIGGER_PLAID,
+  LINK_URL,
+  LINK_VERIFY_SMS,
+  SUBMITTABLE_LINKS
 };

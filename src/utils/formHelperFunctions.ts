@@ -1,7 +1,6 @@
 import getRandomBoolean from './random';
 import { fieldValues, filePathMap, initInfo } from './init';
 import { toBase64 } from './image';
-import { emailPattern, phonePattern } from './validation';
 
 /**
  *
@@ -134,17 +133,10 @@ const nextStepKey = (nextConditions: any, metadata: any) => {
             !userVal.includes(ruleVal) && rule.comparison === 'not_equal';
           ruleMet = equal || notEqual;
         } else {
-          if (rule.comparison === 'is_type') {
-            ruleMet =
-              (ruleVal === 'email' && emailPattern.test(userVal)) ||
-              // use phonePattern rather than validator for nav rules. Validation hasn't necessarily run, so safer to use the regex
-              (ruleVal === 'phone' && phonePattern.test(userVal));
-          } else {
-            const equal = userVal === ruleVal;
-            ruleMet =
-              (equal && rule.comparison === 'equal') ||
-              (!equal && rule.comparison === 'not_equal');
-          }
+          const equal = userVal === ruleVal;
+          ruleMet =
+            (equal && rule.comparison === 'equal') ||
+            (!equal && rule.comparison === 'not_equal');
         }
         // @ts-expect-error TS(2447): The '&=' operator is not allowed for boolean types... Remove this comment to see the full error message
         rulesMet &= ruleMet;
@@ -376,12 +368,7 @@ async function fetchS3File(url: any) {
 }
 
 function textFieldShouldSubmit(servar: any, value: any) {
-  let methods, onlyPhone;
   switch (servar.type) {
-    case 'login':
-      methods = servar.metadata.login_methods;
-      onlyPhone = methods.length === 1 && methods[0] === 'phone';
-      return onlyPhone && value.length === 10;
     case 'ssn':
       return value.length === 9;
     default:

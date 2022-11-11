@@ -40,19 +40,20 @@ import {
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
-import { sendLoginCode } from '../integrations/firebase';
+import { sendFirebaseLogin, verifySMSCode } from '../integrations/firebase';
 import { googleOauthRedirect, sendMagicLink } from '../integrations/stytch';
 import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
 import {
   usePayments,
   toggleProductSelection,
-  isProductSelected
+  isProductSelected,
+  setupPaymentMethodAndPay
 } from '../integrations/stripe';
 import {
-  getIntegrationActionConfiguration,
   ActionData,
   trackEvent,
-  inferAuthLogout
+  inferAuthLogout,
+  isAuthStytch
 } from '../integrations/utils';
 import {
   LINK_ADD_REPEATED_ROW,
@@ -66,7 +67,9 @@ import {
   LINK_STRIPE,
   LINK_BACK,
   LINK_NEXT,
-  LINK_LOGOUT
+  LINK_LOGOUT,
+  LINK_VERIFY_SMS,
+  SUBMITTABLE_LINKS
 } from '../elements/basic/ButtonElement';
 import DevNavBar from './DevNavBar';
 import Spinner from '../elements/components/Spinner';
@@ -124,6 +127,12 @@ export const fieldCounter = FieldCounter;
 const getViewport = () => {
   return window.innerWidth > mobileBreakpointValue ? 'desktop' : 'mobile';
 };
+const findSubmitButton = (step: any) =>
+  step.buttons.find(
+    (b: any) =>
+      !b.properties.link_no_submit &&
+      SUBMITTABLE_LINKS.includes(b.properties.link)
+  );
 
 function Form({
   // @ts-expect-error TS(2339): Property 'formKey' does not exist on type 'Props'.
@@ -153,9 +162,6 @@ function Form({
 
   const [autoValidate, setAutoValidate] = useState(false);
   const [first, setFirst] = useState(true);
-  const [firstStep, setFirstStep] = useState(true);
-  // If true, will automatically redirect to firstStep if logged back in
-  const [firstLoggedOut, setFirstLoggedOut] = useState(false);
 
   const [productionEnv, setProductionEnv] = useState(true);
   const [steps, setSteps] = useState(null);
@@ -328,13 +334,6 @@ function Form({
   useEffect(() => {
     if (!activeStep || !global.firebase) return;
 
-    const hasLoginField = activeStep.servar_fields.some((field: any) => {
-      const servar = field.servar;
-      return (
-        servar.type === 'login' &&
-        servar.metadata.login_methods.includes('phone')
-      );
-    });
     const renderedButtons = activeStep.buttons.filter(
       (element: any) =>
         !shouldElementHide({
@@ -342,25 +341,15 @@ function Form({
           element: element
         })
     );
-    const submitButton = renderedButtons.find(
-      (b: any) =>
-        b.properties.link === LINK_NEXT && !b.properties.link_no_submit
+    const smsButton = renderedButtons.find(
+      (b: any) => b.properties.link === LINK_SEND_SMS
     );
-    if (hasLoginField && submitButton) {
+
+    if (smsButton) {
       window.firebaseRecaptchaVerifier =
-        new global.firebase.auth.RecaptchaVerifier(submitButton.id, {
+        new global.firebase.auth.RecaptchaVerifier(smsButton.id, {
           size: 'invisible'
         });
-    } else {
-      const smsButton = renderedButtons.find(
-        (b: any) => b.properties.link === LINK_SEND_SMS
-      );
-      if (smsButton) {
-        window.firebaseRecaptchaVerifier =
-          new global.firebase.auth.RecaptchaVerifier(smsButton.id, {
-            size: 'invisible'
-          });
-      }
     }
   }, [activeStep?.id, global.firebase]);
 
@@ -409,10 +398,7 @@ function Form({
       e.preventDefault();
       e.stopPropagation();
       // Submit steps by pressing `Enter`
-      const submitButton = activeStep.buttons.find(
-        (b: any) =>
-          b.properties.link === LINK_NEXT && !b.properties.link_no_submit
-      );
+      const submitButton = findSubmitButton(activeStep);
       if (submitButton) {
         // Simulate button click if available
         buttonOnClick(submitButton);
@@ -594,7 +580,6 @@ function Form({
     // @ts-expect-error TS(2531): Object is possibly 'null'.
     let newStep = steps[newKey];
     while (true) {
-      let logOut = false;
       const loadCond = newStep.next_conditions.find((cond: any) => {
         if (cond.element_type !== 'step') return false;
         const notAuth =
@@ -607,11 +592,9 @@ function Form({
         const auth =
           cond.rules.find((r: any) => r.comparison === 'authenticated') &&
           initState.authId;
-        if (notAuth) logOut = true;
         return notAuth || auth;
       });
       if (loadCond) {
-        if (logOut) setFirstLoggedOut(true);
         if (changeStep(loadCond.next_step_key, newKey, steps, history)) {
           clearLoaders(true);
           return;
@@ -738,7 +721,6 @@ function Form({
               (hashKey && hashKey in steps && hashKey) ||
               (saveUserLocation && session.current_step_key) ||
               (getOrigin as any)(steps).key;
-            setFirstStep(newKey);
             // No hash necessary if form only has one step
             if (Object.keys(steps).length > 1) {
               history.replace(
@@ -753,7 +735,6 @@ function Form({
           // Go to first step if origin fails
           const [data] = await formPromise;
           const newKey = (getOrigin as any)(data).key;
-          setFirstStep(newKey);
           history.replace(location.pathname + location.search + `#${newKey}`);
         });
     }
@@ -901,6 +882,7 @@ function Form({
   const submit = async ({
     metadata,
     repeat = 0,
+    buttonAction,
     plaidSuccess = plaidLinked,
     setLoader = () => {}
   }: any) => {
@@ -931,10 +913,16 @@ function Form({
       });
     if (await invalidCheckPromise) return;
 
-    const { loggedIn, errorMessage, errorField } = await handleActions(
-      setLoader,
-      formattedFields
-    );
+    let errors;
+    if (buttonAction) errors = buttonAction();
+    if (
+      activeStep.servar_fields.find(
+        ({ servar: { type } }: any) => type === 'payment_method'
+      )
+    )
+      errors = await handleStepSubmissionPayment(setLoader, formattedFields);
+
+    const { errorMessage, errorField } = errors;
     if (errorMessage && errorField) {
       clearLoaders();
       await setFormElementError({
@@ -1016,14 +1004,12 @@ function Form({
       // async execution after user's onSubmit
       return submitAndNavigate({
         metadata,
-        formattedFields,
-        loggedIn
+        formattedFields
       });
     } else {
       return submitAndNavigate({
         metadata,
-        formattedFields,
-        loggedIn
+        formattedFields
       });
     }
   };
@@ -1031,64 +1017,35 @@ function Form({
   // usePayments (Stripe)
   const [getCardElement, setCardElement] = usePayments();
 
-  async function handleActions(
+  async function handleStepSubmissionPayment(
     setLoader: any,
-    formattedFields: any,
-    // memoizing actionConfigurations provided no real benefit here because it we need a fresh getCardElement
-    actionConfigurations = getIntegrationActionConfiguration(getCardElement)
+    formattedFields: any
   ) {
-    // Run through all action types for any relevant fields and execute them.
-    // Actions have a priority sequence and some actions must be exclusive (don't run any other
-    // actions after them).
-    for (const actionConfig of actionConfigurations) {
-      for (let i = 0; i < activeStep.servar_fields.length; i++) {
-        const servar = activeStep.servar_fields[i].servar;
-        if (servar.type === actionConfig.servarType) {
-          const actionData: ActionData = {
-            fieldVal: fieldValues[servar.key],
-            servar,
-            client,
-            formattedFields,
-            updateFieldValues,
-            step: activeStep,
-            // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-            integrationData: integrations[actionConfig.integrationKey],
-            targetElement:
-              actionConfig.targetElementFn &&
-              actionConfig.targetElementFn(servar.key)
-          };
-
-          if (
-            // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-            integrations[actionConfig.integrationKey] &&
-            (!actionConfig.isMatch ||
-              (actionConfig.isMatch && actionConfig.isMatch(actionData)))
-          ) {
-            setLoader();
-            const actionResult = await actionConfig.actionFn(actionData);
-            // Return right now if this action is not configured to continue to the next or there was an error
-            if (!actionConfig.continue || actionResult !== null) {
-              return actionResult ?? {};
-            }
-          }
-        }
+    for (let i = 0; i < activeStep.servar_fields.length; i++) {
+      const servar = activeStep.servar_fields[i].servar;
+      if (servar.type === 'payment_method') {
+        // @ts-expect-error integrations needs to be typed
+        const integrationData = integrations.stripe;
+        const actionData: ActionData = {
+          fieldVal: fieldValues[servar.key],
+          servar,
+          client,
+          formattedFields,
+          updateFieldValues,
+          step: activeStep,
+          integrationData,
+          targetElement: getCardElement(servar.key)
+        };
+        setLoader();
+        const actionResult = await setupPaymentMethodAndPay(actionData);
+        return actionResult ?? {};
       }
     }
+
     return {};
   }
 
-  function submitAndNavigate({
-    metadata,
-    formattedFields,
-    loggedIn = false
-  }: any) {
-    let redirectKey = '';
-    if (loggedIn && firstLoggedOut && firstStep !== activeStep.key) {
-      setFirstLoggedOut(false);
-      // @ts-expect-error TS(2322): Type 'boolean' is not assignable to type 'string'.
-      redirectKey = firstStep;
-    }
-
+  function submitAndNavigate({ metadata, formattedFields }: any) {
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       let newVal = (val as any).value;
       newVal = Array.isArray(newVal)
@@ -1108,7 +1065,6 @@ function Form({
 
     return goToNewStep({
       metadata,
-      redirectKey,
       submitPromise,
       submitData: true
     });
@@ -1187,7 +1143,11 @@ function Form({
     }));
   };
 
-  const buttonOnSubmit = async (button: any, submitData: any) => {
+  const buttonOnSubmit = async (
+    button: any,
+    submitData: boolean,
+    buttonAction?: any
+  ) => {
     try {
       const metadata = {
         elementType: 'button',
@@ -1197,6 +1157,7 @@ function Form({
         await submit({
           metadata,
           repeat: button.repeat || 0,
+          buttonAction,
           plaidSuccess: true,
           setLoader: () => setButtonLoader(button),
           clearLoader: () => clearLoaders()
@@ -1264,6 +1225,26 @@ function Form({
     buttonClicks[button.id] = true;
     let clickPromise = Promise.resolve();
 
+    const authNavAndSubmit = (authFn: any) => {
+      if (!button.properties.link_no_nav) {
+        // Auth actions always need to validate and submit the current step
+        return buttonOnSubmit(button, true, authFn);
+      } else {
+        return setButtonLoader(button)
+          .then(authFn)
+          .then(() => clearLoaders());
+      }
+    };
+    const setError = (message: string) =>
+      setFormElementError({
+        formRef,
+        fieldKey: button.id,
+        message,
+        errorType: formSettings.errorType,
+        setInlineErrors: setInlineErrors,
+        triggerErrors: true
+      });
+
     const link = button.properties.link;
     if ([LINK_ADD_REPEATED_ROW, LINK_REMOVE_REPEATED_ROW].includes(link)) {
       let data: any;
@@ -1304,31 +1285,47 @@ function Form({
         }
       }));
     } else if (link === LINK_SEND_SMS) {
-      clickPromise = setButtonLoader(button)
-        .then(() =>
-          sendLoginCode({
-            fieldVal: fieldValues[button.properties.auth_target_field_key],
+      const phoneNum = fieldValues[
+        button.properties.auth_target_field_key
+      ] as string;
+      if (validators.phone(phoneNum)) {
+        const authFn = () =>
+          sendFirebaseLogin({
+            fieldVal: phoneNum,
             servar: null,
-            methods: ['phone']
-          })
-        )
-        .then(() => clearLoaders());
-    } else if (link === LINK_SEND_MAGIC_LINK) {
-      const fieldKey = button.properties.auth_target_field_key;
-      const email = fieldValues[fieldKey] as string;
-      if (validators.email(email)) {
-        clickPromise = setButtonLoader(button)
-          .then(() => sendMagicLink({ fieldVal: email }))
-          .then(() => clearLoaders());
+            method: 'phone'
+          });
+        clickPromise = authNavAndSubmit(authFn);
       } else {
-        setFormElementError({
-          formRef,
-          fieldKey: button.id,
-          message: 'An email is needed to send your magic link.',
-          errorType: formSettings.errorType,
-          setInlineErrors: setInlineErrors,
-          triggerErrors: true
-        });
+        setError('A valid phone number is needed to send your login code.');
+      }
+    } else if (link === LINK_VERIFY_SMS) {
+      const pin = fieldValues[
+        button.properties.auth_target_field_key
+      ] as string;
+
+      const authFn = () =>
+        verifySMSCode({ fieldVal: pin, servar: null, method: client });
+      clickPromise = authNavAndSubmit(authFn).catch(() => {
+        setError('Your code is not valid.');
+      });
+    } else if (link === LINK_SEND_MAGIC_LINK) {
+      const email = fieldValues[
+        button.properties.auth_target_field_key
+      ] as string;
+      if (validators.email(email)) {
+        const authFn = isAuthStytch()
+          ? () => sendMagicLink({ fieldVal: email })
+          : () =>
+              sendFirebaseLogin({
+                fieldVal: email,
+                servar: null,
+                method: 'email'
+              });
+
+        clickPromise = authNavAndSubmit(authFn);
+      } else {
+        setError('A valid email is needed to send your magic link.');
       }
     } else if (link === LINK_GOOGLE_OAUTH) {
       googleOauthRedirect();
@@ -1397,10 +1394,7 @@ function Form({
         elementIDs: fieldIDs
       };
       if (submitData) {
-        const submitButton = activeStep.buttons.find(
-          (b: any) =>
-            b.properties.link === LINK_NEXT && b.properties.link_no_submit
-        );
+        const submitButton = findSubmitButton(activeStep);
         // Simulate button submit if available and valid to trigger button loader
         if (
           submitButton &&
@@ -1408,9 +1402,9 @@ function Form({
             elementType: 'button',
             elementIDs: [submitButton.id]
           })
-        )
-          buttonOnSubmit(submitButton, true);
-        else submit({ metadata, repeat: elementRepeatIndex });
+        ) {
+          buttonOnClick(submitButton);
+        } else submit({ metadata, repeat: elementRepeatIndex });
       } else goToNewStep({ metadata });
     };
 

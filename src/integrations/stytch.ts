@@ -1,4 +1,4 @@
-import { getAuthClient, initState, setAuthClient } from '../utils/init';
+import { getAuthClient, setAuthClient } from '../utils/init';
 import { dynamicImport } from './utils';
 import { featheryDoc } from '../utils/browser';
 

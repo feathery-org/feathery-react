@@ -2,8 +2,8 @@ import { installPlaid } from './plaid';
 import {
   installFirebase,
   emailLogin as emailLoginFirebase,
-  sendLoginCode,
-  verifySMSCode
+  verifySMSCode,
+  sendFirebaseLogin
 } from './firebase';
 import { initializeTagManager } from './googleTagManager';
 import { installSegment } from './segment';
@@ -13,7 +13,6 @@ import {
   sendMagicLink
 } from './stytch';
 import { installStripe, setupPaymentMethodAndPay } from './stripe';
-import { getStytchJwt } from '../utils/browser';
 import TagManager from 'react-gtm-module';
 import {
   gaInstalled,
@@ -22,6 +21,10 @@ import {
 } from './googleAnalytics';
 import { getAuthClient, initState } from '../utils/init';
 import Client from '../utils/client';
+import {
+  LINK_SEND_MAGIC_LINK,
+  LINK_SEND_SMS
+} from '../elements/basic/ButtonElement';
 
 const IMPORTED_URLS = new Set();
 
@@ -73,19 +76,22 @@ export async function initializeIntegrations(
 
 export function inferEmailLoginFromURL(featheryClient: Client) {
   const queryParams = new URLSearchParams(window.location.search);
-  const stytchJwt = getStytchJwt();
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
-  if (stytchJwt || (type && token)) emailLoginStytch(featheryClient);
+  if (isAuthStytch() || (type && token)) emailLoginStytch(featheryClient);
   else emailLoginFirebase(featheryClient);
 }
 
 export function inferAuthLogout() {
-  const stytchJwt = getStytchJwt();
-  let logout = () => global.firebase?.auth().signOut(); // firebase? because firebase may not exist
-  if (stytchJwt) {
+  let logout;
+  if (isAuthStytch()) {
     logout = () => getAuthClient().session.revoke();
+  } else if (global.firebase) {
+    logout = () => global.firebase.auth().signOut();
   }
+
+  // logout may not have a value in certain cases, i.e. stytch is already logged out so there is no jwt
+  if (!logout) return;
 
   logout().then(() => {
     initState.authId = undefined;
@@ -97,6 +103,10 @@ export function inferAuthLogout() {
   });
 }
 
+export function isAuthStytch() {
+  return Boolean(global.Stytch);
+}
+
 export interface ActionData {
   fieldVal: any;
   servar: any;
@@ -106,38 +116,6 @@ export interface ActionData {
   step: any;
   integrationData: any;
   targetElement: any;
-}
-
-// Action config that groups actions by servar type, orders them, configures behavior, etc.
-export function getIntegrationActionConfiguration(getCardElement: any) {
-  return [
-    {
-      servarType: 'payment_method',
-      integrationKey: 'stripe',
-      actionFn: setupPaymentMethodAndPay,
-      targetElementFn: getCardElement,
-      continue: true
-    },
-    {
-      servarType: 'login',
-      integrationKey: 'stytch',
-      actionFn: sendMagicLink,
-      continue: false
-    },
-    {
-      servarType: 'login',
-      integrationKey: 'firebase',
-      actionFn: sendLoginCode,
-      continue: false
-    },
-    {
-      servarType: 'pin_input',
-      integrationKey: 'firebase',
-      isMatch: ({ servar }: ActionData) => servar.metadata.verify_sms_code,
-      actionFn: verifySMSCode,
-      continue: false
-    }
-  ];
 }
 
 export function trackEvent(title: string, stepId: string, formId: string) {

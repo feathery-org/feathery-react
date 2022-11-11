@@ -1,7 +1,5 @@
 import { dynamicImport } from './utils';
 import { updateSessionValues } from '../utils/formHelperFunctions';
-import { emailPattern, phonePattern } from '../utils/validation';
-import { initState } from '../utils/init';
 
 let firebasePromise: any = null;
 
@@ -58,9 +56,16 @@ export function emailLogin(featheryClient: any) {
   }
 }
 
-export async function sendLoginCode({ fieldVal, servar, methods = null }: any) {
-  methods = methods || servar.metadata.login_methods;
-  if (methods.includes('phone') && phonePattern.test(fieldVal)) {
+export async function sendFirebaseLogin({
+  fieldVal,
+  servar,
+  method
+}: {
+  fieldVal: string;
+  servar: any;
+  method: 'phone' | 'email';
+}) {
+  if (method === 'phone') {
     return await global.firebase
       .auth()
       .signInWithPhoneNumber(`+1${fieldVal}`, window.firebaseRecaptchaVerifier)
@@ -87,7 +92,7 @@ export async function sendLoginCode({ fieldVal, servar, methods = null }: any) {
           errorField: servar
         };
       });
-  } else if (methods.includes('email') && emailPattern.test(fieldVal)) {
+  } else {
     return await global.firebase
       .auth()
       .sendSignInLinkToEmail(fieldVal, {
@@ -104,22 +109,17 @@ export async function sendLoginCode({ fieldVal, servar, methods = null }: any) {
           errorField: servar
         };
       });
-  } else {
-    return {
-      errorMessage: 'Invalid login',
-      errorField: servar
-    };
   }
 }
 
-export async function verifySMSCode({ fieldVal, servar, client }: any) {
+export async function verifySMSCode({ fieldVal, servar, featheryClient }: any) {
   const fcr = window.firebaseConfirmationResult;
   if (fcr) {
     return await fcr
       .confirm(fieldVal)
       .then(async (result: any) => {
         // User signed in successfully.
-        return await client
+        return await featheryClient
           .submitAuthInfo({
             authId: result.user.uid,
             authPhone: (window as any).firebasePhoneNumber

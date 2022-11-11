@@ -102,7 +102,7 @@ export default class Client {
 
   _submitJSONData(servars: any) {
     const { userId } = initInfo();
-    const url = `${API_URL}panel/step/submit/v2/`;
+    const url = `${API_URL}panel/step/submit/v3/`;
     const data = {
       ...(userId ? { fuser_key: userId } : {}),
       servars,
@@ -262,7 +262,7 @@ export default class Client {
       return Promise.resolve(preloadForms[this.formKey]);
 
     const params = encodeGetParams({ form_key: this.formKey });
-    const url = `${CDN_URL}panel/v8/?${params}`;
+    const url = `${CDN_URL}panel/v9/?${params}`;
     const options: Record<string, any> = {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }

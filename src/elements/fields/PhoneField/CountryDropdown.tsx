@@ -1,6 +1,6 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 
-import countryData from './countryData';
+import countryData, { firebaseSMSCountries } from './countryData';
 
 function CountryDropdown({ show, hide, itemOnClick, ...props }: any, ref: any) {
   const listItemRef = useRef<Record<string, any>>({});
@@ -13,7 +13,10 @@ function CountryDropdown({ show, hide, itemOnClick, ...props }: any, ref: any) {
   const countryItems = useMemo(() => {
     const filteredData = countryData.filter(
       ({ countryCode, countryName, phoneCode }) => {
-        if (!global.libphonenumber?.isSupportedCountry(countryCode))
+        if (
+          !global.libphonenumber?.isSupportedCountry(countryCode) ||
+          (global.firebase && !firebaseSMSCountries.has(countryCode))
+        )
           return false;
         return (
           !query ||

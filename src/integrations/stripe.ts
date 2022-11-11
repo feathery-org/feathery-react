@@ -233,7 +233,10 @@ export async function toggleProductSelection({
   }
 }
 
-export function usePayments() {
+export function usePayments(): [
+  (key: any) => void,
+  (key: any, cardElement: any) => void
+] {
   // Stripe - the card elements on the active step, if any
   const [cardElementMappings, setCardElementMappings] = useState({});
 
