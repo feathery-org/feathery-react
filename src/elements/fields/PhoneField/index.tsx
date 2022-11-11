@@ -62,6 +62,8 @@ function PhoneField({
     if (fullNumber === curFullNumber || editMode) return;
 
     phoneLibPromise.then(() => {
+      if (!global.libphonenumber) return;
+
       const ayt = new global.libphonenumber.AsYouType();
       ayt.input(`+${fullNumber}`);
       const numberObj = ayt.getNumber();
@@ -90,6 +92,8 @@ function PhoneField({
 
     const exampleNumber = exampleNumbers[curCountryCode];
     phoneLibPromise.then(() => {
+      if (!global.libphonenumber) return;
+
       setPlaceholder(
         global.libphonenumber
           .parsePhoneNumber(exampleNumber, curCountryCode)
