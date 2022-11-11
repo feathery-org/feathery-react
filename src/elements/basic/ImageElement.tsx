@@ -3,10 +3,11 @@ import React, { useMemo } from 'react';
 const PLACEHOLDER_IMAGE =
   'https://feathery.s3.us-west-1.amazonaws.com/theme-image-preview.png';
 
-function applyImageStyles(element: any, responsiveStyles: any) {
-  responsiveStyles.addTargets('image');
-  responsiveStyles.applyWidth('image');
-  return responsiveStyles;
+function applyImageStyles(element: any, applyStyles: any) {
+  applyStyles.addTargets('image');
+  applyStyles.applyWidth('image');
+  applyStyles.applyHeight('image');
+  return applyStyles;
 }
 
 function ImageElement({
@@ -34,7 +35,7 @@ function ImageElement({
         src={element.properties.source_image || PLACEHOLDER_IMAGE}
         alt='Form Image'
         css={{
-          objectFit: 'contain',
+          objectFit: 'fill',
           width: '100%',
           maxHeight: '100%'
         }}
