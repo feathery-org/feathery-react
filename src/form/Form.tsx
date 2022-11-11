@@ -482,20 +482,6 @@ function Form({
     return { fieldIDs, fieldKeys };
   }
 
-  // Update the map we maintain to track files that have already been uploaded to S3
-  // This means nulling the existing mapping because the user uploaded a new file
-  function clearFilePathMapEntry(key: any, index = null) {
-    if (index !== null) {
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-      if (!filePathMap[key]) filePathMap[key] = [];
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-      filePathMap[key][index] = null;
-    } else {
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-      filePathMap[key] = null;
-    }
-  }
-
   // Debouncing the validateElements call to rate limit calls
   const debouncedValidate = useCallback(
     debounce((setInlineErrors: any) => {
@@ -1462,7 +1448,6 @@ function Form({
     elementOnView,
     onViewElements,
     formSettings,
-    clearFilePathMapEntry,
     focusRef,
     formRef,
     steps,

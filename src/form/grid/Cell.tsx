@@ -7,7 +7,8 @@ import {
   isFieldActuallyRequired,
   reactFriendlyKey,
   shouldElementHide,
-  textFieldShouldSubmit
+  textFieldShouldSubmit,
+  clearFilePathMapEntry
 } from '../../utils/formHelperFunctions';
 import { isFieldValueEmpty } from '../../utils/validation';
 import { fieldCounter } from '../Form';
@@ -48,7 +49,6 @@ const Cell = ({ node: el, form }: any) => {
     elementOnView,
     onViewElements,
     formSettings,
-    clearFilePathMapEntry,
     formRef,
     focusRef,
     steps,
