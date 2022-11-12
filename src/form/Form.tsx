@@ -913,7 +913,7 @@ function Form({
       });
     if (await invalidCheckPromise) return;
 
-    let errors;
+    let errors: { errorMessage?: string; errorField?: any } = {};
     if (buttonAction) errors = buttonAction();
     if (
       activeStep.servar_fields.find(
