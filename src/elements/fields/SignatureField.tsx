@@ -73,11 +73,17 @@ function SignatureField({
             css={{
               background: '#ffffff',
               position: 'absolute',
-              top: '1px',
-              right: '0',
+              bottom: '5px',
+              right: '5px',
               borderRadius: '6px',
               display: 'flex',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              color: 'rgb(173, 173, 173)',
+              fontSize: '14px',
+              transition: '0.15s ease-in-out all',
+              '&:hover': {
+                color: 'black'
+              }
             }}
             onClick={() => {
               signatureRef.current.clear();
@@ -85,7 +91,7 @@ function SignatureField({
               setIsClearVisible(false);
             }}
           >
-            <CloseIcon fill={closeIconColor} />
+            clear
           </div>
         )}
         <SignatureCanvas
