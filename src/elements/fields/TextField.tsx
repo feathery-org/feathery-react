@@ -10,10 +10,10 @@ const MAX_TEXT_FIELD_LENGTH = 512;
 
 function escapeDefinitionChars(str: any) {
   return str
-    .replace('0', '\\0')
-    .replace('a', '\\a')
-    .replace('b', '\\b')
-    .replace('*', '\\*');
+    .replaceAll('0', '\\0')
+    .replaceAll('a', '\\a')
+    .replaceAll('b', '\\b')
+    .replaceAll('*', '\\*');
 }
 
 function constraintChar(allowed: any) {
