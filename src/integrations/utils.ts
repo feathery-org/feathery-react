@@ -1,18 +1,9 @@
 import { installPlaid } from './plaid';
-import {
-  installFirebase,
-  emailLogin as emailLoginFirebase,
-  verifySMSCode,
-  sendFirebaseLogin
-} from './firebase';
+import { installFirebase, emailLogin as emailLoginFirebase } from './firebase';
 import { initializeTagManager } from './googleTagManager';
 import { installSegment } from './segment';
-import {
-  installStytch,
-  emailLogin as emailLoginStytch,
-  sendMagicLink
-} from './stytch';
-import { installStripe, setupPaymentMethodAndPay } from './stripe';
+import { installStytch, emailLogin as emailLoginStytch } from './stytch';
+import { installStripe } from './stripe';
 import TagManager from 'react-gtm-module';
 import {
   gaInstalled,
@@ -21,10 +12,6 @@ import {
 } from './googleAnalytics';
 import { getAuthClient, initState } from '../utils/init';
 import Client from '../utils/client';
-import {
-  LINK_SEND_MAGIC_LINK,
-  LINK_SEND_SMS
-} from '../elements/basic/ButtonElement';
 
 const IMPORTED_URLS = new Set();
 

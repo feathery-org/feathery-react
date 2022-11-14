@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 
 import ReactButton from 'react-bootstrap/Button';
 import TextNodes from '../components/TextNodes';
-import { imgMaxSizeStyles, ERROR_COLOR } from '../styles';
+import { imgMaxSizeStyles, ERROR_COLOR, borderColorProps } from '../styles';
 import { adjustColor } from '../../utils/styles';
 
 const LINK_ADD_REPEATED_ROW = 'add_repeated_row';
@@ -63,13 +63,19 @@ function applyButtonStyles(element: any, applyStyles: any) {
   applyStyles.applyMargin('img', 'image_');
 
   if (element.properties.link !== LINK_NONE) {
-    applyStyles.apply('buttonHover', 'background_color', (a: any) => {
-      const color = `${adjustColor(a, -45)} !important`;
+    applyStyles.apply('buttonHover', 'background_color', (a: any, b: any) => {
+      const newColor = `${adjustColor(a, -45)} !important`;
       return {
-        backgroundColor: color,
-        borderColor: color,
+        backgroundColor: newColor,
         transition: 'background 0.3s !important'
       };
+    });
+    applyStyles.apply('buttonHover', borderColorProps, (...colors: any) => {
+      const newStyles: Record<string, string> = {};
+      borderColorProps.forEach((prop, index) => {
+        newStyles[prop] = `${adjustColor(colors[index], -45)} !important`;
+      });
+      return newStyles;
     });
   }
   if (element.styles.hover_background_color) {

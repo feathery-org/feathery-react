@@ -12,7 +12,7 @@ const borderWidthProps = [
   'border_left_width'
 ];
 
-const borderColorProps = [
+export const borderColorProps = [
   'border_top_color',
   'border_right_color',
   'border_bottom_color',
