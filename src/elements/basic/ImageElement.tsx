@@ -24,7 +24,9 @@ function ImageElement({
       css={{
         ...styles.getTarget('image'),
         maxHeight: '100%',
-        position: 'relative'
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center'
       }}
     >
       {children}

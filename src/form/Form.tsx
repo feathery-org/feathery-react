@@ -1480,6 +1480,7 @@ function Form({
     return null;
   }
 
+  const addChin = formSettings.showBrand && !isFill(activeStep.height);
   return (
     <>
       {stepLoader && (
@@ -1507,7 +1508,7 @@ function Form({
           ...stepCSS,
           ...style,
           position: 'relative',
-          marginBottom: formSettings.showBrand ? '80px' : '0',
+          marginBottom: addChin ? '80px' : '0',
           display: 'flex'
         }}
       >
@@ -1518,7 +1519,7 @@ function Form({
         )}
         {formSettings.showBrand && (
           <Watermark
-            addChin={!isFill(activeStep.height)}
+            addChin={addChin}
             brandPosition={formSettings.brandPosition}
           />
         )}
