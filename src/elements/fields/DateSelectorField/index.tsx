@@ -39,6 +39,7 @@ function DateSelectorField({
     setInternalDate(newDate);
     onChange(formatDateString(newDate));
   };
+  const [focused, setFocused] = useState(false);
 
   const servar = element.servar;
   return (
@@ -65,6 +66,8 @@ function DateSelectorField({
           selected={internalDate}
           onSelect={onDateChange} // when day is clicked
           onChange={onDateChange} // only when value has changed
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           required={required}
           autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
@@ -95,6 +98,7 @@ function DateSelectorField({
           value={value}
           element={element}
           applyStyles={applyStyles}
+          inputFocused={focused}
         />
         <InlineTooltip element={element} applyStyles={applyStyles} />
       </div>

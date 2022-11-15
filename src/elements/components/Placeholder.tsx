@@ -4,8 +4,13 @@ export default function Placeholder({
   value,
   element,
   applyStyles,
-  type = 'input'
+  type = 'input',
+  inputFocused = false
 }: any) {
+  const focusedStyles = {
+    ...applyStyles.getTarget('placeholderFocus'),
+    ...applyStyles.getTarget('placeholderActive')
+  };
   return (
     <span
       css={{
@@ -16,10 +21,8 @@ export default function Placeholder({
         top: type === 'input' ? '50%' : '0.375rem',
         ...applyStyles.getTarget('placeholder'),
         ...(value ? applyStyles.getTarget('placeholderFocus') : {}),
-        [`${type}:focus + &`]: {
-          ...applyStyles.getTarget('placeholderFocus'),
-          ...applyStyles.getTarget('placeholderActive')
-        }
+        ...(inputFocused ? focusedStyles : {}),
+        [`${type}:focus + &`]: focusedStyles
       }}
     >
       {element.properties.placeholder || ''}
