@@ -34,7 +34,6 @@ import {
   initInfo,
   initState,
   fieldValues,
-  filePathMap,
   setValues,
   FieldValues
 } from '../utils/init';
