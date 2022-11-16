@@ -9,10 +9,6 @@ import { dynamicImport } from '../integrations/utils';
 import React from 'react';
 import { fieldValues } from './init';
 
-export interface CustomValidation {
-  message?: string;
-  rules: ComparisonRule[];
-}
 export interface ResolvedCustomValidation {
   message?: string;
   rules: ResolvedComparisonRule[];
@@ -37,17 +33,24 @@ function validateElements({
   setInlineErrors: any;
 }): {
   errors: string[];
-  invalidCheckPromise: Promise<boolean>;
   inlineErrors: { [key: string]: any };
+  invalid: boolean;
 } {
   const inlineErrors = {};
   const errors = elements
     // Skip validation on hidden elements
     .filter((element: any) => !shouldElementHide({ element }))
     .reduce((errors: any, element: any) => {
-      const { key: servarKey, type = 'button' } = element.servar || {}; // if not a servar, then a button
+      let key, type;
+      if (element.servar) {
+        type = element.servar.type;
+        key = element.servar.key;
+      } else {
+        // if not a servar, then a button
+        type = 'button';
+        key = element.id;
+      }
       const message = validateElement(element);
-      const key = servarKey || element.id;
       errors[key] = message;
       if (triggerErrors) {
         setFormElementError({
@@ -62,9 +65,8 @@ function validateElements({
       }
       return errors;
     }, {});
-  let invalidCheckPromise = Promise.resolve(false);
   if (triggerErrors) {
-    invalidCheckPromise = setFormElementError({
+    setFormElementError({
       formRef,
       errorType: errorType,
       inlineErrors,
@@ -72,7 +74,11 @@ function validateElements({
       triggerErrors: true
     });
   }
-  return { errors, invalidCheckPromise, inlineErrors };
+  return {
+    errors,
+    inlineErrors,
+    invalid: Object.values(errors).some(Boolean)
+  };
 }
 
 /**
@@ -145,6 +151,7 @@ function isFieldValueEmpty(value: any, servar: any) {
       break;
     case 'file_upload':
     case 'button_group':
+    case 'multiselect':
       noVal = value.length === 0;
       break;
     case 'payment_method':
