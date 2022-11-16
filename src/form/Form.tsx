@@ -40,7 +40,12 @@ import {
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { sendFirebaseLogin, verifySMSCode } from '../integrations/firebase';
-import { googleOauthRedirect, sendMagicLink } from '../integrations/stytch';
+import {
+  googleOauthRedirect,
+  sendMagicLink,
+  sendSMSCode,
+  smsLogin
+} from '../integrations/stytch';
 import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
 import {
   usePayments,
@@ -1307,12 +1312,14 @@ function Form({
         button.properties.auth_target_field_key
       ] as string;
       if (validators.phone(phoneNum)) {
-        const authFn = () =>
-          sendFirebaseLogin({
-            fieldVal: phoneNum,
-            servar: null,
-            method: 'phone'
-          });
+        const authFn = isAuthStytch()
+          ? () => sendSMSCode({ fieldVal: phoneNum })
+          : () =>
+              sendFirebaseLogin({
+                fieldVal: phoneNum,
+                servar: null,
+                method: 'phone'
+              });
         clickPromise = authNavAndSubmit(authFn);
       } else {
         setError('A valid phone number is needed to send your login code.');
@@ -1322,8 +1329,10 @@ function Form({
         button.properties.auth_target_field_key
       ] as string;
 
-      const authFn = () =>
-        verifySMSCode({ fieldVal: pin, servar: null, method: client });
+      const params = { fieldVal: pin, featheryClient: client };
+      const authFn = isAuthStytch()
+        ? () => smsLogin(params)
+        : () => verifySMSCode(params);
       clickPromise = authNavAndSubmit(authFn).catch(() => {
         setError('Your code is not valid.');
       });
