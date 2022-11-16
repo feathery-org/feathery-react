@@ -1,6 +1,7 @@
 import getRandomBoolean from './random';
 import { fieldValues, filePathMap, initInfo } from './init';
 import { toBase64 } from './image';
+import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 
 /**
  *
@@ -114,32 +115,8 @@ const nextStepKey = (nextConditions: any, metadata: any) => {
     .forEach((cond: any) => {
       if (newKey) return;
       let rulesMet = true;
-      cond.rules.forEach((rule: any) => {
-        const userVal: any = fieldValues[rule.field_key] || '';
-        const ruleVal: any = rule.value || '';
-        let ruleMet;
-        // 2D array of values happens when a multi select row is repeated
-        if (Array.isArray(userVal) && Array.isArray(userVal[0])) {
-          ruleMet = userVal.some((val) => {
-            const equal = val.includes(ruleVal) && rule.comparison === 'equal';
-            const notEqual =
-              !val.includes(ruleVal) && rule.comparison === 'not_equal';
-            return equal || notEqual;
-          });
-        } else if (Array.isArray(userVal)) {
-          const equal =
-            userVal.includes(ruleVal) && rule.comparison === 'equal';
-          const notEqual =
-            !userVal.includes(ruleVal) && rule.comparison === 'not_equal';
-          ruleMet = equal || notEqual;
-        } else {
-          const equal = userVal === ruleVal;
-          ruleMet =
-            (equal && rule.comparison === 'equal') ||
-            (!equal && rule.comparison === 'not_equal');
-        }
-        // @ts-expect-error TS(2447): The '&=' operator is not allowed for boolean types... Remove this comment to see the full error message
-        rulesMet &= ruleMet;
+      cond.rules.forEach((rule: ResolvedComparisonRule) => {
+        rulesMet &&= evalComparisonRule(rule, fieldValues);
       });
       if (rulesMet) newKey = cond.next_step_key;
     });
@@ -300,55 +277,6 @@ function getInlineError(field: any, inlineErrors: any) {
   return data.message;
 }
 
-/**
- * Determines if the provided element should be hidden based on its "hide-if" rules.
- */
-function shouldElementHide({ fields, element }: any) {
-  // eslint-disable-next-line camelcase
-  const hideIfMap = {};
-  element.hide_ifs.forEach((hideIf: any) => {
-    const index = hideIf.index;
-    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-    if (!(index in hideIfMap)) hideIfMap[index] = [hideIf];
-    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-    else hideIfMap[index].push(hideIf);
-  });
-
-  let shouldHide = false;
-  Object.values(hideIfMap).forEach((hideIfs) => {
-    if (shouldHide) return;
-    shouldHide = (hideIfs as any).every((hideIf: any) =>
-      calculateHide(hideIf, fields, element.repeat)
-    );
-  });
-  return shouldHide;
-}
-
-function calculateHide(hideIf: any, fields: any, repeat: any) {
-  // Get the target value (taking repeated elements into account)
-  let value = fieldValues[hideIf.field_key];
-  if (repeat !== undefined && Array.isArray(value)) value = value[repeat];
-
-  // If the hideIf value is an empty string, we want to match on the "empty" value of a field
-  // This could be null, undefined, an empty array, an empty string, or false
-  // Otherwise, just match the hideIf value
-  const matchValues =
-    hideIf.value === '' ? [null, undefined, [], '', false] : [hideIf.value];
-  if (hideIf.value === 'true') matchValues.push(true);
-  else if (hideIf.value === 'false') matchValues.push(false);
-
-  const matchFn = (val: any) => {
-    const comparison = matchValues.includes(val);
-    return hideIf.comparison === 'equal' ? comparison : !comparison;
-  };
-
-  if (Array.isArray(value)) {
-    return (value.length === 0 && !hideIf.value) || value.some(matchFn);
-  } else {
-    return matchFn(value);
-  }
-}
-
 function objectMap(obj: any, transform: any) {
   return Object.entries(obj).reduce((newObj, [key, val]) => {
     return { ...newObj, [key]: transform(val) };
@@ -438,7 +366,6 @@ export {
   getFieldValue,
   updateSessionValues,
   getInlineError,
-  shouldElementHide,
   setFormElementError,
   objectMap,
   fetchS3File,

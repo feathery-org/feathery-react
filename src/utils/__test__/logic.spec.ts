@@ -70,6 +70,42 @@ describe('logic', () => {
         ).toBeFalsy();
       });
     });
+    describe('field to field comparisons at a repeat index', () => {
+      it('equal (field to field indexed)', () => {
+        const op = 'equal';
+        expect(
+          evalComparisonRule(rule(op, field()), fieldValuesLR([100], [100]), 0)
+        ).toBeTruthy();
+        expect(
+          evalComparisonRule(
+            rule(op, field()),
+            fieldValuesLR([100, 200, 300], [100, 200]),
+            1
+          )
+        ).toBeTruthy();
+        expect(
+          evalComparisonRule(
+            rule(op, field()),
+            fieldValuesLR([100, 100], [100, 200]),
+            1
+          )
+        ).toBeFalsy();
+        expect(
+          evalComparisonRule(
+            rule(op, field()),
+            fieldValuesLR([100, 200, 300], [200]),
+            1
+          )
+        ).toBeTruthy();
+        expect(
+          evalComparisonRule(
+            rule(op, field()),
+            fieldValuesLR([100, 200, 300], [200]),
+            2
+          )
+        ).toBeFalsy();
+      });
+    });
 
     describe('field to free form value comparisons', () => {
       it('equal', () => {
@@ -93,7 +129,7 @@ describe('logic', () => {
         ).toBeTruthy();
         expect(
           evalComparisonRule(rule(op, '1'), fieldValues(['1', '2']))
-        ).toBeFalsy();
+        ).toBeTruthy();
         expect(
           evalComparisonRule(rule(op, '1', '2'), fieldValues(['1', '2']))
         ).toBeTruthy();
@@ -115,7 +151,7 @@ describe('logic', () => {
             rule(op, '2', '1'),
             fieldValues([['1', '2', '3'], ['1']])
           )
-        ).toBeFalsy();
+        ).toBeTruthy();
         // test object
         expect(
           evalComparisonRule(
@@ -164,9 +200,12 @@ describe('logic', () => {
         ).toBeTruthy();
         expect(
           evalComparisonRule(rule(op), fieldValues([['1', '2'], []]))
-        ).toBeFalsy();
+        ).toBeTruthy();
         expect(
           evalComparisonRule(rule(op), fieldValues([['1', '2'], null]))
+        ).toBeTruthy();
+        expect(
+          evalComparisonRule(rule(op), fieldValues([[], null]))
         ).toBeFalsy();
       });
       it('is_empty', () => {
@@ -215,6 +254,9 @@ describe('logic', () => {
         ).toBeTruthy();
         expect(
           evalComparisonRule(rule(op, 44), fieldValues([43, 46]))
+        ).toBeTruthy();
+        expect(
+          evalComparisonRule(rule(op, 44), fieldValues([42, 43]))
         ).toBeFalsy();
       });
       it('greater_than_or_equal', () => {
@@ -227,6 +269,9 @@ describe('logic', () => {
         expect(evalComparisonRule(rule(op, 44), fieldValues([]))).toBeFalsy();
         expect(
           evalComparisonRule(rule(op, 44), fieldValues([43, 46]))
+        ).toBeTruthy();
+        expect(
+          evalComparisonRule(rule(op, 44), fieldValues([42, 43]))
         ).toBeFalsy();
       });
       it('less_than', () => {
@@ -257,6 +302,9 @@ describe('logic', () => {
         ).toBeTruthy();
         expect(
           evalComparisonRule(rule(op), fieldValues([3, 4, 'a']))
+        ).toBeTruthy();
+        expect(
+          evalComparisonRule(rule(op), fieldValues(['a', '&']))
         ).toBeFalsy();
       });
       it('is_text', () => {
@@ -274,6 +322,9 @@ describe('logic', () => {
         ).toBeTruthy();
         expect(
           evalComparisonRule(rule(op), fieldValues(['a', '3']))
+        ).toBeTruthy();
+        expect(
+          evalComparisonRule(rule(op), fieldValues(['2', '3']))
         ).toBeFalsy();
       });
 
@@ -302,6 +353,12 @@ describe('logic', () => {
           evalComparisonRule(
             rule(op, 'test'),
             fieldValues(['test', 'non-matching'])
+          )
+        ).toBeTruthy();
+        expect(
+          evalComparisonRule(
+            rule(op, 'test'),
+            fieldValues(['not it', 'non-matching'])
           )
         ).toBeFalsy();
       });

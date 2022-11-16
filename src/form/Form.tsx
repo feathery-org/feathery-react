@@ -26,9 +26,9 @@ import {
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
-  setFormElementError,
-  shouldElementHide
+  setFormElementError
 } from '../utils/formHelperFunctions';
+import { shouldElementHide, getHideIfReferences } from '../utils/hideIfs';
 import { validators, validateElements } from '../utils/validation';
 import {
   initInfo,
@@ -336,7 +336,6 @@ function Form({
     const renderedButtons = activeStep.buttons.filter(
       (element: any) =>
         !shouldElementHide({
-          fields: activeStep.servar_fields,
           element: element
         })
     );
@@ -376,6 +375,13 @@ function Form({
         (f: any) => f.servar.type === 'gmap_line_1' && fieldValues[f.servar.key]
       )
     );
+  }, [activeStep?.id]);
+
+  // Figure out which fields are used in hide rules so that observed changes can be used
+  // to trigger rerenders
+  const hideIfFieldReferences = useMemo(() => {
+    if (activeStep) return getHideIfReferences(getAllElements(activeStep));
+    return new Set<string>();
   }, [activeStep?.id]);
 
   const scrollToRef = (ref: any) =>
@@ -474,7 +480,6 @@ function Form({
       activeStep &&
         validateElements({
           elements: [...activeStep.servar_fields, ...activeStep.buttons],
-          servars: activeStep.servar_fields,
           triggerErrors: true,
           errorType: formSettings.errorType,
           formRef,
@@ -483,21 +488,39 @@ function Form({
     }, 750),
     [activeStep?.id, formRef, validateElements]
   );
+
+  // Debouncing the re-render due to changing values of referenced fields in hide if rules.
+  // Need to rate limit re-renders here for performance reasons.
+  const debouncedRerender = useCallback(
+    debounce(() => {
+      // Re-render field/element if any field has changed that is
+      //  referenced in the field/element's hide if rule.
+      setRender((render) => !render);
+    }, 500),
+    [setRender, render]
+  );
+
   useEffect(() => {
     return () => {
       debouncedValidate.cancel();
+      debouncedRerender.cancel();
     };
-  }, [debouncedValidate]);
+  }, [debouncedValidate, debouncedRerender]);
 
   const updateFieldValues = (newFieldValues: any, rerender = true) => {
     const entries = Object.entries(newFieldValues);
-    const noChange = entries.every(([key, val]) => fieldValues[key] === val);
-    if (noChange) return false;
+    if (entries.every(([key, val]) => fieldValues[key] === val)) return false;
 
     const empty = entries.some(([key, val]) => !val || !fieldValues[key]);
+    const hideIfDependenciesChanged = entries.some(
+      ([key, val]) => fieldValues[key] !== val && hideIfFieldReferences.has(key)
+    );
+
     Object.assign(fieldValues, newFieldValues);
+
     // Always rerender from empty state for display purposes
-    if (rerender || empty) setRender((render) => !render);
+    // If any fields involved in a hideIf have changed, then trigger a re-render to re-evaluate the hide rule
+    if (rerender || empty || hideIfDependenciesChanged) debouncedRerender();
 
     // Only validate on each field change if auto validate is enabled due to prev a submit attempt
     if (autoValidate) debouncedValidate(setInlineErrors);
@@ -612,7 +635,6 @@ function Form({
       // validate all step fields and buttons
       const { errors } = validateElements({
         elements: [...newStep.servar_fields, ...newStep.buttons],
-        servars: newStep.servar_fields,
         triggerErrors: trigger,
         errorType: formSettings.errorType,
         formRef,
@@ -903,7 +925,6 @@ function Form({
     const { invalidCheckPromise, inlineErrors: newInlineErrors } =
       validateElements({
         elements: [...activeStep.servar_fields, ...activeStep.buttons],
-        servars: activeStep.servar_fields,
         triggerErrors: true,
         errorType: formSettings.errorType,
         formRef,

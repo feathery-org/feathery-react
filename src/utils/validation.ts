@@ -3,7 +3,8 @@ import {
   ComparisonRule,
   ResolvedComparisonRule
 } from './logic';
-import { setFormElementError, shouldElementHide } from './formHelperFunctions';
+import { setFormElementError } from './formHelperFunctions';
+import { shouldElementHide } from './hideIfs';
 import { dynamicImport } from '../integrations/utils';
 import React from 'react';
 import { fieldValues } from './init';
@@ -22,7 +23,6 @@ export interface ResolvedCustomValidation {
  */
 function validateElements({
   elements,
-  servars,
   triggerErrors,
   errorType,
   formRef,
@@ -30,7 +30,6 @@ function validateElements({
   setInlineErrors
 }: {
   elements: any[];
-  servars: any[];
   triggerErrors: boolean;
   errorType: string;
   formRef: React.RefObject<any>;
@@ -44,7 +43,7 @@ function validateElements({
   const inlineErrors = {};
   const errors = elements
     // Skip validation on hidden elements
-    .filter((element: any) => !shouldElementHide({ fields: servars, element }))
+    .filter((element: any) => !shouldElementHide({ element }))
     .reduce((errors: any, element: any) => {
       const { key: servarKey, type = 'button' } = element.servar || {}; // if not a servar, then a button
       const message = validateElement(element);
