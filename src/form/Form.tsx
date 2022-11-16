@@ -641,7 +641,6 @@ function Form({
         errorCallback: getErrorCallback(trigger),
         setInlineErrors
       });
-
       return errors;
     };
 
@@ -922,16 +921,15 @@ function Form({
     };
 
     // validate all step fields and buttons
-    const { invalidCheckPromise, inlineErrors: newInlineErrors } =
-      validateElements({
-        elements: [...activeStep.servar_fields, ...activeStep.buttons],
-        triggerErrors: true,
-        errorType: formSettings.errorType,
-        formRef,
-        errorCallback: getErrorCallback(trigger),
-        setInlineErrors
-      });
-    if (await invalidCheckPromise) return;
+    const { invalid, inlineErrors: newInlineErrors } = validateElements({
+      elements: [...activeStep.servar_fields, ...activeStep.buttons],
+      triggerErrors: true,
+      errorType: formSettings.errorType,
+      formRef,
+      errorCallback: getErrorCallback(trigger),
+      setInlineErrors
+    });
+    if (invalid) return;
 
     let errors: { errorMessage?: string; errorField?: any } = {};
     if (buttonAction) errors = buttonAction();
