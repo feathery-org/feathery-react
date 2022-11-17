@@ -6,6 +6,10 @@ const STYTCH_JS_URL = 'https://js.stytch.com/stytch.js';
 
 let stytchPromise: any = null;
 let config: any = null;
+// When verifying the SMS OTP we can't just provide the phone number again. We
+// need to provide this method_id from Stytch. It is in the network response
+// after sending the SMS
+let stytchPhoneMethodId = '';
 // This guard prevents a second auth attempt to stytch if the form is preloaded
 let authSent = false;
 
@@ -65,6 +69,17 @@ export function sendMagicLink({ fieldVal }: any) {
   });
 }
 
+export function sendSMSCode({ fieldVal }: any) {
+  const client = getAuthClient();
+  if (!client) return;
+
+  // need to add + in front, https://stytch.com/docs/api/log-in-or-create-user-by-sms
+  return client.otps.sms.loginOrCreate(`+${fieldVal}`).then((resp: any) => {
+    stytchPhoneMethodId = resp.method_id;
+    return resp;
+  });
+}
+
 export function emailLogin(featheryClient: any) {
   const stytchClient = getAuthClient();
   // If there is no auth client, no config or auth has already been sent, then return early
@@ -97,16 +112,32 @@ export function emailLogin(featheryClient: any) {
   }
 }
 
+export function smsLogin({ fieldVal, featheryClient }: any) {
+  const client = getAuthClient();
+  if (!client || stytchPhoneMethodId === '') return;
+
+  return client.otps
+    .authenticate(fieldVal, stytchPhoneMethodId, {
+      session_duration_minutes: config.metadata.session_duration
+    })
+    .then(() => {
+      stytchPhoneMethodId = '';
+      return featherySubmitAuthInfo(featheryClient);
+    });
+}
+
 function featherySubmitAuthInfo(featheryClient: any) {
   const stytchClient = getAuthClient();
-  // eslint-disable-next-line camelcase
-  const authId = stytchClient.session.getSync()?.user_id;
-  const authEmail = stytchClient.user.getSync()?.emails[0].email;
+  const user = stytchClient.user.getSync();
+  if (!user) return;
+
   removeStytchQueryParams();
   return featheryClient
     .submitAuthInfo({
-      authId,
-      authEmail,
+      authId: stytchClient.session.getSync()?.user_id,
+      authEmail: user.emails[0]?.email ?? '',
+      // Slice off the + from the phone number
+      authPhone: user.phone_numbers[0]?.phone_number.slice(1) ?? '',
       is_stytch_template_key: config.is_stytch_template_key
     })
     .catch(() => (authSent = false));
