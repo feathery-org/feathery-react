@@ -494,14 +494,10 @@ function Form({
     [activeStep?.id, formRef, validateElements]
   );
 
-  // Debouncing the re-render due to changing values of referenced fields in hide if rules.
+  // Debouncing the rerender due to changing values of referenced fields in hide if rules.
   // Need to rate limit re-renders here for performance reasons.
   const debouncedRerender = useCallback(
-    debounce(() => {
-      // Re-render field/element if any field has changed that is
-      //  referenced in the field/element's hide if rule.
-      setRender((render) => !render);
-    }, 500),
+    debounce(() => setRender((render) => !render), 500),
     [setRender, render]
   );
 
@@ -524,8 +520,11 @@ function Form({
     Object.assign(fieldValues, newFieldValues);
 
     // Always rerender from empty state for display purposes
-    // If any fields involved in a hideIf have changed, then trigger a re-render to re-evaluate the hide rule
-    if (rerender || empty || hideIfDependenciesChanged) debouncedRerender();
+    // If any fields involved in a hideIf have changed, then rerender if
+    // its dependencies have changed. The field that changed needs to immediately
+    // rerender if specified, but hideIf rerenders can be debounced
+    if (rerender || empty) setRender((render) => !render);
+    else if (hideIfDependenciesChanged) debouncedRerender();
 
     // Only validate on each field change if auto validate is enabled due to prev a submit attempt
     if (autoValidate) debouncedValidate(setInlineErrors);
