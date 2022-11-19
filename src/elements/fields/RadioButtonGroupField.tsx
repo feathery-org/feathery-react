@@ -73,14 +73,7 @@ function RadioButtonGroupField({
         );
       })}
       {servar.metadata.other && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            marginBottom: '18px',
-            ...styles.getTarget('radioGroup')
-          }}
-        >
+        <div style={{ display: 'flex' }}>
           <input
             type='radio'
             id={`${servar.key}-`}

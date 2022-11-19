@@ -173,6 +173,7 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyColor('field', 'font_color', 'color');
       break;
     case 'multiselect':
+      styles.applyWidth('fc');
       styles.applyCorners('field');
       styles.applyBorders({ target: 'field' });
       styles.applyBoxShadow('field');
@@ -183,6 +184,7 @@ function applyFieldStyles(field: any, styles: any) {
       }));
       break;
     case 'select':
+      styles.applyWidth('fc');
       styles.applyCorners('field');
       styles.applyBorders({ target: 'field' });
       styles.applyBoxShadow('field');

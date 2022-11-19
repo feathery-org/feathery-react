@@ -68,14 +68,7 @@ function CheckboxGroupField({
         );
       })}
       {servar.metadata.other && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            marginBottom: '18px',
-            ...styles.getTarget('checkboxGroup')
-          }}
-        >
+        <div style={{ display: 'flex' }}>
           <input
             type='checkbox'
             id={`${servar.key}-`}
@@ -91,7 +84,6 @@ function CheckboxGroupField({
             type='text'
             css={{
               marginLeft: '5px',
-              width: 'initial',
               ...bootstrapStyles,
               ...applyStyles.getTarget('field'),
               '&:focus': applyStyles.getTarget('active'),
