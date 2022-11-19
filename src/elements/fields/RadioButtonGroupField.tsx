@@ -3,12 +3,13 @@ import ReactForm from 'react-bootstrap/Form';
 import { bootstrapStyles } from '../styles';
 import {
   applyCheckableInputStyles,
+  applyHeightAndWidthByFontSize,
   composeCheckableInputStyle
 } from './CheckboxField';
 
 const applyRadioGroupStyles = (element: any, applyStyles: any) => {
   applyStyles.addTargets('radioGroup');
-  applyStyles.applyWidth('radioGroup');
+  applyHeightAndWidthByFontSize(applyStyles, 'radioGroup');
   return applyStyles;
 };
 
@@ -46,30 +47,29 @@ function RadioButtonGroupField({
       {fieldLabel}
       {servar.metadata.options.map((opt: any, i: any) => {
         return (
-          <ReactForm.Check
-            type='radio'
-            id={`${servar.key}-${i}`}
-            key={`${servar.key}-${i}`}
-            // All radio buttons in group must have same name to be evaluated
-            // together
-            name={servar.key}
-            label={opt}
-            checked={fieldVal === opt}
-            required={required}
-            onChange={onChange}
-            value={opt}
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              marginBottom: '18px',
-              padding: 0,
-              lineHeight: 'normal'
-            }}
-            css={{
-              ...composeCheckableInputStyle(styles, true, 'radio'),
-              ...styles.getTarget('radioGroup')
-            }}
-          />
+          <div key={`${servar.key}-${i}`} css={{ display: 'flex' }}>
+            <input
+              type='radio'
+              id={`${servar.key}-${i}`}
+              // All radio buttons in group must have same name to be evaluated
+              // together
+              name={servar.key}
+              checked={fieldVal === opt}
+              required={required}
+              onChange={onChange}
+              value={opt}
+              style={{
+                marginBottom: '18px',
+                padding: 0,
+                lineHeight: 'normal'
+              }}
+              css={{
+                ...composeCheckableInputStyle(styles, true, true),
+                ...styles.getTarget('radioGroup')
+              }}
+            />
+            <label htmlFor={`${servar.key}-${i}`}>{opt}</label>
+          </div>
         );
       })}
       {servar.metadata.other && (
@@ -81,12 +81,11 @@ function RadioButtonGroupField({
             ...styles.getTarget('radioGroup')
           }}
         >
-          <ReactForm.Check
+          <input
             type='radio'
             id={`${servar.key}-`}
             key={`${servar.key}-`}
             name={servar.key}
-            label='Other'
             checked={otherChecked}
             onChange={(e) => {
               setOtherSelect({
@@ -96,14 +95,10 @@ function RadioButtonGroupField({
               onChange(e);
             }}
             value={otherVal || ''}
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              padding: 0,
-              lineHeight: 'normal'
-            }}
-            css={composeCheckableInputStyle(styles, true, 'radio')}
+            style={{ padding: 0, lineHeight: 'normal' }}
+            css={composeCheckableInputStyle(styles, true, true)}
           />
+          <label htmlFor={`${servar.key}-`}>Other</label>
           <ReactForm.Control
             type='text'
             css={{

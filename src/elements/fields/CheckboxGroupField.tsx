@@ -3,12 +3,13 @@ import ReactForm from 'react-bootstrap/Form';
 import { bootstrapStyles } from '../styles';
 import {
   applyCheckableInputStyles,
+  applyHeightAndWidthByFontSize,
   composeCheckableInputStyle
 } from './CheckboxField';
 
 const applyCheckboxGroupStyles = (element: any, applyStyles: any) => {
   applyStyles.addTargets('checkboxGroup');
-  applyStyles.applyWidth('checkboxGroup');
+  applyHeightAndWidthByFontSize(applyStyles, 'checkboxGroup');
   return applyStyles;
 };
 
@@ -45,26 +46,25 @@ function CheckboxGroupField({
       {fieldLabel}
       {servar.metadata.options.map((opt: any, i: any) => {
         return (
-          <ReactForm.Check
-            type='checkbox'
-            id={`${servar.key}-${i}`}
-            key={`${servar.key}-${i}`}
-            name={opt}
-            label={opt}
-            checked={fieldVal.includes(opt)}
-            onChange={onChange}
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              marginBottom: '18px',
-              padding: 0,
-              lineHeight: 'normal'
-            }}
-            css={{
-              ...composeCheckableInputStyle(styles, true),
-              ...styles.getTarget('checkboxGroup')
-            }}
-          />
+          <div key={`${servar.key}-${i}`} css={{ display: 'flex' }}>
+            <input
+              type='checkbox'
+              id={`${servar.key}-${i}`}
+              name={opt}
+              checked={fieldVal.includes(opt)}
+              onChange={onChange}
+              style={{
+                marginBottom: '18px',
+                padding: 0,
+                lineHeight: 'normal'
+              }}
+              css={{
+                ...composeCheckableInputStyle(styles, true),
+                ...styles.getTarget('checkboxGroup')
+              }}
+            />
+            <label htmlFor={`${servar.key}-${i}`}>{opt}</label>
+          </div>
         );
       })}
       {servar.metadata.other && (
@@ -76,22 +76,17 @@ function CheckboxGroupField({
             ...styles.getTarget('checkboxGroup')
           }}
         >
-          <ReactForm.Check
+          <input
             type='checkbox'
             id={`${servar.key}-`}
             key={`${servar.key}-`}
             name={otherVal}
-            label='Other'
             checked={otherChecked}
             onChange={onChange}
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              padding: 0,
-              lineHeight: 'normal'
-            }}
+            style={{ padding: 0, lineHeight: 'normal' }}
             css={composeCheckableInputStyle(styles, true)}
           />
+          <label htmlFor={`${servar.key}-`}>Other</label>
           <ReactForm.Control
             type='text'
             css={{
