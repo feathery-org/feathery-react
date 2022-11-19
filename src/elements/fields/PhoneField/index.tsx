@@ -88,7 +88,11 @@ function PhoneField({
   }, []);
 
   useEffect(() => {
-    if (element.properties.placeholder || editMode) return;
+    const elPlaceholder = element.properties.placeholder ?? '';
+    if (editMode || elPlaceholder) {
+      setPlaceholder(elPlaceholder);
+      return;
+    }
 
     const exampleNumber = exampleNumbers[curCountryCode];
     phoneLibPromise.then(() => {
