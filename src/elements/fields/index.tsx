@@ -238,6 +238,9 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyBoxShadow('sub-fc');
       styles.applyCorners('sub-fc');
       styles.applyBorders({ target: 'sub-fc', accountForPadding: true });
+      // Corners must also be applied to input even if not visible since it could cover
+      // up the visible container corners
+      styles.applyCorners('field');
       styles.applyFontStyles('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyPlaceholderStyles(type, field.styles);
