@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import Form from 'react-bootstrap/Form';
 
 // Draws a checkmark, similar in dimensions to the default Chrome checkbox, in CSS
 const checkmarkClipPath =
@@ -32,7 +31,10 @@ const scaleCheckboxSize = (fontSize: any) => {
   return Math.max(Math.floor(fontSize * 0.5), MIN_CHECKBOX_PX);
 };
 
-const applyHeightAndWidthByFontSize = (applyStyles: any, target: any) => {
+export const applyHeightAndWidthByFontSize = (
+  applyStyles: any,
+  target: any
+) => {
   applyStyles.apply(target, ['font_size'], (fontSize: any) => {
     const scaledSize = `${scaleCheckboxSize(fontSize)}px`;
     return {
@@ -152,38 +154,35 @@ export function applyCheckableInputStyles(element: any, applyStyles: any) {
 export const composeCheckableInputStyle = (
   styles: any,
   group = false,
-  type = 'checkbox'
+  isRadio = false
 ) => {
-  const isRadio = type === 'radio';
   return {
-    [`input[type="${type}"]`]: {
-      position: 'static',
-      marginLeft: 5,
-      marginRight: group ? 10 : 5,
-      marginTop: group ? 3 : 0,
-      marginBottom: 0,
-      appearance: 'none',
-      display: 'grid',
-      placeContent: 'center',
-      borderRadius: isRadio ? '50%' : null, // Force radio buttons to be round
-      ...styles.getTarget('checkbox')
-    },
-    [`input[type="${type}"]:hover`]: {
+    position: 'static',
+    marginLeft: 5,
+    marginRight: group ? 10 : 5,
+    marginTop: group ? 3 : 0,
+    marginBottom: 0,
+    appearance: 'none',
+    display: 'grid',
+    placeContent: 'center',
+    borderRadius: isRadio ? '50%' : null, // Force radio buttons to be round
+    ...styles.getTarget('checkbox'),
+    '&:hover': {
       ...styles.getTarget('checkboxHover')
     },
-    [`input[type="${type}"]::before`]: {
+    '&::before': {
       content: "''",
       transform: 'scale(0)',
       ...styles.getTarget('checkboxCheckmark')
     },
-    [`input[type="${type}"]:hover::before`]: {
+    '&:hover::before': {
       ...styles.getTarget('checkboxCheckmark'),
       ...styles.getTarget('checkboxCheckmarkHover')
     },
-    [`input[type="${type}"]:checked`]: {
+    '&:checked': {
       ...styles.getTarget('checkboxSelected')
     },
-    [`input[type="${type}"]:checked::before`]: {
+    '&:checked::before': {
       transform: 'scale(1)'
     }
   };
@@ -215,7 +214,7 @@ function CheckboxField({
       {...elementProps}
     >
       {children}
-      <Form.Check
+      <input
         id={servar.key}
         type='checkbox'
         checked={fieldVal}
