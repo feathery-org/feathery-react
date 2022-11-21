@@ -33,6 +33,12 @@ const Fields = {
   TextArea
 };
 
+const justifyContentTextAlignMap = {
+  'flex-start': 'left',
+  center: 'center',
+  'flex-end': 'right'
+};
+
 function applyFieldStyles(field: any, styles: any) {
   styles.addTargets('fc', 'field', 'error', 'active', 'hover');
 
@@ -108,9 +114,14 @@ function applyFieldStyles(field: any, styles: any) {
       styles.apply('fc', 'vertical_layout', (a: any) => ({
         alignItems: a
       }));
-      styles.apply('fc', 'layout', (a: any) => ({
-        justifyContent: a
-      }));
+      styles.apply(
+        'fc',
+        'layout',
+        (a: keyof typeof justifyContentTextAlignMap) => ({
+          justifyContent: a,
+          textAlign: justifyContentTextAlignMap[a]
+        })
+      );
       // Cancel out extra per-button margins on the edges
       styles.apply(
         'fc',
