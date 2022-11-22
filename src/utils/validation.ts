@@ -135,6 +135,13 @@ const validators = {
       // Invalid phone number
       return false;
     }
+  },
+  url: (a: string) => {
+    try {
+      return Boolean(new URL(a));
+    } catch (e) {
+      return false;
+    }
   }
 };
 
@@ -180,6 +187,8 @@ function getStandardFieldError(value: any, servar: any) {
     return 'Invalid phone number';
   } else if (servar.type === 'email' && !validators.email(value)) {
     return 'Invalid email format';
+  } else if (servar.type === 'url' && !validators.url(value)) {
+    return 'Invalid URL';
   } else if (servar.type === 'ssn' && value.length !== 9) {
     return 'Invalid social security number';
   } else if (
