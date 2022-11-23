@@ -288,7 +288,7 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyFontStyles('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       if (field.properties.placeholder)
-        styles.applyPlaceholderStyles(type, field.styles);
+        styles.applyPlaceholderStyles(type, field.styles, type === 'text_area');
       styles.apply('tooltipIcon', 'font_size', (a: any) => ({
         width: `${a}px`
       }));

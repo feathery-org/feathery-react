@@ -416,7 +416,7 @@ class ApplyStyles {
     return styles;
   }
 
-  applyPlaceholderStyles(type: any, styles: any) {
+  applyPlaceholderStyles(type: any, styles: any, isTextArea = false) {
     this.addTargets('placeholder', 'placeholderActive', 'placeholderFocus');
     this.applyFontStyles('placeholder', true);
     this.apply('placeholder', 'font_size', (a: any) => ({
@@ -436,6 +436,16 @@ class ApplyStyles {
           fontSize: `${minFontSize}px`
         };
       });
+      this.apply(
+        'field',
+        ['height', 'height_unit', 'font_size'],
+        (a: number, b: string, c: number) => {
+          const minFontSize = Math.min(c, 10);
+          return {
+            paddingTop: isTextArea ? `${minFontSize * 2.5}px` : `${a / 3}${b}`
+          };
+        }
+      );
       if (styles.selected_placeholder_color) {
         this.apply(
           'placeholderActive',
@@ -445,10 +455,6 @@ class ApplyStyles {
           })
         );
       }
-      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
-      this.apply('field', ['height', 'height_unit'], (a, b) => ({
-        paddingTop: `${a / 3}${b}`
-      }));
     } else {
       this.setStyle('placeholderFocus', 'display', 'none');
     }
