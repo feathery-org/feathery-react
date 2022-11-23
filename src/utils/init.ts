@@ -109,29 +109,31 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
     if (options[key]) initState[key] = options[key];
   });
 
-  // dynamically load libraries that must be client side only for NextJs support
+  // NextJS support
   if (runningInClient()) {
+    // Dynamically load libraries that must be client side
     global.scriptjsLoadPromise = import('scriptjs');
     global.webfontloaderPromise = import('webfontloader');
-  }
 
-  // NextJS support - FingerprintJS.load cannot run server side
-  if (!initState.userId && runningInClient()) {
-    if (initState.userTracking === 'fingerprint') {
-      initFormsPromise = FingerprintJS.load()
-        .then((fp: any) => fp.get())
-        .then((result: any) => (initState.userId = result.visitorId));
-    } else if (initState.userTracking === 'cookie') {
-      featheryDoc()
-        .cookie.split(/; */)
-        .map((c: any) => {
-          const [key, v] = c.split('=', 2);
-          if (key === `feathery-user-id-${sdkKey}`) initState.userId = v;
-        });
-      if (!initState.userId) initState.userId = uuidv4();
-      featheryDoc().cookie = `feathery-user-id-${sdkKey}=${initState.userId}; max-age=31536000; SameSite=strict`;
+    // FingerprintJS.load cannot run server side
+    if (!initState.userId) {
+      if (initState.userTracking === 'fingerprint') {
+        initFormsPromise = FingerprintJS.load()
+          .then((fp: any) => fp.get())
+          .then((result: any) => (initState.userId = result.visitorId));
+      } else if (initState.userTracking === 'cookie') {
+        featheryDoc()
+          .cookie.split(/; */)
+          .map((c: any) => {
+            const [key, v] = c.split('=', 2);
+            if (key === `feathery-user-id-${sdkKey}`) initState.userId = v;
+          });
+        if (!initState.userId) initState.userId = uuidv4();
+        featheryDoc().cookie = `feathery-user-id-${sdkKey}=${initState.userId}; max-age=31536000; SameSite=strict`;
+      }
     }
   }
+
   if (initState.authId) {
     initFormsPromise = initFormsPromise.then(() =>
       defaultClient.submitAuthInfo({

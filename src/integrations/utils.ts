@@ -58,15 +58,16 @@ export async function initializeIntegrations(
 
   const gtm = integs['google-tag-manager'];
   if (gtm) initializeTagManager(gtm);
-  if (integs.fb || integs.stytch) inferEmailLoginFromURL(featheryClient);
+  if (integs.fb || integs.stytch) return inferEmailLoginFromURL(featheryClient);
 }
 
 export function inferEmailLoginFromURL(featheryClient: Client) {
   const queryParams = new URLSearchParams(window.location.search);
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
-  if (isAuthStytch() || (type && token)) emailLoginStytch(featheryClient);
-  else emailLoginFirebase(featheryClient);
+  if (isAuthStytch() || (type && token))
+    return emailLoginStytch(featheryClient);
+  else return emailLoginFirebase(featheryClient);
 }
 
 export function inferAuthLogout() {
