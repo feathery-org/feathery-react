@@ -153,7 +153,6 @@ function Form({
   onViewElements = [],
   initialValues = {},
   initialStepId = '',
-  usePreviousUserData = null,
   elementProps = {},
   formProps = {},
   style = {},
@@ -705,7 +704,7 @@ function Form({
             brandPosition: res.brand_position
           });
           setProductionEnv(res.production);
-          return [steps, res];
+          return steps;
         });
       // fetch values separately because this request
       // goes to Feathery origin, while the previous
@@ -713,47 +712,24 @@ function Form({
       clientInstance
         // @ts-expect-error TS(2345): Argument of type 'Promise<any[]>' is not assignabl... Remove this comment to see the full error message
         .fetchSession(formPromise, true)
-        .then(
-          ([
-            session,
-            [
-              steps,
-              {
-                save_user_location: saveUserLocation,
-                save_user_data: saveUserData
-              }
-            ]
-          ]) => {
-            updateBackNavMap(session.back_nav_map);
-            setIntegrations(session.integrations);
-            setFormCompleted(session.form_completed);
-            const usePrevious =
-              usePreviousUserData === null ? saveUserData : usePreviousUserData;
-            if (!usePrevious) {
-              // Pass initial values to overwrite values when form history is off
-              clientInstance.setDefaultFormValues({
-                steps: Object.values(steps),
-                additionalValues: initialValues,
-                override: true
-              });
-            }
-            if (!isObjectEmpty(initialValues))
-              clientInstance.submitCustom(initialValues, false);
-            const hashKey = decodeURI(location.hash.substr(1));
-            const newKey =
-              initialStepId ||
-              (hashKey && hashKey in steps && hashKey) ||
-              (saveUserLocation && session.current_step_key) ||
-              (getOrigin as any)(steps).key;
-            // No hash necessary if form only has one step
-            if (Object.keys(steps).length > 1) {
-              history.replace(
-                location.pathname + location.search + `#${newKey}`
-              );
-            }
-            setStepKey(newKey);
+        .then(([session, steps]) => {
+          updateBackNavMap(session.back_nav_map);
+          setIntegrations(session.integrations);
+          setFormCompleted(session.form_completed);
+          if (!isObjectEmpty(initialValues))
+            clientInstance.submitCustom(initialValues, false);
+          const hashKey = decodeURI(location.hash.substr(1));
+          const newKey =
+            initialStepId ||
+            (hashKey && hashKey in steps && hashKey) ||
+            session.current_step_key ||
+            (getOrigin as any)(steps).key;
+          // No hash necessary if form only has one step
+          if (Object.keys(steps).length > 1) {
+            history.replace(location.pathname + location.search + `#${newKey}`);
           }
-        )
+          setStepKey(newKey);
+        })
         .catch(async (error) => {
           console.log(error);
           // Go to first step if origin fails

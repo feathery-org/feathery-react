@@ -8,6 +8,7 @@ import DateSelectorStyles from './styles';
 
 import { bootstrapStyles, ERROR_COLOR } from '../../styles';
 import { IMaskInput } from 'react-imask';
+import { parseISO } from 'date-fns';
 
 function formatDateString(date: any) {
   if (!date) return '';
@@ -32,7 +33,7 @@ function DateSelectorField({
   children
 }: any) {
   const [internalDate, setInternalDate] = useState(
-    value ? new Date(value) : ''
+    value ? parseISO(value) : ''
   );
   const onDateChange = (newDate: any) => {
     newDate = newDate ?? '';

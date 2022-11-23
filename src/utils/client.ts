@@ -1,3 +1,5 @@
+import { v4 as uuidv4 } from 'uuid';
+
 import * as errors from './error';
 import {
   fieldValues,
@@ -189,12 +191,8 @@ export default class Client {
     return this._fetch(url, options);
   }
 
-  setDefaultFormValues({
-    steps,
-    additionalValues = {},
-    override = false
-  }: any) {
-    let values = {};
+  setDefaultFormValues({ steps, additionalValues }: any) {
+    const values = {};
     steps.forEach((step: any) => {
       step.servar_fields.forEach((field: any) => {
         const { key, repeated, type } = field.servar;
@@ -214,9 +212,11 @@ export default class Client {
         if (type === 'file_upload') values[key] = [];
       });
     });
-    values = { ...values, ...additionalValues };
-    if (!override) values = { ...values, ...fieldValues };
-    Object.assign(fieldValues, values);
+    Object.assign(fieldValues, {
+      ...values,
+      ...additionalValues,
+      ...fieldValues
+    });
   }
 
   _loadFormPackages(res: any) {
@@ -262,7 +262,7 @@ export default class Client {
       return Promise.resolve(preloadForms[this.formKey]);
 
     const params = encodeGetParams({ form_key: this.formKey });
-    const url = `${CDN_URL}panel/v9/?${params}`;
+    const url = `${CDN_URL}panel/v10/?${params}`;
     const options: Record<string, any> = {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
@@ -321,9 +321,14 @@ export default class Client {
       session.integrations,
       this
     );
-    // @ts-expect-error TS(1345): An expression of type 'void' cannot be tested for ... Remove this comment to see the full error message
-    if (!noData) updateSessionValues(authSession ?? session);
-    return [session, formData];
+
+    const trueSession = authSession ?? session;
+    if (!noData) {
+      // Randomize user id if tracking disabled
+      if (!trueSession.track_users) initState.userId = uuidv4();
+      updateSessionValues(trueSession);
+    }
+    return [trueSession, formData];
   }
 
   submitAuthInfo({ authId, authPhone = '', authEmail = '' }: any) {
