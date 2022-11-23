@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
 import ProgressBar from 'react-bootstrap/ProgressBar';
-import { isNum } from '../../utils/primitives';
-import { openTab } from '../../utils/browser';
+import { isNum } from '../../../utils/primitives';
+import { openTab } from '../../../utils/browser';
+import SmoothBar from './components/SmoothBar';
+import SegmentBar from './components/SegmentBar';
 
 function applyProgressBarStyles(element: any, applyStyles: any) {
   applyStyles.addTargets('barContainer', 'bar');
@@ -42,43 +44,27 @@ function ProgressBarElement({
   const percent = isNum(actualProgress)
     ? actualProgress
     : Math.round((100 * curDepth) / (maxDepth || 1));
+  const BarComponent = element.properties.num_segments ? SegmentBar : SmoothBar;
   const progressBarElements = [
-    <ProgressBar
+    <BarComponent
       key='progress'
-      style={{
-        height: '0.4rem',
-        width: '100%',
-        borderRadius: 0,
-        display: 'flex',
-        backgroundColor: '#e9ecef'
-      }}
-      css={{
-        '.progress-bar': {
-          margin: '0 0 0 0 !important',
-          transition: 'width 0.6s ease',
-          ...styles.getTarget('bar')
-        }
-      }}
-      now={percent}
+      styles={styles}
+      percent={percent}
+      numSegments={element.properties.num_segments}
     />
   ];
-  const link = element.styles.font_link;
-  const cursorStyle = link ? { cursor: 'pointer' } : {};
   const completionPercentage = (
     <div
       key='completionPercentage'
-      style={{ width: '100%', textAlign: 'center', ...cursorStyle }}
-      onClick={() => {
-        if (link) openTab(link);
-      }}
+      style={{ width: '100%', textAlign: 'center' }}
     >
       {`${percent}% completed`}
     </div>
   );
   if (element.styles.percent_text_layout === 'top') {
-    progressBarElements.splice(0, 0, completionPercentage);
+    progressBarElements.unshift(completionPercentage);
   } else if (element.styles.percent_text_layout === 'bottom') {
-    progressBarElements.splice(1, 0, completionPercentage);
+    progressBarElements.push(completionPercentage);
   }
 
   return (
