@@ -13,6 +13,7 @@ const LINK_LOGOUT = 'logout';
 const LINK_NEXT = 'next';
 const LINK_NONE = 'none';
 const LINK_REMOVE_REPEATED_ROW = 'remove_repeated_row';
+const LINK_STORE_FIELD = 'store_field_value';
 const LINK_SEND_MAGIC_LINK = 'send_magic_link';
 const LINK_SEND_SMS = 'send_sms_code';
 const LINK_STRIPE = 'select_payment_product';
@@ -225,6 +226,7 @@ export {
   LINK_NEXT,
   LINK_NONE,
   LINK_REMOVE_REPEATED_ROW,
+  LINK_STORE_FIELD,
   LINK_SEND_MAGIC_LINK,
   LINK_SEND_SMS,
   LINK_STRIPE,

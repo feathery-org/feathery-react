@@ -118,6 +118,10 @@ function OtpInput({
   const [pasted, setPasted] = useState(false);
   const [rawValue, setRawValue] = useState(value.toString().split(''));
 
+  useEffect(() => {
+    if (value !== rawValue) setRawValue(value);
+  }, [value]);
+
   // Helper to return OTP from input
   const handleOtpChange = (otp: any) => {
     setRawValue(otp);
