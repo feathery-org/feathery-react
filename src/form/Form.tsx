@@ -1074,7 +1074,7 @@ function Form({
     submitPromise = null,
     submitData = false
   }: any) {
-    let eventData = {
+    let eventData: Record<string, any> = {
       step_key: activeStep.key,
       next_step_key: redirectKey,
       event: submitData ? 'complete' : 'skip'
@@ -1086,9 +1086,11 @@ function Form({
     }
 
     await callbackRef.current.all();
+    const explicitNav =
+      submitData || ['button', 'text'].includes(metadata.elementType);
     if (!redirectKey) {
-      if (submitData || ['button', 'text'].includes(metadata.elementType)) {
-        (eventData as any).completed = true;
+      if (explicitNav) {
+        eventData.completed = true;
         // @ts-expect-error TS(2531): Object is possibly 'null'.
         client.registerEvent(eventData, submitPromise).then(() => {
           setFinished(true);
@@ -1098,16 +1100,19 @@ function Form({
     } else {
       setFirst(false);
       // @ts-expect-error TS(2531): Object is possibly 'null'.
-      if (steps[redirectKey].next_conditions.length === 0)
-        (eventData as any).completed = true;
+      const nextStep = steps[redirectKey];
+      const hasNext = nextStep.buttons.some(
+        (b: any) => b.properties.link === LINK_NEXT
+      );
+      const terminalStep = !hasNext && nextStep.next_conditions.length === 0;
+      if (terminalStep) eventData.completed = true;
       // @ts-expect-error TS(2531): Object is possibly 'null'.
       client
         .registerEvent(eventData, submitPromise)
         .then(() => updateBackNavMap({ [redirectKey]: activeStep.key }));
       const newURL = getNewStepUrl(redirectKey);
-      setShouldScrollToTop(submitData || metadata.elementType === 'text');
-      if (submitData || ['button', 'text'].includes(metadata.elementType))
-        history.push(newURL);
+      setShouldScrollToTop(explicitNav);
+      if (explicitNav) history.push(newURL);
       else history.replace(newURL);
       return true;
     }
