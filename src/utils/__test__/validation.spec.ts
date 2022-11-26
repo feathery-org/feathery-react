@@ -5,6 +5,21 @@ import {
 } from '../validation';
 import { fieldValues } from '../init';
 
+jest.mock('../init', () => ({
+  initInfo: jest.fn().mockReturnValue({
+    sdkKey: 'dummy_key',
+    defaultErrors: {
+      required: 'This is a required field',
+      phone_number: 'Invalid phone number',
+      email: 'Invalid email format',
+      url: 'Invalid URL',
+      ssn: 'Invalid social security number',
+      pin_input: 'Please enter a full code'
+    }
+  }),
+  fieldValues: {}
+}));
+
 describe('validation', () => {
   const fieldKey = 'text-field-1';
   const servar = { required: true, type: 'text_field', key: fieldKey };

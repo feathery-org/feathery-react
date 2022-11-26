@@ -48,6 +48,7 @@ type InitState = {
   fieldValuesInitialized: boolean;
   validateCallbacks: { [cbKey: string]: any };
   renderCallbacks: { [cbKey: string]: any };
+  defaultErrors: Record<string, string>;
 } & Omit<InitOptions, keyof DeprecatedOptions>;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
@@ -64,6 +65,7 @@ const initState: InitState = {
   language: '',
   preloadForms: [],
   sessions: {},
+  defaultErrors: {},
   // Since all field values are fetched with each session, only fetch field
   // values on the first session request
   fieldValuesInitialized: false,

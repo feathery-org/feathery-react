@@ -286,6 +286,7 @@ export default class Client {
     const res = await this.fetchCacheForm();
     // If form is disabled, data will equal `null`
     if (!res.steps) return { steps: [], formOff: true };
+    initState.defaultErrors = res.default_errors;
     this.setDefaultFormValues({ steps: res.steps, additionalValues: initVals });
     return res;
   }
