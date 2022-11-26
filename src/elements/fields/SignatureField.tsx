@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
 import SignatureCanvas from 'react-signature-canvas';
 import { dataURLToFile, toBase64 } from '../../utils/image';
-import { CloseIcon } from '../components/icons';
 
 function SignatureField({
   element,
@@ -19,8 +18,6 @@ function SignatureField({
   const signatureRef = useRef<any>();
   const [isClearVisible, setIsClearVisible] = useState(defaultValue !== null);
   const signatureCanvasStyles = applyStyles.getTarget('field', true);
-  // Pick top border color for icon color
-  const closeIconColor = signatureCanvasStyles.borderColor.split(' ')[0];
 
   useEffect(() => {
     async function setSignatureCanvas() {
