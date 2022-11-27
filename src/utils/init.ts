@@ -78,8 +78,7 @@ const optionsAsInitState: (keyof InitOptions & keyof InitState)[] = [
   'authEmail',
   'authPhoneNumber',
   'userId',
-  'userTracking',
-  'language'
+  'userTracking'
 ];
 const fieldValues: FieldValues = {};
 const filePathMap = {};
@@ -110,6 +109,12 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
   optionsAsInitState.forEach((key) => {
     if (options[key]) initState[key] = options[key];
   });
+  if (options.language) {
+    const langPieces = options.language.split(',');
+    initState.language = langPieces
+      .map((piece) => piece.trim().slice(0, 2))
+      .join(',');
+  }
 
   // NextJS support
   if (runningInClient()) {
