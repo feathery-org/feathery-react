@@ -1,16 +1,12 @@
-import {
-  evalComparisonRule,
-  ComparisonRule,
-  ResolvedComparisonRule
-} from './logic';
+import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { setFormElementError } from './formHelperFunctions';
 import { shouldElementHide } from './hideIfs';
 import { dynamicImport } from '../integrations/utils';
 import React from 'react';
-import { fieldValues } from './init';
+import { fieldValues, initInfo } from './init';
 
 export interface ResolvedCustomValidation {
-  message?: string;
+  message: string;
   rules: ResolvedComparisonRule[];
 }
 
@@ -106,8 +102,7 @@ function validateElement(element: {
     const firstMatchingValidation = validations.find((validation) =>
       validation.rules.every((rule) => evalComparisonRule(rule, fieldValues))
     );
-    if (firstMatchingValidation)
-      return firstMatchingValidation.message || 'Invalid'; // if no message, then a default message
+    if (firstMatchingValidation) return firstMatchingValidation.message;
   }
   return '';
 }
@@ -177,25 +172,28 @@ function isFieldValueEmpty(value: any, servar: any) {
  * Returns an empty string if it's valid.
  */
 function getStandardFieldError(value: any, servar: any) {
+  const defaultErrors = initInfo().defaultErrors;
+
   if (isFieldValueEmpty(value, servar)) {
     // If no value, error if field is required
-    return servar.required ? 'This is a required field' : '';
+    return servar.required ? defaultErrors.required : '';
   }
 
+  const defaultErr = defaultErrors[servar.type];
   // Check if value is badly formatted
   if (servar.type === 'phone_number' && !validators.phone(value)) {
-    return 'Invalid phone number';
+    return defaultErr;
   } else if (servar.type === 'email' && !validators.email(value)) {
-    return 'Invalid email format';
+    return defaultErr;
   } else if (servar.type === 'url' && !validators.url(value)) {
-    return 'Invalid URL';
+    return defaultErr;
   } else if (servar.type === 'ssn' && value.length !== 9) {
-    return 'Invalid social security number';
+    return defaultErr;
   } else if (
     servar.type === 'pin_input' &&
     value.length !== servar.max_length
   ) {
-    return 'Please enter a full code';
+    return defaultErr;
   }
 
   // No error
