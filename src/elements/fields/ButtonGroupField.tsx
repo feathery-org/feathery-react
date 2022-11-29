@@ -14,12 +14,12 @@ function ButtonGroupField({
   const servar = element.servar;
   const selectedOptMap = useMemo(
     () =>
-      fieldVal === null
-        ? {}
-        : fieldVal.reduce((map: any, selected: any) => {
+      Array.isArray(fieldVal)
+        ? fieldVal.reduce((map: any, selected: any) => {
             map[selected] = true;
             return map;
-          }, {}),
+          }, {})
+        : {},
     [fieldVal]
   );
   return (
