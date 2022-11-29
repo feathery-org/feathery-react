@@ -85,9 +85,8 @@ function CheckboxGroupField({
             css={{
               marginLeft: '5px',
               ...bootstrapStyles,
-              ...applyStyles.getTarget('field'),
-              '&:focus': applyStyles.getTarget('active'),
-              '&:hover': applyStyles.getTarget('hover')
+              paddingLeft: '0.4rem',
+              ...applyStyles.getTarget('field')
             }}
             id={servar.key}
             value={otherVal || ''}

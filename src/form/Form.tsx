@@ -840,10 +840,10 @@ function Form({
     const curOtherVal = target.value;
     let curFieldVal = fieldValues[target.id];
     if (Array.isArray(curFieldVal)) {
-      if (oldOtherVal) {
-        // @ts-expect-error TS(2349): This expression is not callable.
-        curFieldVal = curFieldVal.filter((val: any) => val !== oldOtherVal);
-      }
+      // @ts-expect-error TS(2349): This expression is not callable.
+      curFieldVal = curFieldVal.filter(
+        (val: any) => val !== oldOtherVal || (!val && !oldOtherVal)
+      );
       if (curOtherVal) {
         (curFieldVal as any).push(curOtherVal);
       }
