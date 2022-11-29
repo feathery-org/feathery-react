@@ -111,7 +111,6 @@ function FileUploadField({
         flexWrap: 'wrap',
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
-        margin: isMultiple ? undefined : '0 6px 6px 0',
         ...applyStyles.getTarget('fc')
       }}
       {...elementProps}
