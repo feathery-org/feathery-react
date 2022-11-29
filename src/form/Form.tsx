@@ -114,7 +114,6 @@ export interface Props {
   onViewElements?: string[];
   initialValues?: FieldValues;
   initialStepId?: string;
-  usePreviousUserData?: null | boolean;
   elementProps?: ElementProps;
   formProps?: Record<string, any>;
   style?: { [cssProperty: string]: string };
