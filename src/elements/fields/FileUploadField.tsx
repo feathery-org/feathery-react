@@ -6,7 +6,7 @@ import { Image } from 'react-bootstrap';
 import { CloseIcon, FileUploadIcon } from '../components/icons';
 import { imgMaxSizeStyles } from '../styles';
 
-const FILE_SIZE_LIMIT = 1024 * 1024 * 10;
+const MAX_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 const NUM_FILES_LIMIT = 20;
 
 function FileUploadField({
@@ -22,7 +22,7 @@ function FileUploadField({
   const servar = element.servar;
   const showLabel = servar.name !== '';
   const isMultiple = servar.metadata.multiple;
-  const fileInput = useRef();
+  const fileInput = useRef<any>();
 
   const [rawFiles, setRawFiles] = useFileData(initialFiles);
   const thumbnailData = useThumbnailData(rawFiles);
@@ -31,16 +31,30 @@ function FileUploadField({
 
   const onClick = () => {
     if (!allowMoreFiles) return;
-    // @ts-expect-error TS(2532): Object is possibly 'undefined'.
     fileInput.current.click();
   };
 
+  const fileSizeLimit = servar.max_length || MAX_FILE_SIZE_LIMIT;
   // When the user uploads files to the multi-file upload, we just append to the existing set
   // By default the input element would just replace all the uploaded files (we don't want that)
   const onChange = async (event: any) => {
-    const files = Array.from(event.target.files).filter(
-      (file) => (file as any).size <= FILE_SIZE_LIMIT
-    );
+    const files = Array.from(event.target.files);
+    if (files.some((file: any) => file.size > fileSizeLimit)) {
+      let sizeLabel = '';
+      if (fileSizeLimit < 1024) sizeLabel = `${fileSizeLimit} bytes`;
+      else if (fileSizeLimit <= 1024 * 1024) {
+        const kbSize = Math.floor(fileSizeLimit / 1024);
+        sizeLabel = `${kbSize} kb`;
+      } else {
+        const mbSize = Math.floor(fileSizeLimit / (1024 * 1024));
+        sizeLabel = `${mbSize} mb`;
+      }
+      fileInput.current.setCustomValidity(
+        `File exceeds max size of ${sizeLabel}`
+      );
+      fileInput.current.reportValidity();
+      return;
+    }
 
     if (files.length + rawFiles.length > NUM_FILES_LIMIT) {
       // Splice off the uploaded files past the upload count
@@ -66,7 +80,6 @@ function FileUploadField({
 
     // Wipe the value of the upload element so we can upload multiple copies of the same file
     // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
-    // @ts-expect-error TS(2532): Object is possibly 'undefined'.
     fileInput.current.value = [];
   };
 
@@ -161,6 +174,7 @@ function FileUploadField({
             onClick={(event) => {
               // Stop propagation so window doesn't open up to pick another file to upload
               event.stopPropagation();
+              fileInput.current.setCustomValidity('');
               onClear(index)();
             }}
           >
@@ -196,7 +210,6 @@ function FileUploadField({
       {/* This input must always be rendered even if no files can be added so we can set field errors */}
       <input
         id={servar.key}
-        // @ts-expect-error TS(2322): Type 'MutableRefObject<undefined>' is not assignab... Remove this comment to see the full error message
         ref={fileInput}
         type='file'
         onChange={onChange}
@@ -204,10 +217,9 @@ function FileUploadField({
         accept={servar.metadata.file_types}
         style={{
           position: 'absolute',
-          height: 1,
-          width: 1,
           bottom: 0,
-          opacity: 0
+          opacity: 0,
+          zIndex: -1
         }}
       />
     </div>
