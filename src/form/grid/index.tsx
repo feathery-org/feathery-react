@@ -4,7 +4,10 @@ import ApplyStyles from '../../elements/styles';
 import { getDefaultFieldValue } from '../../utils/formHelperFunctions';
 import { TEXT_VARIABLE_PATTERN } from '../../utils/hydration';
 import { adjustColor } from '../../utils/styles';
-import { LINK_NONE, LINK_STRIPE } from '../../elements/basic/ButtonElement';
+import {
+  LINK_NONE,
+  LINK_SELECT_PRODUCT
+} from '../../elements/basic/ButtonElement';
 import { fieldValues } from '../../utils/init';
 const Grid = ({ step, form, viewport }: any) => {
   const formattedStep = formatStep(JSON.parse(JSON.stringify(step)), viewport);
@@ -172,9 +175,10 @@ const CellContainer = ({
       selected_product_id_field: selectedProductIdField
     } = properties;
 
-    const hasSubGridLink = link && ![LINK_NONE, LINK_STRIPE].includes(link);
+    const hasSubGridLink =
+      link && ![LINK_NONE, LINK_SELECT_PRODUCT].includes(link);
     const hasSubGridStripeLink =
-      link === LINK_STRIPE && productId && selectedProductIdField;
+      link === LINK_SELECT_PRODUCT && productId && selectedProductIdField;
     const subgridIsSelectable =
       !isElement && (hasSubGridLink || hasSubGridStripeLink);
 

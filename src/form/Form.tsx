@@ -69,7 +69,7 @@ import {
   LINK_TRIGGER_PLAID,
   LINK_URL,
   LINK_STORE_FIELD,
-  LINK_STRIPE,
+  LINK_SELECT_PRODUCT,
   LINK_BACK,
   LINK_NEXT,
   LINK_LOGOUT,
@@ -1213,7 +1213,7 @@ function Form({
   }
   const getButtonSelectionState = (button: ClickActionElement) => {
     const link = button.properties?.link;
-    if (link === LINK_STRIPE) {
+    if (link === LINK_SELECT_PRODUCT) {
       return isProductSelected({
         productId: button.properties.product_id,
         selectedProductIdField: button.properties.selected_product_id_field_key,
@@ -1364,7 +1364,7 @@ function Form({
       clickPromise = buttonOnSubmit(button, !button.properties.link_no_submit);
     } else if (link === LINK_BACK) {
       await goToPreviousStep();
-    } else if (link === LINK_STRIPE) {
+    } else if (link === LINK_SELECT_PRODUCT) {
       await toggleProductSelection({
         productId: button.properties.product_id,
         selectedProductIdFieldId: button.properties.selected_product_id_field,
