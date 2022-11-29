@@ -68,6 +68,7 @@ import {
   LINK_SEND_MAGIC_LINK,
   LINK_TRIGGER_PLAID,
   LINK_URL,
+  LINK_STORE_FIELD,
   LINK_STRIPE,
   LINK_BACK,
   LINK_NEXT,
@@ -1011,6 +1012,25 @@ function Form({
     }
   };
 
+  const submitStepHiddenFields = () => {
+    const isStoreFieldValueAction =
+      () =>
+      ({ properties: { link } }: any) =>
+        link === LINK_STORE_FIELD;
+    const items = [
+      ...activeStep.buttons.filter(isStoreFieldValueAction),
+      ...activeStep.subgrids.filter(isStoreFieldValueAction)
+    ];
+    const hiddenFields: Record<string, any> = {};
+    items.forEach(({ properties }: any) => {
+      const id = properties.custom_store_field;
+      const value = fieldValues[properties.custom_store_field];
+      if (value) hiddenFields[id] = value;
+    });
+    // @ts-expect-error TS(2531): Object is possibly 'null'.
+    client.submitCustom(hiddenFields);
+  };
+
   // usePayments (Stripe)
   const [getCardElement, setCardElement] = usePayments();
 
@@ -1043,6 +1063,7 @@ function Form({
   }
 
   function submitAndNavigate({ metadata, formattedFields }: any) {
+    submitStepHiddenFields();
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       let newVal = (val as any).value;
       newVal = Array.isArray(newVal)
@@ -1198,6 +1219,8 @@ function Form({
         selectedProductIdField: button.properties.selected_product_id_field_key,
         fieldValues
       });
+    } else if (link === LINK_STORE_FIELD) {
+      return Boolean(fieldValues[button.properties?.custom_store_field_key]);
     }
     return false;
   };
@@ -1352,6 +1375,13 @@ function Form({
         client,
         integrations
       });
+    } else if (link === LINK_STORE_FIELD) {
+      const { custom_store_field_key: key, custom_store_value: value } =
+        button.properties;
+
+      // Toggle 'off' the value if it has already been set
+      const newValue = { [key]: fieldValues[key] === value ? '' : value };
+      updateFieldValues(newValue);
     }
 
     await clickPromise;
