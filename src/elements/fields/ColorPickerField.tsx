@@ -118,17 +118,21 @@ function ColorPickerField({
   const [showPicker, setShowPicker] = useState(false);
   return (
     <div
-      css={{ ...applyStyles.getTarget('fc'), position: 'relative' }}
+      css={{
+        maxWidth: '100%',
+        position: 'relative',
+        pointerEvents: editMode ? 'none' : 'auto',
+        ...applyStyles.getTarget('fc')
+      }}
       {...elementProps}
     >
       {children}
       {fieldLabel}
       <div
         css={{
-          width: '36px',
-          height: '36px',
+          width: '100%',
           background: `#${fieldVal}`,
-          cursor: editMode ? 'default' : 'pointer',
+          cursor: 'pointer',
           ...applyStyles.getTarget('field')
         }}
         onClick={() => {

@@ -206,6 +206,8 @@ function applyFieldStyles(field: any, styles: any) {
       }));
       break;
     case 'hex_color':
+      styles.applyWidth('fc');
+      styles.applyHeight('field');
       styles.applyCorners('field');
       styles.applyBorders({ target: 'field' });
       break;
