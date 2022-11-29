@@ -1012,11 +1012,10 @@ function Form({
     }
   };
 
+  const isStoreFieldValueAction = (el: any) =>
+    el.properties?.link === LINK_STORE_FIELD;
+
   const submitStepHiddenFields = () => {
-    const isStoreFieldValueAction =
-      () =>
-      ({ properties: { link } }: any) =>
-        link === LINK_STORE_FIELD;
     const items = [
       ...activeStep.buttons.filter(isStoreFieldValueAction),
       ...activeStep.subgrids.filter(isStoreFieldValueAction)
