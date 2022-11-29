@@ -40,11 +40,12 @@ const justifyContentTextAlignMap = {
 };
 
 function applyFieldStyles(field: any, styles: any) {
+  const type = field.servar.type;
   styles.addTargets('fc', 'field', 'error', 'active', 'hover');
 
   styles.applyFontStyles('fc');
   styles.applySelectorStyles('active', 'selected_', true);
-  styles.applySelectorStyles('hover', 'hover_', true);
+  styles.applySelectorStyles('hover', 'hover_', type !== 'button_group');
   styles.apply('error', 'font_family', (a: any) => ({
     fontFamily: a
   }));
@@ -52,7 +53,6 @@ function applyFieldStyles(field: any, styles: any) {
     fontSize: `${a}px`
   }));
 
-  const type = field.servar.type;
   switch (type) {
     case 'signature':
       styles.applyWidth('fc');

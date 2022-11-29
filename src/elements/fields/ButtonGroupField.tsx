@@ -50,7 +50,6 @@ function ButtonGroupField({
                   'field',
                   selectedOptMap[opt] ? 'active' : ''
                 ),
-                '&:active': applyStyles.getTarget('active'),
                 '&:hover': editMode ? {} : applyStyles.getTarget('hover')
               }}
             >
