@@ -318,12 +318,13 @@ export default class Client {
     if (!response) return [];
 
     const session = await (response as any).json();
+    // Auth session only contains new field data
     const authSession = await initializeIntegrations(
       session.integrations,
       this
     );
 
-    const trueSession = authSession ?? session;
+    const trueSession = { ...session, ...authSession };
     if (!noData) {
       // Randomize user id if tracking disabled
       if (!trueSession.track_users) initState.userId = uuidv4();
