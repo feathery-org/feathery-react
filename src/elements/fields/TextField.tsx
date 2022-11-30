@@ -60,7 +60,10 @@ function getMaskProps(servar: any, value: any) {
             radix: '.',
             thousandsSeparator: ',',
             signed: false,
-            scale: 0
+            scale: 0,
+            // Larger numbers get converted to scientific notation when sent to backend
+            max: Number.MAX_SAFE_INTEGER,
+            min: Number.MIN_SAFE_INTEGER
           }
         },
         value: value.toString()
