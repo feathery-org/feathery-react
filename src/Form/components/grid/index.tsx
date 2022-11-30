@@ -1,14 +1,14 @@
 import React from 'react';
 import Cell from './Cell';
-import ApplyStyles from '../../elements/styles';
-import { getDefaultFieldValue } from '../../utils/formHelperFunctions';
-import { TEXT_VARIABLE_PATTERN } from '../../utils/hydration';
-import { adjustColor } from '../../utils/styles';
+import ApplyStyles from '../../../elements/styles';
+import { getDefaultFieldValue } from '../../../utils/formHelperFunctions';
+import { TEXT_VARIABLE_PATTERN } from '../../../utils/hydration';
+import { adjustColor } from '../../../utils/styles';
 import {
   LINK_NONE,
   LINK_SELECT_PRODUCT
-} from '../../elements/basic/ButtonElement';
-import { fieldValues } from '../../utils/init';
+} from '../../../elements/basic/ButtonElement';
+import { fieldValues } from '../../../utils/init';
 const Grid = ({ step, form, viewport }: any) => {
   const formattedStep = formatStep(JSON.parse(JSON.stringify(step)), viewport);
 
@@ -24,7 +24,14 @@ const Grid = ({ step, form, viewport }: any) => {
     if (repeatNode) addRepeatedCells(repeatNode);
   }
 
-  return <Subgrid tree={formattedStep.tree} form={form} viewport={viewport} />;
+  return (
+    <Subgrid
+      tree={formattedStep.tree}
+      form={form}
+      viewport={viewport}
+      flags={{ fieldSeen: false }}
+    />
+  );
 };
 
 const Subgrid = ({
@@ -32,7 +39,8 @@ const Subgrid = ({
   form,
   layout = null,
   axis = null,
-  viewport = 'desktop'
+  viewport = 'desktop',
+  flags
 }: any) => {
   const { buttonOnClick, getButtonSelectionState } = form;
   if (node.isElement || node.isEmpty) {
@@ -43,7 +51,7 @@ const Subgrid = ({
         axis={axis}
         layout={layout}
       >
-        {!node.isEmpty && <Cell form={form} node={node} />}
+        {!node.isEmpty && <Cell form={form} node={node} flags={flags} />}
       </CellContainer>
     );
   } else {
@@ -70,6 +78,7 @@ const Subgrid = ({
                 layout={layout}
                 form={form}
                 viewport={viewport}
+                flags={flags}
               />
             );
           })}

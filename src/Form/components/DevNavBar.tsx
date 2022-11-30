@@ -1,10 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import { getNewStepUrl, getStepDepthMap } from '../utils/formHelperFunctions';
+import {
+  getNewStepUrl,
+  getStepDepthMap
+} from '../../utils/formHelperFunctions';
 import {
   LeftChevronIcon,
   RightChevronIcon,
   DiagonalArrowIcon
-} from '../elements/components/icons';
+} from '../../elements/components/icons';
 
 const lightGrey = 'rgb(235, 239, 242)';
 

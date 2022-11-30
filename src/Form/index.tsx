@@ -76,7 +76,7 @@ import {
   LINK_VERIFY_SMS,
   SUBMITTABLE_LINKS
 } from '../elements/basic/ButtonElement';
-import DevNavBar from './DevNavBar';
+import DevNavBar from './components/DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
@@ -84,7 +84,7 @@ import { openTab, runningInClient } from '../utils/browser';
 import FormOff from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
-import Grid from './grid';
+import Grid from './components/grid';
 import { mobileBreakpointValue } from '../elements/styles';
 import {
   ContextOnChange,
@@ -99,6 +99,7 @@ import {
   IntegrationData
 } from '../types/Form';
 import usePrevious from '../hooks/usePrevious';
+import ReactPortal from './components/ReactPortal';
 
 export interface Props {
   formName: string;
@@ -115,18 +116,13 @@ export interface Props {
   onViewElements?: string[];
   initialValues?: FieldValues;
   initialStepId?: string;
+  display?: 'inline' | 'modal';
   elementProps?: ElementProps;
   formProps?: Record<string, any>;
   style?: { [cssProperty: string]: string };
   className?: string;
   children?: JSX.Element;
 }
-
-const FieldCounter = {
-  value: 0
-};
-
-export const fieldCounter = FieldCounter;
 
 const getViewport = () => {
   return window.innerWidth > mobileBreakpointValue ? 'desktop' : 'mobile';
@@ -153,6 +149,7 @@ function Form({
   onViewElements = [],
   initialValues = {},
   initialStepId = '',
+  display = 'inline',
   elementProps = {},
   formProps = {},
   style = {},
@@ -1534,31 +1531,37 @@ function Form({
           {stepLoader}
         </div>
       )}
-      <ReactForm
-        {...formProps}
-        autoComplete={formSettings.autocomplete}
-        className={className}
-        ref={formRef}
-        css={{
-          ...stepCSS,
-          ...style,
-          position: 'relative',
-          marginBottom: addChin ? '80px' : '0',
-          display: 'flex'
-        }}
-      >
-        {children}
-        <Grid step={activeStep} form={form} viewport={viewport} />
-        {!productionEnv && (
-          <DevNavBar allSteps={steps} curStep={activeStep} history={history} />
-        )}
-        {formSettings.showBrand && (
-          <Watermark
-            addChin={addChin}
-            brandPosition={formSettings.brandPosition}
-          />
-        )}
-      </ReactForm>
+      <ReactPortal portal={display === 'modal'}>
+        <ReactForm
+          {...formProps}
+          autoComplete={formSettings.autocomplete}
+          className={className}
+          ref={formRef}
+          css={{
+            ...stepCSS,
+            ...style,
+            position: 'relative',
+            marginBottom: addChin ? '80px' : '0',
+            display: 'flex'
+          }}
+        >
+          {children}
+          <Grid step={activeStep} form={form} viewport={viewport} />
+          {!productionEnv && (
+            <DevNavBar
+              allSteps={steps}
+              curStep={activeStep}
+              history={history}
+            />
+          )}
+          {formSettings.showBrand && (
+            <Watermark
+              addChin={addChin}
+              brandPosition={formSettings.brandPosition}
+            />
+          )}
+        </ReactForm>
+      </ReactPortal>
     </>
   );
 }

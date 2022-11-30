@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import Elements from './elements';
-import Form, { Props as FormProps } from './form/Form';
+import Form, { Props as FormProps } from './Form';
 import {
   init,
   updateUserId,
