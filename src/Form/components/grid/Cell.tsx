@@ -1,5 +1,5 @@
 import React from 'react';
-import Elements from '../../elements';
+import Elements from '../../../elements';
 import {
   getFieldValue,
   setFormElementError,
@@ -8,13 +8,12 @@ import {
   reactFriendlyKey,
   textFieldShouldSubmit,
   clearFilePathMapEntry
-} from '../../utils/formHelperFunctions';
-import { shouldElementHide } from '../../utils/hideIfs';
-import { isFieldValueEmpty } from '../../utils/validation';
-import { fieldCounter } from '../Form';
-import { justRemove } from '../../utils/array';
-import { isObjectEmpty, stringifyWithNull } from '../../utils/primitives';
-import { fieldValues } from '../../utils/init';
+} from '../../../utils/formHelperFunctions';
+import { shouldElementHide } from '../../../utils/hideIfs';
+import { isFieldValueEmpty } from '../../../utils/validation';
+import { justRemove } from '../../../utils/array';
+import { isObjectEmpty, stringifyWithNull } from '../../../utils/primitives';
+import { fieldValues } from '../../../utils/init';
 
 const mapFieldTypes = new Set([
   'gmap_line_1',
@@ -24,7 +23,7 @@ const mapFieldTypes = new Set([
   'gmap_zip'
 ]);
 
-const Cell = ({ node: el, form }: any) => {
+const Cell = ({ node: el, form, flags }: any) => {
   const { type } = el;
 
   const {
@@ -135,8 +134,9 @@ const Cell = ({ node: el, form }: any) => {
       />
     );
   } else if (type === 'field') {
-    fieldCounter.value++;
-    const thisCounter = fieldCounter.value;
+    const firstField = !flags.fieldSeen;
+    flags.fieldSeen = true;
+
     const index = el.repeat ?? null;
     const servar = el.servar;
     const { value: fieldVal } = getFieldValue(el);
@@ -185,7 +185,7 @@ const Cell = ({ node: el, form }: any) => {
               if (change) onChange();
             }}
             setRef={(ref: any) => {
-              if (thisCounter === 1) focusRef.current = ref;
+              if (firstField) focusRef.current = ref;
             }}
           />
         );
@@ -345,7 +345,7 @@ const Cell = ({ node: el, form }: any) => {
               if (change) onChange();
             }}
             setRef={(ref: any) => {
-              if (thisCounter === 1) focusRef.current = ref;
+              if (firstField) focusRef.current = ref;
             }}
           />
         );
@@ -359,7 +359,7 @@ const Cell = ({ node: el, form }: any) => {
               if (change) onChange();
             }}
             setRef={(ref: any) => {
-              if (thisCounter === 1) focusRef.current = ref;
+              if (firstField) focusRef.current = ref;
             }}
           />
         );
@@ -410,7 +410,7 @@ const Cell = ({ node: el, form }: any) => {
               }
             }}
             setRef={(ref: any) => {
-              if (thisCounter === 1) focusRef.current = ref;
+              if (firstField) focusRef.current = ref;
             }}
           />
         );
@@ -453,7 +453,7 @@ const Cell = ({ node: el, form }: any) => {
               }
             }}
             setRef={(ref: any) => {
-              if (thisCounter === 1) focusRef.current = ref;
+              if (firstField) focusRef.current = ref;
             }}
           />
         );

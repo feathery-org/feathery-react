@@ -1,7 +1,5 @@
 import React, { useMemo } from 'react';
-import ProgressBar from 'react-bootstrap/ProgressBar';
 import { isNum } from '../../../utils/primitives';
-import { openTab } from '../../../utils/browser';
 import SmoothBar from './components/SmoothBar';
 import SegmentBar from './components/SegmentBar';
 

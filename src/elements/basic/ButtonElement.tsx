@@ -64,7 +64,7 @@ function applyButtonStyles(element: any, applyStyles: any) {
   applyStyles.applyMargin('img', 'image_');
 
   if (element.properties.link !== LINK_NONE) {
-    applyStyles.apply('buttonHover', 'background_color', (a: any, b: any) => {
+    applyStyles.apply('buttonHover', 'background_color', (a: any) => {
       const newColor = `${adjustColor(a, -45)} !important`;
       return {
         backgroundColor: newColor,
