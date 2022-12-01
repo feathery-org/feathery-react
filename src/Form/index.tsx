@@ -135,9 +135,7 @@ const findSubmitButton = (step: any) =>
   );
 
 function Form({
-  // @ts-expect-error TS(2339): Property 'formKey' does not exist on type 'Props'.
-  formKey: _formKey,
-  formName: _formName,
+  formName,
   onChange = null,
   onLoad = null,
   onFormComplete = null,
@@ -156,7 +154,6 @@ function Form({
   className = '',
   children
 }: Props) {
-  const formKey = _formName ?? _formKey;
   const [client, setClient] = useState(null);
   const history = useHistory();
 
@@ -267,7 +264,7 @@ function Form({
 
   // All mount and unmount logic should live here
   useEffect(() => {
-    initState.renderCallbacks[formKey] = () => {
+    initState.renderCallbacks[formName] = () => {
       setRender((render) => !render);
     };
 
@@ -284,14 +281,9 @@ function Form({
         }
       }));
 
-    if (_formKey)
-      console.warn(
-        "<Form/>'s formKey prop has been deprecated. Use formName instead."
-      );
-
     return () => {
-      delete initState.renderCallbacks[formKey];
-      delete initState.validateCallbacks[formKey];
+      delete initState.renderCallbacks[formName];
+      delete initState.validateCallbacks[formName];
     };
   }, []);
 
@@ -629,9 +621,9 @@ function Form({
     setCurDepth(curDepth);
     setMaxDepth(maxDepth);
 
-    trackEvent('FeatheryStepLoad', newKey, formKey);
+    trackEvent('FeatheryStepLoad', newKey, formName);
 
-    initState.validateCallbacks[formKey] = (trigger: any) => {
+    initState.validateCallbacks[formName] = (trigger: any) => {
       // validate all step fields and buttons
       const { errors } = validateElements({
         elements: [...newStep.servar_fields, ...newStep.buttons],
@@ -676,7 +668,7 @@ function Form({
 
   useEffect(() => {
     if (client === null) {
-      const clientInstance = new Client(formKey, hasRedirected);
+      const clientInstance = new Client(formName, hasRedirected);
       // @ts-expect-error TS(2345): Argument of type 'Client' is not assignable to par... Remove this comment to see the full error message
       setClient(clientInstance);
       setFirst(true);
@@ -1076,7 +1068,7 @@ function Form({
       // @ts-expect-error TS(2531): Object is possibly 'null'.
       submitPromise = client.submitStep(featheryFields);
 
-    trackEvent('FeatheryStepSubmit', activeStep.key, formKey);
+    trackEvent('FeatheryStepSubmit', activeStep.key, formName);
 
     return goToNewStep({
       metadata,
@@ -1574,7 +1566,10 @@ function Form({
   );
 }
 
-export default function FormWithRouter(props: Props): JSX.Element | null {
+export default function FormWithRouter({
+  formName,
+  ...props
+}: Props): JSX.Element | null {
   // Check client for NextJS support
   return runningInClient() ? (
     /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */
@@ -1583,7 +1578,7 @@ export default function FormWithRouter(props: Props): JSX.Element | null {
       {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
       {/* @ts-ignore */}
       <Route path='/'>
-        <Form {...props} />
+        <Form {...props} formName={formName} key={formName} />
       </Route>
     </BrowserRouter>
   ) : null;
