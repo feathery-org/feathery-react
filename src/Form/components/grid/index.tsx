@@ -101,14 +101,14 @@ const getCellStyle = (cell: any) => {
     backgroundColor: c ? `#${c}` : null
   }));
   applyStyles.apply('cellHover', 'background_color', (a: any) => {
-    const color = `${adjustColor(a || 'ffffffff', -20)}!important`;
+    const color = `${adjustColor(a || 'ffffffff', -20)}`;
     return {
       backgroundColor: color,
       borderColor: color
     };
   });
   applyStyles.apply('cellActive', 'background_color', (a: any) => {
-    const color = `${adjustColor(a || 'ffffffff', -45)}`;
+    const color = `${adjustColor(a || 'ffffffff', -45)} !important`;
     return {
       backgroundColor: color,
       borderColor: color
@@ -191,15 +191,19 @@ const CellContainer = ({
     const subgridIsSelectable =
       !isElement && (hasSubGridLink || hasSubGridStripeLink);
 
+    const selectableStyles = {
+      cursor: 'pointer',
+      transition: '0.2s ease all',
+      ...(selected ? cellActiveStyle : {}),
+      '&:hover': cellHoverStyle
+    };
+
     return (
       <div
-        style={{
+        css={{
           ...cellContainerStyle,
           ...cellStyle,
-          ...(selected ? cellActiveStyle : {})
-        }}
-        css={{
-          '&:hover': subgridIsSelectable ? cellHoverStyle : {}
+          ...(subgridIsSelectable ? selectableStyles : {})
         }}
         onClick={onClick}
       >
