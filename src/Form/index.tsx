@@ -1019,9 +1019,10 @@ function Form({
     ];
     const hiddenFields: Record<string, any> = {};
     items.forEach(({ properties }: any) => {
-      const id = properties.custom_store_field;
-      const value = fieldValues[properties.custom_store_field];
-      if (value) hiddenFields[id] = value;
+      const fieldKey = properties.custom_store_field_key;
+      const value = fieldValues[fieldKey];
+      // need to include value === '' so that we can clear out hidden fields
+      if (value !== undefined) hiddenFields[fieldKey] = value;
     });
     // @ts-expect-error TS(2531): Object is possibly 'null'.
     client.submitCustom(hiddenFields);
@@ -1375,8 +1376,15 @@ function Form({
       const { custom_store_field_key: key, custom_store_value: value } =
         button.properties;
 
+      // TODO: get default value here for the field and set it instead of ''
+      // However, we can link to a field not on this step, in which case we can't lookup the servar in activeStep
+      // So either set to false for checkboxes, or '' for other fields
+      const defaultValue = value === true ? false : '';
+
       // Toggle 'off' the value if it has already been set
-      const newValue = { [key]: fieldValues[key] === value ? '' : value };
+      const newValue = {
+        [key]: fieldValues[key] === value ? defaultValue : value
+      };
       updateFieldValues(newValue);
     }
 

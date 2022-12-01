@@ -9,11 +9,12 @@ import {
   textFieldShouldSubmit,
   clearFilePathMapEntry
 } from '../../../utils/formHelperFunctions';
+import { isObjectEmpty, stringifyWithNull } from '../../../utils/primitives';
 import { shouldElementHide } from '../../../utils/hideIfs';
 import { isFieldValueEmpty } from '../../../utils/validation';
 import { justRemove } from '../../../utils/array';
-import { isObjectEmpty, stringifyWithNull } from '../../../utils/primitives';
 import { fieldValues } from '../../../utils/init';
+import { LINK_STORE_FIELD } from '../../../elements/basic/ButtonElement';
 
 const mapFieldTypes = new Set([
   'gmap_line_1',
@@ -101,7 +102,7 @@ const Cell = ({ node: el, form, flags }: any) => {
   else if (type === 'button') {
     let disabled = false;
     if (el.properties.disable_if_fields_incomplete) {
-      disabled = activeStep.servar_fields
+      const fieldsMissingValue = activeStep.servar_fields
         .filter(
           (field: any) =>
             !shouldElementHide({
@@ -115,6 +116,16 @@ const Cell = ({ node: el, form, flags }: any) => {
           }
           return false;
         });
+      const storeFieldButtons = activeStep.buttons.filter(
+        ({ properties }: any) => properties.link === LINK_STORE_FIELD
+      );
+      const buttonHasAValue =
+        storeFieldButtons.length === 0 ||
+        storeFieldButtons.some(
+          ({ properties }: any) =>
+            fieldValues[properties.custom_store_field_key]
+        );
+      disabled = fieldsMissingValue || !buttonHasAValue;
     }
     return (
       <Elements.ButtonElement
