@@ -148,6 +148,8 @@ export default class Client {
   }
 
   async _submitFileData(servars: any) {
+    if (servars.length === 0) return;
+
     const { userId } = initInfo();
     const url = `${API_URL}panel/step/submit/file/${userId}/`;
 
@@ -393,18 +395,18 @@ export default class Client {
   }
 
   // servars = [{key: <servarKey>, <type>: <value>}]
-  async submitStep(servars: any) {
+  submitStep(servars: any) {
     const isFileServar = (servar: any) =>
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-
-    const toAwait = [this._submitJSONData(jsonServars)];
-    if (fileServars.length > 0) toAwait.push(this._submitFileData(fileServars));
-    await Promise.all(toAwait);
+    return Promise.all([
+      this._submitJSONData(jsonServars),
+      this._submitFileData(fileServars)
+    ]);
   }
 
-  async registerEvent(eventData: any, promise = null) {
+  async registerEvent(eventData: any, promise: any = null) {
     await initFormsPromise;
     const { userId } = initInfo();
     const url = `${API_URL}event/`;
@@ -418,7 +420,7 @@ export default class Client {
       method: 'POST',
       body: JSON.stringify(data)
     };
-    if (promise) return (promise as any).then(() => this._fetch(url, options));
+    if (promise) return promise.then(() => this._fetch(url, options));
     else return this._fetch(url, options);
   }
 
