@@ -1571,15 +1571,17 @@ export default function FormWithRouter({
   ...props
 }: Props): JSX.Element | null {
   // Check client for NextJS support
-  return runningInClient() ? (
-    /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */
-    /* @ts-ignore */
-    <BrowserRouter>
-      {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
-      {/* @ts-ignore */}
-      <Route path='/'>
-        <Form {...props} formName={formName} key={formName} />
-      </Route>
-    </BrowserRouter>
-  ) : null;
+  if (formName && runningInClient())
+    return (
+      /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */
+      /* @ts-ignore */
+      <BrowserRouter>
+        {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+        {/* @ts-ignore */}
+        <Route path='/'>
+          <Form {...props} formName={formName} key={formName} />
+        </Route>
+      </BrowserRouter>
+    );
+  else return null;
 }
