@@ -170,16 +170,12 @@ function ButtonElement({
           cursor: 'default !important',
           ...styles.getTarget('buttonDisabled')
         },
-        /* Needed to style active class here to get active prop to work */
-        '&.active': editMode
-          ? styles.getTarget('button')
-          : styles.getTarget('buttonActive'),
-        '&:active:not(:disabled):not(.disabled)': editMode
-          ? styles.getTarget('button')
-          : styles.getTarget('buttonActive'),
         '&:hover:enabled': editMode
           ? styles.getTarget('button')
           : styles.getTarget('buttonHover'),
+        '&.active:enabled': editMode
+          ? styles.getTarget('button')
+          : styles.getTarget('buttonActive'),
         '&&': styles.getTarget('button')
       }}
       disabled={element.properties.link === LINK_NONE || loader || disabled}
