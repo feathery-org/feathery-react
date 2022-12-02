@@ -32,10 +32,10 @@ const scaleCheckboxSize = (fontSize: any) => {
 };
 
 export const applyHeightAndWidthByFontSize = (
-  applyStyles: any,
+  responsiveStyles: any,
   target: any
 ) => {
-  applyStyles.apply(target, ['font_size'], (fontSize: any) => {
+  responsiveStyles.apply(target, ['font_size'], (fontSize: any) => {
     const scaledSize = `${scaleCheckboxSize(fontSize)}px`;
     return {
       minHeight: scaledSize,
@@ -47,12 +47,12 @@ export const applyHeightAndWidthByFontSize = (
 };
 
 const applyCheckmarkByFontSize = (
-  applyStyles: any,
+  responsiveStyles: any,
   target: any,
   colorProperty: any,
   isRadio: any
 ) => {
-  applyStyles.apply(
+  responsiveStyles.apply(
     target,
     ['font_size', colorProperty],
     (fontSize: any, color: any) => {
@@ -62,8 +62,12 @@ const applyCheckmarkByFontSize = (
   );
 };
 
-const applyCheckmark = (applyStyles: any, target: any, colorProperty: any) => {
-  applyStyles.apply(
+const applyCheckmark = (
+  responsiveStyles: any,
+  target: any,
+  colorProperty: any
+) => {
+  responsiveStyles.apply(
     target,
     ['height', 'height_unit', 'width', 'width_unit', colorProperty],
     (height: any, heightUnit: any, width: any, widthUnit: any, color: any) => {
@@ -75,8 +79,8 @@ const applyCheckmark = (applyStyles: any, target: any, colorProperty: any) => {
   );
 };
 
-export function applyCheckableInputStyles(element: any, applyStyles: any) {
-  applyStyles.addTargets(
+export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
+  responsiveStyles.addTargets(
     'checkbox',
     'checkboxCheckmark',
     'checkboxSelected',
@@ -95,37 +99,37 @@ export function applyCheckableInputStyles(element: any, applyStyles: any) {
 
   // width/height styles
   if (scaleWithFontSize) {
-    applyHeightAndWidthByFontSize(applyStyles, 'checkbox');
-    applyHeightAndWidthByFontSize(applyStyles, 'checkboxCheckmark');
-    applyHeightAndWidthByFontSize(applyStyles, 'checkboxCheckmarkHover');
+    applyHeightAndWidthByFontSize(responsiveStyles, 'checkbox');
+    applyHeightAndWidthByFontSize(responsiveStyles, 'checkboxCheckmark');
+    applyHeightAndWidthByFontSize(responsiveStyles, 'checkboxCheckmarkHover');
     applyCheckmarkByFontSize(
-      applyStyles,
+      responsiveStyles,
       'checkboxCheckmark',
       'selected_font_color',
       isRadioGroup
     );
     applyCheckmarkByFontSize(
-      applyStyles,
+      responsiveStyles,
       'checkboxCheckmarkHover',
       'hover_font_color',
       isRadioGroup
     );
   } else {
-    applyStyles.applyHeight('checkbox');
-    applyStyles.applyWidth('checkbox');
-    applyStyles.applyHeight('checkboxCheckmark');
-    applyStyles.applyWidth('checkboxCheckmark');
-    applyStyles.applyHeight('checkboxCheckmarkHover');
-    applyStyles.applyWidth('checkboxCheckmarkHover');
+    responsiveStyles.applyHeight('checkbox');
+    responsiveStyles.applyWidth('checkbox');
+    responsiveStyles.applyHeight('checkboxCheckmark');
+    responsiveStyles.applyWidth('checkboxCheckmark');
+    responsiveStyles.applyHeight('checkboxCheckmarkHover');
+    responsiveStyles.applyWidth('checkboxCheckmarkHover');
     applyCheckmark(
-      applyStyles,
+      responsiveStyles,
       'checkboxCheckmark',
       'selected_font_color',
       // @ts-expect-error TS(2554): Expected 3 arguments, but got 4.
       isRadioGroup
     );
     applyCheckmark(
-      applyStyles,
+      responsiveStyles,
       'checkboxCheckmarkHover',
       'hover_font_color',
       // @ts-expect-error TS(2554): Expected 3 arguments, but got 4.
@@ -134,21 +138,21 @@ export function applyCheckableInputStyles(element: any, applyStyles: any) {
   }
 
   // base styles
-  applyStyles.applyBorders({ target: 'checkbox' });
-  if (!isRadioGroup) applyStyles.applyCorners('checkbox');
-  applyStyles.applyBoxShadow('checkbox');
-  applyStyles.applyColor(
+  responsiveStyles.applyBorders({ target: 'checkbox' });
+  if (!isRadioGroup) responsiveStyles.applyCorners('checkbox');
+  responsiveStyles.applyBoxShadow('checkbox');
+  responsiveStyles.applyColor(
     'checkbox',
     'background_color',
     'backgroundColor',
     true
   );
-  applyStyles.applyColor('checkbox', 'font_color', 'color', true);
+  responsiveStyles.applyColor('checkbox', 'font_color', 'color', true);
 
-  applyStyles.applySelectorStyles('checkboxHover', 'hover_', true);
-  applyStyles.applySelectorStyles('checkboxSelected', 'selected_', true);
+  responsiveStyles.applySelectorStyles('checkboxHover', 'hover_', true);
+  responsiveStyles.applySelectorStyles('checkboxSelected', 'selected_', true);
 
-  return applyStyles;
+  return responsiveStyles;
 }
 
 export const composeCheckableInputStyle = (
@@ -190,7 +194,7 @@ export const composeCheckableInputStyle = (
 
 function CheckboxField({
   element,
-  applyStyles,
+  responsiveStyles,
   fieldLabel,
   fieldVal = true,
   onChange = () => {},
@@ -198,8 +202,8 @@ function CheckboxField({
   children
 }: any) {
   const styles = useMemo(
-    () => applyCheckableInputStyles(element, applyStyles),
-    [applyStyles]
+    () => applyCheckableInputStyles(element, responsiveStyles),
+    [responsiveStyles]
   );
 
   const servar = element.servar;
@@ -207,7 +211,7 @@ function CheckboxField({
   return (
     <div
       css={{
-        ...applyStyles.getTarget('fc'),
+        ...responsiveStyles.getTarget('fc'),
         position: 'relative',
         display: 'flex'
       }}

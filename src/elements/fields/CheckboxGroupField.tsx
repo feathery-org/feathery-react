@@ -7,15 +7,15 @@ import {
   composeCheckableInputStyle
 } from './CheckboxField';
 
-const applyCheckboxGroupStyles = (element: any, applyStyles: any) => {
-  applyStyles.addTargets('checkboxGroup');
-  applyHeightAndWidthByFontSize(applyStyles, 'checkboxGroup');
-  return applyStyles;
+const applyCheckboxGroupStyles = (element: any, responsiveStyles: any) => {
+  responsiveStyles.addTargets('checkboxGroup');
+  applyHeightAndWidthByFontSize(responsiveStyles, 'checkboxGroup');
+  return responsiveStyles;
 };
 
 function CheckboxGroupField({
   element,
-  applyStyles,
+  responsiveStyles,
   fieldLabel,
   fieldVal = [],
   otherVal = '',
@@ -28,17 +28,17 @@ function CheckboxGroupField({
   const otherChecked = fieldVal.includes(otherVal);
 
   const styles = useMemo(() => {
-    applyCheckableInputStyles(element, applyStyles);
-    applyCheckboxGroupStyles(element, applyStyles);
+    applyCheckableInputStyles(element, responsiveStyles);
+    applyCheckboxGroupStyles(element, responsiveStyles);
 
-    return applyStyles;
-  }, [applyStyles]);
+    return responsiveStyles;
+  }, [responsiveStyles]);
 
   return (
     <div
       css={{
         position: 'relative',
-        ...applyStyles.getTarget('fc')
+        ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
     >
@@ -86,7 +86,7 @@ function CheckboxGroupField({
               marginLeft: '5px',
               ...bootstrapStyles,
               paddingLeft: '0.4rem',
-              ...applyStyles.getTarget('field')
+              ...responsiveStyles.getTarget('field')
             }}
             id={servar.key}
             value={otherVal || ''}

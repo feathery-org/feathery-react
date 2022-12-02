@@ -6,7 +6,7 @@ import { bootstrapStyles, ERROR_COLOR } from '../styles';
 
 function TextArea({
   element,
-  applyStyles,
+  responsiveStyles,
   fieldLabel,
   elementProps = {},
   required = false,
@@ -24,7 +24,7 @@ function TextArea({
         maxWidth: '100%',
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
-        ...applyStyles.getTarget('fc')
+        ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
     >
@@ -34,7 +34,7 @@ function TextArea({
         css={{
           position: 'relative',
           width: '100%',
-          ...applyStyles.getTarget('sub-fc')
+          ...responsiveStyles.getTarget('sub-fc')
         }}
       >
         <textarea
@@ -44,10 +44,10 @@ function TextArea({
             width: '100%',
             resize: 'none',
             ...bootstrapStyles,
-            ...applyStyles.getTarget('field'),
+            ...responsiveStyles.getTarget('field'),
             ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-            '&:focus': applyStyles.getTarget('active'),
-            '&:hover': applyStyles.getTarget('hover'),
+            '&:focus': responsiveStyles.getTarget('active'),
+            '&:hover': responsiveStyles.getTarget('hover'),
             '&:not(:focus)':
               rawValue || !element.properties.placeholder
                 ? {}
@@ -66,10 +66,10 @@ function TextArea({
         <Placeholder
           value={rawValue}
           element={element}
-          applyStyles={applyStyles}
+          responsiveStyles={responsiveStyles}
           type='textarea'
         />
-        <InlineTooltip element={element} applyStyles={applyStyles} />
+        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
       </div>
     </div>
   );

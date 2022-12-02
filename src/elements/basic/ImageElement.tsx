@@ -3,21 +3,21 @@ import React, { useMemo } from 'react';
 const PLACEHOLDER_IMAGE =
   'https://feathery.s3.us-west-1.amazonaws.com/theme-image-preview.png';
 
-function applyImageStyles(element: any, applyStyles: any) {
-  applyStyles.addTargets('image');
-  applyStyles.applyWidth('image');
-  return applyStyles;
+function applyImageStyles(element: any, responsiveStyles: any) {
+  responsiveStyles.addTargets('image');
+  responsiveStyles.applyWidth('image');
+  return responsiveStyles;
 }
 
 function ImageElement({
   element,
-  applyStyles,
+  responsiveStyles,
   elementProps = {},
   children
 }: any) {
   const styles = useMemo(
-    () => applyImageStyles(element, applyStyles),
-    [applyStyles]
+    () => applyImageStyles(element, responsiveStyles),
+    [responsiveStyles]
   );
   return (
     <div

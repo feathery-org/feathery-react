@@ -8,7 +8,7 @@ import ImageElement from './basic/ImageElement';
 import ProgressBarElement from './basic/ProgressBarElement';
 import VideoElement from './basic/VideoElement';
 
-import ApplyStyles, { mobileBreakpointKey, ERROR_COLOR } from './styles';
+import ResponsiveStyles, { mobileBreakpointKey, ERROR_COLOR } from './styles';
 
 const Basic = {
   ImageElement,
@@ -42,8 +42,8 @@ Object.entries(Elements).map(([key, Element]) => {
       onView,
       ...props
     }: any) => {
-      const applyStyles = useMemo(() => {
-        const as = new ApplyStyles(
+      const responsiveStyles = useMemo(() => {
+        const as = new ResponsiveStyles(
           element,
           ['container', 'containerWrapper'],
           !componentOnly
@@ -59,7 +59,11 @@ Object.entries(Elements).map(([key, Element]) => {
         return as;
       }, [element, componentOnly]);
       const featheryElement = (
-        <Element element={element} applyStyles={applyStyles} {...props} />
+        <Element
+          element={element}
+          responsiveStyles={responsiveStyles}
+          {...props}
+        />
       );
       const e = onView ? (
         <VisibilitySensor onChange={onView}>{featheryElement}</VisibilitySensor>
@@ -74,9 +78,9 @@ Object.entries(Elements).map(([key, Element]) => {
           </>
         );
       else {
-        const containerStyles = applyStyles.getTarget('container');
+        const containerStyles = responsiveStyles.getTarget('container');
         const containerWrapperStyles =
-          applyStyles.getTarget('containerWrapper');
+          responsiveStyles.getTarget('containerWrapper');
 
         const containerCSS = {
           ...containerStyles,
@@ -116,7 +120,7 @@ Object.entries(Elements).map(([key, Element]) => {
                     css={{
                       alignSelf: 'flex-start',
                       color: ERROR_COLOR,
-                      ...applyStyles.getTarget('error')
+                      ...responsiveStyles.getTarget('error')
                     }}
                   >
                     {inlineError}

@@ -55,30 +55,22 @@ const Cell = ({ node: el, form, flags }: any) => {
     setCardElement
   } = form;
 
-  const fieldId = el.servar?.key ?? el.id;
-  let onView;
-  if (elementOnView && onViewElements.includes(fieldId)) {
-    onView = (isVisible: any) => elementOnView(fieldId, isVisible);
-  }
-
-  if (
-    shouldElementHide({
-      element: el
-    })
-  ) {
-    return null;
-  }
+  const shouldHide = shouldElementHide({ element: el });
+  if (shouldHide) return null;
 
   const inlineError =
     formSettings.errorType === 'inline' && getInlineError(el, inlineErrors);
-  const basicProps = {
+  const basicProps: Record<string, any> = {
     key: reactFriendlyKey(el),
     componentOnly: false,
     element: el,
     elementProps: elementProps[el.id],
-    onView,
     inlineError
   };
+  const fieldId = el.servar?.key ?? el.id;
+  if (elementOnView && onViewElements.includes(fieldId))
+    basicProps.onView = (isVisible: any) => elementOnView(fieldId, isVisible);
+
   if (type === 'progress_bar')
     return (
       <Elements.ProgressBarElement
@@ -175,14 +167,10 @@ const Cell = ({ node: el, form, flags }: any) => {
 
     const required = isFieldActuallyRequired(el, repeatTriggerExists);
     const fieldProps = {
-      key: reactFriendlyKey(el),
-      element: el,
-      componentOnly: false,
+      ...basicProps,
       elementProps: elementProps[servar.key],
       autoComplete: formSettings.autocomplete,
-      inlineError,
-      required,
-      onView
+      required
     };
 
     switch (servar.type) {

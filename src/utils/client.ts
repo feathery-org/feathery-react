@@ -274,7 +274,7 @@ export default class Client {
     return this._fetch(url, options).then(async (response) => {
       if (!response) return {};
 
-      const res = await (response as any).json();
+      const res = await response.json();
       if (res.data) {
         res.steps = getABVariant(res);
         delete res.data;
@@ -319,7 +319,7 @@ export default class Client {
     const response = await this._fetch(url, options);
     if (!response) return [];
 
-    const session = await (response as any).json();
+    const session = await response.json();
     // Auth session only contains new field data
     const authSession = await initializeIntegrations(
       session.integrations,
@@ -358,7 +358,7 @@ export default class Client {
       body: JSON.stringify(data)
     };
     return this._fetch(url, options).then((response) => {
-      return (response as any).json();
+      return response ? response.json() : Promise.resolve();
     });
   }
 
@@ -435,7 +435,7 @@ export default class Client {
     const url = `${API_URL}plaid/link_token/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
     return this._fetch(url, options).then((response) =>
-      (response as any).json()
+      response ? response.json() : Promise.resolve()
     );
   }
 
@@ -454,7 +454,7 @@ export default class Client {
       body: JSON.stringify(data)
     };
     return this._fetch(url, options).then((response) =>
-      (response as any).json()
+      response ? response.json() : Promise.resolve()
     );
   }
 
@@ -463,7 +463,7 @@ export default class Client {
     const url = `${API_URL}integration/address/search/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
     return this._fetch(url, options).then((response) =>
-      (response as any).json()
+      response ? response.json() : Promise.resolve()
     );
   }
 
@@ -472,7 +472,7 @@ export default class Client {
     const url = `${API_URL}integration/address/detail/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
     return this._fetch(url, options).then((response) =>
-      (response as any).json()
+      response ? response.json() : Promise.resolve()
     );
   }
 
@@ -492,7 +492,7 @@ export default class Client {
       body: JSON.stringify(data)
     };
     return this._fetch(url, options).then((response) =>
-      (response as any).json()
+      response ? response.json() : Promise.resolve()
     );
   }
 
@@ -512,7 +512,7 @@ export default class Client {
     const url = `${API_URL}stripe/payment_method/card/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
     return this._fetch(url, options).then((response) =>
-      (response as any).json()
+      response ? response.json() : Promise.resolve()
     );
   }
 
@@ -539,7 +539,7 @@ export default class Client {
       body: JSON.stringify(data)
     };
     return this._fetch(url, options).then((response) =>
-      (response as any).json()
+      response ? response.json() : Promise.resolve()
     );
   }
 
@@ -558,7 +558,7 @@ export default class Client {
       body: JSON.stringify(Object.assign(data, extraBodyParams))
     };
     return this._fetch(url, options).then((response) =>
-      (response as any).json()
+      response ? response.json() : Promise.resolve()
     );
   }
 

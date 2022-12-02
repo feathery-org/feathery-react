@@ -14,26 +14,26 @@ function legacyAlignment(alignment: any) {
   }
 }
 
-function applyTextStyles(element: any, applyStyles: any) {
-  applyStyles.addTargets('text');
-  applyStyles.apply('text', 'layout', (a: any) => ({
+function applyTextStyles(element: any, responsiveStyles: any) {
+  responsiveStyles.addTargets('text');
+  responsiveStyles.apply('text', 'layout', (a: any) => ({
     textAlign: legacyAlignment(a)
   }));
-  applyStyles.apply('text', 'line_height', (a: any) => ({
+  responsiveStyles.apply('text', 'line_height', (a: any) => ({
     lineHeight: isNum(a) ? `${a}px` : 'normal'
   }));
-  applyStyles.apply('text', 'letter_spacing', (a: any) => ({
+  responsiveStyles.apply('text', 'letter_spacing', (a: any) => ({
     letterSpacing: isNum(a) ? `${a}px` : 'normal'
   }));
-  applyStyles.apply('text', 'text_transform', (a: any) => ({
+  responsiveStyles.apply('text', 'text_transform', (a: any) => ({
     textTransform: a || 'none'
   }));
-  return applyStyles;
+  return responsiveStyles;
 }
 
 function TextElement({
   element,
-  applyStyles,
+  responsiveStyles,
   values = null,
   editMode,
   focused = false,
@@ -44,8 +44,8 @@ function TextElement({
   children
 }: any) {
   const styles = useMemo(
-    () => applyTextStyles(element, applyStyles),
-    [applyStyles]
+    () => applyTextStyles(element, responsiveStyles),
+    [responsiveStyles]
   );
   return (
     <div
@@ -60,7 +60,7 @@ function TextElement({
       <TextNodes
         element={element}
         values={values}
-        applyStyles={applyStyles}
+        responsiveStyles={responsiveStyles}
         textSpanOnClick={textSpanOnClick}
         conditions={conditions}
         editMode={editMode}

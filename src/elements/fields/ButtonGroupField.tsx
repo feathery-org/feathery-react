@@ -3,7 +3,7 @@ import { imgMaxSizeStyles, noTextSelectStyles } from '../styles';
 
 function ButtonGroupField({
   element,
-  applyStyles,
+  responsiveStyles,
   fieldLabel,
   fieldVal = null,
   editMode,
@@ -30,7 +30,7 @@ function ButtonGroupField({
         css={{
           display: 'flex',
           flexWrap: 'wrap',
-          ...applyStyles.getTarget('fc')
+          ...responsiveStyles.getTarget('fc')
         }}
         {...elementProps}
       >
@@ -46,11 +46,11 @@ function ButtonGroupField({
                 justifyContent: 'center',
                 alignItems: 'center',
                 cursor: editMode ? 'default' : 'pointer',
-                ...applyStyles.getTargets(
+                ...responsiveStyles.getTargets(
                   'field',
                   selectedOptMap[opt] ? 'active' : ''
                 ),
-                '&:hover': editMode ? {} : applyStyles.getTarget('hover')
+                '&:hover': editMode ? {} : responsiveStyles.getTarget('hover')
               }}
             >
               {imageUrl && (
@@ -58,7 +58,7 @@ function ButtonGroupField({
                   src={imageUrl}
                   style={{
                     ...imgMaxSizeStyles,
-                    ...applyStyles.getTargets('img')
+                    ...responsiveStyles.getTargets('img')
                   }}
                 />
               )}
@@ -69,7 +69,7 @@ function ButtonGroupField({
                     maxWidth: '100%',
                     // Do not highlight text when clicking the button
                     ...noTextSelectStyles,
-                    ...applyStyles.getTarget('tc')
+                    ...responsiveStyles.getTarget('tc')
                   }}
                 >
                   {opt}
