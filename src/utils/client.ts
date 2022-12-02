@@ -319,7 +319,17 @@ export default class Client {
     const response = await this._fetch(url, options);
     if (!response) return [];
 
-    const session = await response.json();
+    const session = await response.json().catch((reason) => {
+      throw new Error(
+        reason +
+          ' ' +
+          userId +
+          ' ' +
+          this.formKey +
+          response.status +
+          response.text()
+      );
+    });
     // Auth session only contains new field data
     const authSession = await initializeIntegrations(
       session.integrations,
