@@ -21,7 +21,7 @@ function formatDateString(date: any) {
 
 function DateSelectorField({
   element,
-  applyStyles,
+  responsiveStyles,
   fieldLabel,
   elementProps = {},
   required = false,
@@ -49,7 +49,7 @@ function DateSelectorField({
         maxWidth: '100%',
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
-        ...applyStyles.getTarget('fc')
+        ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
     >
@@ -59,7 +59,7 @@ function DateSelectorField({
         css={{
           position: 'relative',
           width: '100%',
-          ...applyStyles.getTarget('sub-fc')
+          ...responsiveStyles.getTarget('sub-fc')
         }}
       >
         <DateSelectorStyles />
@@ -79,10 +79,10 @@ function DateSelectorField({
                 height: '100%',
                 width: '100%',
                 ...bootstrapStyles,
-                ...applyStyles.getTarget('field'),
+                ...responsiveStyles.getTarget('field'),
                 ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-                '&:focus': applyStyles.getTarget('active'),
-                '&:hover': applyStyles.getTarget('hover'),
+                '&:focus': responsiveStyles.getTarget('active'),
+                '&:hover': responsiveStyles.getTarget('hover'),
                 '&:not(:focus)':
                   value || !element.properties.placeholder
                     ? {}
@@ -98,10 +98,10 @@ function DateSelectorField({
         <Placeholder
           value={value}
           element={element}
-          applyStyles={applyStyles}
+          responsiveStyles={responsiveStyles}
           inputFocused={focused}
         />
-        <InlineTooltip element={element} applyStyles={applyStyles} />
+        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
       </div>
     </div>
   );

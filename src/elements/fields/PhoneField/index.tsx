@@ -23,7 +23,7 @@ const countryMap = countryData.reduce(
 
 function PhoneField({
   element,
-  applyStyles,
+  responsiveStyles,
   fieldLabel,
   fullNumber,
   elementProps = {},
@@ -123,7 +123,7 @@ function PhoneField({
         maxWidth: '100%',
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
-        ...applyStyles.getTarget('fc')
+        ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
     >
@@ -132,10 +132,10 @@ function PhoneField({
       <div
         css={{
           display: 'flex',
-          ...applyStyles.getTarget('sub-fc'),
+          ...responsiveStyles.getTarget('sub-fc'),
           ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-          '&:focus': applyStyles.getTarget('active'),
-          '&:hover': { ...applyStyles.getTarget('hover'), padding: 0 }
+          '&:focus': responsiveStyles.getTarget('active'),
+          '&:hover': { ...responsiveStyles.getTarget('hover'), padding: 0 }
         }}
       >
         <div
@@ -146,7 +146,7 @@ function PhoneField({
             alignItems: 'center',
             justifyContent: 'center',
             borderRight: '1px solid #e6e6e6',
-            ...applyStyles.getTarget('fieldToggle'),
+            ...responsiveStyles.getTarget('fieldToggle'),
             '&:hover': {
               backgroundColor: '#e6e6e6'
             }
@@ -203,7 +203,7 @@ function PhoneField({
               width: '100%',
               border: 'none',
               ...bootstrapStyles,
-              ...applyStyles.getTarget('field'),
+              ...responsiveStyles.getTarget('field'),
               '&:not(:focus)':
                 formattedNumber || !placeholder
                   ? {}
@@ -268,9 +268,12 @@ function PhoneField({
           <Placeholder
             value={formattedNumber}
             element={{ properties: { placeholder } }}
-            applyStyles={applyStyles}
+            responsiveStyles={responsiveStyles}
           />
-          <InlineTooltip element={element} applyStyles={applyStyles} />
+          <InlineTooltip
+            element={element}
+            responsiveStyles={responsiveStyles}
+          />
         </div>
       </div>
     </div>

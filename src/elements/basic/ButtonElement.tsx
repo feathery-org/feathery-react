@@ -29,8 +29,8 @@ const SUBMITTABLE_LINKS = [
   LINK_VERIFY_SMS
 ];
 
-function applyButtonStyles(element: any, applyStyles: any) {
-  applyStyles.addTargets(
+function applyButtonStyles(element: any, responsiveStyles: any) {
+  responsiveStyles.addTargets(
     'button',
     'buttonActive',
     'buttonHover',
@@ -39,15 +39,15 @@ function applyButtonStyles(element: any, applyStyles: any) {
     'img'
   );
 
-  applyStyles.apply('button', 'background_color', (a: any) => ({
+  responsiveStyles.apply('button', 'background_color', (a: any) => ({
     backgroundColor: `#${a}`
   }));
-  applyStyles.applyHeight('button');
-  applyStyles.applyWidth('button');
-  applyStyles.applyCorners('button');
-  applyStyles.applyBorders({ target: 'button' });
-  applyStyles.applyFlexAndTextAlignments('button');
-  applyStyles.apply(
+  responsiveStyles.applyHeight('button');
+  responsiveStyles.applyWidth('button');
+  responsiveStyles.applyCorners('button');
+  responsiveStyles.applyBorders({ target: 'button' });
+  responsiveStyles.applyFlexAndTextAlignments('button');
+  responsiveStyles.apply(
     'button',
     [
       'uploader_padding_top',
@@ -60,44 +60,51 @@ function applyButtonStyles(element: any, applyStyles: any) {
       padding: `${a}px ${b}px ${c}px ${d}px`
     })
   );
-  applyStyles.applyWidth('img', 'image_');
-  applyStyles.applyMargin('img', 'image_');
+  responsiveStyles.applyWidth('img', 'image_');
+  responsiveStyles.applyMargin('img', 'image_');
 
   if (element.properties.link !== LINK_NONE) {
-    applyStyles.apply('buttonHover', 'background_color', (a: any) => {
+    responsiveStyles.apply('buttonHover', 'background_color', (a: any) => {
       const newColor = `${adjustColor(a, -45)} !important`;
       return {
         backgroundColor: newColor,
         transition: 'background 0.3s !important'
       };
     });
-    applyStyles.apply('buttonHover', borderColorProps, (...colors: any) => {
-      const newStyles: Record<string, string> = {};
-      borderColorProps.forEach((prop, index) => {
-        newStyles[prop] = `${adjustColor(colors[index], -45)} !important`;
-      });
-      return newStyles;
-    });
+    responsiveStyles.apply(
+      'buttonHover',
+      borderColorProps,
+      (...colors: any) => {
+        const newStyles: Record<string, string> = {};
+        borderColorProps.forEach((prop, index) => {
+          newStyles[prop] = `${adjustColor(colors[index], -45)} !important`;
+        });
+        return newStyles;
+      }
+    );
   }
   if (element.styles.hover_background_color) {
-    applyStyles.applyColor(
+    responsiveStyles.applyColor(
       'buttonHover',
       `hover_background_color`,
       'backgroundColor',
       true
     );
   }
-  applyStyles.applyBorders({ target: 'buttonHover', prefix: 'hover_' });
+  responsiveStyles.applyBorders({ target: 'buttonHover', prefix: 'hover_' });
   if (element.styles.selected_background_color) {
-    applyStyles.applyColor(
+    responsiveStyles.applyColor(
       'buttonActive',
       `selected_background_color`,
       'backgroundColor',
       true
     );
   }
-  applyStyles.applyBorders({ target: 'buttonActive', prefix: 'selected_' });
-  applyStyles.apply('buttonDisabled', 'background_color', (a: any) => {
+  responsiveStyles.applyBorders({
+    target: 'buttonActive',
+    prefix: 'selected_'
+  });
+  responsiveStyles.apply('buttonDisabled', 'background_color', (a: any) => {
     const color = `${adjustColor(a, 45)} !important`;
     return {
       backgroundColor: color,
@@ -105,9 +112,12 @@ function applyButtonStyles(element: any, applyStyles: any) {
       transition: 'background 0.3s !important'
     };
   });
-  applyStyles.applyBorders({ target: 'buttonDisabled', prefix: 'disabled_' });
+  responsiveStyles.applyBorders({
+    target: 'buttonDisabled',
+    prefix: 'disabled_'
+  });
   if (element.styles.disabled_background_color) {
-    applyStyles.applyColor(
+    responsiveStyles.applyColor(
       'buttonDisabled',
       `disabled_background_color`,
       'backgroundColor',
@@ -115,18 +125,22 @@ function applyButtonStyles(element: any, applyStyles: any) {
     );
   }
 
-  applyStyles.apply('loader', ['height', 'height_unit'], (a: any, b: any) => {
-    const thirdHeight = Math.round(a / 3);
-    const dimension = `${thirdHeight}${b}`;
-    return { width: dimension, height: dimension };
-  });
+  responsiveStyles.apply(
+    'loader',
+    ['height', 'height_unit'],
+    (a: any, b: any) => {
+      const thirdHeight = Math.round(a / 3);
+      const dimension = `${thirdHeight}${b}`;
+      return { width: dimension, height: dimension };
+    }
+  );
 
-  return applyStyles;
+  return responsiveStyles;
 }
 
 function ButtonElement({
   element,
-  applyStyles,
+  responsiveStyles,
   values = null,
   loader = null,
   editMode,
@@ -140,8 +154,8 @@ function ButtonElement({
   children
 }: any) {
   const styles = useMemo(
-    () => applyButtonStyles(element, applyStyles),
-    [applyStyles]
+    () => applyButtonStyles(element, responsiveStyles),
+    [responsiveStyles]
   );
 
   // type=submit is important for HTML5 type validation messages
@@ -192,7 +206,7 @@ function ButtonElement({
               src={element.properties.image}
               style={{
                 ...imgMaxSizeStyles,
-                ...applyStyles.getTargets('img')
+                ...responsiveStyles.getTargets('img')
               }}
             />
           )}
@@ -200,7 +214,7 @@ function ButtonElement({
             <TextNodes
               element={element}
               values={values}
-              applyStyles={applyStyles}
+              responsiveStyles={responsiveStyles}
               editMode={editMode}
               focused={focused}
               textCallbacks={textCallbacks}

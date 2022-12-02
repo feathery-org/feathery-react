@@ -4,7 +4,7 @@ import React from 'react';
 
 export default function DropdownField({
   element,
-  applyStyles,
+  responsiveStyles,
   fieldLabel,
   inlineError,
   required = false,
@@ -39,13 +39,13 @@ export default function DropdownField({
     ));
   }
 
-  applyStyles.applyFontStyles('field', !fieldVal);
+  responsiveStyles.applyFontStyles('field', !fieldVal);
   return (
     <div
       css={{
         maxWidth: '100%',
         position: 'relative',
-        ...applyStyles.getTarget('fc')
+        ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
     >
@@ -57,13 +57,13 @@ export default function DropdownField({
           width: '100%',
           whiteSpace: 'nowrap',
           overflowX: 'hidden',
-          ...applyStyles.getTarget('sub-fc')
+          ...responsiveStyles.getTarget('sub-fc')
         }}
       >
         <select
           css={{
             ...bootstrapStyles,
-            ...applyStyles.getTarget('field'),
+            ...responsiveStyles.getTarget('field'),
             ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
             pointerEvents: editMode ? 'none' : 'auto',
             width: '100%',
@@ -74,8 +74,8 @@ export default function DropdownField({
               "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='black'/></svg>\")",
             backgroundRepeat: 'no-repeat',
             backgroundPosition: 'right 10px center',
-            '&:focus': applyStyles.getTarget('active'),
-            '&:hover': applyStyles.getTarget('hover')
+            '&:focus': responsiveStyles.getTarget('active'),
+            '&:hover': responsiveStyles.getTarget('hover')
           }}
           id={servar.key}
           value={fieldVal}
@@ -92,11 +92,11 @@ export default function DropdownField({
             left: '0.75rem',
             transition: '0.2s ease all',
             top: '50%',
-            ...applyStyles.getTarget('placeholder'),
-            ...(fieldVal ? applyStyles.getTarget('placeholderFocus') : {}),
+            ...responsiveStyles.getTarget('placeholder'),
+            ...(fieldVal ? responsiveStyles.getTarget('placeholderFocus') : {}),
             [`input:focus + &`]: {
-              ...applyStyles.getTarget('placeholderFocus'),
-              ...applyStyles.getTarget('placeholderActive')
+              ...responsiveStyles.getTarget('placeholderFocus'),
+              ...responsiveStyles.getTarget('placeholderActive')
             }
           }}
         >

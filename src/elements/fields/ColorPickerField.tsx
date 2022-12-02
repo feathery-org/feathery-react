@@ -108,7 +108,7 @@ const transparencyMap = {
 
 function ColorPickerField({
   fieldLabel,
-  applyStyles,
+  responsiveStyles,
   fieldVal = 'FFFFFFFF',
   editMode,
   onChange = () => {},
@@ -122,7 +122,7 @@ function ColorPickerField({
         maxWidth: '100%',
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
-        ...applyStyles.getTarget('fc')
+        ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
     >
@@ -133,7 +133,7 @@ function ColorPickerField({
           width: '100%',
           background: `#${fieldVal}`,
           cursor: 'pointer',
-          ...applyStyles.getTarget('field')
+          ...responsiveStyles.getTarget('field')
         }}
         onClick={() => {
           if (!editMode) setShowPicker((showPicker) => !showPicker);

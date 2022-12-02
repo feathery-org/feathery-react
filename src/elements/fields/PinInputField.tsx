@@ -14,7 +14,7 @@ function SingleOtpInput({
   onFocus,
   onBlur,
   element,
-  applyStyles,
+  responsiveStyles,
   inlineError,
   changeCodeAtFocus,
   focusPrevInput,
@@ -36,7 +36,7 @@ function SingleOtpInput({
     }
   }, [focus, input]);
 
-  applyStyles.applyBorders({
+  responsiveStyles.applyBorders({
     target: 'field',
     prefix: focus ? 'selected_' : '',
     important: false
@@ -89,9 +89,9 @@ function SingleOtpInput({
           textAlign: 'center',
           marginLeft: '8px',
           outline: 'none',
-          ...applyStyles.getTarget('field'),
+          ...responsiveStyles.getTarget('field'),
           ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-          '&:hover': applyStyles.getTarget('hover')
+          '&:hover': responsiveStyles.getTarget('hover')
         }}
         type='tel'
         ref={input}
@@ -108,7 +108,7 @@ function SingleOtpInput({
 
 function OtpInput({
   element,
-  applyStyles,
+  responsiveStyles,
   shouldFocus,
   onChange,
   value,
@@ -225,7 +225,7 @@ function OtpInput({
           }}
           onBlur={() => setActiveInput(-1)}
           element={element}
-          applyStyles={applyStyles}
+          responsiveStyles={responsiveStyles}
           inlineError={inlineError}
           changeCodeAtFocus={changeCodeAtFocus}
           focusPrevInput={focusPrevInput}
@@ -243,7 +243,7 @@ function OtpInput({
       css={{
         display: 'flex',
         flexDirection: 'row',
-        ...applyStyles.getTarget('fc')
+        ...responsiveStyles.getTarget('fc')
       }}
     >
       {renderInputs()}
@@ -253,7 +253,7 @@ function OtpInput({
 
 function PinInputField({
   element,
-  applyStyles,
+  responsiveStyles,
   fieldLabel,
   inlineError,
   shouldFocus = false,
@@ -277,7 +277,7 @@ function PinInputField({
       <OtpInput
         shouldFocus={shouldFocus}
         value={fieldVal}
-        applyStyles={applyStyles}
+        responsiveStyles={responsiveStyles}
         element={element}
         onChange={onChange}
         inlineError={inlineError}

@@ -7,15 +7,15 @@ import {
   composeCheckableInputStyle
 } from './CheckboxField';
 
-const applyRadioGroupStyles = (element: any, applyStyles: any) => {
-  applyStyles.addTargets('radioGroup');
-  applyHeightAndWidthByFontSize(applyStyles, 'radioGroup');
-  return applyStyles;
+const applyRadioGroupStyles = (element: any, responsiveStyles: any) => {
+  responsiveStyles.addTargets('radioGroup');
+  applyHeightAndWidthByFontSize(responsiveStyles, 'radioGroup');
+  return responsiveStyles;
 };
 
 function RadioButtonGroupField({
   element,
-  applyStyles,
+  responsiveStyles,
   fieldLabel,
   required = false,
   fieldVal = '',
@@ -32,15 +32,15 @@ function RadioButtonGroupField({
     (otherSelect[servar.key] || fieldVal) && fieldVal === otherVal;
 
   const styles = useMemo(() => {
-    applyCheckableInputStyles(element, applyStyles);
-    applyRadioGroupStyles(element, applyStyles);
+    applyCheckableInputStyles(element, responsiveStyles);
+    applyRadioGroupStyles(element, responsiveStyles);
 
-    return applyStyles;
-  }, [applyStyles]);
+    return responsiveStyles;
+  }, [responsiveStyles]);
 
   return (
     <div
-      css={{ ...applyStyles.getTarget('fc'), position: 'relative' }}
+      css={{ ...responsiveStyles.getTarget('fc'), position: 'relative' }}
       {...elementProps}
     >
       {children}
@@ -98,7 +98,7 @@ function RadioButtonGroupField({
               marginLeft: '5px',
               ...bootstrapStyles,
               paddingLeft: '0.4rem',
-              ...applyStyles.getTarget('field')
+              ...responsiveStyles.getTarget('field')
             }}
             id={servar.key}
             value={otherVal || ''}

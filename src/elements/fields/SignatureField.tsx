@@ -6,7 +6,7 @@ import { dataURLToFile, toBase64 } from '../../utils/image';
 function SignatureField({
   element,
   fieldLabel,
-  applyStyles,
+  responsiveStyles,
   defaultValue = null,
   editMode,
   elementProps = {},
@@ -17,7 +17,7 @@ function SignatureField({
   const servar = element.servar;
   const signatureRef = useRef<any>();
   const [isClearVisible, setIsClearVisible] = useState(defaultValue !== null);
-  const signatureCanvasStyles = applyStyles.getTarget('field', true);
+  const signatureCanvasStyles = responsiveStyles.getTarget('field', true);
 
   useEffect(() => {
     async function setSignatureCanvas() {
@@ -55,7 +55,7 @@ function SignatureField({
   return (
     <div
       css={{
-        ...applyStyles.getTarget('fc'),
+        ...responsiveStyles.getTarget('fc'),
         maxWidth: '100%',
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto'
@@ -64,7 +64,9 @@ function SignatureField({
     >
       {children}
       {fieldLabel}
-      <div css={{ position: 'relative', ...applyStyles.getTarget('sub-fc') }}>
+      <div
+        css={{ position: 'relative', ...responsiveStyles.getTarget('sub-fc') }}
+      >
         {isClearVisible && (
           <div
             css={{

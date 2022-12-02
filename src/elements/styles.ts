@@ -23,7 +23,7 @@ export const borderColorProps = [
  * Handles the translation of server-side properties into responsive CSS
  * attributes
  */
-class ApplyStyles {
+class ResponsiveStyles {
   element: any;
   handleMobile: boolean;
   mobileStyles: any;
@@ -544,5 +544,5 @@ const imgMaxSizeStyles = {
 
 const ERROR_COLOR = '#F42525';
 
-export default ApplyStyles;
+export default ResponsiveStyles;
 export { bootstrapStyles, imgMaxSizeStyles, noTextSelectStyles, ERROR_COLOR };

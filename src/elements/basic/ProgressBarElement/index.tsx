@@ -3,30 +3,30 @@ import { isNum } from '../../../utils/primitives';
 import SmoothBar from './components/SmoothBar';
 import SegmentBar from './components/SegmentBar';
 
-function applyProgressBarStyles(element: any, applyStyles: any) {
-  applyStyles.addTargets('barContainer', 'bar');
+function applyProgressBarStyles(element: any, responsiveStyles: any) {
+  responsiveStyles.addTargets('barContainer', 'bar');
 
-  applyStyles.applyFontStyles('barContainer');
-  applyStyles.apply('barContainer', 'vertical_layout', (a: any) => ({
+  responsiveStyles.applyFontStyles('barContainer');
+  responsiveStyles.apply('barContainer', 'vertical_layout', (a: any) => ({
     justifyContent: a
   }));
-  applyStyles.apply('barContainer', 'layout', (a: any) => ({
+  responsiveStyles.apply('barContainer', 'layout', (a: any) => ({
     alignItems: a
   }));
-  applyStyles.apply('barContainer', 'width', (a: any) => ({
+  responsiveStyles.apply('barContainer', 'width', (a: any) => ({
     width: `${a}%`
   }));
 
-  applyStyles.apply('bar', 'bar_color', (a: any) => ({
+  responsiveStyles.apply('bar', 'bar_color', (a: any) => ({
     backgroundColor: `#${a}`
   }));
 
-  return applyStyles;
+  return responsiveStyles;
 }
 
 function ProgressBarElement({
   element,
-  applyStyles,
+  responsiveStyles,
   progress = null,
   curDepth = 1,
   maxDepth = 1,
@@ -34,8 +34,8 @@ function ProgressBarElement({
   children
 }: any) {
   const styles = useMemo(
-    () => applyProgressBarStyles(element, applyStyles),
-    [applyStyles]
+    () => applyProgressBarStyles(element, responsiveStyles),
+    [responsiveStyles]
   );
 
   const actualProgress = progress ?? element.properties?.progress;

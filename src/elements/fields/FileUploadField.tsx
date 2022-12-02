@@ -11,7 +11,7 @@ const NUM_FILES_LIMIT = 20;
 
 function FileUploadField({
   element,
-  applyStyles,
+  responsiveStyles,
   required = false,
   editMode,
   onChange: customOnChange = () => {},
@@ -96,7 +96,7 @@ function FileUploadField({
 
   const imgStyles = {
     ...imgMaxSizeStyles,
-    ...applyStyles.getTarget('img')
+    ...responsiveStyles.getTarget('img')
   };
   const icon = element.properties.icon ? (
     <Image src={element.properties.icon} fluid style={imgStyles} />
@@ -111,7 +111,7 @@ function FileUploadField({
         flexWrap: 'wrap',
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
-        ...applyStyles.getTarget('fc')
+        ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
     >
@@ -128,7 +128,7 @@ function FileUploadField({
             alignItems: 'center',
             boxSizing: 'border-box',
             margin: isMultiple ? '0 6px 6px 0' : undefined,
-            ...applyStyles.getTarget('field')
+            ...responsiveStyles.getTarget('field')
           }}
         >
           {thumbnail ? (
@@ -197,12 +197,12 @@ function FileUploadField({
             flexDirection: 'column',
             overflow: 'hidden',
             boxSizing: 'border-box',
-            ...applyStyles.getTarget('ac')
+            ...responsiveStyles.getTarget('ac')
           }}
         >
           {icon}
           {showLabel && (
-            <div css={applyStyles.getTarget('add')}>{servar.name}</div>
+            <div css={responsiveStyles.getTarget('add')}>{servar.name}</div>
           )}
         </div>
       )}

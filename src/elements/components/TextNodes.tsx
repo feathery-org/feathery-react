@@ -25,7 +25,7 @@ const applyNewDelta = (
 function TextNodes({
   element,
   values,
-  applyStyles,
+  responsiveStyles,
   conditions = [],
   editMode,
   focused = false,
@@ -111,7 +111,7 @@ function TextNodes({
                   whiteSpace: 'pre-wrap',
                   overflowWrap: 'break-word',
                   cursor,
-                  ...applyStyles.getRichFontStyles(attrs)
+                  ...responsiveStyles.getRichFontStyles(attrs)
                 }}
                 onClick={onClick}
               >
@@ -121,7 +121,7 @@ function TextNodes({
           })}
       </span>
     );
-  }, [element, applyStyles, editableProps]);
+  }, [element, responsiveStyles, editableProps]);
 }
 
 export default TextNodes;

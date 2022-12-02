@@ -301,7 +301,7 @@ function applyFieldStyles(field: any, styles: any) {
 
 Object.entries(Fields).map(([key, Field]) => {
   // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-  Fields[key] = memo(({ element, applyStyles, ...props }) => {
+  Fields[key] = memo(({ element, responsiveStyles, ...props }) => {
     const servar = element.servar;
     const fieldLabel = servar.name ? (
       <label
@@ -315,7 +315,7 @@ Object.entries(Fields).map(([key, Field]) => {
       </label>
     ) : null;
     const styles = useMemo(
-      () => applyFieldStyles(element, applyStyles),
+      () => applyFieldStyles(element, responsiveStyles),
       [element]
     );
     return (
@@ -323,7 +323,7 @@ Object.entries(Fields).map(([key, Field]) => {
         <Field
           element={element}
           fieldLabel={fieldLabel}
-          applyStyles={styles}
+          responsiveStyles={styles}
           {...props}
         />
       </>

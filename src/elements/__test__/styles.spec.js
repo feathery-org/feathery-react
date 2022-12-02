@@ -1,4 +1,4 @@
-import ApplyStyles from '../styles';
+import ResponsiveStyles from '../styles';
 
 const TEST_COLOR_BACKGROUND = 'dddddd';
 const mockElement = {
@@ -8,13 +8,13 @@ const mockElement = {
   }
 };
 
-describe('ApplyStyles', () => {
+describe('responsiveStyles', () => {
   describe('applySelectorStyles', () => {
     it('applies selector styles to target with !important', () => {
       // Arrange
       const TEST_PREFIX = 'selected_';
       const TEST_STYLES_TARGET = 'active';
-      const objectUnderTest = new ApplyStyles(
+      const objectUnderTest = new ResponsiveStyles(
         mockElement,
         [TEST_STYLES_TARGET],
         false
@@ -41,7 +41,7 @@ describe('ApplyStyles', () => {
       // Arrange
       const TEST_PREFIX = 'selected_';
       const TEST_STYLES_TARGET = 'active';
-      const objectUnderTest = new ApplyStyles(
+      const objectUnderTest = new ResponsiveStyles(
         mockElement,
         [TEST_STYLES_TARGET],
         false

@@ -2,7 +2,7 @@ import React from 'react';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { HelpIcon } from './icons';
 
-export default function InlineTooltip({ element, applyStyles }: any) {
+export default function InlineTooltip({ element, responsiveStyles }: any) {
   const text = element.properties.tooltipText;
   return text ? (
     <OverlayTrigger
@@ -40,7 +40,7 @@ export default function InlineTooltip({ element, applyStyles }: any) {
           margin: 'auto',
           cursor: 'pointer',
           height: '100%',
-          ...applyStyles.getTarget('tooltipIcon')
+          ...responsiveStyles.getTarget('tooltipIcon')
         }}
       />
     </OverlayTrigger>

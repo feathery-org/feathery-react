@@ -1,6 +1,6 @@
 import React from 'react';
 import Cell from './Cell';
-import ApplyStyles from '../../../elements/styles';
+import ResponsiveStyles from '../../../elements/styles';
 import { getDefaultFieldValue } from '../../../utils/formHelperFunctions';
 import { TEXT_VARIABLE_PATTERN } from '../../../utils/hydration';
 import { adjustColor } from '../../../utils/styles';
@@ -89,25 +89,25 @@ const Subgrid = ({
 };
 
 const getCellStyle = (cell: any) => {
-  const applyStyles = new ApplyStyles(cell, [
+  const responsiveStyles = new ResponsiveStyles(cell, [
     'cell',
     'cellHover',
     'cellActive'
   ]);
-  applyStyles.applyBorders({ target: 'cell' });
-  applyStyles.applyCorners('cell');
-  applyStyles.applyBackgroundImageStyles('cell');
-  applyStyles.apply('cell', 'background_color', (c: any) => ({
+  responsiveStyles.applyBorders({ target: 'cell' });
+  responsiveStyles.applyCorners('cell');
+  responsiveStyles.applyBackgroundImageStyles('cell');
+  responsiveStyles.apply('cell', 'background_color', (c: any) => ({
     backgroundColor: c ? `#${c}` : null
   }));
-  applyStyles.apply('cellHover', 'background_color', (a: any) => {
+  responsiveStyles.apply('cellHover', 'background_color', (a: any) => {
     const color = `${adjustColor(a || 'ffffffff', -20)}`;
     return {
       backgroundColor: color,
       borderColor: color
     };
   });
-  applyStyles.apply('cellActive', 'background_color', (a: any) => {
+  responsiveStyles.apply('cellActive', 'background_color', (a: any) => {
     const color = `${adjustColor(a || 'ffffffff', -45)} !important`;
     return {
       backgroundColor: color,
@@ -116,9 +116,9 @@ const getCellStyle = (cell: any) => {
   });
 
   return [
-    applyStyles.getTarget('cell'),
-    applyStyles.getTarget('cellHover'),
-    applyStyles.getTarget('cellActive')
+    responsiveStyles.getTarget('cell'),
+    responsiveStyles.getTarget('cellHover'),
+    responsiveStyles.getTarget('cellActive')
   ];
 };
 

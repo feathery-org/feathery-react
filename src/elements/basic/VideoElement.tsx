@@ -22,22 +22,22 @@ function getEmbedUrl(url: any) {
   return url;
 }
 
-function applyVideoStyles(element: any, applyStyles: any) {
-  applyStyles.addTargets('video');
-  applyStyles.applyWidth('video');
-  applyStyles.applyHeight('video');
-  return applyStyles;
+function applyVideoStyles(element: any, responsiveStyles: any) {
+  responsiveStyles.addTargets('video');
+  responsiveStyles.applyWidth('video');
+  responsiveStyles.applyHeight('video');
+  return responsiveStyles;
 }
 
 function VideoElement({
   element,
-  applyStyles,
+  responsiveStyles,
   elementProps = {},
   children
 }: any) {
   const styles = useMemo(
-    () => applyVideoStyles(element, applyStyles),
-    [applyStyles]
+    () => applyVideoStyles(element, responsiveStyles),
+    [responsiveStyles]
   );
   return (
     <div

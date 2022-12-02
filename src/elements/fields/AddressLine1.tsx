@@ -16,7 +16,7 @@ const EXIT_DELAY_TIME = 200;
 
 function AddressLine1({
   element,
-  applyStyles,
+  responsiveStyles,
   fieldLabel,
   elementProps = {},
   editMode,
@@ -38,7 +38,7 @@ function AddressLine1({
         maxWidth: '100%',
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
-        ...applyStyles.getTarget('fc')
+        ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
     >
@@ -48,7 +48,7 @@ function AddressLine1({
         css={{
           position: 'relative',
           width: '100%',
-          ...applyStyles.getTarget('sub-fc')
+          ...responsiveStyles.getTarget('sub-fc')
         }}
       >
         <OverlayTrigger
@@ -97,10 +97,10 @@ function AddressLine1({
               height: '100%',
               width: '100%',
               ...bootstrapStyles,
-              ...applyStyles.getTarget('field'),
+              ...responsiveStyles.getTarget('field'),
               ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-              '&:focus': applyStyles.getTarget('active'),
-              '&:hover': applyStyles.getTarget('hover'),
+              '&:focus': responsiveStyles.getTarget('active'),
+              '&:hover': responsiveStyles.getTarget('hover'),
               '&:not(:focus)':
                 value || !element.properties.placeholder
                   ? {}
@@ -126,9 +126,9 @@ function AddressLine1({
         <Placeholder
           value={value}
           element={element}
-          applyStyles={applyStyles}
+          responsiveStyles={responsiveStyles}
         />
-        <InlineTooltip element={element} applyStyles={applyStyles} />
+        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
       </div>
     </div>
   );

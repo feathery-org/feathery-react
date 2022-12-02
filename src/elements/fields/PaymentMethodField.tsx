@@ -39,7 +39,7 @@ const supportedStripeCssProps = [
 
 const CardField = ({
   element,
-  applyStyles,
+  responsiveStyles,
   fieldLabel,
   elementProps = {},
   setCardElement = () => {},
@@ -70,24 +70,27 @@ const CardField = ({
     style: {
       base: {
         textDecoration: 'none', // Bug in card element - force the reset to none
-        ...filterKeys(applyStyles.getTarget('field'), supportedStripeCssProps),
+        ...filterKeys(
+          responsiveStyles.getTarget('field'),
+          supportedStripeCssProps
+        ),
         '::placeholder': {
           textDecoration: 'none', // Bug in card element - force the reset to none
           ...filterKeys(
-            applyStyles.getTarget('placeholder'),
+            responsiveStyles.getTarget('placeholder'),
             supportedStripeCssProps
           )
         },
         ':hover': filterKeys(
-          applyStyles.getTarget('hover'),
+          responsiveStyles.getTarget('hover'),
           supportedStripeCssProps
         ),
         ':focus': filterKeys(
-          applyStyles.getTarget('active'),
+          responsiveStyles.getTarget('active'),
           supportedStripeCssProps
         )
       },
-      complete: applyStyles.getTarget('completed'),
+      complete: responsiveStyles.getTarget('completed'),
       invalid: {
         color: ERROR_COLOR,
         iconColor: ERROR_COLOR
@@ -121,7 +124,7 @@ const CardField = ({
         maxWidth: '100%',
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
-        ...applyStyles.getTarget('fc')
+        ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
     >
@@ -135,9 +138,9 @@ const CardField = ({
           padding: '0 2px',
           display: 'flex',
           alignItems: 'center',
-          ...applyStyles.getTarget('sub-fc'),
-          '&:focus': applyStyles.getTarget('active'),
-          '&:hover': applyStyles.getTarget('hover'),
+          ...responsiveStyles.getTarget('sub-fc'),
+          '&:focus': responsiveStyles.getTarget('active'),
+          '&:hover': responsiveStyles.getTarget('hover'),
           ...(inlineError ? { borderColor: ERROR_COLOR } : {})
         }}
       >
@@ -173,7 +176,7 @@ const CardField = ({
             onChange={handleCardChange}
           />
         </div>
-        <InlineTooltip element={element} applyStyles={applyStyles} />
+        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
       </div>
     </div>
   );
