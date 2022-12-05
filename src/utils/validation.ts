@@ -111,7 +111,7 @@ function validateElement(element: {
 // Standard Validations
 //
 const emailPatternStr =
-  "^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)+$";
+  "^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]{2,63})+$";
 const emailPattern = new RegExp(emailPatternStr);
 
 const LIB_PHONE_NUMBER_URL =
