@@ -1,6 +1,7 @@
 import { bootstrapStyles, ERROR_COLOR } from '../styles';
 
 import React from 'react';
+import InlineTooltip from '../components/Tooltip';
 
 export default function DropdownField({
   element,
@@ -101,6 +102,7 @@ export default function DropdownField({
         >
           {element.properties.placeholder || ''}
         </span>
+        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
       </div>
     </div>
   );
