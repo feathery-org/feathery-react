@@ -189,9 +189,6 @@ const CellContainer = ({
       '&:hover': cellHoverStyle
     };
 
-  if (node.style) {
-    const cellStyle = getCellStyle({ styles: node.style });
-
     return (
       <div
         css={{
