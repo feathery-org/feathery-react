@@ -41,7 +41,7 @@ const justifyContentTextAlignMap = {
 
 function applyFieldStyles(field: any, styles: any) {
   const type = field.servar.type;
-  styles.addTargets('fc', 'field', 'error', 'active', 'hover');
+  styles.addTargets('fc', 'field', 'error', 'active', 'hover', 'tooltipIcon');
 
   styles.applyFontStyles('fc');
   styles.applySelectorStyles('active', 'selected_', true);
@@ -52,6 +52,10 @@ function applyFieldStyles(field: any, styles: any) {
   styles.apply('error', 'font_size', (a: any) => ({
     fontSize: `${a}px`
   }));
+  styles.apply('tooltipIcon', 'font_size', (a: any) => ({
+    width: `${a}px`
+  }));
+  styles.applyColor('tooltipIcon', 'font_color', 'fill');
 
   switch (type) {
     case 'signature':
@@ -212,7 +216,7 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyBorders({ target: 'field' });
       break;
     case 'payment_method':
-      styles.addTargets('sub-fc', 'tooltipIcon', 'completed');
+      styles.addTargets('sub-fc', 'completed');
       styles.addTargets('active', 'hover'); // resetting these targets here
       styles.applyHeight('sub-fc');
       styles.applyWidth('fc');
@@ -238,15 +242,12 @@ function applyFieldStyles(field: any, styles: any) {
         iconColor: `#${a}`
       }));
       styles.applyPlaceholderStyles(type, field.styles);
-      styles.apply('tooltipIcon', 'font_size', (a: any) => ({
-        width: `${a}px`
-      }));
       styles.apply('completed', 'completed_font_color', (a: any) => ({
         color: `#${a}`
       }));
       break;
     case 'phone_number':
-      styles.addTargets('sub-fc', 'tooltipIcon', 'fieldToggle', 'dropdown');
+      styles.addTargets('sub-fc', 'fieldToggle', 'dropdown');
 
       styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
@@ -259,9 +260,6 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyFontStyles('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyPlaceholderStyles(type, field.styles);
-      styles.apply('tooltipIcon', 'font_size', (a: any) => ({
-        width: `${a}px`
-      }));
 
       styles.applyColor('fieldToggle', 'background_color', 'backgroundColor');
       styles.apply('fieldToggle', 'font_size', (a: any) => ({
@@ -280,7 +278,7 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applySelectorStyles('hover', 'hover_', true, true);
       break;
     default:
-      styles.addTargets('sub-fc', 'tooltipIcon');
+      styles.addTargets('sub-fc');
       // Avoid applying width to checkbox to ensure the checkbox width is properly set by the component
       if (type !== 'checkbox') styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
@@ -291,9 +289,6 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyColor('field', 'background_color', 'backgroundColor');
       if (field.properties.placeholder)
         styles.applyPlaceholderStyles(type, field.styles, type === 'text_area');
-      styles.apply('tooltipIcon', 'font_size', (a: any) => ({
-        width: `${a}px`
-      }));
       break;
   }
   return styles;

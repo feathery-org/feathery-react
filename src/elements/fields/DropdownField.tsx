@@ -1,6 +1,7 @@
 import { bootstrapStyles, ERROR_COLOR } from '../styles';
 
 import React from 'react';
+import InlineTooltip from '../components/Tooltip';
 
 export default function DropdownField({
   element,
@@ -70,8 +71,7 @@ export default function DropdownField({
             appearance: 'none',
             WebkitAppearance: 'none',
             MozAppearance: 'none',
-            backgroundImage:
-              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='black'/></svg>\")",
+            backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='%23${element.styles.font_color}'/></svg>")`,
             backgroundRepeat: 'no-repeat',
             backgroundPosition: 'right 10px center',
             '&:focus': responsiveStyles.getTarget('active'),
@@ -102,6 +102,7 @@ export default function DropdownField({
         >
           {element.properties.placeholder || ''}
         </span>
+        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
       </div>
     </div>
   );
