@@ -134,8 +134,8 @@ function PhoneField({
           display: 'flex',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-          '&:focus': responsiveStyles.getTarget('active'),
-          '&:hover': { ...responsiveStyles.getTarget('hover'), padding: 0 }
+          '&:hover': { ...responsiveStyles.getTarget('hover'), padding: 0 },
+          '&:focus': responsiveStyles.getTarget('active')
         }}
       >
         <div
@@ -148,9 +148,7 @@ function PhoneField({
             borderRight: '1px solid #e6e6e6',
             padding: '0 8px',
             ...responsiveStyles.getTarget('fieldToggle'),
-            '&:hover': {
-              backgroundColor: '#e6e6e6'
-            }
+            '&:hover': { backgroundColor: '#e6e6e6' }
           }}
           ref={triggerRef}
           onClick={() => setShow(!show)}

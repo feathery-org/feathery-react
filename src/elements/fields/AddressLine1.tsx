@@ -72,9 +72,7 @@ function AddressLine1({
                   css={{
                     padding: '16px',
                     transition: '0.1s ease all',
-                    '&:hover': {
-                      backgroundColor: '#e6e6e6'
-                    }
+                    '&:hover': { backgroundColor: '#e6e6e6' }
                   }}
                   onClick={async () => {
                     // @ts-expect-error TS(2532): Object is possibly 'undefined'.
@@ -99,8 +97,8 @@ function AddressLine1({
               ...bootstrapStyles,
               ...responsiveStyles.getTarget('field'),
               ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-              '&:focus': responsiveStyles.getTarget('active'),
               '&:hover': responsiveStyles.getTarget('hover'),
+              '&:focus': responsiveStyles.getTarget('active'),
               '&:not(:focus)':
                 value || !element.properties.placeholder
                   ? {}

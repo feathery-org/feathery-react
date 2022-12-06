@@ -139,8 +139,8 @@ const CardField = ({
           display: 'flex',
           alignItems: 'center',
           ...responsiveStyles.getTarget('sub-fc'),
-          '&:focus': responsiveStyles.getTarget('active'),
           '&:hover': responsiveStyles.getTarget('hover'),
+          '&:focus': responsiveStyles.getTarget('active'),
           ...(inlineError ? { borderColor: ERROR_COLOR } : {})
         }}
       >
