@@ -146,6 +146,7 @@ function PhoneField({
             alignItems: 'center',
             justifyContent: 'center',
             borderRight: '1px solid #e6e6e6',
+            padding: '0 8px',
             ...responsiveStyles.getTarget('fieldToggle'),
             '&:hover': {
               backgroundColor: '#e6e6e6'

@@ -256,7 +256,12 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyBorders({ target: 'sub-fc', accountForPadding: true });
       // Corners must also be applied to input even if not visible since it could cover
       // up the visible container corners
-      styles.applyCorners('field');
+      styles.apply(
+        'field',
+        ['corner_top_right_radius', 'corner_bottom_right_radius'],
+        // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
+        (a, b) => ({ borderRadius: `0 ${a}px ${b}px 0` })
+      );
       styles.applyFontStyles('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyPlaceholderStyles(type, field.styles);
