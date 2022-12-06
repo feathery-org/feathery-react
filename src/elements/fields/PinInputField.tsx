@@ -90,8 +90,8 @@ function SingleOtpInput({
           marginLeft: '8px',
           outline: 'none',
           ...responsiveStyles.getTarget('field'),
-          ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-          '&:hover': responsiveStyles.getTarget('hover')
+          '&:hover': responsiveStyles.getTarget('hover'),
+          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
         }}
         type='tel'
         ref={input}

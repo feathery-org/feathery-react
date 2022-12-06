@@ -46,11 +46,11 @@ function ButtonGroupField({
                 justifyContent: 'center',
                 alignItems: 'center',
                 cursor: editMode ? 'default' : 'pointer',
+                '&:hover': editMode ? {} : responsiveStyles.getTarget('hover'),
                 ...responsiveStyles.getTargets(
                   'field',
                   selectedOptMap[opt] ? 'active' : ''
-                ),
-                '&:hover': editMode ? {} : responsiveStyles.getTarget('hover')
+                )
               }}
             >
               {imageUrl && (

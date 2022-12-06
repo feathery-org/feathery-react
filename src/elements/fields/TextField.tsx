@@ -161,8 +161,8 @@ function TextField({
             ...bootstrapStyles,
             ...responsiveStyles.getTarget('field'),
             ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-            '&:focus': responsiveStyles.getTarget('active'),
             '&:hover': responsiveStyles.getTarget('hover'),
+            '&:focus': responsiveStyles.getTarget('active'),
             '&:not(:focus)':
               rawValue || !element.properties.placeholder
                 ? {}

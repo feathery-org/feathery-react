@@ -80,9 +80,7 @@ function SignatureField({
               color: 'rgb(173, 173, 173)',
               fontSize: '14px',
               transition: '0.15s ease-in-out all',
-              '&:hover': {
-                color: 'black'
-              }
+              '&:hover': { color: 'black' }
             }}
             onClick={() => {
               signatureRef.current.clear();

@@ -171,9 +171,7 @@ export const composeCheckableInputStyle = (
     placeContent: 'center',
     borderRadius: isRadio ? '50%' : null, // Force radio buttons to be round
     ...styles.getTarget('checkbox'),
-    '&:hover': {
-      ...styles.getTarget('checkboxHover')
-    },
+    '&:hover': styles.getTarget('checkboxHover'),
     '&::before': {
       content: "''",
       transform: 'scale(0)',
