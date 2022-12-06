@@ -86,6 +86,7 @@
     "@stripe/stripe-js": "^1.35.0",
     "lodash.debounce": "^4.0.8",
     "quill-delta": "^4.2.2",
+    "rc-slider": "^10.1.0",
     "react-bootstrap": "^1.6.1",
     "react-color": "^2.19.3",
     "react-datepicker": "^4.8.0",
