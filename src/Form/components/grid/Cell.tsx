@@ -333,6 +333,17 @@ const Cell = ({ node: el, form, flags }: any) => {
             }}
           />
         );
+      case 'slider':
+        return (
+          <Elements.SliderField
+            {...fieldProps}
+            fieldVal={fieldVal}
+            onChange={(val: number) => {
+              const change = changeValue(val, el, index);
+              if (change) onChange();
+            }}
+          />
+        );
       case 'text_area':
         return (
           <Elements.TextArea

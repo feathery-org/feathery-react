@@ -1,3 +1,5 @@
+import React, { memo, useMemo } from 'react';
+
 import ButtonGroupField from './ButtonGroupField';
 import CheckboxField from './CheckboxField';
 import CheckboxGroupField from './CheckboxGroupField';
@@ -9,9 +11,9 @@ import PhoneField from './PhoneField';
 import PinInputField from './PinInputField';
 import RadioButtonGroupField from './RadioButtonGroupField';
 import SignatureField from './SignatureField';
+import SliderField from './SliderField';
 import TextField from './TextField';
 import TextArea from './TextArea';
-import React, { memo, useMemo } from 'react';
 import AddressLine1 from './AddressLine1';
 import PaymentMethodField from './PaymentMethodField';
 
@@ -29,6 +31,7 @@ const Fields = {
   PinInputField,
   RadioButtonGroupField,
   SignatureField,
+  SliderField,
   TextField,
   TextArea
 };
@@ -213,7 +216,29 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyWidth('fc');
       styles.applyHeight('field');
       styles.applyCorners('field');
+      styles.applyBoxShadow('field');
       styles.applyBorders({ target: 'field' });
+      break;
+    case 'slider':
+      styles.addTargets('handle', 'track');
+      styles.applyWidth('fc');
+      styles.apply('handle', ['height', 'height_unit'], (a: any, b: any) => {
+        const value = `${a}${b}`;
+        return {
+          height: value,
+          width: value,
+          marginTop: `-${Math.max(a - 4, 0) / 2}${b}`
+        };
+      });
+      styles.applyColor('handle', 'background_color', 'backgroundColor');
+      styles.applyCorners('handle');
+      styles.applyBorders({ target: 'handle' });
+      styles.applyBoxShadow('handle');
+      styles.applyColor('track', 'background_color', 'backgroundColor');
+      styles.apply('field', ['height', 'height_unit'], (a: any, b: any) => {
+        const value = `${a / 2 - 6}${b}`;
+        return { marginBottom: value };
+      });
       break;
     case 'payment_method':
       styles.addTargets('sub-fc', 'completed');
