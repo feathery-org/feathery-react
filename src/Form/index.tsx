@@ -188,7 +188,7 @@ function Form({
   const [inlineErrors, setInlineErrors] = useState({});
   const [, setRepeatChanged] = useState(false);
 
-  const [integrations, setIntegrations] = useState({});
+  const [integrations, setIntegrations] = useState<Record<string, any>>({});
   const [plaidLinked, setPlaidLinked] = useState(false);
   const [hasPlaid, setHasPlaid] = useState(false);
   const [gMapFilled, setGMapFilled] = useState(false);
@@ -576,27 +576,34 @@ function Form({
   const getNewStep = async (newKey: any) => {
     // @ts-expect-error TS(2531): Object is possibly 'null'.
     let newStep = steps[newKey];
-    while (true) {
-      const loadCond = newStep.next_conditions.find((cond: any) => {
-        if (cond.element_type !== 'step') return false;
-        const notAuth =
-          cond.rules.find((r: any) => r.comparison === 'not_authenticated') &&
-          !initState.authId &&
-          // Re: firebaseConfirmationResult, the user hasn't authenticated yet
-          // but they're in the process of doing so and we don't want to
-          // consider them "unauthenticated" for the purposes of redirecting
-          !window.firebaseConfirmationResult;
-        const auth =
-          cond.rules.find((r: any) => r.comparison === 'authenticated') &&
-          initState.authId;
-        return notAuth || auth;
-      });
-      if (loadCond) {
-        if (changeStep(loadCond.next_step_key, newKey, steps, history)) {
-          clearLoaders(true);
-          return;
-        }
-      } else break;
+
+    const metadata =
+      integrations.stytch?.metadata ?? integrations.firebase?.metadata;
+    const authSteps = metadata?.auth_gate_steps ?? [];
+    if (authSteps.length > 0) {
+      const userAuthed = Boolean(initInfo().authId);
+      const nextStepIsProtected = authSteps.includes(newStep.id);
+      const findStepName = (stepId: string) => {
+        const step: undefined | { key: string } = Object.values(steps).find(
+          (step: any) => step.id === stepId
+        ) as undefined | { key: string };
+        return step?.key;
+      };
+      let nextStep: undefined | string;
+
+      if (userAuthed && initInfo().redirectAfterLogin) {
+        initState.redirectAfterLogin = false;
+        nextStep = findStepName(metadata.login_step);
+      } else if (!userAuthed && nextStepIsProtected)
+        nextStep = findStepName(metadata.logout_step);
+
+      if (
+        nextStep !== undefined &&
+        changeStep(nextStep, newKey, steps, history)
+      ) {
+        clearLoaders(true);
+        return;
+      }
     }
     newStep = JSON.parse(JSON.stringify(newStep));
 
@@ -1012,7 +1019,6 @@ function Form({
     for (let i = 0; i < activeStep.servar_fields.length; i++) {
       const servar = activeStep.servar_fields[i].servar;
       if (servar.type === 'payment_method') {
-        // @ts-expect-error integrations needs to be typed
         const integrationData = integrations.stripe;
         const actionData: ActionData = {
           fieldVal: fieldValues[servar.key],
