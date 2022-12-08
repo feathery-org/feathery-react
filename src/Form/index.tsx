@@ -161,7 +161,7 @@ function Form({
   const [first, setFirst] = useState(true);
 
   const [productionEnv, setProductionEnv] = useState(true);
-  const [steps, setSteps] = useState(null);
+  const [steps, setSteps] = useState({});
   const [rawActiveStep, setRawActiveStep] = useState(null);
   const [stepKey, setStepKey] = useState('');
   const [shouldScrollToTop, setShouldScrollToTop] = useState(false);
@@ -652,6 +652,7 @@ function Form({
           previousStepName: activeStep?.key,
           // @ts-expect-error TS(2531): Object is possibly 'null'.
           lastStep: steps[newKey].next_conditions.length === 0,
+          totalSteps: Object.keys(steps).length,
           setStep: (stepKey: any) => {
             stepChanged = changeStep(stepKey, newKey, steps, history);
           },
@@ -730,17 +731,15 @@ function Form({
   }, [client, activeStep, setClient, setFirst, setSteps, updateFieldValues]);
 
   useEffect(() => {
-    return steps
-      ? history.listen(async () => {
-          let hashKey;
-          try {
-            hashKey = decodeURI(location.hash.substr(1));
-            if (hashKey in steps) setStepKey(hashKey);
-          } catch (e) {
-            console.log(e);
-          }
-        })
-      : undefined;
+    return history.listen(async () => {
+      let hashKey;
+      try {
+        hashKey = decodeURI(location.hash.substr(1));
+        if (hashKey in steps) setStepKey(hashKey);
+      } catch (e) {
+        console.log(e);
+      }
+    });
   }, [steps]);
 
   useEffect(() => {
