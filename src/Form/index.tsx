@@ -652,7 +652,7 @@ function Form({
           previousStepName: activeStep?.key,
           // @ts-expect-error TS(2531): Object is possibly 'null'.
           lastStep: steps[newKey].next_conditions.length === 0,
-          totalSteps: Object.keys(steps).length,
+          numSteps: Object.keys(steps).length,
           setStep: (stepKey: any) => {
             stepChanged = changeStep(stepKey, newKey, steps, history);
           },
