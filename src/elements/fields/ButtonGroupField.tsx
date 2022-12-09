@@ -50,7 +50,8 @@ function ButtonGroupField({
                 ...responsiveStyles.getTargets(
                   'field',
                   selectedOptMap[opt] ? 'active' : ''
-                )
+                ),
+                padding: '8px'
               }}
             >
               {imageUrl && (
@@ -68,8 +69,7 @@ function ButtonGroupField({
                     display: 'flex',
                     maxWidth: '100%',
                     // Do not highlight text when clicking the button
-                    ...noTextSelectStyles,
-                    ...responsiveStyles.getTarget('tc')
+                    ...noTextSelectStyles
                   }}
                 >
                   {opt}

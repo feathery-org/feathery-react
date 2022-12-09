@@ -8,6 +8,7 @@ import {
   RightChevronIcon,
   DiagonalArrowIcon
 } from '../../elements/components/icons';
+import { noTextSelectStyles } from '../../elements/styles';
 
 const lightGrey = 'rgb(235, 239, 242)';
 
@@ -192,7 +193,7 @@ export default function DevNavBar({ allSteps, curStep, history }: any) {
         >
           <LeftChevronIcon />
         </div>
-        <span css={{ marginBottom: '4px', userSelect: 'none' }}>
+        <span css={{ marginBottom: '4px', ...noTextSelectStyles }}>
           {curStep.key}
         </span>
         <div
