@@ -104,17 +104,11 @@ const getCellStyle = (cell: any) => {
   }));
   responsiveStyles.apply('cellHover', 'background_color', (a: any) => {
     const color = `${adjustColor(a || 'ffffffff', -20)}`;
-    return {
-      backgroundColor: color,
-      borderColor: color
-    };
+    return { backgroundColor: color };
   });
   responsiveStyles.apply('cellActive', 'background_color', (a: any) => {
     const color = `${adjustColor(a || 'ffffffff', -45)} !important`;
-    return {
-      backgroundColor: color,
-      borderColor: color
-    };
+    return { backgroundColor: color };
   });
 
   return [
