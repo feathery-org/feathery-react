@@ -5,6 +5,7 @@ import { getDefaultFieldValue } from '../../../utils/formHelperFunctions';
 import { TEXT_VARIABLE_PATTERN } from '../../../utils/hydration';
 import { adjustColor } from '../../../utils/styles';
 import {
+  LINK_CUSTOM,
   LINK_NONE,
   LINK_SELECT_PRODUCT
 } from '../../../elements/basic/ButtonElement';
@@ -42,7 +43,7 @@ const Subgrid = ({
   viewport = 'desktop',
   flags
 }: any) => {
-  const { buttonOnClick, getButtonSelectionState } = form;
+  const { buttonOnClick, getButtonSelectionState, onCustomAction } = form;
   if (node.isElement || node.isEmpty) {
     return (
       <CellContainer
@@ -65,6 +66,7 @@ const Subgrid = ({
           properties: node.properties
         })}
         buttonOnClick={buttonOnClick}
+        onCustomAction={onCustomAction}
       >
         <GridContainer node={node}>
           {node.children.map((child: any, i: any) => {
@@ -162,6 +164,7 @@ const CellContainer = ({
   axis,
   layout,
   selected,
+  onCustomAction,
   buttonOnClick = () => {}
 }: any) => {
   if (!parent) return children;
@@ -170,10 +173,10 @@ const CellContainer = ({
 
   if (!properties) properties = {};
   const onClick = (e: React.MouseEvent) => {
-    if (properties.link && properties.link !== LINK_NONE) {
-      e.stopPropagation();
-      buttonOnClick({ id: key, properties });
-    }
+    if (!properties.link || properties.link === LINK_NONE) return;
+    e.stopPropagation();
+    if (properties.link === LINK_CUSTOM) onCustomAction(properties.callback_id);
+    else buttonOnClick({ id: key, properties });
   };
 
   if (cellData) {

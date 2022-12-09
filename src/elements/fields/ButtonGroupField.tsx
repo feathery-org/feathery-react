@@ -51,7 +51,7 @@ function ButtonGroupField({
                   'field',
                   selectedOptMap[opt] ? 'active' : ''
                 ),
-                padding: '8px'
+                padding: '0 10px'
               }}
             >
               {imageUrl && (

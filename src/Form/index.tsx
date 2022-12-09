@@ -1476,7 +1476,15 @@ function Form({
     focusRef,
     formRef,
     steps,
-    setCardElement
+    setCardElement,
+    onCustomAction: (id: string) =>
+      runUserCallback(onCustomAction, () => ({
+        trigger: {
+          id,
+          type: 'container',
+          action: 'click'
+        }
+      }))
   };
 
   let completeState;
