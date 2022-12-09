@@ -77,6 +77,7 @@ const evalComparisonRule = (
   fieldValues: { [key: string]: any },
   repeatIndex?: number
 ): boolean => {
+  console.log(rule);
   // flatten the right side values/fields into flat list of values
   const flatValues = rule.values.flatMap((value) => {
     if (value !== null && valueTypeIsField(value))
@@ -126,7 +127,11 @@ const COMPARISON_FUNCTIONS: {
   [key: string]: (leftOperand: any, rightOperand?: any) => boolean;
 } = {
   equal: (l, r) =>
-    someRight((l, r) => deepEquals(coerceType(l), coerceType(r)), l, r),
+    someRight(
+      (l, r) => (!l && !r) || deepEquals(coerceType(l), coerceType(r)),
+      l,
+      r
+    ),
   not_equal: (l, r) =>
     someRight((l, r) => !deepEquals(coerceType(l), coerceType(r)), l, r),
   is_filled: (l) => {
