@@ -77,7 +77,6 @@ const evalComparisonRule = (
   fieldValues: { [key: string]: any },
   repeatIndex?: number
 ): boolean => {
-  console.log(rule);
   // flatten the right side values/fields into flat list of values
   const flatValues = rule.values.flatMap((value) => {
     if (value !== null && valueTypeIsField(value))
