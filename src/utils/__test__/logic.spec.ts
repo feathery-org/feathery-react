@@ -56,6 +56,9 @@ describe('logic', () => {
             fieldValuesLR([100], [[100, 200]])
           )
         ).toBeTruthy();
+        expect(
+          evalComparisonRule(rule(op, field()), fieldValuesLR([false], ['']))
+        ).toBeTruthy();
       });
       it('greater_than (field to field)', () => {
         const op = 'greater_than';
@@ -118,7 +121,7 @@ describe('logic', () => {
         ).toBeTruthy();
         expect(evalComparisonRule(rule(op, 100), fieldValues(''))).toBeFalsy();
         expect(evalComparisonRule(rule(op, ''), fieldValues(''))).toBeTruthy();
-        expect(evalComparisonRule(rule(op, ''), {})).toBeFalsy();
+        expect(evalComparisonRule(rule(op, ''), {})).toBeTruthy();
         expect(
           evalComparisonRule(rule(op, 'test'), fieldValues('test'))
         ).toBeTruthy();
@@ -180,6 +183,9 @@ describe('logic', () => {
           evalComparisonRule(rule(op, 400), fieldValues([100, 200, 300]))
         ).toBeTruthy();
         expect(evalComparisonRule(rule(op, 400), fieldValues([]))).toBeTruthy();
+        expect(
+          evalComparisonRule(rule(op, field()), fieldValuesLR([false], ['']))
+        ).toBeFalsy();
       });
 
       it('is_filled', () => {
