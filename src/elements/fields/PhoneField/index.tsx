@@ -7,7 +7,6 @@ import countryData from './countryData';
 import exampleNumbers from './exampleNumbers';
 import { Overlay } from 'react-bootstrap';
 import { isNum } from '../../../utils/primitives';
-import DropdownArrow from '../../components/DropdownArrow';
 import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 
@@ -145,8 +144,7 @@ function PhoneField({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            borderRight: '1px solid #e6e6e6',
-            padding: '0 8px',
+            padding: '0 6px',
             ...responsiveStyles.getTarget('fieldToggle'),
             '&:hover': { backgroundColor: '#e6e6e6' }
           }}
@@ -154,7 +152,6 @@ function PhoneField({
           onClick={() => setShow(!show)}
         >
           {countryMap[curCountryCode].flag}
-          <DropdownArrow css={{ marginLeft: '3px' }} />
         </div>
         <Overlay
           target={triggerRef.current}
@@ -198,6 +195,7 @@ function PhoneField({
           <input
             id={servar.key}
             css={{
+              backgroundColor: 'transparent',
               height: '100%',
               width: '100%',
               border: 'none',
