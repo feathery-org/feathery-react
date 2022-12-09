@@ -55,12 +55,15 @@ const getABVariant = (stepRes: any) => {
 };
 
 function getDefaultFieldValue(field: any) {
-  switch (field.servar.type) {
+  const servar = field.servar;
+  switch (servar.type) {
     case 'checkbox':
       // eslint-disable-next-line camelcase
-      return !!field.servar.metadata?.always_checked;
+      return !!servar.metadata.always_checked;
     case 'hex_color':
       return 'FFFFFFFF';
+    case 'slider':
+      return servar.min_length ?? 0;
     case 'select':
     case 'signature':
     case 'file_upload':
