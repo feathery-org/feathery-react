@@ -1,5 +1,6 @@
 import { isNum, objectFromEntries } from '../utils/primitives';
 import { isDirectionColumn } from '../utils/styles';
+import { CSSProperties } from 'react';
 
 export const mobileBreakpointValue = 478;
 
@@ -519,22 +520,22 @@ class ResponsiveStyles {
   }
 }
 
-const noTextSelectStyles = {
-  webkitTouchCallout: 'none' /* iOS Safari */,
-  webkitUserSelect: 'none' /* Safari */,
-  mozUserSelect: 'none' /* Old versions of Firefox */,
+const noTextSelectStyles: CSSProperties = {
+  WebkitTouchCallout: 'none' /* iOS Safari */,
+  WebkitUserSelect: 'none' /* Safari */,
+  MozUserSelect: 'none' /* Old versions of Firefox */,
   msUserSelect: 'none' /* Internet Explorer / Edge */,
   userSelect: 'none' /* Chrome, Firefox, etc. */
 };
 
-const bootstrapStyles = {
+const bootstrapStyles: CSSProperties = {
   padding: '0.375rem 0.75rem',
   boxSizing: 'border-box',
   transition: 'border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out',
   outline: 'none'
 };
 
-const imgMaxSizeStyles = {
+const imgMaxSizeStyles: CSSProperties = {
   // Setting min-height to 0 prevents vertical image overflow
   minHeight: 0,
   objectFit: 'contain',

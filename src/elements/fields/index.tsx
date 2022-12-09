@@ -117,7 +117,7 @@ function applyFieldStyles(field: any, styles: any) {
       );
       break;
     case 'button_group':
-      styles.addTargets('img', 'tc');
+      styles.addTargets('img');
       styles.apply('fc', 'vertical_layout', (a: any) => ({
         alignItems: a
       }));
@@ -140,7 +140,13 @@ function applyFieldStyles(field: any, styles: any) {
         }
       );
       styles.applyHeight('field', '', true);
-      styles.applyWidth('field', '');
+      styles.apply(
+        'field',
+        ['width', 'width_unit', 'content_responsive'],
+        (a: any, b: any, c: boolean) => ({
+          [c ? 'minWidth' : 'width']: `${a}${b}`
+        })
+      );
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
