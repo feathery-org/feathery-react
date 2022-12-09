@@ -132,7 +132,15 @@ const COMPARISON_FUNCTIONS: {
       r
     ),
   not_equal: (l, r) =>
-    someRight((l, r) => !deepEquals(coerceType(l), coerceType(r)), l, r),
+    someRight(
+      (l, r) => {
+        if (!l) return !!r;
+        else if (!r) return !!l;
+        else return !deepEquals(coerceType(l), coerceType(r));
+      },
+      l,
+      r
+    ),
   is_filled: (l) => {
     const type = detectType(l);
     if (type === 'boolean' || type === 'number' || type === 'bigint')
