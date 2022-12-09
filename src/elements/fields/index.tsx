@@ -285,6 +285,7 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyBoxShadow('sub-fc');
       styles.applyCorners('sub-fc');
       styles.applyBorders({ target: 'sub-fc', accountForPadding: true });
+      styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       // Corners must also be applied to input even if not visible since it could cover
       // up the visible container corners
       styles.apply(
@@ -294,10 +295,8 @@ function applyFieldStyles(field: any, styles: any) {
         (a, b) => ({ borderRadius: `0 ${a}px ${b}px 0` })
       );
       styles.applyFontStyles('field');
-      styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyPlaceholderStyles(type, field.styles);
 
-      styles.applyColor('fieldToggle', 'background_color', 'backgroundColor');
       styles.apply('fieldToggle', 'font_size', (a: any) => ({
         fontSize: `${1.5 * a}px`,
         width: `${3 * a}px`
@@ -310,6 +309,9 @@ function applyFieldStyles(field: any, styles: any) {
           borderBottomLeftRadius: `${b}px`
         })
       );
+      styles.apply('fieldToggle', 'border_bottom_color', (a: any) => ({
+        borderRight: `1px solid #${a}`
+      }));
       styles.applySelectorStyles('active', 'selected_', true, true);
       styles.applySelectorStyles('hover', 'hover_', true, true);
       break;
