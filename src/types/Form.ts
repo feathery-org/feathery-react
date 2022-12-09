@@ -71,6 +71,7 @@ export interface ContextOnSubmit extends Context {
 
 export interface ContextOnSkip extends Context {
   trigger: Trigger;
+  lastStep: boolean;
 }
 
 export interface ContextOnError extends Context {
