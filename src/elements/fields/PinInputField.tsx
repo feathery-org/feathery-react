@@ -106,6 +106,8 @@ function SingleOtpInput({
   );
 }
 
+const convertValueToRaw = (value: any) => value.toString().split('');
+
 function OtpInput({
   element,
   responsiveStyles,
@@ -116,10 +118,10 @@ function OtpInput({
 }: any) {
   const [activeInput, setActiveInput] = useState(shouldFocus ? 0 : -1);
   const [pasted, setPasted] = useState(false);
-  const [rawValue, setRawValue] = useState(value.toString().split(''));
+  const [rawValue, setRawValue] = useState(convertValueToRaw(value));
 
   useEffect(() => {
-    if (value !== rawValue) setRawValue(value);
+    if (value !== rawValue) setRawValue(convertValueToRaw(value));
   }, [value]);
 
   // Helper to return OTP from input
@@ -157,8 +159,8 @@ function OtpInput({
     handleOtpChange(newVal);
   };
 
-  const handleMultipleValues = (vals: any) => {
-    if (isNaN(parseInt(vals, 10))) return;
+  const handleMultipleValues = (vals: string[]) => {
+    if (vals.some((val) => isNaN(parseInt(val, 10)))) return;
 
     const newVal = JSON.parse(JSON.stringify(rawValue));
     let nextActiveInput = activeInput;
