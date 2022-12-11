@@ -81,7 +81,7 @@ const optionsAsInitState: (keyof InitOptions & keyof InitState)[] = [
   'userTracking'
 ];
 const fieldValues: FieldValues = {};
-const filePathMap = {};
+const filePathMap: Record<string, null | string | (string | null)[]> = {};
 
 function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
   if (!sdkKey || typeof sdkKey !== 'string') {

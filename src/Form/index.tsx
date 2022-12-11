@@ -15,6 +15,7 @@ import debounce from 'lodash.debounce';
 import { calculateStepCSS, isFill } from '../utils/hydration';
 import {
   changeStep,
+  FieldOptions,
   formatAllFormFields,
   formatStepFields,
   getAllElements,
@@ -26,7 +27,8 @@ import {
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
-  setFormElementError
+  setFormElementError,
+  updateStepFieldOptions
 } from '../utils/formHelperFunctions';
 import { shouldElementHide, getHideIfReferences } from '../utils/hideIfs';
 import { validators, validateElements } from '../utils/validation';
@@ -508,24 +510,15 @@ function Form({
   };
 
   const updateFieldOptions =
-    (stepData: any, activeStepData: any) => (newFieldOptions: any) => {
-      Object.values(stepData).forEach((step) => {
-        (step as any).servar_fields.forEach((field: any) => {
-          const servar = field.servar;
-          if (servar.key in newFieldOptions) {
-            servar.metadata.options = newFieldOptions[servar.key];
-          }
-        });
-      });
+    (stepData: any, loadStep = null) =>
+    (newOptions: FieldOptions) => {
+      Object.values(stepData).forEach((step) =>
+        updateStepFieldOptions(step, newOptions)
+      );
       setSteps(JSON.parse(JSON.stringify(stepData)));
 
-      const newActiveStep = activeStepData || activeStep;
-      newActiveStep.servar_fields.forEach((field: any) => {
-        const servar = field.servar;
-        if (servar.key in newFieldOptions) {
-          servar.metadata.options = newFieldOptions[servar.key];
-        }
-      });
+      const newActiveStep = loadStep || activeStep;
+      updateStepFieldOptions(newActiveStep, newOptions);
       setActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
     };
 
@@ -538,7 +531,6 @@ function Form({
     try {
       await userCallback({
         setValues,
-        // @ts-expect-error TS(2554): Expected 2 arguments, but got 1.
         setOptions: updateFieldOptions(steps),
         setProgress: (val: any) => setUserProgress(val),
         setStep: (stepKey: any) => {
@@ -546,7 +538,6 @@ function Form({
         },
         step: {
           style: {
-            // eslint-disable-next-line camelcase
             backgroundColor: newStep?.default_background_color
           }
         },
@@ -647,6 +638,7 @@ function Form({
           setStep: (stepKey: any) => {
             stepChanged = changeStep(stepKey, newKey, steps, history);
           },
+          setOptions: updateFieldOptions(steps, newStep),
           firstStepLoaded: first,
           integrationData
         };

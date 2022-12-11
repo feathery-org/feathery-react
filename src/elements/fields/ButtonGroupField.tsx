@@ -36,6 +36,7 @@ function ButtonGroupField({
       >
         {servar.metadata.options.map((opt: any, index: any) => {
           const imageUrl = servar.metadata.option_images[index];
+          const label = servar.metadata.option_labels[index] ?? opt;
           return (
             <div
               onClick={() => onClick(opt)}
@@ -62,7 +63,7 @@ function ButtonGroupField({
                   }}
                 />
               )}
-              {opt && (
+              {label && (
                 <div
                   css={{
                     display: 'flex',
@@ -71,7 +72,7 @@ function ButtonGroupField({
                     ...noTextSelectStyles
                   }}
                 >
-                  {opt}
+                  {label}
                 </div>
               )}
             </div>
