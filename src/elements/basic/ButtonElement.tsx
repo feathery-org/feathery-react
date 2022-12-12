@@ -141,7 +141,6 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
 function ButtonElement({
   element,
   responsiveStyles,
-  values = null,
   loader = null,
   editMode,
   focused = false,
@@ -213,7 +212,6 @@ function ButtonElement({
           {element.properties.text && (
             <TextNodes
               element={element}
-              values={values}
               responsiveStyles={responsiveStyles}
               editMode={editMode}
               focused={focused}

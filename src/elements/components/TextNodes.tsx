@@ -4,8 +4,27 @@ import Delta from 'quill-delta';
 import useTextEdit from './useTextEdit';
 import { openTab } from '../../utils/browser';
 import { LINK_NEXT, LINK_NONE } from '../basic/ButtonElement';
+import { fieldValues } from '../../utils/init';
 
-const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
+export const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
+
+export function replaceTextVariables(text: string, repeat: any) {
+  return text.replace(TEXT_VARIABLE_PATTERN, (pattern: any) => {
+    const pStr = pattern.slice(2, -2);
+    if (pStr in fieldValues) {
+      const pVal = fieldValues[pStr];
+      if (Array.isArray(pVal)) {
+        if (pVal.length === 0) {
+          return pattern;
+        } else if (isNaN(repeat) || repeat >= pVal.length) {
+          return stringifyWithNull(pVal[0]);
+        } else {
+          return stringifyWithNull(pVal[repeat]);
+        }
+      } else return stringifyWithNull(pVal);
+    } else return pattern;
+  });
+}
 
 const applyNewDelta = (
   delta: any,
@@ -24,7 +43,6 @@ const applyNewDelta = (
 
 function TextNodes({
   element,
-  values,
   responsiveStyles,
   conditions = [],
   editMode,
@@ -60,32 +78,8 @@ function TextNodes({
         key={text}
       >
         {delta
-          // @ts-expect-error TS(2322): Type 'string | object | undefined' is not assignab... Remove this comment to see the full error message
-          .filter((op) => op.insert)
+          .filter((op) => !!op.insert)
           .map((op, i) => {
-            let text: any = op.insert;
-            if (values) {
-              // replace placeholder variables and populate newlines
-              text = text.replace(TEXT_VARIABLE_PATTERN, (pattern: any) => {
-                const pStr = pattern.slice(2, -2);
-                if (pStr in values) {
-                  const pVal = values[pStr];
-                  if (Array.isArray(pVal)) {
-                    if (pVal.length === 0) {
-                      return pattern;
-                    } else if (
-                      isNaN(element.repeat) ||
-                      element.repeat >= pVal.length
-                    ) {
-                      return stringifyWithNull(pVal[0]);
-                    } else {
-                      return stringifyWithNull(pVal[element.repeat]);
-                    }
-                  } else return stringifyWithNull(pVal);
-                } else return pattern;
-              });
-            }
-
             const attrs = op.attributes || {};
             let onClick = () => {};
             let cursor = 'inherit';
@@ -102,6 +96,11 @@ function TextNodes({
                 cursor = 'pointer';
               }
             }
+
+            const text = replaceTextVariables(
+              op.insert as string,
+              element.repeat
+            );
 
             return (
               <span

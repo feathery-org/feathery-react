@@ -34,7 +34,6 @@ function applyTextStyles(element: any, responsiveStyles: any) {
 function TextElement({
   element,
   responsiveStyles,
-  values = null,
   editMode,
   focused = false,
   textCallbacks = {},
@@ -59,7 +58,6 @@ function TextElement({
       {children}
       <TextNodes
         element={element}
-        values={values}
         responsiveStyles={responsiveStyles}
         textSpanOnClick={textSpanOnClick}
         conditions={conditions}

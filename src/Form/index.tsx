@@ -100,6 +100,7 @@ import {
 } from '../types/Form';
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
+import { replaceTextVariables } from '../elements/components/TextNodes';
 
 export interface Props {
   formName: string;
@@ -162,7 +163,7 @@ function Form({
 
   const [productionEnv, setProductionEnv] = useState(true);
   const [steps, setSteps] = useState({});
-  const [rawActiveStep, setRawActiveStep] = useState(null);
+  const [activeStep, setActiveStep] = useState<any>(null);
   const [stepKey, setStepKey] = useState('');
   const [shouldScrollToTop, setShouldScrollToTop] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -238,29 +239,16 @@ function Form({
   // Determine if there is a field with a custom repeat_trigger configuration anywhere in the step
   const repeatTriggerExists = useMemo(
     () =>
-      rawActiveStep
-        ? (rawActiveStep as any).servar_fields.some(
+      activeStep
+        ? activeStep.servar_fields.some(
             (field: any) => field.servar.repeat_trigger
           )
         : false,
-    [rawActiveStep]
+    [activeStep]
   );
 
-  // Create the fully-hydrated activeStep by injecting repeated rows
-  // Note: Other hydration transformations can also be included here
-  const activeStep = useMemo(() => {
-    if (!rawActiveStep) return null;
-    return JSON.parse(JSON.stringify(rawActiveStep));
-  }, [rawActiveStep]);
-
-  const [stepCSS] = useMemo(() => {
-    if (!activeStep) return [{}, []];
-    return [
-      // When the active step changes, recalculate the dimensions of the new step
-      calculateStepCSS(activeStep),
-      getAllElements(activeStep)
-    ];
-  }, [activeStep]);
+  // When the active step changes, recalculate the dimensions of the new step
+  const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
 
   // All mount and unmount logic should live here
   useEffect(() => {
@@ -409,7 +397,7 @@ function Form({
 
   function addRepeatedRow() {
     // Collect a list of all repeated elements
-    const repeatedServarFields = (rawActiveStep as any)?.servar_fields.filter(
+    const repeatedServarFields = activeStep.servar_fields.filter(
       (field: any) => field.servar.repeated
     );
 
@@ -441,8 +429,7 @@ function Form({
     if (isNaN(index)) return;
 
     // Collect a list of all repeated elements
-    // @ts-expect-error TS(2531): Object is possibly 'null'.
-    const repeatedServarFields = rawActiveStep.servar_fields.filter(
+    const repeatedServarFields = activeStep.servar_fields.filter(
       (field: any) => field.servar.repeated
     );
 
@@ -532,14 +519,14 @@ function Form({
       });
       setSteps(JSON.parse(JSON.stringify(stepData)));
 
-      const newActiveStep = activeStepData || rawActiveStep;
+      const newActiveStep = activeStepData || activeStep;
       newActiveStep.servar_fields.forEach((field: any) => {
         const servar = field.servar;
         if (servar.key in newFieldOptions) {
           servar.metadata.options = newFieldOptions[servar.key];
         }
       });
-      setRawActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
+      setActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
     };
 
   const runUserCallback = async (
@@ -582,10 +569,14 @@ function Form({
   const updateNewStep = (newStep: any) => {
     clearLoaders();
     callbackRef.current = new CallbackQueue(newStep, setLoaders);
-    // setRawActiveStep, apparently, must go after setting the callbackRef
+    // Hydrate field descriptions
+    newStep.servar_fields.forEach((field: any) => {
+      field.servar.name = replaceTextVariables(field.servar.name, field.repeat);
+    });
+    // setActiveStep, apparently, must go after setting the callbackRef
     // because it triggers a new render, before this fn finishes execution,
     // which can cause onView to fire before the callbackRef is set
-    setRawActiveStep(newStep);
+    setActiveStep(newStep);
     // @ts-expect-error TS(2531): Object is possibly 'null'.
     client.registerEvent({ step_key: newStep.key, event: 'load' });
   };
