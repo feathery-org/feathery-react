@@ -1,7 +1,5 @@
 import { isNum } from './primitives';
 
-const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
-
 const FIT = 'fit';
 const FILL = 'fill';
 
@@ -48,6 +46,8 @@ const calculateDimensionsHelper = (step: any, p = '') => {
  * Note: The provided step should be fully-hydrated (i.e. rows injected, etc.) to calculate dimensions accurately.
  */
 function calculateStepCSS(step: any) {
+  if (!step) return {};
+
   const desktop = calculateDimensionsHelper(step);
   const mobile = calculateDimensionsHelper(step, 'mobile_');
 
@@ -78,4 +78,4 @@ function calculateStepCSS(step: any) {
   return stepCSS;
 }
 
-export { TEXT_VARIABLE_PATTERN, calculateStepCSS };
+export { calculateStepCSS };

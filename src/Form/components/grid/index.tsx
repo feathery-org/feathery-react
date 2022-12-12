@@ -2,7 +2,6 @@ import React from 'react';
 import Cell from './Cell';
 import ResponsiveStyles from '../../../elements/styles';
 import { getDefaultFieldValue } from '../../../utils/formHelperFunctions';
-import { TEXT_VARIABLE_PATTERN } from '../../../utils/hydration';
 import { adjustColor } from '../../../utils/styles';
 import {
   LINK_CUSTOM,
@@ -10,6 +9,7 @@ import {
   LINK_SELECT_PRODUCT
 } from '../../../elements/basic/ButtonElement';
 import { fieldValues } from '../../../utils/init';
+import { TEXT_VARIABLE_PATTERN } from '../../../elements/components/TextNodes';
 const Grid = ({ step, form, viewport }: any) => {
   const formattedStep = formatStep(JSON.parse(JSON.stringify(step)), viewport);
 

@@ -85,7 +85,6 @@ const Cell = ({ node: el, form, flags }: any) => {
   else if (type === 'text')
     return (
       <Elements.TextElement
-        values={fieldValues}
         textSpanOnClick={textOnClick}
         conditions={activeStep.next_conditions}
         {...basicProps}
@@ -121,7 +120,6 @@ const Cell = ({ node: el, form, flags }: any) => {
     }
     return (
       <Elements.ButtonElement
-        values={fieldValues}
         active={getButtonSelectionState(el)}
         loader={
           loaders[el.id]?.showOn === 'on_button' && loaders[el.id]?.loader
