@@ -50,8 +50,7 @@ function ButtonGroupField({
                 ...responsiveStyles.getTargets(
                   'field',
                   selectedOptMap[opt] ? 'active' : ''
-                ),
-                padding: '0 10px'
+                )
               }}
             >
               {imageUrl && (
