@@ -136,7 +136,6 @@ export default class Client {
     // There will be an entry in filePathMap for it
     // If so we just need to send the S3 path to the backend, not the full file
     const resolveFile = async (file: any, index = null) => {
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       let path = filePathMap[servar.key];
       if (path && index !== null) path = path[index];
       return path ?? (await file);

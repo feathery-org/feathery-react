@@ -15,6 +15,7 @@ import debounce from 'lodash.debounce';
 import { calculateStepCSS, isFill } from '../utils/hydration';
 import {
   changeStep,
+  FieldOptions,
   formatAllFormFields,
   formatStepFields,
   getAllElements,
@@ -26,7 +27,8 @@ import {
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
-  setFormElementError
+  setFormElementError,
+  updateStepFieldOptions
 } from '../utils/formHelperFunctions';
 import { shouldElementHide, getHideIfReferences } from '../utils/hideIfs';
 import { validators, validateElements } from '../utils/validation';
@@ -293,8 +295,7 @@ function Form({
             errorCallback: getErrorCallback({
               trigger: {
                 id: gMapBlurKey,
-                type: 'field',
-                action: 'blur'
+                type: 'field'
               }
             }),
             fieldKey: gMapBlurKey,
@@ -508,24 +509,15 @@ function Form({
   };
 
   const updateFieldOptions =
-    (stepData: any, activeStepData: any) => (newFieldOptions: any) => {
-      Object.values(stepData).forEach((step) => {
-        (step as any).servar_fields.forEach((field: any) => {
-          const servar = field.servar;
-          if (servar.key in newFieldOptions) {
-            servar.metadata.options = newFieldOptions[servar.key];
-          }
-        });
-      });
+    (stepData: any, loadStep = null) =>
+    (newOptions: FieldOptions) => {
+      Object.values(stepData).forEach((step) =>
+        updateStepFieldOptions(step, newOptions)
+      );
       setSteps(JSON.parse(JSON.stringify(stepData)));
 
-      const newActiveStep = activeStepData || activeStep;
-      newActiveStep.servar_fields.forEach((field: any) => {
-        const servar = field.servar;
-        if (servar.key in newFieldOptions) {
-          servar.metadata.options = newFieldOptions[servar.key];
-        }
-      });
+      const newActiveStep = loadStep || activeStep;
+      updateStepFieldOptions(newActiveStep, newOptions);
       setActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
     };
 
@@ -538,7 +530,6 @@ function Form({
     try {
       await userCallback({
         setValues,
-        // @ts-expect-error TS(2554): Expected 2 arguments, but got 1.
         setOptions: updateFieldOptions(steps),
         setProgress: (val: any) => setUserProgress(val),
         setStep: (stepKey: any) => {
@@ -546,7 +537,6 @@ function Form({
         },
         step: {
           style: {
-            // eslint-disable-next-line camelcase
             backgroundColor: newStep?.default_background_color
           }
         },
@@ -647,6 +637,7 @@ function Form({
           setStep: (stepKey: any) => {
             stepChanged = changeStep(stepKey, newKey, steps, history);
           },
+          setOptions: updateFieldOptions(steps, newStep),
           firstStepLoaded: first,
           integrationData
         };
@@ -875,8 +866,7 @@ function Form({
     const elementType = metadata.elementType;
     const trigger = {
       ...lookUpTrigger(activeStep, metadata.elementIDs[0], elementType),
-      type: elementType,
-      action: metadata.elementType === 'field' ? 'change' : 'click'
+      type: elementType
     };
 
     // validate all step fields and buttons
@@ -1172,8 +1162,7 @@ function Form({
           },
           trigger: {
             ...lookUpTrigger(activeStep, button.id, 'button'),
-            type: 'button',
-            action: 'click'
+            type: 'button'
           },
           lastStep: !getNextStepKey(metadata)
         }));
@@ -1286,8 +1275,7 @@ function Form({
       clickPromise = runUserCallback(onCustomAction, () => ({
         trigger: {
           ...lookUpTrigger(activeStep, button.id, 'button'),
-          type: 'button',
-          action: 'click'
+          type: 'button'
         }
       }));
     } else if (link === LINK_SEND_SMS) {
@@ -1472,11 +1460,7 @@ function Form({
     setCardElement,
     onCustomAction: (id: string) =>
       runUserCallback(onCustomAction, () => ({
-        trigger: {
-          id,
-          type: 'container',
-          action: 'click'
-        }
+        trigger: { id, type: 'container' }
       }))
   };
 

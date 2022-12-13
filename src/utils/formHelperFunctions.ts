@@ -11,7 +11,7 @@ import { evalComparisonRule, ResolvedComparisonRule } from './logic';
  * whether signature field values are base64 or a JS File obj
  * @returns Formatted fields for the step
  */
-const formatStepFields = (step: any, forUser = false) => {
+export const formatStepFields = (step: any, forUser = false) => {
   const formattedFields = {};
   step.servar_fields.forEach((field: any) => {
     const servar = field.servar;
@@ -35,7 +35,7 @@ const formatStepFields = (step: any, forUser = false) => {
   return formattedFields;
 };
 
-const formatAllFormFields = (steps: any, forUser = false) => {
+export const formatAllFormFields = (steps: any, forUser = false) => {
   let formattedFields = {};
   Object.values(steps).forEach((step) => {
     const stepFields = formatStepFields(step, forUser);
@@ -44,7 +44,7 @@ const formatAllFormFields = (steps: any, forUser = false) => {
   return formattedFields;
 };
 
-const getABVariant = (stepRes: any) => {
+export const getABVariant = (stepRes: any) => {
   if (!stepRes.variant) return stepRes.data;
   const { sdkKey, userId } = initInfo();
   // If userId was not passed in, sdkKey is assumed to be a user admin key
@@ -54,7 +54,7 @@ const getABVariant = (stepRes: any) => {
     : stepRes.variant;
 };
 
-function getDefaultFieldValue(field: any) {
+export function getDefaultFieldValue(field: any) {
   const servar = field.servar;
   switch (servar.type) {
     case 'checkbox':
@@ -76,7 +76,28 @@ function getDefaultFieldValue(field: any) {
   }
 }
 
-const getAllElements = (step: any) => {
+// TODO: remove string[] for backcompat
+export type FieldOptions = Record<
+  string,
+  (string | { value: string; label: string })[]
+>;
+
+export function updateStepFieldOptions(step: any, newOptions: FieldOptions) {
+  step.servar_fields.forEach((field: any) => {
+    const servar = field.servar;
+    if (servar.key in newOptions) {
+      const options = newOptions[servar.key];
+      servar.metadata.options = options.map((option) =>
+        typeof option === 'string' ? option : option.value
+      );
+      servar.metadata.option_labels = options.map((option) =>
+        typeof option === 'string' ? option : option.label
+      );
+    }
+  });
+}
+
+export const getAllElements = (step: any) => {
   return [
     ...step.progress_bars.map((e: any) => [e, 'progress_bar']),
     ...step.images.map((e: any) => [e, 'image']),
@@ -87,7 +108,7 @@ const getAllElements = (step: any) => {
   ];
 };
 
-const lookUpTrigger = (step: any, elementID: any, elementType: any) => {
+export const lookUpTrigger = (step: any, elementID: any, elementType: any) => {
   if (elementType === 'button') {
     const element = step.buttons.find((button: any) => button.id === elementID);
     return { id: elementID, text: element.properties.text };
@@ -102,7 +123,7 @@ const lookUpTrigger = (step: any, elementID: any, elementType: any) => {
   } else return {};
 };
 
-const nextStepKey = (nextConditions: any, metadata: any) => {
+export const nextStepKey = (nextConditions: any, metadata: any) => {
   let newKey: any = null;
   nextConditions
     .filter(
@@ -128,11 +149,11 @@ const nextStepKey = (nextConditions: any, metadata: any) => {
 
 // No origin is possible if there are no steps, e.g. form is disabled
 const NO_ORIGIN_DEFAULT = { key: '' };
-const getOrigin = (steps: any) =>
+export const getOrigin = (steps: any) =>
   Object.values(steps).find((step) => (step as any).origin) ??
   NO_ORIGIN_DEFAULT;
 
-const getStepDepthMap = (steps: any, hasProgressBar = false) => {
+export const getStepDepthMap = (steps: any, hasProgressBar = false) => {
   const depthMap = {};
   const stepQueue = [[getOrigin(steps), 0]];
   while (stepQueue.length > 0) {
@@ -156,7 +177,7 @@ const getStepDepthMap = (steps: any, hasProgressBar = false) => {
   return depthMap;
 };
 
-const recurseProgressDepth = (steps: any, curKey: any) => {
+export const recurseProgressDepth = (steps: any, curKey: any) => {
   const depthMap = getStepDepthMap(steps, true);
   // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
   return [depthMap[curKey], Math.max(...Object.values(depthMap))];
@@ -165,7 +186,7 @@ const recurseProgressDepth = (steps: any, curKey: any) => {
 /**
  * Creates a unique key value for an element (taking repeated instances into account).
  */
-function reactFriendlyKey(field: any) {
+export function reactFriendlyKey(field: any) {
   return field.id + (field.repeat ? `-${field.repeat}` : '');
 }
 
@@ -173,7 +194,7 @@ function reactFriendlyKey(field: any) {
  * Retrieves the value of the servar from the provided values.
  * If the servar field is repeated, gets the indexed value.
  */
-function getFieldValue(field: any) {
+export function getFieldValue(field: any) {
   const { servar, repeat } = field;
 
   // Need to check if undefined, rather than !values[servar.key], because null can be a set value
@@ -195,7 +216,7 @@ function getFieldValue(field: any) {
 }
 
 /** Update the fieldValues cache with a backend session */
-function updateSessionValues(session: any) {
+export function updateSessionValues(session: any) {
   // Convert files of the format { url, path } to Promise<File>
   const filePromises = objectMap(session.file_values, (fileOrFiles: any) =>
     Array.isArray(fileOrFiles)
@@ -217,7 +238,7 @@ function updateSessionValues(session: any) {
 /**
  * Set an error on a particular form DOM node(s).
  */
-async function setFormElementError({
+export async function setFormElementError({
   formRef,
   errorType,
   errorCallback = () => {},
@@ -273,14 +294,14 @@ async function setFormElementError({
  * @param field
  * @param inlineErrors
  */
-function getInlineError(field: any, inlineErrors: any) {
+export function getInlineError(field: any, inlineErrors: any) {
   const data = inlineErrors[field.servar ? field.servar.key : field.id];
   if (!data) return;
   if (Number.isInteger(data.index) && data.index !== field.repeat) return;
   return data.message;
 }
 
-function objectMap(obj: any, transform: any) {
+export function objectMap(obj: any, transform: any) {
   return Object.entries(obj).reduce((newObj, [key, val]) => {
     return { ...newObj, [key]: transform(val) };
   }, {});
@@ -290,7 +311,7 @@ function objectMap(obj: any, transform: any) {
  * If a user's file is already uploaded, Feathery backend returns S3 details: { path, url }
  * We convert this information into Promises that resolve to the file
  */
-async function fetchS3File(url: any) {
+export async function fetchS3File(url: any) {
   const response = await fetch(url);
   const blob = await response.blob();
   return new File([blob], decodeURI(url.split('?')[0].split('/').slice(-1)), {
@@ -298,7 +319,7 @@ async function fetchS3File(url: any) {
   });
 }
 
-function textFieldShouldSubmit(servar: any, value: any) {
+export function textFieldShouldSubmit(servar: any, value: any) {
   switch (servar.type) {
     case 'ssn':
       return value.length === 9;
@@ -310,12 +331,12 @@ function textFieldShouldSubmit(servar: any, value: any) {
 // To determine if a field should actually be required, we need to consider the repeat_trigger config
 // If this is the trailing element in a set of repeat_trigger elements, then it shouldn't be required
 // Because we render the trailing element as a way to create a new row, NOT as a required field for the user
-function isFieldActuallyRequired(field: any, repeatTriggerExists: any) {
+export function isFieldActuallyRequired(field: any, repeatTriggerExists: any) {
   const isTrailingRepeatField = repeatTriggerExists && field.lastRepeat;
   return field.servar.required && !isTrailingRepeatField;
 }
 
-function changeStep(newKey: any, oldKey: any, steps: any, history: any) {
+export function changeStep(newKey: any, oldKey: any, steps: any, history: any) {
   const sameKey = oldKey === newKey;
   if (!sameKey && newKey in steps) {
     history.replace(location.pathname + location.search + `#${newKey}`);
@@ -324,11 +345,11 @@ function changeStep(newKey: any, oldKey: any, steps: any, history: any) {
   return false;
 }
 
-function getNewStepUrl(stepKey: any) {
+export function getNewStepUrl(stepKey: any) {
   return location.pathname + location.search + `#${stepKey}`;
 }
 
-function getPrevStepUrl(curStep: any, stepMap: Record<string, string>) {
+export function getPrevStepUrl(curStep: any, stepMap: Record<string, string>) {
   let newStepKey = stepMap[curStep.key];
   if (!newStepKey) {
     const prevCondition = curStep.previous_conditions[0];
@@ -339,40 +360,13 @@ function getPrevStepUrl(curStep: any, stepMap: Record<string, string>) {
 
 // Update the map we maintain to track files that have already been uploaded to S3
 // This means nulling the existing mapping because the user uploaded a new file
-function clearFilePathMapEntry(key: any, index = null) {
+export function clearFilePathMapEntry(key: any, index = null) {
   if (index !== null) {
-    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     if (!filePathMap[key]) filePathMap[key] = [];
-    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
     filePathMap[key][index] = null;
   } else {
-    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     filePathMap[key] = null;
   }
 }
-
-export {
-  changeStep,
-  formatAllFormFields,
-  formatStepFields,
-  getABVariant,
-  getAllElements,
-  getDefaultFieldValue,
-  getNewStepUrl,
-  getPrevStepUrl,
-  lookUpTrigger,
-  nextStepKey,
-  getOrigin,
-  getStepDepthMap,
-  recurseProgressDepth,
-  reactFriendlyKey,
-  getFieldValue,
-  updateSessionValues,
-  getInlineError,
-  setFormElementError,
-  objectMap,
-  fetchS3File,
-  textFieldShouldSubmit,
-  isFieldActuallyRequired,
-  clearFilePathMapEntry
-};

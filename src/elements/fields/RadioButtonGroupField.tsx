@@ -45,7 +45,8 @@ function RadioButtonGroupField({
     >
       {children}
       {fieldLabel}
-      {servar.metadata.options.map((opt: any, i: any) => {
+      {servar.metadata.options.map((opt: any, i: number) => {
+        const optionLabel = servar.metadata.option_labels[i] ?? opt;
         return (
           <div key={`${servar.key}-${i}`} css={{ display: 'flex' }}>
             <input
@@ -68,7 +69,7 @@ function RadioButtonGroupField({
                 ...styles.getTarget('radioGroup')
               }}
             />
-            <label htmlFor={`${servar.key}-${i}`}>{opt}</label>
+            <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
           </div>
         );
       })}

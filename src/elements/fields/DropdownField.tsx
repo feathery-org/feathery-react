@@ -33,11 +33,14 @@ export default function DropdownField({
         </option>
       ));
   } else {
-    options = servar.metadata.options.map((option: any) => (
-      <option key={option} value={option}>
-        {option}
-      </option>
-    ));
+    options = servar.metadata.options.map((option: any, index: number) => {
+      const label = servar.metadata.option_labels[index];
+      return (
+        <option key={option} value={option}>
+          {label ?? option}
+        </option>
+      );
+    });
   }
 
   responsiveStyles.applyFontStyles('field', !fieldVal);
