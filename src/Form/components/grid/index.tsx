@@ -102,14 +102,20 @@ const getCellStyle = (cell: any) => {
   responsiveStyles.apply('cell', 'background_color', (c: any) => ({
     backgroundColor: c ? `#${c}` : null
   }));
-  responsiveStyles.apply('cellHover', 'background_color', (a: any) => {
-    const color = `${adjustColor(a || 'ffffffff', -20)}`;
-    return { backgroundColor: color };
-  });
-  responsiveStyles.apply('cellActive', 'background_color', (a: any) => {
-    const color = `${adjustColor(a || 'ffffffff', -45)} !important`;
-    return { backgroundColor: color };
-  });
+  responsiveStyles.applySelectorStyles('cellActive', 'selected_', true);
+  responsiveStyles.applySelectorStyles('cellHover', 'hover_');
+  if (!cell.styles.hover_background_color) {
+    responsiveStyles.apply('cellHover', 'background_color', (a: any) => {
+      return { backgroundColor: adjustColor(a || 'ffffffff', -20) };
+    });
+  }
+  if (!cell.styles.selected_background_color) {
+    responsiveStyles.apply('cellActive', 'background_color', (a: any) => {
+      return {
+        backgroundColor: `${adjustColor(a || 'ffffffff', -20)} !important`
+      };
+    });
+  }
 
   return [
     responsiveStyles.getTarget('cell'),
