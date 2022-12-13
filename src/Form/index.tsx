@@ -1206,7 +1206,6 @@ function Form({
         metadata: {
           elementType: 'text',
           elementIDs: [text.id],
-          trigger: 'click',
           start,
           end
         }
