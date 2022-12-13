@@ -168,6 +168,26 @@ function applyFieldStyles(field: any, styles: any) {
       );
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
+      styles.apply('hover', 'hover_image_color', (a: string) => {
+        if (!a) return {};
+        const level = a === 'black' ? 0 : 100;
+        return {
+          img: {
+            webkitFilter: `brightness(${level}%)`,
+            filter: `brightness(${level}%)`
+          }
+        };
+      });
+      styles.apply('active', 'selected_image_color', (a: string) => {
+        if (!a) return {};
+        const level = a === 'black' ? 0 : 100;
+        return {
+          img: {
+            webkitFilter: `brightness(${level}%)`,
+            filter: `brightness(${level}%)`
+          }
+        };
+      });
       break;
     case 'dropdown':
     case 'gmap_state':

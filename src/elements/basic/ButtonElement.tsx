@@ -92,6 +92,16 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     );
   }
   responsiveStyles.applyBorders({ target: 'buttonHover', prefix: 'hover_' });
+  responsiveStyles.apply('buttonHover', 'hover_image_color', (a: string) => {
+    if (!a) return {};
+    const level = a === 'black' ? 0 : 100;
+    return {
+      img: {
+        webkitFilter: `brightness(${level}%)`,
+        filter: `brightness(${level}%)`
+      }
+    };
+  });
   if (element.styles.selected_background_color) {
     responsiveStyles.applyColor(
       'buttonActive',
@@ -104,6 +114,20 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     target: 'buttonActive',
     prefix: 'selected_'
   });
+  responsiveStyles.apply(
+    'buttonActive',
+    'selected_image_color',
+    (a: string) => {
+      if (!a) return {};
+      const level = a === 'black' ? 0 : 100;
+      return {
+        img: {
+          webkitFilter: `brightness(${level}%)`,
+          filter: `brightness(${level}%)`
+        }
+      };
+    }
+  );
   responsiveStyles.apply('buttonDisabled', 'background_color', (a: any) => {
     const color = `${adjustColor(a, 45)} !important`;
     return {
@@ -116,6 +140,20 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     target: 'buttonDisabled',
     prefix: 'disabled_'
   });
+  responsiveStyles.apply(
+    'buttonDisabled',
+    'disabled_image_color',
+    (a: string) => {
+      if (!a) return {};
+      const level = a === 'black' ? 0 : 100;
+      return {
+        img: {
+          webkitFilter: `brightness(${level}%)`,
+          filter: `brightness(${level}%)`
+        }
+      };
+    }
+  );
   if (element.styles.disabled_background_color) {
     responsiveStyles.applyColor(
       'buttonDisabled',
