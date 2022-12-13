@@ -4,6 +4,7 @@ import {
   isProductSelected,
   getFlatStripeCustomerFieldValues
 } from '../stripe';
+import { fieldValues } from '../../utils/init';
 
 const mockStripeConfig = () => ({
   metadata: {
@@ -135,7 +136,7 @@ describe('Stripe integration helper', () => {
         product_fields_to_clear: ['field_key_1', 'field_key_2']
       });
 
-      const mockFormattedFields = {};
+      const mockFormattedFields: Record<string, any> = {};
       mockFormattedFields[mockServar.key] = { value: { complete: true } };
       const mockUpdateFieldValues = jest.fn();
 
@@ -235,43 +236,46 @@ describe('Stripe integration helper', () => {
     const selectedProductIdFieldKey = 'some_key'; // hidden field key
     it('properly determines the product is selected', async () => {
       // Arrange, Act & Assert
+      Object.assign(fieldValues, {
+        [selectedProductIdFieldKey]: {
+          [productId]: 1
+        }
+      });
+
       expect(
         isProductSelected({
           productId,
-          selectedProductIdField: selectedProductIdFieldKey,
-          fieldValues: {
-            [selectedProductIdFieldKey]: {
-              [productId]: 1
-            }
-          }
+          selectedProductIdField: selectedProductIdFieldKey
         })
       ).toEqual(true);
     });
     it('properly determines the product is not-selected if qty is 0', async () => {
       // Arrange, Act & Assert
+      Object.assign(fieldValues, {
+        [selectedProductIdFieldKey]: {
+          [productId]: 0
+        }
+      });
+
       expect(
         isProductSelected({
           productId,
-          selectedProductIdField: selectedProductIdFieldKey,
-          fieldValues: {
-            [selectedProductIdFieldKey]: {
-              [productId]: 0
-            }
-          }
+          selectedProductIdField: selectedProductIdFieldKey
         })
       ).toEqual(false);
     });
     it('properly determines the product is not-selected if hidden field has some other id', async () => {
       // Arrange, Act & Assert
+      Object.assign(fieldValues, {
+        [selectedProductIdFieldKey]: {
+          'some non-matching product id': 1
+        }
+      });
+
       expect(
         isProductSelected({
           productId,
-          selectedProductIdField: selectedProductIdFieldKey,
-          fieldValues: {
-            [selectedProductIdFieldKey]: {
-              'some non-matching product id': 1
-            }
-          }
+          selectedProductIdField: selectedProductIdFieldKey
         })
       ).toEqual(false);
     });
@@ -280,8 +284,7 @@ describe('Stripe integration helper', () => {
       expect(
         isProductSelected({
           productId,
-          selectedProductIdField: selectedProductIdFieldKey,
-          fieldValues: {}
+          selectedProductIdField: selectedProductIdFieldKey
         })
       ).toEqual(false);
     });

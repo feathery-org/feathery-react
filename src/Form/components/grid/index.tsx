@@ -187,12 +187,10 @@ const CellContainer = ({
       selected_product_id_field: selectedProductIdField
     } = properties;
 
-    const hasSubGridLink =
-      link && ![LINK_NONE, LINK_SELECT_PRODUCT].includes(link);
-    const hasSubGridStripeLink =
+    const hasAction = link && ![LINK_NONE, LINK_SELECT_PRODUCT].includes(link);
+    const hasStripeAction =
       link === LINK_SELECT_PRODUCT && productId && selectedProductIdField;
-    const subgridIsSelectable =
-      !isElement && (hasSubGridLink || hasSubGridStripeLink);
+    const isSelectable = !isElement && (hasAction || hasStripeAction);
 
     const selectableStyles = {
       cursor: 'pointer',
@@ -206,7 +204,7 @@ const CellContainer = ({
         css={{
           ...cellContainerStyle,
           ...cellStyle,
-          ...(subgridIsSelectable ? selectableStyles : {})
+          ...(isSelectable ? selectableStyles : {})
         }}
         onClick={onClick}
       >

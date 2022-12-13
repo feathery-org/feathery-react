@@ -1190,16 +1190,18 @@ function Form({
     properties: { [key: string]: any };
     repeat?: any;
   }
-  const getButtonSelectionState = (button: ClickActionElement) => {
-    const link = button.properties?.link;
+  const getButtonSelectionState = (el: ClickActionElement) => {
+    const props = el.properties ?? {};
+    const link = props.link;
     if (link === LINK_SELECT_PRODUCT) {
       return isProductSelected({
-        productId: button.properties.product_id,
-        selectedProductIdField: button.properties.selected_product_id_field_key,
-        fieldValues
+        productId: props.product_id,
+        selectedProductIdField: props.selected_product_id_field_key
       });
     } else if (link === LINK_STORE_FIELD) {
-      return Boolean(fieldValues[button.properties?.custom_store_field_key]);
+      return Boolean(fieldValues[props.custom_store_field_key]);
+    } else if (link === LINK_CUSTOM) {
+      return fieldValues[props.select_field_indicator_key];
     }
     return false;
   };
