@@ -295,8 +295,7 @@ function Form({
             errorCallback: getErrorCallback({
               trigger: {
                 id: gMapBlurKey,
-                type: 'field',
-                action: 'blur'
+                type: 'field'
               }
             }),
             fieldKey: gMapBlurKey,
@@ -867,8 +866,7 @@ function Form({
     const elementType = metadata.elementType;
     const trigger = {
       ...lookUpTrigger(activeStep, metadata.elementIDs[0], elementType),
-      type: elementType,
-      action: metadata.elementType === 'field' ? 'change' : 'click'
+      type: elementType
     };
 
     // validate all step fields and buttons
@@ -1164,8 +1162,7 @@ function Form({
           },
           trigger: {
             ...lookUpTrigger(activeStep, button.id, 'button'),
-            type: 'button',
-            action: 'click'
+            type: 'button'
           },
           lastStep: !getNextStepKey(metadata)
         }));
@@ -1278,8 +1275,7 @@ function Form({
       clickPromise = runUserCallback(onCustomAction, () => ({
         trigger: {
           ...lookUpTrigger(activeStep, button.id, 'button'),
-          type: 'button',
-          action: 'click'
+          type: 'button'
         }
       }));
     } else if (link === LINK_SEND_SMS) {
@@ -1464,11 +1460,7 @@ function Form({
     setCardElement,
     onCustomAction: (id: string) =>
       runUserCallback(onCustomAction, () => ({
-        trigger: {
-          id,
-          type: 'container',
-          action: 'click'
-        }
+        trigger: { id, type: 'container' }
       }))
   };
 

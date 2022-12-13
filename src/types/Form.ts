@@ -12,7 +12,6 @@ export type SetErrors = (errors: {
 }) => void;
 
 type Trigger = {
-  action: 'click' | 'change';
   id: string;
   text: string;
   type: 'button' | 'text' | 'field';
