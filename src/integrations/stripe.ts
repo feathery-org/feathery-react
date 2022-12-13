@@ -1,6 +1,7 @@
 import { loadStripe } from '@stripe/stripe-js';
 import { useState } from 'react';
 import { runningInClient, featheryDoc } from '../utils/browser';
+import { fieldValues } from '../utils/init';
 
 const stripePromise = new Promise((resolve) => {
   if (runningInClient())
@@ -163,17 +164,17 @@ export async function setupPaymentMethodAndPay(
 
 export function isProductSelected({
   productId,
-  selectedProductIdField,
-  fieldValues
+  selectedProductIdField
 }: {
   productId: string;
   selectedProductIdField: string;
-  fieldValues: { [_: string]: any };
 }) {
   if (productId && selectedProductIdField) {
     // get the value from the hidden field.  Example: {"some_stripe_product_id": 1}
     // selectedProductIdField can be shared, so make sure it is our product that is selected.
-    return Boolean((fieldValues[selectedProductIdField] || {})[productId]);
+    return Boolean(
+      ((fieldValues[selectedProductIdField] as any) || {})[productId]
+    );
   }
   return false;
 }
