@@ -9,6 +9,8 @@ import { fieldValues } from '../../utils/init';
 export const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 
 export function replaceTextVariables(text: string, repeat: any) {
+  if (!text) return '';
+
   return text.replace(TEXT_VARIABLE_PATTERN, (pattern: any) => {
     const pStr = pattern.slice(2, -2);
     if (pStr in fieldValues) {
