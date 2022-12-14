@@ -56,7 +56,7 @@ const Subgrid = ({
       </CellContainer>
     );
   } else {
-    const containerId = node.properties.callback_id ?? '';
+    const containerId = node.properties?.callback_id ?? '';
     const customComponent = form.customComponents[containerId];
     return (
       <CellContainer
