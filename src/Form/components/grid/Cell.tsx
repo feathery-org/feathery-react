@@ -36,7 +36,7 @@ const Cell = ({ node: el, form, flags }: any) => {
     loaders,
     getButtonSelectionState,
     buttonOnClick,
-    textOnClick,
+    elementOnNavigate,
     fieldOnChange,
     inlineErrors,
     setInlineErrors,
@@ -85,7 +85,7 @@ const Cell = ({ node: el, form, flags }: any) => {
   else if (type === 'text')
     return (
       <Elements.TextElement
-        textSpanOnClick={textOnClick}
+        textSpanOnClick={elementOnNavigate('text')}
         conditions={activeStep.next_conditions}
         {...basicProps}
       />

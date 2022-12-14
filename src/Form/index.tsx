@@ -137,6 +137,12 @@ const findSubmitButton = (step: any) =>
       SUBMITTABLE_LINKS.includes(b.properties.link)
   );
 
+interface ClickActionElement {
+  id: string;
+  properties: { [key: string]: any };
+  repeat?: any;
+}
+
 function Form({
   formName,
   onChange = null,
@@ -1174,11 +1180,6 @@ function Form({
     }
   };
 
-  interface ClickActionElement {
-    id: string;
-    properties: { [key: string]: any };
-    repeat?: any;
-  }
   const getButtonSelectionState = (el: ClickActionElement) => {
     const props = el.properties ?? {};
     const link = props.link;
@@ -1195,23 +1196,25 @@ function Form({
     return false;
   };
 
-  const textOnClick = (
-    text: ClickActionElement,
-    start: number | undefined,
-    end: number | undefined
-  ) => {
-    const link = text.properties.link;
-    if (link === LINK_NEXT)
-      goToNewStep({
-        metadata: {
-          elementType: 'text',
-          elementIDs: [text.id],
-          start,
-          end
-        }
-      });
-    else if (link === LINK_BACK) goToPreviousStep();
-  };
+  const elementOnNavigate =
+    (elementType: 'text' | 'container') =>
+    (
+      element: ClickActionElement,
+      start?: number | undefined,
+      end?: number | undefined
+    ) => {
+      const link = element.properties.link;
+      if (link === LINK_NEXT)
+        goToNewStep({
+          metadata: {
+            elementIDs: [element.id],
+            elementType,
+            start,
+            end
+          }
+        });
+      else if (link === LINK_BACK) goToPreviousStep();
+    };
 
   const buttonOnClick = async (button: ClickActionElement) => {
     // Prevent same button from being clicked multiple times while still running
@@ -1440,7 +1443,7 @@ function Form({
     loaders,
     getButtonSelectionState,
     buttonOnClick,
-    textOnClick,
+    elementOnNavigate,
     fieldOnChange,
     inlineErrors,
     setInlineErrors,

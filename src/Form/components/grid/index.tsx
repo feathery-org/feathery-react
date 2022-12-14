@@ -4,7 +4,9 @@ import ResponsiveStyles from '../../../elements/styles';
 import { getDefaultFieldValue } from '../../../utils/formHelperFunctions';
 import { adjustColor } from '../../../utils/styles';
 import {
+  LINK_BACK,
   LINK_CUSTOM,
+  LINK_NEXT,
   LINK_NONE,
   LINK_SELECT_PRODUCT
 } from '../../../elements/basic/ButtonElement';
@@ -43,7 +45,6 @@ const Subgrid = ({
   viewport = 'desktop',
   flags
 }: any) => {
-  const { buttonOnClick, getButtonSelectionState, onCustomAction } = form;
   if (node.isElement || node.isEmpty) {
     return (
       <CellContainer
@@ -51,6 +52,7 @@ const Subgrid = ({
         node={node}
         axis={axis}
         layout={layout}
+        form={form}
       >
         {!node.isEmpty && <Cell form={form} node={node} flags={flags} />}
       </CellContainer>
@@ -61,12 +63,11 @@ const Subgrid = ({
         node={node}
         axis={axis}
         layout={layout}
-        selected={getButtonSelectionState({
+        selected={form.getButtonSelectionState({
           id: node.key,
           properties: node.properties
         })}
-        buttonOnClick={buttonOnClick}
-        onCustomAction={onCustomAction}
+        form={form}
       >
         <GridContainer node={node}>
           {node.children.map((child: any, i: any) => {
@@ -160,29 +161,33 @@ const getCellContainerStyle = (axis: string, layout: string) => {
 
 const CellContainer = ({
   children,
-  node: { key, isElement, parent, cellData, properties = null },
+  node,
   axis,
   layout,
   selected,
-  onCustomAction,
-  buttonOnClick = () => {}
+  form
 }: any) => {
+  let { key, isElement, parent, cellData, properties } = node;
   if (!parent) return children;
 
   const cellContainerStyle = getCellContainerStyle(axis, layout);
 
   if (!properties) properties = {};
-  const onClick = (e: React.MouseEvent) => {
-    if (!properties.link || properties.link === LINK_NONE) return;
-    e.stopPropagation();
-    if (properties.link === LINK_CUSTOM) onCustomAction(properties.callback_id);
-    else buttonOnClick({ id: key, properties });
-  };
+  const link = properties.link;
+
+  if (!cellData && link && link !== LINK_NONE) cellData = { styles: {} };
 
   if (cellData) {
+    const onClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (link === LINK_CUSTOM) form.onCustomAction(properties.callback_id);
+      else if ([LINK_NEXT, LINK_BACK].includes(link))
+        form.elementOnNavigate('container')(node);
+      else form.buttonOnClick({ id: key, properties });
+    };
+
     const [cellStyle, cellHoverStyle, cellActiveStyle] = getCellStyle(cellData);
     const {
-      link = LINK_NONE,
       product_id: productId,
       selected_product_id_field: selectedProductIdField
     } = properties;
@@ -213,11 +218,7 @@ const CellContainer = ({
     );
   }
 
-  return (
-    <div style={cellContainerStyle} onClick={onClick}>
-      {children}
-    </div>
-  );
+  return <div style={cellContainerStyle}>{children}</div>;
 };
 const GridContainer = ({ children, node: { axis } }: any) => {
   return (
