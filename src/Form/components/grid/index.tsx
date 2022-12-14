@@ -56,6 +56,8 @@ const Subgrid = ({
       </CellContainer>
     );
   } else {
+    const containerId = node.properties.callback_id ?? '';
+    const customComponent = form.customComponents[containerId];
     return (
       <CellContainer
         node={node}
@@ -69,21 +71,22 @@ const Subgrid = ({
         onCustomAction={onCustomAction}
       >
         <GridContainer node={node}>
-          {node.children.map((child: any, i: any) => {
-            layout = node.layout[i];
-            axis = node.axis;
-            return (
-              <Subgrid
-                key={getMapKey(child) + ':' + i}
-                tree={child}
-                axis={axis}
-                layout={layout}
-                form={form}
-                viewport={viewport}
-                flags={flags}
-              />
-            );
-          })}
+          {customComponent ??
+            node.children.map((child: any, i: any) => {
+              layout = node.layout[i];
+              axis = node.axis;
+              return (
+                <Subgrid
+                  key={getMapKey(child) + ':' + i}
+                  tree={child}
+                  axis={axis}
+                  layout={layout}
+                  form={form}
+                  viewport={viewport}
+                  flags={flags}
+                />
+              );
+            })}
         </GridContainer>
       </CellContainer>
     );
