@@ -28,9 +28,10 @@ function FileUploadField({
   const thumbnailData = useThumbnailData(rawFiles);
   const allowMoreFiles = isMultiple || thumbnailData.length === 0;
   const fileExists = thumbnailData.length > 0;
+  const hidePreview = element.styles.hide_file_preview;
 
   const onClick = () => {
-    if (!allowMoreFiles) return;
+    if (!allowMoreFiles && !hidePreview) return;
     fileInput.current.click();
   };
 
@@ -58,9 +59,10 @@ function FileUploadField({
       return;
     }
 
-    if (files.length + rawFiles.length > NUM_FILES_LIMIT) {
+    const originalLength = hidePreview ? 0 : rawFiles.length;
+    if (files.length + originalLength > NUM_FILES_LIMIT) {
       // Splice off the uploaded files past the upload count
-      files.splice(NUM_FILES_LIMIT - rawFiles.length);
+      files.splice(NUM_FILES_LIMIT - originalLength);
     }
 
     const uploadedFiles = files.map((file) => Promise.resolve(file));
@@ -68,7 +70,7 @@ function FileUploadField({
     // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     const isRawFilesNull = rawFiles.length === 1 && rawFiles[0] === null;
     let newRawFiles, length;
-    if (isRawFilesNull) {
+    if (isRawFilesNull || hidePreview) {
       newRawFiles = uploadedFiles;
       length = 0;
     } else {
@@ -116,74 +118,75 @@ function FileUploadField({
       {...elementProps}
     >
       {children}
-      {thumbnailData.map(({ filename, thumbnail }: any, index: any) => (
-        <div
-          key={index}
-          css={{
-            position: 'relative',
-            maxHeight: '100%',
-            overflow: 'hidden',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            boxSizing: 'border-box',
-            margin: isMultiple ? '0 6px 6px 0' : undefined,
-            ...responsiveStyles.getTarget('field')
-          }}
-        >
-          {thumbnail ? (
-            <Image
-              src={thumbnail}
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain'
-              }}
-            />
-          ) : (
-            <span
-              style={{
-                color: 'black',
-                height: '100%',
-                width: '100%',
-                wordBreak: 'break-all',
-                fontSize: 'small',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                textAlign: 'center'
-              }}
-            >
-              {filename}
-            </span>
-          )}
+      {!hidePreview &&
+        thumbnailData.map(({ filename, thumbnail }: any, index: any) => (
           <div
-            style={{
-              position: 'absolute',
-              top: '4px',
-              right: '4px',
-              color: 'white',
-              background: '#AAA',
-              height: '16px',
-              width: '16px',
-              borderRadius: '50%',
-              cursor: 'pointer',
+            key={index}
+            css={{
+              position: 'relative',
+              maxHeight: '100%',
+              overflow: 'hidden',
               display: 'flex',
               justifyContent: 'center',
-              alignItems: 'center'
-            }}
-            onClick={(event) => {
-              // Stop propagation so window doesn't open up to pick another file to upload
-              event.stopPropagation();
-              fileInput.current.setCustomValidity('');
-              onClear(index)();
+              alignItems: 'center',
+              boxSizing: 'border-box',
+              margin: isMultiple ? '0 6px 6px 0' : undefined,
+              ...responsiveStyles.getTarget('field')
             }}
           >
-            <CloseIcon fill='white' width={12} height={12} />
+            {thumbnail ? (
+              <Image
+                src={thumbnail}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain'
+                }}
+              />
+            ) : (
+              <span
+                style={{
+                  color: 'black',
+                  height: '100%',
+                  width: '100%',
+                  wordBreak: 'break-all',
+                  fontSize: 'small',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  textAlign: 'center'
+                }}
+              >
+                {filename}
+              </span>
+            )}
+            <div
+              style={{
+                position: 'absolute',
+                top: '4px',
+                right: '4px',
+                color: 'white',
+                background: '#AAA',
+                height: '16px',
+                width: '16px',
+                borderRadius: '50%',
+                cursor: 'pointer',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}
+              onClick={(event) => {
+                // Stop propagation so window doesn't open up to pick another file to upload
+                event.stopPropagation();
+                fileInput.current.setCustomValidity('');
+                onClear(index)();
+              }}
+            >
+              <CloseIcon fill='white' width={12} height={12} />
+            </div>
           </div>
-        </div>
-      ))}
-      {allowMoreFiles && (
+        ))}
+      {(allowMoreFiles || hidePreview) && (
         <div
           onClick={onClick}
           css={{
