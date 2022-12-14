@@ -4,8 +4,10 @@ const PLACEHOLDER_IMAGE =
   'https://feathery.s3.us-west-1.amazonaws.com/theme-image-preview.png';
 
 function applyImageStyles(element: any, responsiveStyles: any) {
-  responsiveStyles.addTargets('image');
-  responsiveStyles.applyWidth('image');
+  responsiveStyles.addTargets('imageContainer', 'image');
+  responsiveStyles.applyWidth('imageContainer');
+  responsiveStyles.applyCorners('imageContainer');
+  responsiveStyles.applyCorners('image');
   return responsiveStyles;
 }
 
@@ -22,7 +24,7 @@ function ImageElement({
   return (
     <div
       css={{
-        ...styles.getTarget('image'),
+        ...styles.getTarget('imageContainer'),
         maxHeight: '100%',
         position: 'relative',
         display: 'flex',
@@ -36,7 +38,8 @@ function ImageElement({
         css={{
           objectFit: 'contain',
           width: '100%',
-          maxHeight: '100%'
+          maxHeight: '100%',
+          ...styles.getTarget('image')
         }}
         {...elementProps}
       />
