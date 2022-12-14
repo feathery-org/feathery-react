@@ -45,6 +45,7 @@ type InitState = {
   sdkKey: string;
   preloadForms: { [formName: string]: any };
   sessions: { [formName: string]: any };
+  redirectAfterLogin: boolean;
   fieldValuesInitialized: boolean;
   validateCallbacks: { [cbKey: string]: any };
   renderCallbacks: { [cbKey: string]: any };
@@ -63,6 +64,7 @@ const initState: InitState = {
   authEmail: '',
   authPhoneNumber: '',
   language: '',
+  redirectAfterLogin: false,
   preloadForms: [],
   sessions: {},
   defaultErrors: {},
