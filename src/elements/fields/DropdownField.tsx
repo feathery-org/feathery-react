@@ -33,11 +33,12 @@ export default function DropdownField({
         </option>
       ));
   } else {
+    const labels = servar.metadata.option_labels;
     options = servar.metadata.options.map((option: any, index: number) => {
-      const label = servar.metadata.option_labels[index];
+      const label = labels && labels[index] ? labels[index] : option;
       return (
         <option key={option} value={option}>
-          {label ?? option}
+          {label}
         </option>
       );
     });

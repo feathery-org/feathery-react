@@ -22,6 +22,7 @@ function ButtonGroupField({
         : {},
     [fieldVal]
   );
+  const labels = servar.metadata.option_labels;
   return (
     <div css={{ position: 'relative' }}>
       {children}
@@ -36,7 +37,7 @@ function ButtonGroupField({
       >
         {servar.metadata.options.map((opt: any, index: any) => {
           const imageUrl = servar.metadata.option_images[index];
-          const label = servar.metadata.option_labels[index] ?? opt;
+          const label = labels && labels[index] ? labels[index] : opt;
           return (
             <div
               onClick={() => onClick(opt)}

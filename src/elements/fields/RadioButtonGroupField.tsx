@@ -38,6 +38,7 @@ function RadioButtonGroupField({
     return responsiveStyles;
   }, [responsiveStyles]);
 
+  const labels = servar.metadata.option_labels;
   return (
     <div
       css={{ ...responsiveStyles.getTarget('fc'), position: 'relative' }}
@@ -46,7 +47,7 @@ function RadioButtonGroupField({
       {children}
       {fieldLabel}
       {servar.metadata.options.map((opt: any, i: number) => {
-        const optionLabel = servar.metadata.option_labels[i] ?? opt;
+        const optionLabel = labels && labels[i] ? labels[i] : opt;
         return (
           <div key={`${servar.key}-${i}`} css={{ display: 'flex' }}>
             <input
