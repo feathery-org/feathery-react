@@ -100,7 +100,7 @@ function validateElement(element: {
   // Now apply any custom validations
   if (validations) {
     const firstMatchingValidation = validations.find((validation) =>
-      validation.rules.every((rule) => evalComparisonRule(rule, fieldValues))
+      validation.rules.every((rule) => evalComparisonRule(rule))
     );
     if (firstMatchingValidation) return firstMatchingValidation.message;
   }
