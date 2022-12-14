@@ -1,3 +1,5 @@
+import { fieldValues } from './init';
+
 type OPERATOR_CODE =
   | 'equal'
   | 'not_equal'
@@ -74,7 +76,6 @@ const valueTypeIsField = (v: ValueType): v is FieldValueType =>
 
 const evalComparisonRule = (
   rule: ResolvedComparisonRule,
-  fieldValues: { [key: string]: any },
   repeatIndex?: number
 ): boolean => {
   // flatten the right side values/fields into flat list of values

@@ -140,7 +140,7 @@ export const nextStepKey = (nextConditions: any, metadata: any) => {
       if (newKey) return;
       let rulesMet = true;
       cond.rules.forEach((rule: ResolvedComparisonRule) => {
-        rulesMet &&= evalComparisonRule(rule, fieldValues);
+        rulesMet &&= evalComparisonRule(rule);
       });
       if (rulesMet) newKey = cond.next_step_key;
     });

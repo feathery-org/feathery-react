@@ -54,9 +54,7 @@ function shouldElementHide({ element }: { element: any }) {
   const reshapedHideIfs = reshapeHideIfs(element.hide_ifs ?? []);
 
   return reshapedHideIfs.some((hideIfRules: ResolvedComparisonRule[]) =>
-    hideIfRules.every((rule) =>
-      evalComparisonRule(rule, fieldValues, element.repeat)
-    )
+    hideIfRules.every((rule) => evalComparisonRule(rule, element.repeat))
   );
 }
 
