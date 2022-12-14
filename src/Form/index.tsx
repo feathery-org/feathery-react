@@ -122,6 +122,7 @@ export interface Props {
   display?: 'inline' | 'modal';
   elementProps?: ElementProps;
   formProps?: Record<string, any>;
+  customComponents?: Record<string, any>;
   style?: { [cssProperty: string]: string };
   className?: string;
   children?: JSX.Element;
@@ -153,6 +154,7 @@ function Form({
   display = 'inline',
   elementProps = {},
   formProps = {},
+  customComponents = {},
   style = {},
   className = '',
   children
@@ -1436,6 +1438,7 @@ function Form({
     curDepth,
     maxDepth,
     elementProps,
+    customComponents,
     activeStep,
     loaders,
     getButtonSelectionState,
