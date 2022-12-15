@@ -29,7 +29,7 @@ export type FieldData = {
 export interface Context {
   setValues: typeof setValues;
   setOptions: (newOptions: { [servarKey: string]: FeatheryFieldTypes }) => void;
-  setProgress: (val: number) => void;
+  setProgress: (val: number | { progress?: number; segments?: number }) => void;
   setStep: SetStep;
   step: { style: { backgroundColor: string } };
   userId: string;

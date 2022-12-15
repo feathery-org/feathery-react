@@ -27,7 +27,7 @@ function applyProgressBarStyles(element: any, responsiveStyles: any) {
 function ProgressBarElement({
   element,
   responsiveStyles,
-  progress = null,
+  progress,
   curDepth = 1,
   maxDepth = 1,
   elementProps = {},
@@ -38,17 +38,28 @@ function ProgressBarElement({
     [responsiveStyles]
   );
 
-  const actualProgress = progress ?? element.properties?.progress;
-  const percent = isNum(actualProgress)
-    ? actualProgress
+  let userProgress, userSegments;
+  if (progress) {
+    if (typeof progress === 'number') {
+      userProgress = progress;
+    } else {
+      userProgress = progress.progress;
+      userSegments = progress.segments ?? element.properties.num_segments;
+    }
+  }
+
+  userProgress = userProgress ?? element.properties?.progress;
+  const percent = isNum(userProgress)
+    ? userProgress
     : Math.round((100 * curDepth) / (maxDepth || 1));
-  const BarComponent = element.properties.num_segments ? SegmentBar : SmoothBar;
+
+  const BarComponent = userSegments ? SegmentBar : SmoothBar;
   const progressBarElements = [
     <BarComponent
       key='progress'
       styles={styles}
       percent={percent}
-      numSegments={element.properties.num_segments}
+      numSegments={userSegments}
     />
   ];
   const completionPercentage = (
