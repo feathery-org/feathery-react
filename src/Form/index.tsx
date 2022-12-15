@@ -858,7 +858,7 @@ function Form({
   const getNextStepKey = (metadata: any) =>
     nextStepKey(activeStep.next_conditions, metadata);
 
-  const submit = async ({
+  const submitAndNavigate = async ({
     metadata,
     repeat = 0,
     buttonAction,
@@ -976,18 +976,31 @@ function Form({
         triggerErrors: true
       });
       if (invalid) return;
-
-      // async execution after user's onSubmit
-      return submitAndNavigate({
-        metadata,
-        formattedFields
-      });
-    } else {
-      return submitAndNavigate({
-        metadata,
-        formattedFields
-      });
     }
+
+    submitStepHiddenFields();
+    const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
+      let newVal = (val as any).value;
+      newVal = Array.isArray(newVal)
+        ? newVal.filter((v) => v || v === 0)
+        : newVal;
+      return {
+        key,
+        [(val as any).type]: newVal
+      };
+    });
+    let submitPromise = null;
+    if (featheryFields.length > 0)
+      // @ts-expect-error TS(2531): Object is possibly 'null'.
+      submitPromise = client.submitStep(featheryFields);
+
+    trackEvent('FeatheryStepSubmit', activeStep.key, formName);
+
+    return goToNewStep({
+      metadata,
+      submitPromise,
+      submitData: true
+    });
   };
 
   const isStoreFieldValueAction = (el: any) =>
@@ -1037,32 +1050,6 @@ function Form({
     }
 
     return {};
-  }
-
-  function submitAndNavigate({ metadata, formattedFields }: any) {
-    submitStepHiddenFields();
-    const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
-      let newVal = (val as any).value;
-      newVal = Array.isArray(newVal)
-        ? newVal.filter((v) => v || v === 0)
-        : newVal;
-      return {
-        key,
-        [(val as any).type]: newVal
-      };
-    });
-    let submitPromise = null;
-    if (featheryFields.length > 0)
-      // @ts-expect-error TS(2531): Object is possibly 'null'.
-      submitPromise = client.submitStep(featheryFields);
-
-    trackEvent('FeatheryStepSubmit', activeStep.key, formName);
-
-    return goToNewStep({
-      metadata,
-      submitPromise,
-      submitData: true
-    });
   }
 
   async function goToNewStep({
@@ -1154,7 +1141,7 @@ function Form({
         elementIDs: [button.id]
       };
       if (submitData) {
-        await submit({
+        await submitAndNavigate({
           metadata,
           repeat: button.repeat || 0,
           buttonAction,
@@ -1423,7 +1410,7 @@ function Form({
           })
         ) {
           buttonOnClick(submitButton);
-        } else submit({ metadata, repeat: elementRepeatIndex });
+        } else submitAndNavigate({ metadata, repeat: elementRepeatIndex });
       } else goToNewStep({ metadata });
     };
 
