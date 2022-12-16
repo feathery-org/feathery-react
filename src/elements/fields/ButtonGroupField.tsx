@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { imgMaxSizeStyles, noTextSelectStyles } from '../styles';
+import useBorder from '../components/useBorder';
 
 function ButtonGroupField({
   element,
@@ -11,7 +12,6 @@ function ButtonGroupField({
   elementProps = {},
   children
 }: any) {
-  const servar = element.servar;
   const selectedOptMap = useMemo(
     () =>
       Array.isArray(fieldVal)
@@ -22,6 +22,9 @@ function ButtonGroupField({
         : {},
     [fieldVal]
   );
+  const { borderStyles, customBorder } = useBorder(element);
+
+  const servar = element.servar;
   const labels = servar.metadata.option_labels;
   return (
     <div css={{ position: 'relative' }}>
@@ -43,18 +46,27 @@ function ButtonGroupField({
               onClick={() => onClick(opt)}
               key={`${servar.key}-${index}`}
               css={{
-                boxSizing: 'border-box',
+                position: 'relative',
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
                 cursor: editMode ? 'default' : 'pointer',
-                '&:hover': editMode ? {} : responsiveStyles.getTarget('hover'),
-                ...responsiveStyles.getTargets(
-                  'field',
-                  selectedOptMap[opt] ? 'active' : ''
-                )
+                ...responsiveStyles.getTarget('field'),
+                '&:hover': editMode
+                  ? {}
+                  : {
+                      ...responsiveStyles.getTarget('hover'),
+                      ...borderStyles.hover
+                    },
+                '&&': selectedOptMap[opt]
+                  ? {
+                      ...responsiveStyles.getTarget('active'),
+                      ...borderStyles.active
+                    }
+                  : {}
               }}
             >
+              {customBorder}
               {imageUrl && (
                 <img
                   src={imageUrl}

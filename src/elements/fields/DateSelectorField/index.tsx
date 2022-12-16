@@ -9,6 +9,7 @@ import DateSelectorStyles from './styles';
 import { bootstrapStyles, ERROR_COLOR } from '../../styles';
 import { IMaskInput } from 'react-imask';
 import { parseISO } from 'date-fns';
+import useBorder from '../../components/useBorder';
 
 function formatDateString(date: any) {
   if (!date) return '';
@@ -40,6 +41,7 @@ function DateSelectorField({
     setInternalDate(newDate);
     onChange(formatDateString(newDate));
   };
+  const { borderStyles, customBorder } = useBorder(element);
   const [focused, setFocused] = useState(false);
 
   const servar = element.servar;
@@ -59,9 +61,21 @@ function DateSelectorField({
         css={{
           position: 'relative',
           width: '100%',
-          ...responsiveStyles.getTarget('sub-fc')
+          ...responsiveStyles.getTarget('sub-fc'),
+          '&:hover': {
+            ...responsiveStyles.getTarget('hover'),
+            ...borderStyles.hover
+          },
+          '&&': focused
+            ? {
+                ...responsiveStyles.getTarget('active'),
+                ...borderStyles.active
+              }
+            : {},
+          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
         }}
       >
+        {customBorder}
         <DateSelectorStyles />
         <DatePicker
           selected={internalDate}
@@ -78,15 +92,13 @@ function DateSelectorField({
               css={{
                 height: '100%',
                 width: '100%',
+                border: 'none',
+                background: 'transparent',
                 ...bootstrapStyles,
                 ...responsiveStyles.getTarget('field'),
-                ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-                '&:hover': responsiveStyles.getTarget('hover'),
-                '&:focus': responsiveStyles.getTarget('active'),
-                '&:not(:focus)':
-                  value || !element.properties.placeholder
-                    ? {}
-                    : { color: 'transparent !important' }
+                ...(focused || value || !element.properties.placeholder
+                  ? {}
+                  : { color: 'transparent !important' })
               }}
               type='tel'
               mask='00/00/0000'

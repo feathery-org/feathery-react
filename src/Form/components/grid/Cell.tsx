@@ -443,7 +443,6 @@ const Cell = ({ node: el, form, flags }: any) => {
               const change = changeValue(val, el, index);
               if (change) onChange();
             }}
-            errorDisplayMode={formSettings.errorType}
           />
         );
       default:

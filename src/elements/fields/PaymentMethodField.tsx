@@ -11,6 +11,7 @@ import { filterKeys } from '../../utils/primitives';
 
 import InlineTooltip from '../components/Tooltip';
 import { ERROR_COLOR } from '../styles';
+import useBorder from '../components/useBorder';
 
 // In order for the stripe card element to operate and show the hybrid fields, stripe must be loaded and
 // initialized with a key.  In a runtime form, it is crucial to use the real key.  However. in
@@ -37,6 +38,14 @@ const supportedStripeCssProps = [
   'textTransform'
 ];
 
+// There are problems loading custom fonts into the Stripe element.
+// Also, certain fonts (Open Sans) get cutoff.  So, punting on it
+// completely and just using generic sans-serif all the time.
+const toSansSerif = (styles: { fontFamily?: string }) => ({
+  ...styles,
+  fontFamily: 'sans-serif'
+});
+
 const CardField = ({
   element,
   responsiveStyles,
@@ -47,36 +56,33 @@ const CardField = ({
   onChange = () => {},
   editMode,
   inlineError,
-  errorDisplayMode
+  children
 }: any) => {
+  const [focused, setFocused] = useState(false);
+  const { borderStyles, customBorder } = useBorder(element);
+
   const stripe = useStripe();
-  const elements = useElements();
+  const stripeElements = useElements();
   const [lastError, setLastError] = useState('');
 
   useEffect(() => {
-    if (!stripe || !elements) {
+    if (!stripe || !stripeElements) {
       // Stripe.js has not yet loaded.
       return;
     }
-    setCardElement(element.servar.key, elements.getElement(CardElement));
-  }, [stripe, element.servar.key, elements]);
+    setCardElement(element.servar.key, stripeElements.getElement(CardElement));
+  }, [stripe, element.servar.key, stripeElements]);
 
   // In general, mobile styles are supported for the payment method field.  However, we do this using
   // media queries.  The Stripe card element does not support this so the mobile styles that are set
   // in media queries directly below are ignored.  This means that mobile styles like color and the various font styles
   // do not work (mobile settings will not be applied).  However, other mobile styles for things like
   // background color and borders are set in the parent of the card element and DO WORK.
-
-  // There are problems loading custom fonts into the Stripe element.
-  // Also, certain fonts (Open Sans) get cutoff.  So, punting on it
-  // completely and just using generic sans-serif all the time.
-  const toSansSerif = (styles: { fontFamily?: string }) => ({
-    ...styles,
-    fontFamily: 'sans-serif'
-  });
   const cardElementOptions = {
     style: {
       base: {
+        background: 'none',
+        border: 'none',
         textDecoration: 'none', // Bug in card element - force the reset to none
         ...filterKeys(
           toSansSerif(responsiveStyles.getTarget('field')),
@@ -90,15 +96,15 @@ const CardField = ({
           )
         },
         ':hover': filterKeys(
-          toSansSerif(responsiveStyles.getTarget('hover')),
+          toSansSerif(responsiveStyles.getTarget('hoverFont')),
           supportedStripeCssProps
         ),
         ':focus': filterKeys(
-          toSansSerif(responsiveStyles.getTarget('active')),
+          toSansSerif(responsiveStyles.getTarget('activeFont')),
           supportedStripeCssProps
         )
       },
-      complete: toSansSerif(responsiveStyles.getTarget('completed')),
+      complete: toSansSerif(responsiveStyles.getTarget('completedFont')),
       invalid: {
         color: ERROR_COLOR,
         iconColor: ERROR_COLOR
@@ -136,6 +142,7 @@ const CardField = ({
       }}
       {...elementProps}
     >
+      {children}
       {fieldLabel}
       <div
         css={{
@@ -147,41 +154,48 @@ const CardField = ({
           display: 'flex',
           alignItems: 'center',
           ...responsiveStyles.getTarget('sub-fc'),
-          '&:hover': responsiveStyles.getTarget('hover'),
-          '&:focus': responsiveStyles.getTarget('active'),
+          '&:hover': {
+            ...responsiveStyles.getTarget('hover'),
+            ...borderStyles.hover
+          },
+          '&&': focused
+            ? {
+                ...responsiveStyles.getTarget('active'),
+                ...borderStyles.active
+              }
+            : {},
           ...(inlineError ? { borderColor: ERROR_COLOR } : {})
         }}
       >
+        {customBorder}
         <div css={{ width: '100%', position: 'relative' }}>
           {/* position an input field under the card element to support html5 errors */}
-          {!editMode && errorDisplayMode === 'html5' && (
-            <input
-              id={element.servar.key}
-              css={{
-                width: '100%',
-                height: 0,
-                border: 'none',
-                opacity: 0,
-                '&:focus': {
-                  outline: 'none'
-                }
-              }}
-              // @ts-expect-error TS(2322): Type 'string' is not assignable to type 'number'.
-              tabIndex='-1'
-            />
-          )}
+          <input
+            id={element.servar.key}
+            css={{
+              width: '100%',
+              height: 0,
+              border: 'none',
+              opacity: 0,
+              '&:focus': {
+                outline: 'none'
+              }
+            }}
+            // @ts-expect-error TS(2322): Type 'string' is not assignable to type 'number'.
+            tabIndex='-1'
+          />
           <CardElement
-            css={
-              !editMode
-                ? {
-                    position: 'absolute',
-                    top: 0,
-                    width: '100%'
-                  }
-                : {}
-            }
+            css={{
+              position: 'absolute',
+              top: 4,
+              left: 5,
+              right: 5,
+              width: '100%'
+            }}
             options={cardElementOptions}
             onChange={handleCardChange}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
           />
         </div>
         <InlineTooltip element={element} responsiveStyles={responsiveStyles} />

@@ -6,7 +6,7 @@ export const mobileBreakpointValue = 478;
 
 export const mobileBreakpointKey = `@media (max-width: ${mobileBreakpointValue}px)`;
 
-const borderWidthProps = [
+export const borderWidthProps = [
   'border_top_width',
   'border_right_width',
   'border_bottom_width',
@@ -31,7 +31,6 @@ class ResponsiveStyles {
   mobileTargets: any;
   styles: any;
   targets: any;
-  maxBorderWidths: Record<string, number>;
 
   constructor(element: any, targets: string[], handleMobile = false) {
     this.element = element;
@@ -44,21 +43,6 @@ class ResponsiveStyles {
         targets.map((t: string) => [t, {}])
       );
     }
-
-    this.maxBorderWidths = ['top', 'right', 'bottom', 'left'].reduce(
-      (borderWidths: any, direction) => {
-        borderWidths[direction] = this._getMaxBorderWidth(direction);
-        return borderWidths;
-      },
-      {}
-    );
-  }
-
-  _getMaxBorderWidth(direction: string) {
-    const borderWidths: Array<any> = Object.entries(this.styles)
-      .filter(([key, val]) => key.endsWith(`border_${direction}_width`) && val)
-      .map(([, val]) => val);
-    return Math.max(0, ...borderWidths);
   }
 
   addTargets(...targets: string[]) {
@@ -145,12 +129,7 @@ class ResponsiveStyles {
     }));
   }
 
-  applyBorders({
-    target = '',
-    prefix = '',
-    important = true,
-    accountForPadding = false
-  }) {
+  applyBorders({ target = '', prefix = '', important = true }) {
     // If color isn't defined on one of the sides, that means there's no border
     if (!this.styles) return false;
     if (!this.styles[`${prefix}border_top_color`]) return false;
@@ -181,18 +160,9 @@ class ResponsiveStyles {
       target,
       borderWidthProps.map((prop) => `${prefix}${prop}`),
       // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
-      (a, b, c, d) => {
-        const styles: any = {
-          borderWidth: `${a}px ${b}px ${c}px ${d}px ${i}`
-        };
-        if (accountForPadding)
-          styles.padding = `${this.maxBorderWidths.top - a}px ${
-            this.maxBorderWidths.right - b
-          }px ${this.maxBorderWidths.bottom - c}px ${
-            this.maxBorderWidths.left - d
-          }px ${i}`;
-        return styles;
-      }
+      (a, b, c, d) => ({
+        borderWidth: `${a}px ${b}px ${c}px ${d}px ${i}`
+      })
     );
 
     return true;
@@ -202,13 +172,10 @@ class ResponsiveStyles {
     target: string,
     prefix: string,
     important = false,
-    accountForPadding = false
+    addBorder = true
   ) {
-    const applied = this.applyBorders({ target, prefix, accountForPadding });
-
-    const bc = this.styles[`${prefix}background_color`];
-    const fc = this.styles[`${prefix}font_color`];
-    if (bc) {
+    const backgroundApplied = this.styles[`${prefix}background_color`];
+    if (backgroundApplied) {
       this.applyColor(
         target,
         `${prefix}background_color`,
@@ -216,11 +183,10 @@ class ResponsiveStyles {
         important
       );
     }
-    if (fc) {
-      this.applyColor(target, `${prefix}font_color`, 'color', important);
-    }
-    if (applied || bc || fc)
-      this.apply(target, '', () => ({ transition: '0.15s ease-in-out all' }));
+    const borderApplied = addBorder && this.applyBorders({ target, prefix });
+
+    if (borderApplied || backgroundApplied)
+      this.apply(target, '', () => ({ transition: '0.2s ease all' }));
   }
 
   applyPadding(target: string, prefix = '', margin = false) {
@@ -327,6 +293,7 @@ class ResponsiveStyles {
 
   applyColor(target: string, jsonProp: any, cssProp: any, important = false) {
     this.apply(target, jsonProp, (color: any) => {
+      if (!color) return {};
       color = `${color === 'transparent' ? color : `#${color}`}`;
       if (important) color = `${color} !important`;
       return { [cssProp]: color };
@@ -366,6 +333,14 @@ class ResponsiveStyles {
         color: `#${a}`
       })
     );
+    if (!placeholder) {
+      this.apply(target, 'hover_font_color', (color: any) => ({
+        '&:hover': { color: `#${color}` }
+      }));
+      this.apply(target, 'selected_font_color', (color: any) => ({
+        '&:focus': { color: `#${color}` }
+      }));
+    }
 
     this.apply(target, ['font_strike', 'font_underline'], (a: any, b: any) => {
       const lines = [];

@@ -32,8 +32,7 @@ describe('responsiveStyles', () => {
       const expectedStyle = `#${TEST_COLOR_BACKGROUND} !important`;
       const expected = {
         backgroundColor: expectedStyle,
-        color: expectedStyle,
-        transition: '0.15s ease-in-out all'
+        transition: '0.2s ease all'
       };
       expect(actual).toEqual(expected);
     });
@@ -55,8 +54,7 @@ describe('responsiveStyles', () => {
       const expectedStyle = `#${TEST_COLOR_BACKGROUND}`;
       const expected = {
         backgroundColor: expectedStyle,
-        color: expectedStyle,
-        transition: '0.15s ease-in-out all'
+        transition: '0.2s ease all'
       };
       expect(actual).toEqual(expected);
     });

@@ -1,7 +1,8 @@
 import { bootstrapStyles, ERROR_COLOR } from '../styles';
 
-import React from 'react';
+import React, { useState } from 'react';
 import InlineTooltip from '../components/Tooltip';
+import useBorder from '../components/useBorder';
 
 export default function DropdownField({
   element,
@@ -15,6 +16,9 @@ export default function DropdownField({
   elementProps = {},
   children
 }: any) {
+  const { borderStyles, customBorder } = useBorder(element);
+  const [focused, setFocused] = useState(false);
+
   const servar = element.servar;
 
   let options;
@@ -50,6 +54,7 @@ export default function DropdownField({
       css={{
         maxWidth: '100%',
         position: 'relative',
+        pointerEvents: editMode ? 'none' : 'auto',
         ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
@@ -62,29 +67,44 @@ export default function DropdownField({
           width: '100%',
           whiteSpace: 'nowrap',
           overflowX: 'hidden',
-          ...responsiveStyles.getTarget('sub-fc')
+          ...responsiveStyles.getTarget('sub-fc'),
+          '&:hover': {
+            ...responsiveStyles.getTarget('hover'),
+            ...borderStyles.hover
+          },
+          '&&': focused
+            ? {
+                ...responsiveStyles.getTarget('active'),
+                ...borderStyles.active
+              }
+            : {},
+          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
         }}
       >
+        {customBorder}
         <select
           css={{
             ...bootstrapStyles,
             ...responsiveStyles.getTarget('field'),
-            ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-            pointerEvents: editMode ? 'none' : 'auto',
             width: '100%',
+            height: '100%',
+            border: 'none',
+            boxShadow: 'none',
+            backgroundColor: 'transparent',
             appearance: 'none',
             WebkitAppearance: 'none',
             MozAppearance: 'none',
             backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='%23${element.styles.font_color}'/></svg>")`,
             backgroundRepeat: 'no-repeat',
             backgroundPosition: 'right 10px center',
-            '&:hover': responsiveStyles.getTarget('hover'),
-            '&:focus': responsiveStyles.getTarget('active')
+            position: 'relative'
           }}
           id={servar.key}
           value={fieldVal}
           required={required}
           onChange={onChange}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
         >
           <option key='' value='' />
           {options}

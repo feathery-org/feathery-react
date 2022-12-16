@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { isNum } from '../../utils/primitives';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { ERROR_COLOR } from '../styles';
+import useBorder from '../components/useBorder';
 
 function SingleOtpInput({
   index,
@@ -36,11 +37,7 @@ function SingleOtpInput({
     }
   }, [focus, input]);
 
-  responsiveStyles.applyBorders({
-    target: 'field',
-    prefix: focus ? 'selected_' : '',
-    important: false
-  });
+  const { borderStyles, customBorder } = useBorder(element);
 
   // Handle cases of backspace, delete, left arrow, right arrow, space
   useHotkeys(
@@ -79,19 +76,41 @@ function SingleOtpInput({
   );
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center' }}>
+    <div
+      css={{
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        marginLeft: '8px',
+        ...responsiveStyles.getTarget('sub-fc'),
+        '&:hover': {
+          ...responsiveStyles.getTarget('hover'),
+          ...borderStyles.hover
+        },
+        '&&': focus
+          ? {
+              ...responsiveStyles.getTarget('active'),
+              ...borderStyles.active
+            }
+          : {},
+        ...(inlineError ? { borderColor: ERROR_COLOR } : {})
+      }}
+    >
+      {customBorder}
       <input
         id={`${element.servar.key}-${index}`}
         aria-label={`${
           index === 0 ? 'Please enter verification code. ' : ''
         }Digit ${index + 1}`}
         css={{
+          position: 'relative',
           textAlign: 'center',
-          marginLeft: '8px',
           outline: 'none',
-          ...responsiveStyles.getTarget('field'),
-          '&:hover': responsiveStyles.getTarget('hover'),
-          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
+          border: 'none',
+          background: 'none',
+          height: '100%',
+          width: '100%',
+          ...responsiveStyles.getTarget('field')
         }}
         type='tel'
         ref={input}
