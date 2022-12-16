@@ -1230,6 +1230,21 @@ function Form({
           .then(() => clearLoaders());
       }
     };
+    const storeFieldAction = () => {
+      const { custom_store_field_key: key, custom_store_value: value } =
+        button.properties;
+
+      // TODO: get default value here for the field and set it instead of ''
+      // However, we can link to a field not on this step, in which case we can't lookup the servar in activeStep
+      // So either set to false for checkboxes, or '' for other fields
+      const defaultValue = value === true ? false : '';
+
+      // Toggle 'off' the value if it has already been set
+      const newValue = {
+        [key]: fieldValues[key] === value ? defaultValue : value
+      };
+      updateFieldValues(newValue);
+    };
     const setError = (message: string) =>
       setFormElementError({
         formRef,
@@ -1349,21 +1364,8 @@ function Form({
         client,
         integrations
       });
-    } else if (link === LINK_STORE_FIELD) {
-      const { custom_store_field_key: key, custom_store_value: value } =
-        button.properties;
-
-      // TODO: get default value here for the field and set it instead of ''
-      // However, we can link to a field not on this step, in which case we can't lookup the servar in activeStep
-      // So either set to false for checkboxes, or '' for other fields
-      const defaultValue = value === true ? false : '';
-
-      // Toggle 'off' the value if it has already been set
-      const newValue = {
-        [key]: fieldValues[key] === value ? defaultValue : value
-      };
-      updateFieldValues(newValue);
-    }
+      storeFieldAction();
+    } else if (link === LINK_STORE_FIELD) storeFieldAction();
 
     buttonClicks[button.id] = false;
   };

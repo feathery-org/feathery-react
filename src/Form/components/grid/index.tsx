@@ -175,12 +175,10 @@ const CellContainer = ({
   const cellContainerStyle = getCellContainerStyle(axis, layout);
 
   if (!properties) properties = {};
-  const onClick = (e: React.MouseEvent) => {
-    if (!properties.link || properties.link === LINK_NONE) return;
-    e.stopPropagation();
-    if (properties.link === LINK_CUSTOM) onCustomAction(properties.callback_id);
-    else buttonOnClick({ id: key, properties });
-  };
+
+  if (properties.link && properties.link !== LINK_NONE && !cellData) {
+    cellData = { styles: {} };
+  }
 
   if (cellData) {
     const [cellStyle, cellHoverStyle, cellActiveStyle] = getCellStyle(cellData);
@@ -209,18 +207,19 @@ const CellContainer = ({
           ...cellStyle,
           ...(isSelectable ? selectableStyles : {})
         }}
-        onClick={onClick}
+        onClick={(e: React.MouseEvent) => {
+          e.stopPropagation();
+          if (properties.link === LINK_CUSTOM)
+            onCustomAction(properties.callback_id);
+          else buttonOnClick({ id: key, properties });
+        }}
       >
         {children}
       </div>
     );
   }
 
-  return (
-    <div style={cellContainerStyle} onClick={onClick}>
-      {children}
-    </div>
-  );
+  return <div style={cellContainerStyle}>{children}</div>;
 };
 const GridContainer = ({ children, node: { axis } }: any) => {
   return (
