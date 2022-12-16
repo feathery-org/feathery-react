@@ -373,16 +373,18 @@ export default class Client {
   }
 
   async submitCustom(customKeyValues: any, override = true) {
-    const { userId } = initInfo();
-    const url = `${API_URL}panel/custom/submit/v3/`;
-
-    const jsonKeyVals = {};
-    const formData = new FormData();
     const promiseResults = await Promise.all(
       Object.entries(customKeyValues).map(([key, val]) =>
         Promise.all([key, Promise.resolve(val)])
       )
     );
+    if (promiseResults.length === 0) return;
+
+    const { userId } = initInfo();
+    const url = `${API_URL}panel/custom/submit/v3/`;
+
+    const jsonKeyVals = {};
+    const formData = new FormData();
     promiseResults.forEach(([key, val]) => {
       if (val instanceof Blob) {
         // If you use val from customKeyValues instead of value from

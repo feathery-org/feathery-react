@@ -858,7 +858,7 @@ function Form({
   const getNextStepKey = (metadata: any) =>
     nextStepKey(activeStep.next_conditions, metadata);
 
-  const submitAndNavigate = async ({
+  const submitStep = async ({
     metadata,
     repeat = 0,
     buttonAction,
@@ -873,10 +873,11 @@ function Form({
 
     const formattedFields = formatStepFields(activeStep, false);
     const elementType = metadata.elementType;
-    const trigger = {
-      ...lookUpTrigger(activeStep, metadata.elementIDs[0], elementType),
-      type: elementType
-    };
+    const trigger = lookUpTrigger(
+      activeStep,
+      metadata.elementIDs[0],
+      elementType
+    );
 
     // validate all step fields and buttons
     const { invalid, inlineErrors: newInlineErrors } = validateElements({
@@ -978,29 +979,23 @@ function Form({
       if (invalid) return;
     }
 
-    submitStepHiddenFields();
+    const hiddenPromise = submitStepHiddenFields();
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       let newVal = (val as any).value;
       newVal = Array.isArray(newVal)
         ? newVal.filter((v) => v || v === 0)
         : newVal;
-      return {
-        key,
-        [(val as any).type]: newVal
-      };
+      return { key, [(val as any).type]: newVal };
     });
-    let submitPromise = null;
-    if (featheryFields.length > 0)
-      // @ts-expect-error TS(2531): Object is possibly 'null'.
-      submitPromise = client.submitStep(featheryFields);
+    const stepPromise =
+      featheryFields.length > 0
+        ? // @ts-expect-error TS(2531): Object is possibly 'null'.
+          client.submitStep(featheryFields)
+        : Promise.resolve();
 
     trackEvent('FeatheryStepSubmit', activeStep.key, formName);
 
-    return goToNewStep({
-      metadata,
-      submitPromise,
-      submitData: true
-    });
+    return [hiddenPromise, stepPromise];
   };
 
   const isStoreFieldValueAction = (el: any) =>
@@ -1019,7 +1014,7 @@ function Form({
       if (value !== undefined) hiddenFields[fieldKey] = value;
     });
     // @ts-expect-error TS(2531): Object is possibly 'null'.
-    client.submitCustom(hiddenFields);
+    return client.submitCustom(hiddenFields);
   };
 
   // usePayments (Stripe)
@@ -1079,7 +1074,6 @@ function Form({
         client.registerEvent(eventData, submitPromise).then(() => {
           setFinished(true);
         });
-        return true;
       }
     } else {
       setFirst(false);
@@ -1098,7 +1092,6 @@ function Form({
       setShouldScrollToTop(explicitNav);
       if (explicitNav) history.push(newURL);
       else history.replace(newURL);
-      return true;
     }
   }
 
@@ -1130,35 +1123,39 @@ function Form({
     }));
   };
 
-  const buttonOnSubmit = async (
-    button: any,
-    submitData: boolean,
-    buttonAction?: any
-  ) => {
+  const buttonOnSubmit = async ({
+    button,
+    submit,
+    navigate = true,
+    buttonAction
+  }: any) => {
     try {
       const metadata = {
         elementType: 'button',
         elementIDs: [button.id]
       };
-      if (submitData) {
-        await submitAndNavigate({
+      if (submit) {
+        const submitPromise = await submitStep({
           metadata,
           repeat: button.repeat || 0,
           buttonAction,
           plaidSuccess: true,
-          setLoader: () => setButtonLoader(button),
-          clearLoader: () => clearLoaders()
+          setLoader: () => setButtonLoader(button)
         });
-      } else {
+        if (submitPromise && navigate) {
+          await goToNewStep({
+            metadata,
+            submitPromise: Promise.all(submitPromise),
+            submitData: true
+          });
+        }
+      } else if (navigate) {
         let stepChanged = false;
         await runUserCallback(onSkip, () => ({
           setStep: (stepKey: string) => {
             stepChanged = changeStep(stepKey, activeStep.key, steps, history);
           },
-          trigger: {
-            ...lookUpTrigger(activeStep, button.id, 'button'),
-            type: 'button'
-          },
+          trigger: lookUpTrigger(activeStep, button.id, 'button'),
           lastStep: !getNextStepKey(metadata)
         }));
         if (stepChanged) return;
@@ -1212,12 +1209,15 @@ function Form({
     // Prevent same button from being clicked multiple times while still running
     if (buttonClicks[button.id]) return;
     buttonClicks[button.id] = true;
-    let clickPromise = Promise.resolve();
 
     const authNavAndSubmit = (authFn: any) => {
       if (!button.properties.link_no_nav) {
         // Auth actions always need to validate and submit the current step
-        return buttonOnSubmit(button, true, authFn);
+        return buttonOnSubmit({
+          button,
+          submit: true,
+          buttonAction: authFn
+        });
       } else {
         return setButtonLoader(button)
           .then(authFn)
@@ -1248,12 +1248,12 @@ function Form({
       }
     } else if (link === LINK_TRIGGER_PLAID) {
       if (!plaidLinked) {
-        clickPromise = openPlaidLink(
+        await openPlaidLink(
           client,
           async () => {
             setPlaidLinked(true);
             if (activeStep.servar_fields.length === 0)
-              await buttonOnSubmit(button, true);
+              await buttonOnSubmit({ button, submit: true });
           },
           updateFieldValues,
           () => setButtonLoader(button),
@@ -1266,11 +1266,13 @@ function Form({
         ? openTab(url)
         : (location.href = url);
     } else if (link === LINK_CUSTOM) {
-      clickPromise = runUserCallback(onCustomAction, () => ({
-        trigger: {
-          ...lookUpTrigger(activeStep, button.id, 'button'),
-          type: 'button'
-        }
+      await buttonOnSubmit({
+        button,
+        submit: !button.properties.link_no_submit,
+        navigate: false
+      });
+      await runUserCallback(onCustomAction, () => ({
+        trigger: lookUpTrigger(activeStep, button.id, 'button')
       }));
     } else if (link === LINK_SEND_SMS) {
       const phoneNum = fieldValues[
@@ -1285,7 +1287,7 @@ function Form({
                 servar: null,
                 method: 'phone'
               });
-        clickPromise = authNavAndSubmit(authFn);
+        await authNavAndSubmit(authFn);
       } else {
         setError('A valid phone number is needed to send your login code.');
       }
@@ -1298,7 +1300,7 @@ function Form({
       const authFn = isAuthStytch()
         ? () => smsLogin(params)
         : () => verifySMSCode(params);
-      clickPromise = authNavAndSubmit(authFn).catch(() => {
+      await authNavAndSubmit(authFn).catch(() => {
         setError('Your code is not valid.');
       });
     } else if (link === LINK_SEND_MAGIC_LINK) {
@@ -1315,7 +1317,7 @@ function Form({
                 method: 'email'
               });
 
-        clickPromise = authNavAndSubmit(authFn);
+        await authNavAndSubmit(authFn);
       } else {
         setError('A valid email is needed to send your magic link.');
       }
@@ -1324,7 +1326,10 @@ function Form({
     } else if (link === LINK_LOGOUT) {
       inferAuthLogout();
     } else if (link === LINK_NEXT) {
-      clickPromise = buttonOnSubmit(button, !button.properties.link_no_submit);
+      await buttonOnSubmit({
+        button,
+        submit: !button.properties.link_no_submit
+      });
     } else if (link === LINK_BACK) {
       await goToPreviousStep();
     } else if (link === LINK_SELECT_PRODUCT) {
@@ -1354,7 +1359,6 @@ function Form({
       updateFieldValues(newValue);
     }
 
-    await clickPromise;
     buttonClicks[button.id] = false;
   };
 
@@ -1410,7 +1414,17 @@ function Form({
           })
         ) {
           buttonOnClick(submitButton);
-        } else submitAndNavigate({ metadata, repeat: elementRepeatIndex });
+        } else {
+          submitStep({ metadata, repeat: elementRepeatIndex }).then(
+            (submitPromise) =>
+              submitPromise &&
+              goToNewStep({
+                metadata,
+                submitPromise: Promise.all(submitPromise),
+                submitData: true
+              })
+          );
+        }
       } else goToNewStep({ metadata });
     };
 

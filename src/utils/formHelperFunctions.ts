@@ -109,18 +109,20 @@ export const getAllElements = (step: any) => {
 };
 
 export const lookUpTrigger = (step: any, elementID: any, elementType: any) => {
+  let payload = {};
   if (elementType === 'button') {
     const element = step.buttons.find((button: any) => button.id === elementID);
-    return { id: elementID, text: element.properties.text };
+    payload = { id: elementID, text: element.properties.text };
   } else if (elementType === 'text') {
     const element = step.texts.find((text: any) => text.id === elementID);
-    return { id: elementID, text: element.properties.text };
+    payload = { id: elementID, text: element.properties.text };
   } else if (elementType === 'field') {
     const element = step.servar_fields.find(
       (field: any) => field.id === elementID
     );
-    return { id: element.servar.key, text: element.servar.name };
-  } else return {};
+    payload = { id: element.servar.key, text: element.servar.name };
+  }
+  return { ...payload, elementType };
 };
 
 export const nextStepKey = (nextConditions: any, metadata: any) => {
