@@ -159,7 +159,7 @@ function Form({
   className = '',
   children
 }: Props) {
-  const [client, setClient] = useState(null);
+  const [client, setClient] = useState<any>(null);
   const history = useHistory();
 
   const [autoValidate, setAutoValidate] = useState(false);
@@ -532,6 +532,12 @@ function Form({
     try {
       await userCallback({
         setValues,
+        setFormCompletion: (flag: boolean) =>
+          client.registerEvent({
+            step_key: activeStep.key,
+            event: 'load',
+            completed: flag
+          }),
         setOptions: updateFieldOptions(steps),
         setProgress: (val: any) => setUserProgress(val),
         setStep: (stepKey: any) => {
@@ -569,7 +575,6 @@ function Form({
     // because it triggers a new render, before this fn finishes execution,
     // which can cause onView to fire before the callbackRef is set
     setActiveStep(newStep);
-    // @ts-expect-error TS(2531): Object is possibly 'null'.
     client.registerEvent({ step_key: newStep.key, event: 'load' });
   };
 
@@ -646,6 +651,12 @@ function Form({
           setStep: (stepKey: any) => {
             stepChanged = changeStep(stepKey, newKey, steps, history);
           },
+          setFormCompletion: (flag: boolean) =>
+            client.registerEvent({
+              step_key: newStep.key,
+              event: 'load',
+              completed: flag
+            }),
           setOptions: updateFieldOptions(steps, newStep),
           firstStepLoaded: first,
           integrationData
@@ -661,7 +672,6 @@ function Form({
   useEffect(() => {
     if (client === null) {
       const clientInstance = new Client(formName, hasRedirected);
-      // @ts-expect-error TS(2345): Argument of type 'Client' is not assignable to par... Remove this comment to see the full error message
       setClient(clientInstance);
       setFirst(true);
       // render form without values first for speed
@@ -989,8 +999,7 @@ function Form({
     });
     const stepPromise =
       featheryFields.length > 0
-        ? // @ts-expect-error TS(2531): Object is possibly 'null'.
-          client.submitStep(featheryFields)
+        ? client.submitStep(featheryFields)
         : Promise.resolve();
 
     trackEvent('FeatheryStepSubmit', activeStep.key, formName);
@@ -1013,7 +1022,6 @@ function Form({
       // need to include value === '' so that we can clear out hidden fields
       if (value !== undefined) hiddenFields[fieldKey] = value;
     });
-    // @ts-expect-error TS(2531): Object is possibly 'null'.
     return client.submitCustom(hiddenFields);
   };
 
@@ -1070,7 +1078,6 @@ function Form({
     if (!redirectKey) {
       if (explicitNav) {
         eventData.completed = true;
-        // @ts-expect-error TS(2531): Object is possibly 'null'.
         client.registerEvent(eventData, submitPromise).then(() => {
           setFinished(true);
         });
@@ -1084,7 +1091,6 @@ function Form({
       );
       const terminalStep = !hasNext && nextStep.next_conditions.length === 0;
       if (terminalStep) eventData.completed = true;
-      // @ts-expect-error TS(2531): Object is possibly 'null'.
       client
         .registerEvent(eventData, submitPromise)
         .then(() => updateBackNavMap({ [redirectKey]: activeStep.key }));
