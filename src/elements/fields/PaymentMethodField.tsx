@@ -66,31 +66,39 @@ const CardField = ({
   // in media queries directly below are ignored.  This means that mobile styles like color and the various font styles
   // do not work (mobile settings will not be applied).  However, other mobile styles for things like
   // background color and borders are set in the parent of the card element and DO WORK.
+
+  // There are problems loading custom fonts into the Stripe element.
+  // Also, certain fonts (Open Sans) get cutoff.  So, punting on it
+  // completely and just using generic sans-serif all the time.
+  const toSansSerif = (styles: { fontFamily?: string }) => ({
+    ...styles,
+    fontFamily: 'sans-serif'
+  });
   const cardElementOptions = {
     style: {
       base: {
         textDecoration: 'none', // Bug in card element - force the reset to none
         ...filterKeys(
-          responsiveStyles.getTarget('field'),
+          toSansSerif(responsiveStyles.getTarget('field')),
           supportedStripeCssProps
         ),
         '::placeholder': {
           textDecoration: 'none', // Bug in card element - force the reset to none
           ...filterKeys(
-            responsiveStyles.getTarget('placeholder'),
+            toSansSerif(responsiveStyles.getTarget('placeholder')),
             supportedStripeCssProps
           )
         },
         ':hover': filterKeys(
-          responsiveStyles.getTarget('hover'),
+          toSansSerif(responsiveStyles.getTarget('hover')),
           supportedStripeCssProps
         ),
         ':focus': filterKeys(
-          responsiveStyles.getTarget('active'),
+          toSansSerif(responsiveStyles.getTarget('active')),
           supportedStripeCssProps
         )
       },
-      complete: responsiveStyles.getTarget('completed'),
+      complete: toSansSerif(responsiveStyles.getTarget('completed')),
       invalid: {
         color: ERROR_COLOR,
         iconColor: ERROR_COLOR
