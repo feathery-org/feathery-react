@@ -2,8 +2,9 @@ import React, { useMemo } from 'react';
 
 import ReactButton from 'react-bootstrap/Button';
 import TextNodes from '../components/TextNodes';
-import { imgMaxSizeStyles, ERROR_COLOR, borderColorProps } from '../styles';
+import { imgMaxSizeStyles, ERROR_COLOR } from '../styles';
 import { adjustColor } from '../../utils/styles';
+import useBorder from '../components/useBorder';
 
 const LINK_ADD_REPEATED_ROW = 'add_repeated_row';
 const LINK_BACK = 'back';
@@ -45,7 +46,6 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyHeight('button');
   responsiveStyles.applyWidth('button');
   responsiveStyles.applyCorners('button');
-  responsiveStyles.applyBorders({ target: 'button' });
   responsiveStyles.applyFlexAndTextAlignments('button');
   responsiveStyles.apply(
     'button',
@@ -63,26 +63,6 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyWidth('img', 'image_');
   responsiveStyles.applyMargin('img', 'image_');
 
-  if (element.properties.link !== LINK_NONE) {
-    responsiveStyles.apply('buttonHover', 'background_color', (a: any) => {
-      const newColor = `${adjustColor(a, -45)} !important`;
-      return {
-        backgroundColor: newColor,
-        transition: 'background 0.3s !important'
-      };
-    });
-    responsiveStyles.apply(
-      'buttonHover',
-      borderColorProps,
-      (...colors: any) => {
-        const newStyles: Record<string, string> = {};
-        borderColorProps.forEach((prop, index) => {
-          newStyles[prop] = `${adjustColor(colors[index], -45)} !important`;
-        });
-        return newStyles;
-      }
-    );
-  }
   if (element.styles.hover_background_color) {
     responsiveStyles.applyColor(
       'buttonHover',
@@ -90,8 +70,13 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
       'backgroundColor',
       true
     );
+  } else {
+    // default hover effect
+    responsiveStyles.apply('buttonHover', 'background_color', (a: any) => {
+      const newColor = `${adjustColor(a, -45)} !important`;
+      return { backgroundColor: newColor };
+    });
   }
-  responsiveStyles.applyBorders({ target: 'buttonHover', prefix: 'hover_' });
   responsiveStyles.apply('buttonHover', 'hover_image_color', (a: string) => {
     if (!a) return {};
     const level = a === 'black' ? 0 : 100;
@@ -102,6 +87,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
       }
     };
   });
+
   if (element.styles.selected_background_color) {
     responsiveStyles.applyColor(
       'buttonActive',
@@ -110,10 +96,6 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
       true
     );
   }
-  responsiveStyles.applyBorders({
-    target: 'buttonActive',
-    prefix: 'selected_'
-  });
   responsiveStyles.apply(
     'buttonActive',
     'selected_image_color',
@@ -128,17 +110,13 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
       };
     }
   );
+
   responsiveStyles.apply('buttonDisabled', 'background_color', (a: any) => {
     const color = `${adjustColor(a, 45)} !important`;
     return {
       backgroundColor: color,
-      borderColor: color,
-      transition: 'background 0.3s !important'
+      borderColor: color
     };
-  });
-  responsiveStyles.applyBorders({
-    target: 'buttonDisabled',
-    prefix: 'disabled_'
   });
   responsiveStyles.apply(
     'buttonDisabled',
@@ -194,6 +172,7 @@ function ButtonElement({
     () => applyButtonStyles(element, responsiveStyles),
     [responsiveStyles]
   );
+  const { borderStyles, customBorder } = useBorder(element, true);
 
   // type=submit is important for HTML5 type validation messages
   const type = element.properties.link === LINK_NEXT ? 'submit' : 'button';
@@ -217,22 +196,32 @@ function ButtonElement({
         justifyContent: 'center',
         ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
         alignItems: 'center',
+        border: 'none',
+        transition: '0.3s ease all !important',
         '&:disabled': {
           cursor: 'default !important',
-          ...styles.getTarget('buttonDisabled')
+          ...styles.getTarget('buttonDisabled'),
+          ...borderStyles.disabled
         },
         '&:hover:enabled': editMode
           ? styles.getTarget('button')
-          : styles.getTarget('buttonHover'),
+          : {
+              ...styles.getTarget('buttonHover'),
+              ...borderStyles.hover
+            },
         '&.active:enabled': editMode
           ? styles.getTarget('button')
-          : styles.getTarget('buttonActive'),
+          : {
+              ...styles.getTarget('buttonActive'),
+              ...borderStyles.active
+            },
         '&&': styles.getTarget('button')
       }}
       disabled={element.properties.link === LINK_NONE || loader || disabled}
       onClick={onClick}
       {...elementProps}
     >
+      {customBorder}
       {children}
       {loader ? (
         <div css={styles.getTarget('loader')}>{loader}</div>

@@ -9,6 +9,7 @@ import { Overlay } from 'react-bootstrap';
 import { isNum } from '../../../utils/primitives';
 import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
+import useBorder from '../../components/useBorder';
 
 const DEFAULT_COUNTRY = 'US';
 
@@ -51,6 +52,9 @@ function PhoneField({
   const [placeholder, setPlaceholder] = useState(
     element.properties.placeholder
   );
+  const [focused, setFocused] = useState(false);
+
+  const { borderStyles, customBorder } = useBorder(element);
 
   useEffect(() => {
     const input = inputRef.current;
@@ -131,12 +135,22 @@ function PhoneField({
       <div
         css={{
           display: 'flex',
+          position: 'relative',
           ...responsiveStyles.getTarget('sub-fc'),
-          ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-          '&:hover': { ...responsiveStyles.getTarget('hover'), padding: 0 },
-          '&:focus': responsiveStyles.getTarget('active')
+          '&:hover': {
+            ...responsiveStyles.getTarget('hover'),
+            ...borderStyles.hover
+          },
+          '&&': focused
+            ? {
+                ...responsiveStyles.getTarget('active'),
+                ...borderStyles.active
+              }
+            : {},
+          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
         }}
       >
+        {customBorder}
         <div
           css={{
             cursor: 'pointer',
@@ -145,6 +159,7 @@ function PhoneField({
             alignItems: 'center',
             justifyContent: 'center',
             padding: '0 6px',
+            position: 'relative',
             ...responsiveStyles.getTarget('fieldToggle'),
             '&:hover': { backgroundColor: '#e6e6e6' }
           }}
@@ -201,10 +216,9 @@ function PhoneField({
               border: 'none',
               ...bootstrapStyles,
               ...responsiveStyles.getTarget('field'),
-              '&:not(:focus)':
-                formattedNumber || !placeholder
-                  ? {}
-                  : { color: 'transparent !important' }
+              ...(focused || formattedNumber || !placeholder
+                ? {}
+                : { color: 'transparent !important' })
             }}
             required={required}
             autoComplete={servar.metadata.autocomplete || 'on'}
@@ -215,7 +229,11 @@ function PhoneField({
               setRef(ref);
             }}
             type='tel'
-            onBlur={() => setTriggerOnChange(!triggerOnChange)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => {
+              setTriggerOnChange(!triggerOnChange);
+              setFocused(false);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') setTriggerOnChange(!triggerOnChange);
               else if (e.key === '+') setShow(true);

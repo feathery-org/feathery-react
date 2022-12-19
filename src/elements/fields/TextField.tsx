@@ -1,10 +1,11 @@
 import { IMaskInput } from 'react-imask';
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/Tooltip';
 import { bootstrapStyles, ERROR_COLOR } from '../styles';
 import { emailPatternStr } from '../../utils/validation';
+import useBorder from '../components/useBorder';
 
 const MAX_TEXT_FIELD_LENGTH = 512;
 
@@ -124,12 +125,14 @@ function TextField({
   required = false,
   editMode,
   onAccept = () => {},
-  onBlur = () => {},
   setRef = () => {},
   rawValue = '',
   inlineError,
   children
 }: any) {
+  const [focused, setFocused] = useState(false);
+  const { borderStyles, customBorder } = useBorder(element);
+
   const servar = element.servar;
   const inputProps = getInputProps(servar);
   return (
@@ -150,28 +153,40 @@ function TextField({
           width: '100%',
           whiteSpace: 'nowrap',
           overflowX: 'hidden',
-          ...responsiveStyles.getTarget('sub-fc')
+          ...responsiveStyles.getTarget('sub-fc'),
+          '&:hover': {
+            ...responsiveStyles.getTarget('hover'),
+            ...borderStyles.hover
+          },
+          '&&': focused
+            ? {
+                ...responsiveStyles.getTarget('active'),
+                ...borderStyles.active
+              }
+            : {},
+          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
         }}
       >
+        {customBorder}
         <IMaskInput
           id={servar.key}
           css={{
+            position: 'relative',
             height: '100%',
             width: '100%',
+            border: 'none',
+            backgroundColor: 'transparent',
             ...bootstrapStyles,
             ...responsiveStyles.getTarget('field'),
-            ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-            '&:hover': responsiveStyles.getTarget('hover'),
-            '&:focus': responsiveStyles.getTarget('active'),
-            '&:not(:focus)':
-              rawValue || !element.properties.placeholder
-                ? {}
-                : { color: 'transparent !important' }
+            ...(focused || rawValue || !element.properties.placeholder
+              ? {}
+              : { color: 'transparent !important' })
           }}
           maxLength={servar.max_length}
           minLength={servar.min_length}
           required={required}
-          onBlur={onBlur}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
           value={rawValue}

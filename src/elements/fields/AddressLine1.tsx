@@ -9,6 +9,7 @@ import useMounted from '../../utils/useMounted';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'loda... Remove this comment to see the full error message
 import debounce from 'lodash.debounce';
 import { OverlayTrigger } from 'react-bootstrap';
+import useBorder from '../components/useBorder';
 
 // Milliseconds
 const SEARCH_DELAY_TIME = 300;
@@ -31,6 +32,8 @@ function AddressLine1({
   const servar = element.servar;
   const options = useAddressSearch(value, servar.metadata.address_autocomplete);
   const [showOptions, setShowOptions] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const { borderStyles, customBorder } = useBorder(element);
 
   return (
     <div
@@ -48,9 +51,21 @@ function AddressLine1({
         css={{
           position: 'relative',
           width: '100%',
-          ...responsiveStyles.getTarget('sub-fc')
+          ...responsiveStyles.getTarget('sub-fc'),
+          '&:hover': {
+            ...responsiveStyles.getTarget('hover'),
+            ...borderStyles.hover
+          },
+          '&&': focused
+            ? {
+                ...responsiveStyles.getTarget('active'),
+                ...borderStyles.active
+              }
+            : {},
+          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
         }}
       >
+        {customBorder}
         <OverlayTrigger
           placement='bottom-start'
           delay={{ show: 250, hide: 250 }}
@@ -92,17 +107,16 @@ function AddressLine1({
           <input
             id={servar.key}
             css={{
+              position: 'relative',
               height: '100%',
               width: '100%',
+              border: 'none',
+              backgroundColor: 'transparent',
               ...bootstrapStyles,
               ...responsiveStyles.getTarget('field'),
-              ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
-              '&:hover': responsiveStyles.getTarget('hover'),
-              '&:focus': responsiveStyles.getTarget('active'),
-              '&:not(:focus)':
-                value || !element.properties.placeholder
-                  ? {}
-                  : { color: 'transparent !important' }
+              ...(focused || value || !element.properties.placeholder
+                ? {}
+                : { color: 'transparent !important' })
             }}
             maxLength={servar.max_length}
             minLength={servar.min_length}
@@ -112,11 +126,13 @@ function AddressLine1({
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
             onKeyDown={() => setShowOptions(true)}
+            onFocus={() => setFocused(true)}
             onBlur={(e) => {
               // Blur may be triggered by option selection, and option
               // click logic may need to be run first. So delay option removal.
               setTimeout(() => setShowOptions(false), EXIT_DELAY_TIME);
               onBlur(e);
+              setFocused(false);
             }}
             {...props}
           />

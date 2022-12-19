@@ -16,6 +16,7 @@ import TextField from './TextField';
 import TextArea from './TextArea';
 import AddressLine1 from './AddressLine1';
 import PaymentMethodField from './PaymentMethodField';
+import { borderWidthProps } from '../styles';
 
 const Fields = {
   AddressLine1,
@@ -42,13 +43,46 @@ const justifyContentTextAlignMap = {
   'flex-end': 'right'
 };
 
+const defaultBorderFields = [
+  'slider',
+  'checkbox',
+  'multiselect',
+  'hex_color',
+  'select',
+  'signature',
+  'file_upload'
+];
+
 function applyFieldStyles(field: any, styles: any) {
   const type = field.servar.type;
-  styles.addTargets('fc', 'field', 'error', 'active', 'hover', 'tooltipIcon');
+  styles.addTargets(
+    'fc',
+    'sub-fc',
+    'field',
+    'error',
+    'active',
+    'hover',
+    'tooltipIcon'
+  );
 
   styles.applyFontStyles('fc');
-  styles.applySelectorStyles('active', 'selected_', true);
-  styles.applySelectorStyles('hover', 'hover_', type !== 'button_group');
+  styles.applyFontStyles('field');
+
+  // These are fields that don't have content inside, which won't be shifted by
+  // a default border
+  const hasBorder = defaultBorderFields.includes(type);
+  styles.applySelectorStyles(
+    'active',
+    'selected_',
+    type !== 'payment_method',
+    hasBorder
+  );
+  styles.applySelectorStyles(
+    'hover',
+    'hover_',
+    !['button_group', 'payment_method'].includes(type),
+    hasBorder
+  );
   styles.apply('error', 'font_family', (a: any) => ({
     fontFamily: a
   }));
@@ -150,7 +184,6 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
-      styles.applyBorders({ target: 'field' });
       styles.applyPadding('field', '', true);
       styles.applyFlexAndTextAlignments('field');
       styles.apply(
@@ -178,6 +211,9 @@ function applyFieldStyles(field: any, styles: any) {
           }
         };
       });
+      styles.applyColor('hover', 'hover_font_color', 'color');
+      styles.applyColor('active', 'selected_font_color', 'color');
+
       styles.apply('active', 'selected_image_color', (a: string) => {
         if (!a) return {};
         const level = a === 'black' ? 0 : 100;
@@ -191,37 +227,27 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'dropdown':
     case 'gmap_state':
-      styles.addTargets('sub-fc');
-      styles.applyHeight('sub-fc');
       styles.applyWidth('fc');
-      styles.applyBorders({ target: 'field' });
+      styles.applyHeight('sub-fc');
+      styles.applyCorners('sub-fc');
+      styles.applyBoxShadow('sub-fc');
+      styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       styles.applyCorners('field');
-      styles.applyHeight('field');
-      styles.applyBoxShadow('field');
-      styles.applyColor('field', 'background_color', 'backgroundColor');
       if (field.properties.placeholder)
         styles.applyPlaceholderStyles(type, field.styles);
-      // Override default bootstrap styles
-      styles.applyBoxShadow('active');
-      styles.applyBorders({ target: 'active' });
       break;
     case 'pin_input':
-      styles.applyWidth('field');
-      styles.applyHeight('field');
-      styles.applyBoxShadow('field');
-      styles.applyCorners('field');
-      styles.applyColor('field', 'background_color', 'backgroundColor');
-      styles.apply('field', 'font_size', (a: any) => ({
-        fontSize: `${a}px`
-      }));
-      styles.applyColor('field', 'font_color', 'color');
+      styles.applyWidth('sub-fc');
+      styles.applyHeight('sub-fc');
+      styles.applyBoxShadow('sub-fc');
+      styles.applyCorners('sub-fc');
+      styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       break;
     case 'multiselect':
       styles.applyWidth('fc');
       styles.applyCorners('field');
       styles.applyBorders({ target: 'field' });
       styles.applyBoxShadow('field');
-      styles.applyFontStyles('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.apply('field', 'font_size', (a: any) => ({
         height: `${parseInt(a) + 4}px`
@@ -232,7 +258,6 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyCorners('field');
       styles.applyBorders({ target: 'field' });
       styles.applyBoxShadow('field');
-      styles.applyFontStyles('field');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.apply('field', 'font_size', (a: any) => ({
         height: `${parseInt(a) + 4}px`
@@ -267,44 +292,53 @@ function applyFieldStyles(field: any, styles: any) {
       });
       break;
     case 'payment_method':
-      styles.addTargets('sub-fc', 'completed');
-      styles.addTargets('active', 'hover'); // resetting these targets here
-      styles.applyHeight('sub-fc');
+      styles.addTargets('completedFont', 'activeFont', 'hoverFont');
       styles.applyWidth('fc');
+      styles.applyHeight('sub-fc');
       styles.applyCorners('sub-fc');
-      styles.applyBorders({ target: 'sub-fc' });
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('sub-fc');
-      styles.applyFontStyles('field');
 
-      styles.applySelectorStyles('active', 'selected_', false); // no !important allowed
-      styles.applySelectorStyles('hover', 'hover_', false); // no !important allowed
       // iconColor is specific to stripe card element
-      styles.apply('field', 'placeholder_color', (a: any) => ({
-        iconColor: `#${a}`
-      }));
-      styles.apply('hover', 'hover_placeholder_color', (a: any) => ({
-        iconColor: `#${a}`
-      }));
-      styles.apply('active', 'selected_placeholder_color', (a: any) => ({
-        iconColor: `#${a}`
-      }));
-      styles.apply('completed', 'completed_placeholder_color', (a: any) => ({
-        iconColor: `#${a}`
-      }));
+      styles.applyColor('field', 'placeholder_color', 'iconColor');
+      styles.applyColor('hoverFont', 'hover_placeholder_color', 'iconColor');
+      styles.applyColor(
+        'activeFont',
+        'selected_placeholder_color',
+        'iconColor'
+      );
+      styles.applyColor(
+        'completedFont',
+        'completed_placeholder_color',
+        'iconColor'
+      );
+      styles.applyColor('hoverFont', 'hover_font_color', 'color');
+      styles.applyColor('activeFont', 'selected_font_color', 'color');
+      styles.applyColor('completedFont', 'completed_font_color', 'color');
+
       styles.applyPlaceholderStyles(type, field.styles);
-      styles.apply('completed', 'completed_font_color', (a: any) => ({
-        color: `#${a}`
-      }));
       break;
     case 'phone_number':
-      styles.addTargets('sub-fc', 'fieldToggle', 'dropdown');
+      styles.addTargets('fieldToggle', 'dropdown');
 
       styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
       styles.applyBoxShadow('sub-fc');
       styles.applyCorners('sub-fc');
-      styles.applyBorders({ target: 'sub-fc', accountForPadding: true });
+      styles.apply(
+        'sub-fc',
+        [
+          ...borderWidthProps,
+          ...borderWidthProps.map((prop) => `hover_${prop}`),
+          ...borderWidthProps.map((prop) => `selected_${prop}`)
+        ],
+        (...props: any) => ({
+          paddingTop: Math.max(props[0], props[4], props[8]),
+          paddingRight: Math.max(props[1], props[5], props[9]),
+          paddingBottom: Math.max(props[2], props[6], props[10]),
+          paddingLeft: Math.max(props[3], props[7], props[11])
+        })
+      );
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       // Corners must also be applied to input even if not visible since it could cover
       // up the visible container corners
@@ -314,7 +348,6 @@ function applyFieldStyles(field: any, styles: any) {
         // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
         (a, b) => ({ borderRadius: `0 ${a}px ${b}px 0` })
       );
-      styles.applyFontStyles('field');
       styles.applyPlaceholderStyles(type, field.styles);
 
       styles.apply('fieldToggle', 'font_size', (a: any) => ({
@@ -332,19 +365,15 @@ function applyFieldStyles(field: any, styles: any) {
       styles.apply('fieldToggle', 'border_bottom_color', (a: any) => ({
         borderRight: `1px solid #${a}`
       }));
-      styles.applySelectorStyles('active', 'selected_', true, true);
-      styles.applySelectorStyles('hover', 'hover_', true, true);
       break;
     default:
-      styles.addTargets('sub-fc');
       // Avoid applying width to checkbox to ensure the checkbox width is properly set by the component
       if (type !== 'checkbox') styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
+      styles.applyCorners('sub-fc');
+      styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
-      styles.applyBorders({ target: 'field' });
-      styles.applyFontStyles('field');
-      styles.applyColor('field', 'background_color', 'backgroundColor');
       if (field.properties.placeholder)
         styles.applyPlaceholderStyles(type, field.styles, type === 'text_area');
       break;
