@@ -36,7 +36,7 @@ function ImageElement({
         setImageUrl(data.thumbnail)
       );
     else setImageUrl(element.properties.source_image);
-  }, [imageFieldFile]);
+  }, [imageFieldFile, element.properties.source_image]);
 
   return (
     <div
