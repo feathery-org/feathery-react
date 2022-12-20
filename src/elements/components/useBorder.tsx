@@ -37,7 +37,7 @@ export default function useBorder(element: any, defaultHover = false) {
       prefix: 'disabled_'
     });
     return styles;
-  }, []);
+  }, [element.styles, element.mobile_styles]);
 
   const borderId = `bb-${element.id}`;
   const borderSelector = `#${borderId}`;
