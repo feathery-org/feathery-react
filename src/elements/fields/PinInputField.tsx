@@ -37,7 +37,10 @@ function SingleOtpInput({
     }
   }, [focus, input]);
 
-  const { borderStyles, customBorder } = useBorder(element);
+  const { borderStyles, customBorder } = useBorder({
+    element,
+    error: inlineError
+  });
 
   // Handle cases of backspace, delete, left arrow, right arrow, space
   useHotkeys(
@@ -92,8 +95,7 @@ function SingleOtpInput({
               ...responsiveStyles.getTarget('active'),
               ...borderStyles.active
             }
-          : {},
-        ...(inlineError ? { borderColor: ERROR_COLOR } : {})
+          : {}
       }}
     >
       {customBorder}

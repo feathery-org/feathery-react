@@ -54,7 +54,10 @@ function PhoneField({
   );
   const [focused, setFocused] = useState(false);
 
-  const { borderStyles, customBorder } = useBorder(element);
+  const { borderStyles, customBorder } = useBorder({
+    element,
+    error: inlineError
+  });
 
   useEffect(() => {
     const input = inputRef.current;
@@ -146,8 +149,7 @@ function PhoneField({
                 ...responsiveStyles.getTarget('active'),
                 ...borderStyles.active
               }
-            : {},
-          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
+            : {}
         }}
       >
         {customBorder}

@@ -130,8 +130,10 @@ function TextField({
   inlineError,
   children
 }: any) {
-  const [focused, setFocused] = useState(false);
-  const { borderStyles, customBorder } = useBorder(element);
+  const { borderStyles, customBorder, borderId } = useBorder({
+    element,
+    error: inlineError
+  });
 
   const servar = element.servar;
   const inputProps = getInputProps(servar);
@@ -157,36 +159,30 @@ function TextField({
           '&:hover': {
             ...responsiveStyles.getTarget('hover'),
             ...borderStyles.hover
-          },
-          '&&': focused
-            ? {
-                ...responsiveStyles.getTarget('active'),
-                ...borderStyles.active
-              }
-            : {},
-          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
+          }
         }}
       >
-        {customBorder}
         <IMaskInput
           id={servar.key}
           css={{
             position: 'relative',
+            // Position input above the border div
+            zIndex: 1,
             height: '100%',
             width: '100%',
             border: 'none',
             backgroundColor: 'transparent',
             ...bootstrapStyles,
             ...responsiveStyles.getTarget('field'),
-            ...(focused || rawValue || !element.properties.placeholder
-              ? {}
-              : { color: 'transparent !important' })
+            [`&:focus ~ #${borderId}`]: Object.values(borderStyles.active)[0],
+            '&:not(:focus)':
+              rawValue || !element.properties.placeholder
+                ? {}
+                : { color: 'transparent !important' }
           }}
           maxLength={servar.max_length}
           minLength={servar.min_length}
           required={required}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
           autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
           value={rawValue}
@@ -195,6 +191,7 @@ function TextField({
           {...getMaskProps(servar, rawValue)}
           onAccept={onAccept}
         />
+        {customBorder}
         <Placeholder
           value={rawValue}
           element={element}

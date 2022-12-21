@@ -1,8 +1,12 @@
 import React, { useMemo } from 'react';
-import ResponsiveStyles, { borderColorProps } from '../styles';
+import ResponsiveStyles, { borderColorProps, ERROR_COLOR } from '../styles';
 import { adjustColor } from '../../utils/styles';
 
-export default function useBorder(element: any, defaultHover = false) {
+export default function useBorder({
+  element,
+  defaultHover = false,
+  error = false
+}: any) {
   const styles = useMemo(() => {
     const styles = new ResponsiveStyles(element, [
       'border',
@@ -57,9 +61,11 @@ export default function useBorder(element: any, defaultHover = false) {
           bottom: 0,
           right: 0,
           transition: '0.2s ease all !important',
-          ...styles.getTarget('border')
+          ...styles.getTarget('border'),
+          ...(error ? { borderColor: ERROR_COLOR } : {})
         }}
       />
-    )
+    ),
+    borderId
   };
 }

@@ -41,7 +41,10 @@ function DateSelectorField({
     setInternalDate(newDate);
     onChange(formatDateString(newDate));
   };
-  const { borderStyles, customBorder } = useBorder(element);
+  const { borderStyles, customBorder } = useBorder({
+    element,
+    error: inlineError
+  });
   const [focused, setFocused] = useState(false);
 
   const servar = element.servar;
@@ -71,8 +74,7 @@ function DateSelectorField({
                 ...responsiveStyles.getTarget('active'),
                 ...borderStyles.active
               }
-            : {},
-          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
+            : {}
         }}
       >
         {customBorder}
