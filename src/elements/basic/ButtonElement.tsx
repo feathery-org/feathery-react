@@ -40,9 +40,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     'img'
   );
 
-  responsiveStyles.apply('button', 'background_color', (a: any) => ({
-    backgroundColor: `#${a}`
-  }));
+  responsiveStyles.applyColor('button', 'background_color', 'backgroundColor');
   responsiveStyles.applyHeight('button');
   responsiveStyles.applyWidth('button');
   responsiveStyles.applyCorners('button');
@@ -77,12 +75,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
       return { backgroundColor: newColor };
     });
   }
-  responsiveStyles.apply('buttonHover', 'hover_font_color', (a: string) => {
-    if (!a) return {};
-    return {
-      span: { color: `#${a}`, transition: '0.2s ease all' }
-    };
-  });
+  responsiveStyles.applySpanSelectorStyles('buttonHover', 'hover_');
   responsiveStyles.apply('buttonHover', 'hover_image_color', (a: string) => {
     if (!a) return {};
     const level = a === 'black' ? 0 : 100;
@@ -94,20 +87,13 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     };
   });
 
-  if (element.styles.selected_background_color) {
-    responsiveStyles.applyColor(
-      'buttonActive',
-      `selected_background_color`,
-      'backgroundColor',
-      true
-    );
-  }
-  responsiveStyles.apply('buttonActive', 'selected_font_color', (a: string) => {
-    if (!a) return {};
-    return {
-      span: { color: `#${a}`, transition: '0.2s ease all' }
-    };
-  });
+  responsiveStyles.applyColor(
+    'buttonActive',
+    `selected_background_color`,
+    'backgroundColor',
+    true
+  );
+  responsiveStyles.applySpanSelectorStyles('buttonActive', 'selected_');
   responsiveStyles.apply(
     'buttonActive',
     'selected_image_color',
@@ -144,24 +130,13 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
       };
     }
   );
-  responsiveStyles.apply(
+  responsiveStyles.applySpanSelectorStyles('buttonDisabled', 'disabled_');
+  responsiveStyles.applyColor(
     'buttonDisabled',
-    'disabled_font_color',
-    (a: string) => {
-      if (!a) return {};
-      return {
-        span: { color: `#${a}`, transition: '0.2s ease all' }
-      };
-    }
+    `disabled_background_color`,
+    'backgroundColor',
+    true
   );
-  if (element.styles.disabled_background_color) {
-    responsiveStyles.applyColor(
-      'buttonDisabled',
-      `disabled_background_color`,
-      'backgroundColor',
-      true
-    );
-  }
 
   responsiveStyles.apply(
     'loader',

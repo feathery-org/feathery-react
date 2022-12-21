@@ -350,6 +350,15 @@ class ResponsiveStyles {
     });
   }
 
+  applySpanSelectorStyles(target: string, prefix = '') {
+    this.apply(target, `${prefix}font_color`, (a: string) => {
+      if (!a) return {};
+      return {
+        span: { color: `#${a}`, transition: '0.2s ease all' }
+      };
+    });
+  }
+
   getRichFontStyles(attrs: any) {
     const fontStyles = this._getRichFontScreenStyles(attrs);
     if (this.handleMobile) {

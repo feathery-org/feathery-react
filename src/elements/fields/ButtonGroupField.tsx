@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { imgMaxSizeStyles, noTextSelectStyles } from '../styles';
 import useBorder from '../components/useBorder';
 
