@@ -41,7 +41,8 @@ function useTextEdit({
       outline: 'none',
       minWidth: '5px',
       display: 'inline-block',
-      cursor: 'inherit'
+      cursor: 'inherit',
+      position: 'relative'
     };
 
     if (editable) {
