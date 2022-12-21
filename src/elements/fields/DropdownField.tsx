@@ -16,7 +16,10 @@ export default function DropdownField({
   elementProps = {},
   children
 }: any) {
-  const { borderStyles, customBorder } = useBorder(element);
+  const { borderStyles, customBorder } = useBorder({
+    element,
+    error: inlineError
+  });
   const [focused, setFocused] = useState(false);
 
   const servar = element.servar;
@@ -77,8 +80,7 @@ export default function DropdownField({
                 ...responsiveStyles.getTarget('active'),
                 ...borderStyles.active
               }
-            : {},
-          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
+            : {}
         }}
       >
         {customBorder}

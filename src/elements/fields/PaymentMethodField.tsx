@@ -59,7 +59,10 @@ const CardField = ({
   children
 }: any) => {
   const [focused, setFocused] = useState(false);
-  const { borderStyles, customBorder } = useBorder(element);
+  const { borderStyles, customBorder } = useBorder({
+    element,
+    error: inlineError
+  });
 
   const stripe = useStripe();
   const stripeElements = useElements();
@@ -163,8 +166,7 @@ const CardField = ({
                 ...responsiveStyles.getTarget('active'),
                 ...borderStyles.active
               }
-            : {},
-          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
+            : {}
         }}
       >
         {customBorder}

@@ -19,7 +19,10 @@ function TextArea({
   children
 }: any) {
   const [focused, setFocused] = useState(false);
-  const { borderStyles, customBorder } = useBorder(element);
+  const { borderStyles, customBorder } = useBorder({
+    element,
+    error: inlineError
+  });
 
   const servar = element.servar;
   return (
@@ -48,8 +51,7 @@ function TextArea({
                 ...responsiveStyles.getTarget('active'),
                 ...borderStyles.active
               }
-            : {},
-          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
+            : {}
         }}
       >
         {customBorder}

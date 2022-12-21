@@ -33,7 +33,10 @@ function AddressLine1({
   const options = useAddressSearch(value, servar.metadata.address_autocomplete);
   const [showOptions, setShowOptions] = useState(false);
   const [focused, setFocused] = useState(false);
-  const { borderStyles, customBorder } = useBorder(element);
+  const { borderStyles, customBorder } = useBorder({
+    element,
+    error: inlineError
+  });
 
   return (
     <div
@@ -61,8 +64,7 @@ function AddressLine1({
                 ...responsiveStyles.getTarget('active'),
                 ...borderStyles.active
               }
-            : {},
-          ...(inlineError ? { borderColor: ERROR_COLOR } : {})
+            : {}
         }}
       >
         {customBorder}

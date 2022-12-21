@@ -194,7 +194,10 @@ function ButtonElement({
     () => applyButtonStyles(element, responsiveStyles),
     [responsiveStyles]
   );
-  const { borderStyles, customBorder } = useBorder(element, true);
+  const { borderStyles, customBorder } = useBorder({
+    element,
+    defaultHover: true
+  });
 
   const activeStyles = editMode
     ? styles.getTarget('button')

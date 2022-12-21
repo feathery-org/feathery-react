@@ -6,6 +6,7 @@ function ButtonGroupField({
   element,
   responsiveStyles,
   fieldLabel,
+  inlineError,
   fieldVal = null,
   editMode,
   onClick = () => {},
@@ -22,7 +23,10 @@ function ButtonGroupField({
         : {},
     [fieldVal]
   );
-  const { borderStyles, customBorder } = useBorder(element);
+  const { borderStyles, customBorder } = useBorder({
+    element,
+    error: inlineError
+  });
 
   const servar = element.servar;
   const labels = servar.metadata.option_labels;
