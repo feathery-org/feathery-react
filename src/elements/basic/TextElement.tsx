@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
 import TextNodes from '../components/TextNodes';
 import { isNum } from '../../utils/primitives';
+import useBorder from '../components/useBorder';
+import { adjustColor } from '../../utils/styles';
 
 // TODO(peter): deprecate once customers have upgraded and backend migrated
 function legacyAlignment(alignment: any) {
@@ -15,7 +17,7 @@ function legacyAlignment(alignment: any) {
 }
 
 function applyTextStyles(element: any, responsiveStyles: any) {
-  responsiveStyles.addTargets('text');
+  responsiveStyles.addTargets('text', 'textHover');
   responsiveStyles.apply('text', 'layout', (a: any) => ({
     textAlign: legacyAlignment(a)
   }));
@@ -28,6 +30,16 @@ function applyTextStyles(element: any, responsiveStyles: any) {
   responsiveStyles.apply('text', 'text_transform', (a: any) => ({
     textTransform: a || 'none'
   }));
+  responsiveStyles.applyColor('text', 'background_color', 'backgroundColor');
+
+  responsiveStyles.applyColor(
+    'textHover',
+    `hover_background_color`,
+    'backgroundColor',
+    true
+  );
+  responsiveStyles.applySpanSelectorStyles('textHover', 'hover_');
+
   return responsiveStyles;
 }
 
@@ -46,15 +58,23 @@ function TextElement({
     () => applyTextStyles(element, responsiveStyles),
     [responsiveStyles]
   );
+  const { borderStyles, customBorder } = useBorder({ element });
   return (
     <div
       css={{
-        ...styles.getTarget('text'),
         position: 'relative',
-        maxWidth: '100%'
+        maxWidth: '100%',
+        ...styles.getTarget('text'),
+        '&:hover': editMode
+          ? {}
+          : {
+              ...styles.getTarget('textHover'),
+              ...borderStyles.hover
+            }
       }}
       {...elementProps}
     >
+      {customBorder}
       {children}
       <TextNodes
         element={element}
