@@ -42,7 +42,9 @@ function useTextEdit({
       minWidth: '5px',
       display: 'inline-block',
       cursor: 'inherit',
-      position: 'relative'
+      position: 'relative',
+      // Make text in button appear more vertically centered
+      paddingBottom: '2px'
     };
 
     if (editable) {

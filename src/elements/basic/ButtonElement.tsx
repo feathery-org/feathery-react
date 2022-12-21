@@ -77,6 +77,12 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
       return { backgroundColor: newColor };
     });
   }
+  responsiveStyles.apply('buttonHover', 'hover_font_color', (a: string) => {
+    if (!a) return {};
+    return {
+      span: { color: `#${a}`, transition: '0.2s ease all' }
+    };
+  });
   responsiveStyles.apply('buttonHover', 'hover_image_color', (a: string) => {
     if (!a) return {};
     const level = a === 'black' ? 0 : 100;
@@ -96,6 +102,12 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
       true
     );
   }
+  responsiveStyles.apply('buttonActive', 'selected_font_color', (a: string) => {
+    if (!a) return {};
+    return {
+      span: { color: `#${a}`, transition: '0.2s ease all' }
+    };
+  });
   responsiveStyles.apply(
     'buttonActive',
     'selected_image_color',
@@ -129,6 +141,16 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
           webkitFilter: `brightness(${level}%)`,
           filter: `brightness(${level}%)`
         }
+      };
+    }
+  );
+  responsiveStyles.apply(
+    'buttonDisabled',
+    'disabled_font_color',
+    (a: string) => {
+      if (!a) return {};
+      return {
+        span: { color: `#${a}`, transition: '0.2s ease all' }
       };
     }
   );
@@ -174,6 +196,13 @@ function ButtonElement({
   );
   const { borderStyles, customBorder } = useBorder(element, true);
 
+  const activeStyles = editMode
+    ? styles.getTarget('button')
+    : {
+        ...styles.getTarget('buttonActive'),
+        ...borderStyles.active
+      };
+
   // type=submit is important for HTML5 type validation messages
   const type = element.properties.link === LINK_NEXT ? 'submit' : 'button';
   return (
@@ -209,12 +238,8 @@ function ButtonElement({
               ...styles.getTarget('buttonHover'),
               ...borderStyles.hover
             },
-        '&.active:enabled': editMode
-          ? styles.getTarget('button')
-          : {
-              ...styles.getTarget('buttonActive'),
-              ...borderStyles.active
-            },
+        '&.active:enabled': activeStyles,
+        '&:focus:enabled': activeStyles,
         '&&': styles.getTarget('button')
       }}
       disabled={element.properties.link === LINK_NONE || loader || disabled}
