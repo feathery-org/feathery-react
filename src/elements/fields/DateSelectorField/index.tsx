@@ -6,7 +6,7 @@ import InlineTooltip from '../../components/Tooltip';
 import DatePicker from 'react-datepicker';
 import DateSelectorStyles from './styles';
 
-import { bootstrapStyles, ERROR_COLOR } from '../../styles';
+import { bootstrapStyles } from '../../styles';
 import { IMaskInput } from 'react-imask';
 import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';

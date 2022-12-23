@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useState } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/Tooltip';
-import { bootstrapStyles, ERROR_COLOR } from '../styles';
+import { bootstrapStyles } from '../styles';
 import Client from '../../utils/client';
 import useMounted from '../../utils/useMounted';
 

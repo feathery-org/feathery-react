@@ -1,4 +1,4 @@
-import { bootstrapStyles, ERROR_COLOR } from '../styles';
+import { bootstrapStyles } from '../styles';
 
 import React, { useState } from 'react';
 import InlineTooltip from '../components/Tooltip';

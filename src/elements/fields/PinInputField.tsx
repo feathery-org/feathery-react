@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isNum } from '../../utils/primitives';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { ERROR_COLOR } from '../styles';
 import useBorder from '../components/useBorder';
 
 function SingleOtpInput({

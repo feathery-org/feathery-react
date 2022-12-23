@@ -2,7 +2,7 @@ import React, { memo, useState } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/Tooltip';
-import { bootstrapStyles, ERROR_COLOR } from '../styles';
+import { bootstrapStyles } from '../styles';
 import useBorder from '../components/useBorder';
 
 function TextArea({

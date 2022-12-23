@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 
 import ReactButton from 'react-bootstrap/Button';
 import TextNodes from '../components/TextNodes';
-import { imgMaxSizeStyles, ERROR_COLOR } from '../styles';
+import { imgMaxSizeStyles } from '../styles';
 import { adjustColor } from '../../utils/styles';
 import useBorder from '../components/useBorder';
 
@@ -177,6 +177,7 @@ function ButtonElement({
   );
   const { borderStyles, customBorder } = useBorder({
     element,
+    error: inlineError,
     defaultHover: true
   });
 
@@ -207,7 +208,6 @@ function ButtonElement({
       }}
       css={{
         justifyContent: 'center',
-        ...(inlineError ? { borderColor: ERROR_COLOR } : {}),
         alignItems: 'center',
         border: 'none',
         transition: '0.3s ease all !important',
