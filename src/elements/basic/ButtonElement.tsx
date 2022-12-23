@@ -42,7 +42,13 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
 
   responsiveStyles.applyColor('button', 'background_color', 'backgroundColor');
   responsiveStyles.applyHeight('button');
-  responsiveStyles.applyWidth('button');
+  responsiveStyles.apply(
+    'button',
+    ['width', 'width_unit', 'content_responsive'],
+    (a: any, b: any, c: boolean) => ({
+      [c ? 'minWidth' : 'width']: `${a}${b}`
+    })
+  );
   responsiveStyles.applyCorners('button');
   responsiveStyles.applyFlexAndTextAlignments('button');
   responsiveStyles.apply(
