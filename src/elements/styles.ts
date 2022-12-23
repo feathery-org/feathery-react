@@ -401,7 +401,7 @@ class ResponsiveStyles {
     return styles;
   }
 
-  applyPlaceholderStyles(type: any, styles: any, isTextArea = false) {
+  applyPlaceholderStyles(type: any, styles: any, isDropdown = false) {
     this.addTargets('placeholder', 'placeholderActive', 'placeholderFocus');
     this.applyFontStyles('placeholder', true);
     this.apply('placeholder', 'font_size', (a: any) => ({
@@ -412,7 +412,7 @@ class ResponsiveStyles {
         marginTop: `-${a / 2}px`
       }));
     }
-    if (styles.placeholder_transition === 'shrink_top') {
+    if (styles.placeholder_transition === 'shrink_top' && !isDropdown) {
       this.apply('placeholderFocus', 'font_size', (a: any) => {
         const minFontSize = Math.min(a, 10);
         return {
@@ -427,7 +427,8 @@ class ResponsiveStyles {
         (a: number, b: string, c: number) => {
           const minFontSize = Math.min(c, 10);
           return {
-            paddingTop: isTextArea ? `${minFontSize * 2.5}px` : `${a / 3}${b}`
+            paddingTop:
+              type === 'text_area' ? `${minFontSize * 2.5}px` : `${a / 3}${b}`
           };
         }
       );
