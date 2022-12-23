@@ -115,7 +115,7 @@ export const lookUpTrigger = (step: any, elementID: any, elementType: any) => {
   let payload = {};
   if (elementType === 'button') {
     const element = step.buttons.find((button: any) => button.id === elementID);
-    payload = { text: element.properties.text };
+    payload = { text: element?.properties?.text ?? '' };
   } else if (elementType === 'text') {
     const element = step.texts.find((text: any) => text.id === elementID);
     payload = { text: element.properties.text };

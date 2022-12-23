@@ -103,14 +103,13 @@ export function isAuthStytch() {
 }
 
 export interface ActionData {
-  fieldVal: any;
-  servar: any;
+  servar?: any;
+  triggerElement?: any;
   client: any;
   formattedFields: any;
   updateFieldValues: any;
-  step: any;
   integrationData: any;
-  targetElement: any;
+  targetElement?: any;
 }
 
 export function trackEvent(title: string, stepId: string, formId: string) {
