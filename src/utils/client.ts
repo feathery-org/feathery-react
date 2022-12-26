@@ -301,6 +301,23 @@ export default class Client {
     return res;
   }
 
+  fetchGlobalIntegrations() {
+    // TODO: make real api call...realized that I dropped the ball on requesting this from Jay
+
+    const testKey = 'public-token-test-46b331df-9add-4837-9f87-cb73f526a271';
+    return {
+      stytch: {
+        api_key: testKey,
+        metadata: {
+          login_expiration: 120,
+          session_duration: 1440,
+          signup_expiration: 1440,
+          token: testKey
+        }
+      }
+    };
+  }
+
   async fetchSession(formPromise = null, block = false) {
     // Block if there's a chance user id isn't available yet
     await (block ? initFormsPromise : Promise.resolve());

@@ -49,6 +49,7 @@ export async function initializeIntegrations(
   integs: any,
   featheryClient: Client
 ) {
+  // const isAuthIntegActive = Boolean(integs.stytch || integs.firebase);
   await Promise.all([
     installArgyle(!!integs.argyle),
     installPlaid(!!integs.plaid),
@@ -57,6 +58,7 @@ export async function initializeIntegrations(
     installStripe(integs.stripe),
     installSegment(integs.segment),
     installGoogleAnalytics(integs['google-analytics'])
+    // installIdleTimer(isAuthIntegActive)
   ]);
 
   const gtm = integs['google-tag-manager'];
@@ -64,6 +66,30 @@ export async function initializeIntegrations(
   if (integs.firebase || integs.stytch)
     return inferEmailLoginFromURL(featheryClient);
 }
+
+// let idleTimerPromise: any = null;
+// const installIdleTimer = (isAuthIntegActive: boolean) => {
+//   if (idleTimerPromise) return idleTimerPromise;
+//   else if (!isAuthIntegActive) return Promise.resolve();
+//   else {
+//     $script(
+//       'https://unpkg.com/browse/react-idle-timer@5.4.2/dist/index.esm.js',
+//       'idleTimer'
+//     );
+//     $script.ready('idleTimer', (arg) => {
+//       debugger;
+//     });
+// idleTimerPromise = dynamicImport(
+//   'https://unpkg.com/browse/react-idle-timer@5.4.2/dist/index.esm.js'
+// ).then((arg1, arg2) => {
+//   const x = global;
+//   debugger;
+// });
+// const x = global;
+// debugger;
+//     return idleTimerPromise;
+//   }
+// };
 
 export function inferEmailLoginFromURL(featheryClient: Client) {
   const queryParams = new URLSearchParams(window.location.search);

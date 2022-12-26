@@ -5,8 +5,11 @@ import Client from './client';
 import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient, featheryDoc } from './browser';
-import { inferEmailLoginFromURL } from '../integrations/utils';
 import { rerenderAllForms } from './formHelperFunctions';
+import {
+  inferEmailLoginFromURL,
+  initializeIntegrations
+} from '../integrations/utils';
 
 export type FeatheryFieldTypes =
   | null
@@ -46,6 +49,7 @@ type InitState = {
   sdkKey: string;
   preloadForms: { [formName: string]: any };
   sessions: { [formName: string]: any };
+  globalIntegrations: { [integration: string]: any };
   fieldValuesInitialized: boolean;
   renderCallbacks: { [cbKey: string]: any };
   defaultErrors: Record<string, string>;
@@ -65,6 +69,7 @@ const initState: InitState = {
   language: '',
   preloadForms: [],
   sessions: {},
+  globalIntegrations: {},
   defaultErrors: {},
   // Since all field values are fetched with each session, only fetch field
   // values on the first session request
@@ -120,6 +125,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
     // Dynamically load libraries that must be client side
     global.scriptjsLoadPromise = import('scriptjs');
     global.webfontloaderPromise = import('webfontloader');
+    initializeGlobalIntegrations();
 
     // FingerprintJS.load cannot run server side
     if (!initState.userId) {
@@ -209,6 +215,13 @@ function setValues(userVals: FieldValues, rerender = true): void {
   defaultClient.submitCustom(result);
 
   if (rerender) rerenderAllForms();
+}
+
+function initializeGlobalIntegrations() {
+  // how to handle error message?
+  const integrations = defaultClient.fetchGlobalIntegrations();
+  initState.globalIntegrations = integrations;
+  if (integrations) initializeIntegrations(integrations, defaultClient);
 }
 
 function setAuthClient(client: any): void {

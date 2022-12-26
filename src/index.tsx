@@ -15,6 +15,8 @@ import { featheryDoc } from './utils/browser';
 import { getFormContext } from './utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
 import { FormContext } from './types/Form';
+import FeatheryProvider from './provider/FeatheryProvider';
+import { useAuth } from './hooks/useAuth';
 
 function getAllValues() {
   // Make a copy so users can't set fieldValues directly
@@ -64,6 +66,8 @@ export {
   setAuthClient,
   getAuthClient,
   renderAt,
+  FeatheryProvider,
+  useAuth,
   Feathery
 };
 export type { OPERATOR_CODE, FormContext };

@@ -4,6 +4,8 @@ import { featheryDoc } from '../utils/browser';
 
 const STYTCH_JS_URL = 'https://js.stytch.com/stytch.js';
 
+export const authHookCb: Record<string, () => void> = {};
+
 let stytchPromise: any = null;
 let config: any = null;
 // When verifying the SMS OTP we can't just provide the phone number again. We
@@ -36,6 +38,8 @@ export function installStytch(stytchConfig: any) {
 
         return dynamicImport(STYTCH_JS_URL).then(() => {
           const initializedClient = global.Stytch(stytchConfig.metadata.token);
+          // Trigger the useAuth cbs
+          authHookCb.cb();
           setAuthClient(initializedClient);
           resolve(initializedClient);
         });
