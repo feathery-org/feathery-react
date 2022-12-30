@@ -1,11 +1,12 @@
 import { IMaskInput } from 'react-imask';
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 
-import Placeholder from '../components/Placeholder';
-import InlineTooltip from '../components/Tooltip';
-import { bootstrapStyles } from '../styles';
-import { emailPatternStr } from '../../utils/validation';
-import useBorder from '../components/useBorder';
+import Placeholder from '../../components/Placeholder';
+import InlineTooltip from '../../components/Tooltip';
+import { bootstrapStyles } from '../../styles';
+import { emailPatternStr } from '../../../utils/validation';
+import useBorder from '../../components/useBorder';
+import TextAutocomplete from './TextAutocomplete';
 
 const MAX_TEXT_FIELD_LENGTH = 512;
 
@@ -117,6 +118,8 @@ function getInputProps(servar: any) {
   }
 }
 
+const EXIT_DELAY_TIME = 200;
+
 function TextField({
   element,
   responsiveStyles,
@@ -130,12 +133,14 @@ function TextField({
   inlineError,
   children
 }: any) {
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
   const { borderStyles, customBorder, borderId } = useBorder({
     element,
     error: inlineError
   });
 
   const servar = element.servar;
+  const options = servar.metadata.options ?? [];
   const inputProps = getInputProps(servar);
   return (
     <div
@@ -162,35 +167,57 @@ function TextField({
           }
         }}
       >
-        <IMaskInput
-          id={servar.key}
-          css={{
-            position: 'relative',
-            // Position input above the border div
-            zIndex: 1,
-            height: '100%',
-            width: '100%',
-            border: 'none',
-            backgroundColor: 'transparent',
-            ...bootstrapStyles,
-            ...responsiveStyles.getTarget('field'),
-            [`&:focus ~ #${borderId}`]: Object.values(borderStyles.active)[0],
-            '&:not(:focus)':
-              rawValue || !element.properties.placeholder
-                ? {}
-                : { color: 'transparent !important' }
-          }}
-          maxLength={servar.max_length}
-          minLength={servar.min_length}
-          required={required}
-          autoComplete={servar.metadata.autocomplete || 'on'}
-          placeholder=''
+        <TextAutocomplete
+          allOptions={options}
           value={rawValue}
-          inputRef={setRef}
-          {...inputProps}
-          {...getMaskProps(servar, rawValue)}
-          onAccept={onAccept}
-        />
+          showOptions={showAutocomplete}
+          onSelect={(option) => {
+            onAccept(option, {});
+            setShowAutocomplete(false);
+          }}
+        >
+          <IMaskInput
+            id={servar.key}
+            css={{
+              position: 'relative',
+              // Position input above the border div
+              zIndex: 1,
+              height: '100%',
+              width: '100%',
+              border: 'none',
+              backgroundColor: 'transparent',
+              ...bootstrapStyles,
+              ...responsiveStyles.getTarget('field'),
+              [`&:focus ~ #${borderId}`]: Object.values(borderStyles.active)[0],
+              '&:not(:focus)':
+                rawValue || !element.properties.placeholder
+                  ? {}
+                  : { color: 'transparent !important' }
+            }}
+            maxLength={servar.max_length}
+            minLength={servar.min_length}
+            required={required}
+            autoComplete={
+              options.length > 0 ? 'off' : servar.metadata.autocomplete || 'on'
+            }
+            placeholder=''
+            value={rawValue}
+            // Not on focus because if error is showing, it will
+            // keep triggering dropdown after blur
+            onKeyDown={() => options.length > 0 && setShowAutocomplete(true)}
+            onBlur={() => {
+              if (options.length > 0) {
+                // Blur may be triggered by option selection, and option
+                // click logic may need to be run first. So delay option removal.
+                setTimeout(() => setShowAutocomplete(false), EXIT_DELAY_TIME);
+              }
+            }}
+            inputRef={setRef}
+            {...inputProps}
+            {...getMaskProps(servar, rawValue)}
+            onAccept={onAccept}
+          />
+        </TextAutocomplete>
         {customBorder}
         <Placeholder
           value={rawValue}
