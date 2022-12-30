@@ -1,4 +1,5 @@
 import { FeatheryFieldTypes, setValues } from '../utils/init';
+import { FieldOptions } from '../utils/formHelperFunctions';
 
 export interface ElementProps {
   [fieldId: string]: {
@@ -28,7 +29,7 @@ export type FieldData = {
 
 export interface Context {
   setValues: typeof setValues;
-  setOptions: (newOptions: { [servarKey: string]: FeatheryFieldTypes }) => void;
+  setOptions: (newOptions: FieldOptions) => void;
   setProgress: (val: number | { progress?: number; segments?: number }) => void;
   setFormCompletion: (flag: boolean) => void;
   setStep: SetStep;
