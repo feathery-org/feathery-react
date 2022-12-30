@@ -452,7 +452,10 @@ const Cell = ({ node: el, form, flags }: any) => {
             rawValue={stringifyWithNull(fieldVal)}
             onAccept={(val: any, mask: any) => {
               const newVal = mask._unmaskedValue === '' ? '' : val;
-              const change = changeValue(newVal, el, index, false);
+              // Rerender only necessary if autocomplete dropdown needs
+              // to be updated
+              const rerender = (servar.metadata.options ?? []).length > 0;
+              const change = changeValue(newVal, el, index, rerender);
               if (change) {
                 const submitData =
                   autosubmit && textFieldShouldSubmit(servar, newVal);
