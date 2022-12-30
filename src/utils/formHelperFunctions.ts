@@ -79,7 +79,7 @@ export function getDefaultFieldValue(field: any) {
 // TODO: remove string[] for backcompat
 export type FieldOptions = Record<
   string,
-  (string | { value: string; label: string })[]
+  (string | { value: string; label?: string; image?: string })[]
 >;
 
 export function updateStepFieldOptions(step: any, newOptions: FieldOptions) {
@@ -91,7 +91,10 @@ export function updateStepFieldOptions(step: any, newOptions: FieldOptions) {
         typeof option === 'string' ? option : option.value
       );
       servar.metadata.option_labels = options.map((option) =>
-        typeof option === 'string' ? option : option.label
+        typeof option === 'string' ? option : option.label ?? option.value
+      );
+      servar.metadata.option_images = options.map((option) =>
+        typeof option === 'string' ? '' : option.image ?? ''
       );
     }
   });
