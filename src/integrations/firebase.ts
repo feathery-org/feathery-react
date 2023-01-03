@@ -112,7 +112,7 @@ export async function sendFirebaseLogin({
   }
 }
 
-export async function verifySMSCode({ fieldVal, servar, featheryClient }: any) {
+export async function verifySMSCode({ fieldVal, featheryClient }: any) {
   const fcr = window.firebaseConfirmationResult;
   if (fcr) {
     return await fcr
@@ -131,16 +131,10 @@ export async function verifySMSCode({ fieldVal, servar, featheryClient }: any) {
       })
       .catch(() => {
         // User couldn't sign in (bad verification code?)
-        return {
-          errorMessage: 'Invalid code',
-          errorField: servar
-        };
+        throw new Error('Invalid code');
       });
   } else {
-    return {
-      errorMessage: 'Please refresh and try again',
-      errorField: servar
-    };
+    throw new Error('Please refresh and try again');
   }
 }
 

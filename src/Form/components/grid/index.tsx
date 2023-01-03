@@ -3,13 +3,9 @@ import Cell from './Cell';
 import ResponsiveStyles from '../../../elements/styles';
 import { getDefaultFieldValue } from '../../../utils/formHelperFunctions';
 import { adjustColor } from '../../../utils/styles';
-import {
-  LINK_CUSTOM,
-  LINK_NONE,
-  LINK_SELECT_PRODUCT
-} from '../../../elements/basic/ButtonElement';
 import { fieldValues } from '../../../utils/init';
 import { TEXT_VARIABLE_PATTERN } from '../../../elements/components/TextNodes';
+import { ACTION_SELECT_PRODUCT } from '../../../utils/elementActions';
 const Grid = ({ step, form, viewport }: any) => {
   const formattedStep = formatStep(JSON.parse(JSON.stringify(step)), viewport);
 
@@ -43,7 +39,7 @@ const Subgrid = ({
   viewport = 'desktop',
   flags
 }: any) => {
-  const { buttonOnClick, getButtonSelectionState, onCustomAction } = form;
+  const { getButtonSelectionState, runElementActions } = form;
   if (node.isElement || node.isEmpty) {
     return (
       <CellContainer
@@ -67,8 +63,7 @@ const Subgrid = ({
           id: node.key,
           properties: node.properties
         })}
-        buttonOnClick={buttonOnClick}
-        onCustomAction={onCustomAction}
+        runElementActions={runElementActions}
       >
         <GridContainer node={node}>
           {customComponent ??
@@ -163,12 +158,11 @@ const getCellContainerStyle = (axis: string, layout: string) => {
 
 const CellContainer = ({
   children,
-  node: { key, isElement, parent, cellData, properties = null },
+  node: { isElement, parent, cellData, properties = null },
   axis,
   layout,
   selected,
-  onCustomAction,
-  buttonOnClick = () => {}
+  runElementActions = () => {}
 }: any) => {
   if (!parent) return children;
 
@@ -176,42 +170,35 @@ const CellContainer = ({
 
   if (!properties) properties = {};
 
-  if (properties.link && properties.link !== LINK_NONE && !cellData) {
-    cellData = { styles: {} };
-  }
+  const actions = properties.actions ?? [];
+  if (actions.length > 0 && !cellData) cellData = { styles: {} };
 
   if (cellData) {
     const [cellStyle, cellHoverStyle, cellActiveStyle] = getCellStyle(cellData);
-    const {
-      link = LINK_NONE,
-      product_id: productId,
-      selected_product_id_field: selectedProductIdField
-    } = properties;
-
-    const hasAction = link && ![LINK_NONE, LINK_SELECT_PRODUCT].includes(link);
-    const hasStripeAction =
-      link === LINK_SELECT_PRODUCT && productId && selectedProductIdField;
-    const isSelectable = !isElement && (hasAction || hasStripeAction);
-
-    const selectableStyles = {
-      cursor: 'pointer',
-      transition: '0.2s ease all',
-      ...(selected ? cellActiveStyle : {}),
-      '&:hover': cellHoverStyle
-    };
+    const selectableStyles =
+      !isElement && actions.length > 0
+        ? {
+            cursor: 'pointer',
+            transition: '0.2s ease all',
+            ...(selected ? cellActiveStyle : {}),
+            '&:hover': cellHoverStyle
+          }
+        : {};
 
     return (
       <div
         css={{
           ...cellContainerStyle,
           ...cellStyle,
-          ...(isSelectable ? selectableStyles : {})
+          ...selectableStyles
         }}
         onClick={(e: React.MouseEvent) => {
           e.stopPropagation();
-          if (properties.link === LINK_CUSTOM)
-            onCustomAction(properties.callback_id);
-          else buttonOnClick({ id: key, properties });
+          runElementActions({
+            actions: actions,
+            element: { id: properties.callback_id, properties },
+            elementType: 'container'
+          });
         }}
       >
         {children}

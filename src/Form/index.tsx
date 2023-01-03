@@ -57,23 +57,6 @@ import {
   inferAuthLogout,
   isAuthStytch
 } from '../integrations/utils';
-import {
-  LINK_ADD_REPEATED_ROW,
-  LINK_CUSTOM,
-  LINK_GOOGLE_OAUTH,
-  LINK_REMOVE_REPEATED_ROW,
-  LINK_SEND_SMS,
-  LINK_SEND_MAGIC_LINK,
-  LINK_TRIGGER_PLAID,
-  LINK_URL,
-  LINK_STORE_FIELD,
-  LINK_SELECT_PRODUCT,
-  LINK_BACK,
-  LINK_NEXT,
-  LINK_LOGOUT,
-  LINK_VERIFY_SMS,
-  SUBMITTABLE_LINKS
-} from '../elements/basic/ButtonElement';
 import DevNavBar from './components/DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
@@ -103,6 +86,24 @@ import { getFormContext } from '../utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
 import internalState from '../utils/internalState';
 import useAuth from '../hooks/useAuth';
+import {
+  ACTION_ADD_REPEATED_ROW,
+  ACTION_BACK,
+  ACTION_CUSTOM,
+  ACTION_GOOGLE_OAUTH,
+  ACTION_LOGOUT,
+  ACTION_NEXT,
+  ACTION_REMOVE_REPEATED_ROW,
+  ACTION_SELECT_PRODUCT,
+  ACTION_SEND_MAGIC_LINK,
+  ACTION_SEND_SMS,
+  ACTION_STORE_FIELD,
+  ACTION_TRIGGER_PLAID,
+  ACTION_URL,
+  ACTION_VERIFY_SMS,
+  shouldValidateStep,
+  SUBMITTABLE_ACTIONS
+} from '../utils/elementActions';
 
 export interface Props {
   formName: string;
@@ -133,14 +134,21 @@ interface InternalProps {
   _internalId: string; // Used to uniquely identify forms when the same form is rendered multiple times
 }
 
+interface ClickActionElement {
+  id: string;
+  properties: { [key: string]: any };
+  repeat?: any;
+}
+
 const getViewport = () => {
   return window.innerWidth > mobileBreakpointValue ? 'desktop' : 'mobile';
 };
 const findSubmitButton = (step: any) =>
-  step.buttons.find(
-    (b: any) =>
-      !b.properties.link_no_submit &&
-      SUBMITTABLE_LINKS.includes(b.properties.link)
+  step.buttons.find((b: any) =>
+    b.properties.actions.some(
+      (action: any) =>
+        SUBMITTABLE_ACTIONS.includes(action.type) && action.submit
+    )
   );
 
 function Form({
@@ -200,7 +208,7 @@ function Form({
   const [integrations, setIntegrations] = useState<null | Record<string, any>>(
     null
   );
-  const [plaidLinked, setPlaidLinked] = useState(false);
+  const plaidLinked = useRef<boolean>(false);
   const [hasPlaid, setHasPlaid] = useState(false);
   const [gMapFilled, setGMapFilled] = useState(false);
   const [gMapBlurKey, setGMapBlurKey] = useState('');
@@ -252,7 +260,7 @@ function Form({
   const callbackRef = useRef<any>(new CallbackQueue(null, setLoaders));
   // Tracks if the form has redirected
   const hasRedirected = useRef<boolean>(false);
-  const buttonClicks = useRef<any>({}).current;
+  const elementClicks = useRef<any>({}).current;
 
   // Determine if there is a field with a custom repeat_trigger configuration anywhere in the step
   const repeatTriggerExists = useMemo(
@@ -328,8 +336,10 @@ function Form({
           element: element
         })
     );
-    const smsButton = renderedButtons.find(
-      (b: any) => b.properties.link === LINK_SEND_SMS
+    const smsButton = renderedButtons.find((b: any) =>
+      b.properties.actions.some(
+        (action: any) => action.type === ACTION_SEND_SMS
+      )
     );
 
     if (smsButton) {
@@ -354,11 +364,13 @@ function Form({
     }
 
     setHasPlaid(
-      !!activeStep.buttons.find(
-        (b: any) => b.properties.link === LINK_TRIGGER_PLAID
+      !!activeStep.buttons.find((b: any) =>
+        b.properties.actions.some(
+          (action: any) => action.type === ACTION_TRIGGER_PLAID
+        )
       )
     );
-    setPlaidLinked(false);
+    plaidLinked.current = false;
     setGMapFilled(
       activeStep.servar_fields.find(
         (f: any) => f.servar.type === 'gmap_line_1' && fieldValues[f.servar.key]
@@ -464,7 +476,7 @@ function Form({
   // Debouncing the validateElements call to rate limit calls
   const debouncedValidate = useCallback(
     debounce((setInlineErrors: any) => {
-      // validate all step fields and buttons
+      // default form validation
       activeStep &&
         validateElements({
           elements: [...activeStep.servar_fields, ...activeStep.buttons],
@@ -550,28 +562,12 @@ function Form({
         ...props2
       }));
 
-  const updateNewStep = (newStep: any) => {
-    clearLoaders();
-    callbackRef.current = new CallbackQueue(newStep, setLoaders);
-    // Hydrate field descriptions
-    newStep.servar_fields.forEach((field: any) => {
-      field.servar.name = replaceTextVariables(field.servar.name, field.repeat);
-    });
-    // setActiveStep, apparently, must go after setting the callbackRef
-    // because it triggers a new render, before this fn finishes execution,
-    // which can cause onView to fire before the callbackRef is set
-    setActiveStep(newStep);
-    client.registerEvent({ step_key: newStep.key, event: 'load' });
-  };
-
   const getNewStep = async (newKey: any) => {
     // @ts-expect-error TS(2531): Object is possibly 'null'.
     let newStep = steps[newKey];
 
     const nextStep = getNextAuthStep(newStep);
-    if (nextStep !== '' && changeStep(nextStep, newKey, steps, history)) {
-      return;
-    }
+    if (nextStep !== '' && changeStep(nextStep, newKey, steps, history)) return;
     newStep = JSON.parse(JSON.stringify(newStep));
 
     internalState[_internalId] = {
@@ -587,13 +583,6 @@ function Form({
       steps,
       updateFieldOptions
     };
-
-    clearLoaders();
-    const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
-    setCurDepth(curDepth);
-    setMaxDepth(maxDepth);
-
-    trackEvent('FeatheryStepLoad', newKey, formName);
 
     let stepChanged = false;
     await runUserCallback(onLoad, () => {
@@ -619,7 +608,23 @@ function Form({
     });
     if (stepChanged) return;
 
-    updateNewStep(newStep);
+    clearLoaders();
+    const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
+    setCurDepth(curDepth);
+    setMaxDepth(maxDepth);
+
+    trackEvent('FeatheryStepLoad', newKey, formName);
+
+    callbackRef.current = new CallbackQueue(newStep, setLoaders);
+    // Hydrate field descriptions
+    newStep.servar_fields.forEach((field: any) => {
+      field.servar.name = replaceTextVariables(field.servar.name, field.repeat);
+    });
+    // setActiveStep, apparently, must go after setting the callbackRef
+    // because it triggers a new render, before this fn finishes execution,
+    // which can cause onView to fire before the callbackRef is set
+    setActiveStep(newStep);
+    client.registerEvent({ step_key: newStep.key, event: 'load' });
   };
 
   useEffect(() => {
@@ -817,62 +822,39 @@ function Form({
   const getNextStepKey = (metadata: any) =>
     nextStepKey(activeStep.next_conditions, metadata);
 
-  const submitStep = async ({
-    metadata,
-    repeat = 0,
-    buttonAction,
-    plaidSuccess = plaidLinked,
-    setLoader = () => {}
-  }: any) => {
+  const submitStep = async ({ metadata, repeat = 0 }: any) => {
     // Can't submit step until the user has gone through the Plaid flow if present
-    if (hasPlaid && !plaidSuccess) return;
-
-    // start auto validation mode now that a submit has been attempted
-    setAutoValidate(true);
+    if (hasPlaid && !plaidLinked.current) return;
 
     const formattedFields = formatStepFields(activeStep, false);
-    const elementType = metadata.elementType;
     const trigger = lookUpTrigger(
       activeStep,
       metadata.elementIDs[0],
-      elementType
+      metadata.elementType
     );
+    const newInlineErrors: any = {};
 
-    // validate all step fields and buttons
-    const { invalid, inlineErrors: newInlineErrors } = validateElements({
-      elements: [...activeStep.servar_fields, ...activeStep.buttons],
-      triggerErrors: true,
-      errorType: formSettings.errorType,
-      formRef,
-      errorCallback: getErrorCallback(),
-      setInlineErrors
-    });
-    if (invalid) return;
-
-    let errors: { errorMessage?: string; errorField?: any } = {};
-    if (buttonAction) errors = buttonAction();
     if (
       activeStep.servar_fields.find(
         ({ servar: { type } }: any) => type === 'payment_method'
       )
-    )
-      errors = await handleStepSubmissionPayment(setLoader, formattedFields);
-
-    const { errorMessage, errorField } = errors;
-    if (errorMessage && errorField) {
-      clearLoaders();
-      await setFormElementError({
-        formRef,
-        errorCallback: getErrorCallback({ trigger }),
-        fieldKey: errorField.key,
-        message: errorMessage,
-        servarType: errorField.type,
-        errorType: formSettings.errorType,
-        inlineErrors: newInlineErrors,
-        setInlineErrors: setInlineErrors,
-        triggerErrors: true
-      });
-      return;
+    ) {
+      const errors: any = await handleStepSubmissionPayment(formattedFields);
+      const { errorMessage, errorField } = errors;
+      if (errorMessage && errorField) {
+        await setFormElementError({
+          formRef,
+          errorCallback: getErrorCallback({ trigger }),
+          fieldKey: errorField.key,
+          message: errorMessage,
+          servarType: errorField.type,
+          errorType: formSettings.errorType,
+          inlineErrors: newInlineErrors,
+          setInlineErrors: setInlineErrors,
+          triggerErrors: true
+        });
+        return;
+      }
     }
 
     // Execute user-provided onSubmit function if present
@@ -888,7 +870,6 @@ function Form({
         fieldValues
       );
       let stepChanged = false;
-      await setLoader();
       await runUserCallback(onSubmit, () => ({
         // @ts-expect-error TS(2698): Spread types may only be created from object types... Remove this comment to see the full error message
         submitFields: { ...formattedFields, ...plaidFieldValues },
@@ -898,7 +879,6 @@ function Form({
         setErrors: (
           errors: Record<string, string | { index: number; message: string }>
         ) => {
-          if (!isObjectEmpty(errors)) clearLoaders();
           Object.entries(errors).forEach(([fieldKey, error]) => {
             let index = null;
             let message = error;
@@ -957,7 +937,9 @@ function Form({
   };
 
   const isStoreFieldValueAction = (el: any) =>
-    el.properties?.link === LINK_STORE_FIELD;
+    (el.properties?.actions ?? []).some(
+      (action: any) => action.type === ACTION_STORE_FIELD
+    );
 
   const submitStepHiddenFields = () => {
     const items = [
@@ -977,10 +959,7 @@ function Form({
   // usePayments (Stripe)
   const [getCardElement, setCardElement] = usePayments();
 
-  async function handleStepSubmissionPayment(
-    setLoader: any,
-    formattedFields: any
-  ) {
+  async function handleStepSubmissionPayment(formattedFields: any) {
     for (let i = 0; i < activeStep.servar_fields.length; i++) {
       const servar = activeStep.servar_fields[i].servar;
       if (servar.type === 'payment_method') {
@@ -995,7 +974,6 @@ function Form({
           integrationData,
           targetElement: getCardElement(servar.key)
         };
-        setLoader();
         const actionResult = await setupPaymentMethodAndPay(actionData);
         return actionResult ?? {};
       }
@@ -1035,8 +1013,8 @@ function Form({
       setFirst(false);
       // @ts-expect-error TS(2531): Object is possibly 'null'.
       const nextStep = steps[redirectKey];
-      const hasNext = nextStep.buttons.some(
-        (b: any) => b.properties.link === LINK_NEXT
+      const hasNext = nextStep.buttons.some((b: any) =>
+        b.properties.actions.some((action: any) => action.type === ACTION_NEXT)
       );
       const terminalStep = !hasNext && nextStep.next_conditions.length === 0;
       if (terminalStep) eventData.completed = true;
@@ -1078,123 +1056,25 @@ function Form({
     }));
   };
 
-  const buttonOnSubmit = async ({
-    button,
-    submit,
-    navigate = true,
-    buttonAction
-  }: any) => {
-    try {
-      const metadata = {
-        elementType: 'button',
-        elementIDs: [button.id]
-      };
-      if (submit) {
-        const submitPromise = await submitStep({
-          metadata,
-          repeat: button.repeat || 0,
-          buttonAction,
-          plaidSuccess: true,
-          setLoader: () => setButtonLoader(button)
-        });
-        if (submitPromise && navigate) {
-          await goToNewStep({
-            metadata,
-            submitPromise: Promise.all(submitPromise),
-            submitData: true
-          });
-        }
-      } else if (navigate) {
-        let stepChanged = false;
-        await runUserCallback(onSkip, () => ({
-          setStep: (stepKey: string) => {
-            stepChanged = changeStep(stepKey, activeStep.key, steps, history);
-          },
-          trigger: lookUpTrigger(activeStep, button.id, 'button'),
-          lastStep: !getNextStepKey(metadata)
-        }));
-        if (stepChanged) return;
-        await goToNewStep({ metadata });
-      }
-    } catch {
-      clearLoaders();
-    }
-  };
-
-  interface ClickActionElement {
-    id: string;
-    properties: { [key: string]: any };
-    repeat?: any;
-  }
   const getButtonSelectionState = (el: ClickActionElement) => {
     const props = el.properties ?? {};
-    const link = props.link;
-    if (link === LINK_SELECT_PRODUCT) {
-      return isProductSelected({
-        productId: props.product_id,
-        selectedProductIdField: props.selected_product_id_field_key
-      });
-    } else if (link === LINK_STORE_FIELD) {
-      return Boolean(fieldValues[props.custom_store_field_key]);
-    } else if (link === LINK_CUSTOM) {
-      return fieldValues[props.select_field_indicator_key];
-    }
-    return false;
-  };
-
-  const textOnClick = (
-    text: ClickActionElement,
-    start: number | undefined,
-    end: number | undefined
-  ) => {
-    const link = text.properties.link;
-    if (link === LINK_NEXT)
-      goToNewStep({
-        metadata: {
-          elementType: 'text',
-          elementIDs: [text.id],
-          start,
-          end
-        }
-      });
-    else if (link === LINK_BACK) goToPreviousStep();
+    return (props.actions ?? []).some((action: any) => {
+      if (action.type === ACTION_SELECT_PRODUCT) {
+        return isProductSelected({
+          productId: props.product_id,
+          selectedProductIdField: props.selected_product_id_field_key
+        });
+      } else if (action.type === ACTION_STORE_FIELD) {
+        return Boolean(fieldValues[props.custom_store_field_key]);
+      } else if (action.type === ACTION_CUSTOM) {
+        return fieldValues[props.select_field_indicator_key];
+      }
+      return false;
+    });
   };
 
   const buttonOnClick = async (button: ClickActionElement) => {
-    // Prevent same button from being clicked multiple times while still running
-    if (buttonClicks[button.id]) return;
-    buttonClicks[button.id] = true;
-
-    const authNavAndSubmit = (authFn: any) => {
-      if (!button.properties.link_no_nav) {
-        // Auth actions always need to validate and submit the current step
-        return buttonOnSubmit({
-          button,
-          submit: true,
-          buttonAction: authFn
-        });
-      } else {
-        return setButtonLoader(button)
-          .then(authFn)
-          .then(() => clearLoaders());
-      }
-    };
-    const storeFieldAction = () => {
-      const { custom_store_field_key: key, custom_store_value: value } =
-        button.properties;
-
-      // TODO: get default value here for the field and set it instead of ''
-      // However, we can link to a field not on this step, in which case we can't lookup the servar in activeStep
-      // So either set to false for checkboxes, or '' for other fields
-      const defaultValue = value === true ? false : '';
-
-      // Toggle 'off' the value if it has already been set
-      const newValue = {
-        [key]: fieldValues[key] === value ? defaultValue : value
-      };
-      updateFieldValues(newValue);
-    };
-    const setError = (message: string) =>
+    const setButtonError = (message: string) =>
       setFormElementError({
         formRef,
         fieldKey: button.id,
@@ -1204,119 +1084,223 @@ function Form({
         triggerErrors: true
       });
 
-    const link = button.properties.link;
-    if ([LINK_ADD_REPEATED_ROW, LINK_REMOVE_REPEATED_ROW].includes(link)) {
-      let data: any;
-      if (link === LINK_ADD_REPEATED_ROW) data = addRepeatedRow();
-      else data = removeRepeatedRow(button.repeat);
-      if (data && data.fieldKeys.length > 0) {
-        fieldOnChange({
-          fieldIds: data.fieldIDs,
-          fieldKeys: data.fieldKeys,
-          elementRepeatIndex: button.repeat
-        })();
+    await setButtonLoader(button);
+    await runElementActions({
+      actions: button.properties.actions,
+      element: button,
+      elementType: 'button',
+      setElementError: setButtonError
+    });
+    clearLoaders();
+  };
+
+  const runElementActions = async ({
+    actions,
+    element,
+    elementType,
+    setElementError = () => {},
+    textSpanStart,
+    textSpanEnd
+  }: {
+    actions: any[];
+    element: any;
+    elementType: string;
+    setElementError?: any;
+    textSpanStart?: number | undefined;
+    textSpanEnd?: number | undefined;
+  }) => {
+    const id = element.id ?? '';
+    // Prevent same element from being clicked multiple times while still running
+    if (id && elementClicks[id]) return;
+    elementClicks[id] = true;
+
+    if (shouldValidateStep(actions)) {
+      setAutoValidate(true);
+      const trigger = lookUpTrigger(activeStep, element.id, elementType);
+      // run default form validation
+      const { invalid } = validateElements({
+        elements: [...activeStep.servar_fields, ...activeStep.buttons],
+        triggerErrors: true,
+        errorType: formSettings.errorType,
+        formRef,
+        errorCallback: getErrorCallback({ trigger }),
+        setInlineErrors
+      });
+      if (invalid) {
+        elementClicks[id] = false;
+        return;
       }
-    } else if (link === LINK_TRIGGER_PLAID) {
-      if (!plaidLinked) {
-        await openPlaidLink(
-          client,
-          async () => {
-            setPlaidLinked(true);
-            if (activeStep.servar_fields.length === 0)
-              await buttonOnSubmit({ button, submit: true });
+    }
+
+    for (let i = 0; i < actions.length; i++) {
+      const action = actions[i];
+      const type = action.type;
+
+      if (
+        [ACTION_ADD_REPEATED_ROW, ACTION_REMOVE_REPEATED_ROW].includes(type)
+      ) {
+        let data: any;
+        if (type === ACTION_ADD_REPEATED_ROW) data = addRepeatedRow();
+        else data = removeRepeatedRow(element.repeat);
+        if (data && data.fieldKeys.length > 0) {
+          fieldOnChange({
+            fieldIds: data.fieldIDs,
+            fieldKeys: data.fieldKeys,
+            elementRepeatIndex: element.repeat
+          })();
+        }
+      } else if (type === ACTION_TRIGGER_PLAID) {
+        if (!plaidLinked.current) {
+          await openPlaidLink(
+            client,
+            async () => {
+              plaidLinked.current = true;
+              elementClicks[id] = false;
+              if (activeStep.servar_fields.length === 0) {
+                await submitStep({
+                  metadata: {
+                    elementType,
+                    elementIDs: [element.id]
+                  },
+                  repeat: element.repeat || 0
+                });
+              }
+              await runElementActions({
+                actions: actions.slice(i + 1),
+                element,
+                elementType,
+                setElementError,
+                textSpanStart,
+                textSpanEnd
+              });
+            },
+            updateFieldValues
+          );
+          break;
+        }
+      } else if (type === ACTION_URL) {
+        const url = action.url;
+        action.open_tab ? openTab(url) : (location.href = url);
+      } else if (type === ACTION_CUSTOM) {
+        await submitStep({
+          metadata: {
+            elementType,
+            elementIDs: [element.id]
           },
+          repeat: element.repeat || 0
+        });
+        await runUserCallback(onCustomAction, () => ({
+          trigger: lookUpTrigger(activeStep, element.id, elementType)
+        }));
+      } else if (type === ACTION_SEND_SMS) {
+        const phoneNum = fieldValues[action.auth_target_field_key] as string;
+        if (validators.phone(phoneNum)) {
+          const authFn = isAuthStytch()
+            ? () => sendSMSCode({ fieldVal: phoneNum })
+            : () =>
+                sendFirebaseLogin({
+                  fieldVal: phoneNum,
+                  servar: null,
+                  method: 'phone'
+                });
+          await authFn();
+        } else {
+          setElementError(
+            'A valid phone number is needed to send your login code.'
+          );
+          break;
+        }
+      } else if (type === ACTION_VERIFY_SMS) {
+        const pin = fieldValues[action.auth_target_field_key] as string;
+        const params = { fieldVal: pin, featheryClient: client };
+        const authFn = isAuthStytch()
+          ? () => smsLogin(params)
+          : () => verifySMSCode(params);
+        let hasErr = false;
+        await authFn().catch((err: any) => {
+          setElementError(err.message);
+          hasErr = true;
+        });
+        if (hasErr) break;
+      } else if (type === ACTION_SEND_MAGIC_LINK) {
+        const email = fieldValues[action.auth_target_field_key] as string;
+        if (validators.email(email)) {
+          const authFn = isAuthStytch()
+            ? () => sendMagicLink({ fieldVal: email })
+            : () =>
+                sendFirebaseLogin({
+                  fieldVal: email,
+                  servar: null,
+                  method: 'email'
+                });
+          await authFn();
+        } else {
+          setElementError('A valid email is needed to send your magic link.');
+          break;
+        }
+      } else if (type === ACTION_GOOGLE_OAUTH) googleOauthRedirect();
+      else if (type === ACTION_LOGOUT) inferAuthLogout();
+      else if (type === ACTION_NEXT) {
+        const metadata = {
+          elementType,
+          elementIDs: [element.id],
+          start: textSpanStart,
+          end: textSpanEnd
+        };
+        if (action.submit) {
+          const submitPromise = await submitStep({
+            metadata,
+            repeat: element.repeat || 0
+          });
+          if (submitPromise) {
+            await goToNewStep({
+              metadata,
+              submitPromise: Promise.all(submitPromise),
+              submitData: true
+            });
+          }
+        } else {
+          let stepChanged = false;
+          await runUserCallback(onSkip, () => ({
+            setStep: (stepKey: string) => {
+              stepChanged = changeStep(stepKey, activeStep.key, steps, history);
+            },
+            trigger: lookUpTrigger(activeStep, element.id, elementType),
+            lastStep: !getNextStepKey(metadata)
+          }));
+          if (!stepChanged) {
+            await goToNewStep({ metadata });
+          }
+        }
+      } else if (type === ACTION_BACK) await goToPreviousStep();
+      else if (type === ACTION_SELECT_PRODUCT) {
+        await toggleProductSelection({
+          productId: action.product_id,
+          selectedProductIdFieldId: action.selected_product_id_field,
+          selectedProductIdFieldKey: action.selected_product_id_field_key,
+          fieldValues,
           updateFieldValues,
-          () => setButtonLoader(button),
-          () => clearLoaders()
-        );
-      }
-    } else if (link === LINK_URL) {
-      const url = button.properties.link_url;
-      button.properties.link_url_open_tab
-        ? openTab(url)
-        : (location.href = url);
-    } else if (link === LINK_CUSTOM) {
-      await buttonOnSubmit({
-        button,
-        submit: !button.properties.link_no_submit,
-        navigate: false
-      });
-      await runUserCallback(onCustomAction, () => ({
-        trigger: lookUpTrigger(activeStep, button.id, 'button')
-      }));
-    } else if (link === LINK_SEND_SMS) {
-      const phoneNum = fieldValues[
-        button.properties.auth_target_field_key
-      ] as string;
-      if (validators.phone(phoneNum)) {
-        const authFn = isAuthStytch()
-          ? () => sendSMSCode({ fieldVal: phoneNum })
-          : () =>
-              sendFirebaseLogin({
-                fieldVal: phoneNum,
-                servar: null,
-                method: 'phone'
-              });
-        await authNavAndSubmit(authFn);
-      } else {
-        setError('A valid phone number is needed to send your login code.');
-      }
-    } else if (link === LINK_VERIFY_SMS) {
-      const pin = fieldValues[
-        button.properties.auth_target_field_key
-      ] as string;
+          client,
+          integrations
+        });
+      } else if (type === ACTION_STORE_FIELD) {
+        const { custom_store_field_key: key, custom_store_value: value } =
+          action;
 
-      const params = { fieldVal: pin, featheryClient: client };
-      const authFn = isAuthStytch()
-        ? () => smsLogin(params)
-        : () => verifySMSCode(params);
-      await authNavAndSubmit(authFn).catch(() => {
-        setError('Your code is not valid.');
-      });
-    } else if (link === LINK_SEND_MAGIC_LINK) {
-      const email = fieldValues[
-        button.properties.auth_target_field_key
-      ] as string;
-      if (validators.email(email)) {
-        const authFn = isAuthStytch()
-          ? () => sendMagicLink({ fieldVal: email })
-          : () =>
-              sendFirebaseLogin({
-                fieldVal: email,
-                servar: null,
-                method: 'email'
-              });
+        // TODO: get default value here for the field and set it instead of ''
+        // However, we can link to a field not on this step, in which case we can't lookup the servar in activeStep
+        // So either set to false for checkboxes, or '' for other fields
+        const defaultValue = value === true ? false : '';
 
-        await authNavAndSubmit(authFn);
-      } else {
-        setError('A valid email is needed to send your magic link.');
+        // Toggle 'off' the value if it has already been set
+        const newValue = {
+          [key]: fieldValues[key] === value ? defaultValue : value
+        };
+        updateFieldValues(newValue);
       }
-    } else if (link === LINK_GOOGLE_OAUTH) {
-      googleOauthRedirect();
-    } else if (link === LINK_LOGOUT) {
-      inferAuthLogout();
-    } else if (link === LINK_NEXT) {
-      await buttonOnSubmit({
-        button,
-        submit: !button.properties.link_no_submit
-      });
-    } else if (link === LINK_BACK) {
-      await goToPreviousStep();
-    } else if (link === LINK_SELECT_PRODUCT) {
-      await toggleProductSelection({
-        productId: button.properties.product_id,
-        selectedProductIdFieldId: button.properties.selected_product_id_field,
-        selectedProductIdFieldKey:
-          button.properties.selected_product_id_field_key,
-        fieldValues,
-        updateFieldValues,
-        client,
-        integrations
-      });
-      storeFieldAction();
-    } else if (link === LINK_STORE_FIELD) storeFieldAction();
+    }
 
-    buttonClicks[button.id] = false;
+    elementClicks[id] = false;
   };
 
   const fieldOnChange =
@@ -1406,8 +1390,8 @@ function Form({
     activeStep,
     loaders,
     getButtonSelectionState,
+    runElementActions,
     buttonOnClick,
-    textOnClick,
     fieldOnChange,
     inlineErrors,
     setInlineErrors,
@@ -1423,11 +1407,7 @@ function Form({
     focusRef,
     formRef,
     steps,
-    setCardElement,
-    onCustomAction: (id: string) =>
-      runUserCallback(onCustomAction, () => ({
-        trigger: { id, type: 'container' }
-      }))
+    setCardElement
   };
 
   let completeState;
