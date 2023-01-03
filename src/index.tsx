@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import Elements from './elements';
-import Form, { Props as FormProps } from './Form';
+import Form, { FormContext, Props as FormProps } from './Form';
 import {
   init,
   updateUserId,
@@ -62,4 +62,4 @@ export {
   renderAt,
   Feathery
 };
-export type { OPERATOR_CODE };
+export type { OPERATOR_CODE, FormContext };

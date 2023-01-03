@@ -104,6 +104,43 @@ import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
 import { replaceTextVariables } from '../elements/components/TextNodes';
 
+// getFormContext needs to live outside of the component so that we can export
+// the types for the end user
+const getFormContext = (
+  newStep: any,
+  props: {
+    history: any;
+    client: any;
+    updateFieldOptions: (
+      stepData: any,
+      loadStep?: null
+    ) => (newOptions: FieldOptions) => void;
+    setUserProgress: React.Dispatch<React.SetStateAction<null>>;
+    steps: any;
+  }
+) => ({
+  setValues,
+  setFormCompletion: (flag: boolean) =>
+    props.client.registerEvent({
+      step_key: newStep.key,
+      event: 'load',
+      completed: flag
+    }),
+  setOptions: props.updateFieldOptions(props.steps),
+  setProgress: (val: any) => props.setUserProgress(val),
+  setStep: (stepKey: any) => {
+    changeStep(stepKey, newStep.key, props.steps, props.history);
+  },
+  step: {
+    style: {
+      backgroundColor: newStep?.default_background_color
+    }
+  },
+  userId: initInfo().userId,
+  stepName: newStep?.key ?? ''
+});
+export type FormContext = ReturnType<typeof getFormContext>;
+
 export interface Props {
   formName: string;
   onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
@@ -121,6 +158,7 @@ export interface Props {
   initialStepId?: string;
   display?: 'inline' | 'modal';
   elementProps?: ElementProps;
+  contextRef?: React.MutableRefObject<null | FormContext>;
   formProps?: Record<string, any>;
   customComponents?: Record<string, any>;
   style?: { [cssProperty: string]: string };
@@ -153,6 +191,7 @@ function Form({
   initialStepId = '',
   display = 'inline',
   elementProps = {},
+  contextRef,
   formProps = {},
   customComponents = {},
   style = {},
@@ -254,6 +293,16 @@ function Form({
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
 
+  const getFormContextHelper = (newStep = activeStep) => {
+    return getFormContext(newStep, {
+      history,
+      client,
+      updateFieldOptions,
+      setUserProgress,
+      steps
+    });
+  };
+
   // All mount and unmount logic should live here
   useEffect(() => {
     initState.renderCallbacks[formName] = () => {
@@ -340,6 +389,13 @@ function Form({
     if (!activeStep) return;
 
     setAutoValidate(false); // Each step to initially not auto validate
+
+    if (
+      contextRef &&
+      Object.prototype.hasOwnProperty.call(contextRef, 'current')
+    )
+      // Need to update the context because it has activeStep closure'd in
+      contextRef.current = getFormContextHelper();
 
     if (formSettings.autofocus && focusRef.current) {
       focusRef.current.focus({
@@ -531,25 +587,7 @@ function Form({
     if (typeof userCallback !== 'function') return;
     try {
       await userCallback({
-        setValues,
-        setFormCompletion: (flag: boolean) =>
-          client.registerEvent({
-            step_key: activeStep.key,
-            event: 'load',
-            completed: flag
-          }),
-        setOptions: updateFieldOptions(steps),
-        setProgress: (val: any) => setUserProgress(val),
-        setStep: (stepKey: any) => {
-          changeStep(stepKey, newStep.key, steps, history);
-        },
-        step: {
-          style: {
-            backgroundColor: newStep?.default_background_color
-          }
-        },
-        userId: initInfo().userId,
-        stepName: newStep?.key ?? '',
+        ...getFormContextHelper(newStep),
         ...getProps()
       });
     } catch (e) {
