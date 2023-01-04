@@ -47,7 +47,6 @@ type InitState = {
   sessions: { [formName: string]: any };
   redirectAfterLogin: boolean;
   fieldValuesInitialized: boolean;
-  validateCallbacks: { [cbKey: string]: any };
   renderCallbacks: { [cbKey: string]: any };
   defaultErrors: Record<string, string>;
 } & Omit<InitOptions, keyof DeprecatedOptions>;
@@ -71,7 +70,6 @@ const initState: InitState = {
   // Since all field values are fetched with each session, only fetch field
   // values on the first session request
   fieldValuesInitialized: false,
-  validateCallbacks: {},
   renderCallbacks: {}
 };
 const optionsAsInitState: (keyof InitOptions & keyof InitState)[] = [
@@ -215,15 +213,6 @@ function setValues(userVals: FieldValues, rerender = true): void {
     Object.values(initState.renderCallbacks).forEach((cb: any) => cb());
 }
 
-function validateStep(
-  formKey: string,
-  trigger = true
-): undefined | { [fieldKey: string]: string } {
-  const callback = initState.validateCallbacks[formKey];
-  if (!callback) return;
-  return callback(trigger);
-}
-
 function setAuthClient(client: any): void {
   initState.authClient = client;
   // Attempt login after setting auth client, in case the auth client wasn't set
@@ -240,7 +229,6 @@ export {
   initInfo,
   updateUserId,
   setValues,
-  validateStep,
   initState,
   initFormsPromise,
   fieldValues,

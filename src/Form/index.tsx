@@ -32,13 +32,7 @@ import {
 } from '../utils/formHelperFunctions';
 import { shouldElementHide, getHideIfReferences } from '../utils/hideIfs';
 import { validators, validateElements } from '../utils/validation';
-import {
-  initInfo,
-  initState,
-  fieldValues,
-  setValues,
-  FieldValues
-} from '../utils/init';
+import { initInfo, initState, fieldValues, FieldValues } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { sendFirebaseLogin, verifySMSCode } from '../integrations/firebase';
@@ -103,6 +97,7 @@ import {
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
 import { replaceTextVariables } from '../elements/components/TextNodes';
+import { FormContext, getFormContext } from '../utils/formContext';
 
 export interface Props {
   formName: string;
@@ -121,6 +116,7 @@ export interface Props {
   initialStepId?: string;
   display?: 'inline' | 'modal';
   elementProps?: ElementProps;
+  contextRef?: React.MutableRefObject<null | FormContext>;
   formProps?: Record<string, any>;
   customComponents?: Record<string, any>;
   style?: { [cssProperty: string]: string };
@@ -153,6 +149,7 @@ function Form({
   initialStepId = '',
   display = 'inline',
   elementProps = {},
+  contextRef,
   formProps = {},
   customComponents = {},
   style = {},
@@ -185,7 +182,9 @@ function Form({
     brandPosition: undefined,
     allowEdit: 'yes'
   });
-  const [inlineErrors, setInlineErrors] = useState({});
+  const [inlineErrors, setInlineErrors] = useState<
+    Record<string, { message: string; index: number }>
+  >({});
   const [, setRepeatChanged] = useState(false);
 
   const [integrations, setIntegrations] = useState<Record<string, any>>({});
@@ -254,6 +253,21 @@ function Form({
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
 
+  const getFormContextHelper = (newStep = activeStep) => {
+    return getFormContext(newStep, {
+      client,
+      formName,
+      formRef,
+      formSettings,
+      getErrorCallback,
+      history,
+      setInlineErrors,
+      setUserProgress,
+      steps,
+      updateFieldOptions
+    });
+  };
+
   // All mount and unmount logic should live here
   useEffect(() => {
     initState.renderCallbacks[formName] = () => {
@@ -275,7 +289,6 @@ function Form({
 
     return () => {
       delete initState.renderCallbacks[formName];
-      delete initState.validateCallbacks[formName];
     };
   }, []);
 
@@ -531,25 +544,7 @@ function Form({
     if (typeof userCallback !== 'function') return;
     try {
       await userCallback({
-        setValues,
-        setFormCompletion: (flag: boolean) =>
-          client.registerEvent({
-            step_key: activeStep.key,
-            event: 'load',
-            completed: flag
-          }),
-        setOptions: updateFieldOptions(steps),
-        setProgress: (val: any) => setUserProgress(val),
-        setStep: (stepKey: any) => {
-          changeStep(stepKey, newStep.key, steps, history);
-        },
-        step: {
-          style: {
-            backgroundColor: newStep?.default_background_color
-          }
-        },
-        userId: initInfo().userId,
-        stepName: newStep?.key ?? '',
+        ...getFormContextHelper(newStep),
         ...getProps()
       });
     } catch (e) {
@@ -557,12 +552,14 @@ function Form({
     }
   };
 
-  const getErrorCallback = (props1: any) => (props2: any) =>
-    runUserCallback(onError, () => ({
-      fields: formatAllFormFields(steps, true),
-      ...props1,
-      ...props2
-    }));
+  const getErrorCallback =
+    (props1 = {}) =>
+    (props2 = {}) =>
+      runUserCallback(onError, () => ({
+        fields: formatAllFormFields(steps, true),
+        ...props1,
+        ...props2
+      }));
 
   const updateNewStep = (newStep: any) => {
     clearLoaders();
@@ -611,25 +608,18 @@ function Form({
       }
     }
     newStep = JSON.parse(JSON.stringify(newStep));
+    if (
+      contextRef &&
+      Object.prototype.hasOwnProperty.call(contextRef, 'current')
+    )
+      // Need to update the context each time because it has the step closure'd in
+      contextRef.current = getFormContextHelper(newStep);
 
     const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
     setCurDepth(curDepth);
     setMaxDepth(maxDepth);
 
     trackEvent('FeatheryStepLoad', newKey, formName);
-
-    initState.validateCallbacks[formName] = (trigger: any) => {
-      // validate all step fields and buttons
-      const { errors } = validateElements({
-        elements: [...newStep.servar_fields, ...newStep.buttons],
-        triggerErrors: trigger,
-        errorType: formSettings.errorType,
-        formRef,
-        errorCallback: getErrorCallback(trigger),
-        setInlineErrors
-      });
-      return errors;
-    };
 
     let stepChanged = false;
     await runUserCallback(
@@ -895,7 +885,7 @@ function Form({
       triggerErrors: true,
       errorType: formSettings.errorType,
       formRef,
-      errorCallback: getErrorCallback(trigger),
+      errorCallback: getErrorCallback(),
       setInlineErrors
     });
     if (invalid) return;
