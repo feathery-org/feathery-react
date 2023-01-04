@@ -32,13 +32,7 @@ import {
 } from '../utils/formHelperFunctions';
 import { shouldElementHide, getHideIfReferences } from '../utils/hideIfs';
 import { validators, validateElements } from '../utils/validation';
-import {
-  initInfo,
-  initState,
-  fieldValues,
-  setValues,
-  FieldValues
-} from '../utils/init';
+import { initInfo, initState, fieldValues, FieldValues } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { sendFirebaseLogin, verifySMSCode } from '../integrations/firebase';
@@ -103,43 +97,7 @@ import {
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
 import { replaceTextVariables } from '../elements/components/TextNodes';
-
-// getFormContext needs to live outside of the component so that we can export
-// the types for the end user
-const getFormContext = (
-  newStep: any,
-  props: {
-    history: any;
-    client: any;
-    updateFieldOptions: (
-      stepData: any,
-      loadStep?: null
-    ) => (newOptions: FieldOptions) => void;
-    setUserProgress: React.Dispatch<React.SetStateAction<null>>;
-    steps: any;
-  }
-) => ({
-  setValues,
-  setFormCompletion: (flag: boolean) =>
-    props.client.registerEvent({
-      step_key: newStep.key,
-      event: 'load',
-      completed: flag
-    }),
-  setOptions: props.updateFieldOptions(props.steps),
-  setProgress: (val: any) => props.setUserProgress(val),
-  setStep: (stepKey: any) => {
-    changeStep(stepKey, newStep.key, props.steps, props.history);
-  },
-  step: {
-    style: {
-      backgroundColor: newStep?.default_background_color
-    }
-  },
-  userId: initInfo().userId,
-  stepName: newStep?.key ?? ''
-});
-export type FormContext = ReturnType<typeof getFormContext>;
+import { FormContext, getFormContext } from '../utils/formContext';
 
 export interface Props {
   formName: string;
@@ -389,13 +347,6 @@ function Form({
     if (!activeStep) return;
 
     setAutoValidate(false); // Each step to initially not auto validate
-
-    if (
-      contextRef &&
-      Object.prototype.hasOwnProperty.call(contextRef, 'current')
-    )
-      // Need to update the context because it has activeStep closure'd in
-      contextRef.current = getFormContextHelper();
 
     if (formSettings.autofocus && focusRef.current) {
       focusRef.current.focus({
@@ -649,6 +600,12 @@ function Form({
       }
     }
     newStep = JSON.parse(JSON.stringify(newStep));
+    if (
+      contextRef &&
+      Object.prototype.hasOwnProperty.call(contextRef, 'current')
+    )
+      // Need to update the context each time because it has the step closure'd in
+      contextRef.current = getFormContextHelper(newStep);
 
     const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
     setCurDepth(curDepth);

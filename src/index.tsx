@@ -1,18 +1,18 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import Elements from './elements';
-import Form, { FormContext, Props as FormProps } from './Form';
+import Form, { Props as FormProps } from './Form';
 import {
   init,
   updateUserId,
   setValues,
-  validateStep,
   fieldValues,
   setAuthClient,
   getAuthClient
 } from './utils/init';
 import { OPERATOR_CODE } from './utils/logic';
 import { featheryDoc } from './utils/browser';
+import { FormContext } from './utils/formContext';
 
 function getAllValues() {
   // Make a copy so users can't set fieldValues directly
@@ -40,7 +40,6 @@ const Feathery = {
   init,
   updateUserKey,
   updateUserId,
-  validateStep,
   setValues,
   getAllValues,
   setAuthClient,
@@ -54,7 +53,6 @@ export {
   init,
   updateUserKey,
   updateUserId,
-  validateStep,
   setValues,
   getAllValues,
   setAuthClient,
