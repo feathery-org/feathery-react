@@ -43,10 +43,10 @@ export const getFormContext = (
   },
   userId: initInfo().userId,
   stepName: newStep?.key ?? '',
-  validateStep: (triggerErrors = true) => {
+  validateStep: (showErrors = true) => {
     const { errors } = validateElements({
       elements: [...newStep.servar_fields, ...newStep.buttons],
-      triggerErrors,
+      triggerErrors: showErrors,
       errorType: props.formSettings.errorType,
       formRef: props.formRef,
       errorCallback: props.getErrorCallback(),
