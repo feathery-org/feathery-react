@@ -182,7 +182,9 @@ function Form({
     brandPosition: undefined,
     allowEdit: 'yes'
   });
-  const [inlineErrors, setInlineErrors] = useState({});
+  const [inlineErrors, setInlineErrors] = useState<
+    Record<string, { message: string; index: number }>
+  >({});
   const [, setRepeatChanged] = useState(false);
 
   const [integrations, setIntegrations] = useState<Record<string, any>>({});
@@ -253,11 +255,16 @@ function Form({
 
   const getFormContextHelper = (newStep = activeStep) => {
     return getFormContext(newStep, {
-      history,
       client,
-      updateFieldOptions,
+      formName,
+      formRef,
+      formSettings,
+      getErrorCallback,
+      history,
+      setInlineErrors,
       setUserProgress,
-      steps
+      steps,
+      updateFieldOptions
     });
   };
 
@@ -282,7 +289,6 @@ function Form({
 
     return () => {
       delete initState.renderCallbacks[formName];
-      delete initState.validateCallbacks[formName];
     };
   }, []);
 
@@ -546,12 +552,14 @@ function Form({
     }
   };
 
-  const getErrorCallback = (props1: any) => (props2: any) =>
-    runUserCallback(onError, () => ({
-      fields: formatAllFormFields(steps, true),
-      ...props1,
-      ...props2
-    }));
+  const getErrorCallback =
+    (props1 = {}) =>
+    (props2 = {}) =>
+      runUserCallback(onError, () => ({
+        fields: formatAllFormFields(steps, true),
+        ...props1,
+        ...props2
+      }));
 
   const updateNewStep = (newStep: any) => {
     clearLoaders();
@@ -612,19 +620,6 @@ function Form({
     setMaxDepth(maxDepth);
 
     trackEvent('FeatheryStepLoad', newKey, formName);
-
-    initState.validateCallbacks[formName] = (trigger: any) => {
-      // validate all step fields and buttons
-      const { errors } = validateElements({
-        elements: [...newStep.servar_fields, ...newStep.buttons],
-        triggerErrors: trigger,
-        errorType: formSettings.errorType,
-        formRef,
-        errorCallback: getErrorCallback(trigger),
-        setInlineErrors
-      });
-      return errors;
-    };
 
     let stepChanged = false;
     await runUserCallback(
@@ -890,7 +885,7 @@ function Form({
       triggerErrors: true,
       errorType: formSettings.errorType,
       formRef,
-      errorCallback: getErrorCallback(trigger),
+      errorCallback: getErrorCallback(),
       setInlineErrors
     });
     if (invalid) return;

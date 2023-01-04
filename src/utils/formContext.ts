@@ -1,17 +1,27 @@
 import { changeStep, FieldOptions } from './formHelperFunctions';
-import { initInfo, setValues, validateStep } from './init';
+import { initInfo, setValues } from './init';
+import { validateElements } from './validation';
 
 export const getFormContext = (
   newStep: any,
   props: {
-    history: any;
     client: any;
+    formName: string;
+    formRef: React.MutableRefObject<any>;
+    formSettings: any;
+    getErrorCallback: (
+      props1?: Record<string, unknown>
+    ) => (props2?: Record<string, unknown>) => Promise<void>;
+    history: any;
+    setInlineErrors: React.Dispatch<
+      React.SetStateAction<Record<string, { message: string; index: number }>>
+    >;
+    setUserProgress: React.Dispatch<React.SetStateAction<null>>;
+    steps: any;
     updateFieldOptions: (
       stepData: any,
       loadStep?: null
     ) => (newOptions: FieldOptions) => void;
-    setUserProgress: React.Dispatch<React.SetStateAction<null>>;
-    steps: any;
   }
 ) => ({
   setValues,
@@ -33,7 +43,17 @@ export const getFormContext = (
   },
   userId: initInfo().userId,
   stepName: newStep?.key ?? '',
-  validateStep
+  validateStep: (triggerErrors = true) => {
+    const { errors } = validateElements({
+      elements: [...newStep.servar_fields, ...newStep.buttons],
+      triggerErrors,
+      errorType: props.formSettings.errorType,
+      formRef: props.formRef,
+      errorCallback: props.getErrorCallback(),
+      setInlineErrors: props.setInlineErrors
+    });
+    return errors;
+  }
 });
 
 export type FormContext = ReturnType<typeof getFormContext>;
