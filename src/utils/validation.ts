@@ -28,7 +28,7 @@ function validateElements({
   errorCallback?: any;
   setInlineErrors: any;
 }): {
-  errors: string[];
+  errors: { [fieldKey: string]: string };
   inlineErrors: { [key: string]: any };
   invalid: boolean;
 } {
