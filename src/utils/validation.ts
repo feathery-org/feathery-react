@@ -24,7 +24,7 @@ function validateElements({
   elements: any[];
   triggerErrors: boolean;
   errorType: string;
-  formRef: React.RefObject<any>;
+  formRef: React.MutableRefObject<any>;
   errorCallback?: any;
   setInlineErrors: any;
 }): {

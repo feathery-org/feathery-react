@@ -1,59 +1,65 @@
 import { changeStep, FieldOptions } from './formHelperFunctions';
-import { initInfo, setValues } from './init';
+import { setValues } from './init';
+import internalState from './internalState';
 import { validateElements } from './validation';
 
-export const getFormContext = (
-  newStep: any,
-  props: {
-    client: any;
-    formName: string;
-    formRef: React.MutableRefObject<any>;
-    formSettings: any;
-    getErrorCallback: (
-      props1?: Record<string, unknown>
-    ) => (props2?: Record<string, unknown>) => Promise<void>;
-    history: any;
-    setInlineErrors: React.Dispatch<
-      React.SetStateAction<Record<string, { message: string; index: number }>>
-    >;
-    setUserProgress: React.Dispatch<React.SetStateAction<null>>;
-    steps: any;
-    updateFieldOptions: (
-      stepData: any,
-      loadStep?: null
-    ) => (newOptions: FieldOptions) => void;
-  }
-) => ({
+/**
+ * Used by contextRef in <Form />, renderAt for vanillajs, and the lifecycle
+ * methods
+ *
+ * @param formUuid
+ * @returns Form context object
+ */
+export const getFormContext = (formUuid: string) => ({
   setValues,
-  setFormCompletion: (flag: boolean) =>
-    props.client.registerEvent({
-      step_key: newStep.key,
+  setFormCompletion: (flag: boolean) => {
+    const { client, currentStep } = internalState[formUuid];
+    return client.registerEvent({
+      step_key: currentStep.key,
       event: 'load',
       completed: flag
-    }),
-  setOptions: props.updateFieldOptions(props.steps),
-  setProgress: (val: any) => props.setUserProgress(val),
+    });
+  },
+  setOptions: (newOptions: FieldOptions) => {
+    const { steps, updateFieldOptions } = internalState[formUuid];
+    return updateFieldOptions(steps)(newOptions);
+  },
+  setProgress: (val: any) => {
+    return internalState[formUuid].setUserProgress(val);
+  },
   setStep: (stepKey: any) => {
-    changeStep(stepKey, newStep.key, props.steps, props.history);
+    const { currentStep, history, steps } = internalState[formUuid];
+    changeStep(stepKey, currentStep.key, steps, history);
   },
-  step: {
-    style: {
-      backgroundColor: newStep?.default_background_color
-    }
-  },
-  userId: initInfo().userId,
-  stepName: newStep?.key ?? '',
+  stepProperties: () => ({
+    name: internalState[formUuid]?.currentStep?.key ?? '',
+    backgroundColor:
+      internalState[formUuid]?.currentStep?.default_background_color
+  }),
   validateStep: (showErrors = true) => {
+    const {
+      currentStep,
+      formRef,
+      formSettings,
+      getErrorCallback,
+      setInlineErrors
+    } = internalState[formUuid];
     const { errors } = validateElements({
-      elements: [...newStep.servar_fields, ...newStep.buttons],
+      elements: [...currentStep.servar_fields, ...currentStep.buttons],
       triggerErrors: showErrors,
-      errorType: props.formSettings.errorType,
-      formRef: props.formRef,
-      errorCallback: props.getErrorCallback(),
-      setInlineErrors: props.setInlineErrors
+      errorType: formSettings.errorType,
+      formRef: formRef,
+      errorCallback: getErrorCallback(),
+      setInlineErrors: setInlineErrors
     });
     return errors;
-  }
+  },
+  // TODO: deprecate the following
+  step: {
+    style: {
+      backgroundColor:
+        internalState[formUuid]?.currentStep?.default_background_color
+    }
+  },
+  stepName: internalState[formUuid]?.currentStep?.key ?? ''
 });
-
-export type FormContext = ReturnType<typeof getFormContext>;
