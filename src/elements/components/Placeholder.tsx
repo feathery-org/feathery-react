@@ -22,7 +22,7 @@ export default function Placeholder({
         ...responsiveStyles.getTarget('placeholder'),
         ...(value ? responsiveStyles.getTarget('placeholderFocus') : {}),
         ...(inputFocused ? focusedStyles : {}),
-        [`${type}:focus + &`]: focusedStyles
+        [`${type}:focus ~ &`]: focusedStyles
       }}
     >
       {element.properties.placeholder || ''}
