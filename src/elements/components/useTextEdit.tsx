@@ -44,7 +44,7 @@ function useTextEdit({
       cursor: 'inherit',
       position: 'relative',
       // Make text in button appear more vertically centered
-      paddingBottom: '2px'
+      paddingBottom: '1px'
     };
 
     if (editable) {
