@@ -103,6 +103,7 @@ import { getFormContext } from '../utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
 import internalState from '../utils/internalState';
 import useAuth from '../hooks/useAuth';
+import VersionListener from './components/VersionListener';
 
 export interface Props {
   formName: string;
@@ -1528,24 +1529,26 @@ export function JSForm({
   ...props
 }: Props & InternalProps) {
   // Check client for NextJS support
-  if (formName && runningInClient())
-    return (
-      /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */
-      /* @ts-ignore */
-      <BrowserRouter>
-        {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
-        {/* @ts-ignore */}
-        <Route path='/'>
+  if (!formName || !runningInClient()) return null;
+
+  return (
+    /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */
+    /* @ts-ignore */
+    <BrowserRouter>
+      {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+      {/* @ts-ignore */}
+      <Route path='/'>
+        <VersionListener formName={formName}>
           <Form
-            {...props}
-            formName={formName}
             key={formName}
             _internalId={_internalId}
+            formName={formName}
+            {...props}
           />
-        </Route>
-      </BrowserRouter>
-    );
-  else return null;
+        </VersionListener>
+      </Route>
+    </BrowserRouter>
+  );
 }
 
 export default function ReactForm(props: Props): JSX.Element | null {

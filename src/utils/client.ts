@@ -74,7 +74,7 @@ export default class Client {
     }
   }
 
-  _fetch(url: any, options: any) {
+  _fetch(url: any, options: any = {}) {
     const { sdkKey } = initInfo();
     const { headers, ...otherOptions } = options;
     options = {
@@ -175,6 +175,14 @@ export default class Client {
     });
 
     await this._fetch(url, { method: 'POST', body: formData });
+  }
+
+  fetchVersion() {
+    const params = encodeGetParams({ form_key: this.formKey });
+    const url = `${CDN_URL}panel/version/?${params}`;
+    return this._fetch(url).then((response) =>
+      response ? response.json() : { version: '' }
+    );
   }
 
   updateUserId(newUserId: any, merge = false) {
