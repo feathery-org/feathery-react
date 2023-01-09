@@ -320,6 +320,8 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'phone_number':
       styles.addTargets('fieldToggle', 'dropdown');
+      styles.applyFontStyles('dropdown');
+      styles.applyColor('dropdown', 'background_color', 'backgroundColor');
 
       styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
@@ -367,6 +369,10 @@ function applyFieldStyles(field: any, styles: any) {
       }));
       break;
     default:
+      styles.addTargets('dropdown');
+      styles.applyFontStyles('dropdown');
+      styles.applyColor('dropdown', 'background_color', 'backgroundColor');
+
       // Avoid applying width to checkbox to ensure the checkbox width is properly set by the component
       if (type !== 'checkbox') styles.applyWidth('fc');
       styles.applyHeight('sub-fc');

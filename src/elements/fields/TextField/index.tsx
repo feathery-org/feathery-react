@@ -175,6 +175,7 @@ function TextField({
             onAccept(option, {});
             setShowAutocomplete(false);
           }}
+          responsiveStyles={responsiveStyles}
         >
           <IMaskInput
             id={servar.key}

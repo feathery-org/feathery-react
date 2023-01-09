@@ -75,6 +75,7 @@ function AddressLine1({
           overlay={
             <ul
               css={{
+                zIndex: 1,
                 listStyleType: 'none',
                 padding: 0,
                 margin: 0,
@@ -87,9 +88,9 @@ function AddressLine1({
                 <li
                   key={display}
                   css={{
-                    padding: '16px',
+                    padding: '8px 14px',
                     transition: '0.1s ease all',
-                    '&:hover': { backgroundColor: '#e6e6e6' }
+                    '&:hover': { backgroundColor: '#e6e6e61a' }
                   }}
                   onClick={async () => {
                     // @ts-expect-error TS(2532): Object is possibly 'undefined'.

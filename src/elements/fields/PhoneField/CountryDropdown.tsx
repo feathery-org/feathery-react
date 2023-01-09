@@ -109,6 +109,7 @@ function CountryDropdown({ show, hide, itemOnClick, ...props }: any, ref: any) {
   return (
     <ul
       css={{
+        zIndex: 1,
         listStyleType: 'none',
         padding: 0,
         margin: 0,

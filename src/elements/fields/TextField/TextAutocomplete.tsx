@@ -7,12 +7,14 @@ function TextAutocomplete({
   showOptions,
   onSelect = () => {},
   value = '',
+  responsiveStyles,
   children
 }: {
   allOptions: string[];
   showOptions: boolean;
   onSelect: (a: string) => void;
   value: string;
+  responsiveStyles: any;
   children: any;
 }) {
   const options = allOptions.filter((opt) =>
@@ -29,21 +31,23 @@ function TextAutocomplete({
         overlay={
           <ul
             css={{
+              zIndex: 1,
               listStyleType: 'none',
               padding: 0,
               margin: 0,
               backgroundColor: 'white',
               cursor: 'pointer',
-              boxShadow: '0 0 4px rgb(0 0 0 / 15%)'
+              boxShadow: '0 0 4px rgb(0 0 0 / 15%)',
+              ...responsiveStyles.getTarget('dropdown')
             }}
           >
             {options.map((opt) => (
               <li
                 key={opt}
                 css={{
-                  padding: '16px',
+                  padding: '8px 14px',
                   transition: '0.1s ease all',
-                  '&:hover': { backgroundColor: '#e6e6e6' }
+                  '&:hover': { backgroundColor: '#e6e6e61a' }
                 }}
                 onClick={() => onSelect(opt)}
               >
