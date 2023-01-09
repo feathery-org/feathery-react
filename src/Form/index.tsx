@@ -7,7 +7,7 @@ import React, {
   useCallback
 } from 'react';
 
-import ReactForm from 'react-bootstrap/Form';
+import BootstrapForm from 'react-bootstrap/Form';
 import { useHotkeys } from 'react-hotkeys-hook';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'loda... Remove this comment to see the full error message
 import debounce from 'lodash.debounce';
@@ -85,7 +85,7 @@ import { mobileBreakpointValue } from '../elements/styles';
 import {
   ContextOnChange,
   ContextOnLoad,
-  Context,
+  FormContext,
   ContextOnSubmit,
   ContextOnSkip,
   ContextOnError,
@@ -97,13 +97,15 @@ import {
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
 import { replaceTextVariables } from '../elements/components/TextNodes';
-import { FormContext, getFormContext } from '../utils/formContext';
+import { getFormContext } from '../utils/formContext';
+import { v4 as uuidv4 } from 'uuid';
+import internalState from '../utils/internalState';
 
 export interface Props {
   formName: string;
   onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
   onLoad?: null | ((context: ContextOnLoad) => Promise<any> | void);
-  onFormComplete?: null | ((context: Context) => Promise<any> | void);
+  onFormComplete?: null | ((context: FormContext) => Promise<any> | void);
   onSubmit?: null | ((context: ContextOnSubmit) => Promise<any> | void);
   onSkip?: null | ((context: ContextOnSkip) => Promise<any> | void);
   onError?: null | ((context: ContextOnError) => Promise<any> | void);
@@ -124,6 +126,10 @@ export interface Props {
   children?: JSX.Element;
 }
 
+interface InternalProps {
+  _internalId: string; // Used to uniquely identify forms when the same form is rendered multiple times
+}
+
 const getViewport = () => {
   return window.innerWidth > mobileBreakpointValue ? 'desktop' : 'mobile';
 };
@@ -135,6 +141,7 @@ const findSubmitButton = (step: any) =>
   );
 
 function Form({
+  _internalId,
   formName,
   onChange = null,
   onLoad = null,
@@ -155,7 +162,7 @@ function Form({
   style = {},
   className = '',
   children
-}: Props) {
+}: InternalProps & Props) {
   const [client, setClient] = useState<any>(null);
   const history = useHistory();
 
@@ -253,26 +260,16 @@ function Form({
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
 
-  const getFormContextHelper = (newStep = activeStep) => {
-    return getFormContext(newStep, {
-      client,
-      formName,
-      formRef,
-      formSettings,
-      getErrorCallback,
-      history,
-      setInlineErrors,
-      setUserProgress,
-      steps,
-      updateFieldOptions
-    });
-  };
-
   // All mount and unmount logic should live here
   useEffect(() => {
-    initState.renderCallbacks[formName] = () => {
+    initState.renderCallbacks[_internalId] = () => {
       setRender((render) => !render);
     };
+    if (
+      contextRef &&
+      Object.prototype.hasOwnProperty.call(contextRef, 'current')
+    )
+      contextRef.current = getFormContext(_internalId);
 
     if (window.location.search.includes('stytch_token_type'))
       setLoaders((loaders) => ({
@@ -288,7 +285,7 @@ function Form({
       }));
 
     return () => {
-      delete initState.renderCallbacks[formName];
+      delete initState.renderCallbacks[_internalId];
     };
   }, []);
 
@@ -538,13 +535,12 @@ function Form({
 
   const runUserCallback = async (
     userCallback: any,
-    getProps: () => Record<string, any> = () => ({}),
-    newStep = activeStep
+    getProps: () => Record<string, any> = () => ({})
   ) => {
     if (typeof userCallback !== 'function') return;
     try {
       await userCallback({
-        ...getFormContextHelper(newStep),
+        ...getFormContext(_internalId),
         ...getProps()
       });
     } catch (e) {
@@ -608,12 +604,20 @@ function Form({
       }
     }
     newStep = JSON.parse(JSON.stringify(newStep));
-    if (
-      contextRef &&
-      Object.prototype.hasOwnProperty.call(contextRef, 'current')
-    )
-      // Need to update the context each time because it has the step closure'd in
-      contextRef.current = getFormContextHelper(newStep);
+
+    internalState[_internalId] = {
+      currentStep: newStep,
+      client,
+      formName,
+      formRef,
+      formSettings,
+      getErrorCallback,
+      history,
+      setInlineErrors,
+      setUserProgress,
+      steps,
+      updateFieldOptions
+    };
 
     const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
     setCurDepth(curDepth);
@@ -622,38 +626,27 @@ function Form({
     trackEvent('FeatheryStepLoad', newKey, formName);
 
     let stepChanged = false;
-    await runUserCallback(
-      onLoad,
-      () => {
-        const formattedFields = formatAllFormFields(steps, true);
-        const integrationData: IntegrationData = {};
-        if (initState.authId) {
-          integrationData.firebaseAuthId = initState.authId;
-        }
+    await runUserCallback(onLoad, () => {
+      const formattedFields = formatAllFormFields(steps, true);
+      const integrationData: IntegrationData = {};
+      if (initState.authId) {
+        integrationData.firebaseAuthId = initState.authId;
+      }
 
-        return {
-          fields: formattedFields,
-          stepName: newStep.key,
-          previousStepName: activeStep?.key,
-          // @ts-expect-error TS(2531): Object is possibly 'null'.
-          lastStep: steps[newKey].next_conditions.length === 0,
-          numSteps: Object.keys(steps).length,
-          setStep: (stepKey: any) => {
-            stepChanged = changeStep(stepKey, newKey, steps, history);
-          },
-          setFormCompletion: (flag: boolean) =>
-            client.registerEvent({
-              step_key: newStep.key,
-              event: 'load',
-              completed: flag
-            }),
-          setOptions: updateFieldOptions(steps, newStep),
-          firstStepLoaded: first,
-          integrationData
-        };
-      },
-      newStep
-    );
+      return {
+        fields: formattedFields,
+        previousStepName: activeStep?.key,
+        // @ts-expect-error TS(2531): Object is possibly 'null'.
+        lastStep: steps[newKey].next_conditions.length === 0,
+        numSteps: Object.keys(steps).length,
+        firstStepLoaded: first,
+        integrationData,
+        // Override setStep fn from the common context props with this one for special bx
+        setStep: (stepKey: any) => {
+          stepChanged = changeStep(stepKey, newKey, steps, history);
+        }
+      };
+    });
     if (stepChanged) return;
 
     updateNewStep(newStep);
@@ -1523,7 +1516,7 @@ function Form({
         </div>
       )}
       <ReactPortal portal={display === 'modal'}>
-        <ReactForm
+        <BootstrapForm
           {...formProps}
           autoComplete={formSettings.autocomplete}
           className={className}
@@ -1551,16 +1544,20 @@ function Form({
               brandPosition={formSettings.brandPosition}
             />
           )}
-        </ReactForm>
+        </BootstrapForm>
       </ReactPortal>
     </>
   );
 }
 
-export default function FormWithRouter({
+// normal <Form /> (aka ReactForm) component is exported with just `props:
+// Props`, so need this component to support exposing _internalId for use in
+// renderAt without exposing InternalProps to SDK users
+export function JSForm({
   formName,
+  _internalId,
   ...props
-}: Props): JSX.Element | null {
+}: Props & InternalProps) {
   // Check client for NextJS support
   if (formName && runningInClient())
     return (
@@ -1570,9 +1567,19 @@ export default function FormWithRouter({
         {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
         {/* @ts-ignore */}
         <Route path='/'>
-          <Form {...props} formName={formName} key={formName} />
+          <Form
+            {...props}
+            formName={formName}
+            key={formName}
+            _internalId={_internalId}
+          />
         </Route>
       </BrowserRouter>
     );
   else return null;
+}
+
+export default function ReactForm(props: Props): JSX.Element | null {
+  const [_internalId] = useState(uuidv4());
+  return <JSForm {...props} _internalId={_internalId} />;
 }

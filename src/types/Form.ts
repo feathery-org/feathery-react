@@ -1,5 +1,5 @@
-import { FeatheryFieldTypes, setValues } from '../utils/init';
-import { FieldOptions } from '../utils/formHelperFunctions';
+import { FeatheryFieldTypes } from '../utils/init';
+import { getFormContext } from '../utils/formContext';
 
 export interface ElementProps {
   [fieldId: string]: {
@@ -27,18 +27,9 @@ export type FieldData = {
   };
 };
 
-export interface Context {
-  setValues: typeof setValues;
-  setOptions: (newOptions: FieldOptions) => void;
-  setProgress: (val: number | { progress?: number; segments?: number }) => void;
-  setFormCompletion: (flag: boolean) => void;
-  setStep: SetStep;
-  step: { style: { backgroundColor: string } };
-  userId: string;
-  stepName: string;
-}
+export type FormContext = ReturnType<typeof getFormContext>;
 
-export interface ContextOnChange extends Context {
+export interface ContextOnChange extends FormContext {
   changeKeys: string[];
   integrationData: IntegrationData;
   trigger: 'field' | 'addressSelect';
@@ -48,7 +39,7 @@ export interface ContextOnChange extends Context {
   valueRepeatIndex: number;
 }
 
-export interface ContextOnLoad extends Context {
+export interface ContextOnLoad extends FormContext {
   fields: FieldData;
   stepName: string;
   previousStepName: string;
@@ -58,7 +49,7 @@ export interface ContextOnLoad extends Context {
   integrationData: IntegrationData;
 }
 
-export interface ContextOnSubmit extends Context {
+export interface ContextOnSubmit extends FormContext {
   // Need to figure out how to better convey the possible Plaid information in submitFields
   submitFields: FieldData;
   fields: FieldData;
@@ -70,12 +61,12 @@ export interface ContextOnSubmit extends Context {
   trigger: Trigger;
 }
 
-export interface ContextOnSkip extends Context {
+export interface ContextOnSkip extends FormContext {
   trigger: Trigger;
   lastStep: boolean;
 }
 
-export interface ContextOnError extends Context {
+export interface ContextOnError extends FormContext {
   fields: FieldData;
   trigger: Trigger;
   elementRepeatIndex: number;
@@ -84,10 +75,10 @@ export interface ContextOnError extends Context {
   errorMessage: string;
 }
 
-export interface ContextOnCustomAction extends Context {
+export interface ContextOnCustomAction extends FormContext {
   trigger: Trigger;
 }
 
-export interface ContextOnView extends Context {
+export interface ContextOnView extends FormContext {
   visibilityStatus: { elementId: string; isVisible: boolean };
 }

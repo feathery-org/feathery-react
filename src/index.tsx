@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import Elements from './elements';
-import Form, { Props as FormProps } from './Form';
+import Form, { JSForm, Props as FormProps } from './Form';
 import {
   init,
   updateUserId,
@@ -12,7 +12,9 @@ import {
 } from './utils/init';
 import { OPERATOR_CODE } from './utils/logic';
 import { featheryDoc } from './utils/browser';
-import { FormContext } from './utils/formContext';
+import { getFormContext } from './utils/formContext';
+import { v4 as uuidv4 } from 'uuid';
+import { FormContext } from './types/Form';
 
 function getAllValues() {
   // Make a copy so users can't set fieldValues directly
@@ -27,7 +29,11 @@ function getAllValues() {
 function renderAt(elementId: any, props: FormProps) {
   const container = featheryDoc().getElementById(elementId);
 
-  ReactDOM.render(<Form {...props} />, container);
+  const uuid = uuidv4();
+
+  ReactDOM.render(<JSForm {...props} _internalId={uuid} />, container);
+
+  return getFormContext(uuid);
 }
 
 // TODO: deprecate

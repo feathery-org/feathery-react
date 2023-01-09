@@ -83,7 +83,7 @@ const optionsAsInitState: (keyof InitOptions & keyof InitState)[] = [
 const fieldValues: FieldValues = {};
 const filePathMap: Record<string, null | string | (string | null)[]> = {};
 
-function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
+function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (!sdkKey || typeof sdkKey !== 'string') {
     throw new errors.SDKKeyError();
   }
@@ -102,7 +102,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
     throw new errors.UserIdError();
   }
 
-  if (initState.initialized) return Promise.resolve(); // can only be initialized one time per load
+  if (initState.initialized) return Promise.resolve(initState.userId ?? ''); // can only be initialized one time per load
   initState.initialized = true;
 
   initState.sdkKey = sdkKey;
@@ -153,7 +153,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<void> {
   initFormsPromise = initFormsPromise.then(() =>
     _fetchFormData(initState.preloadForms)
   );
-  return initFormsPromise;
+  return initFormsPromise.then(() => initState.userId ?? '');
 }
 
 // must be called after userId loads
