@@ -165,6 +165,56 @@ describe('logic', () => {
         expect(evalComparisonRule(rule(op, field()))).toBeFalsy();
       });
 
+      it('selections_include', () => {
+        const op = 'selections_include';
+        // multi valued field
+        setFieldValues([100, 200]);
+        expect(evalComparisonRule(rule(op, 100))).toBeTruthy();
+
+        setFieldValues([100, 200]);
+        expect(evalComparisonRule(rule(op, 100, 200))).toBeTruthy();
+
+        setFieldValues([100, 200]);
+        expect(evalComparisonRule(rule(op, 300))).toBeFalsy();
+        setFieldValues(['a', 'b']);
+        expect(evalComparisonRule(rule(op, 'a'))).toBeTruthy();
+
+        setFieldValues([]);
+        expect(evalComparisonRule(rule(op, 300))).toBeFalsy();
+        setFieldValues([undefined]);
+        expect(evalComparisonRule(rule(op, 300))).toBeFalsy();
+        setFieldValues([null]);
+        expect(evalComparisonRule(rule(op, 300))).toBeFalsy();
+        setFieldValues([]);
+        expect(evalComparisonRule(rule(op, ''))).toBeTruthy();
+      });
+
+      it('selections_not_include', () => {
+        const op = 'selections_not_include';
+        // multi valued field
+        setFieldValues([100, 200]);
+        expect(evalComparisonRule(rule(op, 300))).toBeTruthy();
+
+        setFieldValues([100, 200]);
+        expect(evalComparisonRule(rule(op, 100))).toBeFalsy();
+
+        setFieldValues([100, 200]);
+        expect(evalComparisonRule(rule(op, 100, 200))).toBeFalsy();
+        setFieldValues([100, 200]);
+        expect(evalComparisonRule(rule(op, 100, 300))).toBeFalsy();
+        setFieldValues([100, 200]);
+        expect(evalComparisonRule(rule(op, 300, 400))).toBeTruthy();
+
+        setFieldValues([]);
+        expect(evalComparisonRule(rule(op, 300))).toBeTruthy();
+        setFieldValues([undefined]);
+        expect(evalComparisonRule(rule(op, 300))).toBeTruthy();
+        setFieldValues([null]);
+        expect(evalComparisonRule(rule(op, 300))).toBeTruthy();
+        setFieldValues([]);
+        expect(evalComparisonRule(rule(op, ''))).toBeFalsy();
+      });
+
       it('is_filled', () => {
         const op = 'is_filled';
         setFieldValues('');

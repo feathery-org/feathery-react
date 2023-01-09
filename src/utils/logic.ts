@@ -18,7 +18,9 @@ type OPERATOR_CODE =
   | 'ends_with'
   | 'not_ends_with'
   | 'is_numerical'
-  | 'is_text';
+  | 'is_text'
+  | 'selections_include'
+  | 'selections_not_include';
 
 export type FieldValueType = {
   field_type: 'servar' | 'hidden';
@@ -94,13 +96,18 @@ const evalComparisonRule = (
   const leftFieldValues = getValuesAsArray(
     fieldValues[rule.field_key],
     repeatIndex
-  );
-  return leftFieldValues
-    .flatMap((v: any) => {
-      if (Array.isArray(v) && !v.length) return [undefined];
-      return v;
-    })
-    .some((fv: any) => COMPARISON_FUNCTIONS[rule.comparison](fv, flatValues));
+  ).flatMap((v: any) => {
+    if (Array.isArray(v) && !v.length) return [undefined];
+    return v;
+  });
+  return COMPARISON_FUNCTIONS[rule.comparison](leftFieldValues, flatValues);
+
+  // return leftFieldValues
+  //   .flatMap((v: any) => {
+  //     if (Array.isArray(v) && !v.length) return [undefined];
+  //     return v;
+  //   })
+  //   .some((fv: any) => COMPARISON_FUNCTIONS[rule.comparison](fv, flatValues));
 };
 const getValuesAsArray = (values: unknown, repeatIndex?: number) => {
   // Array.isArray(values) ? (values.length ? values : [undefined]) : [values];
@@ -122,82 +129,128 @@ const someRight = (fn: COMPARISON_FUNCTION, l: any, r: any): boolean => {
   if (detectType(r) === 'array') return r.some((rv: any) => fn(l, rv));
   return fn(l, r);
 };
+// Determines if the left compares to at every right value
+const everyRight = (fn: COMPARISON_FUNCTION, l: any, r: any): boolean => {
+  if (detectType(r) === 'array') return r.every((rv: any) => fn(l, rv));
+  return fn(l, r);
+};
 
 const COMPARISON_FUNCTIONS: {
   [key: string]: (leftOperand: any, rightOperand?: any) => boolean;
 } = {
   equal: (l, r) =>
-    someRight(
-      (l, r) => (!l && !r) || deepEquals(coerceType(l), coerceType(r)),
-      l,
-      r
+    l.some((l: any) =>
+      someRight(
+        (l, r) => (!l && !r) || deepEquals(coerceType(l), coerceType(r)),
+        l,
+        r
+      )
     ),
   not_equal: (l, r) =>
-    someRight(
-      (l, r) => {
-        if (!l) return !!r;
-        else if (!r) return !!l;
-        else return !deepEquals(coerceType(l), coerceType(r));
-      },
-      l,
-      r
+    l.some((l: any) =>
+      someRight(
+        (l, r) => {
+          if (!l) return !!r;
+          else if (!r) return !!l;
+          else return !deepEquals(coerceType(l), coerceType(r));
+        },
+        l,
+        r
+      )
     ),
-  is_filled: (l) => {
-    const type = detectType(l);
-    if (type === 'boolean' || type === 'number' || type === 'bigint')
+  selections_include: (l, r) =>
+    l.some((l: any) =>
+      someRight(
+        (l, r) => (!l && !r) || deepEquals(coerceType(l), coerceType(r)),
+        l,
+        r
+      )
+    ),
+  selections_not_include: (l, r) =>
+    l.every((l: any) =>
+      everyRight(
+        (l, r) => {
+          if (!l) return !!r;
+          else if (!r) return !!l;
+          else return !deepEquals(coerceType(l), coerceType(r));
+        },
+        l,
+        r
+      )
+    ),
+  is_filled: (l) =>
+    l.some((l: any) => {
+      const type = detectType(l);
+      if (type === 'boolean' || type === 'number' || type === 'bigint')
+        // Can only detect it as a number if it is filled
+        return true;
+      if (type === 'array') return (l as any[]).length > 0;
+      return Boolean(l);
+    }),
+  is_empty: (l) =>
+    l.some((l: any) => {
+      const type = detectType(l);
       // Can only detect it as a number if it is filled
-      return true;
-    if (type === 'array') return (l as any[]).length > 0;
-    return Boolean(l);
-  },
-  is_empty: (l) => {
-    const type = detectType(l);
-    // Can only detect it as a number if it is filled
-    if (type === 'boolean' || type === 'number' || type === 'bigint')
-      return false;
-    if (type === 'array') return (l as any[]).length === 0;
-    return !l;
-  },
+      if (type === 'boolean' || type === 'number' || type === 'bigint')
+        return false;
+      if (type === 'array') return (l as any[]).length === 0;
+      return !l;
+    }),
   greater_than: (l, r) =>
-    someRight(
-      (l, r) =>
-        // If either side is null/empty, then the expression is false
-        !anyEmptyOperands(l, r) && coerceType(l) > coerceType(r),
-      l,
-      r
+    l.some((l: any) =>
+      someRight(
+        (l, r) =>
+          // If either side is null/empty, then the expression is false
+          !anyEmptyOperands(l, r) && coerceType(l) > coerceType(r),
+        l,
+        r
+      )
     ),
   greater_than_or_equal: (l, r) =>
-    someRight(
-      (l, r) => !anyEmptyOperands(l, r) && coerceType(l) >= coerceType(r),
-      l,
-      r
+    l.some((l: any) =>
+      someRight(
+        (l, r) => !anyEmptyOperands(l, r) && coerceType(l) >= coerceType(r),
+        l,
+        r
+      )
     ),
   less_than: (l, r) =>
-    someRight(
-      (l, r) => !anyEmptyOperands(l, r) && coerceType(l) < coerceType(r),
-      l,
-      r
+    l.some((l: any) =>
+      someRight(
+        (l, r) => !anyEmptyOperands(l, r) && coerceType(l) < coerceType(r),
+        l,
+        r
+      )
     ),
   less_than_or_equal: (l, r) =>
-    someRight(
-      (l, r) => !anyEmptyOperands(l, r) && coerceType(l) <= coerceType(r),
-      l,
-      r
+    l.some((l: any) =>
+      someRight(
+        (l, r) => !anyEmptyOperands(l, r) && coerceType(l) <= coerceType(r),
+        l,
+        r
+      )
     ),
-  is_numerical: (l) => {
-    const type = detectType(l);
-    return type === 'number' || type === 'bigint';
-  },
-  is_text: (l) => !isEmptyOrNull(l) && detectType(l) === 'string',
-  contains: (l, r) => someRight((l, r) => String(l).includes(r), l, r),
-  not_contains: (l, r) => someRight((l, r) => !String(l).includes(r), l, r),
-  starts_with: (l, r) => someRight((l, r) => String(l).startsWith(r), l, r),
+  is_numerical: (l) =>
+    l.some((l: any) => {
+      const type = detectType(l);
+      return type === 'number' || type === 'bigint';
+    }),
+  is_text: (l) =>
+    l.some((l: any) => !isEmptyOrNull(l) && detectType(l) === 'string'),
+  contains: (l, r) =>
+    l.some((l: any) => someRight((l, r) => String(l).includes(r), l, r)),
+  not_contains: (l, r) =>
+    l.some((l: any) => someRight((l, r) => !String(l).includes(r), l, r)),
+  starts_with: (l, r) =>
+    l.some((l: any) => someRight((l, r) => String(l).startsWith(r), l, r)),
   not_starts_with: (l, r) =>
-    someRight((l, r) => !String(l).startsWith(r), l, r),
-  ends_with: (l, r) => someRight((l, r) => String(l).endsWith(r), l, r),
-  not_ends_with: (l, r) => someRight((l, r) => !String(l).endsWith(r), l, r),
-  is_true: (l) => Boolean(l),
-  is_false: (l) => !l
+    l.some((l: any) => someRight((l, r) => !String(l).startsWith(r), l, r)),
+  ends_with: (l, r) =>
+    l.some((l: any) => someRight((l, r) => String(l).endsWith(r), l, r)),
+  not_ends_with: (l, r) =>
+    l.some((l: any) => someRight((l, r) => !String(l).endsWith(r), l, r)),
+  is_true: (l) => l.some((l: any) => Boolean(l)),
+  is_false: (l) => l.some((l: any) => !l)
 };
 
 function deepEquals(a: any, b: any): boolean {
