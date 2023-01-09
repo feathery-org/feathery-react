@@ -21,8 +21,8 @@ export const getFormContext = (formUuid: string) => ({
     });
   },
   setOptions: (newOptions: FieldOptions) => {
-    const { steps, updateFieldOptions } = internalState[formUuid];
-    return updateFieldOptions(steps)(newOptions);
+    const { steps, updateFieldOptions, currentStep } = internalState[formUuid];
+    return updateFieldOptions(steps, currentStep)(newOptions);
   },
   setProgress: (val: any) => {
     return internalState[formUuid].setUserProgress(val);

@@ -521,16 +521,14 @@ function Form({
   };
 
   const updateFieldOptions =
-    (stepData: any, loadStep = null) =>
-    (newOptions: FieldOptions) => {
+    (stepData: any, curStep: any) => (newOptions: FieldOptions) => {
       Object.values(stepData).forEach((step) =>
         updateStepFieldOptions(step, newOptions)
       );
       setSteps(JSON.parse(JSON.stringify(stepData)));
 
-      const newActiveStep = loadStep || activeStep;
-      updateStepFieldOptions(newActiveStep, newOptions);
-      setActiveStep(JSON.parse(JSON.stringify(newActiveStep)));
+      updateStepFieldOptions(curStep, newOptions);
+      setActiveStep(JSON.parse(JSON.stringify(curStep)));
     };
 
   const runUserCallback = async (
