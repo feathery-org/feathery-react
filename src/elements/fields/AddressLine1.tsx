@@ -128,7 +128,10 @@ function AddressLine1({
             ref={setRef}
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
-            onKeyDown={(e) => e.key !== 'Enter' && setShowOptions(true)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowOptions(false);
+              else if (e.key !== 'Enter') setShowOptions(true);
+            }}
             onFocus={() => setFocused(true)}
             onBlur={(e) => {
               // Blur may be triggered by option selection, and option
