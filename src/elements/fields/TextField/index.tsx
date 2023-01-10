@@ -205,7 +205,11 @@ function TextField({
             value={rawValue}
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
-            onKeyDown={() => options.length > 0 && setShowAutocomplete(true)}
+            onKeyDown={(e) =>
+              e.key !== 'Enter' &&
+              options.length > 0 &&
+              setShowAutocomplete(true)
+            }
             onBlur={() => {
               if (options.length > 0) {
                 // Blur may be triggered by option selection, and option

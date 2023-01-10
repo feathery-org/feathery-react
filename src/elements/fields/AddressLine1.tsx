@@ -90,7 +90,7 @@ function AddressLine1({
                   css={{
                     padding: '8px 14px',
                     transition: '0.1s ease all',
-                    '&:hover': { backgroundColor: '#e6e6e61a' }
+                    '&:hover': { backgroundColor: '#e6e6e633' }
                   }}
                   onClick={async () => {
                     // @ts-expect-error TS(2532): Object is possibly 'undefined'.
@@ -128,7 +128,7 @@ function AddressLine1({
             ref={setRef}
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
-            onKeyDown={() => setShowOptions(true)}
+            onKeyDown={(e) => e.key !== 'Enter' && setShowOptions(true)}
             onFocus={() => setFocused(true)}
             onBlur={(e) => {
               // Blur may be triggered by option selection, and option

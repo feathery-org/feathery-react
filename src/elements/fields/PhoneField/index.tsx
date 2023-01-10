@@ -163,7 +163,7 @@ function PhoneField({
             padding: '0 6px',
             position: 'relative',
             ...responsiveStyles.getTarget('fieldToggle'),
-            '&:hover': { backgroundColor: '#e6e6e6' }
+            '&:hover': { backgroundColor: '#e6e6e633' }
           }}
           ref={triggerRef}
           onClick={() => setShow(!show)}

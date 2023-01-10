@@ -153,7 +153,7 @@ export default function DevNavBar({ allSteps, curStep, history }: any) {
             height: '32px',
             border: '1px solid #DBDFE8',
             boxSizing: 'border-box',
-            boxShadow: '0px 1px 2px #2b36471a',
+            boxShadow: '0px 1px 2px #2b364726',
             borderRadius: '6px',
             cursor: 'pointer',
             display: 'flex',

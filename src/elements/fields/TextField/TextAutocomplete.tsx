@@ -47,7 +47,7 @@ function TextAutocomplete({
                 css={{
                   padding: '8px 14px',
                   transition: '0.1s ease all',
-                  '&:hover': { backgroundColor: '#e6e6e61a' }
+                  '&:hover': { backgroundColor: '#e6e6e633' }
                 }}
                 onClick={() => onSelect(opt)}
               >
