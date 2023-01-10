@@ -319,9 +319,7 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyPlaceholderStyles(type, field.styles);
       break;
     case 'phone_number':
-      styles.addTargets('fieldToggle', 'dropdown');
-      styles.applyFontStyles('dropdown');
-      styles.applyColor('dropdown', 'background_color', 'backgroundColor');
+      styles.addTargets('fieldToggle');
 
       styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
@@ -371,7 +369,11 @@ function applyFieldStyles(field: any, styles: any) {
     default:
       styles.addTargets('dropdown');
       styles.applyFontStyles('dropdown');
-      styles.applyColor('dropdown', 'background_color', 'backgroundColor');
+      styles.apply('dropdown', 'background_color', (color: any) => {
+        if (color.substring(6).toLowerCase() !== 'ff')
+          return { backgroundColor: 'white', color: 'black' };
+        return { backgroundColor: `#${color}` };
+      });
 
       // Avoid applying width to checkbox to ensure the checkbox width is properly set by the component
       if (type !== 'checkbox') styles.applyWidth('fc');
