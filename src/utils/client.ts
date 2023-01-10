@@ -347,7 +347,8 @@ export default class Client {
   submitAuthInfo({ authId, authPhone = '', authEmail = '' }: any) {
     const { userId } = initInfo();
     initState.authId = authId;
-    initState.redirectAfterLogin = true;
+    initState.authStatus = 'finished';
+
     // Execute render callbacks after setting authId, so that form navigation can be evaluated again
     Object.values(initState.renderCallbacks).forEach((renderCb: any) =>
       renderCb()

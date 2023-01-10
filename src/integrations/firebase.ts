@@ -36,7 +36,7 @@ export function installFirebase(firebaseConfig: any) {
 }
 
 export function emailLogin(featheryClient: any) {
-  if (global.firebase?.auth().isSignInWithEmailLink(window.location.href)) {
+  if (isHrefFirebaseMagicLink()) {
     const authEmail = window.localStorage.getItem('featheryFirebaseEmail');
     if (authEmail) {
       return global.firebase
@@ -142,4 +142,9 @@ export async function verifySMSCode({ fieldVal, servar, featheryClient }: any) {
       errorField: servar
     };
   }
+}
+
+export function isHrefFirebaseMagicLink(): boolean {
+  if (!global.firebase) return false;
+  return global.firebase.auth().isSignInWithEmailLink(window.location.href);
 }

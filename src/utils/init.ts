@@ -45,7 +45,11 @@ type InitState = {
   sdkKey: string;
   preloadForms: { [formName: string]: any };
   sessions: { [formName: string]: any };
-  redirectAfterLogin: boolean;
+  // started means that the auth handshake process has started and we are
+  // waiting to select a form step. finished means we have successfully authed
+  // and can now determine which step should be loaded. Value resets to '' after
+  // this is complete
+  authStatus: '' | 'started' | 'finished';
   fieldValuesInitialized: boolean;
   renderCallbacks: { [cbKey: string]: any };
   defaultErrors: Record<string, string>;
@@ -63,7 +67,7 @@ const initState: InitState = {
   authEmail: '',
   authPhoneNumber: '',
   language: '',
-  redirectAfterLogin: false,
+  authStatus: '',
   preloadForms: [],
   sessions: {},
   defaultErrors: {},
