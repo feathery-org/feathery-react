@@ -20,7 +20,7 @@ type OPERATOR_CODE =
   | 'is_numerical'
   | 'is_text'
   | 'selections_include'
-  | 'selections_not_include';
+  | 'selections_dont_include';
 
 export type FieldValueType = {
   field_type: 'servar' | 'hidden';
@@ -101,13 +101,6 @@ const evalComparisonRule = (
     return v;
   });
   return COMPARISON_FUNCTIONS[rule.comparison](leftFieldValues, flatValues);
-
-  // return leftFieldValues
-  //   .flatMap((v: any) => {
-  //     if (Array.isArray(v) && !v.length) return [undefined];
-  //     return v;
-  //   })
-  //   .some((fv: any) => COMPARISON_FUNCTIONS[rule.comparison](fv, flatValues));
 };
 const getValuesAsArray = (values: unknown, repeatIndex?: number) => {
   // Array.isArray(values) ? (values.length ? values : [undefined]) : [values];
@@ -166,7 +159,7 @@ const COMPARISON_FUNCTIONS: {
         r
       )
     ),
-  selections_not_include: (l, r) =>
+  selections_dont_include: (l, r) =>
     l.every((l: any) =>
       everyRight(
         (l, r) => {
