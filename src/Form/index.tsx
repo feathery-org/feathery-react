@@ -27,7 +27,6 @@ import {
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
-  rerenderAllForms,
   setFormElementError,
   setUrlStepHash,
   updateStepFieldOptions
@@ -37,11 +36,7 @@ import { validators, validateElements } from '../utils/validation';
 import { initInfo, initState, fieldValues, FieldValues } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
-import {
-  isHrefFirebaseMagicLink,
-  sendFirebaseLogin,
-  verifySMSCode
-} from '../integrations/firebase';
+import { sendFirebaseLogin, verifySMSCode } from '../integrations/firebase';
 import {
   googleOauthRedirect,
   sendMagicLink,
@@ -82,7 +77,7 @@ import DevNavBar from './components/DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
-import { getStytchJwt, openTab, runningInClient } from '../utils/browser';
+import { openTab, runningInClient } from '../utils/browser';
 import FormOff from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
@@ -106,6 +101,7 @@ import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
 import internalState from '../utils/internalState';
+import useAuth from '../hooks/useAuth';
 
 export interface Props {
   formName: string;
@@ -214,13 +210,14 @@ function Form({
   const prevAuthId = usePrevious(initState.authId);
   const prevStepKey = usePrevious(stepKey);
 
+  console.log('------------------------------------');
+  console.log('render stepKey:', stepKey);
+
   // Set to trigger conditional renders on field value updates, no need to use the value itself
   const [render, setRender] = useState(false);
 
   const [loaders, setLoaders] = useState({});
-  const clearLoaders = () => {
-    setLoaders({});
-  };
+  const clearLoaders = () => setLoaders({});
   const stepLoader = useMemo(() => {
     const data = Object.values(loaders).find(
       (l) => (l as any)?.showOn === 'full_page'
@@ -583,7 +580,8 @@ function Form({
     };
 
     // Clear auth (and other) loaders and reset auth flag
-    initState.authState.redirectAfterLogin = false;
+    console.log('clearing loaders and resetting flag');
+    initState.redirectAfterLogin = false;
     clearLoaders();
     const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
     setCurDepth(curDepth);
@@ -619,17 +617,10 @@ function Form({
   };
 
   const getNextAuthStep = (newStep?: any): string => {
-    // If steps & integrations state has been set use that, otherwise grab from
-    // initState. This is necessary because the client CB fires in the same
-    // render cycle that these values are set, so the react state variables are
-    // not updated in time
-    const stepsToUse = Object.keys(steps).length
-      ? steps
-      : initState.authState.steps;
-    const integs = Object.keys(integrations).length
-      ? integrations
-      : initState.authState.integrations;
-    const metadata = integs.stytch?.metadata ?? integs.firebase?.metadata;
+    console.log('getNextAuthStep. stepsToUse', steps);
+    console.log('getNextAuthStep. integs', integrations);
+    const metadata =
+      integrations.stytch?.metadata ?? integrations.firebase?.metadata;
     const authSteps = metadata?.auth_gate_steps ?? [];
     const nextStepIsProtected = newStep
       ? authSteps.includes(newStep.id)
@@ -640,7 +631,7 @@ function Form({
     }
 
     const findStepName = (stepId: string): string => {
-      const step: undefined | { key: string } = Object.values(stepsToUse).find(
+      const step: undefined | { key: string } = Object.values(steps).find(
         (step: any) => step.id === stepId
       ) as undefined | { key: string };
       return step?.key ?? '';
@@ -648,7 +639,12 @@ function Form({
     let nextStep = '';
     const userAuthed = Boolean(initInfo().authId);
 
-    if (userAuthed && initInfo().authState.redirectAfterLogin) {
+    console.log(
+      'getNextAuthStep. userAuthed && initInfo().redirectAfterLogin',
+      userAuthed,
+      initInfo().redirectAfterLogin
+    );
+    if (userAuthed && initInfo().redirectAfterLogin) {
       nextStep = findStepName(metadata.login_step);
       if (nextStep) setStepKey(nextStep);
     } else if (!userAuthed && nextStepIsProtected)
@@ -659,41 +655,8 @@ function Form({
 
   useEffect(() => {
     if (client === null) {
-      const clientInstance = new Client(
-        formName,
-        hasRedirected,
-        // If we delayed setting stepKey after loading the session, we want to set the
-        // appropriate stepKey now that auth handshake is complete
-        () => {
-          const stepName = getNextAuthStep();
-          setStepKey(stepName);
-          setUrlStepHash(history, initInfo().authState.steps, stepName);
-        }
-      );
-      // internalState[_internalId] = { client }; // this doesn't work well because when the host application calls setAuthClient we don't know which _internalId
-      initState.authState.featheryClient = clientInstance;
+      const clientInstance = new Client(formName, hasRedirected);
       setClient(clientInstance);
-
-      if (
-        // We should set loader for new auth sessions
-        window.location.search.includes('stytch_token_type') ||
-        isHrefFirebaseMagicLink() ||
-        // and existing ones
-        getStytchJwt()
-      ) {
-        initState.authState.redirectAfterLogin = true;
-        setLoaders((loaders) => ({
-          ...loaders,
-          auth: {
-            showOn: 'full_page',
-            loader: (
-              <div style={{ height: '10vh', width: '10vh' }}>
-                <Spinner />
-              </div>
-            )
-          }
-        }));
-      }
 
       setFirst(true);
       // render form without values first for speed
@@ -705,7 +668,6 @@ function Form({
             return result;
           }, {});
           setSteps(steps);
-          initState.authState.steps = steps;
           setFormSettings({
             redirectUrl: res.redirect_url,
             errorType: res.error_type,
@@ -734,7 +696,7 @@ function Form({
             clientInstance.submitCustom(initialValues, false);
 
           // initial step has already been set by the client cb
-          if (initInfo().authState.redirectAfterLogin) return;
+          if (initInfo().redirectAfterLogin) return;
 
           const hashKey = decodeURI(location.hash.substr(1));
           const newKey =
@@ -1515,6 +1477,16 @@ function Form({
   // consider the form finished
   const anyFinished =
     finished || (formCompleted && completeState !== undefined);
+
+  // Requires fns defined above
+  useAuth({
+    setLoaders,
+    setStepKey,
+    stepKey,
+    getNextAuthStep,
+    steps,
+    integrations
+  });
 
   useEffect(() => {
     if (!anyFinished) return;

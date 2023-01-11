@@ -34,7 +34,7 @@ const CDN_URL_OPTIONS = {
   production: 'https://cdn.feathery.io/api/'
 };
 
-const environment = 'production';
+const environment = 'local';
 
 export const API_URL = API_URL_OPTIONS[environment];
 export const CDN_URL = CDN_URL_OPTIONS[environment];
@@ -49,11 +49,9 @@ const TYPE_MESSAGES_TO_IGNORE = [
 export default class Client {
   formKey: any;
   ignoreNetworkErrors: any; // this should be a ref
-  authCallback: any;
-  constructor(formKey?: any, ignoreNetworkErrors?: any, authCallback?: any) {
+  constructor(formKey?: any, ignoreNetworkErrors?: any) {
     this.formKey = formKey;
     this.ignoreNetworkErrors = ignoreNetworkErrors;
-    this.authCallback = authCallback;
   }
 
   async _checkResponseSuccess(response: any) {
@@ -332,7 +330,6 @@ export default class Client {
           response.text()
       );
     });
-    initState.authState.integrations = session.integrations;
     // Auth session only contains new field data
     const authSession = await initializeIntegrations(
       session.integrations,
@@ -350,8 +347,8 @@ export default class Client {
 
   submitAuthInfo({ authId, authPhone = '', authEmail = '' }: any) {
     const { userId } = initInfo();
+    console.log('submitting auth info & setting authId');
     initState.authId = authId;
-    if (this.authCallback) this.authCallback();
 
     // Execute render callbacks after setting authId, so that form navigation can be evaluated again
     rerenderAllForms();
