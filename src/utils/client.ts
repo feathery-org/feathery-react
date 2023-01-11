@@ -13,6 +13,7 @@ import { encodeGetParams } from './primitives';
 import {
   getABVariant,
   getDefaultFieldValue,
+  rerenderAllForms,
   updateSessionValues
 } from './formHelperFunctions';
 import { loadPhoneValidator } from './validation';
@@ -347,11 +348,8 @@ export default class Client {
   submitAuthInfo({ authId, authPhone = '', authEmail = '' }: any) {
     const { userId } = initInfo();
     initState.authId = authId;
-    initState.redirectAfterLogin = true;
     // Execute render callbacks after setting authId, so that form navigation can be evaluated again
-    Object.values(initState.renderCallbacks).forEach((renderCb: any) =>
-      renderCb()
-    );
+    rerenderAllForms();
     if (authPhone) initState.authPhoneNumber = authPhone;
     if (authEmail) initState.authEmail = authEmail;
 

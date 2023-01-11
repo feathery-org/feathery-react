@@ -12,6 +12,7 @@ import {
 } from './googleAnalytics';
 import { getAuthClient, initState } from '../utils/init';
 import Client from '../utils/client';
+import { rerenderAllForms } from '../utils/formHelperFunctions';
 
 const IMPORTED_URLS = new Set();
 
@@ -85,9 +86,7 @@ export function inferAuthLogout() {
     initState.authId = undefined;
     initState.authPhoneNumber = undefined;
     initState.authEmail = undefined;
-    Object.values(initState.renderCallbacks).forEach((renderCb: any) =>
-      renderCb()
-    );
+    rerenderAllForms();
   });
 }
 

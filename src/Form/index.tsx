@@ -28,6 +28,7 @@ import {
   nextStepKey,
   recurseProgressDepth,
   setFormElementError,
+  setUrlStepHash,
   updateStepFieldOptions
 } from '../utils/formHelperFunctions';
 import { shouldElementHide, getHideIfReferences } from '../utils/hideIfs';
@@ -100,6 +101,7 @@ import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
 import internalState from '../utils/internalState';
+import useAuth from '../hooks/useAuth';
 
 export interface Props {
   formName: string;
@@ -212,13 +214,7 @@ function Form({
   const [render, setRender] = useState(false);
 
   const [loaders, setLoaders] = useState({});
-  const clearLoaders = (clearAuthLoader = false) => {
-    if (clearAuthLoader) setLoaders({});
-    else
-      setLoaders(({ auth }: any) => ({
-        auth
-      }));
-  };
+  const clearLoaders = () => setLoaders({});
   const stepLoader = useMemo(() => {
     const data = Object.values(loaders).find(
       (l) => (l as any)?.showOn === 'full_page'
@@ -232,6 +228,14 @@ function Form({
       (data as any).loader
     );
   }, [loaders]);
+
+  const { getNextAuthStep, redirectAfterLoginRef } = useAuth({
+    setLoaders,
+    setStepKey,
+    stepKey,
+    steps,
+    integrations
+  });
 
   const [backNavMap, setBackNavMap] = useState({});
   const updateBackNavMap = (newNavs: Record<string, string>) =>
@@ -270,19 +274,6 @@ function Form({
       Object.prototype.hasOwnProperty.call(contextRef, 'current')
     )
       contextRef.current = getFormContext(_internalId);
-
-    if (window.location.search.includes('stytch_token_type'))
-      setLoaders((loaders) => ({
-        ...loaders,
-        auth: {
-          showOn: 'full_page',
-          loader: (
-            <div style={{ height: '10vh', width: '10vh' }}>
-              <Spinner />
-            </div>
-          )
-        }
-      }));
 
     return () => {
       delete initState.renderCallbacks[_internalId];
@@ -573,33 +564,9 @@ function Form({
     // @ts-expect-error TS(2531): Object is possibly 'null'.
     let newStep = steps[newKey];
 
-    const metadata =
-      integrations.stytch?.metadata ?? integrations.firebase?.metadata;
-    const authSteps = metadata?.auth_gate_steps ?? [];
-    if (authSteps.length > 0) {
-      const userAuthed = Boolean(initInfo().authId);
-      const nextStepIsProtected = authSteps.includes(newStep.id);
-      const findStepName = (stepId: string) => {
-        const step: undefined | { key: string } = Object.values(steps).find(
-          (step: any) => step.id === stepId
-        ) as undefined | { key: string };
-        return step?.key;
-      };
-      let nextStep: undefined | string;
-
-      if (userAuthed && initInfo().redirectAfterLogin) {
-        initState.redirectAfterLogin = false;
-        nextStep = findStepName(metadata.login_step);
-      } else if (!userAuthed && nextStepIsProtected)
-        nextStep = findStepName(metadata.logout_step);
-
-      if (
-        nextStep !== undefined &&
-        changeStep(nextStep, newKey, steps, history)
-      ) {
-        clearLoaders(true);
-        return;
-      }
+    const nextStep = getNextAuthStep(newStep);
+    if (nextStep !== '' && changeStep(nextStep, newKey, steps, history)) {
+      return;
     }
     newStep = JSON.parse(JSON.stringify(newStep));
 
@@ -617,6 +584,7 @@ function Form({
       updateFieldOptions
     };
 
+    clearLoaders();
     const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
     setCurDepth(curDepth);
     setMaxDepth(maxDepth);
@@ -690,16 +658,17 @@ function Form({
           setFormCompleted(session.form_completed);
           if (!isObjectEmpty(initialValues))
             clientInstance.submitCustom(initialValues, false);
+
+          // User is authenticating. auth hook will set the initial stepKey once auth has finished
+          if (redirectAfterLoginRef.current) return;
+
           const hashKey = decodeURI(location.hash.substr(1));
           const newKey =
             initialStepId ||
             (hashKey && hashKey in steps && hashKey) ||
             session.current_step_key ||
             (getOrigin as any)(steps).key;
-          // No hash necessary if form only has one step
-          if (Object.keys(steps).length > 1) {
-            history.replace(location.pathname + location.search + `#${newKey}`);
-          }
+          setUrlStepHash(history, steps, newKey);
           setStepKey(newKey);
         })
         .catch(async (error) => {
@@ -1484,35 +1453,38 @@ function Form({
     runUserCallback(onFormComplete).then(redirectForm);
   }, [anyFinished]);
 
+  const wholePageLoader = stepLoader && (
+    <div
+      style={{
+        backgroundColor: `#${activeStep?.default_background_color ?? 'FFF'}`,
+        position: 'fixed',
+        height: '100vh',
+        width: '100vw',
+        zIndex: 50,
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center'
+      }}
+    >
+      {stepLoader}
+    </div>
+  );
+
   if (formSettings.formOff) {
     // Form is turned off
     return <FormOff />;
   } else if (anyFinished) {
     return completeState ?? null;
   } else if (!activeStep) {
-    // Form has not been loaded yet
-    return null;
+    // Form has not been loaded yet, but we need to display
+    // loader if waiting on auth
+    return wholePageLoader;
   }
 
   const addChin = formSettings.showBrand && !isFill(activeStep.height);
   return (
     <>
-      {stepLoader && (
-        <div
-          style={{
-            backgroundColor: `#${activeStep.default_background_color}`,
-            position: 'fixed',
-            height: '100vh',
-            width: '100vw',
-            zIndex: 50,
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center'
-          }}
-        >
-          {stepLoader}
-        </div>
-      )}
+      {wholePageLoader}
       <ReactPortal portal={display === 'modal'}>
         <BootstrapForm
           {...formProps}

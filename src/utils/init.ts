@@ -6,6 +6,7 @@ import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient, featheryDoc } from './browser';
 import { inferEmailLoginFromURL } from '../integrations/utils';
+import { rerenderAllForms } from './formHelperFunctions';
 
 export type FeatheryFieldTypes =
   | null
@@ -45,7 +46,6 @@ type InitState = {
   sdkKey: string;
   preloadForms: { [formName: string]: any };
   sessions: { [formName: string]: any };
-  redirectAfterLogin: boolean;
   fieldValuesInitialized: boolean;
   renderCallbacks: { [cbKey: string]: any };
   defaultErrors: Record<string, string>;
@@ -63,7 +63,6 @@ const initState: InitState = {
   authEmail: '',
   authPhoneNumber: '',
   language: '',
-  redirectAfterLogin: false,
   preloadForms: [],
   sessions: {},
   defaultErrors: {},
@@ -209,8 +208,7 @@ function setValues(userVals: FieldValues, rerender = true): void {
   Object.assign(fieldValues, result);
   defaultClient.submitCustom(result);
 
-  if (rerender)
-    Object.values(initState.renderCallbacks).forEach((cb: any) => cb());
+  if (rerender) rerenderAllForms();
 }
 
 function setAuthClient(client: any): void {
