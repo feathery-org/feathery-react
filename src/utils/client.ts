@@ -34,7 +34,7 @@ const CDN_URL_OPTIONS = {
   production: 'https://cdn.feathery.io/api/'
 };
 
-const environment = 'local';
+const environment = 'production';
 
 export const API_URL = API_URL_OPTIONS[environment];
 export const CDN_URL = CDN_URL_OPTIONS[environment];
@@ -347,9 +347,7 @@ export default class Client {
 
   submitAuthInfo({ authId, authPhone = '', authEmail = '' }: any) {
     const { userId } = initInfo();
-    console.log('submitting auth info & setting authId');
     initState.authId = authId;
-
     // Execute render callbacks after setting authId, so that form navigation can be evaluated again
     rerenderAllForms();
     if (authPhone) initState.authPhoneNumber = authPhone;

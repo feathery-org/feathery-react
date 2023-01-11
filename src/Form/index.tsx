@@ -210,9 +210,6 @@ function Form({
   const prevAuthId = usePrevious(initState.authId);
   const prevStepKey = usePrevious(stepKey);
 
-  console.log('------------------------------------');
-  console.log('render stepKey:', stepKey);
-
   // Set to trigger conditional renders on field value updates, no need to use the value itself
   const [render, setRender] = useState(false);
 
@@ -231,6 +228,14 @@ function Form({
       (data as any).loader
     );
   }, [loaders]);
+
+  const { getNextAuthStep, redirectAfterLoginRef } = useAuth({
+    setLoaders,
+    setStepKey,
+    stepKey,
+    steps,
+    integrations
+  });
 
   const [backNavMap, setBackNavMap] = useState({});
   const updateBackNavMap = (newNavs: Record<string, string>) =>
@@ -579,9 +584,6 @@ function Form({
       updateFieldOptions
     };
 
-    // Clear auth (and other) loaders and reset auth flag
-    console.log('clearing loaders and resetting flag');
-    initState.redirectAfterLogin = false;
     clearLoaders();
     const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
     setCurDepth(curDepth);
@@ -616,48 +618,10 @@ function Form({
     updateNewStep(newStep);
   };
 
-  const getNextAuthStep = (newStep?: any): string => {
-    console.log('getNextAuthStep. stepsToUse', steps);
-    console.log('getNextAuthStep. integs', integrations);
-    const metadata =
-      integrations.stytch?.metadata ?? integrations.firebase?.metadata;
-    const authSteps = metadata?.auth_gate_steps ?? [];
-    const nextStepIsProtected = newStep
-      ? authSteps.includes(newStep.id)
-      : false;
-
-    if (!authSteps.length) {
-      return '';
-    }
-
-    const findStepName = (stepId: string): string => {
-      const step: undefined | { key: string } = Object.values(steps).find(
-        (step: any) => step.id === stepId
-      ) as undefined | { key: string };
-      return step?.key ?? '';
-    };
-    let nextStep = '';
-    const userAuthed = Boolean(initInfo().authId);
-
-    console.log(
-      'getNextAuthStep. userAuthed && initInfo().redirectAfterLogin',
-      userAuthed,
-      initInfo().redirectAfterLogin
-    );
-    if (userAuthed && initInfo().redirectAfterLogin) {
-      nextStep = findStepName(metadata.login_step);
-      if (nextStep) setStepKey(nextStep);
-    } else if (!userAuthed && nextStepIsProtected)
-      nextStep = findStepName(metadata.logout_step);
-
-    return nextStep;
-  };
-
   useEffect(() => {
     if (client === null) {
       const clientInstance = new Client(formName, hasRedirected);
       setClient(clientInstance);
-
       setFirst(true);
       // render form without values first for speed
       const formPromise = clientInstance
@@ -695,8 +659,8 @@ function Form({
           if (!isObjectEmpty(initialValues))
             clientInstance.submitCustom(initialValues, false);
 
-          // initial step has already been set by the client cb
-          if (initInfo().redirectAfterLogin) return;
+          // User is authenticating. auth hook will set the initial stepKey once auth has finished
+          if (redirectAfterLoginRef.current) return;
 
           const hashKey = decodeURI(location.hash.substr(1));
           const newKey =
@@ -704,7 +668,6 @@ function Form({
             (hashKey && hashKey in steps && hashKey) ||
             session.current_step_key ||
             (getOrigin as any)(steps).key;
-
           setUrlStepHash(history, steps, newKey);
           setStepKey(newKey);
         })
@@ -1477,16 +1440,6 @@ function Form({
   // consider the form finished
   const anyFinished =
     finished || (formCompleted && completeState !== undefined);
-
-  // Requires fns defined above
-  useAuth({
-    setLoaders,
-    setStepKey,
-    stepKey,
-    getNextAuthStep,
-    steps,
-    integrations
-  });
 
   useEffect(() => {
     if (!anyFinished) return;

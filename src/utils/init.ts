@@ -46,9 +46,6 @@ type InitState = {
   sdkKey: string;
   preloadForms: { [formName: string]: any };
   sessions: { [formName: string]: any };
-  // this is a flag so we only redirect to the login start step immediately after auth,
-  // not during other form navigation
-  redirectAfterLogin: boolean;
   fieldValuesInitialized: boolean;
   renderCallbacks: { [cbKey: string]: any };
   defaultErrors: Record<string, string>;
@@ -65,7 +62,6 @@ const initState: InitState = {
   authId: '',
   authEmail: '',
   authPhoneNumber: '',
-  redirectAfterLogin: false,
   language: '',
   preloadForms: [],
   sessions: {},
@@ -218,7 +214,7 @@ function setValues(userVals: FieldValues, rerender = true): void {
 function setAuthClient(client: any): void {
   initState.authClient = client;
   // Attempt login after setting auth client, in case the auth client wasn't set
-  // when auth was already attempted after initializing the integrations.
+  // when auth was already attempted after initializing the integrations
   inferEmailLoginFromURL(defaultClient);
 }
 
