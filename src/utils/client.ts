@@ -48,9 +48,11 @@ const TYPE_MESSAGES_TO_IGNORE = [
 export default class Client {
   formKey: any;
   ignoreNetworkErrors: any; // this should be a ref
-  constructor(formKey?: any, ignoreNetworkErrors?: any) {
+  authCb: any;
+  constructor(formKey?: any, ignoreNetworkErrors?: any, authCb?: any) {
     this.formKey = formKey;
     this.ignoreNetworkErrors = ignoreNetworkErrors;
+    this.authCb = authCb;
   }
 
   async _checkResponseSuccess(response: any) {
@@ -329,6 +331,7 @@ export default class Client {
           response.text()
       );
     });
+    initState.authState.integrations = session.integrations;
     // Auth session only contains new field data
     const authSession = await initializeIntegrations(
       session.integrations,
@@ -347,7 +350,8 @@ export default class Client {
   submitAuthInfo({ authId, authPhone = '', authEmail = '' }: any) {
     const { userId } = initInfo();
     initState.authId = authId;
-    initState.authStatus = 'finished';
+    initState.authState.redirectAfterLogin = true;
+    this.authCb();
 
     // Execute render callbacks after setting authId, so that form navigation can be evaluated again
     Object.values(initState.renderCallbacks).forEach((renderCb: any) =>

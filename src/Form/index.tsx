@@ -269,27 +269,6 @@ function Form({
     )
       contextRef.current = getFormContext(_internalId);
 
-    if (
-      // We should set loader for new auth sessions
-      window.location.search.includes('stytch_token_type') ||
-      isHrefFirebaseMagicLink() ||
-      // and existing ones
-      getStytchJwt()
-    ) {
-      initState.authStatus = 'started';
-      setLoaders((loaders) => ({
-        ...loaders,
-        auth: {
-          showOn: 'full_page',
-          loader: (
-            <div style={{ height: '10vh', width: '10vh' }}>
-              <Spinner />
-            </div>
-          )
-        }
-      }));
-    }
-
     return () => {
       delete initState.renderCallbacks[_internalId];
     };
@@ -579,15 +558,9 @@ function Form({
     // @ts-expect-error TS(2531): Object is possibly 'null'.
     let newStep = steps[newKey];
 
-    const metadata =
-      integrations.stytch?.metadata ?? integrations.firebase?.metadata;
-    const authSteps = metadata?.auth_gate_steps ?? [];
-    if (authSteps.length > 0) {
-      const nextStep = getNextAuthStep({ newStep });
-
-      if (nextStep !== '' && changeStep(nextStep, newKey, steps, history)) {
-        return;
-      }
+    const nextStep = getNextAuthStep(newStep);
+    if (nextStep !== '' && changeStep(nextStep, newKey, steps, history)) {
+      return;
     }
     newStep = JSON.parse(JSON.stringify(newStep));
 
@@ -639,17 +612,26 @@ function Form({
     updateNewStep(newStep);
   };
 
-  const getNextAuthStep = ({
-    newStep,
-    _integrations,
-    _steps
-  }: {
-    newStep?: any;
-    _integrations?: any;
-    _steps?: any;
-  } = {}): string => {
-    const stepsToUse = _steps ?? steps;
-    const integs = _integrations ?? integrations;
+  const getNextAuthStep = (newStep?: any): string => {
+    // If steps & integrations state has been set use that, otherwise grab from
+    // initState. This is necessary because the client CB fires in the same
+    // render cycle that these values are set, so the react state variables are
+    // not updated in time
+    const stepsToUse = Object.keys(steps).length
+      ? steps
+      : initState.authState.steps;
+    const integs = Object.keys(integrations).length
+      ? integrations
+      : initState.authState.integrations;
+    const metadata = integs.stytch?.metadata ?? integs.firebase?.metadata;
+    const authSteps = metadata?.auth_gate_steps ?? [];
+    const nextStepIsProtected = newStep
+      ? authSteps.includes(newStep.id)
+      : false;
+
+    if (!authSteps.length) {
+      return '';
+    }
 
     const findStepName = (stepId: string): string => {
       const step: undefined | { key: string } = Object.values(stepsToUse).find(
@@ -659,15 +641,9 @@ function Form({
     };
 
     let nextStep = '';
-    const userAuthed = Boolean(initInfo().authId);
-    const metadata = integs.stytch?.metadata ?? integs.firebase?.metadata;
-    const authSteps = metadata?.auth_gate_steps ?? [];
-    const nextStepIsProtected = newStep
-      ? authSteps.includes(newStep.id)
-      : false;
 
-    if (userAuthed && initInfo().authStatus === 'finished') {
-      initState.authStatus = '';
+    const userAuthed = Boolean(initInfo().authId);
+    if (userAuthed && initInfo().authState.redirectAfterLogin) {
       nextStep = findStepName(metadata.login_step);
       if (nextStep) setStepKey(nextStep);
     } else if (!userAuthed && nextStepIsProtected)
@@ -678,8 +654,37 @@ function Form({
 
   useEffect(() => {
     if (client === null) {
-      const clientInstance = new Client(formName, hasRedirected);
+      const clientInstance = new Client(
+        formName,
+        hasRedirected,
+        // If we delayed setting stepKey after loading the session, we want to set the
+        // appropriate stepKey now that auth handshake is complete
+        () => setStepKey(getNextAuthStep())
+      );
+      // internalState[_internalId] = { client }; // this doesn't work well because when the host application calls setAuthClient we don't know which _internalId
+      initState.authState.featheryClient = clientInstance;
       setClient(clientInstance);
+
+      if (
+        // We should set loader for new auth sessions
+        window.location.search.includes('stytch_token_type') ||
+        isHrefFirebaseMagicLink() ||
+        // and existing ones
+        getStytchJwt()
+      ) {
+        setLoaders((loaders) => ({
+          ...loaders,
+          auth: {
+            showOn: 'full_page',
+            loader: (
+              <div style={{ height: '10vh', width: '10vh' }}>
+                <Spinner />
+              </div>
+            )
+          }
+        }));
+      }
+
       setFirst(true);
       // render form without values first for speed
       const formPromise = clientInstance
@@ -690,6 +695,7 @@ function Form({
             return result;
           }, {});
           setSteps(steps);
+          initState.authState.steps = steps;
           setFormSettings({
             redirectUrl: res.redirect_url,
             errorType: res.error_type,
@@ -716,16 +722,14 @@ function Form({
           setFormCompleted(session.form_completed);
           if (!isObjectEmpty(initialValues))
             clientInstance.submitCustom(initialValues, false);
-          const hashKey = decodeURI(location.hash.substr(1));
-          // If we are waiting for auth handshake to finish, we don't want to set an initial step yet
-          if (initInfo().authStatus === 'started') return;
 
+          if (initInfo().authState.redirectAfterLogin) {
+            initState.authState.redirectAfterLogin = false;
+            return; // initial step has already been set by the client cb
+          }
+
+          const hashKey = decodeURI(location.hash.substr(1));
           const newKey =
-            (initInfo().authStatus === 'finished' &&
-              getNextAuthStep({
-                _integrations: session.integrations,
-                _steps: steps
-              })) ||
             initialStepId ||
             (hashKey && hashKey in steps && hashKey) ||
             session.current_step_key ||
@@ -1495,11 +1499,6 @@ function Form({
         trigger: { id, type: 'container' }
       }))
   };
-
-  // If we delayed setting stepKey after loading the session, we want to set the
-  // appropriate stepKey now that auth handshake is complete
-  if (stepKey === '' && initInfo().authStatus === 'finished')
-    setStepKey(getNextAuthStep());
 
   let completeState;
   if (formSettings.allowEdit === 'hide') completeState = null;

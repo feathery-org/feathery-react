@@ -45,11 +45,12 @@ type InitState = {
   sdkKey: string;
   preloadForms: { [formName: string]: any };
   sessions: { [formName: string]: any };
-  // started means that the auth handshake process has started and we are
-  // waiting to select a form step. finished means we have successfully authed
-  // and can now determine which step should be loaded. Value resets to '' after
-  // this is complete
-  authStatus: '' | 'started' | 'finished';
+  authState: {
+    redirectAfterLogin: boolean;
+    steps: any;
+    integrations: any;
+    featheryClient: any;
+  };
   fieldValuesInitialized: boolean;
   renderCallbacks: { [cbKey: string]: any };
   defaultErrors: Record<string, string>;
@@ -66,8 +67,13 @@ const initState: InitState = {
   authId: '',
   authEmail: '',
   authPhoneNumber: '',
+  authState: {
+    redirectAfterLogin: false,
+    steps: null,
+    featheryClient: null,
+    integrations: {}
+  },
   language: '',
-  authStatus: '',
   preloadForms: [],
   sessions: {},
   defaultErrors: {},
@@ -220,8 +226,9 @@ function setValues(userVals: FieldValues, rerender = true): void {
 function setAuthClient(client: any): void {
   initState.authClient = client;
   // Attempt login after setting auth client, in case the auth client wasn't set
-  // when auth was already attempted after initializing the integrations
-  inferEmailLoginFromURL(defaultClient);
+  // when auth was already attempted after initializing the integrations.
+  // Can't use defaultClient here because we need the CB from the form-specific client
+  inferEmailLoginFromURL(initInfo().authState.featheryClient);
 }
 
 function getAuthClient(): any {
