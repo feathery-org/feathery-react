@@ -27,7 +27,9 @@ import {
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
+  rerenderAllForms,
   setFormElementError,
+  setUrlStepHash,
   updateStepFieldOptions
 } from '../utils/formHelperFunctions';
 import { shouldElementHide, getHideIfReferences } from '../utils/hideIfs';
@@ -216,7 +218,9 @@ function Form({
   const [render, setRender] = useState(false);
 
   const [loaders, setLoaders] = useState({});
-  const clearLoaders = () => setLoaders({});
+  const clearLoaders = () => {
+    setLoaders({});
+  };
   const stepLoader = useMemo(() => {
     const data = Object.values(loaders).find(
       (l) => (l as any)?.showOn === 'full_page'
@@ -578,6 +582,8 @@ function Form({
       updateFieldOptions
     };
 
+    // Clear auth (and other) loaders and reset auth flag
+    initState.authState.redirectAfterLogin = false;
     clearLoaders();
     const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
     setCurDepth(curDepth);
@@ -639,10 +645,9 @@ function Form({
       ) as undefined | { key: string };
       return step?.key ?? '';
     };
-
     let nextStep = '';
-
     const userAuthed = Boolean(initInfo().authId);
+
     if (userAuthed && initInfo().authState.redirectAfterLogin) {
       nextStep = findStepName(metadata.login_step);
       if (nextStep) setStepKey(nextStep);
@@ -659,7 +664,11 @@ function Form({
         hasRedirected,
         // If we delayed setting stepKey after loading the session, we want to set the
         // appropriate stepKey now that auth handshake is complete
-        () => setStepKey(getNextAuthStep())
+        () => {
+          const stepName = getNextAuthStep();
+          setStepKey(stepName);
+          setUrlStepHash(history, initInfo().authState.steps, stepName);
+        }
       );
       // internalState[_internalId] = { client }; // this doesn't work well because when the host application calls setAuthClient we don't know which _internalId
       initState.authState.featheryClient = clientInstance;
@@ -672,6 +681,7 @@ function Form({
         // and existing ones
         getStytchJwt()
       ) {
+        initState.authState.redirectAfterLogin = true;
         setLoaders((loaders) => ({
           ...loaders,
           auth: {
@@ -723,10 +733,8 @@ function Form({
           if (!isObjectEmpty(initialValues))
             clientInstance.submitCustom(initialValues, false);
 
-          if (initInfo().authState.redirectAfterLogin) {
-            initState.authState.redirectAfterLogin = false;
-            return; // initial step has already been set by the client cb
-          }
+          // initial step has already been set by the client cb
+          if (initInfo().authState.redirectAfterLogin) return;
 
           const hashKey = decodeURI(location.hash.substr(1));
           const newKey =
@@ -734,10 +742,8 @@ function Form({
             (hashKey && hashKey in steps && hashKey) ||
             session.current_step_key ||
             (getOrigin as any)(steps).key;
-          // No hash necessary if form only has one step
-          if (Object.keys(steps).length > 1) {
-            history.replace(location.pathname + location.search + `#${newKey}`);
-          }
+
+          setUrlStepHash(history, steps, newKey);
           setStepKey(newKey);
         })
         .catch(async (error) => {

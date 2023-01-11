@@ -375,3 +375,14 @@ export function clearFilePathMapEntry(key: any, index = null) {
     filePathMap[key] = null;
   }
 }
+
+export function setUrlStepHash(history: any, steps: any, stepName: string) {
+  // No hash necessary if form only has one step
+  if (Object.keys(steps).length > 1) {
+    history.replace(location.pathname + location.search + `#${stepName}`);
+  }
+}
+
+export function rerenderAllForms() {
+  Object.values(initInfo().renderCallbacks).forEach((cb: any) => cb());
+}

@@ -13,6 +13,7 @@ import { encodeGetParams } from './primitives';
 import {
   getABVariant,
   getDefaultFieldValue,
+  rerenderAllForms,
   updateSessionValues
 } from './formHelperFunctions';
 import { loadPhoneValidator } from './validation';
@@ -48,11 +49,11 @@ const TYPE_MESSAGES_TO_IGNORE = [
 export default class Client {
   formKey: any;
   ignoreNetworkErrors: any; // this should be a ref
-  authCb: any;
-  constructor(formKey?: any, ignoreNetworkErrors?: any, authCb?: any) {
+  authCallback: any;
+  constructor(formKey?: any, ignoreNetworkErrors?: any, authCallback?: any) {
     this.formKey = formKey;
     this.ignoreNetworkErrors = ignoreNetworkErrors;
-    this.authCb = authCb;
+    this.authCallback = authCallback;
   }
 
   async _checkResponseSuccess(response: any) {
@@ -350,13 +351,10 @@ export default class Client {
   submitAuthInfo({ authId, authPhone = '', authEmail = '' }: any) {
     const { userId } = initInfo();
     initState.authId = authId;
-    initState.authState.redirectAfterLogin = true;
-    this.authCb();
+    if (this.authCallback) this.authCallback();
 
     // Execute render callbacks after setting authId, so that form navigation can be evaluated again
-    Object.values(initState.renderCallbacks).forEach((renderCb: any) =>
-      renderCb()
-    );
+    rerenderAllForms();
     if (authPhone) initState.authPhoneNumber = authPhone;
     if (authEmail) initState.authEmail = authEmail;
 
