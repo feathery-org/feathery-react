@@ -47,9 +47,10 @@ const TYPE_MESSAGES_TO_IGNORE = [
 ];
 
 export default class Client {
-  formKey: any;
+  formKey: string;
+  version?: string;
   ignoreNetworkErrors: any; // this should be a ref
-  constructor(formKey?: any, ignoreNetworkErrors?: any) {
+  constructor(formKey = '', ignoreNetworkErrors?: any) {
     this.formKey = formKey;
     this.ignoreNetworkErrors = ignoreNetworkErrors;
   }
@@ -67,6 +68,9 @@ export default class Client {
         throw new errors.SDKKeyError();
       case 404:
         throw new errors.FetchError("Can't find object");
+      case 409:
+        location.reload();
+        return;
       case 500:
         throw new errors.FetchError('Internal server error');
       default:
@@ -107,10 +111,12 @@ export default class Client {
     const { userId } = initInfo();
     const url = `${API_URL}panel/step/submit/v3/`;
     const data = {
-      ...(userId ? { fuser_key: userId } : {}),
+      fuser_key: userId,
       servars,
-      panel_key: this.formKey
+      panel_key: this.formKey,
+      __feathery_version: this.version
     };
+
     const options = {
       headers: {
         'Content-Type': 'application/json'
@@ -174,6 +180,7 @@ export default class Client {
       }
     });
 
+    if (this.version) formData.set('__feathery_version', this.version);
     await this._fetch(url, { method: 'POST', body: formData });
   }
 
@@ -288,6 +295,7 @@ export default class Client {
     const res = await this.fetchCacheForm();
     // If form is disabled, data will equal `null`
     if (!res.steps) return { steps: [], formOff: true };
+    this.version = res.version;
     initState.defaultErrors = res.default_errors;
     this.setDefaultFormValues({ steps: res.steps, additionalValues: initVals });
     return res;
@@ -398,7 +406,10 @@ export default class Client {
     formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
     // @ts-expect-error TS(2345): Argument of type 'boolean' is not assignable to pa... Remove this comment to see the full error message
     formData.set('override', override);
-    if (this.formKey) formData.set('form_key', this.formKey);
+    if (this.formKey) {
+      formData.set('form_key', this.formKey);
+      if (this.version) formData.set('__feathery_version', this.version);
+    }
     if (userId) formData.set('fuser_key', userId);
 
     return this._fetch(url, { method: 'POST', body: formData });
