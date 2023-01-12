@@ -243,7 +243,6 @@ function Form({
   const { getNextAuthStep, redirectAfterLoginRef } = useAuth({
     setLoaders,
     setStepKey,
-    stepKey,
     steps,
     integrations,
     initialStep: getInitialStep({ initialStepId, steps, formName })
