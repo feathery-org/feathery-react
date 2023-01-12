@@ -194,14 +194,14 @@ export async function toggleProductSelection({
   fieldValues: { [_: string]: any };
   updateFieldValues: any;
   client: any;
-  integrations: any;
+  integrations: null | Record<string, any>;
 }) {
   // check productId and selectedProductIdField (key) are set
   if (
     productId &&
     selectedProductIdFieldKey &&
     selectedProductIdFieldId &&
-    integrations.stripe
+    integrations?.stripe
   ) {
     // get the value from the hidden field
     const fieldVal = fieldValues[selectedProductIdFieldKey] || {};

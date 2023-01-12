@@ -40,6 +40,7 @@ export async function openPlaidLink(
 }
 
 export function getPlaidFieldValues(plaidConfig: any, fieldValues: any) {
+  if (!plaidConfig) return {};
   // eslint-disable-next-line camelcase
   const keys = plaidConfig?.metadata?.plaid_field_map || [];
   return Object.values(keys).reduce((result, key) => {

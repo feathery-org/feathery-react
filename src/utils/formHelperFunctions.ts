@@ -386,3 +386,21 @@ export function setUrlStepHash(history: any, steps: any, stepName: string) {
 export function rerenderAllForms() {
   Object.values(initInfo().renderCallbacks).forEach((cb: any) => cb());
 }
+
+export function getInitialStep({
+  initialStepId,
+  steps,
+  formName
+}: {
+  initialStepId: string;
+  steps: any;
+  formName: string;
+}) {
+  const hashKey = decodeURI(location.hash.substr(1));
+  return (
+    initialStepId ||
+    (hashKey && hashKey in steps && hashKey) ||
+    initInfo().sessions[formName]?.current_step_key ||
+    (getOrigin as any)(steps).key
+  );
+}
