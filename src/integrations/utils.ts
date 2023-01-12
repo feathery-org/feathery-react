@@ -92,6 +92,7 @@ export function inferAuthLogout() {
 
 export function isAuthStytch() {
   const authClient = getAuthClient();
+  if (!authClient) return;
   const isAuthClientStytch = Object.getOwnPropertySymbols(authClient)
     .map((symbol) => symbol.toString())
     .includes('Symbol(stytch__internal)');
