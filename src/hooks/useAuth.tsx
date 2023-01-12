@@ -8,14 +8,12 @@ import { initInfo } from '../utils/init';
 
 const useAuth = ({
   setLoaders,
-  stepKey,
   setStepKey,
   steps,
   integrations,
   initialStep
 }: {
   setLoaders: React.Dispatch<React.SetStateAction<Record<string, any>>>;
-  stepKey: string;
   setStepKey: React.Dispatch<React.SetStateAction<string>>;
   steps: any;
   integrations: null | Record<string, any>;
@@ -56,7 +54,6 @@ const useAuth = ({
   useEffect(() => {
     if (
       authId &&
-      stepKey === '' &&
       redirectAfterLoginRef.current &&
       Object.keys(steps).length &&
       integrations &&
@@ -67,7 +64,7 @@ const useAuth = ({
       setUrlStepHash(history, steps, stepName);
       redirectAfterLoginRef.current = false;
     }
-  }, [stepKey, redirectAfterLoginRef.current, steps, integrations, authId]);
+  }, [redirectAfterLoginRef.current, steps, integrations, authId]);
 
   // This hook is needed to prevent a bug on localhost. Cookies can't be
   // distinguished by port and stytch uses cookie to expose JWT. So, if one is
@@ -122,7 +119,6 @@ const useAuth = ({
 
     if (userAuthed && redirectAfterLoginRef.current) {
       nextStep = findStepName(metadata.login_step);
-      if (nextStep) setStepKey(nextStep);
     } else if (!userAuthed && nextStepIsProtected)
       nextStep = findStepName(metadata.logout_step);
 

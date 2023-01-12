@@ -1,6 +1,5 @@
 import { isObjectEmpty } from './primitives';
 import Spinner from '../elements/components/Spinner';
-import { LINK_NEXT } from '../elements/basic/ButtonElement';
 import React from 'react';
 
 export default class CallbackQueue {
@@ -24,14 +23,9 @@ export default class CallbackQueue {
           type: 'default'
         };
         const newLoaders = this.step.buttons
-          .filter((button: any) => {
-            const bp = button.properties;
-            return (
-              bp.link === LINK_NEXT &&
-              !bp.link_no_submit &&
-              bp.show_loading_icon === 'on_button'
-            );
-          })
+          .filter(
+            (button: any) => button.properties.show_loading_icon === 'on_button'
+          )
           .reduce((loaders: any, button: any) => {
             loaders[button.id] = payload;
             return loaders;

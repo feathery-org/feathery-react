@@ -3,8 +3,8 @@ import { isNum, stringifyWithNull } from '../../utils/primitives';
 import Delta from 'quill-delta';
 import useTextEdit from './useTextEdit';
 import { openTab } from '../../utils/browser';
-import { LINK_NEXT, LINK_NONE } from '../basic/ButtonElement';
 import { fieldValues } from '../../utils/init';
+import { ACTION_NEXT } from '../../utils/elementActions';
 
 export const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 
@@ -61,8 +61,8 @@ function TextNodes({
   return useMemo(() => {
     const text = element.properties.text;
     let delta = new Delta(element.properties.text_formatted);
-    const link = element.properties.link;
-    if (link === LINK_NEXT) {
+    const actions = element.properties.actions;
+    if (actions.some((action: any) => action.type === ACTION_NEXT)) {
       conditions.forEach((cond: any) => {
         if (cond.element_type === 'text' && cond.element_id === element.id) {
           const start = cond.metadata.start;
@@ -70,7 +70,7 @@ function TextNodes({
           delta = applyNewDelta(delta, start, end);
         }
       });
-    } else if (link !== LINK_NONE) delta = applyNewDelta(delta);
+    } else if (actions.length > 0) delta = applyNewDelta(delta);
 
     return (
       <span
@@ -93,8 +93,7 @@ function TextNodes({
                 attrs.fullSpan ||
                 (isNum(attrs.start) && isNum(attrs.end))
               ) {
-                onClick = () =>
-                  textSpanOnClick(element, attrs.start, attrs.end);
+                onClick = () => textSpanOnClick(attrs.start, attrs.end);
                 cursor = 'pointer';
               }
             }

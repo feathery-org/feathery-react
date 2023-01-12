@@ -14,7 +14,7 @@ import { shouldElementHide } from '../../../utils/hideIfs';
 import { isFieldValueEmpty } from '../../../utils/validation';
 import { justRemove } from '../../../utils/array';
 import { fieldValues } from '../../../utils/init';
-import { LINK_STORE_FIELD } from '../../../elements/basic/ButtonElement';
+import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 
 const mapFieldTypes = new Set([
   'gmap_line_1',
@@ -35,8 +35,8 @@ const Cell = ({ node: el, form, flags }: any) => {
     activeStep,
     loaders,
     getButtonSelectionState,
+    runElementActions,
     buttonOnClick,
-    textOnClick,
     fieldOnChange,
     inlineErrors,
     setInlineErrors,
@@ -85,7 +85,18 @@ const Cell = ({ node: el, form, flags }: any) => {
   else if (type === 'text')
     return (
       <Elements.TextElement
-        textSpanOnClick={textOnClick}
+        textSpanOnClick={(
+          textSpanStart: number | undefined,
+          textSpanEnd: number | undefined
+        ) => {
+          runElementActions({
+            element: el,
+            actions: el.properties.actions,
+            elementType: 'text',
+            textSpanStart,
+            textSpanEnd
+          });
+        }}
         conditions={activeStep.next_conditions}
         {...basicProps}
       />
@@ -108,7 +119,10 @@ const Cell = ({ node: el, form, flags }: any) => {
           return false;
         });
       const storeFieldButtons = activeStep.buttons.filter(
-        ({ properties }: any) => properties.link === LINK_STORE_FIELD
+        ({ properties }: any) =>
+          properties.actions.some(
+            (action: any) => action.type === ACTION_STORE_FIELD
+          )
       );
       const buttonHasAValue =
         storeFieldButtons.length === 0 ||

@@ -114,7 +114,7 @@ export function emailLogin(featheryClient: any) {
 
 export function smsLogin({ fieldVal, featheryClient }: any) {
   const client = getAuthClient();
-  if (!client || stytchPhoneMethodId === '') return;
+  if (!client || stytchPhoneMethodId === '') return Promise.resolve();
 
   return client.otps
     .authenticate(fieldVal, stytchPhoneMethodId, {

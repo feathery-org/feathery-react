@@ -16,9 +16,7 @@ export function installPlaid(isPlaidActive: any) {
 export async function openPlaidLink(
   client: any,
   onSuccess: any,
-  updateFieldValues: any,
-  setLoader: any,
-  clearLoader: any
+  updateFieldValues: any
 ) {
   // No actions if Plaid hasn't been loaded yet
   if (!global.Plaid) return;
@@ -27,11 +25,9 @@ export async function openPlaidLink(
   const handler = global.Plaid.create({
     token: linkToken,
     onSuccess: async (publicToken: any) => {
-      setLoader();
       const fieldVals = await client.submitPlaidUserData(publicToken);
       updateFieldValues(fieldVals);
       await onSuccess();
-      clearLoader();
       handler.exit();
       handler.destroy();
     }
