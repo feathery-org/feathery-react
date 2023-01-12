@@ -122,7 +122,6 @@ const useAuth = ({
 
     if (userAuthed && redirectAfterLoginRef.current) {
       nextStep = findStepName(metadata.login_step);
-      if (nextStep) setStepKey(nextStep);
     } else if (!userAuthed && nextStepIsProtected)
       nextStep = findStepName(metadata.logout_step);
 

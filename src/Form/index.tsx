@@ -1222,6 +1222,7 @@ function Form({
           hasErr = true;
         });
         if (hasErr) break;
+        else redirectAfterLoginRef.current = true;
       } else if (type === ACTION_SEND_MAGIC_LINK) {
         const email = fieldValues[action.auth_target_field_key] as string;
         if (validators.email(email)) {
