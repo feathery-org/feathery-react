@@ -50,7 +50,7 @@ export async function initializeIntegrations(
 ) {
   await Promise.all([
     installPlaid(!!integs.plaid),
-    installFirebase(integs.fb),
+    installFirebase(integs.firebase),
     installStytch(integs.stytch),
     installStripe(integs.stripe),
     installSegment(integs.segment),
@@ -59,7 +59,8 @@ export async function initializeIntegrations(
 
   const gtm = integs['google-tag-manager'];
   if (gtm) initializeTagManager(gtm);
-  if (integs.fb || integs.stytch) return inferEmailLoginFromURL(featheryClient);
+  if (integs.firebase || integs.stytch)
+    return inferEmailLoginFromURL(featheryClient);
 }
 
 export function inferEmailLoginFromURL(featheryClient: Client) {

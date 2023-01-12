@@ -343,7 +343,8 @@ function Form({
 
     if (smsButton) {
       window.firebaseRecaptchaVerifier =
-        new global.firebase.auth.RecaptchaVerifier(smsButton.id, {
+        global.firebase.auth &&
+        new (global.firebase.auth().RecaptchaVerifier)(smsButton.id, {
           size: 'invisible'
         });
     }

@@ -139,6 +139,6 @@ export async function verifySMSCode({ fieldVal, featheryClient }: any) {
 }
 
 export function isHrefFirebaseMagicLink(): boolean {
-  if (!global.firebase) return false;
+  if (!global.firebase || !global.firebase.auth) return false;
   return global.firebase.auth().isSignInWithEmailLink(window.location.href);
 }
