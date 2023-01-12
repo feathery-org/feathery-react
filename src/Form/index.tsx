@@ -21,6 +21,7 @@ import {
   getAllElements,
   getDefaultFieldValue,
   getFieldValue,
+  getInitialStep,
   getNewStepUrl,
   getOrigin,
   getPrevStepUrl,
@@ -33,7 +34,7 @@ import {
 } from '../utils/formHelperFunctions';
 import { shouldElementHide, getHideIfReferences } from '../utils/hideIfs';
 import { validators, validateElements } from '../utils/validation';
-import { initInfo, initState, fieldValues, FieldValues } from '../utils/init';
+import { initState, fieldValues, FieldValues } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { sendFirebaseLogin, verifySMSCode } from '../integrations/firebase';
@@ -196,7 +197,9 @@ function Form({
   >({});
   const [, setRepeatChanged] = useState(false);
 
-  const [integrations, setIntegrations] = useState<Record<string, any>>({});
+  const [integrations, setIntegrations] = useState<null | Record<string, any>>(
+    null
+  );
   const [plaidLinked, setPlaidLinked] = useState(false);
   const [hasPlaid, setHasPlaid] = useState(false);
   const [gMapFilled, setGMapFilled] = useState(false);
@@ -213,7 +216,7 @@ function Form({
   // Set to trigger conditional renders on field value updates, no need to use the value itself
   const [render, setRender] = useState(false);
 
-  const [loaders, setLoaders] = useState({});
+  const [loaders, setLoaders] = useState<Record<string, any>>({});
   const clearLoaders = () => setLoaders({});
   const stepLoader = useMemo(() => {
     const data = Object.values(loaders).find(
@@ -234,7 +237,8 @@ function Form({
     setStepKey,
     stepKey,
     steps,
-    integrations
+    integrations,
+    initialStep: getInitialStep({ initialStepId, steps, formName })
   });
 
   const [backNavMap, setBackNavMap] = useState({});
@@ -662,12 +666,7 @@ function Form({
           // User is authenticating. auth hook will set the initial stepKey once auth has finished
           if (redirectAfterLoginRef.current) return;
 
-          const hashKey = decodeURI(location.hash.substr(1));
-          const newKey =
-            initialStepId ||
-            (hashKey && hashKey in steps && hashKey) ||
-            session.current_step_key ||
-            (getOrigin as any)(steps).key;
+          const newKey = getInitialStep({ initialStepId, steps, formName });
           setUrlStepHash(history, steps, newKey);
           setStepKey(newKey);
         })
@@ -885,7 +884,7 @@ function Form({
 
       const allFields = formatAllFormFields(steps, true);
       const plaidFieldValues = getPlaidFieldValues(
-        (integrations as any).plaid,
+        integrations?.plaid,
         fieldValues
       );
       let stepChanged = false;
@@ -985,7 +984,7 @@ function Form({
     for (let i = 0; i < activeStep.servar_fields.length; i++) {
       const servar = activeStep.servar_fields[i].servar;
       if (servar.type === 'payment_method') {
-        const integrationData = integrations.stripe;
+        const integrationData = integrations?.stripe;
         const actionData: ActionData = {
           fieldVal: fieldValues[servar.key],
           servar,
