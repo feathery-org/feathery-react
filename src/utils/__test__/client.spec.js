@@ -313,18 +313,16 @@ describe('client', () => {
       expect(response).toEqual(expResponse);
     });
     it('createPayment properly calls the end point', async () => {
-      const paymentMethodFieldKey = 'payment-method-field-servar-key';
       // Arrange
       const body = {
         form_key: formKey,
-        user_id: userId,
-        field_id: paymentMethodFieldKey
+        user_id: userId
       };
       const intentSecret = 'intent_secret';
       mockFetch(intentSecret);
 
       // Act
-      const response = await client.createPayment(paymentMethodFieldKey);
+      const response = await client.createPayment();
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/payment/`, {
@@ -361,6 +359,37 @@ describe('client', () => {
         method: 'PUT'
       });
       expect(response).toEqual(intentSecret);
+    });
+    it('createCheckoutSession properly calls the end point', async () => {
+      // Arrange
+      const successUrl = 'success';
+      const cancelUrl = 'cancel';
+      const body = {
+        form_key: formKey,
+        user_id: userId,
+        success_url: successUrl,
+        cancel_url: cancelUrl
+      };
+      const expectedResponse = { checkout_url: 'checkoutUrl' };
+      mockFetch(expectedResponse);
+
+      // Act
+      const response = await client.createCheckoutSession(
+        successUrl,
+        cancelUrl
+      );
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/checkout/`, {
+        body: JSON.stringify(body),
+        cache: 'no-store',
+        headers: {
+          Authorization: 'Token sdkKey',
+          'Content-Type': 'application/json'
+        },
+        method: 'POST'
+      });
+      expect(response).toEqual(expectedResponse);
     });
   });
 });

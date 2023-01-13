@@ -1,13 +1,15 @@
 import {
-  setupPaymentMethodAndPay,
+  setupPaymentMethod,
+  collectPayment,
   toggleProductSelection,
   isProductSelected,
   getFlatStripeCustomerFieldValues
 } from '../stripe';
 import { fieldValues } from '../../utils/init';
 
-const mockStripeConfig = () => ({
+const mockStripeConfig = (checkoutType: 'custom' | 'stripe' = 'custom') => ({
   metadata: {
+    checkout_type: checkoutType,
     customer_field_mappings: {
       name: 'customer-name',
       description: 'customer-description-hidden',
@@ -42,6 +44,53 @@ const mockFieldValues = {
   otherNonCustomerField: { value: 'blaa' }
 };
 
+const _mockStripe = () => {
+  const mockObj: any = {};
+  mockObj.confirmCardSetup = jest.fn().mockResolvedValue({
+    setupIntent: { payment_method: '' }
+  });
+  mockObj.confirmCardPayment = jest.fn().mockResolvedValue({
+    paymentIntent: {}
+  });
+  return mockObj;
+};
+
+const stripePaymentMethodId = 'stripe_payment_method_id';
+const paymentMethodData = {
+  card_data: {
+    brand: 'mastercard',
+    last4: '6685',
+    country: 'US',
+    exp_year: 2024,
+    exp_month: 4,
+    postal_code: '46814'
+  },
+  stripe_customer_id: 'stripe_customer_id',
+  stripe_payment_method_id: stripePaymentMethodId
+};
+
+const _mockClient = () => {
+  const mockObj: any = {};
+  mockObj.setupPaymentIntent = jest
+    .fn()
+    .mockResolvedValue({ intent_secret: 'test_secret' });
+  mockObj.retrievePaymentMethodData = jest
+    .fn()
+    .mockResolvedValue(paymentMethodData);
+  mockObj.submitCustom = jest.fn().mockResolvedValue({});
+  mockObj.createPayment = jest
+    .fn()
+    .mockResolvedValue({ intent_secret: 'payment_intent_secret' });
+  mockObj.paymentComplete = jest.fn().mockResolvedValue({
+    product_fields_to_clear: ['field_key_1', 'field_key_2']
+  });
+  mockObj.createCheckoutSession = jest.fn().mockResolvedValue({
+    checkout_url: 'mock_checkout_url'
+  });
+
+  return mockObj;
+};
+
 describe('Stripe integration helper', () => {
   describe('getFlatStripeCustomerFieldValues', () => {
     it('retrieves no customer fields when no field values', () => {
@@ -62,18 +111,13 @@ describe('Stripe integration helper', () => {
     });
   });
 
-  describe('setupPaymentMethodAndPay', () => {
+  describe('setupPaymentMethod', () => {
     const paymentMethodFieldKey = 'payment-method-1';
     const mockServar = {
       id: 'some id',
       key: paymentMethodFieldKey,
       type: 'payment_method'
     };
-
-    const mockStripe: any = {};
-    mockStripe.confirmCardSetup = jest.fn().mockResolvedValue({
-      setupIntent: { payment_method: '' }
-    });
 
     const mockTargetElement = {};
 
@@ -83,65 +127,7 @@ describe('Stripe integration helper', () => {
       const mockUpdateFieldValues = jest.fn();
 
       // act
-      const result = await setupPaymentMethodAndPay(
-        {
-          servar: mockServar,
-          client: mockClient,
-          formattedFields: mockFormattedFields,
-          updateFieldValues: mockUpdateFieldValues,
-          integrationData: mockStripeConfig,
-          targetElement: mockTargetElement
-        },
-        mockStripe
-      );
-
-      // Assert
-      expect(result).toBeNull();
-    });
-    it('returns payment method data', async () => {
-      const mockStripe: any = {};
-      mockStripe.confirmCardSetup = jest.fn().mockResolvedValue({
-        setupIntent: { payment_method: '' }
-      });
-      mockStripe.confirmCardPayment = jest.fn().mockResolvedValue({
-        paymentIntent: {}
-      });
-
-      const stripePaymentMethodId = 'stripe_payment_method_id';
-      const paymentMethodData = {
-        card_data: {
-          brand: 'mastercard',
-          last4: '6685',
-          country: 'US',
-          exp_year: 2024,
-          exp_month: 4,
-          postal_code: '46814'
-        },
-        stripe_customer_id: 'stripe_customer_id',
-        stripe_payment_method_id: stripePaymentMethodId
-      };
-
-      const mockClient: any = {};
-      mockClient.setupPaymentIntent = jest
-        .fn()
-        .mockResolvedValue({ intent_secret: 'test_secret' });
-      mockClient.retrievePaymentMethodData = jest
-        .fn()
-        .mockResolvedValue(paymentMethodData);
-      mockClient.submitCustom = jest.fn().mockResolvedValue({});
-      mockClient.createPayment = jest
-        .fn()
-        .mockResolvedValue({ intent_secret: 'payment_intent_secret' });
-      mockClient.paymentComplete = jest.fn().mockResolvedValue({
-        product_fields_to_clear: ['field_key_1', 'field_key_2']
-      });
-
-      const mockFormattedFields: Record<string, any> = {};
-      mockFormattedFields[mockServar.key] = { value: { complete: true } };
-      const mockUpdateFieldValues = jest.fn();
-
-      // act
-      const result = await setupPaymentMethodAndPay(
+      const result = await setupPaymentMethod(
         {
           servar: mockServar,
           client: mockClient,
@@ -150,6 +136,32 @@ describe('Stripe integration helper', () => {
           integrationData: mockStripeConfig(),
           targetElement: mockTargetElement
         },
+        true,
+        _mockStripe()
+      );
+
+      // Assert
+      expect(result).toBeNull();
+    });
+    it('returns payment method data', async () => {
+      const mockClient = _mockClient();
+      const mockFormattedFields: Record<string, any> = {};
+      mockFormattedFields[mockServar.key] = { value: { complete: true } };
+      const mockUpdateFieldValues = jest.fn();
+
+      const mockStripe = _mockStripe();
+
+      // act
+      const result = await setupPaymentMethod(
+        {
+          servar: mockServar,
+          client: mockClient,
+          formattedFields: mockFormattedFields,
+          updateFieldValues: mockUpdateFieldValues,
+          integrationData: mockStripeConfig(),
+          targetElement: mockTargetElement
+        },
+        true,
         mockStripe
       );
 
@@ -157,15 +169,118 @@ describe('Stripe integration helper', () => {
       expect(mockClient.setupPaymentIntent).toHaveBeenCalled();
       expect(mockStripe.confirmCardSetup).toHaveBeenCalled();
       expect(mockClient.retrievePaymentMethodData).toHaveBeenCalled();
-      expect(mockClient.createPayment).toHaveBeenCalledWith(
-        paymentMethodFieldKey
-      );
-      expect(mockClient.paymentComplete).toHaveBeenCalled();
       expect(mockUpdateFieldValues).toHaveBeenCalled();
       expect(result).toBeNull();
       expect(mockFormattedFields[mockServar.key].value).toEqual(
         paymentMethodData
       );
+    });
+  });
+
+  describe('collectPayment', () => {
+    delete window.location;
+    window.location = {}; // get rid of jest warning
+    it('sets up payment method for a card element', async () => {
+      const paymentMethodFieldKey = 'payment-method-1';
+      const mockServar = {
+        id: 'some id',
+        key: paymentMethodFieldKey,
+        type: 'payment_method'
+      };
+      const mockTargetElement = {};
+
+      const mockFormattedFields: Record<string, any> = {};
+      mockFormattedFields[mockServar.key] = { value: { complete: true } };
+      const mockUpdateFieldValues = jest.fn();
+
+      const mockClient = _mockClient();
+      const mockStripe = _mockStripe();
+
+      const buttonId = 'button_id';
+      const mockButton = { id: buttonId, properties: {} };
+
+      // act
+      const result = await collectPayment(
+        {
+          servar: mockServar,
+          client: mockClient,
+          formattedFields: mockFormattedFields,
+          updateFieldValues: mockUpdateFieldValues,
+          integrationData: mockStripeConfig(),
+          targetElement: mockTargetElement,
+          triggerElement: mockButton
+        },
+        mockStripe
+      );
+
+      // Assert
+      expect(mockClient.setupPaymentIntent).toHaveBeenCalled();
+      expect(mockStripe.confirmCardSetup).toHaveBeenCalled();
+      expect(mockClient.retrievePaymentMethodData).toHaveBeenCalled();
+    });
+    it('does a custom (in Feathery) payment with no payment/card setup', async () => {
+      const mockClient = _mockClient();
+      const mockStripe = _mockStripe();
+
+      const mockFormattedFields: Record<string, any> = {};
+      const mockUpdateFieldValues = jest.fn();
+
+      const buttonId = 'button_id';
+      const successUrl = 'http://www.example.com';
+      const cancelUrl = 'http://www.example.com';
+      const mockButton = {
+        id: buttonId,
+        properties: { success_url: successUrl, cancel_url: cancelUrl }
+      };
+
+      // act
+      const result = await collectPayment(
+        {
+          client: mockClient,
+          formattedFields: mockFormattedFields,
+          updateFieldValues: mockUpdateFieldValues,
+          integrationData: mockStripeConfig('custom'),
+          triggerElement: mockButton
+        },
+        mockStripe
+      );
+
+      // Assert
+      expect(mockClient.createPayment).toHaveBeenCalled();
+      expect(mockClient.paymentComplete).toHaveBeenCalled();
+      expect(mockUpdateFieldValues).toHaveBeenCalled();
+      expect(result).toBeNull();
+    });
+    it('does a stripe checkout', async () => {
+      const mockClient = _mockClient();
+      const mockStripe = _mockStripe();
+
+      const mockFormattedFields: Record<string, any> = {};
+      const mockUpdateFieldValues = jest.fn();
+
+      const buttonId = 'button_id';
+      const successUrl = 'http://www.example.com';
+      const cancelUrl = 'http://www.example.com';
+      const mockButton = {
+        id: buttonId,
+        properties: { success_url: successUrl, cancel_url: cancelUrl }
+      };
+
+      // act
+      const result = await collectPayment(
+        {
+          client: mockClient,
+          formattedFields: mockFormattedFields,
+          updateFieldValues: mockUpdateFieldValues,
+          integrationData: mockStripeConfig('stripe'),
+          triggerElement: mockButton
+        },
+        mockStripe
+      );
+
+      // Assert
+      expect(mockClient.createCheckoutSession).toHaveBeenCalled();
+      expect(result).toBeNull();
     });
   });
 

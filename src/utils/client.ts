@@ -554,29 +554,49 @@ export default class Client {
   }
 
   // Stripe
-  async payment(method: 'POST' | 'PUT', extraBodyParams = {}) {
+  async _payment(method: 'POST' | 'PUT') {
     await initFormsPromise;
     const { userId } = initInfo();
     const url = `${API_URL}stripe/payment/`;
     const data = {
       form_key: this.formKey,
-      ...(userId ? { user_id: userId } : {})
+      user_id: userId
     };
     const options = {
       headers: { 'Content-Type': 'application/json' },
-      method: method,
-      body: JSON.stringify(Object.assign(data, extraBodyParams))
+      method,
+      body: JSON.stringify(data)
     };
     return this._fetch(url, options).then((response) =>
       response ? response.json() : Promise.resolve()
     );
   }
 
-  createPayment(paymentMethodFieldKey: string) {
-    return this.payment('POST', { field_id: paymentMethodFieldKey });
+  createPayment() {
+    return this._payment('POST');
   }
 
   paymentComplete() {
-    return this.payment('PUT');
+    return this._payment('PUT');
+  }
+
+  async createCheckoutSession(successUrl: string, cancelUrl?: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const url = `${API_URL}stripe/checkout/`;
+    const data = {
+      form_key: this.formKey,
+      user_id: userId,
+      success_url: successUrl,
+      cancel_url: cancelUrl || ''
+    };
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data)
+    };
+    return this._fetch(url, options).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
   }
 }

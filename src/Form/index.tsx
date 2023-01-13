@@ -49,7 +49,8 @@ import {
   usePayments,
   toggleProductSelection,
   isProductSelected,
-  setupPaymentMethodAndPay
+  setupPaymentMethod,
+  collectPayment
 } from '../integrations/stripe';
 import {
   ActionData,
@@ -94,6 +95,7 @@ import {
   ACTION_LOGOUT,
   ACTION_NEXT,
   ACTION_REMOVE_REPEATED_ROW,
+  ACTION_COLLECT_PAYMENT,
   ACTION_SELECT_PRODUCT,
   ACTION_SEND_MAGIC_LINK,
   ACTION_SEND_SMS,
@@ -839,7 +841,7 @@ function Form({
         ({ servar: { type } }: any) => type === 'payment_method'
       )
     ) {
-      const errors: any = await handleStepSubmissionPayment(formattedFields);
+      const errors: any = await setupStepPaymentMethod(formattedFields);
       const { errorMessage, errorField } = errors;
       if (errorMessage && errorField) {
         await setFormElementError({
@@ -959,27 +961,71 @@ function Form({
   // usePayments (Stripe)
   const [getCardElement, setCardElement] = usePayments();
 
-  async function handleStepSubmissionPayment(formattedFields: any) {
+  async function setupStepPaymentMethod(formattedFields: any) {
     for (let i = 0; i < activeStep.servar_fields.length; i++) {
       const servar = activeStep.servar_fields[i].servar;
       if (servar.type === 'payment_method') {
         const integrationData = integrations?.stripe;
         const actionData: ActionData = {
-          fieldVal: fieldValues[servar.key],
           servar,
           client,
           formattedFields,
           updateFieldValues,
-          step: activeStep,
           integrationData,
           targetElement: getCardElement(servar.key)
         };
-        const actionResult = await setupPaymentMethodAndPay(actionData);
+        const actionResult = await setupPaymentMethod(actionData);
         return actionResult ?? {};
       }
     }
-
     return {};
+  }
+
+  async function collectPaymentAction(triggerElement: any) {
+    const errorCallback = getErrorCallback({
+      // could be container or button but model as button for the time being...
+      trigger: lookUpTrigger(activeStep, triggerElement.id, 'container')
+    });
+    // validate all step fields and buttons.  Must be valid before payment.
+    const { invalid, inlineErrors: newInlineErrors } = validateElements({
+      elements: [...activeStep.servar_fields, ...activeStep.buttons],
+      triggerErrors: true,
+      errorType: formSettings.errorType,
+      formRef,
+      errorCallback,
+      setInlineErrors
+    });
+    if (invalid) return false;
+
+    // payment/checkout
+    const pm = activeStep.servar_fields.find(
+      ({ servar: { type } }: any) => type === 'payment_method'
+    );
+    const errors = await collectPayment({
+      triggerElement,
+      servar: pm ? pm.servar : null,
+      client,
+      formattedFields: formatStepFields(activeStep, false),
+      updateFieldValues,
+      integrationData: integrations?.stripe,
+      targetElement: pm ? getCardElement(pm.servar.key) : null
+    });
+    if (errors) {
+      const { errorMessage, errorField } = errors;
+      await setFormElementError({
+        formRef,
+        errorCallback,
+        fieldKey: errorField.servar ? errorField.servar.key : errorField.id,
+        message: errorMessage,
+        servarType: errorField.servar ? errorField.servar.type : '',
+        errorType: formSettings.errorType,
+        inlineErrors: newInlineErrors,
+        setInlineErrors: setInlineErrors,
+        triggerErrors: true
+      });
+      return false;
+    }
+    return true;
   }
 
   async function goToNewStep({
@@ -1274,7 +1320,9 @@ function Form({
           }
         }
       } else if (type === ACTION_BACK) await goToPreviousStep();
-      else if (type === ACTION_SELECT_PRODUCT) {
+      else if (type === ACTION_COLLECT_PAYMENT) {
+        if (!(await collectPaymentAction(element))) break;
+      } else if (type === ACTION_SELECT_PRODUCT) {
         await toggleProductSelection({
           productId: action.product_id,
           selectedProductIdFieldId: action.selected_product_id_field,
