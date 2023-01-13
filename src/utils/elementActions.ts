@@ -14,7 +14,7 @@ export const ACTION_TRIGGER_PLAID = 'trigger_plaid';
 export const ACTION_URL = 'url';
 export const ACTION_VERIFY_SMS = 'verify_sms';
 
-const ACTIONS_TO_VALIDATE = [
+export const ACTIONS_TO_VALIDATE = [
   ACTION_SEND_SMS,
   ACTION_VERIFY_SMS,
   ACTION_SEND_MAGIC_LINK

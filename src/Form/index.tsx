@@ -103,6 +103,7 @@ import {
   ACTION_TRIGGER_PLAID,
   ACTION_URL,
   ACTION_VERIFY_SMS,
+  ACTIONS_TO_VALIDATE,
   shouldValidateStep,
   SUBMITTABLE_ACTIONS
 } from '../utils/elementActions';
@@ -152,6 +153,24 @@ const findSubmitButton = (step: any) =>
         SUBMITTABLE_ACTIONS.includes(action.type) && action.submit
     )
   );
+const findEnterButton = (step: any) => {
+  const buttons = step.buttons;
+  // Enter should first trigger a submittable button
+  const target = buttons.find((b: any) =>
+    b.properties.actions.some(
+      (action: any) =>
+        SUBMITTABLE_ACTIONS.includes(action.type) && action.submit
+    )
+  );
+  if (target) return target;
+
+  // Otherwise it should trigger actions that use a step field
+  return buttons.find((b: any) =>
+    b.properties.actions.some((action: any) =>
+      ACTIONS_TO_VALIDATE.includes(action.type)
+    )
+  );
+};
 
 function Form({
   _internalId,
@@ -406,10 +425,10 @@ function Form({
       e.preventDefault();
       e.stopPropagation();
       // Submit steps by pressing `Enter`
-      const submitButton = findSubmitButton(activeStep);
-      if (submitButton) {
+      const enterButton = findEnterButton(activeStep);
+      if (enterButton) {
         // Simulate button click if available
-        buttonOnClick(submitButton);
+        buttonOnClick(enterButton);
       }
     },
     {
@@ -1241,15 +1260,14 @@ function Form({
       } else if (type === ACTION_SEND_SMS) {
         const phoneNum = fieldValues[action.auth_target_field_key] as string;
         if (validators.phone(phoneNum)) {
-          const authFn = isAuthStytch()
-            ? () => sendSMSCode({ fieldVal: phoneNum })
-            : () =>
-                sendFirebaseLogin({
-                  fieldVal: phoneNum,
-                  servar: null,
-                  method: 'phone'
-                });
-          await authFn();
+          // Don't block to make potential subsequent navigation snappy
+          if (isAuthStytch()) sendSMSCode({ fieldVal: phoneNum });
+          else
+            sendFirebaseLogin({
+              fieldVal: phoneNum,
+              servar: null,
+              method: 'phone'
+            });
         } else {
           setElementError(
             'A valid phone number is needed to send your login code.'
@@ -1272,15 +1290,14 @@ function Form({
       } else if (type === ACTION_SEND_MAGIC_LINK) {
         const email = fieldValues[action.auth_target_field_key] as string;
         if (validators.email(email)) {
-          const authFn = isAuthStytch()
-            ? () => sendMagicLink({ fieldVal: email })
-            : () =>
-                sendFirebaseLogin({
-                  fieldVal: email,
-                  servar: null,
-                  method: 'email'
-                });
-          await authFn();
+          // Don't block to make potential subsequent navigation snappy
+          if (isAuthStytch()) sendMagicLink({ fieldVal: email });
+          else
+            sendFirebaseLogin({
+              fieldVal: email,
+              servar: null,
+              method: 'email'
+            });
         } else {
           setElementError('A valid email is needed to send your magic link.');
           break;
