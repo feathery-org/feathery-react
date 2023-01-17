@@ -139,10 +139,7 @@ function featherySubmitAuthInfo(featheryClient: any) {
   return featheryClient
     .submitAuthInfo({
       authId: stytchClient.session.getSync()?.user_id,
-      authEmail: user.emails[0]?.email ?? '',
-      // Slice off the + from the phone number
-      authPhone: user.phone_numbers[0]?.phone_number.slice(1) ?? '',
-      is_stytch_template_key: config.is_stytch_template_key
+      isStytchTemplateKey: config.is_stytch_template_key
     })
     .catch(() => (authSent = false));
 }

@@ -38,9 +38,8 @@ type InitOptions = {
   userId?: string;
   preloadForms?: string[];
   userTracking?: 'cookie' | 'fingerprint';
+  // TODO: remove from here, move to auth gate
   authId?: string;
-  authEmail?: string;
-  authPhoneNumber?: string;
   language?: string;
 } & DeprecatedOptions;
 
@@ -64,8 +63,6 @@ const initState: InitState = {
   userId: '',
   authClient: null,
   authId: '',
-  authEmail: '',
-  authPhoneNumber: '',
   language: '',
   preloadForms: [],
   sessions: {},
@@ -79,8 +76,6 @@ const initState: InitState = {
 const optionsAsInitState: (keyof InitOptions & keyof InitState)[] = [
   'authClient',
   'authId',
-  'authEmail',
-  'authPhoneNumber',
   'userId',
   'userTracking'
 ];
@@ -149,9 +144,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (initState.authId) {
     initFormsPromise = initFormsPromise.then(() =>
       defaultClient.submitAuthInfo({
-        authId: initState.authId,
-        authPhone: initState.authPhoneNumber,
-        authEmail: initState.authEmail
+        authId: initState.authId
       })
     );
   }

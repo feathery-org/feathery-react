@@ -113,8 +113,6 @@ export function inferAuthLogout() {
 
   logout().then(() => {
     initState.authId = undefined;
-    initState.authPhoneNumber = undefined;
-    initState.authEmail = undefined;
     rerenderAllForms();
   });
 }

@@ -370,18 +370,15 @@ export default class Client {
     return [trueSession, formData];
   }
 
-  submitAuthInfo({ authId, authPhone = '', authEmail = '' }: any) {
+  submitAuthInfo({ authId, isStytchTemplateKey }: any) {
     const { userId } = initInfo();
     initState.authId = authId;
     // Execute render callbacks after setting authId, so that form navigation can be evaluated again
     rerenderAllForms();
-    if (authPhone) initState.authPhoneNumber = authPhone;
-    if (authEmail) initState.authEmail = authEmail;
 
     const data = {
       auth_id: authId,
-      auth_phone: authPhone,
-      auth_email: authEmail,
+      is_stytch_template_key: isStytchTemplateKey,
       ...(userId ? { fuser_key: userId } : {})
     };
     const url = `${API_URL}panel/update_auth/v2/`;
