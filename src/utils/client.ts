@@ -571,40 +571,14 @@ export default class Client {
   }
 
   // Stripe
-  async updateProductSelection(
-    productId: string,
-    quantity: number,
-    fieldKey: string
-  ) {
-    await initFormsPromise;
-    const { userId } = initInfo();
-    const url = `${API_URL}stripe/product/`;
-    const data = {
-      form_key: this.formKey,
-      ...(userId ? { user_id: userId } : {}),
-      stripe_product_id: productId,
-      quantity,
-      field_id:
-        fieldKey /* Hidden field containing the selected product id & quantity */
-    };
-    const options = {
-      headers: { 'Content-Type': 'application/json' },
-      method: 'PUT',
-      body: JSON.stringify(data)
-    };
-    return this._fetch(url, options).then((response) =>
-      response ? response.json() : Promise.resolve()
-    );
-  }
-
-  // Stripe
-  async _payment(method: 'POST' | 'PUT') {
+  async _payment(method: 'POST' | 'PUT', extraParams = {}) {
     await initFormsPromise;
     const { userId } = initInfo();
     const url = `${API_URL}stripe/payment/`;
     const data = {
       form_key: this.formKey,
-      user_id: userId
+      user_id: userId,
+      ...extraParams
     };
     const options = {
       headers: { 'Content-Type': 'application/json' },
@@ -616,15 +590,19 @@ export default class Client {
     );
   }
 
-  createPayment() {
-    return this._payment('POST');
+  createPayment(paymentGroupId: string) {
+    return this._payment('POST', { payment_group_id: paymentGroupId });
   }
 
   paymentComplete() {
     return this._payment('PUT');
   }
 
-  async createCheckoutSession(successUrl: string, cancelUrl?: string) {
+  async createCheckoutSession(
+    paymentGroupId: string,
+    successUrl: string,
+    cancelUrl?: string
+  ) {
     await initFormsPromise;
     const { userId } = initInfo();
     const url = `${API_URL}stripe/checkout/`;
@@ -632,7 +610,8 @@ export default class Client {
       form_key: this.formKey,
       user_id: userId,
       success_url: successUrl,
-      cancel_url: cancelUrl || ''
+      cancel_url: cancelUrl || '',
+      payment_group_id: paymentGroupId
     };
     const options = {
       headers: { 'Content-Type': 'application/json' },

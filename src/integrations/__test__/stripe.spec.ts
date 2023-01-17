@@ -1,11 +1,10 @@
 import {
   setupPaymentMethod,
   collectPayment,
-  toggleProductSelection,
-  isProductSelected,
-  getFlatStripeCustomerFieldValues
+  getFlatStripeCustomerFieldValues,
+  getStripePaymentQuantityFieldValues,
+  PaymentProduct
 } from '../stripe';
-import { fieldValues } from '../../utils/init';
 
 const mockStripeConfig = (checkoutType: 'custom' | 'stripe' = 'custom') => ({
   metadata: {
@@ -41,7 +40,9 @@ const mockFieldValues = {
   'customer-description-hidden': { value: 'customer description' },
   addr_country: { value: 'customer address country' },
   ship_line1: { value: 'customer shipping line 1' },
-  otherNonCustomerField: { value: 'blaa' }
+  otherNonCustomerField: { value: 'blaa' },
+  payment_product_1_quantity: { value: 1 },
+  payment_product_2_quantity: { value: 2 }
 };
 
 const _mockStripe = () => {
@@ -108,6 +109,34 @@ describe('Stripe integration helper', () => {
         addr_country: 'customer address country',
         ship_line1: 'customer shipping line 1'
       });
+    });
+  });
+  describe('getStripePaymentQuantityFieldValues', () => {
+    const mockPaymentGroup = (products: PaymentProduct[] = []) => ({
+      payment_group_id: 'blaa',
+      products: products
+    });
+
+    it('retrieves no payment group fields when no dynamic quantity fields mapped', () => {
+      const result = getStripePaymentQuantityFieldValues(
+        mockPaymentGroup(),
+        mockFieldValues
+      );
+      expect(result).toStrictEqual({});
+    });
+    it('retrieves payment group fields when dynamic quantity fields mapped', () => {
+      const prod1Key = 'payment_product_1_quantity';
+      const prod2Key = 'payment_product_2_quantity';
+
+      const result = getStripePaymentQuantityFieldValues(
+        mockPaymentGroup([
+          { product_id: 'p1', quantity_field: prod1Key },
+          { product_id: 'p2', quantity_field: prod2Key },
+          { product_id: 'p3', fixed_quantity: 100 }
+        ]),
+        mockFieldValues
+      );
+      expect(result).toStrictEqual({ [prod1Key]: 1, [prod2Key]: 2 });
     });
   });
 
@@ -180,6 +209,36 @@ describe('Stripe integration helper', () => {
   describe('collectPayment', () => {
     delete window.location;
     window.location = {}; // get rid of jest warning
+
+    const buttonId = 'button_id';
+    const successUrl = 'http://www.example.com';
+    const cancelUrl = 'http://www.example.com';
+    const mockButton = {
+      id: buttonId,
+      properties: {
+        actions: [
+          {
+            success_url: successUrl,
+            cancel_url: cancelUrl,
+            type: 'collect_payment',
+            payment_group: {
+              payment_group_id: 'some id',
+              products: [
+                {
+                  product_id: 'some prod id 1',
+                  quantity_field: 'payment_product_1_quantity'
+                },
+                {
+                  product_id: 'some prod id 2',
+                  quantity_field: 'payment_product_2_quantity'
+                }
+              ]
+            }
+          }
+        ]
+      }
+    };
+
     it('sets up payment method for a card element', async () => {
       const paymentMethodFieldKey = 'payment-method-1';
       const mockServar = {
@@ -196,11 +255,8 @@ describe('Stripe integration helper', () => {
       const mockClient = _mockClient();
       const mockStripe = _mockStripe();
 
-      const buttonId = 'button_id';
-      const mockButton = { id: buttonId, properties: {} };
-
       // act
-      const result = await collectPayment(
+      await collectPayment(
         {
           servar: mockServar,
           client: mockClient,
@@ -222,22 +278,13 @@ describe('Stripe integration helper', () => {
       const mockClient = _mockClient();
       const mockStripe = _mockStripe();
 
-      const mockFormattedFields: Record<string, any> = {};
       const mockUpdateFieldValues = jest.fn();
-
-      const buttonId = 'button_id';
-      const successUrl = 'http://www.example.com';
-      const cancelUrl = 'http://www.example.com';
-      const mockButton = {
-        id: buttonId,
-        properties: { success_url: successUrl, cancel_url: cancelUrl }
-      };
 
       // act
       const result = await collectPayment(
         {
           client: mockClient,
-          formattedFields: mockFormattedFields,
+          formattedFields: mockFieldValues,
           updateFieldValues: mockUpdateFieldValues,
           integrationData: mockStripeConfig('custom'),
           triggerElement: mockButton
@@ -255,22 +302,13 @@ describe('Stripe integration helper', () => {
       const mockClient = _mockClient();
       const mockStripe = _mockStripe();
 
-      const mockFormattedFields: Record<string, any> = {};
       const mockUpdateFieldValues = jest.fn();
-
-      const buttonId = 'button_id';
-      const successUrl = 'http://www.example.com';
-      const cancelUrl = 'http://www.example.com';
-      const mockButton = {
-        id: buttonId,
-        properties: { success_url: successUrl, cancel_url: cancelUrl }
-      };
 
       // act
       const result = await collectPayment(
         {
           client: mockClient,
-          formattedFields: mockFormattedFields,
+          formattedFields: mockFieldValues,
           updateFieldValues: mockUpdateFieldValues,
           integrationData: mockStripeConfig('stripe'),
           triggerElement: mockButton
@@ -281,121 +319,6 @@ describe('Stripe integration helper', () => {
       // Assert
       expect(mockClient.createCheckoutSession).toHaveBeenCalled();
       expect(result).toBeNull();
-    });
-  });
-
-  describe('toggleProductSelection', () => {
-    it('sets the product select hidden field and the total cost hidden field', async () => {
-      // Arrange
-      const selectedProductIdFieldKey = 'some_key'; // hidden field key
-      const selectedProductIdFieldId = 'some_id'; // hidden field id
-      const totalField = 'some_other_key'; // hidden field key
-      const productId = 'pr_PcVyovGHZVpxSo';
-      const mockTotal = '112.99';
-      const mockClient: any = {};
-      mockClient.updateProductSelection = jest.fn().mockResolvedValue({
-        field_values: {
-          [selectedProductIdFieldKey]: {
-            [productId]: 1
-          },
-          [totalField]: mockTotal
-        }
-      });
-      const mockUpdateFieldValues = jest.fn();
-      const integrations = {
-        stripe: {
-          metadata: {
-            payment_field_mappings: {
-              total: totalField
-            }
-          }
-        }
-      };
-
-      // Act
-      await toggleProductSelection({
-        productId,
-        selectedProductIdFieldId,
-        selectedProductIdFieldKey,
-        updateFieldValues: mockUpdateFieldValues,
-        client: mockClient,
-        integrations
-      });
-
-      // Assert
-      expect(mockClient.updateProductSelection).toHaveBeenCalledWith(
-        productId,
-        1,
-        selectedProductIdFieldKey
-      );
-      const expectedVal1 = {
-        [selectedProductIdFieldKey]: {
-          [productId]: 1
-        }
-      };
-      const expectedVal2 = Object.assign({}, expectedVal1, {
-        [totalField]: mockTotal
-      });
-      expect(mockUpdateFieldValues).toHaveBeenNthCalledWith(1, expectedVal1);
-      expect(mockUpdateFieldValues).toHaveBeenNthCalledWith(2, expectedVal2);
-    });
-  });
-  describe('isProductSelected', () => {
-    const productId = 'pr_PcVyovGHZVpxSo';
-    const selectedProductIdFieldKey = 'some_key'; // hidden field key
-    it('properly determines the product is selected', async () => {
-      // Arrange, Act & Assert
-      Object.assign(fieldValues, {
-        [selectedProductIdFieldKey]: {
-          [productId]: 1
-        }
-      });
-
-      expect(
-        isProductSelected({
-          productId,
-          selectedProductIdField: selectedProductIdFieldKey
-        })
-      ).toEqual(true);
-    });
-    it('properly determines the product is not-selected if qty is 0', async () => {
-      // Arrange, Act & Assert
-      Object.assign(fieldValues, {
-        [selectedProductIdFieldKey]: {
-          [productId]: 0
-        }
-      });
-
-      expect(
-        isProductSelected({
-          productId,
-          selectedProductIdField: selectedProductIdFieldKey
-        })
-      ).toEqual(false);
-    });
-    it('properly determines the product is not-selected if hidden field has some other id', async () => {
-      // Arrange, Act & Assert
-      Object.assign(fieldValues, {
-        [selectedProductIdFieldKey]: {
-          'some non-matching product id': 1
-        }
-      });
-
-      expect(
-        isProductSelected({
-          productId,
-          selectedProductIdField: selectedProductIdFieldKey
-        })
-      ).toEqual(false);
-    });
-    it('properly determines the product is not-selected if hidden field has has no value', async () => {
-      // Arrange, Act & Assert
-      expect(
-        isProductSelected({
-          productId,
-          selectedProductIdField: selectedProductIdFieldKey
-        })
-      ).toEqual(false);
     });
   });
 });

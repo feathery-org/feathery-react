@@ -1,9 +1,8 @@
 import { loadStripe } from '@stripe/stripe-js';
 import { useState } from 'react';
 import { runningInClient, featheryDoc } from '../utils/browser';
-import { fieldValues } from '../utils/init';
 import { ActionData } from './utils';
-
+import { ACTION_COLLECT_PAYMENT } from '../utils/elementActions';
 const stripePromise = new Promise((resolve) => {
   if (runningInClient())
     featheryDoc().addEventListener('stripe_key_loaded', (e: any) => {
@@ -61,10 +60,33 @@ function getObjectMappingValues(mappingObj: any, fieldValues: any) {
   }, {} as { [key: string]: any });
 }
 
+export interface PaymentProduct {
+  product_id: string;
+  quantity_field?: string; // resolved servar key of hidden field key
+  fixed_quantity?: number;
+}
+export interface PaymentGroup {
+  payment_group_id: string;
+  products: PaymentProduct[];
+}
+export function getStripePaymentQuantityFieldValues(
+  paymentGroup: PaymentGroup,
+  fieldValues: any
+) {
+  return paymentGroup.products
+    .filter((p) => p.quantity_field)
+    .reduce((result: any, p) => {
+      const key = p.quantity_field as string;
+      if (key in fieldValues) result[key] = fieldValues[key].value;
+      return result;
+    }, {} as { [key: string]: any });
+}
+
 async function syncStripeFieldChanges(
   client: any,
   formattedFields: any,
-  integrationData: any
+  integrationData: any,
+  paymentGroup?: PaymentGroup
 ) {
   // Need to update the backend with any customer field values that might be on
   // the current step.
@@ -72,8 +94,16 @@ async function syncStripeFieldChanges(
     integrationData,
     formattedFields
   );
-  if (Object.keys(stepCustomerFieldValues).length) {
-    await client.submitCustom(stepCustomerFieldValues);
+  // payment groups (from action props) also could have mapped product quantity fields that must be sync'd
+  const stepPaymentQtyFieldValues = paymentGroup
+    ? getStripePaymentQuantityFieldValues(paymentGroup, formattedFields)
+    : {};
+  const fieldValuesToSumbit = {
+    ...stepCustomerFieldValues,
+    ...stepPaymentQtyFieldValues
+  };
+  if (Object.keys(fieldValuesToSumbit).length) {
+    await client.submitCustom(fieldValuesToSumbit);
   }
 }
 
@@ -158,8 +188,18 @@ export async function collectPayment(
     integrationData: stripeConfig
   } = actionData;
 
+  // there can only be one collect payment action and therefore at most one payment group
+  const collectPaymentAction = triggerElement.properties.actions.find(
+    (action: { type: string }) => action.type === ACTION_COLLECT_PAYMENT
+  );
+  const paymentGroupId = collectPaymentAction?.payment_group.payment_group_id;
   // sync fields to BE
-  await syncStripeFieldChanges(client, formattedFields, stripeConfig);
+  await syncStripeFieldChanges(
+    client,
+    formattedFields,
+    stripeConfig,
+    collectPaymentAction?.payment_group
+  );
 
   // setup any payment method on this step
   if (actionData.targetElement) {
@@ -186,6 +226,7 @@ export async function collectPayment(
       const cancelUrl =
         triggerElement?.properties?.cancel_url || window.location.href;
       const { checkout_url: checkoutUrl } = await client.createCheckoutSession(
+        paymentGroupId,
         successUrl,
         cancelUrl
       );
@@ -193,8 +234,9 @@ export async function collectPayment(
       window.location.href = checkoutUrl;
     } else if (checkoutType === 'custom') {
       // custom payment from Feathery
-      const { intent_secret: paymentIntentSecret } =
-        await client.createPayment();
+      const { intent_secret: paymentIntentSecret } = await client.createPayment(
+        paymentGroupId
+      );
       // No paymentIntentSecret means no payment will be done
       if (paymentIntentSecret) {
         const result = await stripe.confirmCardPayment(paymentIntentSecret);
@@ -222,76 +264,6 @@ export async function collectPayment(
     };
   }
   return null;
-}
-
-export function isProductSelected({
-  productId,
-  selectedProductIdField
-}: {
-  productId: string;
-  selectedProductIdField: string;
-}) {
-  if (productId && selectedProductIdField) {
-    // get the value from the hidden field.  Example: {"some_stripe_product_id": 1}
-    // selectedProductIdField can be shared, so make sure it is our product that is selected.
-    return Boolean(
-      ((fieldValues[selectedProductIdField] as any) || {})[productId]
-    );
-  }
-  return false;
-}
-
-export async function toggleProductSelection({
-  productId,
-  selectedProductIdFieldId,
-  selectedProductIdFieldKey,
-  updateFieldValues,
-  client,
-  integrations
-}: {
-  productId: string;
-  selectedProductIdFieldId: string;
-  selectedProductIdFieldKey: string;
-  updateFieldValues: any;
-  client: any;
-  integrations: null | Record<string, any>;
-}) {
-  // check productId and selectedProductIdField (key) are set
-  if (
-    productId &&
-    selectedProductIdFieldKey &&
-    selectedProductIdFieldId &&
-    integrations?.stripe
-  ) {
-    // get the value from the hidden field
-    const fieldVal: any = fieldValues[selectedProductIdFieldKey] || {};
-    const quantity = fieldVal[productId];
-    // toggling the quantity 0/1 using xor
-    let newQuantity = quantity ^ 1;
-    // For the single select case, the stripe product id will change in the
-    // common/shared hidden field. In this case just replace with quantity 1
-    // of the new product id.
-    if (!(productId in fieldVal)) newQuantity = 1;
-
-    // toggle the quantity and set the new value into the hidden field
-    // Do this immediately to give UI feedback
-    updateFieldValues({
-      [selectedProductIdFieldKey]: {
-        [productId]: newQuantity
-      }
-    });
-    // set the new product selection state on the BE
-    const { field_values: newFieldValues } =
-      await client.updateProductSelection(
-        productId,
-        newQuantity,
-        selectedProductIdFieldKey
-      );
-
-    // BE is the source of truth here.  Update fieldValues.
-    // This will change the  selected product hidden fields and the total hidden field.
-    updateFieldValues(newFieldValues);
-  }
 }
 
 export function usePayments(): [
