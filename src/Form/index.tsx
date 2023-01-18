@@ -44,7 +44,7 @@ import {
   sendSMSCode,
   smsLogin
 } from '../integrations/stytch';
-import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
+import { openPlaidLink } from '../integrations/plaid';
 import {
   usePayments,
   toggleProductSelection,
@@ -105,8 +105,12 @@ import {
   ACTION_VERIFY_SMS,
   ACTIONS_TO_VALIDATE,
   shouldValidateStep,
-  SUBMITTABLE_ACTIONS
+  SUBMITTABLE_ACTIONS,
+  ACTION_TRIGGER_ARGYLE,
+  REQUIRED_FLOW_ACTIONS,
+  hasFlowActions
 } from '../utils/elementActions';
+import { openArgyleLink } from '../integrations/argyle';
 
 export interface Props {
   formName: string;
@@ -229,8 +233,8 @@ function Form({
   const [integrations, setIntegrations] = useState<null | Record<string, any>>(
     null
   );
-  const plaidLinked = useRef<boolean>(false);
-  const [hasPlaid, setHasPlaid] = useState(false);
+  const flowCompleted = useRef(false);
+  const [stepHasRequiredFlow, setStepHasRequiredFlow] = useState(false);
   const [gMapFilled, setGMapFilled] = useState(false);
   const [gMapBlurKey, setGMapBlurKey] = useState('');
   const [gMapTimeoutId, setGMapTimeoutId] = useState<NodeJS.Timeout | number>(
@@ -384,16 +388,15 @@ function Form({
       focusRef.current = null;
     }
 
-    setHasPlaid(
-      !!activeStep.buttons.find((b: any) =>
-        b.properties.actions.some(
-          (action: any) => action.type === ACTION_TRIGGER_PLAID
+    setStepHasRequiredFlow(
+      activeStep.buttons.some((b: any) =>
+        b.properties.actions.some((action: any) =>
+          REQUIRED_FLOW_ACTIONS.includes(action.type)
         )
       )
     );
-    plaidLinked.current = false;
     setGMapFilled(
-      activeStep.servar_fields.find(
+      activeStep.servar_fields.some(
         (f: any) => f.servar.type === 'gmap_line_1' && fieldValues[f.servar.key]
       )
     );
@@ -844,9 +847,6 @@ function Form({
     nextStepKey(activeStep.next_conditions, metadata);
 
   const submitStep = async ({ metadata, repeat = 0 }: any) => {
-    // Can't submit step until the user has gone through the Plaid flow if present
-    if (hasPlaid && !plaidLinked.current) return;
-
     const formattedFields = formatStepFields(activeStep, false);
     const trigger = lookUpTrigger(
       activeStep,
@@ -880,22 +880,11 @@ function Form({
 
     // Execute user-provided onSubmit function if present
     if (typeof onSubmit === 'function') {
-      const integrationData = {};
-      if (initState.authId) {
-        (integrationData as any).firebaseAuthId = initState.authId;
-      }
-
-      const allFields = formatAllFormFields(steps, true);
-      const plaidFieldValues = getPlaidFieldValues(
-        integrations?.plaid,
-        fieldValues
-      );
       let stepChanged = false;
       await runUserCallback(onSubmit, () => ({
-        // @ts-expect-error TS(2698): Spread types may only be created from object types... Remove this comment to see the full error message
-        submitFields: { ...formattedFields, ...plaidFieldValues },
+        submitFields: formattedFields,
         elementRepeatIndex: repeat,
-        fields: allFields,
+        fields: formatAllFormFields(steps, true),
         lastStep: !getNextStepKey(metadata),
         setErrors: (
           errors: Record<string, string | { index: number; message: string }>
@@ -923,7 +912,7 @@ function Form({
           stepChanged = changeStep(stepKey, activeStep.key, steps, history);
         },
         firstStepSubmitted: first,
-        integrationData,
+        integrationData: { authProviderId: initState.authId ?? '' },
         trigger
       }));
       if (stepChanged) return;
@@ -1181,6 +1170,7 @@ function Form({
 
     if (shouldValidateStep(actions)) {
       setAutoValidate(true);
+
       const trigger = lookUpTrigger(activeStep, element.id, elementType);
       // run default form validation
       const { invalid } = validateElements({
@@ -1196,6 +1186,27 @@ function Form({
         return;
       }
     }
+
+    // Do not proceed until user has gone through required flows
+    if (
+      !hasFlowActions(actions) &&
+      stepHasRequiredFlow &&
+      !flowCompleted.current
+    )
+      return;
+
+    const flowOnSuccess = (index: number) => async () => {
+      flowCompleted.current = true;
+      elementClicks[id] = false;
+      await runElementActions({
+        actions: actions.slice(index + 1),
+        element,
+        elementType,
+        setElementError,
+        textSpanStart,
+        textSpanEnd
+      });
+    };
 
     for (let i = 0; i < actions.length; i++) {
       const action = actions[i];
@@ -1215,34 +1226,16 @@ function Form({
           })();
         }
       } else if (type === ACTION_TRIGGER_PLAID) {
-        if (!plaidLinked.current) {
-          await openPlaidLink(
-            client,
-            async () => {
-              plaidLinked.current = true;
-              elementClicks[id] = false;
-              if (activeStep.servar_fields.length === 0) {
-                await submitStep({
-                  metadata: {
-                    elementType,
-                    elementIDs: [element.id]
-                  },
-                  repeat: element.repeat || 0
-                });
-              }
-              await runElementActions({
-                actions: actions.slice(i + 1),
-                element,
-                elementType,
-                setElementError,
-                textSpanStart,
-                textSpanEnd
-              });
-            },
-            updateFieldValues
-          );
-          break;
-        }
+        await openPlaidLink(client, flowOnSuccess(i), updateFieldValues);
+        break;
+      } else if (type === ACTION_TRIGGER_ARGYLE) {
+        await openArgyleLink(
+          client,
+          flowOnSuccess(i),
+          integrations?.argyle,
+          updateFieldValues
+        );
+        break;
       } else if (type === ACTION_URL) {
         const url = action.url;
         action.open_tab ? openTab(url) : (location.href = url);
