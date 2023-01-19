@@ -440,7 +440,7 @@ export default class Client {
     const { userId } = initInfo();
     const params = encodeGetParams({
       form_key: this.formKey,
-      ...(userId ? { fuser_key: userId } : {})
+      fuser_key: userId
     });
     const url = `${API_URL}plaid/link_token/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
@@ -449,14 +449,47 @@ export default class Client {
     );
   }
 
-  async submitPlaidUserData(publicToken: any) {
+  async submitPlaidUserData(publicToken: string) {
     await initFormsPromise;
     const { userId } = initInfo();
     const url = `${API_URL}plaid/user_data/`;
     const data = {
       public_token: publicToken,
       form_key: this.formKey,
-      ...(userId ? { fuser_key: userId } : {})
+      fuser_key: userId
+    };
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data)
+    };
+    return this._fetch(url, options).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
+  }
+
+  async fetchArgyleUserToken() {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      fuser_key: userId
+    });
+    const url = `${API_URL}argyle/user_token/?${params}`;
+    const options = { headers: { 'Content-Type': 'application/json' } };
+    return this._fetch(url, options).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
+  }
+
+  async submitArgyleUserData(linkItemId: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const url = `${API_URL}argyle/user_data/`;
+    const data = {
+      link_item_id: linkItemId,
+      form_key: this.formKey,
+      fuser_key: userId
     };
     const options = {
       headers: { 'Content-Type': 'application/json' },

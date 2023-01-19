@@ -13,6 +13,7 @@ import {
 import { getAuthClient, initState } from '../utils/init';
 import Client from '../utils/client';
 import { rerenderAllForms } from '../utils/formHelperFunctions';
+import { installArgyle } from './argyle';
 
 const IMPORTED_URLS = new Set();
 
@@ -49,6 +50,7 @@ export async function initializeIntegrations(
   featheryClient: Client
 ) {
   await Promise.all([
+    installArgyle(!!integs.argyle),
     installPlaid(!!integs.plaid),
     installFirebase(integs.firebase),
     installStytch(integs.stytch),

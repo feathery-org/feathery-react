@@ -6,6 +6,7 @@ declare global {
   var firebase: any;
   var lottie: any;
   var libphonenumber: any;
+  var Argyle: any;
   var Plaid: any;
   var Stytch: any;
 
