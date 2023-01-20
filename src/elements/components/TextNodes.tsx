@@ -98,10 +98,9 @@ function TextNodes({
               }
             }
 
-            const text = replaceTextVariables(
-              op.insert as string,
-              element.repeat
-            );
+            const text = editMode
+              ? (op.insert as string)
+              : replaceTextVariables(op.insert as string, element.repeat);
 
             return (
               <span

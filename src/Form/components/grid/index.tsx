@@ -2,10 +2,8 @@ import React from 'react';
 import Cell from './Cell';
 import ResponsiveStyles from '../../../elements/styles';
 import { getDefaultFieldValue } from '../../../utils/formHelperFunctions';
-import { adjustColor } from '../../../utils/styles';
 import { fieldValues } from '../../../utils/init';
 import { TEXT_VARIABLE_PATTERN } from '../../../elements/components/TextNodes';
-import { ACTION_SELECT_PRODUCT } from '../../../utils/elementActions';
 const Grid = ({ step, form, viewport }: any) => {
   const formattedStep = formatStep(JSON.parse(JSON.stringify(step)), viewport);
 
@@ -102,18 +100,6 @@ const getCellStyle = (cell: any) => {
   }));
   responsiveStyles.applySelectorStyles('cellActive', 'selected_', true);
   responsiveStyles.applySelectorStyles('cellHover', 'hover_');
-  if (!cell.styles.hover_background_color) {
-    responsiveStyles.apply('cellHover', 'background_color', (a: any) => {
-      return { backgroundColor: adjustColor(a || 'ffffffff', -20) };
-    });
-  }
-  if (!cell.styles.selected_background_color) {
-    responsiveStyles.apply('cellActive', 'background_color', (a: any) => {
-      return {
-        backgroundColor: `${adjustColor(a || 'ffffffff', -20)} !important`
-      };
-    });
-  }
 
   return [
     responsiveStyles.getTarget('cell'),

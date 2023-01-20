@@ -451,7 +451,7 @@ export default class Client {
     const { userId } = initInfo();
     const params = encodeGetParams({
       form_key: this.formKey,
-      ...(userId ? { fuser_key: userId } : {})
+      fuser_key: userId
     });
     const url = `${API_URL}plaid/link_token/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
@@ -460,14 +460,47 @@ export default class Client {
     );
   }
 
-  async submitPlaidUserData(publicToken: any) {
+  async submitPlaidUserData(publicToken: string) {
     await initFormsPromise;
     const { userId } = initInfo();
     const url = `${API_URL}plaid/user_data/`;
     const data = {
       public_token: publicToken,
       form_key: this.formKey,
-      ...(userId ? { fuser_key: userId } : {})
+      fuser_key: userId
+    };
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data)
+    };
+    return this._fetch(url, options).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
+  }
+
+  async fetchArgyleUserToken() {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      fuser_key: userId
+    });
+    const url = `${API_URL}argyle/user_token/?${params}`;
+    const options = { headers: { 'Content-Type': 'application/json' } };
+    return this._fetch(url, options).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
+  }
+
+  async submitArgyleUserData(linkItemId: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const url = `${API_URL}argyle/user_data/`;
+    const data = {
+      link_item_id: linkItemId,
+      form_key: this.formKey,
+      fuser_key: userId
     };
     const options = {
       headers: { 'Content-Type': 'application/json' },
@@ -565,29 +598,49 @@ export default class Client {
   }
 
   // Stripe
-  async payment(method: 'POST' | 'PUT', extraBodyParams = {}) {
+  async _payment(method: 'POST' | 'PUT') {
     await initFormsPromise;
     const { userId } = initInfo();
     const url = `${API_URL}stripe/payment/`;
     const data = {
       form_key: this.formKey,
-      ...(userId ? { user_id: userId } : {})
+      user_id: userId
     };
     const options = {
       headers: { 'Content-Type': 'application/json' },
-      method: method,
-      body: JSON.stringify(Object.assign(data, extraBodyParams))
+      method,
+      body: JSON.stringify(data)
     };
     return this._fetch(url, options).then((response) =>
       response ? response.json() : Promise.resolve()
     );
   }
 
-  createPayment(paymentMethodFieldKey: string) {
-    return this.payment('POST', { field_id: paymentMethodFieldKey });
+  createPayment() {
+    return this._payment('POST');
   }
 
   paymentComplete() {
-    return this.payment('PUT');
+    return this._payment('PUT');
+  }
+
+  async createCheckoutSession(successUrl: string, cancelUrl?: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const url = `${API_URL}stripe/checkout/`;
+    const data = {
+      form_key: this.formKey,
+      user_id: userId,
+      success_url: successUrl,
+      cancel_url: cancelUrl || ''
+    };
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data)
+    };
+    return this._fetch(url, options).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
   }
 }

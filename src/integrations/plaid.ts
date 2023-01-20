@@ -18,8 +18,7 @@ export async function openPlaidLink(
   onSuccess: any,
   updateFieldValues: any
 ) {
-  // No actions if Plaid hasn't been loaded yet
-  if (!global.Plaid) return;
+  await plaidPromise;
 
   const linkToken = (await client.fetchPlaidLinkToken()).link_token;
   const handler = global.Plaid.create({
@@ -33,15 +32,4 @@ export async function openPlaidLink(
     }
   });
   handler.open();
-}
-
-export function getPlaidFieldValues(plaidConfig: any, fieldValues: any) {
-  if (!plaidConfig) return {};
-  // eslint-disable-next-line camelcase
-  const keys = plaidConfig?.metadata?.plaid_field_map || [];
-  return Object.values(keys).reduce((result, key) => {
-    // @ts-expect-error TS(2538): Type 'unknown' cannot be used as an index type.
-    (result as any)[key] = fieldValues[key];
-    return result;
-  }, {});
 }

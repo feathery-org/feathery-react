@@ -2,6 +2,7 @@ import { loadStripe } from '@stripe/stripe-js';
 import { useState } from 'react';
 import { runningInClient, featheryDoc } from '../utils/browser';
 import { fieldValues } from '../utils/init';
+import { ActionData } from './utils';
 
 const stripePromise = new Promise((resolve) => {
   if (runningInClient())
@@ -60,10 +61,26 @@ function getObjectMappingValues(mappingObj: any, fieldValues: any) {
   }, {} as { [key: string]: any });
 }
 
+async function syncStripeFieldChanges(
+  client: any,
+  formattedFields: any,
+  integrationData: any
+) {
+  // Need to update the backend with any customer field values that might be on
+  // the current step.
+  const stepCustomerFieldValues: any = getFlatStripeCustomerFieldValues(
+    integrationData,
+    formattedFields
+  );
+  if (Object.keys(stepCustomerFieldValues).length) {
+    await client.submitCustom(stepCustomerFieldValues);
+  }
+}
+
 /**
- * Used to both setup a payment method and, if there are charges, to pay.
+ * Used to setup a payment method.
  */
-export async function setupPaymentMethodAndPay(
+export async function setupPaymentMethod(
   {
     servar,
     client,
@@ -71,26 +88,17 @@ export async function setupPaymentMethodAndPay(
     updateFieldValues,
     integrationData,
     targetElement
-  }: any,
-  stripePromise = getStripe()
+  }: ActionData,
+  syncFields = true,
+  stripePromise = null
 ) {
   if (formattedFields[servar.key]?.value?.complete) {
     try {
-      const stripe: any = await stripePromise;
+      const stripe: any = await (stripePromise ?? getStripe());
 
-      //
-      // Payment method setup sequence
-      //
-
-      // Need to update the backend with any customer field values that might be on
-      // the current step.
-      const stepCustomerFieldValues: any = getFlatStripeCustomerFieldValues(
-        integrationData,
-        formattedFields
-      );
-      if (Object.keys(stepCustomerFieldValues).length) {
-        await client.submitCustom(stepCustomerFieldValues);
-      }
+      // sync fields to BE
+      if (syncFields)
+        await syncStripeFieldChanges(client, formattedFields, integrationData);
 
       // Payment method setup
       const { intent_secret: intentSecret } = await client.setupPaymentIntent(
@@ -124,33 +132,6 @@ export async function setupPaymentMethodAndPay(
           type: servar.type,
           displayText: servar.name
         };
-
-        //
-        // Payment sequence
-        //
-        const { intent_secret: paymentIntentSecret } =
-          await client.createPayment(servar.key);
-        // No paymentIntentSecret means no payment will be done
-        if (paymentIntentSecret) {
-          const result = await stripe.confirmCardPayment(paymentIntentSecret, {
-            payment_method: paymentMethodId
-          });
-          if (result.error)
-            return {
-              errorField: servar,
-              errorMessage: result.error.message
-            };
-          else {
-            // Complete the payment (clears fields, sets paid indicator)
-            const { field_values: newFieldValues } =
-              await client.paymentComplete();
-
-            // BE is the source of truth here.  Update fieldValues.
-            // This will clear the selected product hidden fields and the total hidden field
-            // as well as set the has_paid field.
-            updateFieldValues(newFieldValues);
-          }
-        }
       }
     } catch (e) {
       return {
@@ -158,6 +139,87 @@ export async function setupPaymentMethodAndPay(
         errorMessage: e instanceof Error ? e.message : ''
       };
     }
+  }
+  return null;
+}
+
+/**
+ * Used to either collect payment directly or launch stripe checkout to collect payment.
+ */
+export async function collectPayment(
+  actionData: ActionData,
+  stripePromise = null
+) {
+  const {
+    client,
+    triggerElement, // action button that triggered this
+    formattedFields,
+    updateFieldValues,
+    integrationData: stripeConfig
+  } = actionData;
+
+  // sync fields to BE
+  await syncStripeFieldChanges(client, formattedFields, stripeConfig);
+
+  // setup any payment method on this step
+  if (actionData.targetElement) {
+    const payMethodResult = await setupPaymentMethod(
+      actionData,
+      false,
+      stripePromise
+    );
+    if (payMethodResult) {
+      // error
+      return payMethodResult;
+    }
+  }
+
+  // Now collect payment or do stripe checkout
+  try {
+    const stripe: any = await (stripePromise ?? getStripe());
+    const checkoutType = stripeConfig.metadata.checkout_type ?? 'custom';
+    if (checkoutType === 'stripe') {
+      // stripe checkout
+      // If the urls are not supplied, default to the current step
+      const successUrl =
+        triggerElement?.properties?.success_url || window.location.href;
+      const cancelUrl =
+        triggerElement?.properties?.cancel_url || window.location.href;
+      const { checkout_url: checkoutUrl } = await client.createCheckoutSession(
+        successUrl,
+        cancelUrl
+      );
+      // preserve browser back button function to current page/step
+      window.location.href = checkoutUrl;
+    } else if (checkoutType === 'custom') {
+      // custom payment from Feathery
+      const { intent_secret: paymentIntentSecret } =
+        await client.createPayment();
+      // No paymentIntentSecret means no payment will be done
+      if (paymentIntentSecret) {
+        const result = await stripe.confirmCardPayment(paymentIntentSecret);
+        if (result.error)
+          return {
+            errorField: triggerElement,
+            errorMessage: result.error.message
+          };
+        else {
+          // Complete the payment (clears fields, sets paid indicator)
+          const { field_values: newFieldValues } =
+            await client.paymentComplete();
+
+          // BE is the source of truth here.  Update fieldValues.
+          // This will clear the selected product hidden fields and the total hidden field
+          // as well as set the has_paid field.
+          updateFieldValues(newFieldValues);
+        }
+      }
+    }
+  } catch (e) {
+    return {
+      errorField: triggerElement,
+      errorMessage: 'Payment Error'
+    };
   }
   return null;
 }

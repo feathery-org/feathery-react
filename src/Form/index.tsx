@@ -44,12 +44,13 @@ import {
   sendSMSCode,
   smsLogin
 } from '../integrations/stytch';
-import { getPlaidFieldValues, openPlaidLink } from '../integrations/plaid';
+import { openPlaidLink } from '../integrations/plaid';
 import {
   usePayments,
   toggleProductSelection,
   isProductSelected,
-  setupPaymentMethodAndPay
+  setupPaymentMethod,
+  collectPayment
 } from '../integrations/stripe';
 import {
   ActionData,
@@ -94,6 +95,7 @@ import {
   ACTION_LOGOUT,
   ACTION_NEXT,
   ACTION_REMOVE_REPEATED_ROW,
+  ACTION_COLLECT_PAYMENT,
   ACTION_SELECT_PRODUCT,
   ACTION_SEND_MAGIC_LINK,
   ACTION_SEND_SMS,
@@ -101,9 +103,14 @@ import {
   ACTION_TRIGGER_PLAID,
   ACTION_URL,
   ACTION_VERIFY_SMS,
+  ACTIONS_TO_VALIDATE,
   shouldValidateStep,
-  SUBMITTABLE_ACTIONS
+  SUBMITTABLE_ACTIONS,
+  ACTION_TRIGGER_ARGYLE,
+  REQUIRED_FLOW_ACTIONS,
+  hasFlowActions
 } from '../utils/elementActions';
+import { openArgyleLink } from '../integrations/argyle';
 
 export interface Props {
   formName: string;
@@ -150,6 +157,24 @@ const findSubmitButton = (step: any) =>
         SUBMITTABLE_ACTIONS.includes(action.type) && action.submit
     )
   );
+const findEnterButton = (step: any) => {
+  const buttons = step.buttons;
+  // Enter should first trigger a submittable button
+  const target = buttons.find((b: any) =>
+    b.properties.actions.some(
+      (action: any) =>
+        SUBMITTABLE_ACTIONS.includes(action.type) && action.submit
+    )
+  );
+  if (target) return target;
+
+  // Otherwise it should trigger actions that use a step field
+  return buttons.find((b: any) =>
+    b.properties.actions.some((action: any) =>
+      ACTIONS_TO_VALIDATE.includes(action.type)
+    )
+  );
+};
 
 function Form({
   _internalId,
@@ -208,8 +233,8 @@ function Form({
   const [integrations, setIntegrations] = useState<null | Record<string, any>>(
     null
   );
-  const plaidLinked = useRef<boolean>(false);
-  const [hasPlaid, setHasPlaid] = useState(false);
+  const flowCompleted = useRef(false);
+  const [stepHasRequiredFlow, setStepHasRequiredFlow] = useState(false);
   const [gMapFilled, setGMapFilled] = useState(false);
   const [gMapBlurKey, setGMapBlurKey] = useState('');
   const [gMapTimeoutId, setGMapTimeoutId] = useState<NodeJS.Timeout | number>(
@@ -363,16 +388,15 @@ function Form({
       focusRef.current = null;
     }
 
-    setHasPlaid(
-      !!activeStep.buttons.find((b: any) =>
-        b.properties.actions.some(
-          (action: any) => action.type === ACTION_TRIGGER_PLAID
+    setStepHasRequiredFlow(
+      activeStep.buttons.some((b: any) =>
+        b.properties.actions.some((action: any) =>
+          REQUIRED_FLOW_ACTIONS.includes(action.type)
         )
       )
     );
-    plaidLinked.current = false;
     setGMapFilled(
-      activeStep.servar_fields.find(
+      activeStep.servar_fields.some(
         (f: any) => f.servar.type === 'gmap_line_1' && fieldValues[f.servar.key]
       )
     );
@@ -404,10 +428,10 @@ function Form({
       e.preventDefault();
       e.stopPropagation();
       // Submit steps by pressing `Enter`
-      const submitButton = findSubmitButton(activeStep);
-      if (submitButton) {
+      const enterButton = findEnterButton(activeStep);
+      if (enterButton) {
         // Simulate button click if available
-        buttonOnClick(submitButton);
+        buttonOnClick(enterButton);
       }
     },
     {
@@ -823,9 +847,6 @@ function Form({
     nextStepKey(activeStep.next_conditions, metadata);
 
   const submitStep = async ({ metadata, repeat = 0 }: any) => {
-    // Can't submit step until the user has gone through the Plaid flow if present
-    if (hasPlaid && !plaidLinked.current) return;
-
     const formattedFields = formatStepFields(activeStep, false);
     const trigger = lookUpTrigger(
       activeStep,
@@ -839,7 +860,7 @@ function Form({
         ({ servar: { type } }: any) => type === 'payment_method'
       )
     ) {
-      const errors: any = await handleStepSubmissionPayment(formattedFields);
+      const errors: any = await setupStepPaymentMethod(formattedFields);
       const { errorMessage, errorField } = errors;
       if (errorMessage && errorField) {
         await setFormElementError({
@@ -859,22 +880,11 @@ function Form({
 
     // Execute user-provided onSubmit function if present
     if (typeof onSubmit === 'function') {
-      const integrationData = {};
-      if (initState.authId) {
-        (integrationData as any).firebaseAuthId = initState.authId;
-      }
-
-      const allFields = formatAllFormFields(steps, true);
-      const plaidFieldValues = getPlaidFieldValues(
-        integrations?.plaid,
-        fieldValues
-      );
       let stepChanged = false;
       await runUserCallback(onSubmit, () => ({
-        // @ts-expect-error TS(2698): Spread types may only be created from object types... Remove this comment to see the full error message
-        submitFields: { ...formattedFields, ...plaidFieldValues },
+        submitFields: formattedFields,
         elementRepeatIndex: repeat,
-        fields: allFields,
+        fields: formatAllFormFields(steps, true),
         lastStep: !getNextStepKey(metadata),
         setErrors: (
           errors: Record<string, string | { index: number; message: string }>
@@ -902,7 +912,7 @@ function Form({
           stepChanged = changeStep(stepKey, activeStep.key, steps, history);
         },
         firstStepSubmitted: first,
-        integrationData,
+        integrationData: { authProviderId: initState.authId ?? '' },
         trigger
       }));
       if (stepChanged) return;
@@ -959,27 +969,71 @@ function Form({
   // usePayments (Stripe)
   const [getCardElement, setCardElement] = usePayments();
 
-  async function handleStepSubmissionPayment(formattedFields: any) {
+  async function setupStepPaymentMethod(formattedFields: any) {
     for (let i = 0; i < activeStep.servar_fields.length; i++) {
       const servar = activeStep.servar_fields[i].servar;
       if (servar.type === 'payment_method') {
         const integrationData = integrations?.stripe;
         const actionData: ActionData = {
-          fieldVal: fieldValues[servar.key],
           servar,
           client,
           formattedFields,
           updateFieldValues,
-          step: activeStep,
           integrationData,
           targetElement: getCardElement(servar.key)
         };
-        const actionResult = await setupPaymentMethodAndPay(actionData);
+        const actionResult = await setupPaymentMethod(actionData);
         return actionResult ?? {};
       }
     }
-
     return {};
+  }
+
+  async function collectPaymentAction(triggerElement: any) {
+    const errorCallback = getErrorCallback({
+      // could be container or button but model as button for the time being...
+      trigger: lookUpTrigger(activeStep, triggerElement.id, 'container')
+    });
+    // validate all step fields and buttons.  Must be valid before payment.
+    const { invalid, inlineErrors: newInlineErrors } = validateElements({
+      elements: [...activeStep.servar_fields, ...activeStep.buttons],
+      triggerErrors: true,
+      errorType: formSettings.errorType,
+      formRef,
+      errorCallback,
+      setInlineErrors
+    });
+    if (invalid) return false;
+
+    // payment/checkout
+    const pm = activeStep.servar_fields.find(
+      ({ servar: { type } }: any) => type === 'payment_method'
+    );
+    const errors = await collectPayment({
+      triggerElement,
+      servar: pm ? pm.servar : null,
+      client,
+      formattedFields: formatStepFields(activeStep, false),
+      updateFieldValues,
+      integrationData: integrations?.stripe,
+      targetElement: pm ? getCardElement(pm.servar.key) : null
+    });
+    if (errors) {
+      const { errorMessage, errorField } = errors;
+      await setFormElementError({
+        formRef,
+        errorCallback,
+        fieldKey: errorField.servar ? errorField.servar.key : errorField.id,
+        message: errorMessage,
+        servarType: errorField.servar ? errorField.servar.type : '',
+        errorType: formSettings.errorType,
+        inlineErrors: newInlineErrors,
+        setInlineErrors: setInlineErrors,
+        triggerErrors: true
+      });
+      return false;
+    }
+    return true;
   }
 
   async function goToNewStep({
@@ -1116,6 +1170,7 @@ function Form({
 
     if (shouldValidateStep(actions)) {
       setAutoValidate(true);
+
       const trigger = lookUpTrigger(activeStep, element.id, elementType);
       // run default form validation
       const { invalid } = validateElements({
@@ -1131,6 +1186,27 @@ function Form({
         return;
       }
     }
+
+    // Do not proceed until user has gone through required flows
+    if (
+      !hasFlowActions(actions) &&
+      stepHasRequiredFlow &&
+      !flowCompleted.current
+    )
+      return;
+
+    const flowOnSuccess = (index: number) => async () => {
+      flowCompleted.current = true;
+      elementClicks[id] = false;
+      await runElementActions({
+        actions: actions.slice(index + 1),
+        element,
+        elementType,
+        setElementError,
+        textSpanStart,
+        textSpanEnd
+      });
+    };
 
     for (let i = 0; i < actions.length; i++) {
       const action = actions[i];
@@ -1150,34 +1226,16 @@ function Form({
           })();
         }
       } else if (type === ACTION_TRIGGER_PLAID) {
-        if (!plaidLinked.current) {
-          await openPlaidLink(
-            client,
-            async () => {
-              plaidLinked.current = true;
-              elementClicks[id] = false;
-              if (activeStep.servar_fields.length === 0) {
-                await submitStep({
-                  metadata: {
-                    elementType,
-                    elementIDs: [element.id]
-                  },
-                  repeat: element.repeat || 0
-                });
-              }
-              await runElementActions({
-                actions: actions.slice(i + 1),
-                element,
-                elementType,
-                setElementError,
-                textSpanStart,
-                textSpanEnd
-              });
-            },
-            updateFieldValues
-          );
-          break;
-        }
+        await openPlaidLink(client, flowOnSuccess(i), updateFieldValues);
+        break;
+      } else if (type === ACTION_TRIGGER_ARGYLE) {
+        await openArgyleLink(
+          client,
+          flowOnSuccess(i),
+          integrations?.argyle,
+          updateFieldValues
+        );
+        break;
       } else if (type === ACTION_URL) {
         const url = action.url;
         action.open_tab ? openTab(url) : (location.href = url);
@@ -1195,15 +1253,14 @@ function Form({
       } else if (type === ACTION_SEND_SMS) {
         const phoneNum = fieldValues[action.auth_target_field_key] as string;
         if (validators.phone(phoneNum)) {
-          const authFn = isAuthStytch()
-            ? () => sendSMSCode({ fieldVal: phoneNum })
-            : () =>
-                sendFirebaseLogin({
-                  fieldVal: phoneNum,
-                  servar: null,
-                  method: 'phone'
-                });
-          await authFn();
+          // Don't block to make potential subsequent navigation snappy
+          if (isAuthStytch()) sendSMSCode({ fieldVal: phoneNum });
+          else
+            sendFirebaseLogin({
+              fieldVal: phoneNum,
+              servar: null,
+              method: 'phone'
+            });
         } else {
           setElementError(
             'A valid phone number is needed to send your login code.'
@@ -1226,15 +1283,14 @@ function Form({
       } else if (type === ACTION_SEND_MAGIC_LINK) {
         const email = fieldValues[action.auth_target_field_key] as string;
         if (validators.email(email)) {
-          const authFn = isAuthStytch()
-            ? () => sendMagicLink({ fieldVal: email })
-            : () =>
-                sendFirebaseLogin({
-                  fieldVal: email,
-                  servar: null,
-                  method: 'email'
-                });
-          await authFn();
+          // Don't block to make potential subsequent navigation snappy
+          if (isAuthStytch()) sendMagicLink({ fieldVal: email });
+          else
+            sendFirebaseLogin({
+              fieldVal: email,
+              servar: null,
+              method: 'email'
+            });
         } else {
           setElementError('A valid email is needed to send your magic link.');
           break;
@@ -1274,7 +1330,9 @@ function Form({
           }
         }
       } else if (type === ACTION_BACK) await goToPreviousStep();
-      else if (type === ACTION_SELECT_PRODUCT) {
+      else if (type === ACTION_COLLECT_PAYMENT) {
+        if (!(await collectPaymentAction(element))) break;
+      } else if (type === ACTION_SELECT_PRODUCT) {
         await toggleProductSelection({
           productId: action.product_id,
           selectedProductIdFieldId: action.selected_product_id_field,
