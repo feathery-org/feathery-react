@@ -302,11 +302,6 @@ describe('Stripe integration helper', () => {
         }
       });
       const mockUpdateFieldValues = jest.fn();
-      const fieldValues = {
-        [selectedProductIdFieldKey]: {
-          [productId]: 0
-        }
-      };
       const integrations = {
         stripe: {
           metadata: {
@@ -322,7 +317,6 @@ describe('Stripe integration helper', () => {
         productId,
         selectedProductIdFieldId,
         selectedProductIdFieldKey,
-        fieldValues,
         updateFieldValues: mockUpdateFieldValues,
         client: mockClient,
         integrations

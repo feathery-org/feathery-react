@@ -245,7 +245,6 @@ export async function toggleProductSelection({
   productId,
   selectedProductIdFieldId,
   selectedProductIdFieldKey,
-  fieldValues,
   updateFieldValues,
   client,
   integrations
@@ -253,7 +252,6 @@ export async function toggleProductSelection({
   productId: string;
   selectedProductIdFieldId: string;
   selectedProductIdFieldKey: string;
-  fieldValues: { [_: string]: any };
   updateFieldValues: any;
   client: any;
   integrations: null | Record<string, any>;
@@ -266,7 +264,7 @@ export async function toggleProductSelection({
     integrations?.stripe
   ) {
     // get the value from the hidden field
-    const fieldVal = fieldValues[selectedProductIdFieldKey] || {};
+    const fieldVal: any = fieldValues[selectedProductIdFieldKey] || {};
     const quantity = fieldVal[productId];
     // toggling the quantity 0/1 using xor
     let newQuantity = quantity ^ 1;

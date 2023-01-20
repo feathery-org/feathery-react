@@ -1337,7 +1337,6 @@ function Form({
           productId: action.product_id,
           selectedProductIdFieldId: action.selected_product_id_field,
           selectedProductIdFieldKey: action.selected_product_id_field_key,
-          fieldValues,
           updateFieldValues,
           client,
           integrations
