@@ -1,62 +1,29 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
-import Spinner from '../elements/components/Spinner';
-import { isHrefFirebaseMagicLink } from '../integrations/firebase';
+import { authState } from '../elements/components/FeatheryAuthGate';
 import { getAuthIntegrationMetadata } from '../integrations/utils';
-import { getStytchJwt } from '../utils/browser';
 import { setUrlStepHash } from '../utils/formHelperFunctions';
 import { initInfo } from '../utils/init';
 
 const useAuth = ({
-  setLoaders,
   setStepKey,
   steps,
   integrations,
   initialStep
 }: {
-  setLoaders: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   setStepKey: React.Dispatch<React.SetStateAction<string>>;
   steps: any;
   integrations: null | Record<string, any>;
   initialStep: string;
 }) => {
   const history = useHistory();
-  // This is a flag so we only redirect to the login start step immediately
-  // after auth, not during other form navigation
-  const redirectAfterLoginRef = useRef<boolean>(false);
   const authId = initInfo().authId;
-
-  // This hook detects the login process then sets the redirect flag
-  // & auth loader
-  useEffect(() => {
-    if (
-      window.location.hostname !== 'localhost' &&
-      // We should set loader for new auth sessions
-      (window.location.search.includes('stytch_token_type') ||
-        isHrefFirebaseMagicLink() ||
-        // and existing ones
-        getStytchJwt())
-    ) {
-      redirectAfterLoginRef.current = true;
-      setLoaders((loaders: any) => ({
-        ...loaders,
-        auth: {
-          showOn: 'full_page',
-          loader: (
-            <div style={{ height: '10vh', width: '10vh' }}>
-              <Spinner />
-            </div>
-          )
-        }
-      }));
-    }
-  }, []);
 
   // This hook sets the step key & hash once auth has been completed
   useEffect(() => {
     if (
       authId &&
-      redirectAfterLoginRef.current &&
+      authState.redirectAfterLogin &&
       Object.keys(steps).length &&
       integrations &&
       Object.keys(integrations).length
@@ -64,9 +31,9 @@ const useAuth = ({
       const stepName = getNextAuthStep();
       setStepKey(stepName);
       setUrlStepHash(history, steps, stepName);
-      redirectAfterLoginRef.current = false;
+      authState.redirectAfterLogin = false;
     }
-  }, [redirectAfterLoginRef.current, steps, integrations, authId]);
+  }, [authState.redirectAfterLogin, steps, integrations, authId]);
 
   // This hook is needed to prevent a bug on localhost. Cookies can't be
   // distinguished by port and stytch uses cookie to expose JWT. So, if one is
@@ -80,11 +47,10 @@ const useAuth = ({
     // We can't just check to see if there is no stytch because that would
     // improperly clear the loaders when stytch isn't configured but firebase is
     const metadata = getAuthIntegrationMetadata(integrations);
-    if (redirectAfterLoginRef.current && integrations && !metadata) {
-      redirectAfterLoginRef.current = false;
-      setLoaders({});
+    if (authState.redirectAfterLogin && integrations && !metadata) {
+      authState.redirectAfterLogin = false;
       // We also need to set the step & hash because both those actions were
-      // blocked by the `if (redirectAfterLoginRef.current) return;` early
+      // blocked by the `if (authState.redirectAfterLogin) return;` early
       // return in Form's fetchSession.then fn call
       setStepKey(initialStep);
       setUrlStepHash(history, steps, initialStep);
@@ -119,7 +85,7 @@ const useAuth = ({
     let nextStep = '';
     const userAuthed = Boolean(initInfo().authId);
 
-    if (userAuthed && redirectAfterLoginRef.current) {
+    if (userAuthed && authState.redirectAfterLogin) {
       nextStep = findStepName(metadata.login_step);
     } else if (!userAuthed && nextStepIsProtected)
       nextStep = findStepName(metadata.logout_step);
@@ -127,14 +93,7 @@ const useAuth = ({
     return nextStep;
   };
 
-  return {
-    getNextAuthStep,
-    // Need to return the ref rather than the value because otherwise the value
-    // is stale. This prevents navigation to any other step because the code
-    // sees the flag as true so it sets the next step to the login start step,
-    // rather than the step the user is trying to nav to
-    redirectAfterLoginRef
-  };
+  return getNextAuthStep;
 };
 
 export default useAuth;

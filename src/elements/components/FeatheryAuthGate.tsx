@@ -4,19 +4,25 @@ import { Props as FormProps } from '../../Form';
 import { getStytchJwt } from '../../utils/browser';
 import { getAuthClient, initInfo, initState } from '../../utils/init';
 import { authHookCb } from '../../integrations/stytch';
+import Client from '../../utils/client';
+import { isAuthStytch } from '../../integrations/utils';
+import Spinner from './Spinner';
+import { isHrefFirebaseMagicLink } from '../../integrations/firebase';
 /** TODO: These next 2 should maybe be dynamically imported, but having trouble with that
  * combined 6.9k gzipped, so OK for now
  */
 import { useIdleTimer } from 'react-idle-timer';
 import throttle from 'lodash.throttle';
-import Client from '../../utils/client';
-import { isAuthStytch } from '../../integrations/utils';
 
 const TEN_SECONDS_IN_MILLISECONDS = 1000 * 10;
 const FIVE_MINUTES_IN_MILLISECONDS = 1000 * 60 * 5;
 
 export const authState = {
+  // This is a flag so we only redirect to the login start step immediately
+  // after auth, not during other form navigation
+  redirectAfterLogin: false,
   sentAuth: false,
+  clearLoader: () => {},
   onLogin: () => {},
   onLogout: () => {}
 };
@@ -46,6 +52,7 @@ const FeatheryAuthGate = ({
   const hasAuthedRef = useRef(false);
   // Use this render state to force re-evaluation of initState, since initState isn't reactive as-is
   const [render, setRender] = useState(true);
+  const [showLoader, setShowLoader] = useState(false);
   authHookCb.cb = () => setRender((prev) => !prev);
 
   const logoutActions = () => {
@@ -55,18 +62,30 @@ const FeatheryAuthGate = ({
   };
 
   useEffect(() => {
+    if (
+      window.location.hostname !== 'localhost' &&
+      // We should set loader for new auth sessions
+      (window.location.search.includes('stytch_token_type') ||
+        isHrefFirebaseMagicLink() ||
+        // and existing ones
+        getStytchJwt())
+    ) {
+      authState.redirectAfterLogin = true;
+      setShowLoader(true);
+    }
+
     const { location, history } = window;
     if (whitelistPath && location.pathname !== whitelistPath) {
       // If user is not at the URL whitelisted for auth, take them there for login
       history.replaceState(null, '', whitelistPath);
     }
 
-    // Register onLogin cb so it can be called by Client.submitAuthInfo,
-    // regardless of whether there's an existing session or not
+    authState.clearLoader = () => setShowLoader(false);
+    // Register onLogin cb so it can be called by Client.submitAuthInfo
     authState.onLogin = onLogin;
     authState.onLogout = onLogout;
 
-    // If user passes authId as a prop we need to submit it
+    // If user passes authId as a prop, we need to submit it
     if (authIdProp) {
       const defaultClient = new Client();
       defaultClient.submitAuthInfo({
@@ -81,17 +100,9 @@ const FeatheryAuthGate = ({
     const authClient = getAuthClient();
 
     const unsubscribe = authClient.session.onChange((newSession: any) => {
-      if (hasAuthedRef.current) {
-        if (newSession === null) logoutActions();
-        return;
-      }
-      // This onChange is just meant to set the token on initial login. It is
-      // not to cache the token. The token is retrieved directly every time it
-      // is needed by the function getStytchJwt
-      const newToken =
-        newSession?.stytch_session?.session_jwt ?? getStytchJwt();
-      if (!newToken) return;
-      hasAuthedRef.current = true;
+      if (hasAuthedRef.current && newSession === null) {
+      } else if (newSession?.stytch_session?.session_jwt ?? getStytchJwt())
+        hasAuthedRef.current = true;
     });
 
     return unsubscribe;
@@ -131,7 +142,31 @@ const FeatheryAuthGate = ({
     timeout: TEN_SECONDS_IN_MILLISECONDS
   });
 
-  const form = <Form {...formProps} />;
+  const form = (
+    <>
+      {showLoader && (
+        <div
+          style={{
+            // TODO: what should the background color be?
+            backgroundColor: '#FFF',
+            // backgroundColor: `#${activeStep?.default_background_color ?? 'FFF'}`,
+            position: 'fixed',
+            height: '100vh',
+            width: '100vw',
+            zIndex: 50,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center'
+          }}
+        >
+          <div style={{ height: '10vh', width: '10vh' }}>
+            <Spinner />
+          </div>
+        </div>
+      )}
+      <Form {...formProps} />
+    </>
+  );
   if (!initInfo().authId || !formCompleted) {
     return !fullPageLogin ? (
       form

@@ -266,8 +266,7 @@ function Form({
     );
   }, [loaders]);
 
-  const { getNextAuthStep, redirectAfterLoginRef } = useAuth({
-    setLoaders,
+  const getNextAuthStep = useAuth({
     setStepKey,
     steps,
     integrations,
@@ -632,6 +631,7 @@ function Form({
     if (stepChanged) return;
 
     clearLoaders();
+    authState.clearLoader();
     const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
     setCurDepth(curDepth);
     setMaxDepth(maxDepth);
@@ -693,7 +693,7 @@ function Form({
             clientInstance.submitCustom(initialValues, false);
 
           // User is authenticating. auth hook will set the initial stepKey once auth has finished
-          if (redirectAfterLoginRef.current) return;
+          if (authState.redirectAfterLogin) return;
 
           const newKey = getInitialStep({ initialStepId, steps, formName });
           setUrlStepHash(history, steps, newKey);
@@ -1081,6 +1081,7 @@ function Form({
           authState.sentAuth &&
           authIntegration?.auth_gate_steps.length &&
           !authIntegration?.auth_gate_steps.includes(steps[stepKey].id);
+        // eventData.completed = formCompleted || !isTerminalStepAuth;
         eventData.completed = !isTerminalStepAuth;
       }
       client
@@ -1297,7 +1298,7 @@ function Form({
           hasErr = true;
         });
         if (hasErr) break;
-        else redirectAfterLoginRef.current = true;
+        else authState.redirectAfterLogin = true;
       } else if (type === ACTION_SEND_MAGIC_LINK) {
         const email = fieldValues[action.auth_target_field_key] as string;
         if (validators.email(email)) {
@@ -1499,39 +1500,35 @@ function Form({
     runUserCallback(onFormComplete).then(redirectForm);
   }, [anyFinished]);
 
-  const wholePageLoader = stepLoader && (
-    <div
-      style={{
-        backgroundColor: `#${activeStep?.default_background_color ?? 'FFF'}`,
-        position: 'fixed',
-        height: '100vh',
-        width: '100vw',
-        zIndex: 50,
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center'
-      }}
-    >
-      {stepLoader}
-    </div>
-  );
-
   if (formSettings.formOff) {
     // Form is turned off
     return <FormOff />;
   } else if (anyFinished) {
     return completeState ?? null;
   } else if (!activeStep) {
-    // Form has not been loaded yet, but we need to display
-    // loader if waiting on auth
-    return wholePageLoader;
+    return null;
   }
 
   const isModal = display === 'modal';
   const addChin = formSettings.showBrand && !isFill(activeStep.height);
   return (
     <>
-      {wholePageLoader}
+      {stepLoader && (
+        <div
+          style={{
+            backgroundColor: `#${activeStep?.default_background_color}`,
+            position: 'fixed',
+            height: '100vh',
+            width: '100vw',
+            zIndex: 50,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center'
+          }}
+        >
+          {stepLoader}
+        </div>
+      )}
       <ReactPortal portal={isModal}>
         <BootstrapForm
           {...formProps}
