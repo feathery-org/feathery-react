@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useHistory } from 'react-router-dom';
 import Spinner from '../elements/components/Spinner';
 import { isHrefFirebaseMagicLink } from '../integrations/firebase';
+import { getAuthIntegrationMetadata } from '../integrations/utils';
 import { getStytchJwt } from '../utils/browser';
 import { setUrlStepHash } from '../utils/formHelperFunctions';
 import { initInfo } from '../utils/init';
@@ -78,7 +79,7 @@ const useAuth = ({
   useEffect(() => {
     // We can't just check to see if there is no stytch because that would
     // improperly clear the loaders when stytch isn't configured but firebase is
-    const metadata = getMetadata(integrations);
+    const metadata = getAuthIntegrationMetadata(integrations);
     if (redirectAfterLoginRef.current && integrations && !metadata) {
       redirectAfterLoginRef.current = false;
       setLoaders({});
@@ -99,7 +100,7 @@ const useAuth = ({
    * no transition to make
    */
   const getNextAuthStep = (nextStepCandidate?: any): string => {
-    const metadata = getMetadata(integrations);
+    const metadata = getAuthIntegrationMetadata(integrations);
     const authSteps = metadata?.auth_gate_steps ?? [];
     const nextStepIsProtected = nextStepCandidate
       ? authSteps.includes(nextStepCandidate.id)
@@ -135,8 +136,5 @@ const useAuth = ({
     redirectAfterLoginRef
   };
 };
-
-const getMetadata = (integrations: null | Record<string, any>) =>
-  integrations?.stytch?.metadata ?? integrations?.firebase?.metadata;
 
 export default useAuth;

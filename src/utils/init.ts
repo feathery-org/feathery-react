@@ -6,10 +6,7 @@ import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient, featheryDoc } from './browser';
 import { rerenderAllForms } from './formHelperFunctions';
-import {
-  inferEmailLoginFromURL,
-  initializeIntegrations
-} from '../integrations/utils';
+import { inferEmailLoginFromURL } from '../integrations/utils';
 
 export type FeatheryFieldTypes =
   | null
@@ -38,17 +35,15 @@ type InitOptions = {
   userId?: string;
   preloadForms?: string[];
   userTracking?: 'cookie' | 'fingerprint';
-  // TODO: remove from here, move to auth gate
-  authId?: string;
   language?: string;
 } & DeprecatedOptions;
 
 type InitState = {
+  authId?: string;
   initialized: boolean;
   sdkKey: string;
   preloadForms: { [formName: string]: any };
   sessions: { [formName: string]: any };
-  globalIntegrations: { [integration: string]: any };
   fieldValuesInitialized: boolean;
   renderCallbacks: { [cbKey: string]: any };
   defaultErrors: Record<string, string>;
@@ -66,7 +61,6 @@ const initState: InitState = {
   language: '',
   preloadForms: [],
   sessions: {},
-  globalIntegrations: {},
   defaultErrors: {},
   // Since all field values are fetched with each session, only fetch field
   // values on the first session request
@@ -75,7 +69,6 @@ const initState: InitState = {
 };
 const optionsAsInitState: (keyof InitOptions & keyof InitState)[] = [
   'authClient',
-  'authId',
   'userId',
   'userTracking'
 ];
@@ -120,7 +113,6 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
     // Dynamically load libraries that must be client side
     global.scriptjsLoadPromise = import('scriptjs');
     global.webfontloaderPromise = import('webfontloader');
-    initializeGlobalIntegrations();
 
     // FingerprintJS.load cannot run server side
     if (!initState.userId) {
@@ -141,13 +133,6 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
     }
   }
 
-  if (initState.authId) {
-    initFormsPromise = initFormsPromise.then(() =>
-      defaultClient.submitAuthInfo({
-        authId: initState.authId
-      })
-    );
-  }
   initFormsPromise = initFormsPromise.then(() =>
     _fetchFormData(initState.preloadForms)
   );
@@ -208,13 +193,6 @@ function setValues(userVals: FieldValues, rerender = true): void {
   defaultClient.submitCustom(result);
 
   if (rerender) rerenderAllForms();
-}
-
-function initializeGlobalIntegrations() {
-  // how to handle error message?
-  const integrations = defaultClient.fetchGlobalIntegrations();
-  initState.globalIntegrations = integrations;
-  if (integrations) initializeIntegrations(integrations, defaultClient);
 }
 
 function setAuthClient(client: any): void {

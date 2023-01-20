@@ -54,7 +54,8 @@ import {
   ActionData,
   trackEvent,
   inferAuthLogout,
-  isAuthStytch
+  isAuthStytch,
+  getAuthIntegrationMetadata
 } from '../integrations/utils';
 import DevNavBar from './components/DevNavBar';
 import Spinner from '../elements/components/Spinner';
@@ -108,6 +109,7 @@ import {
   hasFlowActions
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
+import { authState } from '../elements/components/FeatheryAuthGate';
 
 export interface Props {
   formName: string;
@@ -683,6 +685,7 @@ function Form({
         // @ts-expect-error TS(2345): Argument of type 'Promise<any[]>' is not assignabl... Remove this comment to see the full error message
         .fetchSession(formPromise, true)
         .then(([session, steps]) => {
+          initState.sessions[formName] = session;
           updateBackNavMap(session.back_nav_map);
           setIntegrations(session.integrations);
           setFormCompleted(session.form_completed);
@@ -1070,7 +1073,16 @@ function Form({
         b.properties.actions.some((action: any) => action.type === ACTION_NEXT)
       );
       const terminalStep = !hasNext && nextStep.next_conditions.length === 0;
-      if (terminalStep) eventData.completed = true;
+      if (terminalStep) {
+        const authIntegration = getAuthIntegrationMetadata(integrations);
+        // Completed should be false if it is a 'terminal step' in the middle of
+        // a login flow with steps configured for after login
+        const isTerminalStepAuth =
+          authState.sentAuth &&
+          authIntegration?.auth_gate_steps.length &&
+          !authIntegration?.auth_gate_steps.includes(steps[stepKey].id);
+        eventData.completed = !isTerminalStepAuth;
+      }
       client
         .registerEvent(eventData, submitPromise)
         .then(() => updateBackNavMap({ [redirectKey]: activeStep.key }));

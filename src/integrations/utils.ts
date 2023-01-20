@@ -14,6 +14,7 @@ import { getAuthClient, initState } from '../utils/init';
 import Client from '../utils/client';
 import { rerenderAllForms } from '../utils/formHelperFunctions';
 import { installArgyle } from './argyle';
+import { authState } from '../elements/components/FeatheryAuthGate';
 
 const IMPORTED_URLS = new Set();
 
@@ -46,10 +47,9 @@ export function dynamicImport(
 }
 
 export async function initializeIntegrations(
-  integs: any,
+  integs: Record<string, any>,
   featheryClient: Client
 ) {
-  // const isAuthIntegActive = Boolean(integs.stytch || integs.firebase);
   await Promise.all([
     installArgyle(!!integs.argyle),
     installPlaid(!!integs.plaid),
@@ -58,7 +58,6 @@ export async function initializeIntegrations(
     installStripe(integs.stripe),
     installSegment(integs.segment),
     installGoogleAnalytics(integs['google-analytics'])
-    // installIdleTimer(isAuthIntegActive)
   ]);
 
   const gtm = integs['google-tag-manager'];
@@ -66,30 +65,6 @@ export async function initializeIntegrations(
   if (integs.firebase || integs.stytch)
     return inferEmailLoginFromURL(featheryClient);
 }
-
-// let idleTimerPromise: any = null;
-// const installIdleTimer = (isAuthIntegActive: boolean) => {
-//   if (idleTimerPromise) return idleTimerPromise;
-//   else if (!isAuthIntegActive) return Promise.resolve();
-//   else {
-//     $script(
-//       'https://unpkg.com/browse/react-idle-timer@5.4.2/dist/index.esm.js',
-//       'idleTimer'
-//     );
-//     $script.ready('idleTimer', (arg) => {
-//       debugger;
-//     });
-// idleTimerPromise = dynamicImport(
-//   'https://unpkg.com/browse/react-idle-timer@5.4.2/dist/index.esm.js'
-// ).then((arg1, arg2) => {
-//   const x = global;
-//   debugger;
-// });
-// const x = global;
-// debugger;
-//     return idleTimerPromise;
-//   }
-// };
 
 export function inferEmailLoginFromURL(featheryClient: Client) {
   const queryParams = new URLSearchParams(window.location.search);
@@ -112,6 +87,7 @@ export function inferAuthLogout() {
   if (!logout) return;
 
   logout().then(() => {
+    authState.onLogout();
     initState.authId = undefined;
     rerenderAllForms();
   });
@@ -126,6 +102,12 @@ export function isAuthStytch() {
   // Still check global.Stytch for back compat, if customer is using old package.
   // TODO: remove the global.Stytch part of this || once the new package has been out for longer
   return global.Stytch || isAuthClientStytch;
+}
+
+export function getAuthIntegrationMetadata(
+  integrations: null | Record<string, any>
+): undefined | any {
+  return integrations?.stytch?.metadata ?? integrations?.firebase?.metadata;
 }
 
 export interface ActionData {

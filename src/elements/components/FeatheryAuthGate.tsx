@@ -9,30 +9,28 @@ import { authHookCb } from '../../integrations/stytch';
  */
 import { useIdleTimer } from 'react-idle-timer';
 import throttle from 'lodash.throttle';
+import Client from '../../utils/client';
+import { isAuthStytch } from '../../integrations/utils';
 
 const TEN_SECONDS_IN_MILLISECONDS = 1000 * 10;
 const FIVE_MINUTES_IN_MILLISECONDS = 1000 * 60 * 5;
 
-// NEED to look to see if form is completed. show onboarding if not
-// ned to store when sending the magic link. look to not set complete if flag is set, current step isn't auth gated and the form has auth gated steps
-
-// need to highlight both ways in the docs for this. onboarding form is part of
-// the form, and it is a new form sent in children where hide if complete is
-// checked on feathery dashboard and it doesn't get shown again
+export const authState = {
+  sentAuth: false,
+  onLogin: () => {},
+  onLogout: () => {}
+};
 
 const FeatheryAuthGate = ({
-  // authId,
+  authId: authIdProp,
   formProps,
-  // provide internal loading logic? not sure because this loading state
-  // is really meant to show a loader after auth is complete but the host app
-  // needs to fetch resources (i.e. fetchResources() in our App.tsx)
   whitelistPath,
   fullPageLogin,
   onLogin = () => {},
   onLogout = () => {},
   children
 }: {
-  // authId?:string;
+  authId?: string;
   formProps: FormProps;
   whitelistPath?: string;
   fullPageLogin?: boolean;
@@ -40,7 +38,7 @@ const FeatheryAuthGate = ({
   onLogout?: () => void;
   children: JSX.Element;
 }) => {
-  const authId = initInfo().authId;
+  const formCompleted = initInfo().sessions[formProps.formName]?.form_completed;
 
   // Need to use this flag because when doing magic link login the onChange
   // event doesn't seem to be added early enough to catch the first event which
@@ -57,8 +55,30 @@ const FeatheryAuthGate = ({
   };
 
   useEffect(() => {
+    const { location, history } = window;
+    if (whitelistPath && location.pathname !== whitelistPath) {
+      // If user is not at the URL whitelisted for auth, take them there for login
+      history.replaceState(null, '', whitelistPath);
+    }
+
+    // Register onLogin cb so it can be called by Client.submitAuthInfo,
+    // regardless of whether there's an existing session or not
+    authState.onLogin = onLogin;
+    authState.onLogout = onLogout;
+
+    // If user passes authId as a prop we need to submit it
+    if (authIdProp) {
+      const defaultClient = new Client();
+      defaultClient.submitAuthInfo({
+        authId: authIdProp
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthStytch()) return;
+
     const authClient = getAuthClient();
-    if (!authClient) return;
 
     const unsubscribe = authClient.session.onChange((newSession: any) => {
       if (hasAuthedRef.current) {
@@ -72,27 +92,10 @@ const FeatheryAuthGate = ({
         newSession?.stytch_session?.session_jwt ?? getStytchJwt();
       if (!newToken) return;
       hasAuthedRef.current = true;
-      // cb to fetch resources
-      onLogin();
     });
 
     return unsubscribe;
   }, [render]);
-
-  useEffect(() => {
-    // When reloading the page, with an existing session, the above onChange
-    // doesn't fire, so we need to just identify if there is an existing token
-    // and execute onAuth
-    if (getStytchJwt()) onLogin();
-  }, []);
-
-  useEffect(() => {
-    const { location, history } = window;
-    if (whitelistPath && location.pathname !== whitelistPath) {
-      // If user is not at the URL whitelisted for auth, take them there for login
-      history.replaceState(null, '', whitelistPath);
-    }
-  }, []);
 
   const onActive = useCallback(
     throttle(
@@ -129,7 +132,7 @@ const FeatheryAuthGate = ({
   });
 
   const form = <Form {...formProps} />;
-  if (!authId) {
+  if (!initInfo().authId || !formCompleted) {
     return !fullPageLogin ? (
       form
     ) : (
