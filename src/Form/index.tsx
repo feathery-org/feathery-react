@@ -39,6 +39,7 @@ import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { sendFirebaseLogin, verifySMSCode } from '../integrations/firebase';
 import {
+  authHookCb,
   googleOauthRedirect,
   sendMagicLink,
   sendSMSCode,
@@ -1061,6 +1062,11 @@ function Form({
       submitData || ['button', 'text'].includes(metadata.elementType);
     if (!redirectKey) {
       if (explicitNav) {
+        if (initState.sessions[formName]) {
+          initState.sessions[formName].form_completed = true;
+          setFormCompleted(true);
+          authHookCb.cb();
+        }
         eventData.completed = true;
         client.registerEvent(eventData, submitPromise).then(() => {
           setFinished(true);

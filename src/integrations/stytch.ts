@@ -39,7 +39,7 @@ export function installStytch(stytchConfig: any) {
 
         return dynamicImport(STYTCH_JS_URL).then(() => {
           const initializedClient = global.Stytch(stytchConfig.metadata.token);
-          // Trigger the useAuth cbs
+          // Trigger the auth cbs
           authHookCb.cb();
           setAuthClient(initializedClient);
           resolve(initializedClient);
