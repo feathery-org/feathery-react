@@ -29,11 +29,12 @@ const useAuth = ({
   // & auth loader
   useEffect(() => {
     if (
+      window.location.hostname !== 'localhost' &&
       // We should set loader for new auth sessions
-      window.location.search.includes('stytch_token_type') ||
-      isHrefFirebaseMagicLink() ||
-      // and existing ones
-      getStytchJwt()
+      (window.location.search.includes('stytch_token_type') ||
+        isHrefFirebaseMagicLink() ||
+        // and existing ones
+        getStytchJwt())
     ) {
       redirectAfterLoginRef.current = true;
       setLoaders((loaders: any) => ({
