@@ -23,6 +23,7 @@ import {
   getFieldValue,
   getInitialStep,
   getNewStepUrl,
+  getNonHiddenFields,
   getOrigin,
   getPrevStepUrl,
   lookUpTrigger,
@@ -203,7 +204,7 @@ function Form({
   const [first, setFirst] = useState(true);
 
   const [productionEnv, setProductionEnv] = useState(true);
-  const [steps, setSteps] = useState({});
+  const [steps, setSteps] = useState<Record<string, any>>({});
   const [activeStep, setActiveStep] = useState<any>(null);
   const [stepKey, setStepKey] = useState('');
   const [shouldScrollToTop, setShouldScrollToTop] = useState(false);
@@ -584,7 +585,6 @@ function Form({
       }));
 
   const getNewStep = async (newKey: any) => {
-    // @ts-expect-error TS(2531): Object is possibly 'null'.
     let newStep = steps[newKey];
 
     const nextStep = getNextAuthStep(newStep);
@@ -616,7 +616,6 @@ function Form({
       return {
         fields: formattedFields,
         previousStepName: activeStep?.key,
-        // @ts-expect-error TS(2531): Object is possibly 'null'.
         lastStep: steps[newKey].next_conditions.length === 0,
         numSteps: Object.keys(steps).length,
         firstStepLoaded: first,
@@ -879,7 +878,7 @@ function Form({
     if (typeof onSubmit === 'function') {
       let stepChanged = false;
       await runUserCallback(onSubmit, () => ({
-        submitFields: formattedFields,
+        submitFields: getNonHiddenFields(activeStep, formattedFields),
         elementRepeatIndex: repeat,
         fields: formatAllFormFields(steps, true),
         lastStep: !getNextStepKey(metadata),
@@ -1062,7 +1061,6 @@ function Form({
       }
     } else {
       setFirst(false);
-      // @ts-expect-error TS(2531): Object is possibly 'null'.
       const nextStep = steps[redirectKey];
       const hasNext = nextStep.buttons.some((b: any) =>
         b.properties.actions.some((action: any) => action.type === ACTION_NEXT)

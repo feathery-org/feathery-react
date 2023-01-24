@@ -2,6 +2,7 @@ import getRandomBoolean from './random';
 import { fieldValues, filePathMap, initInfo } from './init';
 import { toBase64 } from './image';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
+import { shouldElementHide } from './hideIfs';
 
 /**
  *
@@ -12,7 +13,10 @@ import { evalComparisonRule, ResolvedComparisonRule } from './logic';
  * @returns Formatted fields for the step
  */
 export const formatStepFields = (step: any, forUser = false) => {
-  const formattedFields = {};
+  const formattedFields: Record<
+    string,
+    { value: any; type: string; displayText: string }
+  > = {};
   step.servar_fields.forEach((field: any) => {
     const servar = field.servar;
     let value;
@@ -20,12 +24,10 @@ export const formatStepFields = (step: any, forUser = false) => {
     const val = fieldValues[servar.key];
     if (forUser && servar.type === 'signature') {
       value =
-        val !== null
-          ? // @ts-expect-error TS(2345): Argument of type 'string | number | boolean | stri... Remove this comment to see the full error message
-            Promise.resolve(val).then((file) => toBase64(file))
+        val !== null && (val instanceof File || val instanceof Promise)
+          ? Promise.resolve(val).then((file) => toBase64(file))
           : Promise.resolve('');
     } else value = val;
-    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     formattedFields[servar.key] = {
       value,
       type: servar.type,
@@ -74,6 +76,23 @@ export function getDefaultFieldValue(field: any) {
     default:
       return '';
   }
+}
+
+export function getNonHiddenFields(currentStep: any, formattedFields: any) {
+  const hiddenState: { key: string; hidden: boolean }[] =
+    currentStep.servar_fields.map((servar: any) => ({
+      key: servar.servar.key,
+      hidden: shouldElementHide({ element: servar })
+    }));
+  const nonHiddenFields: Record<
+    string,
+    { value: any; type: string; displayText: string }
+  > = {};
+  hiddenState.forEach(({ key, hidden }: any) => {
+    if (!hidden) nonHiddenFields[key] = formattedFields[key];
+  });
+
+  return nonHiddenFields;
 }
 
 // TODO: remove string[] for backcompat
