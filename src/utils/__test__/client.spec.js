@@ -278,51 +278,19 @@ describe('client', () => {
       );
       expect(result).toEqual(paymentMethodData);
     });
-    it('updateProductSelection properly calls the end point', async () => {
+    it('createPayment properly calls the end point', async () => {
       // Arrange
-      const stripeProductId = 'id';
-      const quantity = 1;
-      const fieldKey = 'some key';
+      const paymentGroupId = 'some payment group id';
       const body = {
         form_key: formKey,
         user_id: userId,
-        stripe_product_id: stripeProductId,
-        quantity,
-        field_id: fieldKey
-      };
-      const expResponse = 'some response';
-      mockFetch(expResponse);
-
-      // Act
-      const response = await client.updateProductSelection(
-        stripeProductId,
-        quantity,
-        fieldKey
-      );
-
-      // Assert
-      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/product/`, {
-        body: JSON.stringify(body),
-        cache: 'no-store',
-        headers: {
-          Authorization: 'Token sdkKey',
-          'Content-Type': 'application/json'
-        },
-        method: 'PUT'
-      });
-      expect(response).toEqual(expResponse);
-    });
-    it('createPayment properly calls the end point', async () => {
-      // Arrange
-      const body = {
-        form_key: formKey,
-        user_id: userId
+        payment_group_id: paymentGroupId
       };
       const intentSecret = 'intent_secret';
       mockFetch(intentSecret);
 
       // Act
-      const response = await client.createPayment();
+      const response = await client.createPayment(paymentGroupId);
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/payment/`, {
@@ -364,17 +332,20 @@ describe('client', () => {
       // Arrange
       const successUrl = 'success';
       const cancelUrl = 'cancel';
+      const paymentGroupId = 'some payment group id';
       const body = {
         form_key: formKey,
         user_id: userId,
         success_url: successUrl,
-        cancel_url: cancelUrl
+        cancel_url: cancelUrl,
+        payment_group_id: paymentGroupId
       };
       const expectedResponse = { checkout_url: 'checkoutUrl' };
       mockFetch(expectedResponse);
 
       // Act
       const response = await client.createCheckoutSession(
+        paymentGroupId,
         successUrl,
         cancelUrl
       );

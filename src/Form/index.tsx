@@ -47,8 +47,6 @@ import {
 import { openPlaidLink } from '../integrations/plaid';
 import {
   usePayments,
-  toggleProductSelection,
-  isProductSelected,
   setupPaymentMethod,
   collectPayment
 } from '../integrations/stripe';
@@ -96,7 +94,6 @@ import {
   ACTION_NEXT,
   ACTION_REMOVE_REPEATED_ROW,
   ACTION_COLLECT_PAYMENT,
-  ACTION_SELECT_PRODUCT,
   ACTION_SEND_MAGIC_LINK,
   ACTION_SEND_SMS,
   ACTION_STORE_FIELD,
@@ -1113,12 +1110,7 @@ function Form({
   const getButtonSelectionState = (el: ClickActionElement) => {
     const props = el.properties ?? {};
     return (props.actions ?? []).some((action: any) => {
-      if (action.type === ACTION_SELECT_PRODUCT) {
-        return isProductSelected({
-          productId: props.product_id,
-          selectedProductIdField: props.selected_product_id_field_key
-        });
-      } else if (action.type === ACTION_STORE_FIELD) {
+      if (action.type === ACTION_STORE_FIELD) {
         return Boolean(fieldValues[props.custom_store_field_key]);
       } else if (action.type === ACTION_CUSTOM) {
         return fieldValues[props.select_field_indicator_key];
@@ -1332,15 +1324,6 @@ function Form({
       } else if (type === ACTION_BACK) await goToPreviousStep();
       else if (type === ACTION_COLLECT_PAYMENT) {
         if (!(await collectPaymentAction(element))) break;
-      } else if (type === ACTION_SELECT_PRODUCT) {
-        await toggleProductSelection({
-          productId: action.product_id,
-          selectedProductIdFieldId: action.selected_product_id_field,
-          selectedProductIdFieldKey: action.selected_product_id_field_key,
-          updateFieldValues,
-          client,
-          integrations
-        });
       } else if (type === ACTION_STORE_FIELD) {
         const { custom_store_field_key: key, custom_store_value: value } =
           action;
