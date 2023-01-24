@@ -10,8 +10,8 @@ import TextAutocomplete from './TextAutocomplete';
 
 const MAX_TEXT_FIELD_LENGTH = 512;
 
-function escapeDefinitionChars(str: any) {
-  return str
+function escapeDefinitionChars(str: string | undefined) {
+  return (str ?? '')
     .replaceAll('0', '\\0')
     .replaceAll('a', '\\a')
     .replaceAll('b', '\\b')
@@ -33,8 +33,8 @@ function constraintChar(allowed: any) {
 
 function getTextFieldMask(servar: any) {
   const data = servar.metadata;
-  const prefix = escapeDefinitionChars(data.prefix || '');
-  const suffix = escapeDefinitionChars(data.suffix || '');
+  const prefix = escapeDefinitionChars(data.prefix);
+  const suffix = escapeDefinitionChars(data.suffix);
 
   let mask = '';
   if (data.mask) mask = data.mask;
