@@ -3,7 +3,6 @@ import { useHistory } from 'react-router-dom';
 import { authState } from '../elements/components/FeatheryAuthGate';
 import { getAuthIntegrationMetadata } from '../integrations/utils';
 import { setUrlStepHash } from '../utils/formHelperFunctions';
-import { initInfo } from '../utils/init';
 
 const useAuth = ({
   setStepKey,
@@ -17,7 +16,7 @@ const useAuth = ({
   initialStep: string;
 }) => {
   const history = useHistory();
-  const authId = initInfo().authId;
+  const authId = authState.authId;
 
   // This hook sets the step key & hash once auth has been completed
   useEffect(() => {
@@ -83,7 +82,7 @@ const useAuth = ({
       return step?.key ?? '';
     };
     let nextStep = '';
-    const userAuthed = Boolean(initInfo().authId);
+    const userAuthed = Boolean(authState.authId);
 
     if (userAuthed && authState.redirectAfterLogin) {
       nextStep = findStepName(metadata.login_step);

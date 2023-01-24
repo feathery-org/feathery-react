@@ -46,7 +46,8 @@ export function emailLogin(featheryClient: any) {
         .then((result: any) => {
           return featheryClient
             .submitAuthInfo({
-              authId: result.user.uid
+              authId: result.user.uid,
+              authEmail
             })
             .then((session: any) => {
               return session;

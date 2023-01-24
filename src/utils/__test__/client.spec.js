@@ -18,7 +18,7 @@ describe('client', () => {
       initInfo.mockReturnValue({
         sdkKey: 'sdkKey',
         userId: 'userId',
-        sessions: {},
+        cachedSessions: {},
         preloadForms: {}
       });
       global.fetch = jest.fn().mockResolvedValue({
@@ -55,7 +55,7 @@ describe('client', () => {
       initInfo.mockReturnValue({
         sdkKey: 'sdkKey',
         userId: 'userId',
-        sessions: {},
+        cachedSessions: {},
         preloadForms: {},
         fieldValuesInitialized: false
       });
@@ -200,7 +200,7 @@ describe('client', () => {
     initInfo.mockReturnValue({
       sdkKey: 'sdkKey',
       userId: 'userId',
-      sessions: {},
+      cachedSessions: {},
       preloadForms: {}
     });
     const formKey = 'formKey';

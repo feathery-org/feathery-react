@@ -4,6 +4,7 @@ type InternalState = {
   [formUuid: string]: {
     currentStep: any;
     client: any;
+    formCompleted: boolean;
     formName: string;
     formRef: React.MutableRefObject<any>;
     formSettings: any;

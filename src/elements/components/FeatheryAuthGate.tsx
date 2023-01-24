@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Form } from '../..';
-import { Props as FormProps } from '../../Form';
+import { JSForm, Props as FormProps } from '../../Form';
 import { getStytchJwt } from '../../utils/browser';
-import { getAuthClient, initInfo, initState } from '../../utils/init';
+import { defaultClient, getAuthClient, initInfo } from '../../utils/init';
 import { authHookCb } from '../../integrations/stytch';
-import Client from '../../utils/client';
 import { isAuthStytch } from '../../integrations/utils';
 import Spinner from './Spinner';
 import { isHrefFirebaseMagicLink } from '../../integrations/firebase';
+import LoaderContainer from './LoaderContainer';
+import internalState from '../../utils/internalState';
+import { v4 as uuidv4 } from 'uuid';
 /** TODO: These next 2 should maybe be dynamically imported, but having trouble with that
  * combined 6.9k gzipped, so OK for now
  */
@@ -18,52 +19,57 @@ const TEN_SECONDS_IN_MILLISECONDS = 1000 * 10;
 const FIVE_MINUTES_IN_MILLISECONDS = 1000 * 60 * 5;
 
 export const authState = {
+  authClient: null,
+  authEmail: '',
+  authId: '',
+  authPhoneNumber: '',
   // This is a flag so we only redirect to the login start step immediately
   // after auth, not during other form navigation
   redirectAfterLogin: false,
   sentAuth: false,
-  clearLoader: () => {},
   onLogin: () => {},
   onLogout: () => {}
 };
 
 const FeatheryAuthGate = ({
+  authClient: authClientProp,
   authId: authIdProp,
   formProps,
-  whitelistPath,
-  fullPageLogin,
+  loginPath,
   onLogin = () => {},
   onLogout = () => {},
   children
 }: {
+  authClient?: any;
   authId?: string;
   formProps: FormProps;
-  whitelistPath?: string;
-  fullPageLogin?: boolean;
+  loginPath?: string;
   onLogin?: () => void;
   onLogout?: () => void;
   children: JSX.Element;
 }) => {
-  const formCompleted = initInfo().sessions[formProps.formName]?.form_completed;
+  const [_internalId] = useState(uuidv4());
+  const formCompleted = Boolean(internalState[_internalId]?.formCompleted);
 
   // Need to use this flag because when doing magic link login the onChange
   // event doesn't seem to be added early enough to catch the first event which
   // is the one containing the token. subsequent events do not contain the token
   const hasAuthedRef = useRef(false);
-  // Use this render state to force re-evaluation of initState, since initState isn't reactive as-is
+  // Use this render state to force re-evaluation of authId, since authState isn't reactive as-is
   const [render, setRender] = useState(true);
   const [showLoader, setShowLoader] = useState(false);
   authHookCb.cb = () => setRender((prev) => !prev);
 
   const logoutActions = () => {
     hasAuthedRef.current = false;
-    initState.authId = undefined;
+    authState.authId = '';
     onLogout();
   };
 
   useEffect(() => {
     if (
-      window.location.hostname !== 'localhost' &&
+      (window.location.hostname !== 'localhost' ||
+        window.location.port === '3000') &&
       // We should set loader for new auth sessions
       (window.location.search.includes('stytch_token_type') ||
         isHrefFirebaseMagicLink() ||
@@ -75,19 +81,21 @@ const FeatheryAuthGate = ({
     }
 
     const { location, history } = window;
-    if (whitelistPath && location.pathname !== whitelistPath) {
+    if (loginPath && location.pathname !== loginPath) {
       // If user is not at the URL whitelisted for auth, take them there for login
-      history.replaceState(null, '', whitelistPath);
+      history.replaceState(null, '', loginPath);
     }
 
-    authState.clearLoader = () => setShowLoader(false);
     // Register onLogin cb so it can be called by Client.submitAuthInfo
-    authState.onLogin = onLogin;
+    authState.onLogin = () => {
+      onLogin();
+      setShowLoader(false);
+    };
     authState.onLogout = onLogout;
 
+    if (authClientProp) authState.authClient = authClientProp;
     // If user passes authId as a prop, we need to submit it
     if (authIdProp) {
-      const defaultClient = new Client();
       defaultClient.submitAuthInfo({
         authId: authIdProp
       });
@@ -142,36 +150,18 @@ const FeatheryAuthGate = ({
     timeout: TEN_SECONDS_IN_MILLISECONDS
   });
 
-  const form = (
-    <>
-      {showLoader && (
-        <div
-          style={{
-            // TODO: what should the background color be?
-            backgroundColor: '#FFF',
-            // backgroundColor: `#${activeStep?.default_background_color ?? 'FFF'}`,
-            position: 'fixed',
-            height: '100vh',
-            width: '100vw',
-            zIndex: 50,
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center'
-          }}
-        >
+  if (!authState.authId || !formCompleted) {
+    return (
+      // Since we want to auth gate we should make the login form take up the entire page
+      <div style={{ height: '100vh' }}>
+        <LoaderContainer showLoader={showLoader}>
           <div style={{ height: '10vh', width: '10vh' }}>
             <Spinner />
           </div>
-        </div>
-      )}
-      <Form {...formProps} />
-    </>
-  );
-  if (!initInfo().authId || !formCompleted) {
-    return !fullPageLogin ? (
-      form
-    ) : (
-      <div style={{ height: '100vh' }}>{form}</div>
+        </LoaderContainer>
+
+        <JSForm {...formProps} _internalId={_internalId} />
+      </div>
     );
   } else return children;
 };

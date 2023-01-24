@@ -403,17 +403,17 @@ export function rerenderAllForms() {
 export function getInitialStep({
   initialStepId,
   steps,
-  formName
+  sessionCurrentStep
 }: {
   initialStepId: string;
   steps: any;
-  formName: string;
+  sessionCurrentStep?: string;
 }) {
   const hashKey = decodeURI(location.hash.substr(1));
   return (
     initialStepId ||
     (hashKey && hashKey in steps && hashKey) ||
-    initInfo().sessions[formName]?.current_step_key ||
+    sessionCurrentStep ||
     (getOrigin as any)(steps).key
   );
 }

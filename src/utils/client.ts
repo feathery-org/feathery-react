@@ -307,18 +307,18 @@ export default class Client {
     await (block ? initFormsPromise : Promise.resolve());
     const {
       userId,
-      sessions,
-      authId,
+      cachedSessions,
       fieldValuesInitialized: noData
     } = initInfo();
     const formData = await (formPromise ?? Promise.resolve());
 
-    if (this.formKey in sessions) return [sessions[this.formKey], formData];
+    if (this.formKey in cachedSessions)
+      return [cachedSessions[this.formKey], formData];
 
     initState.fieldValuesInitialized = true;
     let params = { form_key: this.formKey };
     if (userId) (params as any).fuser_key = userId;
-    if (authId) (params as any).auth_id = authId;
+    if (authState.authId) (params as any).auth_id = authState.authId;
     if (noData) (params as any).no_data = 'true';
     // @ts-expect-error TS(2322): Type 'string' is not assignable to type '{ form_ke... Remove this comment to see the full error message
     params = encodeGetParams(params);
@@ -354,15 +354,24 @@ export default class Client {
     return [trueSession, formData];
   }
 
-  async submitAuthInfo({ authId, isStytchTemplateKey }: any) {
+  async submitAuthInfo({
+    authId,
+    authPhone = '',
+    authEmail = '',
+    isStytchTemplateKey
+  }: any) {
     const { userId } = initInfo();
     await authState.onLogin();
-    initState.authId = authId;
+    authState.authId = authId;
     // Execute render callbacks after setting authId, so that form navigation can be evaluated again
     rerenderAllForms();
+    if (authPhone) authState.authPhoneNumber = authPhone;
+    if (authEmail) authState.authEmail = authEmail;
 
     const data = {
       auth_id: authId,
+      auth_phone: authPhone,
+      auth_email: authEmail,
       is_stytch_template_key: isStytchTemplateKey,
       ...(userId ? { fuser_key: userId } : {})
     };

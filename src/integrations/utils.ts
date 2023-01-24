@@ -88,7 +88,9 @@ export function inferAuthLogout() {
 
   logout().then(() => {
     authState.onLogout();
-    initState.authId = undefined;
+    authState.authId = '';
+    authState.authPhoneNumber = '';
+    authState.authEmail = '';
     rerenderAllForms();
   });
 }

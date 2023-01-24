@@ -111,6 +111,7 @@ import {
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../elements/components/FeatheryAuthGate';
+import LoaderContainer from '../elements/components/LoaderContainer';
 
 export interface Props {
   formName: string;
@@ -245,7 +246,7 @@ function Form({
   const [viewport, setViewport] = useState(getViewport());
   const handleResize = () => setViewport(getViewport());
 
-  const prevAuthId = usePrevious(initState.authId);
+  const prevAuthId = usePrevious(authState.authId);
   const prevStepKey = usePrevious(stepKey);
 
   // Set to trigger conditional renders on field value updates, no need to use the value itself
@@ -271,7 +272,7 @@ function Form({
     setStepKey,
     steps,
     integrations,
-    initialStep: getInitialStep({ initialStepId, steps, formName })
+    initialStep: getInitialStep({ initialStepId, steps })
   });
 
   const [backNavMap, setBackNavMap] = useState({});
@@ -597,6 +598,7 @@ function Form({
     internalState[_internalId] = {
       currentStep: newStep,
       client,
+      formCompleted,
       formName,
       formRef,
       formSettings,
@@ -612,8 +614,8 @@ function Form({
     await runUserCallback(onLoad, () => {
       const formattedFields = formatAllFormFields(steps, true);
       const integrationData: IntegrationData = {};
-      if (initState.authId) {
-        integrationData.firebaseAuthId = initState.authId;
+      if (authState.authId) {
+        integrationData.firebaseAuthId = authState.authId;
       }
 
       return {
@@ -632,7 +634,6 @@ function Form({
     if (stepChanged) return;
 
     clearLoaders();
-    authState.clearLoader();
     const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
     setCurDepth(curDepth);
     setMaxDepth(maxDepth);
@@ -686,7 +687,20 @@ function Form({
         // @ts-expect-error TS(2345): Argument of type 'Promise<any[]>' is not assignabl... Remove this comment to see the full error message
         .fetchSession(formPromise, true)
         .then(([session, steps]) => {
-          initState.sessions[formName] = session;
+          internalState[_internalId] = {
+            currentStep: '',
+            client,
+            formCompleted: session.form_completed,
+            formName,
+            formRef,
+            formSettings,
+            getErrorCallback,
+            history,
+            setInlineErrors,
+            setUserProgress,
+            steps,
+            updateFieldOptions
+          };
           updateBackNavMap(session.back_nav_map);
           setIntegrations(session.integrations);
           setFormCompleted(session.form_completed);
@@ -696,7 +710,11 @@ function Form({
           // User is authenticating. auth hook will set the initial stepKey once auth has finished
           if (authState.redirectAfterLogin) return;
 
-          const newKey = getInitialStep({ initialStepId, steps, formName });
+          const newKey = getInitialStep({
+            initialStepId,
+            steps,
+            sessionCurrentStep: session.current_step_key
+          });
           setUrlStepHash(history, steps, newKey);
           setStepKey(newKey);
         })
@@ -725,7 +743,7 @@ function Form({
   useEffect(() => {
     // We set render to re-evaluate auth nav rules - but should only getNewStep if either the step or authId has changed.
     // Should not fetch new step if render was set for another reason
-    if (stepKey && (prevStepKey !== stepKey || prevAuthId !== initState.authId))
+    if (stepKey && (prevStepKey !== stepKey || prevAuthId !== authState.authId))
       getNewStep(stepKey);
   }, [stepKey, render]);
 
@@ -913,7 +931,7 @@ function Form({
           stepChanged = changeStep(stepKey, activeStep.key, steps, history);
         },
         firstStepSubmitted: first,
-        integrationData: { authProviderId: initState.authId ?? '' },
+        integrationData: { authProviderId: authState.authId ?? '' },
         trigger
       }));
       if (stepChanged) return;
@@ -1062,12 +1080,11 @@ function Form({
       submitData || ['button', 'text'].includes(metadata.elementType);
     if (!redirectKey) {
       if (explicitNav) {
-        if (initState.sessions[formName]) {
-          initState.sessions[formName].form_completed = true;
-          setFormCompleted(true);
-          authHookCb.cb();
-        }
+        setFormCompleted(true);
         eventData.completed = true;
+        if (internalState[_internalId])
+          internalState[_internalId].formCompleted = true;
+        authHookCb.cb();
         client.registerEvent(eventData, submitPromise).then(() => {
           setFinished(true);
         });
@@ -1087,7 +1104,6 @@ function Form({
           authState.sentAuth &&
           authIntegration?.auth_gate_steps.length &&
           !authIntegration?.auth_gate_steps.includes(steps[stepKey].id);
-        // eventData.completed = formCompleted || !isTerminalStepAuth;
         eventData.completed = !isTerminalStepAuth;
       }
       client
@@ -1519,22 +1535,12 @@ function Form({
   const addChin = formSettings.showBrand && !isFill(activeStep.height);
   return (
     <>
-      {stepLoader && (
-        <div
-          style={{
-            backgroundColor: `#${activeStep?.default_background_color}`,
-            position: 'fixed',
-            height: '100vh',
-            width: '100vw',
-            zIndex: 50,
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center'
-          }}
-        >
-          {stepLoader}
-        </div>
-      )}
+      <LoaderContainer
+        showLoader={Boolean(stepLoader)}
+        backgroundColor={activeStep?.default_background_color}
+      >
+        {stepLoader}
+      </LoaderContainer>
       <ReactPortal portal={isModal}>
         <BootstrapForm
           {...formProps}

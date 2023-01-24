@@ -7,6 +7,7 @@ import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient, featheryDoc } from './browser';
 import { rerenderAllForms } from './formHelperFunctions';
 import { inferEmailLoginFromURL } from '../integrations/utils';
+import { authState } from '../elements/components/FeatheryAuthGate';
 
 export type FeatheryFieldTypes =
   | null
@@ -31,7 +32,6 @@ type DeprecatedOptions = {
 };
 
 type InitOptions = {
-  authClient?: any;
   userId?: string;
   preloadForms?: string[];
   userTracking?: 'cookie' | 'fingerprint';
@@ -39,28 +39,25 @@ type InitOptions = {
 } & DeprecatedOptions;
 
 type InitState = {
-  authId?: string;
   initialized: boolean;
   sdkKey: string;
   preloadForms: { [formName: string]: any };
-  sessions: { [formName: string]: any };
+  cachedSessions: { [formName: string]: any };
   fieldValuesInitialized: boolean;
   renderCallbacks: { [cbKey: string]: any };
   defaultErrors: Record<string, string>;
 } & Omit<InitOptions, keyof DeprecatedOptions>;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
-const defaultClient = new Client();
+export const defaultClient = new Client();
 const initState: InitState = {
   initialized: false,
   userTracking: 'cookie',
   sdkKey: '',
   userId: '',
-  authClient: null,
-  authId: '',
   language: '',
   preloadForms: [],
-  sessions: {},
+  cachedSessions: {},
   defaultErrors: {},
   // Since all field values are fetched with each session, only fetch field
   // values on the first session request
@@ -68,7 +65,6 @@ const initState: InitState = {
   renderCallbacks: {}
 };
 const optionsAsInitState: (keyof InitOptions & keyof InitState)[] = [
-  'authClient',
   'userId',
   'userTracking'
 ];
@@ -99,6 +95,12 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
 
   initState.sdkKey = sdkKey;
   optionsAsInitState.forEach((key) => {
+    // ------------------------------------
+    // ------------------------------------
+    // I don't really get why removing authId and authClient caused this?
+    // ------------------------------------
+    // ------------------------------------
+    // @ts-expect-error
     if (options[key]) initState[key] = options[key];
   });
   if (options.language) {
@@ -148,7 +150,7 @@ function _fetchFormData(formIds: string[]) {
     });
     formClient
       .fetchSession()
-      .then(([session]: any) => (initState.sessions[key] = session));
+      .then(([session]: any) => (initState.cachedSessions[key] = session));
   });
 }
 
@@ -196,14 +198,14 @@ function setValues(userVals: FieldValues, rerender = true): void {
 }
 
 function setAuthClient(client: any): void {
-  initState.authClient = client;
+  authState.authClient = client;
   // Attempt login after setting auth client, in case the auth client wasn't set
   // when auth was already attempted after initializing the integrations
   inferEmailLoginFromURL(defaultClient);
 }
 
 function getAuthClient(): any {
-  return initState.authClient;
+  return authState.authClient;
 }
 
 export {
