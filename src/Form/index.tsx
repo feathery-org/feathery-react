@@ -1506,35 +1506,43 @@ function Form({
     <>
       {wholePageLoader}
       <ReactPortal portal={display === 'modal'}>
-        <BootstrapForm
-          {...formProps}
-          autoComplete={formSettings.autocomplete}
-          className={className}
-          ref={formRef}
-          css={{
-            ...stepCSS,
-            ...style,
-            position: 'relative',
-            marginBottom: addChin ? '80px' : '0',
-            display: 'flex'
-          }}
+        <div
+          css={
+            display === 'modal'
+              ? { height: '100%', overflowY: 'auto' }
+              : { minWidth: '100%' }
+          }
         >
-          {children}
-          <Grid step={activeStep} form={form} viewport={viewport} />
-          {!productionEnv && (
-            <DevNavBar
-              allSteps={steps}
-              curStep={activeStep}
-              history={history}
-            />
-          )}
-          {formSettings.showBrand && (
-            <Watermark
-              addChin={addChin}
-              brandPosition={formSettings.brandPosition}
-            />
-          )}
-        </BootstrapForm>
+          <BootstrapForm
+            {...formProps}
+            autoComplete={formSettings.autocomplete}
+            className={className}
+            ref={formRef}
+            css={{
+              ...stepCSS,
+              ...style,
+              position: 'relative',
+              marginBottom: addChin ? '80px' : '0',
+              display: 'flex'
+            }}
+          >
+            {children}
+            <Grid step={activeStep} form={form} viewport={viewport} />
+            {!productionEnv && (
+              <DevNavBar
+                allSteps={steps}
+                curStep={activeStep}
+                history={history}
+              />
+            )}
+            {formSettings.showBrand && (
+              <Watermark
+                addChin={addChin}
+                brandPosition={formSettings.brandPosition}
+              />
+            )}
+          </BootstrapForm>
+        </div>
       </ReactPortal>
     </>
   );
