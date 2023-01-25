@@ -14,7 +14,7 @@ export default function ReactPortal({
     if (!root) {
       root = document.createElement('div');
       root.style.cssText =
-        'position:fixed;height:100vh;width:100vw;top:0;left:0;display:flex;align-items:center;justify-content:center;background-color:rgba(0, 0, 0, 0.4);';
+        'position:fixed;height:100vh;width:100vw;top:0;left:0;overflow-y:auto;display:flex;background-color:rgba(0, 0, 0, 0.4);';
       root.classList.add('feathery-modal-root');
       document.body.appendChild(root);
     }
