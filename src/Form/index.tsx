@@ -1501,11 +1501,12 @@ function Form({
     return wholePageLoader;
   }
 
+  const isModal = display === 'modal';
   const addChin = formSettings.showBrand && !isFill(activeStep.height);
   return (
     <>
       {wholePageLoader}
-      <ReactPortal portal={display === 'modal'}>
+      <ReactPortal portal={isModal}>
         <BootstrapForm
           {...formProps}
           autoComplete={formSettings.autocomplete}
@@ -1516,7 +1517,8 @@ function Form({
             ...style,
             position: 'relative',
             marginBottom: addChin ? '80px' : '0',
-            display: 'flex'
+            display: 'flex',
+            ...(isModal ? { margin: 'auto' } : {})
           }}
         >
           {children}
