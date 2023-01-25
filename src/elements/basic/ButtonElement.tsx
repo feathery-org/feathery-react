@@ -141,7 +141,7 @@ function ButtonElement({
   editMode,
   focused = false,
   disabled = false,
-  active = false,
+  active = null,
   textCallbacks = {},
   onClick = () => {},
   elementProps = {},
@@ -202,7 +202,9 @@ function ButtonElement({
               ...borderStyles.hover
             },
         '&.active:enabled': activeStyles,
-        '&:focus:enabled': activeStyles,
+        // Fall back on default focus behavior if custom active state
+        // is not set for button
+        ...(active === null ? { '&:focus:enabled': activeStyles } : {}),
         '&&': styles.getTarget('button')
       }}
       disabled={actions.length === 0 || loader || disabled}

@@ -37,7 +37,7 @@ const Subgrid = ({
   viewport = 'desktop',
   flags
 }: any) => {
-  const { getButtonSelectionState, runElementActions } = form;
+  const { customClickSelectionState, runElementActions } = form;
   if (node.isElement || node.isEmpty) {
     return (
       <CellContainer
@@ -57,7 +57,7 @@ const Subgrid = ({
         node={node}
         axis={axis}
         layout={layout}
-        selected={getButtonSelectionState({
+        selected={customClickSelectionState({
           id: node.key,
           properties: node.properties
         })}
