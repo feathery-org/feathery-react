@@ -178,8 +178,7 @@ const CellContainer = ({
           ...cellStyle,
           ...selectableStyles
         }}
-        onClick={(e: React.MouseEvent) => {
-          e.stopPropagation();
+        onClick={() => {
           runElementActions({
             actions: actions,
             element: { id: properties.callback_id, properties },
