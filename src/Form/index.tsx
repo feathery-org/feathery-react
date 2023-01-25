@@ -1104,16 +1104,28 @@ function Form({
     }));
   };
 
-  const getButtonSelectionState = (el: ClickActionElement) => {
-    const props = el.properties ?? {};
-    return (props.actions ?? []).some((action: any) => {
-      if (action.type === ACTION_STORE_FIELD) {
-        return Boolean(fieldValues[props.custom_store_field_key]);
-      } else if (action.type === ACTION_CUSTOM) {
-        return fieldValues[props.select_field_indicator_key];
+  const customClickSelectionState = (
+    el: ClickActionElement
+  ): null | boolean => {
+    let state = null;
+    for (const action of el.properties?.actions ?? []) {
+      if ([ACTION_BACK, ACTION_NEXT].includes(action.type)) {
+        return null;
+      } else if ([ACTION_STORE_FIELD, ACTION_CUSTOM].includes(action.type)) {
+        if (state === null) state = false;
+        if (
+          action.type === ACTION_STORE_FIELD &&
+          fieldValues[action.custom_store_field_key]
+        )
+          state = true;
+        else if (
+          action.type === ACTION_CUSTOM &&
+          fieldValues[action.select_field_indicator_key]
+        )
+          state = true;
       }
-      return false;
-    });
+    }
+    return state;
   };
 
   const buttonOnClick = async (button: ClickActionElement) => {
@@ -1427,7 +1439,7 @@ function Form({
     customComponents,
     activeStep,
     loaders,
-    getButtonSelectionState,
+    customClickSelectionState,
     runElementActions,
     buttonOnClick,
     fieldOnChange,

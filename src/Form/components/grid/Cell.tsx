@@ -34,7 +34,7 @@ const Cell = ({ node: el, form, flags }: any) => {
     elementProps,
     activeStep,
     loaders,
-    getButtonSelectionState,
+    customClickSelectionState,
     runElementActions,
     buttonOnClick,
     fieldOnChange,
@@ -134,7 +134,7 @@ const Cell = ({ node: el, form, flags }: any) => {
     }
     return (
       <Elements.ButtonElement
-        active={getButtonSelectionState(el)}
+        active={customClickSelectionState(el)}
         loader={
           loaders[el.id]?.showOn === 'on_button' && loaders[el.id]?.loader
         }
