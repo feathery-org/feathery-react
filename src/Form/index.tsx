@@ -1111,7 +1111,7 @@ function Form({
     const props = el.properties ?? {};
     return (props.actions ?? []).some((action: any) => {
       if (action.type === ACTION_STORE_FIELD) {
-        return Boolean(fieldValues[props.custom_store_field_key]);
+        return Boolean(fieldValues[action.custom_store_field_key]);
       } else if (action.type === ACTION_CUSTOM) {
         return fieldValues[props.select_field_indicator_key];
       }
@@ -1431,6 +1431,7 @@ function Form({
     activeStep,
     loaders,
     getButtonSelectionState,
+    isStoreFieldValueAction,
     runElementActions,
     buttonOnClick,
     fieldOnChange,

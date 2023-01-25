@@ -142,6 +142,7 @@ function ButtonElement({
   focused = false,
   disabled = false,
   active = false,
+  selectable = false, // has a durable selection state
   textCallbacks = {},
   onClick = () => {},
   elementProps = {},
@@ -202,7 +203,10 @@ function ButtonElement({
               ...borderStyles.hover
             },
         '&.active:enabled': activeStyles,
-        '&:focus:enabled': activeStyles,
+        // Until we support separate focus/active and selected styles in the future,
+        //  just don't set focus styles if this button is a push button with
+        //  a durable selection state.
+        '&:focus:enabled': selectable ? {} : activeStyles,
         '&&': styles.getTarget('button')
       }}
       disabled={actions.length === 0 || loader || disabled}

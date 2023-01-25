@@ -35,6 +35,7 @@ const Cell = ({ node: el, form, flags }: any) => {
     activeStep,
     loaders,
     getButtonSelectionState,
+    isStoreFieldValueAction,
     runElementActions,
     buttonOnClick,
     fieldOnChange,
@@ -135,6 +136,7 @@ const Cell = ({ node: el, form, flags }: any) => {
     return (
       <Elements.ButtonElement
         active={getButtonSelectionState(el)}
+        selectable={isStoreFieldValueAction(el)}
         loader={
           loaders[el.id]?.showOn === 'on_button' && loaders[el.id]?.loader
         }
