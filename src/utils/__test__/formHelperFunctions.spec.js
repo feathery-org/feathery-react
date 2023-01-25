@@ -20,7 +20,7 @@ describe('formHelperFunctions', () => {
       const expected = {};
 
       // Act
-      const actual = formatStepFields(step);
+      const actual = formatStepFields(step, false, false);
 
       // Assert
       expect(actual).toMatchObject(expected);
@@ -66,7 +66,7 @@ describe('formHelperFunctions', () => {
       };
 
       // Act
-      const actual = formatStepFields(step);
+      const actual = formatStepFields(step, false, false);
 
       // Assert
       expect(actual).toMatchObject(expected);

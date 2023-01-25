@@ -2,6 +2,7 @@ import getRandomBoolean from './random';
 import { fieldValues, filePathMap, initInfo } from './init';
 import { toBase64 } from './image';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
+import { shouldElementHide } from './hideIfs';
 
 /**
  *
@@ -9,23 +10,35 @@ import { evalComparisonRule, ResolvedComparisonRule } from './logic';
  * @param {boolean} forUser indicate whether the result of this function is
  * meant for the user, or Feathery's BE. Presently the only difference is
  * whether signature field values are base64 or a JS File obj
+ * @param {boolean} onlyVisibleFields if true, only includes fields that are
+ * visible to user as determined by the hide if rules
  * @returns Formatted fields for the step
  */
-export const formatStepFields = (step: any, forUser = false) => {
-  const formattedFields = {};
-  step.servar_fields.forEach((field: any) => {
+export const formatStepFields = (
+  step: any,
+  forUser: boolean,
+  onlyVisibleFields: boolean
+) => {
+  const formattedFields: Record<
+    string,
+    { value: any; type: string; displayText: string }
+  > = {};
+  let fields = step.servar_fields;
+  if (onlyVisibleFields)
+    fields = fields.filter(
+      (servar: any) => !shouldElementHide({ element: servar })
+    );
+  fields.forEach((field: any) => {
     const servar = field.servar;
     let value;
     // Only use base64 for signature if these values will be presented to the user
     const val = fieldValues[servar.key];
     if (forUser && servar.type === 'signature') {
       value =
-        val !== null
-          ? // @ts-expect-error TS(2345): Argument of type 'string | number | boolean | stri... Remove this comment to see the full error message
-            Promise.resolve(val).then((file) => toBase64(file))
+        val !== null && (val instanceof File || val instanceof Promise)
+          ? Promise.resolve(val).then((file) => toBase64(file))
           : Promise.resolve('');
     } else value = val;
-    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     formattedFields[servar.key] = {
       value,
       type: servar.type,
@@ -38,7 +51,7 @@ export const formatStepFields = (step: any, forUser = false) => {
 export const formatAllFormFields = (steps: any, forUser = false) => {
   let formattedFields = {};
   Object.values(steps).forEach((step) => {
-    const stepFields = formatStepFields(step, forUser);
+    const stepFields = formatStepFields(step, forUser, false);
     formattedFields = { ...formattedFields, ...stepFields };
   });
   return formattedFields;

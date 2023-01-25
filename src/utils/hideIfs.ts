@@ -1,5 +1,4 @@
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
-import { fieldValues } from './init';
 
 interface FlatHideRule extends ResolvedComparisonRule {
   index: number;

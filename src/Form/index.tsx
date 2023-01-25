@@ -203,7 +203,7 @@ function Form({
   const [first, setFirst] = useState(true);
 
   const [productionEnv, setProductionEnv] = useState(true);
-  const [steps, setSteps] = useState({});
+  const [steps, setSteps] = useState<Record<string, any>>({});
   const [activeStep, setActiveStep] = useState<any>(null);
   const [stepKey, setStepKey] = useState('');
   const [shouldScrollToTop, setShouldScrollToTop] = useState(false);
@@ -584,7 +584,6 @@ function Form({
       }));
 
   const getNewStep = async (newKey: any) => {
-    // @ts-expect-error TS(2531): Object is possibly 'null'.
     let newStep = steps[newKey];
 
     const nextStep = getNextAuthStep(newStep);
@@ -616,7 +615,6 @@ function Form({
       return {
         fields: formattedFields,
         previousStepName: activeStep?.key,
-        // @ts-expect-error TS(2531): Object is possibly 'null'.
         lastStep: steps[newKey].next_conditions.length === 0,
         numSteps: Object.keys(steps).length,
         firstStepLoaded: first,
@@ -844,7 +842,7 @@ function Form({
     nextStepKey(activeStep.next_conditions, metadata);
 
   const submitStep = async ({ metadata, repeat = 0 }: any) => {
-    const formattedFields = formatStepFields(activeStep, false);
+    const formattedFields = formatStepFields(activeStep, false, true);
     const trigger = lookUpTrigger(
       activeStep,
       metadata.elementIDs[0],
@@ -1010,7 +1008,7 @@ function Form({
       triggerElement,
       servar: pm ? pm.servar : null,
       client,
-      formattedFields: formatStepFields(activeStep, false),
+      formattedFields: formatStepFields(activeStep, false, false),
       updateFieldValues,
       integrationData: integrations?.stripe,
       targetElement: pm ? getCardElement(pm.servar.key) : null
@@ -1062,7 +1060,6 @@ function Form({
       }
     } else {
       setFirst(false);
-      // @ts-expect-error TS(2531): Object is possibly 'null'.
       const nextStep = steps[redirectKey];
       const hasNext = nextStep.buttons.some((b: any) =>
         b.properties.actions.some((action: any) => action.type === ACTION_NEXT)
