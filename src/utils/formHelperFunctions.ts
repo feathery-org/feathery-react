@@ -10,14 +10,25 @@ import { shouldElementHide } from './hideIfs';
  * @param {boolean} forUser indicate whether the result of this function is
  * meant for the user, or Feathery's BE. Presently the only difference is
  * whether signature field values are base64 or a JS File obj
+ * @param {boolean} onlyVisibleFields if true, only includes fields that are
+ * visible to user as determined by the hide if rules
  * @returns Formatted fields for the step
  */
-export const formatStepFields = (step: any, forUser = false) => {
+export const formatStepFields = (
+  step: any,
+  forUser: boolean,
+  onlyVisibleFields: boolean
+) => {
   const formattedFields: Record<
     string,
     { value: any; type: string; displayText: string }
   > = {};
-  step.servar_fields.forEach((field: any) => {
+  let fields = step.servar_fields;
+  if (onlyVisibleFields)
+    fields = fields.filter(
+      (servar: any) => !shouldElementHide({ element: servar })
+    );
+  fields.forEach((field: any) => {
     const servar = field.servar;
     let value;
     // Only use base64 for signature if these values will be presented to the user
@@ -40,7 +51,7 @@ export const formatStepFields = (step: any, forUser = false) => {
 export const formatAllFormFields = (steps: any, forUser = false) => {
   let formattedFields = {};
   Object.values(steps).forEach((step) => {
-    const stepFields = formatStepFields(step, forUser);
+    const stepFields = formatStepFields(step, forUser, false);
     formattedFields = { ...formattedFields, ...stepFields };
   });
   return formattedFields;
@@ -76,23 +87,6 @@ export function getDefaultFieldValue(field: any) {
     default:
       return '';
   }
-}
-
-export function getNonHiddenFields(currentStep: any, formattedFields: any) {
-  const hiddenState: { key: string; hidden: boolean }[] =
-    currentStep.servar_fields.map((servar: any) => ({
-      key: servar.servar.key,
-      hidden: shouldElementHide({ element: servar })
-    }));
-  const nonHiddenFields: Record<
-    string,
-    { value: any; type: string; displayText: string }
-  > = {};
-  hiddenState.forEach(({ key, hidden }: any) => {
-    if (!hidden) nonHiddenFields[key] = formattedFields[key];
-  });
-
-  return nonHiddenFields;
 }
 
 // TODO: remove string[] for backcompat

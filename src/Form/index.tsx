@@ -23,7 +23,6 @@ import {
   getFieldValue,
   getInitialStep,
   getNewStepUrl,
-  getNonHiddenFields,
   getOrigin,
   getPrevStepUrl,
   lookUpTrigger,
@@ -843,7 +842,7 @@ function Form({
     nextStepKey(activeStep.next_conditions, metadata);
 
   const submitStep = async ({ metadata, repeat = 0 }: any) => {
-    const formattedFields = formatStepFields(activeStep, false);
+    const formattedFields = formatStepFields(activeStep, false, true);
     const trigger = lookUpTrigger(
       activeStep,
       metadata.elementIDs[0],
@@ -878,7 +877,7 @@ function Form({
     if (typeof onSubmit === 'function') {
       let stepChanged = false;
       await runUserCallback(onSubmit, () => ({
-        submitFields: getNonHiddenFields(activeStep, formattedFields),
+        submitFields: formattedFields,
         elementRepeatIndex: repeat,
         fields: formatAllFormFields(steps, true),
         lastStep: !getNextStepKey(metadata),
@@ -1009,7 +1008,7 @@ function Form({
       triggerElement,
       servar: pm ? pm.servar : null,
       client,
-      formattedFields: formatStepFields(activeStep, false),
+      formattedFields: formatStepFields(activeStep, false, false),
       updateFieldValues,
       integrationData: integrations?.stripe,
       targetElement: pm ? getCardElement(pm.servar.key) : null
