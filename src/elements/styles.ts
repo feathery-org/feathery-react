@@ -54,7 +54,9 @@ class ResponsiveStyles {
 
   // Return CSS for a particular target HTML element
   getTarget(targetId: string, desktopOnly = false) {
-    const target = { ...this.targets[targetId] };
+    const target = this.targets[targetId];
+    if (!target) return {};
+
     if (!desktopOnly && this.handleMobile) {
       target[mobileBreakpointKey] = this.mobileTargets[targetId];
     }
@@ -106,26 +108,27 @@ class ResponsiveStyles {
     }
   }
 
-  applyFlexAndTextAlignments(target: string, prefix = '') {
-    this.applyFlexDirection(target, prefix);
-    this.applyTextAlign(target, prefix);
-  }
-
   applyFlexDirection(target: string, prefix = '') {
     this.apply(target, `${prefix}flex_direction`, (a: any) => ({
       flexDirection: a
     }));
   }
 
-  // Text align needs to be applied on the opposite axis from the flex
+  // Content align needs to be applied on the opposite axis from the flex
   // direction, which specifies the icon position relative to the text, so that
   // text align behaves as expected when the flex direction is vertical (a
   // column)
-  applyTextAlign(target: string, prefix = '') {
+  applyContentAlign(target: string, prefix = '') {
     this.apply(target, `${prefix}text_align`, (a: any) => ({
       [isDirectionColumn(this.styles[`${prefix}flex_direction`])
         ? 'alignItems'
         : 'justifyContent']: a
+    }));
+  }
+
+  applyTextAlign(target: string, prefix = '') {
+    this.apply(target, `${prefix}text_align`, (a: any) => ({
+      textAlign: a
     }));
   }
 

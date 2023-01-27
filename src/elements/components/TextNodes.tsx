@@ -46,6 +46,7 @@ const applyNewDelta = (
 function TextNodes({
   element,
   responsiveStyles,
+  cssTarget = '',
   conditions = [],
   editMode,
   focused = false,
@@ -57,6 +58,11 @@ function TextNodes({
     focused,
     ...textCallbacks
   });
+
+  editableProps.css = {
+    ...editableProps.css,
+    ...responsiveStyles.getTarget(cssTarget)
+  };
 
   return useMemo(() => {
     const text = element.properties.text;
