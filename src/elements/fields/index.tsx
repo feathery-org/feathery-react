@@ -151,7 +151,7 @@ function applyFieldStyles(field: any, styles: any) {
       );
       break;
     case 'button_group':
-      styles.addTargets('img');
+      styles.addTargets('img', 'label');
       styles.apply('fc', 'vertical_layout', (a: any) => ({
         alignItems: a
       }));
@@ -185,7 +185,9 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
       styles.applyPadding('field', '', true);
-      styles.applyFlexAndTextAlignments('field');
+      styles.applyFlexDirection('field');
+      styles.applyContentAlign('field');
+      styles.applyTextAlign('label');
       styles.apply(
         'field',
         [

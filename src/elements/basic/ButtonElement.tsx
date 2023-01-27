@@ -10,6 +10,7 @@ import { SUBMITTABLE_ACTIONS } from '../../utils/elementActions';
 function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets(
     'button',
+    'buttonLabel',
     'buttonActive',
     'buttonHover',
     'buttonDisabled',
@@ -27,7 +28,9 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     })
   );
   responsiveStyles.applyCorners('button');
-  responsiveStyles.applyFlexAndTextAlignments('button');
+  responsiveStyles.applyFlexDirection('button');
+  responsiveStyles.applyContentAlign('button');
+  responsiveStyles.applyTextAlign('buttonLabel');
   responsiveStyles.apply(
     'button',
     [
@@ -230,6 +233,7 @@ function ButtonElement({
             <TextNodes
               element={element}
               responsiveStyles={responsiveStyles}
+              cssTarget='buttonLabel'
               editMode={editMode}
               focused={focused}
               textCallbacks={textCallbacks}

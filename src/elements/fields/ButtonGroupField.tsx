@@ -85,6 +85,7 @@ function ButtonGroupField({
                   css={{
                     display: 'flex',
                     maxWidth: '100%',
+                    ...responsiveStyles.getTargets('label'),
                     // Do not highlight text when clicking the button
                     ...noTextSelectStyles
                   }}
