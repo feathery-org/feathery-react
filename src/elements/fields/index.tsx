@@ -10,6 +10,7 @@ import FileUploadField from './FileUploadField';
 import PhoneField from './PhoneField';
 import PinInputField from './PinInputField';
 import RadioButtonGroupField from './RadioButtonGroupField';
+import RatingField from './RatingField';
 import SignatureField from './SignatureField';
 import SliderField from './SliderField';
 import TextField from './TextField';
@@ -31,6 +32,7 @@ const Fields = {
   PhoneField,
   PinInputField,
   RadioButtonGroupField,
+  RatingField,
   SignatureField,
   SliderField,
   TextField,
@@ -150,6 +152,13 @@ function applyFieldStyles(field: any, styles: any) {
         })
       );
       break;
+    case 'rating':
+      styles.addTargets('selectedRating', 'hoverRating');
+      styles.applyWidth('fc');
+      styles.applyColor('field', 'background_color', 'fill');
+      styles.applyColor('selectedRating', 'selected_background_color', 'fill');
+      styles.applyColor('hoverRating', 'hover_background_color', 'fill');
+      break;
     case 'button_group':
       styles.addTargets('img', 'label');
       styles.apply('fc', 'vertical_layout', (a: any) => ({
@@ -163,7 +172,7 @@ function applyFieldStyles(field: any, styles: any) {
           textAlign: justifyContentTextAlignMap[a]
         })
       );
-      // Cancel out extra per-button margins on the edges
+      // Cancel out extra margins on the element edges
       styles.apply(
         'fc',
         ['padding_top', 'padding_right', 'padding_bottom', 'padding_left'],

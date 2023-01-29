@@ -356,6 +356,17 @@ const Cell = ({ node: el, form, flags }: any) => {
             }}
           />
         );
+      case 'rating':
+        return (
+          <Elements.RatingField
+            {...fieldProps}
+            fieldVal={fieldVal}
+            onChange={(val: number) => {
+              const change = changeValue(val, el, index);
+              if (change) onChange();
+            }}
+          />
+        );
       case 'text_area':
         return (
           <Elements.TextArea
