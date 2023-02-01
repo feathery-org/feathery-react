@@ -172,6 +172,8 @@ const findEnterButton = (step: any) => {
     )
   );
 };
+const isElementAButtonOnStep = (step: any, el: any) =>
+  el.id && step.buttons.find((b: any) => b.id === el.id);
 
 function Form({
   _internalId,
@@ -1006,6 +1008,9 @@ function Form({
     );
     const errors = await collectPayment({
       triggerElement,
+      triggerElementType: isElementAButtonOnStep(activeStep, triggerElement)
+        ? 'button'
+        : 'container',
       servar: pm ? pm.servar : null,
       client,
       formattedFields: formatStepFields(activeStep, false, false),

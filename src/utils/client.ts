@@ -590,8 +590,11 @@ export default class Client {
     );
   }
 
-  createPayment(paymentGroupId: string) {
-    return this._payment('POST', { payment_group_id: paymentGroupId });
+  createPayment(elementId: string, elementType: 'button' | 'container') {
+    return this._payment('POST', {
+      element_id: elementId,
+      element_type: elementType
+    });
   }
 
   paymentComplete() {
@@ -599,7 +602,8 @@ export default class Client {
   }
 
   async createCheckoutSession(
-    paymentGroupId: string,
+    elementId: string,
+    elementType: 'button' | 'container',
     successUrl: string,
     cancelUrl?: string
   ) {
@@ -611,7 +615,8 @@ export default class Client {
       user_id: userId,
       success_url: successUrl,
       cancel_url: cancelUrl || '',
-      payment_group_id: paymentGroupId
+      element_id: elementId,
+      element_type: elementType
     };
     const options = {
       headers: { 'Content-Type': 'application/json' },

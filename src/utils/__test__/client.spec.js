@@ -280,17 +280,19 @@ describe('client', () => {
     });
     it('createPayment properly calls the end point', async () => {
       // Arrange
-      const paymentGroupId = 'some payment group id';
+      const elementId = 'some element id';
+      const elementType = 'button';
       const body = {
         form_key: formKey,
         user_id: userId,
-        payment_group_id: paymentGroupId
+        element_id: elementId,
+        element_type: elementType
       };
       const intentSecret = 'intent_secret';
       mockFetch(intentSecret);
 
       // Act
-      const response = await client.createPayment(paymentGroupId);
+      const response = await client.createPayment(elementId, elementType);
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/payment/`, {
@@ -332,20 +334,23 @@ describe('client', () => {
       // Arrange
       const successUrl = 'success';
       const cancelUrl = 'cancel';
-      const paymentGroupId = 'some payment group id';
+      const elementId = 'some element id';
+      const elementType = 'button';
       const body = {
         form_key: formKey,
         user_id: userId,
         success_url: successUrl,
         cancel_url: cancelUrl,
-        payment_group_id: paymentGroupId
+        element_id: elementId,
+        element_type: elementType
       };
       const expectedResponse = { checkout_url: 'checkoutUrl' };
       mockFetch(expectedResponse);
 
       // Act
       const response = await client.createCheckoutSession(
-        paymentGroupId,
+        elementId,
+        elementType,
         successUrl,
         cancelUrl
       );

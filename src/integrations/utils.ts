@@ -107,6 +107,7 @@ export function isAuthStytch() {
 export interface ActionData {
   servar?: any;
   triggerElement?: any;
+  triggerElementType?: 'button' | 'container';
   client: any;
   formattedFields: any;
   updateFieldValues: any;
