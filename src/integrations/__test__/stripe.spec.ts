@@ -264,7 +264,8 @@ describe('Stripe integration helper', () => {
           updateFieldValues: mockUpdateFieldValues,
           integrationData: mockStripeConfig(),
           targetElement: mockTargetElement,
-          triggerElement: mockButton
+          triggerElement: mockButton,
+          triggerElementType: 'button'
         },
         mockStripe
       );
@@ -287,7 +288,8 @@ describe('Stripe integration helper', () => {
           formattedFields: mockFieldValues,
           updateFieldValues: mockUpdateFieldValues,
           integrationData: mockStripeConfig('custom'),
-          triggerElement: mockButton
+          triggerElement: mockButton,
+          triggerElementType: 'button'
         },
         mockStripe
       );
@@ -311,7 +313,8 @@ describe('Stripe integration helper', () => {
           formattedFields: mockFieldValues,
           updateFieldValues: mockUpdateFieldValues,
           integrationData: mockStripeConfig('stripe'),
-          triggerElement: mockButton
+          triggerElement: mockButton,
+          triggerElementType: 'button'
         },
         mockStripe
       );

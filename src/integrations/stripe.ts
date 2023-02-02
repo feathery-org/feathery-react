@@ -183,6 +183,7 @@ export async function collectPayment(
   const {
     client,
     triggerElement, // action button that triggered this
+    triggerElementType,
     formattedFields,
     updateFieldValues,
     integrationData: stripeConfig
@@ -192,7 +193,6 @@ export async function collectPayment(
   const collectPaymentAction = triggerElement.properties.actions.find(
     (action: { type: string }) => action.type === ACTION_COLLECT_PAYMENT
   );
-  const paymentGroupId = collectPaymentAction?.payment_group.payment_group_id;
   // sync fields to BE
   await syncStripeFieldChanges(
     client,
@@ -218,6 +218,17 @@ export async function collectPayment(
   try {
     const stripe: any = await (stripePromise ?? getStripe());
     const checkoutType = stripeConfig.metadata.checkout_type ?? 'custom';
+    const paymentElementId =
+      triggerElementType === 'button'
+        ? triggerElement.id
+        : triggerElement.properties.callback_id;
+
+    if (!paymentElementId)
+      return {
+        errorField: triggerElement,
+        errorMessage: 'Payment Error: Missing ID' // could happen on a container.
+      };
+
     if (checkoutType === 'stripe') {
       // stripe checkout
       // If the urls are not supplied, default to the current step
@@ -226,7 +237,8 @@ export async function collectPayment(
       const cancelUrl =
         triggerElement?.properties?.cancel_url || window.location.href;
       const { checkout_url: checkoutUrl } = await client.createCheckoutSession(
-        paymentGroupId,
+        paymentElementId,
+        triggerElementType,
         successUrl,
         cancelUrl
       );
@@ -235,7 +247,8 @@ export async function collectPayment(
     } else if (checkoutType === 'custom') {
       // custom payment from Feathery
       const { intent_secret: paymentIntentSecret } = await client.createPayment(
-        paymentGroupId
+        paymentElementId,
+        triggerElementType
       );
       // No paymentIntentSecret means no payment will be done
       if (paymentIntentSecret) {
