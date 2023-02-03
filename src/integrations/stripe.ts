@@ -243,7 +243,7 @@ export async function collectPayment(
         cancelUrl
       );
       // preserve browser back button function to current page/step
-      window.location.href = checkoutUrl;
+      checkoutUrl && (window.location.href = checkoutUrl);
     } else if (checkoutType === 'custom') {
       // custom payment from Feathery
       const { intent_secret: paymentIntentSecret } = await client.createPayment(
