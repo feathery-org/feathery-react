@@ -10,11 +10,11 @@ import {
   installGoogleAnalytics,
   trackGAEvent
 } from './googleAnalytics';
-import { getAuthClient, initState } from '../utils/init';
+import { getAuthClient } from '../utils/init';
 import Client from '../utils/client';
 import { rerenderAllForms } from '../utils/formHelperFunctions';
 import { installArgyle } from './argyle';
-import { authState } from '../elements/components/FeatheryAuthGate';
+import { authState } from '../elements/components/LoginProvider';
 
 const IMPORTED_URLS = new Set();
 

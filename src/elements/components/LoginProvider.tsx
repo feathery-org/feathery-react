@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { JSForm, Props as FormProps } from '../../Form';
 import { getStytchJwt } from '../../utils/browser';
-import { defaultClient, getAuthClient, initInfo } from '../../utils/init';
+import { defaultClient, getAuthClient } from '../../utils/init';
 import { authHookCb } from '../../integrations/stytch';
 import { isAuthStytch } from '../../integrations/utils';
 import Spinner from './Spinner';
@@ -31,7 +31,7 @@ export const authState = {
   onLogout: () => {}
 };
 
-const FeatheryAuthGate = ({
+const LoginProvider = ({
   authClient: authClientProp,
   authId: authIdProp,
   formProps,
@@ -68,16 +68,19 @@ const FeatheryAuthGate = ({
 
   useEffect(() => {
     if (
-      (window.location.hostname !== 'localhost' ||
-        window.location.port === '3000') &&
       // We should set loader for new auth sessions
-      (window.location.search.includes('stytch_token_type') ||
-        isHrefFirebaseMagicLink() ||
-        // and existing ones
-        getStytchJwt())
+      window.location.search.includes('stytch_token_type') ||
+      isHrefFirebaseMagicLink() ||
+      // and existing ones
+      getStytchJwt()
     ) {
       authState.redirectAfterLogin = true;
-      setShowLoader(true);
+      // We always need to set the redirect flag, but on local hosted forms we don't want to set the loader
+      if (
+        window.location.hostname !== 'localhost' ||
+        window.location.port === '3000'
+      )
+        setShowLoader(true);
     }
 
     const { location, history } = window;
@@ -87,8 +90,8 @@ const FeatheryAuthGate = ({
     }
 
     // Register onLogin cb so it can be called by Client.submitAuthInfo
-    authState.onLogin = () => {
-      onLogin();
+    authState.onLogin = async () => {
+      await onLogin();
       setShowLoader(false);
     };
     authState.onLogout = onLogout;
@@ -166,4 +169,4 @@ const FeatheryAuthGate = ({
   } else return children;
 };
 
-export default FeatheryAuthGate;
+export default LoginProvider;

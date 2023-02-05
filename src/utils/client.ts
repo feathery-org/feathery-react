@@ -20,7 +20,7 @@ import { loadPhoneValidator } from './validation';
 import { initializeIntegrations } from '../integrations/utils';
 import { loadLottieLight } from '../elements/components/Lottie';
 import { featheryDoc } from './browser';
-import { authState } from '../elements/components/FeatheryAuthGate';
+import { authState } from '../elements/components/LoginProvider';
 
 // Convenience boolean for urls - manually change for testing
 const API_URL_OPTIONS = {

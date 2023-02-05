@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
-import { authState } from '../elements/components/FeatheryAuthGate';
+import { authState } from '../elements/components/LoginProvider';
 import { getAuthIntegrationMetadata } from '../integrations/utils';
 import { setUrlStepHash } from '../utils/formHelperFunctions';
 

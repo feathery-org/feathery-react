@@ -110,7 +110,7 @@ import {
   hasFlowActions
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
-import { authState } from '../elements/components/FeatheryAuthGate';
+import { authState } from '../elements/components/LoginProvider';
 import LoaderContainer from '../elements/components/LoaderContainer';
 
 export interface Props {
@@ -614,9 +614,7 @@ function Form({
     await runUserCallback(onLoad, () => {
       const formattedFields = formatAllFormFields(steps, true);
       const integrationData: IntegrationData = {};
-      if (authState.authId) {
-        integrationData.firebaseAuthId = authState.authId;
-      }
+      if (authState.authId) integrationData.firebaseAuthId = authState.authId;
 
       return {
         fields: formattedFields,

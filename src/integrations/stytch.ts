@@ -1,7 +1,7 @@
 import { getAuthClient, setAuthClient } from '../utils/init';
 import { dynamicImport } from './utils';
 import { featheryDoc } from '../utils/browser';
-import { authState } from '../elements/components/FeatheryAuthGate';
+import { authState } from '../elements/components/LoginProvider';
 
 const STYTCH_JS_URL = 'https://js.stytch.com/stytch.js';
 

@@ -7,7 +7,7 @@ import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient, featheryDoc } from './browser';
 import { rerenderAllForms } from './formHelperFunctions';
 import { inferEmailLoginFromURL } from '../integrations/utils';
-import { authState } from '../elements/components/FeatheryAuthGate';
+import { authState } from '../elements/components/LoginProvider';
 
 export type FeatheryFieldTypes =
   | null
