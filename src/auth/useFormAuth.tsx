@@ -1,10 +1,10 @@
 import React, { useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
-import { authState } from '../elements/components/LoginProvider';
-import { getAuthIntegrationMetadata } from '../integrations/utils';
+import { authState } from './LoginProvider';
 import { setUrlStepHash } from '../utils/formHelperFunctions';
+import { getAuthIntegrationMetadata } from './utils';
 
-const useAuth = ({
+const useFormAuth = ({
   initialStep,
   integrations,
   productionEnv,
@@ -18,12 +18,11 @@ const useAuth = ({
   steps: any;
 }) => {
   const history = useHistory();
-  const authId = authState.authId;
 
   // This hook sets the step key & hash once auth has been completed
   useEffect(() => {
     if (
-      authId &&
+      authState.authId &&
       authState.redirectAfterLogin &&
       Object.keys(steps).length &&
       integrations &&
@@ -34,7 +33,7 @@ const useAuth = ({
       setUrlStepHash(history, steps, stepName);
       authState.redirectAfterLogin = false;
     }
-  }, [authState.redirectAfterLogin, steps, integrations, authId]);
+  }, [authState.redirectAfterLogin, steps, integrations, authState.authId]);
 
   // This hook is needed to prevent a bug on localhost. Cookies can't be
   // distinguished by port and stytch uses cookie to expose JWT. So, if one is
@@ -100,4 +99,4 @@ const useAuth = ({
   return getNextAuthStep;
 };
 
-export default useAuth;
+export default useFormAuth;

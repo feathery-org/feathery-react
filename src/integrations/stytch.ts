@@ -1,11 +1,9 @@
-import { getAuthClient, setAuthClient } from '../utils/init';
+import { getAuthClient, setAuthClient } from '../auth/utils';
 import { dynamicImport } from './utils';
 import { featheryDoc } from '../utils/browser';
-import { authState } from '../elements/components/LoginProvider';
+import { authState } from '../auth/LoginProvider';
 
 const STYTCH_JS_URL = 'https://js.stytch.com/stytch.js';
-
-export const authHookCb: Record<string, () => void> = {};
 
 let stytchPromise: any = null;
 let config: any = null;
@@ -39,8 +37,6 @@ export function installStytch(stytchConfig: any) {
 
         return dynamicImport(STYTCH_JS_URL).then(() => {
           const initializedClient = global.Stytch(stytchConfig.metadata.token);
-          // Trigger the auth cbs
-          authHookCb.cb();
           setAuthClient(initializedClient);
           resolve(initializedClient);
         });

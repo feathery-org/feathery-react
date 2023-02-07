@@ -28,18 +28,19 @@ import {
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
+  registerRenderCallback,
+  rerenderAllForms,
   setFormElementError,
   setUrlStepHash,
   updateStepFieldOptions
 } from '../utils/formHelperFunctions';
 import { shouldElementHide, getHideIfReferences } from '../utils/hideIfs';
 import { validators, validateElements } from '../utils/validation';
-import { initState, fieldValues, FieldValues } from '../utils/init';
+import { initState, fieldValues, FieldValues, initInfo } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { sendFirebaseLogin, verifySMSCode } from '../integrations/firebase';
 import {
-  authHookCb,
   googleOauthRedirect,
   sendMagicLink,
   sendSMSCode,
@@ -51,13 +52,7 @@ import {
   setupPaymentMethod,
   collectPayment
 } from '../integrations/stripe';
-import {
-  ActionData,
-  trackEvent,
-  inferAuthLogout,
-  isAuthStytch,
-  getAuthIntegrationMetadata
-} from '../integrations/utils';
+import { ActionData, trackEvent } from '../integrations/utils';
 import DevNavBar from './components/DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
@@ -86,7 +81,7 @@ import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
 import internalState from '../utils/internalState';
-import useAuth from '../hooks/useAuth';
+import useFormAuth from '../auth/useFormAuth';
 import {
   ACTION_ADD_REPEATED_ROW,
   ACTION_BACK,
@@ -110,8 +105,14 @@ import {
   hasFlowActions
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
-import { authState } from '../elements/components/LoginProvider';
+import { authState } from '../auth/LoginProvider';
 import LoaderContainer from '../elements/components/LoaderContainer';
+import {
+  getAuthIntegrationMetadata,
+  inferAuthLogout,
+  isAuthStytch,
+  isTerminalStepAuth
+} from '../auth/utils';
 
 export interface Props {
   formName: string;
@@ -204,6 +205,7 @@ function Form({
 }: InternalProps & Props) {
   const [client, setClient] = useState<any>(null);
   const history = useHistory();
+  const session = initState.formSessions[formName];
 
   const [autoValidate, setAutoValidate] = useState(false);
   const [first, setFirst] = useState(true);
@@ -215,7 +217,6 @@ function Form({
   const [shouldScrollToTop, setShouldScrollToTop] = useState(false);
   const [finished, setFinished] = useState(false);
   const [userProgress, setUserProgress] = useState(null);
-  const [formCompleted, setFormCompleted] = useState(false);
   const [curDepth, setCurDepth] = useState(0);
   const [maxDepth, setMaxDepth] = useState(0);
   const [formSettings, setFormSettings] = useState({
@@ -268,7 +269,7 @@ function Form({
     );
   }, [loaders]);
 
-  const getNextAuthStep = useAuth({
+  const getNextAuthStep = useFormAuth({
     initialStep: getInitialStep({ initialStepId, steps }),
     integrations,
     productionEnv,
@@ -305,9 +306,9 @@ function Form({
 
   // All mount and unmount logic should live here
   useEffect(() => {
-    initState.renderCallbacks[_internalId] = () => {
+    registerRenderCallback(_internalId, 'form', () => {
       setRender((render) => !render);
-    };
+    });
     if (
       contextRef &&
       Object.prototype.hasOwnProperty.call(contextRef, 'current')
@@ -599,7 +600,6 @@ function Form({
     internalState[_internalId] = {
       currentStep: newStep,
       client,
-      formCompleted,
       formName,
       formRef,
       formSettings,
@@ -686,23 +686,8 @@ function Form({
         // @ts-expect-error TS(2345): Argument of type 'Promise<any[]>' is not assignabl... Remove this comment to see the full error message
         .fetchSession(formPromise, true)
         .then(([session, steps]) => {
-          internalState[_internalId] = {
-            currentStep: '',
-            client,
-            formCompleted: session.form_completed,
-            formName,
-            formRef,
-            formSettings,
-            getErrorCallback,
-            history,
-            setInlineErrors,
-            setUserProgress,
-            steps,
-            updateFieldOptions
-          };
           updateBackNavMap(session.back_nav_map);
           setIntegrations(session.integrations);
-          setFormCompleted(session.form_completed);
           if (!isObjectEmpty(initialValues))
             clientInstance.submitCustom(initialValues, false);
 
@@ -1079,11 +1064,11 @@ function Form({
       submitData || ['button', 'text'].includes(metadata.elementType);
     if (!redirectKey) {
       if (explicitNav) {
-        setFormCompleted(true);
         eventData.completed = true;
-        if (internalState[_internalId])
-          internalState[_internalId].formCompleted = true;
-        authHookCb.cb();
+        session.form_completed = true;
+        // Need to rerender when onboarding questions are complete so
+        // LoginProvider can render children
+        rerenderAllForms();
         client.registerEvent(eventData, submitPromise).then(() => {
           setFinished(true);
         });
@@ -1097,13 +1082,10 @@ function Form({
       const terminalStep = !hasNext && nextStep.next_conditions.length === 0;
       if (terminalStep) {
         const authIntegration = getAuthIntegrationMetadata(integrations);
-        // Completed should be false if it is a 'terminal step' in the middle of
-        // a login flow with steps configured for after login
-        const isTerminalStepAuth =
-          authState.sentAuth &&
-          authIntegration?.auth_gate_steps.length &&
-          !authIntegration?.auth_gate_steps.includes(steps[stepKey].id);
-        eventData.completed = !isTerminalStepAuth;
+        eventData.completed = !isTerminalStepAuth(
+          authIntegration,
+          steps[stepKey].id
+        );
       }
       client
         .registerEvent(eventData, submitPromise)
@@ -1507,7 +1489,7 @@ function Form({
   // If form was completed in a previous session and edits are disabled,
   // consider the form finished
   const anyFinished =
-    finished || (formCompleted && completeState !== undefined);
+    finished || (session?.form_completed && completeState !== undefined);
 
   useEffect(() => {
     if (!anyFinished) return;

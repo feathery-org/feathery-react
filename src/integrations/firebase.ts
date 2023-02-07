@@ -1,6 +1,6 @@
 import { dynamicImport } from './utils';
 import { updateSessionValues } from '../utils/formHelperFunctions';
-import { authState } from '../elements/components/LoginProvider';
+import { authState } from '../auth/LoginProvider';
 
 let firebasePromise: any = null;
 

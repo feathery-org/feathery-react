@@ -6,8 +6,6 @@ import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient, featheryDoc } from './browser';
 import { rerenderAllForms } from './formHelperFunctions';
-import { inferEmailLoginFromURL } from '../integrations/utils';
-import { authState } from '../elements/components/LoginProvider';
 
 export type FeatheryFieldTypes =
   | null
@@ -42,9 +40,9 @@ type InitState = {
   initialized: boolean;
   sdkKey: string;
   preloadForms: { [formName: string]: any };
-  cachedSessions: { [formName: string]: any };
+  formSessions: { [formName: string]: any };
   fieldValuesInitialized: boolean;
-  renderCallbacks: { [cbKey: string]: any };
+  renderCallbacks: Record<string, Record<string, any>>;
   defaultErrors: Record<string, string>;
 } & Omit<InitOptions, keyof DeprecatedOptions>;
 
@@ -57,7 +55,7 @@ const initState: InitState = {
   userId: '',
   language: '',
   preloadForms: [],
-  cachedSessions: {},
+  formSessions: {},
   defaultErrors: {},
   // Since all field values are fetched with each session, only fetch field
   // values on the first session request
@@ -95,12 +93,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
 
   initState.sdkKey = sdkKey;
   optionsAsInitState.forEach((key) => {
-    // ------------------------------------
-    // ------------------------------------
-    // I don't really get why removing authId and authClient caused this?
-    // ------------------------------------
-    // ------------------------------------
-    // @ts-expect-error
+    // @ts-expect-error Type 'string | string[] | undefined' is not assignable to type...
     if (options[key]) initState[key] = options[key];
   });
   if (options.language) {
@@ -148,9 +141,7 @@ function _fetchFormData(formIds: string[]) {
     formClient.fetchCacheForm().then((stepsResponse: any) => {
       initState.preloadForms[key] = stepsResponse;
     });
-    formClient
-      .fetchSession()
-      .then(([session]: any) => (initState.cachedSessions[key] = session));
+    formClient.fetchSession();
   });
 }
 
@@ -197,17 +188,6 @@ function setValues(userVals: FieldValues, rerender = true): void {
   if (rerender) rerenderAllForms();
 }
 
-function setAuthClient(client: any): void {
-  authState.authClient = client;
-  // Attempt login after setting auth client, in case the auth client wasn't set
-  // when auth was already attempted after initializing the integrations
-  inferEmailLoginFromURL(defaultClient);
-}
-
-function getAuthClient(): any {
-  return authState.authClient;
-}
-
 export {
   init,
   initInfo,
@@ -216,7 +196,5 @@ export {
   initState,
   initFormsPromise,
   fieldValues,
-  filePathMap,
-  getAuthClient,
-  setAuthClient
+  filePathMap
 };

@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { JSForm, Props as FormProps } from '../../Form';
-import { getStytchJwt } from '../../utils/browser';
-import { defaultClient, getAuthClient } from '../../utils/init';
-import { authHookCb } from '../../integrations/stytch';
-import { isAuthStytch } from '../../integrations/utils';
-import Spinner from './Spinner';
-import { isHrefFirebaseMagicLink } from '../../integrations/firebase';
-import LoaderContainer from './LoaderContainer';
-import internalState from '../../utils/internalState';
+import { JSForm, Props as FormProps } from '../Form';
+import { getStytchJwt } from '../utils/browser';
+import { defaultClient, initInfo } from '../utils/init';
+import { getAuthClient, isAuthStytch } from './utils';
+import Spinner from '../elements/components/Spinner';
+import { isHrefFirebaseMagicLink } from '../integrations/firebase';
+import LoaderContainer from '../elements/components/LoaderContainer';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  registerRenderCallback,
+  rerenderAllForms
+} from '../utils/formHelperFunctions';
 /** TODO: These next 2 should maybe be dynamically imported, but having trouble with that
  * combined 6.9k gzipped, so OK for now
  */
@@ -27,6 +29,7 @@ export const authState = {
   // after auth, not during other form navigation
   redirectAfterLogin: false,
   sentAuth: false,
+  setAuthId: (() => {}) as (newId: string) => void,
   onLogin: () => {},
   onLogout: () => {}
 };
@@ -46,10 +49,11 @@ const LoginProvider = ({
   loginPath?: string;
   onLogin?: () => void;
   onLogout?: () => void;
-  children: JSX.Element;
+  children?: JSX.Element;
 }) => {
   const [_internalId] = useState(uuidv4());
-  const formCompleted = Boolean(internalState[_internalId]?.formCompleted);
+  const formCompleted =
+    initInfo().formSessions[formProps.formName]?.form_completed ?? false;
 
   // Need to use this flag because when doing magic link login the onChange
   // event doesn't seem to be added early enough to catch the first event which
@@ -58,7 +62,6 @@ const LoginProvider = ({
   // Use this render state to force re-evaluation of authId, since authState isn't reactive as-is
   const [render, setRender] = useState(true);
   const [showLoader, setShowLoader] = useState(false);
-  authHookCb.cb = () => setRender((prev) => !prev);
 
   const logoutActions = () => {
     hasAuthedRef.current = false;
@@ -75,12 +78,7 @@ const LoginProvider = ({
       getStytchJwt()
     ) {
       authState.redirectAfterLogin = true;
-      // We always need to set the redirect flag, but on local hosted forms we don't want to set the loader
-      if (
-        window.location.hostname !== 'localhost' ||
-        window.location.port === '3000'
-      )
-        setShowLoader(true);
+      setShowLoader(true);
     }
 
     const { location, history } = window;
@@ -95,6 +93,15 @@ const LoginProvider = ({
       setShowLoader(false);
     };
     authState.onLogout = onLogout;
+    authState.setAuthId = (newId: string) => {
+      authState.authId = newId;
+      // Execute render callbacks after setting authId, so that form navigation can be evaluated again
+      rerenderAllForms();
+    };
+
+    registerRenderCallback(_internalId, 'loginProvider', () => {
+      setRender((render) => !render);
+    });
 
     if (authClientProp) authState.authClient = authClientProp;
     // If user passes authId as a prop, we need to submit it
@@ -112,6 +119,7 @@ const LoginProvider = ({
 
     const unsubscribe = authClient.session.onChange((newSession: any) => {
       if (hasAuthedRef.current && newSession === null) {
+        authState.setAuthId('');
       } else if (newSession?.stytch_session?.session_jwt ?? getStytchJwt())
         hasAuthedRef.current = true;
     });
