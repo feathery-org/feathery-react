@@ -245,6 +245,8 @@ function PhoneField({
               const newNum = e.target.value;
               if (newNum) {
                 const LPN = global.libphonenumber;
+                if (!LPN) return;
+
                 const onlyDigits = LPN.parseDigits(newNum, curCountryCode);
                 // Prevent user from starting national number with country code.
                 // This is valid for all countries aside from a few, like Indonesia
