@@ -269,10 +269,11 @@ function Form({
   }, [loaders]);
 
   const getNextAuthStep = useAuth({
-    setStepKey,
-    steps,
+    initialStep: getInitialStep({ initialStepId, steps }),
     integrations,
-    initialStep: getInitialStep({ initialStepId, steps })
+    productionEnv,
+    setStepKey,
+    steps
   });
 
   const [backNavMap, setBackNavMap] = useState({});

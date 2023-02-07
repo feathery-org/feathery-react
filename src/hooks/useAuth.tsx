@@ -5,15 +5,17 @@ import { getAuthIntegrationMetadata } from '../integrations/utils';
 import { setUrlStepHash } from '../utils/formHelperFunctions';
 
 const useAuth = ({
-  setStepKey,
-  steps,
+  initialStep,
   integrations,
-  initialStep
+  productionEnv,
+  setStepKey,
+  steps
 }: {
+  initialStep: string;
+  integrations: null | Record<string, any>;
+  productionEnv: boolean;
   setStepKey: React.Dispatch<React.SetStateAction<string>>;
   steps: any;
-  integrations: null | Record<string, any>;
-  initialStep: string;
 }) => {
   const history = useHistory();
   const authId = authState.authId;
@@ -84,9 +86,12 @@ const useAuth = ({
     let nextStep = '';
     const userAuthed = Boolean(authState.authId);
 
-    if (userAuthed && authState.redirectAfterLogin) {
+    if (!productionEnv && window.location.hostname !== 'localhost') {
+      // Don't want to auth gate steps if using the test SDK key.
+      // However, still auth gate on localhost for dev purposes
+    } else if (userAuthed && authState.redirectAfterLogin)
       nextStep = findStepName(metadata.login_step);
-    } else if (!userAuthed && nextStepIsProtected)
+    else if (!userAuthed && nextStepIsProtected)
       nextStep = findStepName(metadata.logout_step);
 
     return nextStep;
