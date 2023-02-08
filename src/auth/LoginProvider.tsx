@@ -174,7 +174,7 @@ const LoginProvider = ({
         <JSForm {...formProps} _internalId={_internalId} />
       </div>
     );
-  } else return children;
+  } else return children ?? null;
 };
 
 export default LoginProvider;
