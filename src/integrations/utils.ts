@@ -1,8 +1,8 @@
 import { installPlaid } from './plaid';
-import { installFirebase, emailLogin as emailLoginFirebase } from './firebase';
+import { installFirebase } from './firebase';
 import { initializeTagManager } from './googleTagManager';
 import { installSegment } from './segment';
-import { installStytch, emailLogin as emailLoginStytch } from './stytch';
+import { installStytch } from './stytch';
 import { installStripe } from './stripe';
 import TagManager from 'react-gtm-module';
 import {
@@ -10,9 +10,8 @@ import {
   installGoogleAnalytics,
   trackGAEvent
 } from './googleAnalytics';
-import { getAuthClient, initState } from '../utils/init';
+import { inferEmailLoginFromURL } from '../auth/utils';
 import Client from '../utils/client';
-import { rerenderAllForms } from '../utils/formHelperFunctions';
 import { installArgyle } from './argyle';
 
 const IMPORTED_URLS = new Set();
@@ -46,7 +45,7 @@ export function dynamicImport(
 }
 
 export async function initializeIntegrations(
-  integs: any,
+  integs: Record<string, any>,
   featheryClient: Client
 ) {
   await Promise.all([
@@ -63,45 +62,6 @@ export async function initializeIntegrations(
   if (gtm) initializeTagManager(gtm);
   if (integs.firebase || integs.stytch)
     return inferEmailLoginFromURL(featheryClient);
-}
-
-export function inferEmailLoginFromURL(featheryClient: Client) {
-  const queryParams = new URLSearchParams(window.location.search);
-  const type = queryParams.get('stytch_token_type');
-  const token = queryParams.get('token');
-  if (isAuthStytch() || (type && token))
-    return emailLoginStytch(featheryClient);
-  else return emailLoginFirebase(featheryClient);
-}
-
-export function inferAuthLogout() {
-  let logout;
-  if (isAuthStytch()) {
-    logout = () => getAuthClient().session.revoke();
-  } else if (global.firebase) {
-    logout = () => global.firebase.auth().signOut();
-  }
-
-  // logout may not have a value in certain cases, i.e. stytch is already logged out so there is no jwt
-  if (!logout) return;
-
-  logout().then(() => {
-    initState.authId = undefined;
-    initState.authPhoneNumber = undefined;
-    initState.authEmail = undefined;
-    rerenderAllForms();
-  });
-}
-
-export function isAuthStytch() {
-  const authClient = getAuthClient();
-  if (!authClient) return;
-  const isAuthClientStytch = Object.getOwnPropertySymbols(authClient)
-    .map((symbol) => symbol.toString())
-    .includes('Symbol(stytch__internal)');
-  // Still check global.Stytch for back compat, if customer is using old package.
-  // TODO: remove the global.Stytch part of this || once the new package has been out for longer
-  return global.Stytch || isAuthClientStytch;
 }
 
 export interface ActionData {

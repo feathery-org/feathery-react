@@ -5,7 +5,6 @@ import Client from './client';
 import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient, featheryDoc } from './browser';
-import { inferEmailLoginFromURL } from '../integrations/utils';
 import { rerenderAllForms } from './formHelperFunctions';
 
 export type FeatheryFieldTypes =
@@ -31,13 +30,9 @@ type DeprecatedOptions = {
 };
 
 type InitOptions = {
-  authClient?: any;
   userId?: string;
   preloadForms?: string[];
   userTracking?: 'cookie' | 'fingerprint';
-  authId?: string;
-  authEmail?: string;
-  authPhoneNumber?: string;
   language?: string;
 } & DeprecatedOptions;
 
@@ -45,26 +40,22 @@ type InitState = {
   initialized: boolean;
   sdkKey: string;
   preloadForms: { [formName: string]: any };
-  sessions: { [formName: string]: any };
+  formSessions: { [formName: string]: any };
   fieldValuesInitialized: boolean;
-  renderCallbacks: { [cbKey: string]: any };
+  renderCallbacks: Record<string, Record<string, any>>;
   defaultErrors: Record<string, string>;
 } & Omit<InitOptions, keyof DeprecatedOptions>;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
-const defaultClient = new Client();
+export const defaultClient = new Client();
 const initState: InitState = {
   initialized: false,
   userTracking: 'cookie',
   sdkKey: '',
   userId: '',
-  authClient: null,
-  authId: '',
-  authEmail: '',
-  authPhoneNumber: '',
   language: '',
   preloadForms: [],
-  sessions: {},
+  formSessions: {},
   defaultErrors: {},
   // Since all field values are fetched with each session, only fetch field
   // values on the first session request
@@ -72,10 +63,6 @@ const initState: InitState = {
   renderCallbacks: {}
 };
 const optionsAsInitState: (keyof InitOptions & keyof InitState)[] = [
-  'authClient',
-  'authId',
-  'authEmail',
-  'authPhoneNumber',
   'userId',
   'userTracking'
 ];
@@ -106,6 +93,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
 
   initState.sdkKey = sdkKey;
   optionsAsInitState.forEach((key) => {
+    // @ts-expect-error Type 'string | string[] | undefined' is not assignable to type...
     if (options[key]) initState[key] = options[key];
   });
   if (options.language) {
@@ -140,15 +128,6 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
     }
   }
 
-  if (initState.authId) {
-    initFormsPromise = initFormsPromise.then(() =>
-      defaultClient.submitAuthInfo({
-        authId: initState.authId,
-        authPhone: initState.authPhoneNumber,
-        authEmail: initState.authEmail
-      })
-    );
-  }
   initFormsPromise = initFormsPromise.then(() =>
     _fetchFormData(initState.preloadForms)
   );
@@ -162,9 +141,7 @@ function _fetchFormData(formIds: string[]) {
     formClient.fetchCacheForm().then((stepsResponse: any) => {
       initState.preloadForms[key] = stepsResponse;
     });
-    formClient
-      .fetchSession()
-      .then(([session]: any) => (initState.sessions[key] = session));
+    formClient.fetchSession();
   });
 }
 
@@ -211,17 +188,6 @@ function setValues(userVals: FieldValues, rerender = true): void {
   if (rerender) rerenderAllForms();
 }
 
-function setAuthClient(client: any): void {
-  initState.authClient = client;
-  // Attempt login after setting auth client, in case the auth client wasn't set
-  // when auth was already attempted after initializing the integrations
-  inferEmailLoginFromURL(defaultClient);
-}
-
-function getAuthClient(): any {
-  return initState.authClient;
-}
-
 export {
   init,
   initInfo,
@@ -230,7 +196,5 @@ export {
   initState,
   initFormsPromise,
   fieldValues,
-  filePathMap,
-  getAuthClient,
-  setAuthClient
+  filePathMap
 };

@@ -1,5 +1,6 @@
 import { dynamicImport } from './utils';
 import { updateSessionValues } from '../utils/formHelperFunctions';
+import { authState } from '../auth/LoginProvider';
 
 let firebasePromise: any = null;
 
@@ -70,6 +71,7 @@ export async function sendFirebaseLogin({
       .auth()
       .signInWithPhoneNumber(`+1${fieldVal}`, window.firebaseRecaptchaVerifier)
       .then((confirmationResult: any) => {
+        authState.sentAuth = true;
         // SMS sent
         window.firebaseConfirmationResult = confirmationResult;
         (window as any).firebasePhoneNumber = fieldVal;
@@ -100,6 +102,7 @@ export async function sendFirebaseLogin({
         handleCodeInApp: true
       })
       .then(() => {
+        authState.sentAuth = true;
         window.localStorage.setItem('featheryFirebaseEmail', fieldVal);
         return {};
       })

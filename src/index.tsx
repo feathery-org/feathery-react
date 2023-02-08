@@ -2,19 +2,14 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import Elements from './elements';
 import Form, { JSForm, Props as FormProps } from './Form';
-import {
-  init,
-  updateUserId,
-  setValues,
-  fieldValues,
-  setAuthClient,
-  getAuthClient
-} from './utils/init';
+import { init, updateUserId, setValues, fieldValues } from './utils/init';
+import { setAuthClient, getAuthClient } from './auth/utils';
 import { OPERATOR_CODE } from './utils/logic';
 import { featheryDoc } from './utils/browser';
 import { getFormContext } from './utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
 import { FormContext } from './types/Form';
+import LoginProvider from './auth/LoginProvider';
 
 function getAllValues() {
   // Make a copy so users can't set fieldValues directly
@@ -64,6 +59,7 @@ export {
   setAuthClient,
   getAuthClient,
   renderAt,
+  LoginProvider,
   Feathery
 };
 export type { OPERATOR_CODE, FormContext };

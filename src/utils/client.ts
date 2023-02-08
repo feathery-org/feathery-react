@@ -13,13 +13,13 @@ import { encodeGetParams } from './primitives';
 import {
   getABVariant,
   getDefaultFieldValue,
-  rerenderAllForms,
   updateSessionValues
 } from './formHelperFunctions';
 import { loadPhoneValidator } from './validation';
 import { initializeIntegrations } from '../integrations/utils';
 import { loadLottieLight } from '../elements/components/Lottie';
 import { featheryDoc } from './browser';
+import { authState } from '../auth/LoginProvider';
 
 // Convenience boolean for urls - manually change for testing
 const API_URL_OPTIONS = {
@@ -304,20 +304,16 @@ export default class Client {
   async fetchSession(formPromise = null, block = false) {
     // Block if there's a chance user id isn't available yet
     await (block ? initFormsPromise : Promise.resolve());
-    const {
-      userId,
-      sessions,
-      authId,
-      fieldValuesInitialized: noData
-    } = initInfo();
+    const { userId, formSessions, fieldValuesInitialized: noData } = initInfo();
     const formData = await (formPromise ?? Promise.resolve());
 
-    if (this.formKey in sessions) return [sessions[this.formKey], formData];
+    if (this.formKey in formSessions)
+      return [formSessions[this.formKey], formData];
 
     initState.fieldValuesInitialized = true;
     let params = { form_key: this.formKey };
     if (userId) (params as any).fuser_key = userId;
-    if (authId) (params as any).auth_id = authId;
+    if (authState.authId) (params as any).auth_id = authState.authId;
     if (noData) (params as any).no_data = 'true';
     // @ts-expect-error TS(2322): Type 'string' is not assignable to type '{ form_ke... Remove this comment to see the full error message
     params = encodeGetParams(params);
@@ -350,21 +346,27 @@ export default class Client {
       if (!trueSession.track_users) initState.userId = uuidv4();
       updateSessionValues(trueSession);
     }
+    initState.formSessions[this.formKey] = trueSession;
     return [trueSession, formData];
   }
 
-  submitAuthInfo({ authId, authPhone = '', authEmail = '' }: any) {
+  async submitAuthInfo({
+    authId,
+    authPhone = '',
+    authEmail = '',
+    isStytchTemplateKey
+  }: any) {
     const { userId } = initInfo();
-    initState.authId = authId;
-    // Execute render callbacks after setting authId, so that form navigation can be evaluated again
-    rerenderAllForms();
-    if (authPhone) initState.authPhoneNumber = authPhone;
-    if (authEmail) initState.authEmail = authEmail;
+    await authState.onLogin();
+    if (authPhone) authState.authPhoneNumber = authPhone;
+    if (authEmail) authState.authEmail = authEmail;
 
     const data = {
       auth_id: authId,
       auth_phone: authPhone,
       auth_email: authEmail,
+      is_stytch_template_key: isStytchTemplateKey,
+      form_keys: Object.keys(initInfo().formSessions),
       ...(userId ? { fuser_key: userId } : {})
     };
     const url = `${API_URL}panel/update_auth/v2/`;
@@ -373,9 +375,23 @@ export default class Client {
       method: 'PATCH',
       body: JSON.stringify(data)
     };
-    return this._fetch(url, options).then((response) => {
-      return response ? response.json() : Promise.resolve();
-    });
+    return this._fetch(url, options)
+      .then((response) => {
+        return response ? response.json() : Promise.resolve();
+      })
+      .then((data: any) => {
+        if (data === undefined) return Promise.resolve();
+        Object.entries<{ form_completed: boolean }>(data.sessions).forEach(
+          ([formKey, session]) =>
+            (initState.formSessions[formKey].form_completed =
+              session.form_completed)
+        );
+        // Need to wait until form_completed has been fetched before setting
+        // authId, otherwise we will can flash the onboarding questions before
+        // LoginProvider renders its children
+        authState.setAuthId(authId);
+        return Promise.resolve(data);
+      });
   }
 
   async submitCustom(customKeyValues: any, override = true) {

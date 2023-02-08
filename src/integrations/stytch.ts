@@ -1,6 +1,7 @@
-import { getAuthClient, setAuthClient } from '../utils/init';
+import { getAuthClient, setAuthClient } from '../auth/utils';
 import { dynamicImport } from './utils';
 import { featheryDoc } from '../utils/browser';
+import { authState } from '../auth/LoginProvider';
 
 const STYTCH_JS_URL = 'https://js.stytch.com/stytch.js';
 
@@ -92,6 +93,8 @@ export function emailLogin(featheryClient: any) {
 
   // Flag so that we don't attempt auth again after, if it was successful
   authSent = true;
+  // This is a separate flag because it is never reset
+  authState.sentAuth = true;
 
   // If there is an existing Stytch session when a user returns to an embedded
   // Feathery form, we need to update the auth info from Feathery's side
@@ -138,7 +141,7 @@ function featherySubmitAuthInfo(featheryClient: any) {
       authEmail: user.emails[0]?.email ?? '',
       // Slice off the + from the phone number
       authPhone: user.phone_numbers[0]?.phone_number.slice(1) ?? '',
-      is_stytch_template_key: config.is_stytch_template_key
+      isStytchTemplateKey: config.is_stytch_template_key
     })
     .catch(() => (authSent = false));
 }

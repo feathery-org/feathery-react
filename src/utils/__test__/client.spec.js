@@ -4,7 +4,7 @@ import { initInfo, initFormsPromise } from '../init';
 jest.mock('../init', () => ({
   initInfo: jest.fn(),
   initFormsPromise: Promise.resolve(),
-  initState: {},
+  initState: { formSessions: {} },
   fieldValues: {},
   filePathMap: {}
 }));
@@ -18,7 +18,7 @@ describe('client', () => {
       initInfo.mockReturnValue({
         sdkKey: 'sdkKey',
         userId: 'userId',
-        sessions: {},
+        formSessions: {},
         preloadForms: {}
       });
       global.fetch = jest.fn().mockResolvedValue({
@@ -55,7 +55,7 @@ describe('client', () => {
       initInfo.mockReturnValue({
         sdkKey: 'sdkKey',
         userId: 'userId',
-        sessions: {},
+        formSessions: {},
         preloadForms: {},
         fieldValuesInitialized: false
       });
@@ -200,7 +200,7 @@ describe('client', () => {
     initInfo.mockReturnValue({
       sdkKey: 'sdkKey',
       userId: 'userId',
-      sessions: {},
+      formSessions: {},
       preloadForms: {}
     });
     const formKey = 'formKey';

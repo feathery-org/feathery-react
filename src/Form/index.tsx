@@ -28,13 +28,15 @@ import {
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
+  registerRenderCallback,
+  rerenderAllForms,
   setFormElementError,
   setUrlStepHash,
   updateStepFieldOptions
 } from '../utils/formHelperFunctions';
 import { shouldElementHide, getHideIfReferences } from '../utils/hideIfs';
 import { validators, validateElements } from '../utils/validation';
-import { initState, fieldValues, FieldValues } from '../utils/init';
+import { initState, fieldValues, FieldValues, initInfo } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { sendFirebaseLogin, verifySMSCode } from '../integrations/firebase';
@@ -50,12 +52,7 @@ import {
   setupPaymentMethod,
   collectPayment
 } from '../integrations/stripe';
-import {
-  ActionData,
-  trackEvent,
-  inferAuthLogout,
-  isAuthStytch
-} from '../integrations/utils';
+import { ActionData, trackEvent } from '../integrations/utils';
 import DevNavBar from './components/DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
@@ -84,7 +81,7 @@ import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
 import internalState from '../utils/internalState';
-import useAuth from '../hooks/useAuth';
+import useFormAuth from '../auth/useFormAuth';
 import {
   ACTION_ADD_REPEATED_ROW,
   ACTION_BACK,
@@ -108,6 +105,14 @@ import {
   hasFlowActions
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
+import { authState } from '../auth/LoginProvider';
+import LoaderContainer from '../elements/components/LoaderContainer';
+import {
+  getAuthIntegrationMetadata,
+  inferAuthLogout,
+  isAuthStytch,
+  isTerminalStepAuth
+} from '../auth/utils';
 
 export interface Props {
   formName: string;
@@ -200,6 +205,7 @@ function Form({
 }: InternalProps & Props) {
   const [client, setClient] = useState<any>(null);
   const history = useHistory();
+  const session = initState.formSessions[formName];
 
   const [autoValidate, setAutoValidate] = useState(false);
   const [first, setFirst] = useState(true);
@@ -211,7 +217,6 @@ function Form({
   const [shouldScrollToTop, setShouldScrollToTop] = useState(false);
   const [finished, setFinished] = useState(false);
   const [userProgress, setUserProgress] = useState(null);
-  const [formCompleted, setFormCompleted] = useState(false);
   const [curDepth, setCurDepth] = useState(0);
   const [maxDepth, setMaxDepth] = useState(0);
   const [formSettings, setFormSettings] = useState({
@@ -242,7 +247,7 @@ function Form({
   const [viewport, setViewport] = useState(getViewport());
   const handleResize = () => setViewport(getViewport());
 
-  const prevAuthId = usePrevious(initState.authId);
+  const prevAuthId = usePrevious(authState.authId);
   const prevStepKey = usePrevious(stepKey);
 
   // Set to trigger conditional renders on field value updates, no need to use the value itself
@@ -264,12 +269,12 @@ function Form({
     );
   }, [loaders]);
 
-  const { getNextAuthStep, redirectAfterLoginRef } = useAuth({
-    setLoaders,
-    setStepKey,
-    steps,
+  const getNextAuthStep = useFormAuth({
+    initialStep: getInitialStep({ initialStepId, steps }),
     integrations,
-    initialStep: getInitialStep({ initialStepId, steps, formName })
+    productionEnv,
+    setStepKey,
+    steps
   });
 
   const [backNavMap, setBackNavMap] = useState({});
@@ -301,9 +306,9 @@ function Form({
 
   // All mount and unmount logic should live here
   useEffect(() => {
-    initState.renderCallbacks[_internalId] = () => {
+    registerRenderCallback(_internalId, 'form', () => {
       setRender((render) => !render);
-    };
+    });
     if (
       contextRef &&
       Object.prototype.hasOwnProperty.call(contextRef, 'current')
@@ -610,9 +615,7 @@ function Form({
     await runUserCallback(onLoad, () => {
       const formattedFields = formatAllFormFields(steps, true);
       const integrationData: IntegrationData = {};
-      if (initState.authId) {
-        integrationData.firebaseAuthId = initState.authId;
-      }
+      if (authState.authId) integrationData.firebaseAuthId = authState.authId;
 
       return {
         fields: formattedFields,
@@ -685,14 +688,17 @@ function Form({
         .then(([session, steps]) => {
           updateBackNavMap(session.back_nav_map);
           setIntegrations(session.integrations);
-          setFormCompleted(session.form_completed);
           if (!isObjectEmpty(initialValues))
             clientInstance.submitCustom(initialValues, false);
 
           // User is authenticating. auth hook will set the initial stepKey once auth has finished
-          if (redirectAfterLoginRef.current) return;
+          if (authState.redirectAfterLogin) return;
 
-          const newKey = getInitialStep({ initialStepId, steps, formName });
+          const newKey = getInitialStep({
+            initialStepId,
+            steps,
+            sessionCurrentStep: session.current_step_key
+          });
           setUrlStepHash(history, steps, newKey);
           setStepKey(newKey);
         })
@@ -721,7 +727,7 @@ function Form({
   useEffect(() => {
     // We set render to re-evaluate auth nav rules - but should only getNewStep if either the step or authId has changed.
     // Should not fetch new step if render was set for another reason
-    if (stepKey && (prevStepKey !== stepKey || prevAuthId !== initState.authId))
+    if (stepKey && (prevStepKey !== stepKey || prevAuthId !== authState.authId))
       getNewStep(stepKey);
   }, [stepKey, render]);
 
@@ -909,7 +915,7 @@ function Form({
           stepChanged = changeStep(stepKey, activeStep.key, steps, history);
         },
         firstStepSubmitted: first,
-        integrationData: { authProviderId: initState.authId ?? '' },
+        integrationData: { authProviderId: authState.authId ?? '' },
         trigger
       }));
       if (stepChanged) return;
@@ -1059,6 +1065,10 @@ function Form({
     if (!redirectKey) {
       if (explicitNav) {
         eventData.completed = true;
+        session.form_completed = true;
+        // Need to rerender when onboarding questions are complete so
+        // LoginProvider can render children
+        rerenderAllForms();
         client.registerEvent(eventData, submitPromise).then(() => {
           setFinished(true);
         });
@@ -1070,7 +1080,13 @@ function Form({
         b.properties.actions.some((action: any) => action.type === ACTION_NEXT)
       );
       const terminalStep = !hasNext && nextStep.next_conditions.length === 0;
-      if (terminalStep) eventData.completed = true;
+      if (terminalStep) {
+        const authIntegration = getAuthIntegrationMetadata(integrations);
+        eventData.completed = !isTerminalStepAuth(
+          authIntegration,
+          steps[stepKey].id
+        );
+      }
       client
         .registerEvent(eventData, submitPromise)
         .then(() => updateBackNavMap({ [redirectKey]: activeStep.key }));
@@ -1285,7 +1301,7 @@ function Form({
           hasErr = true;
         });
         if (hasErr) break;
-        else redirectAfterLoginRef.current = true;
+        else authState.redirectAfterLogin = true;
       } else if (type === ACTION_SEND_MAGIC_LINK) {
         const email = fieldValues[action.auth_target_field_key] as string;
         if (validators.email(email)) {
@@ -1473,7 +1489,7 @@ function Form({
   // If form was completed in a previous session and edits are disabled,
   // consider the form finished
   const anyFinished =
-    finished || (formCompleted && completeState !== undefined);
+    finished || (session?.form_completed && completeState !== undefined);
 
   useEffect(() => {
     if (!anyFinished) return;
@@ -1487,39 +1503,25 @@ function Form({
     runUserCallback(onFormComplete).then(redirectForm);
   }, [anyFinished]);
 
-  const wholePageLoader = stepLoader && (
-    <div
-      style={{
-        backgroundColor: `#${activeStep?.default_background_color ?? 'FFF'}`,
-        position: 'fixed',
-        height: '100vh',
-        width: '100vw',
-        zIndex: 50,
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center'
-      }}
-    >
-      {stepLoader}
-    </div>
-  );
-
   if (formSettings.formOff) {
     // Form is turned off
     return <FormOff />;
   } else if (anyFinished) {
     return completeState ?? null;
   } else if (!activeStep) {
-    // Form has not been loaded yet, but we need to display
-    // loader if waiting on auth
-    return wholePageLoader;
+    return null;
   }
 
   const isModal = display === 'modal';
   const addChin = formSettings.showBrand && !isFill(activeStep.height);
   return (
     <>
-      {wholePageLoader}
+      <LoaderContainer
+        showLoader={Boolean(stepLoader)}
+        backgroundColor={activeStep?.default_background_color}
+      >
+        {stepLoader}
+      </LoaderContainer>
       <ReactPortal portal={isModal}>
         <BootstrapForm
           {...formProps}

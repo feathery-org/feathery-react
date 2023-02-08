@@ -1,5 +1,5 @@
 import getRandomBoolean from './random';
-import { fieldValues, filePathMap, initInfo } from './init';
+import { fieldValues, filePathMap, initInfo, initState } from './init';
 import { toBase64 } from './image';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { shouldElementHide } from './hideIfs';
@@ -396,24 +396,38 @@ export function setUrlStepHash(history: any, steps: any, stepName: string) {
   }
 }
 
+export function registerRenderCallback(
+  internalId: string,
+  key: 'form' | 'loginProvider',
+  callback: () => void
+) {
+  initState.renderCallbacks[internalId] = {
+    ...initState.renderCallbacks[internalId],
+    [key]: callback
+  };
+}
+
 export function rerenderAllForms() {
-  Object.values(initInfo().renderCallbacks).forEach((cb: any) => cb());
+  Object.values(initInfo().renderCallbacks).forEach(
+    (formCbs: Record<string, any>) =>
+      Object.values(formCbs).forEach((cb: any) => cb())
+  );
 }
 
 export function getInitialStep({
   initialStepId,
   steps,
-  formName
+  sessionCurrentStep
 }: {
   initialStepId: string;
   steps: any;
-  formName: string;
+  sessionCurrentStep?: string;
 }) {
   const hashKey = decodeURI(location.hash.substr(1));
   return (
     initialStepId ||
     (hashKey && hashKey in steps && hashKey) ||
-    initInfo().sessions[formName]?.current_step_key ||
+    sessionCurrentStep ||
     (getOrigin as any)(steps).key
   );
 }
