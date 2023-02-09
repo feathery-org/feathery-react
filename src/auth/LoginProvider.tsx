@@ -82,9 +82,10 @@ const LoginProvider = ({
     }
 
     const { location, history } = window;
-    if (loginPath && location.pathname !== loginPath) {
+    // only need to redirect to login path for new logins
+    if (!getStytchJwt() && loginPath && location.pathname !== loginPath) {
       // If user is not at the URL whitelisted for auth, take them there for login
-      history.replaceState(null, '', loginPath);
+      history.replaceState(null, '', loginPath + window.location.search);
     }
 
     // Register onLogin cb so it can be called by Client.submitAuthInfo
