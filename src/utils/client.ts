@@ -180,6 +180,7 @@ export default class Client {
       }
     });
 
+    formData.set('__feathery_form_key', this.formKey);
     if (this.version) formData.set('__feathery_version', this.version);
     await this._fetch(url, { method: 'POST', body: formData });
   }
