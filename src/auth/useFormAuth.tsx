@@ -85,10 +85,7 @@ const useFormAuth = ({
     let nextStep = '';
     const userAuthed = Boolean(authState.authId);
 
-    if (!productionEnv && window.location.hostname !== 'localhost') {
-      // Don't want to auth gate steps if using the test SDK key.
-      // However, still auth gate on localhost for dev purposes
-    } else if (userAuthed && authState.redirectAfterLogin)
+    if (userAuthed && authState.redirectAfterLogin)
       nextStep = findStepName(metadata.login_step);
     else if (!userAuthed && nextStepIsProtected)
       nextStep = findStepName(metadata.logout_step);
