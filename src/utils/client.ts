@@ -266,9 +266,9 @@ export default class Client {
     });
   }
 
-  fetchCacheForm() {
-    const { preloadForms, language } = initInfo();
-    if (this.formKey in preloadForms)
+  fetchCacheForm(formLanguage?: string) {
+    const { preloadForms, language: globalLanguage } = initInfo();
+    if (!formLanguage && this.formKey in preloadForms)
       return Promise.resolve(preloadForms[this.formKey]);
 
     const params = encodeGetParams({ form_key: this.formKey });
@@ -277,6 +277,7 @@ export default class Client {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
     };
+    const language = formLanguage ?? globalLanguage;
     if (language) options.headers['Accept-Language'] = language;
 
     return this._fetch(url, options).then(async (response) => {
@@ -292,8 +293,8 @@ export default class Client {
     });
   }
 
-  async fetchForm(initVals: any) {
-    const res = await this.fetchCacheForm();
+  async fetchForm(initVals: any, language?: string) {
+    const res = await this.fetchCacheForm(language);
     // If form is disabled, data will equal `null`
     if (!res.steps) return { steps: [], formOff: true };
     this.version = res.version;
