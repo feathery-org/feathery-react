@@ -130,6 +130,7 @@ export interface Props {
   initialValues?: FieldValues;
   initialStepId?: string;
   display?: 'inline' | 'modal';
+  language?: string;
   elementProps?: ElementProps;
   contextRef?: React.MutableRefObject<null | FormContext>;
   formProps?: Record<string, any>;
@@ -195,6 +196,7 @@ function Form({
   initialValues = {},
   initialStepId = '',
   display = 'inline',
+  language,
   elementProps = {},
   contextRef,
   formProps = {},
@@ -658,7 +660,7 @@ function Form({
       setFirst(true);
       // render form without values first for speed
       const formPromise = clientInstance
-        .fetchForm(initialValues)
+        .fetchForm(initialValues, language)
         .then(({ steps, ...res }) => {
           steps = steps.reduce((result: any, step: any) => {
             result[step.key] = step;
@@ -1563,6 +1565,7 @@ function Form({
 // renderAt without exposing InternalProps to SDK users
 export function JSForm({
   formName,
+  language,
   _internalId,
   ...props
 }: Props & InternalProps) {
@@ -1578,7 +1581,9 @@ export function JSForm({
           <Form
             {...props}
             formName={formName}
-            key={formName}
+            // Changing the language changes the key and fetches the new form data
+            key={`${formName}_${language}`}
+            language={language}
             _internalId={_internalId}
           />
         </Route>
