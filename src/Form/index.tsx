@@ -1264,13 +1264,15 @@ function Form({
         const url = action.url;
         action.open_tab ? openTab(url) : (location.href = url);
       } else if (type === ACTION_CUSTOM) {
-        await submitStep({
-          metadata: {
-            elementType,
-            elementIDs: [element.id]
-          },
-          repeat: element.repeat || 0
-        });
+        if (action.submit)
+          await submitStep({
+            metadata: {
+              elementType,
+              elementIDs: [element.id]
+            },
+            repeat: element.repeat || 0
+          });
+
         await runUserCallback(onCustomAction, () => ({
           trigger: lookUpTrigger(activeStep, element.id, elementType)
         }));
