@@ -38,6 +38,7 @@ const LoginProvider = ({
   authClient: authClientProp,
   authId: authIdProp,
   formProps,
+  loader = <Spinner />,
   loginPath,
   onLogin = () => {},
   onLogout = () => {},
@@ -46,6 +47,7 @@ const LoginProvider = ({
   authClient?: any;
   authId?: string;
   formProps: FormProps;
+  loader?: JSX.Element;
   loginPath?: string;
   onLogin?: () => void;
   onLogout?: () => void;
@@ -165,11 +167,9 @@ const LoginProvider = ({
   if (!authState.authId || !formCompleted) {
     return (
       // Since we want to auth gate we should make the login form take up the entire page
-      <div style={{ height: '100vh' }}>
+      <div style={{ height: '100vh', width: '100vw' }}>
         <LoaderContainer showLoader={showLoader}>
-          <div style={{ height: '10vh', width: '10vh' }}>
-            <Spinner />
-          </div>
+          <div style={{ height: '10vh', width: '10vh' }}>{loader}</div>
         </LoaderContainer>
 
         <JSForm {...formProps} _internalId={_internalId} />
