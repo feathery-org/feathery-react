@@ -75,6 +75,8 @@ export function getDefaultFieldValue(field: any) {
       return !!servar.metadata.always_checked;
     case 'hex_color':
       return 'FFFFFFFF';
+    case 'rating':
+      return 0;
     case 'slider':
       return servar.min_length ?? 0;
     case 'select':
