@@ -5,7 +5,7 @@ export default function RatingField({
   element,
   fieldLabel,
   responsiveStyles,
-  fieldVal = 1,
+  fieldVal,
   editMode,
   onChange = () => {},
   elementProps = {},
@@ -15,6 +15,9 @@ export default function RatingField({
 
   const servar = element.servar;
   const numRatings = servar.max_length ?? 5;
+
+  // If no field value, default to 1 less than the max
+  fieldVal = fieldVal ?? numRatings - 1;
 
   return (
     <div
