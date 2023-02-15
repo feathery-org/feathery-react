@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { JSForm, Props as FormProps } from '../Form';
 import { getStytchJwt } from '../utils/browser';
 import { defaultClient, initInfo } from '../utils/init';
-import { getAuthClient, isAuthStytch } from './utils';
+import { isAuthStytch } from './internal/utils';
 import Spinner from '../elements/components/Spinner';
 import { isHrefFirebaseMagicLink } from '../integrations/firebase';
 import LoaderContainer from '../elements/components/LoaderContainer';
@@ -21,7 +21,7 @@ const TEN_SECONDS_IN_MILLISECONDS = 1000 * 10;
 const FIVE_MINUTES_IN_MILLISECONDS = 1000 * 60 * 5;
 
 export const authState = {
-  authClient: null,
+  client: null as any,
   authEmail: '',
   authId: '',
   authPhoneNumber: '',
@@ -29,28 +29,33 @@ export const authState = {
   // after auth, not during other form navigation
   redirectAfterLogin: false,
   sentAuth: false,
-  setAuthId: (() => {}) as (newId: string) => void,
+  setAuthId: (newId: string) => {
+    authState.authId = newId;
+  },
+  setClient: (newClient: any) => {
+    authState.client = newClient;
+  },
   onLogin: () => {},
   onLogout: () => {}
 };
 
 const LoginProvider = ({
-  authClient: authClientProp,
   authId: authIdProp,
   formProps,
   loader = <Spinner />,
   loginPath,
   onLogin = () => {},
   onLogout = () => {},
+  onClientReady = () => {},
   children
 }: {
-  authClient?: any;
   authId?: string;
   formProps: FormProps;
   loader?: JSX.Element;
   loginPath?: string;
   onLogin?: () => void;
   onLogout?: () => void;
+  onClientReady?: (authClient: any) => void;
   children?: JSX.Element;
 }) => {
   const [_internalId] = useState(uuidv4());
@@ -101,12 +106,15 @@ const LoginProvider = ({
       // Execute render callbacks after setting authId, so that form navigation can be evaluated again
       rerenderAllForms();
     };
+    authState.setClient = (newClient: any) => {
+      authState.client = newClient;
+      onClientReady(newClient);
+    };
 
     registerRenderCallback(_internalId, 'loginProvider', () => {
       setRender((render) => !render);
     });
 
-    if (authClientProp) authState.authClient = authClientProp;
     // If user passes authId as a prop, we need to submit it
     if (authIdProp) {
       defaultClient.submitAuthInfo({
@@ -118,22 +126,18 @@ const LoginProvider = ({
   useEffect(() => {
     if (!isAuthStytch()) return;
 
-    const authClient = getAuthClient();
-
-    const unsubscribe = authClient.session.onChange((newSession: any) => {
+    return authState.client.session.onChange((newSession: any) => {
       if (hasAuthedRef.current && newSession === null) {
         authState.setAuthId('');
       } else if (newSession?.stytch_session?.session_jwt ?? getStytchJwt())
         hasAuthedRef.current = true;
     });
-
-    return unsubscribe;
   }, [render]);
 
   const onActive = useCallback(
     throttle(
       () => {
-        const stytchClient = getAuthClient();
+        const stytchClient = authState.client;
         if (!stytchClient) return;
 
         const session = stytchClient.session.getSync();

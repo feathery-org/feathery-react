@@ -1,6 +1,9 @@
 import { dynamicImport } from './utils';
 import { updateSessionValues } from '../utils/formHelperFunctions';
 import { authState } from '../auth/LoginProvider';
+import { useEffect } from 'react';
+import { shouldElementHide } from '../utils/hideIfs';
+import { ACTION_SEND_SMS } from '../utils/elementActions';
 
 let firebasePromise: any = null;
 
@@ -9,7 +12,7 @@ export function installFirebase(firebaseConfig: any) {
   else if (!firebaseConfig) return Promise.resolve();
   else {
     firebasePromise = new Promise((resolve) => {
-      if (global.firebase) resolve(global.firebase);
+      if (authState.client) resolve(authState.client);
       else {
         // Bring in Firebase dependencies dynamically if this form uses Firebase
         return dynamicImport(
@@ -28,7 +31,8 @@ export function installFirebase(firebaseConfig: any) {
             messagingSenderId: firebaseConfig.metadata.sender_id,
             appId: firebaseConfig.metadata.app_id
           });
-          resolve(global.firebase);
+          authState.setClient(global.firebase);
+          resolve(authState.client);
         });
       }
     });
@@ -40,7 +44,7 @@ export function emailLogin(featheryClient: any) {
   if (isHrefFirebaseMagicLink()) {
     const authEmail = window.localStorage.getItem('featheryFirebaseEmail');
     if (authEmail) {
-      return global.firebase
+      return authState.client
         .auth()
         .signInWithEmailLink(authEmail, window.location.href)
         .then((result: any) => {
@@ -67,7 +71,7 @@ export async function sendFirebaseLogin({
   method: 'phone' | 'email';
 }) {
   if (method === 'phone') {
-    return await global.firebase
+    return await authState.client
       .auth()
       .signInWithPhoneNumber(`+1${fieldVal}`, window.firebaseRecaptchaVerifier)
       .then((confirmationResult: any) => {
@@ -95,7 +99,7 @@ export async function sendFirebaseLogin({
         };
       });
   } else {
-    return await global.firebase
+    return await authState.client
       .auth()
       .sendSignInLinkToEmail(fieldVal, {
         url: window.location.href,
@@ -142,6 +146,33 @@ export async function verifySMSCode({ fieldVal, featheryClient }: any) {
 }
 
 export function isHrefFirebaseMagicLink(): boolean {
-  if (!global.firebase || !global.firebase.auth) return false;
-  return global.firebase.auth().isSignInWithEmailLink(window.location.href);
+  if (!authState.client?.auth) return false;
+  return authState.client.auth().isSignInWithEmailLink(window.location.href);
+}
+
+export function useFirebaseRecaptcha(activeStep: any) {
+  // Logic to run on each step once firebase is loaded
+  useEffect(() => {
+    if (!activeStep || !global.firebase) return;
+
+    const renderedButtons = activeStep.buttons.filter(
+      (element: any) =>
+        !shouldElementHide({
+          element: element
+        })
+    );
+    const smsButton = renderedButtons.find((b: any) =>
+      b.properties.actions.some(
+        (action: any) => action.type === ACTION_SEND_SMS
+      )
+    );
+
+    if (smsButton) {
+      window.firebaseRecaptchaVerifier =
+        authState.client.auth &&
+        new (authState.client.auth().RecaptchaVerifier)(smsButton.id, {
+          size: 'invisible'
+        });
+    }
+  }, [activeStep?.id]);
 }

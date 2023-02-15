@@ -10,7 +10,7 @@ import {
   installGoogleAnalytics,
   trackGAEvent
 } from './googleAnalytics';
-import { inferEmailLoginFromURL } from '../auth/utils';
+import { inferEmailLoginFromURL } from '../auth/internal/utils';
 import Client from '../utils/client';
 import { installArgyle } from './argyle';
 

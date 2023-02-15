@@ -39,7 +39,11 @@ import { validators, validateElements } from '../utils/validation';
 import { initState, fieldValues, FieldValues, initInfo } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
-import { sendFirebaseLogin, verifySMSCode } from '../integrations/firebase';
+import {
+  sendFirebaseLogin,
+  useFirebaseRecaptcha,
+  verifySMSCode
+} from '../integrations/firebase';
 import {
   googleOauthRedirect,
   sendMagicLink,
@@ -81,7 +85,7 @@ import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
 import internalState from '../utils/internalState';
-import useFormAuth from '../auth/useFormAuth';
+import useFormAuth from '../auth/internal/useFormAuth';
 import {
   ACTION_ADD_REPEATED_ROW,
   ACTION_BACK,
@@ -112,7 +116,7 @@ import {
   inferAuthLogout,
   isAuthStytch,
   isTerminalStepAuth
-} from '../auth/utils';
+} from '../auth/internal/utils';
 
 export interface Props {
   formName: string;
@@ -271,10 +275,10 @@ function Form({
     );
   }, [loaders]);
 
+  useFirebaseRecaptcha(activeStep);
   const getNextAuthStep = useFormAuth({
     initialStep: getInitialStep({ initialStepId, steps }),
     integrations,
-    productionEnv,
     setStepKey,
     steps
   });
@@ -355,31 +359,6 @@ function Form({
       setGMapTimeoutId(timeoutId);
     }
   }, [gMapTimeoutId, gMapFilled, gMapBlurKey]);
-
-  // Logic to run on each step once firebase is loaded
-  useEffect(() => {
-    if (!activeStep || !global.firebase) return;
-
-    const renderedButtons = activeStep.buttons.filter(
-      (element: any) =>
-        !shouldElementHide({
-          element: element
-        })
-    );
-    const smsButton = renderedButtons.find((b: any) =>
-      b.properties.actions.some(
-        (action: any) => action.type === ACTION_SEND_SMS
-      )
-    );
-
-    if (smsButton) {
-      window.firebaseRecaptchaVerifier =
-        global.firebase.auth &&
-        new (global.firebase.auth().RecaptchaVerifier)(smsButton.id, {
-          size: 'invisible'
-        });
-    }
-  }, [activeStep?.id, global.firebase]);
 
   // Logic to run every time step changes
   useEffect(() => {
@@ -1322,7 +1301,7 @@ function Form({
           break;
         }
       } else if (type === ACTION_GOOGLE_OAUTH) googleOauthRedirect();
-      else if (type === ACTION_LOGOUT) inferAuthLogout();
+      else if (type === ACTION_LOGOUT) await inferAuthLogout();
       else if (type === ACTION_NEXT) {
         const metadata = {
           elementType,

@@ -1,4 +1,3 @@
-import { getAuthClient, setAuthClient } from '../auth/utils';
 import { dynamicImport } from './utils';
 import { featheryDoc } from '../utils/browser';
 import { authState } from '../auth/LoginProvider';
@@ -21,8 +20,7 @@ export function installStytch(stytchConfig: any) {
   else {
     config = stytchConfig;
     stytchPromise = new Promise((resolve) => {
-      const stytchClient = getAuthClient();
-      if (stytchClient) resolve(stytchClient);
+      if (authState.client) resolve(authState.client);
       else {
         // Bring in stytch dependencies dynamically if this form uses stytch
         // When calling `await loadStytch()` with the JS SDK it does this script
@@ -37,7 +35,7 @@ export function installStytch(stytchConfig: any) {
 
         return dynamicImport(STYTCH_JS_URL).then(() => {
           const initializedClient = global.Stytch(stytchConfig.metadata.token);
-          setAuthClient(initializedClient);
+          authState.setClient(initializedClient);
           resolve(initializedClient);
         });
       }
@@ -47,7 +45,7 @@ export function installStytch(stytchConfig: any) {
 }
 
 export function googleOauthRedirect() {
-  const stytchClient = getAuthClient();
+  const stytchClient = authState.client;
   if (!stytchClient) return;
 
   const redirectUrl = getRedirectUrl();
@@ -58,7 +56,7 @@ export function googleOauthRedirect() {
 }
 
 export function sendMagicLink({ fieldVal }: any) {
-  const client = getAuthClient();
+  const client = authState.client;
   if (!client) return;
 
   const redirectUrl = getRedirectUrl();
@@ -71,7 +69,7 @@ export function sendMagicLink({ fieldVal }: any) {
 }
 
 export function sendSMSCode({ fieldVal }: any) {
-  const client = getAuthClient();
+  const client = authState.client;
   if (!client) return;
 
   // need to add + in front, https://stytch.com/docs/api/log-in-or-create-user-by-sms
@@ -82,7 +80,7 @@ export function sendSMSCode({ fieldVal }: any) {
 }
 
 export function emailLogin(featheryClient: any) {
-  const stytchClient = getAuthClient();
+  const stytchClient = authState.client;
   // If there is no auth client, no config or auth has already been sent, then return early
   if (!stytchClient || !config || authSent) return;
 
@@ -98,7 +96,7 @@ export function emailLogin(featheryClient: any) {
 
   // If there is an existing Stytch session when a user returns to an embedded
   // Feathery form, we need to update the auth info from Feathery's side
-  if (stytchSession) return featherySubmitAuthInfo(featheryClient);
+  if (stytchSession) return stytchSubmitAuthInfo(featheryClient);
   // If there is no existing Stytch session & the stytch query params are
   // present, then attempt auth. If the Stytch query params exist, but a
   // session also exists, then we don't want to execute stytch auth again as
@@ -108,7 +106,7 @@ export function emailLogin(featheryClient: any) {
 
     // @ts-expect-error TS(2721): Cannot invoke an object which is possibly 'null'.
     return authFn()
-      .then(() => featherySubmitAuthInfo(featheryClient))
+      .then(() => stytchSubmitAuthInfo(featheryClient))
       .catch((e: any) =>
         console.log('Auth failed. Possibly because your magic link expired.', e)
       );
@@ -116,7 +114,7 @@ export function emailLogin(featheryClient: any) {
 }
 
 export function smsLogin({ fieldVal, featheryClient }: any) {
-  const client = getAuthClient();
+  const client = authState.client;
   if (!client || stytchPhoneMethodId === '') return Promise.resolve();
 
   return client.otps
@@ -125,12 +123,12 @@ export function smsLogin({ fieldVal, featheryClient }: any) {
     })
     .then(() => {
       stytchPhoneMethodId = '';
-      return featherySubmitAuthInfo(featheryClient);
+      return stytchSubmitAuthInfo(featheryClient);
     });
 }
 
-function featherySubmitAuthInfo(featheryClient: any) {
-  const stytchClient = getAuthClient();
+function stytchSubmitAuthInfo(featheryClient: any) {
+  const stytchClient = authState.client;
   const user = stytchClient.user.getSync();
   if (!user) return;
 
@@ -151,15 +149,14 @@ function validateStytchQueryParams({ token, type }: any) {
 }
 
 function determineAuthFn({ token, type }: any) {
-  const stytchClient = getAuthClient();
   const opts = {
     session_duration_minutes: config.metadata.session_duration
   };
   let authFn;
   if (type === 'oauth') {
-    authFn = () => stytchClient.oauth.authenticate(token, opts);
+    authFn = () => authState.client.oauth.authenticate(token, opts);
   } else if (type === 'magic_links') {
-    authFn = () => stytchClient.magicLinks.authenticate(token, opts);
+    authFn = () => authState.client.magicLinks.authenticate(token, opts);
   } else {
     return null;
   }
