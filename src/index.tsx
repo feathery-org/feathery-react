@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom';
 import Elements from './elements';
 import Form, { JSForm, Props as FormProps } from './Form';
 import { init, updateUserId, setValues, fieldValues } from './utils/init';
-import { setAuthClient, getAuthClient } from './auth/utils';
 import { OPERATOR_CODE } from './utils/logic';
 import { featheryDoc } from './utils/browser';
 import { getFormContext } from './utils/formContext';
@@ -43,8 +42,6 @@ const Feathery = {
   updateUserId,
   setValues,
   getAllValues,
-  setAuthClient,
-  getAuthClient,
   renderAt
 };
 
@@ -56,8 +53,6 @@ export {
   updateUserId,
   setValues,
   getAllValues,
-  setAuthClient,
-  getAuthClient,
   renderAt,
   LoginProvider,
   Feathery

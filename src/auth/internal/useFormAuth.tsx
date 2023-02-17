@@ -1,19 +1,17 @@
 import React, { useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
-import { authState } from './LoginProvider';
-import { setUrlStepHash } from '../utils/formHelperFunctions';
+import { authState } from '../LoginProvider';
+import { setUrlStepHash } from '../../utils/formHelperFunctions';
 import { getAuthIntegrationMetadata } from './utils';
 
 const useFormAuth = ({
   initialStep,
   integrations,
-  productionEnv,
   setStepKey,
   steps
 }: {
   initialStep: string;
   integrations: null | Record<string, any>;
-  productionEnv: boolean;
   setStepKey: React.Dispatch<React.SetStateAction<string>>;
   steps: any;
 }) => {
