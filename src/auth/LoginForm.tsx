@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useEffect,
+  useRef,
+  useState
+} from 'react';
 import { JSForm, Props as FormProps } from '../Form';
 import { getStytchJwt } from '../utils/browser';
 import { defaultClient, initInfo } from '../utils/init';
@@ -20,6 +26,8 @@ import throttle from 'lodash.throttle';
 const TEN_SECONDS_IN_MILLISECONDS = 1000 * 10;
 const FIVE_MINUTES_IN_MILLISECONDS = 1000 * 60 * 5;
 
+export const AuthContext = createContext<any>(null);
+
 export const authState = {
   client: null as any,
   authEmail: '',
@@ -39,7 +47,7 @@ export const authState = {
   onLogout: () => {}
 };
 
-const LoginProvider = ({
+const LoginForm = ({
   authId: authIdProp,
   formProps,
   loader = <Spinner />,
@@ -111,7 +119,7 @@ const LoginProvider = ({
       onClientReady(newClient);
     };
 
-    registerRenderCallback(_internalId, 'loginProvider', () => {
+    registerRenderCallback(_internalId, 'loginForm', () => {
       setRender((render) => !render);
     });
 
@@ -137,17 +145,15 @@ const LoginProvider = ({
   const onActive = useCallback(
     throttle(
       () => {
-        const stytchClient = authState.client;
-        if (!stytchClient) return;
+        if (!isAuthStytch()) return;
 
-        const session = stytchClient.session.getSync();
-
-        if (session) {
-          stytchClient.session.authenticate({
+        if (authState.client.session.getSync()) {
+          authState.client.session.authenticate({
             session_duration_minutes: 1440
           });
         } else if (hasAuthedRef.current) {
-          stytchClient.session.revoke().then(logoutActions);
+          // There is no session, so need to revoke it
+          logoutActions();
         }
       },
       FIVE_MINUTES_IN_MILLISECONDS,
@@ -179,7 +185,18 @@ const LoginProvider = ({
         <JSForm {...formProps} _internalId={_internalId} />
       </div>
     );
-  } else return children ?? null;
+  } else
+    return (
+      (
+        // Safe to pass authState.client, rather than a react state reference,
+        // because the children are only rendered if the user is logged in,
+        // which requires the auth client to be set. And we do not support
+        // changing the client mid-way through runtime
+        <AuthContext.Provider value={authState.client}>
+          {children}
+        </AuthContext.Provider>
+      ) ?? null
+    );
 };
 
-export default LoginProvider;
+export default LoginForm;

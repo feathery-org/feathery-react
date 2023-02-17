@@ -1,6 +1,6 @@
 import { dynamicImport } from './utils';
 import { updateSessionValues } from '../utils/formHelperFunctions';
-import { authState } from '../auth/LoginProvider';
+import { authState } from '../auth/LoginForm';
 import { useEffect } from 'react';
 import { shouldElementHide } from '../utils/hideIfs';
 import { ACTION_SEND_SMS } from '../utils/elementActions';

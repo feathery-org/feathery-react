@@ -1,4 +1,4 @@
-import { authState } from '../LoginProvider';
+import { authState } from '../LoginForm';
 import { emailLogin as emailLoginFirebase } from '../../integrations/firebase';
 import { emailLogin as emailLoginStytch } from '../../integrations/stytch';
 import Client from '../../utils/client';
