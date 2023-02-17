@@ -29,9 +29,12 @@ export async function inferAuthLogout() {
 
 export function isAuthStytch() {
   if (!authState.client) return;
-  return Object.getOwnPropertySymbols(authState.client)
+  const isAuthClientStytch = Object.getOwnPropertySymbols(authState.client)
     .map((symbol) => symbol.toString())
     .includes('Symbol(stytch__internal)');
+  // Still check global.Stytch for back compat
+  // TODO: remove the global.Stytch part of this || once the new vanilla JS package can be loaded via URL
+  return global.Stytch || isAuthClientStytch;
 }
 
 export function getAuthIntegrationMetadata(
