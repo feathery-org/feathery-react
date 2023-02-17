@@ -8,7 +8,8 @@ import { featheryDoc } from './utils/browser';
 import { getFormContext } from './utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
 import { FormContext } from './types/Form';
-import LoginProvider from './auth/LoginProvider';
+import LoginForm from './auth/LoginForm';
+import useAuthClient from './auth/useAuthClient';
 
 function getAllValues() {
   // Make a copy so users can't set fieldValues directly
@@ -54,7 +55,8 @@ export {
   setValues,
   getAllValues,
   renderAt,
-  LoginProvider,
+  LoginForm,
+  useAuthClient,
   Feathery
 };
 export type { OPERATOR_CODE, FormContext };

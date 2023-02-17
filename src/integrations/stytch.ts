@@ -1,6 +1,6 @@
 import { dynamicImport } from './utils';
 import { featheryDoc } from '../utils/browser';
-import { authState } from '../auth/LoginProvider';
+import { authState } from '../auth/LoginForm';
 
 const STYTCH_JS_URL = 'https://js.stytch.com/stytch.js';
 

@@ -109,7 +109,7 @@ import {
   hasFlowActions
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
-import { authState } from '../auth/LoginProvider';
+import { authState } from '../auth/LoginForm';
 import LoaderContainer from '../elements/components/LoaderContainer';
 import {
   getAuthIntegrationMetadata,
@@ -1048,7 +1048,7 @@ function Form({
         eventData.completed = true;
         session.form_completed = true;
         // Need to rerender when onboarding questions are complete so
-        // LoginProvider can render children
+        // LoginForm can render children
         rerenderAllForms();
         client.registerEvent(eventData, submitPromise).then(() => {
           setFinished(true);

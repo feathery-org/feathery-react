@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
-import { authState } from '../LoginProvider';
+import { authState } from '../LoginForm';
 import { setUrlStepHash } from '../../utils/formHelperFunctions';
 import { getAuthIntegrationMetadata } from './utils';
 

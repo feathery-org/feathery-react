@@ -400,7 +400,7 @@ export function setUrlStepHash(history: any, steps: any, stepName: string) {
 
 export function registerRenderCallback(
   internalId: string,
-  key: 'form' | 'loginProvider',
+  key: 'form' | 'loginForm',
   callback: () => void
 ) {
   initState.renderCallbacks[internalId] = {

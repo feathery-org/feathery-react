@@ -19,7 +19,7 @@ import { loadPhoneValidator } from './validation';
 import { initializeIntegrations } from '../integrations/utils';
 import { loadLottieLight } from '../elements/components/Lottie';
 import { featheryDoc } from './browser';
-import { authState } from '../auth/LoginProvider';
+import { authState } from '../auth/LoginForm';
 
 // Convenience boolean for urls - manually change for testing
 const API_URL_OPTIONS = {
@@ -390,7 +390,7 @@ export default class Client {
         );
         // Need to wait until form_completed has been fetched before setting
         // authId, otherwise we will can flash the onboarding questions before
-        // LoginProvider renders its children
+        // LoginForm renders its children
         authState.setAuthId(authId);
         return Promise.resolve(data);
       });
