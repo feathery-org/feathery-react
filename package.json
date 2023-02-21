@@ -85,6 +85,7 @@
     "@fingerprintjs/fingerprintjs": "^3.1.0",
     "@stripe/react-stripe-js": "^1.10.0",
     "@stripe/stripe-js": "^1.35.0",
+    "@stytch/vanilla-js": "^0.9.3",
     "lodash.debounce": "^4.0.8",
     "lodash.throttle": "^4.1.1",
     "quill-delta": "^4.2.2",

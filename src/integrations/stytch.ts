@@ -1,8 +1,5 @@
-import { dynamicImport } from './utils';
-import { featheryDoc } from '../utils/browser';
+import { StytchHeadlessClient } from '@stytch/vanilla-js/headless';
 import { authState } from '../auth/LoginForm';
-
-const STYTCH_JS_URL = 'https://js.stytch.com/stytch.js';
 
 let stytchPromise: any = null;
 let config: any = null;
@@ -22,22 +19,11 @@ export function installStytch(stytchConfig: any) {
     stytchPromise = new Promise((resolve) => {
       if (authState.client) resolve(authState.client);
       else {
-        // Bring in stytch dependencies dynamically if this form uses stytch
-        // When calling `await loadStytch()` with the JS SDK it does this script
-        // check internally. If that loads first and then we do a dynamic import
-        // it causes an error, so don't dynamic import if the script is already
-        // set
-        const isStytchImported = featheryDoc().querySelectorAll(
-          `script[src="${STYTCH_JS_URL}"]`
-        )[0];
-        // @ts-expect-error TS(2794): Expected 1 arguments, but got 0. Did you forget to... Remove this comment to see the full error message
-        if (isStytchImported) return resolve();
-
-        return dynamicImport(STYTCH_JS_URL).then(() => {
-          const initializedClient = global.Stytch(stytchConfig.metadata.token);
-          authState.setClient(initializedClient);
-          resolve(initializedClient);
-        });
+        const initializedClient = new StytchHeadlessClient(
+          stytchConfig.metadata.token
+        );
+        authState.setClient(initializedClient);
+        resolve(initializedClient);
       }
     });
     return stytchPromise;
