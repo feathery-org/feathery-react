@@ -416,6 +416,10 @@ export function rerenderAllForms() {
   );
 }
 
+export function remountAllForms() {
+  Object.values(initInfo().remountCallbacks).forEach((cb) => cb());
+}
+
 export function getInitialStep({
   initialStepId,
   steps,
