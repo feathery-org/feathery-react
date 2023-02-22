@@ -183,6 +183,7 @@ function _parseUserVal(userVal: FeatheryFieldTypes, key: string) {
  * since they may not have done so
  */
 function setValues(userVals: FieldValues, rerender = true): void {
+  console.log('set values');
   const result: FieldValues = {};
   Object.entries(userVals).forEach(([key, value]) => {
     if (Array.isArray(value))
@@ -191,6 +192,7 @@ function setValues(userVals: FieldValues, rerender = true): void {
     else result[key] = _parseUserVal(value, key);
   });
 
+  console.log(result);
   Object.assign(fieldValues, result);
   defaultClient.submitCustom(result);
 

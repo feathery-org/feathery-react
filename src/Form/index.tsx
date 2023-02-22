@@ -209,8 +209,12 @@ function Form({
   className = '',
   children
 }: InternalProps & Props) {
+  console.log('current user id');
   console.log(initState.userId);
+  console.log('current field values');
   console.log(fieldValues);
+  console.log('initial values');
+  console.log(initialValues);
   const [client, setClient] = useState<any>(null);
   const history = useHistory();
   const session = initState.formSessions[formName];
