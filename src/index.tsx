@@ -1,5 +1,5 @@
 import React from 'react';
-import ReactDOM from 'react-dom';
+import ReactDOM, { unmountComponentAtNode } from 'react-dom';
 import Elements from './elements';
 import Form, { JSForm, Props as FormProps } from './Form';
 import { init, updateUserId, setValues, fieldValues } from './utils/init';
@@ -28,7 +28,10 @@ function renderAt(elementId: any, props: FormProps) {
 
   ReactDOM.render(<JSForm {...props} _internalId={uuid} />, container);
 
-  return getFormContext(uuid);
+  return {
+    ...getFormContext(uuid),
+    destroy: () => unmountComponentAtNode(container)
+  };
 }
 
 // TODO: deprecate
