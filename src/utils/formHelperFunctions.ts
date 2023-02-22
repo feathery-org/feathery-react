@@ -417,6 +417,8 @@ export function rerenderAllForms() {
 }
 
 export function remountAllForms() {
+  console.log('remount');
+  console.log(initState.remountCallbacks);
   Object.values(initInfo().remountCallbacks).forEach((cb) => cb());
 }
 

@@ -160,6 +160,7 @@ async function updateUserId(newUserId: string, merge = false): Promise<void> {
     featheryDoc().cookie = `feathery-user-id-${initState.sdkKey}=${newUserId}; max-age=31536000; SameSite=strict`;
   }
   if (!merge) {
+    console.log('clear');
     fieldValues = {};
     filePathMap = {};
     initState.formSessions = {};
