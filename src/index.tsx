@@ -16,6 +16,7 @@ function getAllValues() {
   return { ...fieldValues };
 }
 
+const mountedForms: Record<string, boolean> = {};
 /**
  * Utility function which renders a form with the provided props in the DOM element with the provided ID.
  * @param {string} elementId The ID of the DOM element to hold the form
@@ -23,6 +24,9 @@ function getAllValues() {
  */
 function renderAt(elementId: any, props: FormProps) {
   const container = featheryDoc().getElementById(elementId);
+  const destroy = () => unmountComponentAtNode(container);
+  if (mountedForms[elementId]) destroy();
+  else mountedForms[elementId] = true;
 
   const uuid = uuidv4();
 
@@ -30,7 +34,7 @@ function renderAt(elementId: any, props: FormProps) {
 
   return {
     ...getFormContext(uuid),
-    destroy: () => unmountComponentAtNode(container)
+    destroy
   };
 }
 
