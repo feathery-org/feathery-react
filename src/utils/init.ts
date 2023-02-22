@@ -157,7 +157,7 @@ async function updateUserId(newUserId: string, merge = false): Promise<void> {
   if (merge) await defaultClient.updateUserId(newUserId, true);
   initState.userId = newUserId;
   if (initState.userTracking === 'cookie') {
-    featheryDoc().cookie = `feathery-user-id=${newUserId}; max-age=31536000; SameSite=strict`;
+    featheryDoc().cookie = `feathery-user-id-${initState.sdkKey}=${newUserId}; max-age=31536000; SameSite=strict`;
   }
   if (!merge) {
     fieldValues = {};
