@@ -34,9 +34,9 @@ import {
   setUrlStepHash,
   updateStepFieldOptions
 } from '../utils/formHelperFunctions';
-import { shouldElementHide, getHideIfReferences } from '../utils/hideIfs';
+import { getHideIfReferences } from '../utils/hideIfs';
 import { validators, validateElements } from '../utils/validation';
-import { initState, fieldValues, FieldValues, initInfo } from '../utils/init';
+import { initState, fieldValues, FieldValues } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import {
@@ -1550,6 +1550,16 @@ export function JSForm({
   _internalId,
   ...props
 }: Props & InternalProps) {
+  const [remount, setRemount] = useState(false);
+
+  useEffect(() => {
+    initState.remountCallbacks[_internalId] = () =>
+      setRemount((remount) => !remount);
+    return () => {
+      delete initState.remountCallbacks[_internalId];
+    };
+  }, []);
+
   // Check client for NextJS support
   if (formName && runningInClient())
     return (
@@ -1563,7 +1573,7 @@ export function JSForm({
             {...props}
             formName={formName}
             // Changing the language changes the key and fetches the new form data
-            key={`${formName}_${language}`}
+            key={`${formName}_${language}_${remount}`}
             language={language}
             _internalId={_internalId}
           />
