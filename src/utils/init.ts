@@ -157,6 +157,12 @@ function updateUserId(newUserId: string, merge = false): void {
     if (initState.userTracking === 'cookie') {
       featheryDoc().cookie = `feathery-user-id=${newUserId}; max-age=31536000; SameSite=strict`;
     }
+    if (!merge) {
+      Object.keys(initState.formSessions).forEach(
+        (formName) => (initState.formSessions[formName] = {})
+      );
+      rerenderAllForms();
+    }
   });
 }
 
