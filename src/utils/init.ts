@@ -160,7 +160,6 @@ async function updateUserId(newUserId: string, merge = false): Promise<void> {
     featheryDoc().cookie = `feathery-user-id-${initState.sdkKey}=${newUserId}; max-age=31536000; SameSite=strict`;
   }
   if (!merge) {
-    console.log('clear');
     fieldValues = {};
     filePathMap = {};
     initState.formSessions = {};
@@ -183,7 +182,6 @@ function _parseUserVal(userVal: FeatheryFieldTypes, key: string) {
  * since they may not have done so
  */
 function setValues(userVals: FieldValues, rerender = true): void {
-  console.log('set values');
   const result: FieldValues = {};
   Object.entries(userVals).forEach(([key, value]) => {
     if (Array.isArray(value))
@@ -192,7 +190,6 @@ function setValues(userVals: FieldValues, rerender = true): void {
     else result[key] = _parseUserVal(value, key);
   });
 
-  console.log(result);
   Object.assign(fieldValues, result);
   defaultClient.submitCustom(result);
 
