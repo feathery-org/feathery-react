@@ -14,6 +14,7 @@ declare global {
     firebaseRecaptchaVerifier: any;
     firebaseConfirmationResult: any;
     analytics: Array;
+    heap: any;
   }
 }
 

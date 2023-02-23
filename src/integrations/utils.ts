@@ -13,6 +13,7 @@ import {
 import { inferEmailLoginFromURL } from '../auth/internal/utils';
 import Client from '../utils/client';
 import { installArgyle } from './argyle';
+import { installHeap } from './heap';
 
 const IMPORTED_URLS = new Set();
 
@@ -55,7 +56,8 @@ export async function initializeIntegrations(
     installStytch(integs.stytch),
     installStripe(integs.stripe),
     installSegment(integs.segment),
-    installGoogleAnalytics(integs['google-analytics'])
+    installGoogleAnalytics(integs['google-analytics']),
+    installHeap(integs.heap)
   ]);
 
   const gtm = integs['google-tag-manager'];
