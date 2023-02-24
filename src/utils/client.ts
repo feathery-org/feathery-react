@@ -389,7 +389,7 @@ export default class Client {
               session.form_completed)
         );
         // Need to wait until form_completed has been fetched before setting
-        // authId, otherwise we will can flash the onboarding questions before
+        // authId, otherwise we would flash the onboarding questions before
         // LoginForm renders its children
         authState.setAuthId(authId);
         return Promise.resolve(data);

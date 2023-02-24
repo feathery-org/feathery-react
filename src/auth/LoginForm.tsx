@@ -122,14 +122,16 @@ const LoginForm = ({
     registerRenderCallback(_internalId, 'loginForm', () => {
       setRender((render) => !render);
     });
+  }, []);
 
+  useEffect(() => {
     // If user passes authId as a prop, we need to submit it
     if (authIdProp) {
       defaultClient.submitAuthInfo({
         authId: authIdProp
       });
     }
-  }, []);
+  }, [authIdProp]);
 
   useEffect(() => {
     if (!isAuthStytch()) return;
@@ -188,10 +190,10 @@ const LoginForm = ({
   } else
     return (
       (
-        // Safe to pass authState.client, rather than a react state reference,
+        // Safe to pass authState.client, rather than a React state reference,
         // because the children are only rendered if the user is logged in,
         // which requires the auth client to be set. And we do not support
-        // changing the client mid-way through runtime
+        // changing the client midway through runtime
         <AuthContext.Provider value={authState.client}>
           {children}
         </AuthContext.Provider>
