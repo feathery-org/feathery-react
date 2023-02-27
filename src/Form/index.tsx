@@ -1518,7 +1518,7 @@ function Form({
           position: 'relative',
           marginBottom: addChin ? '80px' : '0',
           display: 'flex',
-          ...(popupOptions ? { margin: 'auto', borderRadius: '10px' } : {})
+          ...(popupOptions ? { borderRadius: '10px' } : {})
         }}
       >
         {children}

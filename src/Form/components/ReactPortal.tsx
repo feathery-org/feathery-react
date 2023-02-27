@@ -33,5 +33,9 @@ export default function ReactPortal({
 
   if (!options) return children;
   else if (!rootEl || !options.show) return null;
-  else return createPortal(children, rootEl);
+  else
+    return createPortal(
+      <div css={{ margin: 'auto', padding: '32px' }}>{children}</div>,
+      rootEl
+    );
 }
