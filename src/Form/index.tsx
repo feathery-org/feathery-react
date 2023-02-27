@@ -77,7 +77,8 @@ import {
   ContextOnCustomAction,
   ContextOnView,
   ElementProps,
-  IntegrationData
+  IntegrationData,
+  PopupOptions
 } from '../types/Form';
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
@@ -117,6 +118,7 @@ import {
   isAuthStytch,
   isTerminalStepAuth
 } from '../auth/internal/utils';
+import { CloseIcon } from '../elements/components/icons';
 
 export interface Props {
   formName: string;
@@ -135,6 +137,7 @@ export interface Props {
   initialStepId?: string;
   display?: 'inline' | 'modal';
   language?: string;
+  popupOptions?: PopupOptions;
   elementProps?: ElementProps;
   contextRef?: React.MutableRefObject<null | FormContext>;
   formProps?: Record<string, any>;
@@ -199,8 +202,8 @@ function Form({
   onViewElements = [],
   initialValues = {},
   initialStepId = '',
-  display = 'inline',
   language,
+  popupOptions,
   elementProps = {},
   contextRef,
   formProps = {},
@@ -1495,49 +1498,54 @@ function Form({
     return null;
   }
 
-  const isModal = display === 'modal';
   const addChin = formSettings.showBrand && !isFill(activeStep.height);
   return (
-    <>
+    <ReactPortal options={popupOptions}>
       <LoaderContainer
         showLoader={Boolean(stepLoader)}
         backgroundColor={activeStep?.default_background_color}
       >
         {stepLoader}
       </LoaderContainer>
-      <ReactPortal portal={isModal}>
-        <BootstrapForm
-          {...formProps}
-          autoComplete={formSettings.autocomplete}
-          className={className}
-          ref={formRef}
-          css={{
-            ...stepCSS,
-            ...style,
-            position: 'relative',
-            marginBottom: addChin ? '80px' : '0',
-            display: 'flex',
-            ...(isModal ? { margin: 'auto' } : {})
-          }}
-        >
-          {children}
-          <Grid step={activeStep} form={form} viewport={viewport} />
-          {!productionEnv && (
-            <DevNavBar
-              allSteps={steps}
-              curStep={activeStep}
-              history={history}
-            />
-          )}
-          {formSettings.showBrand && (
-            <Watermark
-              addChin={addChin}
-              brandPosition={formSettings.brandPosition}
-            />
-          )}
-        </BootstrapForm>
-      </ReactPortal>
-    </>
+      <BootstrapForm
+        {...formProps}
+        autoComplete={formSettings.autocomplete}
+        className={className}
+        ref={formRef}
+        css={{
+          ...stepCSS,
+          ...style,
+          position: 'relative',
+          marginBottom: addChin ? '80px' : '0',
+          display: 'flex',
+          ...(popupOptions ? { margin: 'auto', borderRadius: '10px' } : {})
+        }}
+      >
+        {children}
+        <Grid step={activeStep} form={form} viewport={viewport} />
+        {popupOptions && (
+          <CloseIcon
+            fill='white'
+            css={{
+              position: 'absolute',
+              top: '17px',
+              right: '17px',
+              cursor: 'pointer'
+            }}
+            onClick={() => popupOptions.onHide && popupOptions.onHide()}
+          />
+        )}
+        {!productionEnv && (
+          <DevNavBar allSteps={steps} curStep={activeStep} history={history} />
+        )}
+        {formSettings.showBrand && (
+          <Watermark
+            addChin={addChin}
+            brandPosition={formSettings.brandPosition}
+          />
+        )}
+      </BootstrapForm>
+    </ReactPortal>
   );
 }
 
@@ -1584,6 +1592,11 @@ export function JSForm({
 }
 
 export default function ReactForm(props: Props): JSX.Element | null {
-  const [_internalId] = useState(uuidv4());
-  return <JSForm {...props} _internalId={_internalId} />;
+  let [internalId, setInternalId] = useState('');
+  // Cannot use uuidv4 on server-side
+  if (!internalId && runningInClient()) {
+    internalId = uuidv4();
+    setInternalId(internalId);
+  }
+  return <JSForm {...props} _internalId={internalId} />;
 }
