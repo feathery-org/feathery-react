@@ -1540,7 +1540,7 @@ function Form({
         )}
         {formSettings.showBrand && (
           <Watermark
-            addChin={addChin}
+            addChin={!popupOptions && addChin}
             brandPosition={formSettings.brandPosition}
           />
         )}
