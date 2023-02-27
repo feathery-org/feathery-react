@@ -1498,7 +1498,8 @@ function Form({
     return null;
   }
 
-  const addChin = formSettings.showBrand && !isFill(activeStep.height);
+  const addChin =
+    formSettings.showBrand && !isFill(activeStep.height) && !popupOptions;
   return (
     <ReactPortal options={popupOptions}>
       <LoaderContainer
@@ -1540,7 +1541,7 @@ function Form({
         )}
         {formSettings.showBrand && (
           <Watermark
-            addChin={!popupOptions && addChin}
+            addChin={addChin}
             brandPosition={formSettings.brandPosition}
           />
         )}
