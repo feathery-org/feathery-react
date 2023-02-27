@@ -192,7 +192,7 @@ function ButtonElement({
         justifyContent: 'center',
         alignItems: 'center',
         border: 'none',
-        transition: '0.3s ease all !important',
+        transition: '0.2s ease all !important',
         '&:disabled': {
           cursor: 'default !important',
           ...styles.getTarget('buttonDisabled'),

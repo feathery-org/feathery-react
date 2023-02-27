@@ -7,6 +7,11 @@ export interface ElementProps {
   };
 }
 
+export interface PopupOptions {
+  show?: boolean;
+  onHide?: () => void;
+}
+
 export type SetStep = (stepKey: string) => void;
 export type SetErrors = (errors: {
   [fieldKey: string]: string | { index: number; message: string };
