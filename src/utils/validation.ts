@@ -160,7 +160,7 @@ function isFieldValueEmpty(value: any, servar: any) {
       noVal = !value?.complete;
       break;
     default:
-      noVal = value === '';
+      noVal = ['', null, undefined].includes(value);
       break;
   }
   return noVal;
