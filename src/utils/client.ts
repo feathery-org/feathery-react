@@ -11,6 +11,7 @@ import {
 import { dataURLToFile, isBase64Image } from './image';
 import { encodeGetParams } from './primitives';
 import {
+  castVal,
   getABVariant,
   getDefaultFieldValue,
   updateSessionValues
@@ -398,9 +399,9 @@ export default class Client {
 
   async submitCustom(customKeyValues: any, override = true) {
     const promiseResults = await Promise.all(
-      Object.entries(customKeyValues).map(([key, val]) =>
-        Promise.all([key, Promise.resolve(val)])
-      )
+      Object.entries(customKeyValues).map(([key, val]) => {
+        return Promise.all([key, val]);
+      })
     );
     if (promiseResults.length === 0) return;
 
