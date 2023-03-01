@@ -2,7 +2,6 @@ import React, { useMemo } from 'react';
 import TextNodes from '../components/TextNodes';
 import { isNum } from '../../utils/primitives';
 import useBorder from '../components/useBorder';
-import { adjustColor } from '../../utils/styles';
 
 // TODO(peter): deprecate once customers have upgraded and backend migrated
 function legacyAlignment(alignment: any) {
