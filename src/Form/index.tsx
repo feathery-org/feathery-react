@@ -14,6 +14,7 @@ import debounce from 'lodash.debounce';
 
 import { calculateStepCSS, isFill } from '../utils/hydration';
 import {
+  castVal,
   changeStep,
   FieldOptions,
   formatAllFormFields,
@@ -25,6 +26,7 @@ import {
   getNewStepUrl,
   getOrigin,
   getPrevStepUrl,
+  getServarTypeMap,
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
@@ -675,8 +677,14 @@ function Form({
         .then(([session, steps]) => {
           updateBackNavMap(session.back_nav_map);
           setIntegrations(session.integrations);
-          if (!isObjectEmpty(initialValues))
-            clientInstance.submitCustom(initialValues, false);
+          if (!isObjectEmpty(initialValues)) {
+            const servarKeyToTypeMap = getServarTypeMap(steps);
+            const castValues = { ...initialValues };
+            Object.entries(castValues).map(([key, val]) => {
+              castValues[key] = castVal(servarKeyToTypeMap[key], val);
+            });
+            clientInstance.submitCustom(castValues, false);
+          }
 
           // User is authenticating. auth hook will set the initial stepKey once auth has finished
           if (authState.redirectAfterLogin) return;
