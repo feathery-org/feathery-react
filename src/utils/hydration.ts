@@ -45,7 +45,7 @@ const calculateDimensionsHelper = (step: any, p = '') => {
  * Calculates the dimensions of the provided step.
  * Note: The provided step should be fully-hydrated (i.e. rows injected, etc.) to calculate dimensions accurately.
  */
-function calculateStepCSS(step: any, max = true) {
+function calculateStepCSS(step: any) {
   if (!step) return {};
 
   const desktop = calculateDimensionsHelper(step);
@@ -57,17 +57,19 @@ function calculateStepCSS(step: any, max = true) {
     backgroundSize: 'cover',
     width: '100%',
     minWidth: (desktop as any).minWidth,
-    [max ? 'maxWidth' : 'width']: desktop.gridWidth,
+    maxWidth: desktop.gridWidth,
     height: desktop.gridHeight,
     minHeight: (desktop as any).minHeight,
     maxHeight: (desktop as any).maxHeight
   };
 
+  // 478
+  // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
   stepCSS[`@media (max-width: 478px)`] = {
     // width will be controlled by maxWidth in the case it is fixed below 478px
     width: '100%',
     minWidth: (mobile as any).minWidth,
-    [max ? 'maxWidth' : 'width']: mobile.gridWidth,
+    maxWidth: mobile.gridWidth,
     height: mobile.gridHeight,
     minHeight: (mobile as any).minHeight,
     maxHeight: (desktop as any).maxHeight
