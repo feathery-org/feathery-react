@@ -311,7 +311,10 @@ function Form({
   );
 
   // When the active step changes, recalculate the dimensions of the new step
-  const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
+  const stepCSS = useMemo(
+    () => calculateStepCSS(activeStep, !popupOptions),
+    [activeStep]
+  );
 
   // All mount and unmount logic should live here
   useEffect(() => {
