@@ -57,7 +57,7 @@ export function isTerminalStepAuth(
 ): boolean {
   return (
     authState.sentAuth &&
-    authIntegration?.auth_gate_steps.length &&
+    authIntegration?.auth_gate_steps?.length &&
     !authIntegration?.auth_gate_steps.includes(stepId)
   );
 }
