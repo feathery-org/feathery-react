@@ -20,7 +20,12 @@ export function installStytch(stytchConfig: any) {
       if (authState.client) resolve(authState.client);
       else {
         const initializedClient = new StytchHeadlessClient(
-          stytchConfig.metadata.token
+          stytchConfig.metadata.token,
+          {
+            cookieOptions: {
+              availableToSubdomains: true
+            }
+          }
         );
         authState.setClient(initializedClient);
         resolve(initializedClient);

@@ -320,6 +320,10 @@ function Form({
     registerRenderCallback(_internalId, 'form', () => {
       setRender((render) => !render);
     });
+    initState.redirectCallbacks[_internalId] = () => {
+      if (formSettings.redirectUrl)
+        window.location.href = formSettings.redirectUrl;
+    };
     if (
       contextRef &&
       Object.prototype.hasOwnProperty.call(contextRef, 'current')
@@ -328,6 +332,7 @@ function Form({
 
     return () => {
       delete initState.renderCallbacks[_internalId];
+      delete initState.redirectCallbacks[_internalId];
     };
   }, []);
 

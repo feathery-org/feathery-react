@@ -42,6 +42,7 @@ type InitState = {
   preloadForms: { [formName: string]: any };
   formSessions: { [formName: string]: any };
   fieldValuesInitialized: boolean;
+  redirectCallbacks: Record<string, any>;
   renderCallbacks: Record<string, Record<string, any>>;
   remountCallbacks: Record<string, any>;
   defaultErrors: Record<string, string>;
@@ -61,6 +62,7 @@ const initState: InitState = {
   // Since all field values are fetched with each session, only fetch field
   // values on the first session request
   fieldValuesInitialized: false,
+  redirectCallbacks: {},
   renderCallbacks: {},
   remountCallbacks: {}
 };

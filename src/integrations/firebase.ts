@@ -170,7 +170,7 @@ export function useFirebaseRecaptcha(activeStep: any) {
     if (smsButton) {
       window.firebaseRecaptchaVerifier =
         authState.client.auth &&
-        new (authState.client.auth().RecaptchaVerifier)(smsButton.id, {
+        new authState.client.auth.RecaptchaVerifier(smsButton.id, {
           size: 'invisible'
         });
     }

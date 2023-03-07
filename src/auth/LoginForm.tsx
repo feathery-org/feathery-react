@@ -117,6 +117,16 @@ const LoginForm = ({
     authState.setClient = (newClient: any) => {
       authState.client = newClient;
       onClientReady(newClient);
+      if (getStytchJwt()) {
+        // When logging in via re-direct we need to set the authId once the user object has initialized
+        const unsubscribe = authState.client.user.onChange((newUser: any) => {
+          if (newUser)
+            defaultClient.submitAuthInfo({ authId: newUser.user_id });
+        });
+        window.addEventListener('beforeunload', () => {
+          unsubscribe && unsubscribe();
+        });
+      }
     };
 
     registerRenderCallback(_internalId, 'loginForm', () => {
@@ -187,18 +197,20 @@ const LoginForm = ({
         <JSForm {...formProps} _internalId={_internalId} />
       </div>
     );
+  } else if (initInfo().redirectCallbacks[_internalId]) {
+    // If logged in and have finished onboarding questions for an apex form, then we need to redirect back to application
+    initInfo().redirectCallbacks[_internalId]();
+    return null;
   } else
-    return (
-      (
-        // Safe to pass authState.client, rather than a React state reference,
-        // because the children are only rendered if the user is logged in,
-        // which requires the auth client to be set. And we do not support
-        // changing the client midway through runtime
-        <AuthContext.Provider value={authState.client}>
-          {children}
-        </AuthContext.Provider>
-      ) ?? null
-    );
+    return children ? (
+      // Safe to pass authState.client, rather than a React state reference,
+      // because the children are only rendered if the user is logged in,
+      // which requires the auth client to be set. And we do not support
+      // changing the client midway through runtime
+      <AuthContext.Provider value={authState.client}>
+        {children}
+      </AuthContext.Provider>
+    ) : null;
 };
 
 export default LoginForm;
