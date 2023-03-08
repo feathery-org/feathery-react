@@ -165,8 +165,12 @@ function getRedirectUrl() {
   const { origin, pathname, hash } = window.location;
   const queryParams = new URLSearchParams(window.location.search);
   queryParams.forEach((value, key) => {
-    if (key !== 'feathery_1' && key !== 'feathery_2') queryParams.delete(key);
+    if (!['feathery_1', 'feathery_2', '_slug'].includes(key))
+      queryParams.delete(key);
   });
-  const queryString = queryParams.has('feathery_1') ? `?${queryParams}` : '';
+  const queryString =
+    queryParams.has('feathery_1') || queryParams.has('_slug')
+      ? `?${queryParams}`
+      : '';
   return `${origin}${pathname}${queryString}${hash}`;
 }
