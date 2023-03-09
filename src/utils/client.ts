@@ -11,7 +11,6 @@ import {
 import { dataURLToFile, isBase64Image } from './image';
 import { encodeGetParams } from './primitives';
 import {
-  castVal,
   getABVariant,
   getDefaultFieldValue,
   updateSessionValues

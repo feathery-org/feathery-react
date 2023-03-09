@@ -1,40 +1,11 @@
 import { authState } from '../LoginForm';
-import { emailLogin as emailLoginFirebase } from '../../integrations/firebase';
-import { emailLogin as emailLoginStytch } from '../../integrations/stytch';
-import Client from '../../utils/client';
-
-export function inferEmailLoginFromURL(featheryClient: Client) {
-  const queryParams = new URLSearchParams(window.location.search);
-  const type = queryParams.get('stytch_token_type');
-  const token = queryParams.get('token');
-  if (isAuthStytch() || (type && token))
-    return emailLoginStytch(featheryClient);
-  else return emailLoginFirebase(featheryClient);
-}
-
-export async function inferAuthLogout() {
-  if (!authState.client) return;
-
-  if (isAuthStytch()) {
-    await authState.client.session.revoke();
-  } else if (global.firebase) {
-    await authState.client.auth().signOut();
-  }
-
-  authState.onLogout();
-  authState.authPhoneNumber = '';
-  authState.authEmail = '';
-  authState.setAuthId('');
-}
 
 export function isAuthStytch() {
   if (!authState.client) return;
   const isAuthClientStytch = Object.getOwnPropertySymbols(authState.client)
     .map((symbol) => symbol.toString())
     .includes('Symbol(stytch__internal)');
-  // Still check global.Stytch for back compat
-  // TODO: remove the global.Stytch part of this || once the new vanilla JS package can be loaded via URL
-  return global.Stytch || isAuthClientStytch;
+  return isAuthClientStytch;
 }
 
 export function getAuthIntegrationMetadata(
