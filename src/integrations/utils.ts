@@ -39,9 +39,9 @@ export function dynamicImport(
   } else if (index < dependencies.length) {
     return new Promise((resolve) => {
       global.scriptjsLoadPromise.then(($script: any) => {
-        $script.default(dependencies[index], resolve);
+        $script.default.order(dependencies, resolve);
       });
-    }).then(() => dynamicImport(dependencies, false, index + 1));
+    });
   }
 }
 
