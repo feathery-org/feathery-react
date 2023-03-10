@@ -41,17 +41,7 @@ import { validators, validateElements } from '../utils/validation';
 import { initState, fieldValues, FieldValues } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
-import {
-  sendFirebaseLogin,
-  useFirebaseRecaptcha,
-  verifySMSCode
-} from '../integrations/firebase';
-import {
-  googleOauthRedirect,
-  sendMagicLink,
-  sendSMSCode,
-  smsLogin
-} from '../integrations/stytch';
+import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
 import {
   usePayments,
@@ -116,10 +106,9 @@ import { authState } from '../auth/LoginForm';
 import LoaderContainer from '../elements/components/LoaderContainer';
 import {
   getAuthIntegrationMetadata,
-  inferAuthLogout,
-  isAuthStytch,
   isTerminalStepAuth
 } from '../auth/internal/utils';
+import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 
 export interface Props {
@@ -320,10 +309,10 @@ function Form({
     registerRenderCallback(_internalId, 'form', () => {
       setRender((render) => !render);
     });
-    initState.redirectCallbacks[_internalId] = () => {
-      if (formSettings.redirectUrl)
+    if (formSettings.redirectUrl)
+      initState.redirectCallbacks[_internalId] = () => {
         window.location.href = formSettings.redirectUrl;
-    };
+      };
     if (
       contextRef &&
       Object.prototype.hasOwnProperty.call(contextRef, 'current')
@@ -1275,13 +1264,7 @@ function Form({
         const phoneNum = fieldValues[action.auth_target_field_key] as string;
         if (validators.phone(phoneNum)) {
           // Don't block to make potential subsequent navigation snappy
-          if (isAuthStytch()) sendSMSCode({ fieldVal: phoneNum });
-          else
-            sendFirebaseLogin({
-              fieldVal: phoneNum,
-              servar: null,
-              method: 'phone'
-            });
+          Auth.sendSms(phoneNum);
         } else {
           setElementError(
             'A valid phone number is needed to send your login code.'
@@ -1291,11 +1274,8 @@ function Form({
       } else if (type === ACTION_VERIFY_SMS) {
         const pin = fieldValues[action.auth_target_field_key] as string;
         const params = { fieldVal: pin, featheryClient: client };
-        const authFn = isAuthStytch()
-          ? () => smsLogin(params)
-          : () => verifySMSCode(params);
         let hasErr = false;
-        await authFn().catch((err: any) => {
+        await Auth.verifySms(params).catch((err: any) => {
           setElementError(err.message);
           hasErr = true;
         });
@@ -1305,19 +1285,13 @@ function Form({
         const email = fieldValues[action.auth_target_field_key] as string;
         if (validators.email(email)) {
           // Don't block to make potential subsequent navigation snappy
-          if (isAuthStytch()) sendMagicLink({ fieldVal: email });
-          else
-            sendFirebaseLogin({
-              fieldVal: email,
-              servar: null,
-              method: 'email'
-            });
+          Auth.sendMagicLink(email);
         } else {
           setElementError('A valid email is needed to send your magic link.');
           break;
         }
-      } else if (type === ACTION_GOOGLE_OAUTH) googleOauthRedirect();
-      else if (type === ACTION_LOGOUT) await inferAuthLogout();
+      } else if (type === ACTION_GOOGLE_OAUTH) Auth.oauthRedirect();
+      else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEXT) {
         const metadata = {
           elementType,

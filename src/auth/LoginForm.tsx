@@ -10,7 +10,6 @@ import { getStytchJwt } from '../utils/browser';
 import { defaultClient, initInfo } from '../utils/init';
 import { isAuthStytch } from './internal/utils';
 import Spinner from '../elements/components/Spinner';
-import { isHrefFirebaseMagicLink } from '../integrations/firebase';
 import LoaderContainer from '../elements/components/LoaderContainer';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -22,6 +21,7 @@ import {
  */
 import { useIdleTimer } from 'react-idle-timer';
 import throttle from 'lodash.throttle';
+import Auth from './internal/AuthIntegrationInterface';
 
 const TEN_SECONDS_IN_MILLISECONDS = 1000 * 10;
 const FIVE_MINUTES_IN_MILLISECONDS = 1000 * 60 * 5;
@@ -87,10 +87,9 @@ const LoginForm = ({
   useEffect(() => {
     if (
       // We should set loader for new auth sessions
-      window.location.search.includes('stytch_token_type') ||
-      isHrefFirebaseMagicLink() ||
+      Auth.isHrefMagicLink() ||
       // and existing ones
-      getStytchJwt()
+      Auth.isThereAnExistingSession()
     ) {
       authState.redirectAfterLogin = true;
       setShowLoader(true);
@@ -98,7 +97,11 @@ const LoginForm = ({
 
     const { location, history } = window;
     // only need to redirect to login path for new logins
-    if (!getStytchJwt() && loginPath && location.pathname !== loginPath) {
+    if (
+      !Auth.isThereAnExistingSession() &&
+      loginPath &&
+      location.pathname !== loginPath
+    ) {
       // If user is not at the URL whitelisted for auth, take them there for login
       history.replaceState(null, '', loginPath + window.location.search);
     }
@@ -111,22 +114,14 @@ const LoginForm = ({
     authState.onLogout = onLogout;
     authState.setAuthId = (newId: string) => {
       authState.authId = newId;
+      hasAuthedRef.current = newId !== '';
       // Execute render callbacks after setting authId, so that form navigation can be evaluated again
       rerenderAllForms();
     };
     authState.setClient = (newClient: any) => {
       authState.client = newClient;
       onClientReady(newClient);
-      if (getStytchJwt()) {
-        // When logging in via re-direct we need to set the authId once the user object has initialized
-        const unsubscribe = authState.client.user.onChange((newUser: any) => {
-          if (newUser)
-            defaultClient.submitAuthInfo({ authId: newUser.user_id });
-        });
-        window.addEventListener('beforeunload', () => {
-          unsubscribe && unsubscribe();
-        });
-      }
+      Auth.initializeAuthClientListeners();
     };
 
     registerRenderCallback(_internalId, 'loginForm', () => {
@@ -143,31 +138,9 @@ const LoginForm = ({
     }
   }, [authIdProp]);
 
-  useEffect(() => {
-    if (!isAuthStytch()) return;
-
-    return authState.client.session.onChange((newSession: any) => {
-      if (hasAuthedRef.current && newSession === null) {
-        authState.setAuthId('');
-      } else if (newSession?.stytch_session?.session_jwt ?? getStytchJwt())
-        hasAuthedRef.current = true;
-    });
-  }, [render]);
-
   const onActive = useCallback(
     throttle(
-      () => {
-        if (!isAuthStytch()) return;
-
-        if (authState.client.session.getSync()) {
-          authState.client.session.authenticate({
-            session_duration_minutes: 1440
-          });
-        } else if (hasAuthedRef.current) {
-          // There is no session, so need to revoke it
-          logoutActions();
-        }
-      },
+      () => Auth.idleTimerAction(hasAuthedRef.current, logoutActions),
       FIVE_MINUTES_IN_MILLISECONDS,
       { leading: true, trailing: false }
     ),
@@ -201,7 +174,7 @@ const LoginForm = ({
     // If logged in and have finished onboarding questions for an apex form, then we need to redirect back to application
     initInfo().redirectCallbacks[_internalId]();
     return null;
-  } else
+  } else {
     return children ? (
       // Safe to pass authState.client, rather than a React state reference,
       // because the children are only rendered if the user is logged in,
@@ -211,6 +184,7 @@ const LoginForm = ({
         {children}
       </AuthContext.Provider>
     ) : null;
+  }
 };
 
 export default LoginForm;

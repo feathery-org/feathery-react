@@ -10,7 +10,7 @@ import {
   installGoogleAnalytics,
   trackGAEvent
 } from './googleAnalytics';
-import { inferEmailLoginFromURL } from '../auth/internal/utils';
+import Auth from '../auth/internal/AuthIntegrationInterface';
 import Client from '../utils/client';
 import { installArgyle } from './argyle';
 import { installHeap } from './heap';
@@ -63,7 +63,7 @@ export async function initializeIntegrations(
   const gtm = integs['google-tag-manager'];
   if (gtm) initializeTagManager(gtm);
   if (integs.firebase || integs.stytch)
-    return inferEmailLoginFromURL(featheryClient);
+    return Auth.inferLoginFromURL(featheryClient);
 }
 
 export interface ActionData {

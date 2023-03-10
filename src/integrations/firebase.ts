@@ -40,7 +40,7 @@ export function installFirebase(firebaseConfig: any) {
   }
 }
 
-export function emailLogin(featheryClient: any) {
+export function firebaseLoginMagicLink(featheryClient: any) {
   if (isHrefFirebaseMagicLink()) {
     const authEmail = window.localStorage.getItem('featheryFirebaseEmail');
     if (authEmail) {
@@ -61,65 +61,69 @@ export function emailLogin(featheryClient: any) {
   }
 }
 
-export async function sendFirebaseLogin({
+export async function firebaseSendMagicLink({
   fieldVal,
-  servar,
-  method
+  servar
 }: {
   fieldVal: string;
   servar: any;
-  method: 'phone' | 'email';
 }) {
-  if (method === 'phone') {
-    return await authState.client
-      .auth()
-      .signInWithPhoneNumber(`+1${fieldVal}`, window.firebaseRecaptchaVerifier)
-      .then((confirmationResult: any) => {
-        authState.sentAuth = true;
-        // SMS sent
-        window.firebaseConfirmationResult = confirmationResult;
-        (window as any).firebasePhoneNumber = fieldVal;
-        return {};
-      })
-      .catch((error: any) => {
-        console.log(error);
-        // Error; SMS not sent. Reset Recaptcha
-        window.firebaseRecaptchaVerifier
-          .render()
-          .then(function (widgetId: any) {
-            // Reset reCaptcha
-            // @ts-expect-error TS(2304): Cannot find name 'grecaptcha'.
-            // eslint-disable-next-line no-undef
-            grecaptcha.reset(widgetId);
-          })
-          .catch((e: any) => console.log(e));
-        return {
-          errorMessage: error.message,
-          errorField: servar
-        };
-      });
-  } else {
-    return await authState.client
-      .auth()
-      .sendSignInLinkToEmail(fieldVal, {
-        url: window.location.href,
-        handleCodeInApp: true
-      })
-      .then(() => {
-        authState.sentAuth = true;
-        window.localStorage.setItem('featheryFirebaseEmail', fieldVal);
-        return {};
-      })
-      .catch((error: any) => {
-        return {
-          errorMessage: error.message,
-          errorField: servar
-        };
-      });
-  }
+  return await authState.client
+    .auth()
+    .sendSignInLinkToEmail(fieldVal, {
+      url: window.location.href,
+      handleCodeInApp: true
+    })
+    .then(() => {
+      authState.sentAuth = true;
+      window.localStorage.setItem('featheryFirebaseEmail', fieldVal);
+      return {};
+    })
+    .catch((error: any) => {
+      return {
+        errorMessage: error.message,
+        errorField: servar
+      };
+    });
 }
 
-export async function verifySMSCode({ fieldVal, featheryClient }: any) {
+export async function firebaseSendSms({
+  fieldVal,
+  servar
+}: {
+  fieldVal: string;
+  servar: any;
+}) {
+  return await authState.client
+    .auth()
+    .signInWithPhoneNumber(`+1${fieldVal}`, window.firebaseRecaptchaVerifier)
+    .then((confirmationResult: any) => {
+      authState.sentAuth = true;
+      // SMS sent
+      window.firebaseConfirmationResult = confirmationResult;
+      (window as any).firebasePhoneNumber = fieldVal;
+      return {};
+    })
+    .catch((error: any) => {
+      console.log(error);
+      // Error; SMS not sent. Reset Recaptcha
+      window.firebaseRecaptchaVerifier
+        .render()
+        .then(function (widgetId: any) {
+          // Reset reCaptcha
+          // @ts-expect-error TS(2304): Cannot find name 'grecaptcha'.
+          // eslint-disable-next-line no-undef
+          grecaptcha.reset(widgetId);
+        })
+        .catch((e: any) => console.log(e));
+      return {
+        errorMessage: error.message,
+        errorField: servar
+      };
+    });
+}
+
+export async function firebaseVerifySms({ fieldVal, featheryClient }: any) {
   const fcr = window.firebaseConfirmationResult;
   if (fcr) {
     return await fcr

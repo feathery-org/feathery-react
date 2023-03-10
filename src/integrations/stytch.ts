@@ -35,7 +35,7 @@ export function installStytch(stytchConfig: any) {
   }
 }
 
-export function googleOauthRedirect() {
+export function stytchGoogleOauthRedirect() {
   const stytchClient = authState.client;
   if (!stytchClient) return;
 
@@ -46,7 +46,7 @@ export function googleOauthRedirect() {
   });
 }
 
-export function sendMagicLink({ fieldVal }: any) {
+export function stytchSendMagicLink({ fieldVal }: any) {
   const client = authState.client;
   if (!client) return;
 
@@ -59,7 +59,7 @@ export function sendMagicLink({ fieldVal }: any) {
   });
 }
 
-export function sendSMSCode({ fieldVal }: any) {
+export function stytchSendSms({ fieldVal }: any) {
   const client = authState.client;
   if (!client) return;
 
@@ -70,7 +70,8 @@ export function sendSMSCode({ fieldVal }: any) {
   });
 }
 
-export function emailLogin(featheryClient: any) {
+// Login with query params from oauth redirect or magic link
+export function stytchUrlLogin(featheryClient: any) {
   const stytchClient = authState.client;
   // If there is no auth client, no config or auth has already been sent, then return early
   if (!stytchClient || !config || authSent) return;
@@ -104,7 +105,10 @@ export function emailLogin(featheryClient: any) {
   }
 }
 
-export function smsLogin({ fieldVal, featheryClient }: any) {
+export function stytchVerifySms({
+  fieldVal,
+  featheryClient
+}: any): Promise<any> {
   const client = authState.client;
   if (!client || stytchPhoneMethodId === '') return Promise.resolve();
 
@@ -118,10 +122,10 @@ export function smsLogin({ fieldVal, featheryClient }: any) {
     });
 }
 
-function stytchSubmitAuthInfo(featheryClient: any) {
+function stytchSubmitAuthInfo(featheryClient: any): Promise<any> {
   const stytchClient = authState.client;
   const user = stytchClient.user.getSync();
-  if (!user) return;
+  if (!user) return Promise.resolve();
 
   removeStytchQueryParams();
   return featheryClient
