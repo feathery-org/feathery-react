@@ -8,7 +8,7 @@ import {
 } from '../../integrations/firebase';
 import {
   stytchUrlLogin,
-  stytchGoogleOauthRedirect,
+  stytchOauthRedirect,
   stytchSendMagicLink,
   stytchSendSms,
   stytchVerifySms
@@ -79,8 +79,8 @@ function sendMagicLink(email: string) {
     });
 }
 
-function oauthRedirect() {
-  stytchGoogleOauthRedirect();
+function oauthRedirect(oauthType: string) {
+  stytchOauthRedirect(oauthType);
 }
 
 function initializeAuthClientListeners() {
