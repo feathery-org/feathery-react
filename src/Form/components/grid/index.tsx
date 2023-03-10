@@ -117,8 +117,8 @@ const getCellContainerStyle = (
   trackAxis: string,
   viewport: string
 ) => {
-  const parentStyles = node?.parent?.style || {};
-  const nodeStyles = node.style || {};
+  const parentStyles = node?.parent?.cellStyles || {};
+  const nodeStyles = node.cellStyles || {};
   const styles: any = {
     position: 'relative',
     display: !node.isElement ? 'flex' : 'block',
@@ -409,7 +409,8 @@ const CellContainer = ({
   const properties = _properties ?? {};
 
   const actions = properties.actions ?? [];
-  const nodeStyles = actions.length > 0 && !node.style ? {} : node.style;
+  const nodeStyles =
+    actions.length > 0 && !node.cellStyles ? {} : node.cellStyles;
 
   if (nodeStyles) {
     const [cellStyle, cellHoverStyle, cellActiveStyle] = getCellStyle({
@@ -450,7 +451,7 @@ const CellContainer = ({
 };
 
 const GridContainer = ({ children, node }: any) => {
-  const nodeStyles = node?.style || {};
+  const nodeStyles = node?.cellStyles || {};
   const styles: any = {};
 
   if (node.children) {
@@ -583,16 +584,14 @@ const buildGridMap = (step: any) => {
   const addObjectsToMap = (obj: any, type: any) => {
     // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     if (typeMap[type]) obj.type = typeMap[type];
-    if (type === 'subgrids' && obj.position.length === 0) {
-      if (Array.isArray(obj.styles)) {
-        obj.styles.forEach((style: any) => {
-          const cellData = { ...style };
-          cellData.position = [...obj.position, cellData.position];
-          cells.push(cellData);
-        });
-      }
 
-      return (rootSubgrid = obj);
+    if (type === 'subgrids') {
+      obj.cellStyles = obj.styles;
+      delete obj.styles;
+
+      if (obj.position.length === 0) {
+        return (rootSubgrid = obj);
+      }
     }
 
     const previous = map[getMapKey(obj)];
@@ -600,7 +599,7 @@ const buildGridMap = (step: any) => {
     if (previous) {
       prevObj.width = previous.width;
       prevObj.height = previous.height;
-      prevObj.style = previous.style;
+      prevObj.cellStyles = previous.cellStyles;
     }
 
     if (type !== 'subgrids') {
@@ -608,16 +607,6 @@ const buildGridMap = (step: any) => {
     }
 
     map[getMapKey(obj)] = { ...obj, ...prevObj };
-
-    if (type === 'subgrids') {
-      if (Array.isArray(obj.styles)) {
-        obj.styles.forEach((style: any) => {
-          const cellData = { ...style };
-          cellData.position = [...obj.position, cellData.position];
-          cells.push(cellData);
-        });
-      }
-    }
   };
 
   fields.forEach((field) =>
