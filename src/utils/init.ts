@@ -71,6 +71,7 @@ const filePathMap: Record<string, null | string | (string | null)[]> = {};
 
 function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (!sdkKey || typeof sdkKey !== 'string') {
+    console.log('sdkKey', sdkKey);
     throw new errors.SDKKeyError();
   }
 

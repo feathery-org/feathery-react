@@ -4,8 +4,16 @@ import ResponsiveStyles from '../../../elements/styles';
 import { getDefaultFieldValue } from '../../../utils/formHelperFunctions';
 import { fieldValues } from '../../../utils/init';
 import { TEXT_VARIABLE_PATTERN } from '../../../elements/components/TextNodes';
+import { FIT, isFill, isFit, isPx, getPxValue } from '../../../utils/hydration';
+
+const DEFAULT_MIN_SIZE = 50;
+const DEFAULT_MIN_FILL_SIZE = 10;
+
 const Grid = ({ step, form, viewport }: any) => {
-  const formattedStep = formatStep(JSON.parse(JSON.stringify(step)), viewport);
+  const formattedStep: any = formatStep(
+    JSON.parse(JSON.stringify(step)),
+    viewport
+  );
 
   const repeatPosition =
     viewport === 'mobile'
@@ -14,7 +22,6 @@ const Grid = ({ step, form, viewport }: any) => {
 
   if (Array.isArray(repeatPosition) && repeatPosition.length > 0) {
     const repeatNode =
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       formattedStep.map[getMapKey({ position: repeatPosition })];
     if (repeatNode) addRepeatedCells(repeatNode);
   }
@@ -32,7 +39,6 @@ const Grid = ({ step, form, viewport }: any) => {
 const Subgrid = ({
   tree: node,
   form,
-  layout = null,
   axis = null,
   viewport = 'desktop',
   flags
@@ -44,7 +50,7 @@ const Subgrid = ({
         key={getMapKey(node)}
         node={node}
         axis={axis}
-        layout={layout}
+        viewport={viewport}
       >
         {!node.isEmpty && <Cell form={form} node={node} flags={flags} />}
       </CellContainer>
@@ -56,7 +62,7 @@ const Subgrid = ({
       <CellContainer
         node={node}
         axis={axis}
-        layout={layout}
+        viewport={viewport}
         selected={customClickSelectionState({
           id: node.key,
           properties: node.properties
@@ -65,15 +71,13 @@ const Subgrid = ({
       >
         <GridContainer node={node}>
           {customComponent ??
-            node.children.map((child: any, i: any) => {
-              layout = node.layout[i];
+            (node.children || []).map((child: any, i: any) => {
               axis = node.axis;
               return (
                 <Subgrid
                   key={getMapKey(child) + ':' + i}
                   tree={child}
                   axis={axis}
-                  layout={layout}
                   form={form}
                   viewport={viewport}
                   flags={flags}
@@ -108,59 +112,309 @@ const getCellStyle = (cell: any) => {
   ];
 };
 
-const getCellContainerStyle = (axis: string, layout: string) => {
-  const dimension = axis === 'column' ? 'width' : 'height';
-
-  const common = {
-    display: 'flex'
+const getCellContainerStyle = (
+  node: any,
+  trackAxis: string,
+  viewport: string
+) => {
+  const parentStyles = node?.parent?.style || {};
+  const nodeStyles = node.style || {};
+  const styles: any = {
+    position: 'relative',
+    display: !node.isElement ? 'flex' : 'block',
+    minWidth: !node.isElement ? `${DEFAULT_MIN_SIZE}px` : 'min-content',
+    minHeight: !node.isElement ? `${DEFAULT_MIN_SIZE}px` : 'min-content',
+    flexBasis: !node.isElement ? 0 : 'fit-content',
+    boxSizing: !node.isElement ? 'content-box' : 'border-box'
   };
 
-  const dimensionName = dimension[0].toUpperCase() + dimension.substring(1);
-  const minDimension = `min${dimensionName}`;
-  const maxDimension = `max${dimensionName}`;
+  // Apply axis styles
+  styles.flexDirection = trackAxis;
 
-  switch (layout) {
-    case 'fit':
-      return {
-        ...common,
-        [minDimension]: 0,
-        [dimension]: 'fit-content'
-      };
-    case 'fill':
-      return {
-        ...common,
-        flex: 1,
-        [minDimension]: 0
-      };
-    default:
-      return {
-        ...common,
-        [dimension]: parseInt(layout),
-        [maxDimension]: parseInt(layout),
-        [minDimension]: 0
-      };
+  const isEmpty = node.isEmpty;
+  const nodeWidth = node.width;
+  const nodeHeight = node.height;
+  const isAligned =
+    parentStyles.vertical_align || parentStyles.horizontal_align;
+
+  // Used for "Fit" parents of purely px-width children cells
+  const pxWidthChildren =
+    !isEmpty &&
+    node.children &&
+    node.axis === 'column' &&
+    node.children.every((child: any) => !child.isElement && isPx(child.width));
+
+  /**
+   * Width styles
+   */
+  if (!node.isElement) {
+    if (isPx(nodeWidth)) {
+      styles.minWidth = 'min-content';
+      styles.width = '100%';
+
+      if (trackAxis === 'column') {
+        styles.flexBasis = '100%';
+      }
+
+      styles.maxWidth = nodeWidth;
+    }
+
+    if (isFit(nodeWidth)) {
+      styles.maxWidth = `${DEFAULT_MIN_SIZE}px`;
+
+      if (!isEmpty) {
+        if (trackAxis === 'column') {
+          styles.flexBasis = '100%';
+        }
+
+        styles.width = 'fit-content !important';
+        styles.maxWidth = 'fit-content';
+        styles.minWidth = 'min-content';
+
+        // TODO: This is not ideal. This is calculating the px width of all px children (every child is px)
+        // and setting that to the max width of fit parents. Ideally it should allow the children to grow to this size without
+        // calculating the px size of children.
+        if (pxWidthChildren) {
+          const pxValueOfChildren = node.children.reduce(
+            (pxValue: number, child: any) => {
+              return pxValue + getPxValue(child.width);
+            },
+            0
+          );
+
+          styles.maxWidth = `${pxValueOfChildren}px`;
+        }
+      }
+    }
+
+    if (isFill(nodeWidth)) {
+      if (!isAligned) styles.alignSelf = 'stretch';
+      styles.width = 'auto';
+      styles.minWidth = `${DEFAULT_MIN_FILL_SIZE}px`;
+
+      if (trackAxis === 'column') {
+        styles.flexGrow = 1;
+        styles.flexShrink = 0;
+      } else {
+        styles.width = '100%';
+      }
+
+      if (!isEmpty) {
+        styles.minWidth = 'min-content';
+      }
+    }
+
+    /**
+     * Height styles
+     */
+    if (isPx(nodeHeight)) {
+      styles.minHeight = 'auto';
+      styles.height = nodeHeight;
+
+      if (trackAxis === 'row') {
+        styles.flexBasis = '100%';
+      }
+
+      styles.maxHeight = nodeHeight;
+    }
+
+    if (isFit(nodeHeight)) {
+      styles.maxHeight = `${DEFAULT_MIN_SIZE}px`;
+
+      if (!isEmpty) {
+        styles.height = 'fit-content !important';
+        styles.maxHeight = 'fit-content';
+        styles.minHeight = 'min-content';
+      }
+    }
+
+    if (isFill(nodeHeight)) {
+      if (!node.parent) {
+        styles.height = '100%';
+      } else {
+        if (!isAligned) styles.alignSelf = 'stretch';
+        styles.height = 'auto';
+        styles.minHeight = `${DEFAULT_MIN_FILL_SIZE}px`;
+
+        if (trackAxis === 'row') {
+          styles.flexGrow = 1;
+          styles.flexShrink = 0;
+        } else {
+          styles.height = '100%';
+        }
+
+        if (!isEmpty) {
+          styles.minHeight = 'min-content';
+        }
+      }
+    }
+
+    if (nodeStyles.vertical_layout) {
+      if (trackAxis === 'row') {
+        styles.justifySelf = nodeStyles.vertical_layout;
+      } else {
+        styles.alignSelf = nodeStyles.vertical_layout;
+      }
+    }
+
+    if (nodeStyles.layout) {
+      let targetStyle = nodeStyles.layout;
+      if (targetStyle === 'left') targetStyle = 'flex-start';
+      if (targetStyle === 'right') targetStyle = 'flex-end';
+      if (trackAxis === 'row') {
+        styles.alignSelf = targetStyle;
+      } else {
+        styles.justifySelf = targetStyle;
+      }
+    }
+  } else {
+    const { styles: elementStyles = {} } = node;
+    const {
+      width,
+      width_unit: widthUnit,
+      height,
+      height_unit: heightUnit
+    } = elementStyles;
+
+    if (width && width !== FIT) {
+      if (trackAxis === 'column') {
+        styles.flexBasis = `${width}${widthUnit}`;
+        styles.minWidth = 'min-content';
+      } else {
+        styles.minWidth = `${width}${widthUnit}`;
+      }
+    } else {
+      styles.width = 'fit-content !important';
+      styles.maxWidth = 'fit-content';
+      styles.minWidth = 'min-content';
+    }
+
+    if (height && height !== FIT)
+      if (trackAxis === 'row') {
+        styles.flexBasis = `${height}${heightUnit}`;
+        styles.minHeight = 'min-content';
+      } else {
+        styles.minHeight = `${height}${heightUnit}`;
+      }
+    else {
+      styles.height = 'fit-content !important';
+      styles.maxHeight = 'fit-content';
+      styles.minHeight = 'min-content';
+    }
+
+    if (widthUnit === '%') {
+      if (trackAxis === 'column') styles.flexBasis = `${width}${widthUnit}`;
+      else styles.width = `${width}${widthUnit}`;
+    }
+
+    if (heightUnit === '%') {
+      if (trackAxis === 'row') styles.flexBasis = `${height}${heightUnit}`;
+      else styles.height = `${height}${heightUnit}`;
+    }
+
+    if (elementStyles.vertical_layout) {
+      if (trackAxis === 'row') {
+        styles.justifySelf = elementStyles.vertical_layout;
+      } else {
+        styles.alignSelf = elementStyles.vertical_layout;
+      }
+    }
+
+    if (elementStyles.layout) {
+      let targetStyle = elementStyles.layout;
+      if (targetStyle === 'left') targetStyle = 'flex-start';
+      if (targetStyle === 'right') targetStyle = 'flex-end';
+      if (trackAxis === 'row') {
+        styles.alignSelf = targetStyle;
+      } else {
+        styles.justifySelf = targetStyle;
+      }
+    }
   }
+
+  // Style rules when the parent is a root cell that is not pixel sized
+  const isMobile = viewport === 'mobile';
+  const parentIsRoot = node.parent && !node.parent.children;
+  if (
+    parentIsRoot &&
+    !isPx(node.parent.width) &&
+    !isMobile &&
+    isPx(node.width)
+  ) {
+    styles.minWidth = node.width;
+  }
+
+  if (
+    parentIsRoot &&
+    !isPx(node.parent.height) &&
+    !isMobile &&
+    isPx(node.height)
+  ) {
+    styles.minHeight = node.height;
+  }
+
+  // Style rules for an empty root cell
+  const isEmptyRootNode = !node.parent && !node.children;
+  if (isEmptyRootNode && isFit(node.width)) {
+    styles.minWidth = `${DEFAULT_MIN_SIZE}px`;
+  }
+
+  if (isEmptyRootNode && isFit(node.height)) {
+    styles.minHeight = `${DEFAULT_MIN_SIZE}px`;
+  }
+
+  // Apply external padding (margin)
+  styles.paddingTop = nodeStyles.external_padding_top ?? 0;
+  styles.paddingRight = nodeStyles.external_padding_right ?? 0;
+  styles.paddingBottom = nodeStyles.external_padding_bottom ?? 0;
+  styles.paddingLeft = nodeStyles.external_padding_left ?? 0;
+
+  const yTotalExternalPadding = styles.paddingTop + styles.paddingBottom;
+  const xTotalExternalPadding = styles.paddingLeft + styles.paddingRight;
+
+  if (xTotalExternalPadding) {
+    if (styles.width === '100%' || !isFit(nodeWidth)) {
+      styles.width = `calc(100% - ${xTotalExternalPadding}px)`;
+    } else if (isFit(nodeWidth)) {
+      styles.width = `max-content`;
+    }
+  }
+
+  if (yTotalExternalPadding) {
+    if (styles.height === '100%' || !isFit(nodeHeight)) {
+      styles.height = `calc(100% - ${yTotalExternalPadding}px)`;
+    } else if (isFit(nodeHeight)) {
+      styles.height = `max-content`;
+    }
+  }
+
+  return styles;
 };
 
 const CellContainer = ({
   children,
-  node: { isElement, parent, cellData, properties = null },
+  node,
   axis,
-  layout,
   selected,
+  viewport = 'desktop',
   runElementActions = () => {}
 }: any) => {
-  if (!parent) return children;
+  const { isElement, parent, properties: _properties = null } = node;
 
-  const cellContainerStyle = getCellContainerStyle(axis, layout);
+  if (!parent) {
+    return children;
+  }
 
-  if (!properties) properties = {};
+  const cellContainerStyle = getCellContainerStyle(node, axis, viewport); // TODO: [Andy] Pass element render data as third param
+  const properties = _properties ?? {};
 
   const actions = properties.actions ?? [];
-  if (actions.length > 0 && !cellData) cellData = { styles: {} };
+  const nodeStyles = actions.length > 0 && !node.style ? {} : node.style;
 
-  if (cellData) {
-    const [cellStyle, cellHoverStyle, cellActiveStyle] = getCellStyle(cellData);
+  if (nodeStyles) {
+    const [cellStyle, cellHoverStyle, cellActiveStyle] = getCellStyle({
+      styles: nodeStyles
+    });
     const selectableStyles =
       !isElement && actions.length > 0
         ? {
@@ -173,6 +427,7 @@ const CellContainer = ({
 
     return (
       <div
+        className='CellContainer-Styles'
         css={{
           ...cellContainerStyle,
           ...cellStyle,
@@ -193,16 +448,57 @@ const CellContainer = ({
 
   return <div style={cellContainerStyle}>{children}</div>;
 };
-const GridContainer = ({ children, node: { axis } }: any) => {
+
+const GridContainer = ({ children, node }: any) => {
+  const nodeStyles = node?.style || {};
+  const styles: any = {};
+
+  if (node.children) {
+    if (node.axis === 'column') {
+      styles.alignItems = nodeStyles.vertical_align || 'flex-start';
+      styles.justifyContent = nodeStyles.horizontal_align || 'left';
+    }
+
+    if (node.axis === 'row') {
+      styles.alignItems = nodeStyles.horizontal_align || 'flex-start';
+      styles.justifyContent = nodeStyles.vertical_align || 'left';
+    }
+
+    if (nodeStyles.gap) {
+      styles.gap = `${nodeStyles.gap}px`;
+    }
+
+    if (nodeStyles.padding_top)
+      styles.paddingTop = `${nodeStyles.padding_top}px`;
+
+    if (nodeStyles.padding_right)
+      styles.paddingRight = `${nodeStyles.padding_right}px`;
+
+    if (nodeStyles.padding_bottom)
+      styles.paddingBottom = `${nodeStyles.padding_bottom}px`;
+
+    if (nodeStyles.padding_left)
+      styles.paddingLeft = `${nodeStyles.padding_left}px`;
+  } else {
+    styles.alignItems = undefined;
+    styles.justifyContent = undefined;
+    styles.paddingTop = undefined;
+    styles.paddingRight = undefined;
+    styles.paddingBottom = undefined;
+    styles.paddingLeft = undefined;
+  }
+
   return (
     <div
       style={{
-        flexDirection: axis === 'column' ? 'row' : 'column',
+        flexDirection: node.axis === 'column' ? 'row' : 'column',
         flexWrap: 'nowrap',
         display: 'flex',
         position: 'relative',
         minHeight: '100%',
-        minWidth: '100%'
+        minWidth: '100%',
+        boxSizing: 'border-box',
+        ...styles
       }}
     >
       {children}
@@ -211,7 +507,7 @@ const GridContainer = ({ children, node: { axis } }: any) => {
 };
 
 const formatStep = (step: any, viewport: string) => {
-  step = convertStepToViewport(step, viewport);
+  step = convertStepToViewport(JSON.parse(JSON.stringify(step)), viewport);
 
   const map = buildGridMap(step);
   const tree = buildGridTree(map, [], viewport);
@@ -261,7 +557,7 @@ const convertStepToViewport = (step: any, viewport: any) => {
 
 const viewportProperties = {
   step: ['width', 'height', 'repeat_position'],
-  subgrids: ['layout', 'position', 'axis', 'styles'],
+  subgrids: ['position', 'axis', 'style', 'styles', 'width', 'height'],
   elements: ['position']
 };
 
@@ -270,6 +566,7 @@ const convertToViewport = (obj: any, viewport: any, props: any) => {
 
   props.forEach((prop: any) => {
     const viewportProp = `${viewport}_${prop}`;
+
     if (obj[viewportProp]) {
       obj[prop] = obj[viewportProp];
     }
@@ -279,7 +576,7 @@ const convertToViewport = (obj: any, viewport: any, props: any) => {
 };
 
 const buildGridMap = (step: any) => {
-  const map = {};
+  const map: any[string] = {};
   let rootSubgrid = {};
   const cells: any = [];
 
@@ -297,8 +594,21 @@ const buildGridMap = (step: any) => {
 
       return (rootSubgrid = obj);
     }
-    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-    map[getMapKey(obj)] = obj;
+
+    const previous = map[getMapKey(obj)];
+    const prevObj: any = {};
+    if (previous) {
+      prevObj.width = previous.width;
+      prevObj.height = previous.height;
+      prevObj.style = previous.style;
+    }
+
+    if (type !== 'subgrids') {
+      prevObj.isElement = true;
+    }
+
+    map[getMapKey(obj)] = { ...obj, ...prevObj };
+
     if (type === 'subgrids') {
       if (Array.isArray(obj.styles)) {
         obj.styles.forEach((style: any) => {
@@ -318,12 +628,11 @@ const buildGridMap = (step: any) => {
     // @ts-expect-error TS(7006): Parameter 'cell' implicitly has an 'any' type.
     cells.forEach((cell) => {
       const key = getMapKey(cell);
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
+
       if (!map[key]) {
-        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
         map[key] = { isEmpty: true, position: cell.position };
       }
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
+
       map[key].cellData = cell;
     });
   }
@@ -341,7 +650,6 @@ const addRepeatedCells = (node: any) => {
   if (numberOfRepeats) {
     node.parent.children[index] = repeat({ ...node }, 0);
     for (let i = 0; i < numberOfRepeats; ++i) {
-      node.parent.layout.splice(index + i, 0, node.parent.layout[index]);
       const repeatIndex = i + 1;
       node.parent.children.splice(
         index + repeatIndex,
@@ -449,22 +757,28 @@ const repeatCount = (node: any) => {
   return Math.max(repeatCountByFields(node), repeatCountByTextVariables(node));
 };
 
-const buildGridTree = (gridMap: any, position = [], viewport: any) => {
+const buildGridTree = (gridMap: any, position: any[] = [], viewport: any) => {
   const node = gridMap[getMapKey({ position })];
   if (!node) return { isEmpty: true, position };
-  if (node.layout) {
-    if (position.length > 0) node.isSubgrid = true;
+
+  let i = 0;
+  let nextPos = [...position, i];
+  let hasNextChild = gridMap[getMapKey({ position: nextPos })];
+
+  if (hasNextChild) {
     node.children = [];
-    node.layout.forEach((layout: any, i: any) => {
-      const nextPosition = [...position, i];
-      // @ts-expect-error TS(2345): Argument of type 'any[]' is not assignable to para... Remove this comment to see the full error message
-      const child = buildGridTree(gridMap, nextPosition, viewport);
-      child.parent = node;
-      node.children.push(child);
-    });
-  } else {
-    if (!node.isEmpty) node.isElement = true;
   }
+
+  while (hasNextChild) {
+    const actualChild = buildGridTree(gridMap, [...position, i], viewport);
+    actualChild.parent = node;
+    node.children.push(actualChild);
+
+    i = i + 1;
+    nextPos = [...position, i];
+    hasNextChild = gridMap[getMapKey({ position: nextPos })];
+  }
+
   return node;
 };
 

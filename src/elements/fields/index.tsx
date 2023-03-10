@@ -152,12 +152,12 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'button_group':
       styles.addTargets('img', 'label');
-      styles.apply('fc', 'vertical_layout', (a: any) => ({
+      styles.apply('fc', 'vertical_alignment', (a: any) => ({
         alignItems: a
       }));
       styles.apply(
         'fc',
-        'layout',
+        'horizontal_alignment',
         (a: keyof typeof justifyContentTextAlignMap) => ({
           justifyContent: a,
           textAlign: justifyContentTextAlignMap[a]
