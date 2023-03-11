@@ -1,13 +1,14 @@
 import { authState } from '../LoginForm';
 import {
-  firebaseLoginMagicLink,
+  firebaseLoginOnLoad,
   isHrefFirebaseMagicLink,
   firebaseSendMagicLink,
   firebaseSendSms,
-  firebaseVerifySms
+  firebaseVerifySms,
+  firebaseOauthRedirect
 } from '../../integrations/firebase';
 import {
-  stytchUrlLogin,
+  stytchLoginOnLoad,
   stytchOauthRedirect,
   stytchSendMagicLink,
   stytchSendSms,
@@ -15,7 +16,7 @@ import {
 } from '../../integrations/stytch';
 import Client from '../../utils/client';
 import { isAuthStytch } from './utils';
-import { getStytchJwt } from '../../utils/browser';
+import { getCookie, getStytchJwt } from '../../utils/browser';
 import { defaultClient } from '../../utils/init';
 
 // All code that needs to do something different based on the auth integration should go in this file
@@ -27,16 +28,17 @@ function isHrefMagicLink(): boolean {
   );
 }
 
-function inferLoginFromURL(featheryClient: Client) {
+function inferLoginOnLoad(featheryClient: Client) {
   const queryParams = new URLSearchParams(window.location.search);
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
-  if (isAuthStytch() || (type && token)) return stytchUrlLogin(featheryClient);
-  else return firebaseLoginMagicLink(featheryClient);
+  if (isAuthStytch() || (type && token))
+    return stytchLoginOnLoad(featheryClient);
+  else return firebaseLoginOnLoad(featheryClient);
 }
 
 function isThereAnExistingSession(): boolean {
-  return !!getStytchJwt();
+  return !!(getStytchJwt() || getCookie('featheryFirebaseRedirect'));
 }
 
 async function inferAuthLogout() {
@@ -78,7 +80,8 @@ function sendMagicLink(email: string) {
 }
 
 function oauthRedirect(oauthType: string) {
-  stytchOauthRedirect(oauthType);
+  if (isAuthStytch()) stytchOauthRedirect(oauthType);
+  else firebaseOauthRedirect(oauthType as any);
 }
 
 function initializeAuthClientListeners() {
@@ -112,7 +115,7 @@ function idleTimerAction(hasAuthed: boolean, logoutActions: () => void) {
 
 export default {
   isHrefMagicLink,
-  inferLoginFromURL,
+  inferLoginOnLoad,
   isThereAnExistingSession,
   inferAuthLogout,
   sendSms,

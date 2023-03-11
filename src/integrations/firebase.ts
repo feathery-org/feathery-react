@@ -4,6 +4,7 @@ import { authState } from '../auth/LoginForm';
 import { useEffect } from 'react';
 import { shouldElementHide } from '../utils/hideIfs';
 import { ACTION_SEND_SMS } from '../utils/elementActions';
+import { deleteCookie, getCookie, setCookie } from '../utils/browser';
 
 let firebasePromise: any = null;
 
@@ -40,9 +41,9 @@ export function installFirebase(firebaseConfig: any) {
   }
 }
 
-export function firebaseLoginMagicLink(featheryClient: any) {
+export function firebaseLoginOnLoad(featheryClient: any) {
   if (isHrefFirebaseMagicLink()) {
-    const authEmail = window.localStorage.getItem('featheryFirebaseEmail');
+    const authEmail = getCookie('featheryFirebaseEmail');
     if (authEmail) {
       return authState.client
         .auth()
@@ -58,9 +59,23 @@ export function firebaseLoginMagicLink(featheryClient: any) {
                 first_name: user.displayName
               }
             })
-            .then((session: any) => {
-              return session;
-            });
+            .then((session: any) => session);
+        });
+    }
+  } else {
+    const oauthRedirect = getCookie('featheryFirebaseRedirect');
+    if (oauthRedirect) {
+      deleteCookie('featheryFirebaseRedirect');
+      authState.client
+        .auth()
+        .getRedirectResult()
+        .then((result: any) => {
+          return featheryClient
+            .submitAuthInfo({
+              authId: result.user.uid,
+              authEmail: result.user.email
+            })
+            .then((session: any) => session);
         });
     }
   }
@@ -81,7 +96,7 @@ export async function firebaseSendMagicLink({
     })
     .then(() => {
       authState.sentAuth = true;
-      window.localStorage.setItem('featheryFirebaseEmail', fieldVal);
+      setCookie('featheryFirebaseEmail', fieldVal);
       return {};
     })
     .catch((error: any) => {
@@ -189,4 +204,30 @@ export function useFirebaseRecaptcha(activeStep: any) {
         });
     }
   }, [activeStep?.id]);
+}
+
+const OAUTH_PROVIDER_MAP = {
+  google: { provider: 'GoogleAuthProvider', id: '' },
+  facebook: { provider: 'FacebookAuthProvider', id: '' },
+  apple: { provider: 'OAuthProvider', id: 'apple.com' },
+  twitter: { provider: 'TwitterAuthProvider', id: '' },
+  github: { provider: 'GithubAuthProvider', id: '' },
+  microsoft: { provider: 'OAuthProvider', id: 'microsoft.com' }
+};
+
+export function firebaseOauthRedirect(
+  oauthType: keyof typeof OAUTH_PROVIDER_MAP
+) {
+  const firebaseClient = authState.client;
+  if (!firebaseClient) return;
+
+  const providerInfo = OAUTH_PROVIDER_MAP[oauthType];
+  if (!providerInfo) return;
+
+  setCookie('featheryFirebaseRedirect', 'true');
+  const Provider = firebaseClient.auth[providerInfo.provider];
+  const instance = providerInfo.id
+    ? new Provider(providerInfo.id)
+    : new Provider();
+  firebaseClient.auth().signInWithRedirect(instance);
 }
