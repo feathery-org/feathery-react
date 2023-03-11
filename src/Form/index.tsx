@@ -83,7 +83,7 @@ import {
   ACTION_ADD_REPEATED_ROW,
   ACTION_BACK,
   ACTION_CUSTOM,
-  ACTION_GOOGLE_OAUTH,
+  ACTION_OAUTH_LOGIN,
   ACTION_LOGOUT,
   ACTION_NEXT,
   ACTION_REMOVE_REPEATED_ROW,
@@ -1290,7 +1290,8 @@ function Form({
           setElementError('A valid email is needed to send your magic link.');
           break;
         }
-      } else if (type === ACTION_GOOGLE_OAUTH) Auth.oauthRedirect();
+      } else if (type === ACTION_OAUTH_LOGIN)
+        Auth.oauthRedirect(action.oauth_type);
       else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEXT) {
         const metadata = {

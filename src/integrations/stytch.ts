@@ -35,12 +35,12 @@ export function installStytch(stytchConfig: any) {
   }
 }
 
-export function stytchGoogleOauthRedirect() {
+export function stytchOauthRedirect(oauthType: string) {
   const stytchClient = authState.client;
   if (!stytchClient) return;
 
   const redirectUrl = getRedirectUrl();
-  stytchClient.oauth.google.start({
+  stytchClient.oauth[oauthType].start({
     login_redirect_url: redirectUrl,
     signup_redirect_url: redirectUrl
   });
