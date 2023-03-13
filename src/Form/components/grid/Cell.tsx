@@ -356,6 +356,17 @@ const Cell = ({ node: el, form, flags }: any) => {
             }}
           />
         );
+      case 'rating':
+        return (
+          <Elements.RatingField
+            {...fieldProps}
+            fieldVal={fieldVal}
+            onChange={(val: number) => {
+              const change = changeValue(val, el, index);
+              if (change) onChange();
+            }}
+          />
+        );
       case 'text_area':
         return (
           <Elements.TextArea
@@ -420,7 +431,7 @@ const Cell = ({ node: el, form, flags }: any) => {
               // register current step field IDs if possible
               trackMapFields(activeStep);
 
-              if (!isObjectEmpty(Object.keys(addrValues))) {
+              if (!isObjectEmpty(addrValues)) {
                 updateFieldValues(addrValues);
                 fieldOnChange({
                   fieldIDs: Object.values(keyIDMap),

@@ -1,9 +1,5 @@
-import { getAuthClient, setAuthClient } from '../auth/utils';
-import { dynamicImport } from './utils';
-import { featheryDoc } from '../utils/browser';
-import { authState } from '../auth/LoginProvider';
-
-const STYTCH_JS_URL = 'https://js.stytch.com/stytch.js';
+import { StytchHeadlessClient } from '@stytch/vanilla-js/headless';
+import { authState } from '../auth/LoginForm';
 
 let stytchPromise: any = null;
 let config: any = null;
@@ -21,44 +17,37 @@ export function installStytch(stytchConfig: any) {
   else {
     config = stytchConfig;
     stytchPromise = new Promise((resolve) => {
-      const stytchClient = getAuthClient();
-      if (stytchClient) resolve(stytchClient);
+      if (authState.client) resolve(authState.client);
       else {
-        // Bring in stytch dependencies dynamically if this form uses stytch
-        // When calling `await loadStytch()` with the JS SDK it does this script
-        // check internally. If that loads first and then we do a dynamic import
-        // it causes an error, so don't dynamic import if the script is already
-        // set
-        const isStytchImported = featheryDoc().querySelectorAll(
-          `script[src="${STYTCH_JS_URL}"]`
-        )[0];
-        // @ts-expect-error TS(2794): Expected 1 arguments, but got 0. Did you forget to... Remove this comment to see the full error message
-        if (isStytchImported) return resolve();
-
-        return dynamicImport(STYTCH_JS_URL).then(() => {
-          const initializedClient = global.Stytch(stytchConfig.metadata.token);
-          setAuthClient(initializedClient);
-          resolve(initializedClient);
-        });
+        const initializedClient = new StytchHeadlessClient(
+          stytchConfig.metadata.token,
+          {
+            cookieOptions: {
+              availableToSubdomains: true
+            }
+          }
+        );
+        authState.setClient(initializedClient);
+        resolve(initializedClient);
       }
     });
     return stytchPromise;
   }
 }
 
-export function googleOauthRedirect() {
-  const stytchClient = getAuthClient();
+export function stytchOauthRedirect(oauthType: string) {
+  const stytchClient = authState.client;
   if (!stytchClient) return;
 
   const redirectUrl = getRedirectUrl();
-  stytchClient.oauth.google.start({
+  stytchClient.oauth[oauthType].start({
     login_redirect_url: redirectUrl,
     signup_redirect_url: redirectUrl
   });
 }
 
-export function sendMagicLink({ fieldVal }: any) {
-  const client = getAuthClient();
+export function stytchSendMagicLink({ fieldVal }: any) {
+  const client = authState.client;
   if (!client) return;
 
   const redirectUrl = getRedirectUrl();
@@ -70,8 +59,8 @@ export function sendMagicLink({ fieldVal }: any) {
   });
 }
 
-export function sendSMSCode({ fieldVal }: any) {
-  const client = getAuthClient();
+export function stytchSendSms({ fieldVal }: any) {
+  const client = authState.client;
   if (!client) return;
 
   // need to add + in front, https://stytch.com/docs/api/log-in-or-create-user-by-sms
@@ -81,8 +70,9 @@ export function sendSMSCode({ fieldVal }: any) {
   });
 }
 
-export function emailLogin(featheryClient: any) {
-  const stytchClient = getAuthClient();
+// Login with query params from oauth redirect or magic link
+export function stytchUrlLogin(featheryClient: any) {
+  const stytchClient = authState.client;
   // If there is no auth client, no config or auth has already been sent, then return early
   if (!stytchClient || !config || authSent) return;
 
@@ -98,7 +88,7 @@ export function emailLogin(featheryClient: any) {
 
   // If there is an existing Stytch session when a user returns to an embedded
   // Feathery form, we need to update the auth info from Feathery's side
-  if (stytchSession) return featherySubmitAuthInfo(featheryClient);
+  if (stytchSession) return stytchSubmitAuthInfo(featheryClient);
   // If there is no existing Stytch session & the stytch query params are
   // present, then attempt auth. If the Stytch query params exist, but a
   // session also exists, then we don't want to execute stytch auth again as
@@ -108,15 +98,18 @@ export function emailLogin(featheryClient: any) {
 
     // @ts-expect-error TS(2721): Cannot invoke an object which is possibly 'null'.
     return authFn()
-      .then(() => featherySubmitAuthInfo(featheryClient))
+      .then(() => stytchSubmitAuthInfo(featheryClient))
       .catch((e: any) =>
         console.log('Auth failed. Possibly because your magic link expired.', e)
       );
   }
 }
 
-export function smsLogin({ fieldVal, featheryClient }: any) {
-  const client = getAuthClient();
+export function stytchVerifySms({
+  fieldVal,
+  featheryClient
+}: any): Promise<any> {
+  const client = authState.client;
   if (!client || stytchPhoneMethodId === '') return Promise.resolve();
 
   return client.otps
@@ -125,14 +118,14 @@ export function smsLogin({ fieldVal, featheryClient }: any) {
     })
     .then(() => {
       stytchPhoneMethodId = '';
-      return featherySubmitAuthInfo(featheryClient);
+      return stytchSubmitAuthInfo(featheryClient);
     });
 }
 
-function featherySubmitAuthInfo(featheryClient: any) {
-  const stytchClient = getAuthClient();
+function stytchSubmitAuthInfo(featheryClient: any): Promise<any> {
+  const stytchClient = authState.client;
   const user = stytchClient.user.getSync();
-  if (!user) return;
+  if (!user) return Promise.resolve();
 
   removeStytchQueryParams();
   return featheryClient
@@ -151,15 +144,14 @@ function validateStytchQueryParams({ token, type }: any) {
 }
 
 function determineAuthFn({ token, type }: any) {
-  const stytchClient = getAuthClient();
   const opts = {
     session_duration_minutes: config.metadata.session_duration
   };
   let authFn;
   if (type === 'oauth') {
-    authFn = () => stytchClient.oauth.authenticate(token, opts);
+    authFn = () => authState.client.oauth.authenticate(token, opts);
   } else if (type === 'magic_links') {
-    authFn = () => stytchClient.magicLinks.authenticate(token, opts);
+    authFn = () => authState.client.magicLinks.authenticate(token, opts);
   } else {
     return null;
   }
@@ -182,8 +174,12 @@ function getRedirectUrl() {
   const { origin, pathname, hash } = window.location;
   const queryParams = new URLSearchParams(window.location.search);
   queryParams.forEach((value, key) => {
-    if (key !== 'feathery_1' && key !== 'feathery_2') queryParams.delete(key);
+    if (!['feathery_1', 'feathery_2', '_slug'].includes(key))
+      queryParams.delete(key);
   });
-  const queryString = queryParams.has('feathery_1') ? `?${queryParams}` : '';
+  const queryString =
+    queryParams.has('feathery_1') || queryParams.has('_slug')
+      ? `?${queryParams}`
+      : '';
   return `${origin}${pathname}${queryString}${hash}`;
 }

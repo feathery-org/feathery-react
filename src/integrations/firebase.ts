@@ -1,6 +1,9 @@
 import { dynamicImport } from './utils';
 import { updateSessionValues } from '../utils/formHelperFunctions';
-import { authState } from '../auth/LoginProvider';
+import { authState } from '../auth/LoginForm';
+import { useEffect } from 'react';
+import { shouldElementHide } from '../utils/hideIfs';
+import { ACTION_SEND_SMS } from '../utils/elementActions';
 
 let firebasePromise: any = null;
 
@@ -9,7 +12,7 @@ export function installFirebase(firebaseConfig: any) {
   else if (!firebaseConfig) return Promise.resolve();
   else {
     firebasePromise = new Promise((resolve) => {
-      if (global.firebase) resolve(global.firebase);
+      if (authState.client) resolve(authState.client);
       else {
         // Bring in Firebase dependencies dynamically if this form uses Firebase
         return dynamicImport(
@@ -28,7 +31,8 @@ export function installFirebase(firebaseConfig: any) {
             messagingSenderId: firebaseConfig.metadata.sender_id,
             appId: firebaseConfig.metadata.app_id
           });
-          resolve(global.firebase);
+          authState.setClient(global.firebase);
+          resolve(authState.client);
         });
       }
     });
@@ -36,11 +40,11 @@ export function installFirebase(firebaseConfig: any) {
   }
 }
 
-export function emailLogin(featheryClient: any) {
+export function firebaseLoginMagicLink(featheryClient: any) {
   if (isHrefFirebaseMagicLink()) {
     const authEmail = window.localStorage.getItem('featheryFirebaseEmail');
     if (authEmail) {
-      return global.firebase
+      return authState.client
         .auth()
         .signInWithEmailLink(authEmail, window.location.href)
         .then((result: any) => {
@@ -57,65 +61,69 @@ export function emailLogin(featheryClient: any) {
   }
 }
 
-export async function sendFirebaseLogin({
+export async function firebaseSendMagicLink({
   fieldVal,
-  servar,
-  method
+  servar
 }: {
   fieldVal: string;
   servar: any;
-  method: 'phone' | 'email';
 }) {
-  if (method === 'phone') {
-    return await global.firebase
-      .auth()
-      .signInWithPhoneNumber(`+1${fieldVal}`, window.firebaseRecaptchaVerifier)
-      .then((confirmationResult: any) => {
-        authState.sentAuth = true;
-        // SMS sent
-        window.firebaseConfirmationResult = confirmationResult;
-        (window as any).firebasePhoneNumber = fieldVal;
-        return {};
-      })
-      .catch((error: any) => {
-        console.log(error);
-        // Error; SMS not sent. Reset Recaptcha
-        window.firebaseRecaptchaVerifier
-          .render()
-          .then(function (widgetId: any) {
-            // Reset reCaptcha
-            // @ts-expect-error TS(2304): Cannot find name 'grecaptcha'.
-            // eslint-disable-next-line no-undef
-            grecaptcha.reset(widgetId);
-          })
-          .catch((e: any) => console.log(e));
-        return {
-          errorMessage: error.message,
-          errorField: servar
-        };
-      });
-  } else {
-    return await global.firebase
-      .auth()
-      .sendSignInLinkToEmail(fieldVal, {
-        url: window.location.href,
-        handleCodeInApp: true
-      })
-      .then(() => {
-        authState.sentAuth = true;
-        window.localStorage.setItem('featheryFirebaseEmail', fieldVal);
-        return {};
-      })
-      .catch((error: any) => {
-        return {
-          errorMessage: error.message,
-          errorField: servar
-        };
-      });
-  }
+  return await authState.client
+    .auth()
+    .sendSignInLinkToEmail(fieldVal, {
+      url: window.location.href,
+      handleCodeInApp: true
+    })
+    .then(() => {
+      authState.sentAuth = true;
+      window.localStorage.setItem('featheryFirebaseEmail', fieldVal);
+      return {};
+    })
+    .catch((error: any) => {
+      return {
+        errorMessage: error.message,
+        errorField: servar
+      };
+    });
 }
 
-export async function verifySMSCode({ fieldVal, featheryClient }: any) {
+export async function firebaseSendSms({
+  fieldVal,
+  servar
+}: {
+  fieldVal: string;
+  servar: any;
+}) {
+  return await authState.client
+    .auth()
+    .signInWithPhoneNumber(`+1${fieldVal}`, window.firebaseRecaptchaVerifier)
+    .then((confirmationResult: any) => {
+      authState.sentAuth = true;
+      // SMS sent
+      window.firebaseConfirmationResult = confirmationResult;
+      (window as any).firebasePhoneNumber = fieldVal;
+      return {};
+    })
+    .catch((error: any) => {
+      console.log(error);
+      // Error; SMS not sent. Reset Recaptcha
+      window.firebaseRecaptchaVerifier
+        .render()
+        .then(function (widgetId: any) {
+          // Reset reCaptcha
+          // @ts-expect-error TS(2304): Cannot find name 'grecaptcha'.
+          // eslint-disable-next-line no-undef
+          grecaptcha.reset(widgetId);
+        })
+        .catch((e: any) => console.log(e));
+      return {
+        errorMessage: error.message,
+        errorField: servar
+      };
+    });
+}
+
+export async function firebaseVerifySms({ fieldVal, featheryClient }: any) {
   const fcr = window.firebaseConfirmationResult;
   if (fcr) {
     return await fcr
@@ -142,6 +150,33 @@ export async function verifySMSCode({ fieldVal, featheryClient }: any) {
 }
 
 export function isHrefFirebaseMagicLink(): boolean {
-  if (!global.firebase || !global.firebase.auth) return false;
-  return global.firebase.auth().isSignInWithEmailLink(window.location.href);
+  if (!authState.client?.auth) return false;
+  return authState.client.auth().isSignInWithEmailLink(window.location.href);
+}
+
+export function useFirebaseRecaptcha(activeStep: any) {
+  // Logic to run on each step once firebase is loaded
+  useEffect(() => {
+    if (!activeStep || !global.firebase) return;
+
+    const renderedButtons = activeStep.buttons.filter(
+      (element: any) =>
+        !shouldElementHide({
+          element: element
+        })
+    );
+    const smsButton = renderedButtons.find((b: any) =>
+      b.properties.actions.some(
+        (action: any) => action.type === ACTION_SEND_SMS
+      )
+    );
+
+    if (smsButton) {
+      window.firebaseRecaptchaVerifier =
+        authState.client.auth &&
+        new authState.client.auth.RecaptchaVerifier(smsButton.id, {
+          size: 'invisible'
+        });
+    }
+  }, [activeStep?.id]);
 }

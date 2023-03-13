@@ -14,6 +14,7 @@ import debounce from 'lodash.debounce';
 
 import { calculateStepCSS, isFill } from '../utils/hydration';
 import {
+  castVal,
   changeStep,
   FieldOptions,
   formatAllFormFields,
@@ -25,6 +26,7 @@ import {
   getNewStepUrl,
   getOrigin,
   getPrevStepUrl,
+  getServarTypeMap,
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
@@ -34,18 +36,12 @@ import {
   setUrlStepHash,
   updateStepFieldOptions
 } from '../utils/formHelperFunctions';
-import { shouldElementHide, getHideIfReferences } from '../utils/hideIfs';
+import { getHideIfReferences } from '../utils/hideIfs';
 import { validators, validateElements } from '../utils/validation';
-import { initState, fieldValues, FieldValues, initInfo } from '../utils/init';
+import { initState, fieldValues, FieldValues } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
-import { sendFirebaseLogin, verifySMSCode } from '../integrations/firebase';
-import {
-  googleOauthRedirect,
-  sendMagicLink,
-  sendSMSCode,
-  smsLogin
-} from '../integrations/stytch';
+import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
 import {
   usePayments,
@@ -73,7 +69,8 @@ import {
   ContextOnCustomAction,
   ContextOnView,
   ElementProps,
-  IntegrationData
+  IntegrationData,
+  PopupOptions
 } from '../types/Form';
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
@@ -81,12 +78,12 @@ import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
 import internalState from '../utils/internalState';
-import useFormAuth from '../auth/useFormAuth';
+import useFormAuth from '../auth/internal/useFormAuth';
 import {
   ACTION_ADD_REPEATED_ROW,
   ACTION_BACK,
   ACTION_CUSTOM,
-  ACTION_GOOGLE_OAUTH,
+  ACTION_OAUTH_LOGIN,
   ACTION_LOGOUT,
   ACTION_NEXT,
   ACTION_REMOVE_REPEATED_ROW,
@@ -105,14 +102,14 @@ import {
   hasFlowActions
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
-import { authState } from '../auth/LoginProvider';
+import { authState } from '../auth/LoginForm';
 import LoaderContainer from '../elements/components/LoaderContainer';
 import {
   getAuthIntegrationMetadata,
-  inferAuthLogout,
-  isAuthStytch,
   isTerminalStepAuth
-} from '../auth/utils';
+} from '../auth/internal/utils';
+import Auth from '../auth/internal/AuthIntegrationInterface';
+import { CloseIcon } from '../elements/components/icons';
 
 export interface Props {
   formName: string;
@@ -131,6 +128,7 @@ export interface Props {
   initialStepId?: string;
   display?: 'inline' | 'modal';
   language?: string;
+  popupOptions?: PopupOptions;
   elementProps?: ElementProps;
   contextRef?: React.MutableRefObject<null | FormContext>;
   formProps?: Record<string, any>;
@@ -195,8 +193,8 @@ function Form({
   onViewElements = [],
   initialValues = {},
   initialStepId = '',
-  display = 'inline',
   language,
+  popupOptions,
   elementProps = {},
   contextRef,
   formProps = {},
@@ -271,10 +269,10 @@ function Form({
     );
   }, [loaders]);
 
+  useFirebaseRecaptcha(activeStep);
   const getNextAuthStep = useFormAuth({
     initialStep: getInitialStep({ initialStepId, steps }),
     integrations,
-    productionEnv,
     setStepKey,
     steps
   });
@@ -311,6 +309,10 @@ function Form({
     registerRenderCallback(_internalId, 'form', () => {
       setRender((render) => !render);
     });
+    if (formSettings.redirectUrl)
+      initState.redirectCallbacks[_internalId] = () => {
+        window.location.href = formSettings.redirectUrl;
+      };
     if (
       contextRef &&
       Object.prototype.hasOwnProperty.call(contextRef, 'current')
@@ -319,6 +321,7 @@ function Form({
 
     return () => {
       delete initState.renderCallbacks[_internalId];
+      delete initState.redirectCallbacks[_internalId];
     };
   }, []);
 
@@ -355,31 +358,6 @@ function Form({
       setGMapTimeoutId(timeoutId);
     }
   }, [gMapTimeoutId, gMapFilled, gMapBlurKey]);
-
-  // Logic to run on each step once firebase is loaded
-  useEffect(() => {
-    if (!activeStep || !global.firebase) return;
-
-    const renderedButtons = activeStep.buttons.filter(
-      (element: any) =>
-        !shouldElementHide({
-          element: element
-        })
-    );
-    const smsButton = renderedButtons.find((b: any) =>
-      b.properties.actions.some(
-        (action: any) => action.type === ACTION_SEND_SMS
-      )
-    );
-
-    if (smsButton) {
-      window.firebaseRecaptchaVerifier =
-        global.firebase.auth &&
-        new (global.firebase.auth().RecaptchaVerifier)(smsButton.id, {
-          size: 'invisible'
-        });
-    }
-  }, [activeStep?.id, global.firebase]);
 
   // Logic to run every time step changes
   useEffect(() => {
@@ -690,8 +668,14 @@ function Form({
         .then(([session, steps]) => {
           updateBackNavMap(session.back_nav_map);
           setIntegrations(session.integrations);
-          if (!isObjectEmpty(initialValues))
-            clientInstance.submitCustom(initialValues, false);
+          if (!isObjectEmpty(initialValues)) {
+            const servarKeyToTypeMap = getServarTypeMap(steps);
+            const castValues = { ...initialValues };
+            Object.entries(castValues).map(([key, val]) => {
+              castValues[key] = castVal(servarKeyToTypeMap[key], val);
+            });
+            clientInstance.submitCustom(castValues, false);
+          }
 
           // User is authenticating. auth hook will set the initial stepKey once auth has finished
           if (authState.redirectAfterLogin) return;
@@ -1069,7 +1053,7 @@ function Form({
         eventData.completed = true;
         session.form_completed = true;
         // Need to rerender when onboarding questions are complete so
-        // LoginProvider can render children
+        // LoginForm can render children
         rerenderAllForms();
         client.registerEvent(eventData, submitPromise).then(() => {
           setFinished(true);
@@ -1280,13 +1264,7 @@ function Form({
         const phoneNum = fieldValues[action.auth_target_field_key] as string;
         if (validators.phone(phoneNum)) {
           // Don't block to make potential subsequent navigation snappy
-          if (isAuthStytch()) sendSMSCode({ fieldVal: phoneNum });
-          else
-            sendFirebaseLogin({
-              fieldVal: phoneNum,
-              servar: null,
-              method: 'phone'
-            });
+          Auth.sendSms(phoneNum);
         } else {
           setElementError(
             'A valid phone number is needed to send your login code.'
@@ -1296,11 +1274,8 @@ function Form({
       } else if (type === ACTION_VERIFY_SMS) {
         const pin = fieldValues[action.auth_target_field_key] as string;
         const params = { fieldVal: pin, featheryClient: client };
-        const authFn = isAuthStytch()
-          ? () => smsLogin(params)
-          : () => verifySMSCode(params);
         let hasErr = false;
-        await authFn().catch((err: any) => {
+        await Auth.verifySms(params).catch((err: any) => {
           setElementError(err.message);
           hasErr = true;
         });
@@ -1310,19 +1285,14 @@ function Form({
         const email = fieldValues[action.auth_target_field_key] as string;
         if (validators.email(email)) {
           // Don't block to make potential subsequent navigation snappy
-          if (isAuthStytch()) sendMagicLink({ fieldVal: email });
-          else
-            sendFirebaseLogin({
-              fieldVal: email,
-              servar: null,
-              method: 'email'
-            });
+          Auth.sendMagicLink(email);
         } else {
           setElementError('A valid email is needed to send your magic link.');
           break;
         }
-      } else if (type === ACTION_GOOGLE_OAUTH) googleOauthRedirect();
-      else if (type === ACTION_LOGOUT) inferAuthLogout();
+      } else if (type === ACTION_OAUTH_LOGIN)
+        Auth.oauthRedirect(action.oauth_type);
+      else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEXT) {
         const metadata = {
           elementType,
@@ -1516,49 +1486,55 @@ function Form({
     return null;
   }
 
-  const isModal = display === 'modal';
-  const addChin = formSettings.showBrand && !isFill(activeStep.height);
+  const addChin =
+    formSettings.showBrand && !isFill(activeStep.height) && !popupOptions;
   return (
-    <>
+    <ReactPortal options={popupOptions}>
       <LoaderContainer
         showLoader={Boolean(stepLoader)}
         backgroundColor={activeStep?.default_background_color}
       >
         {stepLoader}
       </LoaderContainer>
-      <ReactPortal portal={isModal}>
-        <BootstrapForm
-          {...formProps}
-          autoComplete={formSettings.autocomplete}
-          className={className}
-          ref={formRef}
-          css={{
-            ...stepCSS,
-            ...style,
-            position: 'relative',
-            marginBottom: addChin ? '80px' : '0',
-            display: 'flex',
-            ...(isModal ? { margin: 'auto' } : {})
-          }}
-        >
-          {children}
-          <Grid step={activeStep} form={form} viewport={viewport} />
-          {!productionEnv && (
-            <DevNavBar
-              allSteps={steps}
-              curStep={activeStep}
-              history={history}
-            />
-          )}
-          {formSettings.showBrand && (
-            <Watermark
-              addChin={addChin}
-              brandPosition={formSettings.brandPosition}
-            />
-          )}
-        </BootstrapForm>
-      </ReactPortal>
-    </>
+      <BootstrapForm
+        {...formProps}
+        autoComplete={formSettings.autocomplete}
+        className={className}
+        ref={formRef}
+        css={{
+          ...stepCSS,
+          ...style,
+          position: 'relative',
+          marginBottom: addChin ? '80px' : '0',
+          display: 'flex',
+          ...(popupOptions ? { borderRadius: '10px' } : {})
+        }}
+      >
+        {children}
+        <Grid step={activeStep} form={form} viewport={viewport} />
+        {popupOptions && (
+          <CloseIcon
+            fill='white'
+            css={{
+              position: 'absolute',
+              top: '17px',
+              right: '17px',
+              cursor: 'pointer'
+            }}
+            onClick={() => popupOptions.onHide && popupOptions.onHide()}
+          />
+        )}
+        {!productionEnv && (
+          <DevNavBar allSteps={steps} curStep={activeStep} history={history} />
+        )}
+        {formSettings.showBrand && (
+          <Watermark
+            addChin={addChin}
+            brandPosition={formSettings.brandPosition}
+          />
+        )}
+      </BootstrapForm>
+    </ReactPortal>
   );
 }
 
@@ -1571,6 +1547,16 @@ export function JSForm({
   _internalId,
   ...props
 }: Props & InternalProps) {
+  const [remount, setRemount] = useState(false);
+
+  useEffect(() => {
+    initState.remountCallbacks[_internalId] = () =>
+      setRemount((remount) => !remount);
+    return () => {
+      delete initState.remountCallbacks[_internalId];
+    };
+  }, []);
+
   // Check client for NextJS support
   if (formName && runningInClient())
     return (
@@ -1584,7 +1570,7 @@ export function JSForm({
             {...props}
             formName={formName}
             // Changing the language changes the key and fetches the new form data
-            key={`${formName}_${language}`}
+            key={`${formName}_${language}_${remount}`}
             language={language}
             _internalId={_internalId}
           />
@@ -1595,6 +1581,11 @@ export function JSForm({
 }
 
 export default function ReactForm(props: Props): JSX.Element | null {
-  const [_internalId] = useState(uuidv4());
-  return <JSForm {...props} _internalId={_internalId} />;
+  let [internalId, setInternalId] = useState('');
+  // Cannot use uuidv4 on server-side
+  if (!internalId && runningInClient()) {
+    internalId = uuidv4();
+    setInternalId(internalId);
+  }
+  return <JSForm {...props} _internalId={internalId} />;
 }

@@ -1,21 +1,22 @@
 import React from 'react';
-import ReactDOM from 'react-dom';
+import ReactDOM, { unmountComponentAtNode } from 'react-dom';
 import Elements from './elements';
 import Form, { JSForm, Props as FormProps } from './Form';
 import { init, updateUserId, setValues, fieldValues } from './utils/init';
-import { setAuthClient, getAuthClient } from './auth/utils';
 import { OPERATOR_CODE } from './utils/logic';
 import { featheryDoc } from './utils/browser';
 import { getFormContext } from './utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
 import { FormContext } from './types/Form';
-import LoginProvider from './auth/LoginProvider';
+import LoginForm from './auth/LoginForm';
+import useAuthClient from './auth/useAuthClient';
 
 function getAllValues() {
   // Make a copy so users can't set fieldValues directly
   return { ...fieldValues };
 }
 
+const mountedForms: Record<string, boolean> = {};
 /**
  * Utility function which renders a form with the provided props in the DOM element with the provided ID.
  * @param {string} elementId The ID of the DOM element to hold the form
@@ -23,12 +24,18 @@ function getAllValues() {
  */
 function renderAt(elementId: any, props: FormProps) {
   const container = featheryDoc().getElementById(elementId);
+  const destroy = () => unmountComponentAtNode(container);
+  if (mountedForms[elementId]) destroy();
+  else mountedForms[elementId] = true;
 
   const uuid = uuidv4();
 
   ReactDOM.render(<JSForm {...props} _internalId={uuid} />, container);
 
-  return getFormContext(uuid);
+  return {
+    ...getFormContext(uuid),
+    destroy
+  };
 }
 
 // TODO: deprecate
@@ -43,8 +50,6 @@ const Feathery = {
   updateUserId,
   setValues,
   getAllValues,
-  setAuthClient,
-  getAuthClient,
   renderAt
 };
 
@@ -56,10 +61,9 @@ export {
   updateUserId,
   setValues,
   getAllValues,
-  setAuthClient,
-  getAuthClient,
   renderAt,
-  LoginProvider,
+  LoginForm,
+  useAuthClient,
   Feathery
 };
 export type { OPERATOR_CODE, FormContext };

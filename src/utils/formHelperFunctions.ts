@@ -75,6 +75,8 @@ export function getDefaultFieldValue(field: any) {
       return !!servar.metadata.always_checked;
     case 'hex_color':
       return 'FFFFFFFF';
+    case 'rating':
+      return 0;
     case 'slider':
       return servar.min_length ?? 0;
     case 'select':
@@ -398,7 +400,7 @@ export function setUrlStepHash(history: any, steps: any, stepName: string) {
 
 export function registerRenderCallback(
   internalId: string,
-  key: 'form' | 'loginProvider',
+  key: 'form' | 'loginForm',
   callback: () => void
 ) {
   initState.renderCallbacks[internalId] = {
@@ -412,6 +414,10 @@ export function rerenderAllForms() {
     (formCbs: Record<string, any>) =>
       Object.values(formCbs).forEach((cb: any) => cb())
   );
+}
+
+export function remountAllForms() {
+  Object.values(initInfo().remountCallbacks).forEach((cb) => cb());
 }
 
 export function getInitialStep({
@@ -430,4 +436,38 @@ export function getInitialStep({
     sessionCurrentStep ||
     (getOrigin as any)(steps).key
   );
+}
+
+export function castVal(servarType: string | undefined, val: any) {
+  // If there is no type it is a hidden field and we will treat it as a string
+  if (servarType === undefined) return String(val);
+  let castVal = val;
+  switch (servarType) {
+    case 'currency':
+    case 'integer_field':
+    case 'rating':
+    case 'slider':
+      castVal = Number(val);
+      break;
+    case 'checkbox':
+      castVal = !['False', 'false'].includes(val);
+      break;
+    default:
+      castVal = String(val);
+      break;
+  }
+
+  return castVal;
+}
+
+export function getServarTypeMap(steps: any) {
+  const servarKeyToTypeMap: Record<string, string> = {};
+  if (steps) {
+    Object.values(steps).forEach((step: any) => {
+      step.servar_fields.forEach(({ servar }: any) => {
+        servarKeyToTypeMap[servar.key] = servar.type;
+      });
+    });
+  }
+  return servarKeyToTypeMap;
 }

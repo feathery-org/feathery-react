@@ -12,7 +12,7 @@ function isNum(candidate: any) {
 }
 
 function isObjectEmpty(obj: any) {
-  return Object.keys(obj).length === 0;
+  return !obj || Object.keys(obj).length === 0;
 }
 
 // This is a polyfill of Object.fromEntries.

@@ -10,9 +10,10 @@ import {
   installGoogleAnalytics,
   trackGAEvent
 } from './googleAnalytics';
-import { inferEmailLoginFromURL } from '../auth/utils';
+import Auth from '../auth/internal/AuthIntegrationInterface';
 import Client from '../utils/client';
 import { installArgyle } from './argyle';
+import { installHeap } from './heap';
 
 const IMPORTED_URLS = new Set();
 
@@ -38,9 +39,9 @@ export function dynamicImport(
   } else if (index < dependencies.length) {
     return new Promise((resolve) => {
       global.scriptjsLoadPromise.then(($script: any) => {
-        $script.default(dependencies[index], resolve);
+        $script.default.order(dependencies, resolve);
       });
-    }).then(() => dynamicImport(dependencies, false, index + 1));
+    });
   }
 }
 
@@ -55,13 +56,14 @@ export async function initializeIntegrations(
     installStytch(integs.stytch),
     installStripe(integs.stripe),
     installSegment(integs.segment),
-    installGoogleAnalytics(integs['google-analytics'])
+    installGoogleAnalytics(integs['google-analytics']),
+    installHeap(integs.heap)
   ]);
 
   const gtm = integs['google-tag-manager'];
   if (gtm) initializeTagManager(gtm);
   if (integs.firebase || integs.stytch)
-    return inferEmailLoginFromURL(featheryClient);
+    return Auth.inferLoginFromURL(featheryClient);
 }
 
 export interface ActionData {

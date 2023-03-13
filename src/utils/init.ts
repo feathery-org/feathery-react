@@ -5,7 +5,7 @@ import Client from './client';
 import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient, featheryDoc } from './browser';
-import { rerenderAllForms } from './formHelperFunctions';
+import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
 
 export type FeatheryFieldTypes =
   | null
@@ -42,7 +42,9 @@ type InitState = {
   preloadForms: { [formName: string]: any };
   formSessions: { [formName: string]: any };
   fieldValuesInitialized: boolean;
+  redirectCallbacks: Record<string, any>;
   renderCallbacks: Record<string, Record<string, any>>;
+  remountCallbacks: Record<string, any>;
   defaultErrors: Record<string, string>;
 } & Omit<InitOptions, keyof DeprecatedOptions>;
 
@@ -60,14 +62,16 @@ const initState: InitState = {
   // Since all field values are fetched with each session, only fetch field
   // values on the first session request
   fieldValuesInitialized: false,
-  renderCallbacks: {}
+  redirectCallbacks: {},
+  renderCallbacks: {},
+  remountCallbacks: {}
 };
 const optionsAsInitState: (keyof InitOptions & keyof InitState)[] = [
   'userId',
   'userTracking'
 ];
-const fieldValues: FieldValues = {};
-const filePathMap: Record<string, null | string | (string | null)[]> = {};
+let fieldValues: FieldValues = {};
+let filePathMap: Record<string, null | string | (string | null)[]> = {};
 
 function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (!sdkKey || typeof sdkKey !== 'string') {
@@ -152,13 +156,19 @@ function initInfo() {
   return initState;
 }
 
-function updateUserId(newUserId: string, merge = false): void {
-  defaultClient.updateUserId(newUserId, merge).then(() => {
-    initState.userId = newUserId;
-    if (initState.userTracking === 'cookie') {
-      featheryDoc().cookie = `feathery-user-id=${newUserId}; max-age=31536000; SameSite=strict`;
-    }
-  });
+async function updateUserId(newUserId: string, merge = false): Promise<void> {
+  if (merge) await defaultClient.updateUserId(newUserId, true);
+  initState.userId = newUserId;
+  if (initState.userTracking === 'cookie') {
+    featheryDoc().cookie = `feathery-user-id-${initState.sdkKey}=${newUserId}; max-age=31536000; SameSite=strict`;
+  }
+  if (!merge) {
+    fieldValues = {};
+    filePathMap = {};
+    initState.formSessions = {};
+    initState.fieldValuesInitialized = false;
+    remountAllForms();
+  }
 }
 
 function _parseUserVal(userVal: FeatheryFieldTypes, key: string) {

@@ -98,12 +98,12 @@ async function syncStripeFieldChanges(
   const stepPaymentQtyFieldValues = paymentGroup
     ? getStripePaymentQuantityFieldValues(paymentGroup, formattedFields)
     : {};
-  const fieldValuesToSumbit = {
+  const fieldValuesToSubmit = {
     ...stepCustomerFieldValues,
     ...stepPaymentQtyFieldValues
   };
-  if (Object.keys(fieldValuesToSumbit).length) {
-    await client.submitCustom(fieldValuesToSumbit);
+  if (Object.keys(fieldValuesToSubmit).length) {
+    await client.submitCustom(fieldValuesToSubmit);
   }
 }
 
