@@ -462,10 +462,12 @@ export function castVal(servarType: string | undefined, val: any) {
 
 export function getServarTypeMap(steps: any) {
   const servarKeyToTypeMap: Record<string, string> = {};
-  Object.values(steps).forEach((step: any) => {
-    step.servar_fields.forEach(({ servar }: any) => {
-      servarKeyToTypeMap[servar.key] = servar.type;
+  if (steps) {
+    Object.values(steps).forEach((step: any) => {
+      step.servar_fields.forEach(({ servar }: any) => {
+        servarKeyToTypeMap[servar.key] = servar.type;
+      });
     });
-  });
+  }
   return servarKeyToTypeMap;
 }

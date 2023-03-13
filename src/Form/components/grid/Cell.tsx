@@ -431,7 +431,7 @@ const Cell = ({ node: el, form, flags }: any) => {
               // register current step field IDs if possible
               trackMapFields(activeStep);
 
-              if (!isObjectEmpty(Object.keys(addrValues))) {
+              if (!isObjectEmpty(addrValues)) {
                 updateFieldValues(addrValues);
                 fieldOnChange({
                   fieldIDs: Object.values(keyIDMap),
