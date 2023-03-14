@@ -574,7 +574,12 @@ function Form({
     let newStep = steps[newKey];
 
     const nextStep = getNextAuthStep(newStep);
-    if (nextStep !== '' && changeStep(nextStep, newKey, steps, history)) return;
+    if (
+      nextStep !== '' &&
+      productionEnv &&
+      changeStep(nextStep, newKey, steps, history)
+    )
+      return;
     newStep = JSON.parse(JSON.stringify(newStep));
 
     internalState[_internalId] = {
