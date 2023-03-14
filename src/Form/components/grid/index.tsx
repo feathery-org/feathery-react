@@ -233,15 +233,15 @@ const getCellContainerStyle = (
       styles.height = 'auto';
       styles.minHeight = `${DEFAULT_MIN_FILL_SIZE}px`;
 
+      if (!isEmpty) {
+        styles.minHeight = 'min-content';
+      }
+
       if (trackAxis === 'row') {
         styles.flexGrow = 1;
         styles.flexShrink = 0;
       } else {
-        styles.height = '100%';
-      }
-
-      if (!isEmpty) {
-        styles.minHeight = 'min-content';
+        styles.minHeight = '100%';
       }
     }
 
