@@ -48,10 +48,10 @@ Object.entries(Elements).map(([key, Element]) => {
           ['container', 'containerWrapper'],
           !componentOnly
         );
-        as.apply('container', 'vertical_layout', (a: any) => ({
+        as.apply('container', 'vertical_alignment', (a: any) => ({
           justifyContent: a
         }));
-        as.apply('container', 'layout', (a: any) => ({
+        as.apply('container', 'horizontal_alignment', (a: any) => ({
           alignItems: legacyAlignment(a)
         }));
         as.applyPadding('containerWrapper');

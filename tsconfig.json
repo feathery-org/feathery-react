@@ -23,5 +23,5 @@
     "noImplicitAny": true
   },
   "exclude": ["node_modules", "src/**/*.spec.ts", "src/**/*.spec.js"],
-  "include": ["src/**/*"]
+  "include": ["./src/**/*"]
 }

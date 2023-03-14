@@ -5,6 +5,10 @@ import useBorder from '../components/useBorder';
 
 // TODO(peter): deprecate once customers have upgraded and backend migrated
 function legacyAlignment(alignment: any) {
+  if (!alignment) {
+    return undefined;
+  }
+
   switch (alignment) {
     case 'flex-start':
       return 'left';
@@ -17,7 +21,7 @@ function legacyAlignment(alignment: any) {
 
 function applyTextStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets('text', 'textHover');
-  responsiveStyles.apply('text', 'layout', (a: any) => ({
+  responsiveStyles.apply('text', 'horizontal_align', (a: any) => ({
     textAlign: legacyAlignment(a)
   }));
   responsiveStyles.apply('text', 'line_height', (a: any) => ({

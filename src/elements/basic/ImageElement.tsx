@@ -8,6 +8,7 @@ const PLACEHOLDER_IMAGE =
 function applyImageStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets('imageContainer', 'image');
   responsiveStyles.applyWidth('imageContainer');
+  responsiveStyles.applyHeight('image');
   responsiveStyles.applyCorners('imageContainer');
   responsiveStyles.applyCorners('image');
   return responsiveStyles;

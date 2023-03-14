@@ -1,10 +1,17 @@
 import { isNum } from './primitives';
 
-const FIT = 'fit';
-const FILL = 'fill';
+export const MIN_AXIS_SIZE = 15;
 
-export const isFill = (v: any) => {
-  return v === FILL;
+export const FIT = 'fit';
+export const FILL = 'fill';
+
+export const isFill = (v: any) => v === FILL;
+export const isFit = (v: any) => v === FIT;
+export const isPx = (v: string) =>
+  typeof v === 'string' && v.indexOf('px') >= 0;
+
+export const getPxValue = (size: string) => {
+  return isPx(size) ? Number.parseFloat(size) : MIN_AXIS_SIZE;
 };
 
 const formatDimensionValue = (value: any, type = 'col') => {
