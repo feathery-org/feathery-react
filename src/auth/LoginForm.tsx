@@ -159,7 +159,16 @@ const LoginForm = ({
     timeout: TEN_SECONDS_IN_MILLISECONDS
   });
 
-  if (!authState.authId || !formCompleted) {
+  if (
+    authState.authId &&
+    formCompleted &&
+    initInfo().redirectCallbacks[_internalId]
+  ) {
+    // If logged in and have finished onboarding questions for an apex form, then we need to redirect back to application
+    initInfo().redirectCallbacks[_internalId]();
+    return null;
+  } else if (!authState.authId || !formCompleted || !children) {
+    // If not logged in, the form isn't complete, or there is nothing to show otherwise, show the login form
     return (
       // Since we want to auth gate we should make the login form take up the entire page
       <div style={{ height: '100vh', width: '100vw' }}>
@@ -170,20 +179,16 @@ const LoginForm = ({
         <JSForm {...formProps} _internalId={_internalId} />
       </div>
     );
-  } else if (initInfo().redirectCallbacks[_internalId]) {
-    // If logged in and have finished onboarding questions for an apex form, then we need to redirect back to application
-    initInfo().redirectCallbacks[_internalId]();
-    return null;
   } else {
-    return children ? (
-      // Safe to pass authState.client, rather than a React state reference,
-      // because the children are only rendered if the user is logged in,
-      // which requires the auth client to be set. And we do not support
-      // changing the client midway through runtime
+    // Safe to pass authState.client, rather than a React state reference,
+    // because the children are only rendered if the user is logged in,
+    // which requires the auth client to be set. And we do not support
+    // changing the client midway through runtime
+    return (
       <AuthContext.Provider value={authState.client}>
         {children}
       </AuthContext.Provider>
-    ) : null;
+    );
   }
 };
 
