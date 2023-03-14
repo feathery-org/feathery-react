@@ -14,11 +14,11 @@ export const getPxValue = (size: string) => {
   return isPx(size) ? Number.parseFloat(size) : MIN_AXIS_SIZE;
 };
 
-const formatDimensionValue = (value: any, type = 'col') => {
+const formatDimensionValue = (value: any) => {
   // fit-content is needed here, for both fill and fit, to allow elements to push beyond the parent container's explicit height.
   switch (value) {
     case FILL:
-      return type === 'col' ? '100%' : 'fit-content';
+      return '100%';
     case FIT:
       return 'fit-content';
     default:
@@ -31,8 +31,8 @@ const calculateDimensionsHelper = (step: any, p = '') => {
   const gridHeight = step[`${p}height`] || step.height;
 
   const dimensions = {
-    gridWidth: formatDimensionValue(gridWidth, 'col'),
-    gridHeight: formatDimensionValue(gridHeight, 'row')
+    gridWidth: formatDimensionValue(gridWidth),
+    gridHeight: formatDimensionValue(gridHeight)
   };
 
   // to allow responsiveness, min width shouldn't be set for fixed widths

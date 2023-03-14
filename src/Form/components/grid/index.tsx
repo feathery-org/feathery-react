@@ -229,23 +229,19 @@ const getCellContainerStyle = (
     }
 
     if (isFill(nodeHeight)) {
-      if (!node.parent) {
-        styles.height = '100%';
+      if (!isAligned) styles.alignSelf = 'stretch';
+      styles.height = 'auto';
+      styles.minHeight = `${DEFAULT_MIN_FILL_SIZE}px`;
+
+      if (trackAxis === 'row') {
+        styles.flexGrow = 1;
+        styles.flexShrink = 0;
       } else {
-        if (!isAligned) styles.alignSelf = 'stretch';
-        styles.height = 'auto';
-        styles.minHeight = `${DEFAULT_MIN_FILL_SIZE}px`;
+        styles.height = '100%';
+      }
 
-        if (trackAxis === 'row') {
-          styles.flexGrow = 1;
-          styles.flexShrink = 0;
-        } else {
-          styles.height = '100%';
-        }
-
-        if (!isEmpty) {
-          styles.minHeight = 'min-content';
-        }
+      if (!isEmpty) {
+        styles.minHeight = 'min-content';
       }
     }
 
@@ -399,11 +395,7 @@ const CellContainer = ({
   viewport = 'desktop',
   runElementActions = () => {}
 }: any) => {
-  const { isElement, parent, properties: _properties = null } = node;
-
-  if (!parent) {
-    return children;
-  }
+  const { isElement, properties: _properties = null } = node;
 
   const cellContainerStyle = getCellContainerStyle(node, axis, viewport); // TODO: [Andy] Pass element render data as third param
   const properties = _properties ?? {};
