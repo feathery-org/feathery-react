@@ -242,7 +242,7 @@ const getCellContainerStyle = (
         styles.height = '100%';
       }
 
-      if (!isEmpty) {
+      if (!isEmpty && node.parent) {
         styles.minHeight = 'min-content';
       }
     }
