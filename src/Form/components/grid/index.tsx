@@ -5,6 +5,7 @@ import { getDefaultFieldValue } from '../../../utils/formHelperFunctions';
 import { fieldValues } from '../../../utils/init';
 import { TEXT_VARIABLE_PATTERN } from '../../../elements/components/TextNodes';
 import { FIT, isFill, isFit, isPx, getPxValue } from '../../../utils/hydration';
+import { shouldElementHide } from '../../../utils/hideIfs';
 
 const DEFAULT_MIN_SIZE = 50;
 const DEFAULT_MIN_FILL_SIZE = 10;
@@ -398,6 +399,11 @@ const CellContainer = ({
   runElementActions = () => {}
 }: any) => {
   const { isElement, properties: _properties = null } = node;
+
+  // Prevent rendering the CellContainer if the element is supposed to be hidden
+  if (node.isElement && shouldElementHide({ element: node })) {
+    return null;
+  }
 
   const cellContainerStyle = getCellContainerStyle(node, axis, viewport); // TODO: [Andy] Pass element render data as third param
   const properties = _properties ?? {};
