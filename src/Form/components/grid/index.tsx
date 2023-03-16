@@ -118,16 +118,16 @@ const getCellContainerStyle = (
   trackAxis: string,
   viewport: string
 ) => {
-  const parentStyles = node?.parent?.cellStyles || {};
+  const parentStyles = node.parent?.cellStyles || {};
   const nodeStyles = node.cellStyles || {};
   const styles: any = {
     position: 'relative',
     display: !node.isElement ? 'flex' : 'block',
     minWidth: !node.isElement ? `${DEFAULT_MIN_SIZE}px` : 'min-content',
     minHeight: !node.isElement ? `${DEFAULT_MIN_SIZE}px` : 'min-content',
-    flexBasis: !node.isElement ? 0 : 'fit-content',
     boxSizing: !node.isElement ? 'content-box' : 'border-box'
   };
+  if (node.parent) styles.flexBasis = !node.isElement ? 0 : 'fit-content';
 
   // Apply axis styles
   styles.flexDirection = trackAxis;
