@@ -10,6 +10,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { FormContext } from './types/Form';
 import LoginForm from './auth/LoginForm';
 import useAuthClient from './auth/useAuthClient';
+import polyfill from './utils/polyfills';
+
+polyfill();
 
 function getAllValues() {
   // Make a copy so users can't set fieldValues directly
