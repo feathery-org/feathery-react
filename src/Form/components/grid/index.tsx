@@ -237,11 +237,13 @@ const getCellContainerStyle = (
       if (trackAxis === 'row') {
         styles.flexGrow = 1;
         styles.flexShrink = 0;
+      } else if (!node.parent) {
+        styles.minHeight = '100%';
       } else {
         styles.height = '100%';
       }
 
-      if (!isEmpty) {
+      if (!isEmpty && node.parent) {
         styles.minHeight = 'min-content';
       }
     }
