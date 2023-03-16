@@ -5,7 +5,6 @@ describe('hydration', () => {
     it('calculates dimensions', () => {
       // Arrange
       const inputStep = {
-        default_background_color: '000000FF',
         texts: [],
         buttons: [],
         servar_fields: [
@@ -17,9 +16,15 @@ describe('hydration', () => {
         ],
         images: [],
         videos: [],
-        width: 'fit',
-        mobile_width: '30px',
-        progress_bars: [{}]
+        progress_bars: [{}],
+        subgrids: [
+          {
+            position: [],
+            styles: { background_color: '000000FF' },
+            width: 'fit',
+            mobile_width: '30px'
+          }
+        ]
       };
       const expected = {
         backgroundColor: '#000000FF',
@@ -40,7 +45,6 @@ describe('hydration', () => {
     it('handles repeating elements', () => {
       // Arrange
       const inputStep = {
-        default_background_color: '000000FF',
         texts: [
           {
             properties: { text: 'Repeated text field {{foobar}}' },
@@ -72,8 +76,14 @@ describe('hydration', () => {
         servar_fields: [],
         images: [],
         videos: [],
-        width: 'fit',
-        progress_bars: [{}]
+        progress_bars: [{}],
+        subgrids: [
+          {
+            position: [],
+            styles: { background_color: '000000FF' },
+            width: 'fit'
+          }
+        ]
       };
       const expected = {
         backgroundColor: '#000000FF',
