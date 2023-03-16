@@ -348,6 +348,9 @@ export default class Client {
       if (!trueSession.track_users) initState.userId = uuidv4();
       updateSessionValues(trueSession);
     }
+    // submitAuthInfo can set formCompleted before the session is set, so we don't want to override completed flags
+    if (initState.formSessions[this.formKey]?.form_completed)
+      trueSession.form_completed = true;
     initState.formSessions[this.formKey] = trueSession;
     return [trueSession, formData];
   }
@@ -368,7 +371,6 @@ export default class Client {
       auth_phone: authPhone,
       auth_email: authEmail,
       is_stytch_template_key: isStytchTemplateKey,
-      form_keys: Object.keys(initInfo().formSessions),
       ...(userId ? { fuser_key: userId } : {})
     };
     const url = `${API_URL}panel/update_auth/v2/`;
@@ -383,11 +385,11 @@ export default class Client {
       })
       .then((data: any) => {
         if (data === undefined) return Promise.resolve();
-        Object.entries<{ form_completed: boolean }>(data.sessions).forEach(
-          ([formKey, session]) =>
-            (initState.formSessions[formKey].form_completed =
-              session.form_completed)
-        );
+        data.completed_forms.forEach((formKey: string) => {
+          if (!initState.formSessions[formKey])
+            initState.formSessions[formKey] = {};
+          initState.formSessions[formKey].form_completed = true;
+        });
         // Need to wait until form_completed has been fetched before setting
         // authId, otherwise we would flash the onboarding questions before
         // LoginForm renders its children

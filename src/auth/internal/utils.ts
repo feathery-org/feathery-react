@@ -1,11 +1,11 @@
 import { authState } from '../LoginForm';
 
 export function isAuthStytch() {
-  if (!authState.client) return;
-  const isAuthClientStytch = Object.getOwnPropertySymbols(authState.client)
-    .map((symbol) => symbol.toString())
-    .includes('Symbol(stytch__internal)');
-  return isAuthClientStytch;
+  if (authState.client) {
+    return Object.getOwnPropertySymbols(authState.client)
+      .map((symbol) => symbol.toString())
+      .includes('Symbol(stytch__internal)');
+  }
 }
 
 export function getAuthIntegrationMetadata(

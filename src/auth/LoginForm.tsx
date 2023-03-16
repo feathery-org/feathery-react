@@ -6,9 +6,7 @@ import React, {
   useState
 } from 'react';
 import { JSForm, Props as FormProps } from '../Form';
-import { getStytchJwt } from '../utils/browser';
 import { defaultClient, initInfo } from '../utils/init';
-import { isAuthStytch } from './internal/utils';
 import Spinner from '../elements/components/Spinner';
 import LoaderContainer from '../elements/components/LoaderContainer';
 import { v4 as uuidv4 } from 'uuid';
