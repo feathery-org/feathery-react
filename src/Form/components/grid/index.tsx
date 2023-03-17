@@ -375,7 +375,7 @@ const getCellContainerStyle = (
     if (styles.width === '100%' || !isFit(nodeWidth)) {
       styles.width = `calc(100% - ${xTotalExternalPadding}px)`;
     } else if (isFit(nodeWidth)) {
-      styles.width = `max-content`;
+      styles.width = `auto`;
     }
   }
 
@@ -383,7 +383,7 @@ const getCellContainerStyle = (
     if (styles.height === '100%' || !isFit(nodeHeight)) {
       styles.height = `calc(100% - ${yTotalExternalPadding}px)`;
     } else if (isFit(nodeHeight)) {
-      styles.height = `max-content`;
+      styles.height = `auto`;
     }
   }
 
