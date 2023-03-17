@@ -31,11 +31,16 @@ export const getFormContext = (formUuid: string) => ({
     const { currentStep, history, steps } = internalState[formUuid];
     changeStep(stepKey, currentStep.key, steps, history);
   },
-  stepProperties: () => ({
-    name: internalState[formUuid]?.currentStep?.key ?? '',
-    backgroundColor:
-      internalState[formUuid]?.currentStep?.default_background_color
-  }),
+  stepProperties: () => {
+    const step = internalState[formUuid]?.currentStep ?? {};
+    const rootStyles = step
+      ? step.subgrids.find((grid: any) => grid.position.length === 0).styles
+      : {};
+    return {
+      name: step.key ?? '',
+      backgroundColor: rootStyles?.background_color ?? 'FFFFFF'
+    };
+  },
   validateStep: (showErrors = true) => {
     const {
       currentStep,
@@ -55,11 +60,5 @@ export const getFormContext = (formUuid: string) => ({
     return errors;
   },
   // TODO: deprecate the following
-  step: {
-    style: {
-      backgroundColor:
-        internalState[formUuid]?.currentStep?.default_background_color
-    }
-  },
   stepName: internalState[formUuid]?.currentStep?.key ?? ''
 });

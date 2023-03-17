@@ -1,7 +1,7 @@
 import React from 'react';
 
 const LoaderContainer = ({
-  backgroundColor = 'FFF',
+  backgroundColor = '#FFF',
   showLoader,
   children
 }: {
@@ -14,7 +14,7 @@ const LoaderContainer = ({
   return (
     <div
       style={{
-        backgroundColor: `#${backgroundColor}`,
+        backgroundColor,
         position: 'fixed',
         height: '100vh',
         width: '100vw',

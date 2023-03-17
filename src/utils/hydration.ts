@@ -26,9 +26,9 @@ const formatDimensionValue = (value: any, type: string) => {
   }
 };
 
-const calculateDimensionsHelper = (step: any, p = '') => {
-  const gridWidth = step[`${p}width`] || step.width;
-  const gridHeight = step[`${p}height`] || step.height;
+const calculateDimensionsHelper = (root: any, p = '') => {
+  const gridWidth = root[`${p}width`] || root.width;
+  const gridHeight = root[`${p}height`] || root.height;
 
   const dimensions = {
     gridWidth: formatDimensionValue(gridWidth, 'width'),
@@ -52,15 +52,17 @@ const calculateDimensionsHelper = (step: any, p = '') => {
  * Calculates the dimensions of the provided step.
  * Note: The provided step should be fully-hydrated (i.e. rows injected, etc.) to calculate dimensions accurately.
  */
-function calculateStepCSS(step: any) {
+function calculateStepCSS(step: any): Record<string, any> {
   if (!step) return {};
 
-  const desktop = calculateDimensionsHelper(step);
-  const mobile = calculateDimensionsHelper(step, 'mobile_');
+  const root = step.subgrids.find((grid: any) => grid.position.length === 0);
+
+  const desktop = calculateDimensionsHelper(root);
+  const mobile = calculateDimensionsHelper(root, 'mobile_');
 
   const stepCSS = {
-    backgroundColor: `#${step.default_background_color}`,
-    backgroundImage: `url("${step.background_image_url}")`,
+    backgroundColor: `#${root.styles.background_color ?? 'FFFFFF'}`,
+    backgroundImage: `url("${root.styles.background_image_url}")`,
     backgroundSize: 'cover',
     width: '100%',
     minWidth: (desktop as any).minWidth,

@@ -1497,7 +1497,7 @@ function Form({
     <ReactPortal options={popupOptions}>
       <LoaderContainer
         showLoader={Boolean(stepLoader)}
-        backgroundColor={activeStep?.default_background_color}
+        backgroundColor={stepCSS.backgroundColor ?? 'white'}
       >
         {stepLoader}
       </LoaderContainer>
