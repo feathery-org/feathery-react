@@ -248,23 +248,16 @@ const getCellContainerStyle = (
       }
     }
 
-    if (nodeStyles.vertical_layout) {
-      if (trackAxis === 'row') {
-        styles.justifySelf = nodeStyles.vertical_layout;
-      } else {
-        styles.alignSelf = nodeStyles.vertical_layout;
-      }
-    }
+    const alignDirection = trackAxis === 'row' ? 'justifySelf' : 'alignSelf';
+    if (nodeStyles.vertical_layout)
+      styles[alignDirection] = nodeStyles.vertical_layout;
 
     if (nodeStyles.layout) {
       let targetStyle = nodeStyles.layout;
       if (targetStyle === 'left') targetStyle = 'flex-start';
-      if (targetStyle === 'right') targetStyle = 'flex-end';
-      if (trackAxis === 'row') {
-        styles.alignSelf = targetStyle;
-      } else {
-        styles.justifySelf = targetStyle;
-      }
+      else if (targetStyle === 'right') targetStyle = 'flex-end';
+      const alignDirection = trackAxis === 'row' ? 'alignSelf' : 'justifySelf';
+      styles[alignDirection] = targetStyle;
     }
   } else {
     const { styles: elementStyles = {} } = node;
@@ -275,12 +268,14 @@ const getCellContainerStyle = (
       height_unit: heightUnit
     } = elementStyles;
 
-    if (width && width !== FIT) {
+    if (width && widthUnit !== FIT) {
       if (trackAxis === 'column') {
         styles.flexBasis = `${width}${widthUnit}`;
         styles.minWidth = 'min-content';
       } else {
         styles.minWidth = `${width}${widthUnit}`;
+        if (widthUnit === '%' || node.type === 'text')
+          styles.width = `${width}${widthUnit}`;
       }
     } else {
       styles.width = 'fit-content !important';
@@ -288,12 +283,13 @@ const getCellContainerStyle = (
       styles.minWidth = 'min-content';
     }
 
-    if (height && height !== FIT)
+    if (height && heightUnit !== FIT)
       if (trackAxis === 'row') {
         styles.flexBasis = `${height}${heightUnit}`;
         styles.minHeight = 'min-content';
       } else {
         styles.minHeight = `${height}${heightUnit}`;
+        if (heightUnit === '%') styles.height = `${height}${heightUnit}`;
       }
     else {
       styles.height = 'fit-content !important';
@@ -301,33 +297,16 @@ const getCellContainerStyle = (
       styles.minHeight = 'min-content';
     }
 
-    if (widthUnit === '%') {
-      if (trackAxis === 'column') styles.flexBasis = `${width}${widthUnit}`;
-      else styles.width = `${width}${widthUnit}`;
-    }
-
-    if (heightUnit === '%') {
-      if (trackAxis === 'row') styles.flexBasis = `${height}${heightUnit}`;
-      else styles.height = `${height}${heightUnit}`;
-    }
-
-    if (elementStyles.vertical_layout) {
-      if (trackAxis === 'row') {
-        styles.justifySelf = elementStyles.vertical_layout;
-      } else {
-        styles.alignSelf = elementStyles.vertical_layout;
-      }
-    }
+    const alignDirection = trackAxis === 'row' ? 'justifySelf' : 'alignSelf';
+    if (elementStyles.vertical_layout)
+      styles[alignDirection] = elementStyles.vertical_layout;
 
     if (elementStyles.layout) {
       let targetStyle = elementStyles.layout;
       if (targetStyle === 'left') targetStyle = 'flex-start';
-      if (targetStyle === 'right') targetStyle = 'flex-end';
-      if (trackAxis === 'row') {
-        styles.alignSelf = targetStyle;
-      } else {
-        styles.justifySelf = targetStyle;
-      }
+      else if (targetStyle === 'right') targetStyle = 'flex-end';
+      const alignDirection = trackAxis === 'row' ? 'alignSelf' : 'justifySelf';
+      styles[alignDirection] = targetStyle;
     }
   }
 
