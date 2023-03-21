@@ -12,7 +12,9 @@ import {
   stytchOauthRedirect,
   stytchSendMagicLink,
   stytchSendSms,
-  stytchVerifySms
+  stytchVerifySms,
+  setStytchDomainCookie,
+  clearStytchDomainCookie
 } from '../../integrations/stytch';
 import Client from '../../utils/client';
 import { isAuthStytch } from './utils';
@@ -28,12 +30,12 @@ function isHrefMagicLink(): boolean {
   );
 }
 
-function inferLoginOnLoad(featheryClient: Client) {
+async function inferLoginOnLoad(featheryClient: Client) {
   const queryParams = new URLSearchParams(window.location.search);
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
   if (isAuthStytch() || (type && token))
-    return stytchLoginOnLoad(featheryClient);
+    return await stytchLoginOnLoad(featheryClient);
   else return firebaseLoginOnLoad(featheryClient);
 }
 
@@ -85,13 +87,22 @@ function oauthRedirect(oauthType: string) {
 }
 
 function initializeAuthClientListeners() {
-  if (getStytchJwt()) {
+  if (isAuthStytch()) {
+    if (getStytchJwt()) setStytchDomainCookie();
     // When logging in via re-direct we need to set the authId once the user object has initialized
     const unsubUser = authState.client.user.onChange((newUser: any) => {
-      if (newUser) defaultClient.submitAuthInfo({ authId: newUser.user_id });
+      if (newUser) {
+        defaultClient.submitAuthInfo({ authId: newUser.user_id });
+        setStytchDomainCookie();
+      }
     });
     const unsubSession = authState.client.session.onChange(
-      (newSession: any) => !newSession && authState.setAuthId('')
+      (newSession: any) => {
+        if (newSession === null) {
+          clearStytchDomainCookie();
+          authState.setAuthId('');
+        }
+      }
     );
     window.addEventListener('beforeunload', () => {
       unsubUser && unsubUser();
