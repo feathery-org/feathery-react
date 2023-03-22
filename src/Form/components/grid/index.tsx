@@ -341,30 +341,11 @@ const getCellContainerStyle = (
     styles.minHeight = `${DEFAULT_MIN_SIZE}px`;
   }
 
-  // Apply external padding (margin)
-  styles.paddingTop = nodeStyles.external_padding_top ?? 0;
-  styles.paddingRight = nodeStyles.external_padding_right ?? 0;
-  styles.paddingBottom = nodeStyles.external_padding_bottom ?? 0;
-  styles.paddingLeft = nodeStyles.external_padding_left ?? 0;
-
-  const yTotalExternalPadding = styles.paddingTop + styles.paddingBottom;
-  const xTotalExternalPadding = styles.paddingLeft + styles.paddingRight;
-
-  if (xTotalExternalPadding) {
-    if (styles.width === '100%' || !isFit(nodeWidth)) {
-      styles.width = `calc(100% - ${xTotalExternalPadding}px)`;
-    } else if (isFit(nodeWidth)) {
-      styles.width = `auto`;
-    }
-  }
-
-  if (yTotalExternalPadding) {
-    if (styles.height === '100%' || !isFit(nodeHeight)) {
-      styles.height = `calc(100% - ${yTotalExternalPadding}px)`;
-    } else if (isFit(nodeHeight)) {
-      styles.height = `auto`;
-    }
-  }
+  // Apply margin
+  styles.marginTop = nodeStyles.external_padding_top ?? 0;
+  styles.marginRight = nodeStyles.external_padding_right ?? 0;
+  styles.marginBottom = nodeStyles.external_padding_bottom ?? 0;
+  styles.marginLeft = nodeStyles.external_padding_left ?? 0;
 
   return styles;
 };
