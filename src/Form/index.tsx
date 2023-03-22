@@ -1492,7 +1492,7 @@ function Form({
   }
 
   const addChin =
-    formSettings.showBrand && !isFill(activeStep.height) && !popupOptions;
+    formSettings.showBrand && stepCSS.minHeight !== '100%' && !popupOptions;
   return (
     <ReactPortal options={popupOptions}>
       <LoaderContainer

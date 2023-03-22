@@ -25,6 +25,8 @@ export default function Watermark({
         style={{
           width: `${width}px`,
           height: `${height}px`,
+          marginRight: '5px',
+          marginBottom: '5px',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
