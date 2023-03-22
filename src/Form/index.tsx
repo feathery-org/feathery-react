@@ -1516,7 +1516,12 @@ function Form({
         }}
       >
         {children}
-        <Grid step={activeStep} form={form} viewport={viewport} />
+        <Grid
+          step={activeStep}
+          form={form}
+          viewport={viewport}
+          key={activeStep.id}
+        />
         {popupOptions && (
           <CloseIcon
             fill='white'

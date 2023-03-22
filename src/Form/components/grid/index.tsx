@@ -70,22 +70,20 @@ const Subgrid = ({
         })}
         runElementActions={runElementActions}
       >
-        <GridContainer node={node}>
-          {customComponent ??
-            (node.children || []).map((child: any, i: any) => {
-              axis = node.axis;
-              return (
-                <Subgrid
-                  key={getMapKey(child) + ':' + i}
-                  tree={child}
-                  axis={axis}
-                  form={form}
-                  viewport={viewport}
-                  flags={flags}
-                />
-              );
-            })}
-        </GridContainer>
+        {customComponent ??
+          (node.children || []).map((child: any, i: any) => {
+            axis = node.axis;
+            return (
+              <Subgrid
+                key={getMapKey(child) + ':' + i}
+                tree={child}
+                axis={axis}
+                form={form}
+                viewport={viewport}
+                flags={flags}
+              />
+            );
+          })}
       </CellContainer>
     );
   }
@@ -341,33 +339,50 @@ const getCellContainerStyle = (
     styles.minHeight = `${DEFAULT_MIN_SIZE}px`;
   }
 
-  // Apply external padding (margin)
-  styles.paddingTop = nodeStyles.external_padding_top ?? 0;
-  styles.paddingRight = nodeStyles.external_padding_right ?? 0;
-  styles.paddingBottom = nodeStyles.external_padding_bottom ?? 0;
-  styles.paddingLeft = nodeStyles.external_padding_left ?? 0;
+  // Apply padding
+  styles.paddingTop = nodeStyles.padding_top ?? 0;
+  styles.paddingRight = nodeStyles.padding_right ?? 0;
+  styles.paddingBottom = nodeStyles.padding_bottom ?? 0;
+  styles.paddingLeft = nodeStyles.padding_left ?? 0;
 
-  const yTotalExternalPadding = styles.paddingTop + styles.paddingBottom;
-  const xTotalExternalPadding = styles.paddingLeft + styles.paddingRight;
+  // Apply margin
+  styles.marginTop = nodeStyles.external_padding_top ?? 0;
+  styles.marginRight = nodeStyles.external_padding_right ?? 0;
+  styles.marginBottom = nodeStyles.external_padding_bottom ?? 0;
+  styles.marginLeft = nodeStyles.external_padding_left ?? 0;
 
-  if (xTotalExternalPadding) {
-    if (styles.width === '100%' || !isFit(nodeWidth)) {
-      styles.width = `calc(100% - ${xTotalExternalPadding}px)`;
-    } else if (isFit(nodeWidth)) {
-      styles.width = `auto`;
-    }
-  }
-
-  if (yTotalExternalPadding) {
-    if (styles.height === '100%' || !isFit(nodeHeight)) {
-      styles.height = `calc(100% - ${yTotalExternalPadding}px)`;
-    } else if (isFit(nodeHeight)) {
-      styles.height = `auto`;
-    }
-  }
-
-  return styles;
+  return { ...styles, ...getTrackStyles(node) };
 };
+
+function getTrackStyles(node: any) {
+  const nodeStyles = node?.cellStyles || {};
+  const styles: any = {};
+
+  if (node.children) {
+    if (node.axis === 'column') {
+      styles.alignItems = nodeStyles.vertical_align || 'flex-start';
+      styles.justifyContent = nodeStyles.horizontal_align || 'left';
+    }
+
+    if (node.axis === 'row') {
+      styles.alignItems = nodeStyles.horizontal_align || 'flex-start';
+      styles.justifyContent = nodeStyles.vertical_align || 'left';
+    }
+
+    if (nodeStyles.gap) {
+      styles.gap = `${nodeStyles.gap}px`;
+    }
+  } else {
+    styles.alignItems = undefined;
+    styles.justifyContent = undefined;
+  }
+
+  return {
+    flexDirection: node.axis === 'column' ? 'row' : 'column',
+    flexWrap: 'nowrap',
+    ...styles
+  };
+}
 
 const CellContainer = ({
   children,
@@ -427,63 +442,6 @@ const CellContainer = ({
   }
 
   return <div style={cellContainerStyle}>{children}</div>;
-};
-
-const GridContainer = ({ children, node }: any) => {
-  const nodeStyles = node?.cellStyles || {};
-  const styles: any = {};
-
-  if (node.children) {
-    if (node.axis === 'column') {
-      styles.alignItems = nodeStyles.vertical_align || 'flex-start';
-      styles.justifyContent = nodeStyles.horizontal_align || 'left';
-    }
-
-    if (node.axis === 'row') {
-      styles.alignItems = nodeStyles.horizontal_align || 'flex-start';
-      styles.justifyContent = nodeStyles.vertical_align || 'left';
-    }
-
-    if (nodeStyles.gap) {
-      styles.gap = `${nodeStyles.gap}px`;
-    }
-
-    if (nodeStyles.padding_top)
-      styles.paddingTop = `${nodeStyles.padding_top}px`;
-
-    if (nodeStyles.padding_right)
-      styles.paddingRight = `${nodeStyles.padding_right}px`;
-
-    if (nodeStyles.padding_bottom)
-      styles.paddingBottom = `${nodeStyles.padding_bottom}px`;
-
-    if (nodeStyles.padding_left)
-      styles.paddingLeft = `${nodeStyles.padding_left}px`;
-  } else {
-    styles.alignItems = undefined;
-    styles.justifyContent = undefined;
-    styles.paddingTop = undefined;
-    styles.paddingRight = undefined;
-    styles.paddingBottom = undefined;
-    styles.paddingLeft = undefined;
-  }
-
-  return (
-    <div
-      style={{
-        flexDirection: node.axis === 'column' ? 'row' : 'column',
-        flexWrap: 'nowrap',
-        display: 'flex',
-        position: 'relative',
-        minHeight: '100%',
-        minWidth: '100%',
-        boxSizing: 'border-box',
-        ...styles
-      }}
-    >
-      {children}
-    </div>
-  );
 };
 
 const formatStep = (step: any, viewport: string) => {
