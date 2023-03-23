@@ -43,18 +43,13 @@ Object.entries(Elements).map(([key, Element]) => {
       ...props
     }: any) => {
       const responsiveStyles = useMemo(() => {
-        const as = new ResponsiveStyles(
-          element,
-          ['container', 'containerWrapper'],
-          !componentOnly
-        );
+        const as = new ResponsiveStyles(element, ['container'], !componentOnly);
         as.apply('container', 'vertical_alignment', (a: any) => ({
           justifyContent: a
         }));
         as.apply('container', 'horizontal_alignment', (a: any) => ({
           alignItems: legacyAlignment(a)
         }));
-        as.applyPadding('containerWrapper');
         if (key in Basic) as.applyVisibility('container');
         return as;
       }, [element, componentOnly]);
@@ -70,64 +65,35 @@ Object.entries(Elements).map(([key, Element]) => {
       ) : (
         featheryElement
       );
-      if (componentOnly)
+      if (componentOnly) {
         return (
           <>
             {children}
             {e}
           </>
         );
-      else {
-        const containerStyles = responsiveStyles.getTarget('container');
-        const containerWrapperStyles =
-          responsiveStyles.getTarget('containerWrapper');
-
-        const containerCSS = {
-          ...containerStyles,
-          [mobileBreakpointKey]: {
-            ...containerStyles[mobileBreakpointKey]
-          }
-        };
-
-        const containerWrapperCSS = {
-          ...containerWrapperStyles,
-          [mobileBreakpointKey]: {
-            ...containerWrapperStyles[mobileBreakpointKey]
-          }
-        };
-
+      } else {
         return (
           <div
             css={{
               display: 'flex',
-              flexGrow: 1,
-              ...containerWrapperCSS
+              flexDirection: 'column',
+              width: '100%',
+              ...responsiveStyles.getTarget('container')
             }}
           >
-            <div
-              css={{
-                display: 'flex',
-                flexDirection: 'column',
-                width: '100%',
-                height: '100%',
-                ...containerCSS
-              }}
-            >
-              <>
-                {e}
-                {inlineError && (
-                  <span
-                    css={{
-                      alignSelf: 'flex-start',
-                      color: ERROR_COLOR,
-                      ...responsiveStyles.getTarget('error')
-                    }}
-                  >
-                    {inlineError}
-                  </span>
-                )}
-              </>
-            </div>
+            {e}
+            {inlineError && (
+              <span
+                css={{
+                  alignSelf: 'flex-start',
+                  color: ERROR_COLOR,
+                  ...responsiveStyles.getTarget('error')
+                }}
+              >
+                {inlineError}
+              </span>
+            )}
           </div>
         );
       }

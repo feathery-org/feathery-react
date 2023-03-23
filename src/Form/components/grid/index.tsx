@@ -44,48 +44,49 @@ const Subgrid = ({
   viewport = 'desktop',
   flags
 }: any) => {
-  const { customClickSelectionState, runElementActions } = form;
-  if (node.isElement || node.isEmpty) {
+  const containerProps = {
+    key: getMapKey(node),
+    node,
+    axis,
+    viewport
+  };
+  if (node.isElement) {
     return (
-      <CellContainer
-        key={getMapKey(node)}
-        node={node}
-        axis={axis}
-        viewport={viewport}
-      >
-        {!node.isEmpty && <Cell form={form} node={node} flags={flags} />}
-      </CellContainer>
+      <ElementContainer {...containerProps}>
+        <Cell form={form} node={node} flags={flags} />
+      </ElementContainer>
     );
   } else {
+    const { customClickSelectionState, runElementActions } = form;
     const containerId = node.properties?.callback_id ?? '';
     const customComponent = form.customComponents[containerId];
     return (
       <CellContainer
-        node={node}
-        axis={axis}
-        viewport={viewport}
+        {...containerProps}
         selected={customClickSelectionState({
           id: node.key,
           properties: node.properties
         })}
         runElementActions={runElementActions}
       >
-        <GridContainer node={node}>
-          {customComponent ??
-            (node.children || []).map((child: any, i: any) => {
-              axis = node.axis;
-              return (
-                <Subgrid
-                  key={getMapKey(child) + ':' + i}
-                  tree={child}
-                  axis={axis}
-                  form={form}
-                  viewport={viewport}
-                  flags={flags}
-                />
-              );
-            })}
-        </GridContainer>
+        {!node.isEmpty && (
+          <GridContainer node={node}>
+            {customComponent ??
+              (node.children || []).map((child: any, i: any) => {
+                axis = node.axis;
+                return (
+                  <Subgrid
+                    key={getMapKey(child) + ':' + i}
+                    tree={child}
+                    axis={axis}
+                    form={form}
+                    viewport={viewport}
+                    flags={flags}
+                  />
+                );
+              })}
+          </GridContainer>
+        )}
       </CellContainer>
     );
   }
@@ -122,7 +123,7 @@ const getCellContainerStyle = (
   const nodeStyles = node.cellStyles || {};
   const styles: any = {
     position: 'relative',
-    display: !node.isElement ? 'flex' : 'block',
+    display: 'flex',
     minWidth: !node.isElement ? `${DEFAULT_MIN_SIZE}px` : 'min-content',
     minHeight: !node.isElement ? `${DEFAULT_MIN_SIZE}px` : 'min-content',
     boxSizing: !node.isElement ? 'content-box' : 'border-box'
@@ -148,166 +149,107 @@ const getCellContainerStyle = (
   /**
    * Width styles
    */
-  if (!node.isElement) {
-    if (isPx(nodeWidth)) {
-      styles.minWidth = 'min-content';
-      styles.width = '100%';
+  if (isPx(nodeWidth)) {
+    styles.minWidth = 'min-content';
+    styles.width = '100%';
 
+    if (trackAxis === 'column') {
+      styles.flexBasis = '100%';
+    }
+
+    styles.maxWidth = nodeWidth;
+  }
+
+  if (isFit(nodeWidth)) {
+    styles.maxWidth = `${DEFAULT_MIN_SIZE}px`;
+
+    if (!isEmpty) {
       if (trackAxis === 'column') {
         styles.flexBasis = '100%';
       }
 
-      styles.maxWidth = nodeWidth;
-    }
-
-    if (isFit(nodeWidth)) {
-      styles.maxWidth = `${DEFAULT_MIN_SIZE}px`;
-
-      if (!isEmpty) {
-        if (trackAxis === 'column') {
-          styles.flexBasis = '100%';
-        }
-
-        styles.width = 'fit-content !important';
-        styles.maxWidth = 'fit-content';
-        styles.minWidth = 'min-content';
-
-        // TODO: This is not ideal. This is calculating the px width of all px children (every child is px)
-        // and setting that to the max width of fit parents. Ideally it should allow the children to grow to this size without
-        // calculating the px size of children.
-        if (pxWidthChildren) {
-          const pxValueOfChildren = node.children.reduce(
-            (pxValue: number, child: any) => {
-              return pxValue + getPxValue(child.width);
-            },
-            0
-          );
-
-          styles.maxWidth = `${pxValueOfChildren}px`;
-        }
-      }
-    }
-
-    if (isFill(nodeWidth)) {
-      if (!isAligned) styles.alignSelf = 'stretch';
-      styles.width = 'auto';
-      styles.minWidth = `${DEFAULT_MIN_FILL_SIZE}px`;
-
-      if (trackAxis === 'column') {
-        styles.flexGrow = 1;
-        styles.flexShrink = 0;
-      } else {
-        styles.width = '100%';
-      }
-
-      if (!isEmpty) {
-        styles.minWidth = 'min-content';
-      }
-    }
-
-    /**
-     * Height styles
-     */
-    if (isPx(nodeHeight)) {
-      styles.minHeight = 'auto';
-      styles.height = nodeHeight;
-
-      if (trackAxis === 'row') {
-        styles.flexBasis = '100%';
-      }
-
-      styles.maxHeight = nodeHeight;
-    }
-
-    if (isFit(nodeHeight)) {
-      styles.maxHeight = `${DEFAULT_MIN_SIZE}px`;
-
-      if (!isEmpty) {
-        styles.height = 'fit-content !important';
-        styles.maxHeight = 'fit-content';
-        styles.minHeight = 'min-content';
-      }
-    }
-
-    if (isFill(nodeHeight)) {
-      if (!isAligned) styles.alignSelf = 'stretch';
-      styles.height = 'auto';
-      styles.minHeight = `${DEFAULT_MIN_FILL_SIZE}px`;
-
-      if (trackAxis === 'row') {
-        styles.flexGrow = 1;
-        styles.flexShrink = 0;
-      } else if (!node.parent) {
-        styles.minHeight = '100%';
-      } else {
-        styles.height = '100%';
-      }
-
-      if (!isEmpty && node.parent) {
-        styles.minHeight = 'min-content';
-      }
-    }
-
-    const alignDirection = trackAxis === 'row' ? 'justifySelf' : 'alignSelf';
-    if (nodeStyles.vertical_layout)
-      styles[alignDirection] = nodeStyles.vertical_layout;
-
-    if (nodeStyles.layout) {
-      let targetStyle = nodeStyles.layout;
-      if (targetStyle === 'left') targetStyle = 'flex-start';
-      else if (targetStyle === 'right') targetStyle = 'flex-end';
-      const alignDirection = trackAxis === 'row' ? 'alignSelf' : 'justifySelf';
-      styles[alignDirection] = targetStyle;
-    }
-  } else {
-    const { styles: elementStyles = {} } = node;
-    const {
-      width,
-      width_unit: widthUnit,
-      height,
-      height_unit: heightUnit
-    } = elementStyles;
-
-    if (width && widthUnit !== FIT) {
-      if (trackAxis === 'column') {
-        styles.flexBasis = `${width}${widthUnit}`;
-        styles.minWidth = 'min-content';
-      } else {
-        styles.minWidth = `${width}${widthUnit}`;
-        if (widthUnit === '%' || node.type === 'text')
-          styles.width = `${width}${widthUnit}`;
-      }
-    } else {
       styles.width = 'fit-content !important';
       styles.maxWidth = 'fit-content';
       styles.minWidth = 'min-content';
+
+      // TODO: This is not ideal. This is calculating the px width of all px children (every child is px)
+      // and setting that to the max width of fit parents. Ideally it should allow the children to grow to this size without
+      // calculating the px size of children.
+      if (pxWidthChildren) {
+        const pxValueOfChildren = node.children.reduce(
+          (pxValue: number, child: any) => {
+            return pxValue + getPxValue(child.width);
+          },
+          0
+        );
+
+        styles.maxWidth = `${pxValueOfChildren}px`;
+      }
+    }
+  } else if (isFill(nodeWidth)) {
+    if (!isAligned) styles.alignSelf = 'stretch';
+    styles.width = 'auto';
+    styles.minWidth = `${DEFAULT_MIN_FILL_SIZE}px`;
+
+    if (trackAxis === 'column') {
+      styles.flexGrow = 1;
+      styles.flexShrink = 0;
+    } else {
+      styles.width = '100%';
     }
 
-    if (height && heightUnit !== FIT)
-      if (trackAxis === 'row') {
-        styles.flexBasis = `${height}${heightUnit}`;
-        styles.minHeight = 'min-content';
-      } else {
-        styles.minHeight = `${height}${heightUnit}`;
-        if (heightUnit === '%') styles.height = `${height}${heightUnit}`;
-      }
-    else {
+    if (!isEmpty) {
+      styles.minWidth = 'min-content';
+    }
+  }
+
+  /**
+   * Height styles
+   */
+  if (isPx(nodeHeight)) {
+    styles.minHeight = nodeHeight;
+    styles.height = nodeHeight;
+
+    if (trackAxis === 'row') styles.flexBasis = '100%';
+
+    styles.maxHeight = nodeHeight;
+  } else if (isFit(nodeHeight)) {
+    styles.maxHeight = `${DEFAULT_MIN_SIZE}px`;
+
+    if (!isEmpty) {
       styles.height = 'fit-content !important';
       styles.maxHeight = 'fit-content';
       styles.minHeight = 'min-content';
     }
+  } else if (isFill(nodeHeight)) {
+    if (!isAligned) styles.alignSelf = 'stretch';
+    styles.height = 'auto';
+    styles.minHeight = `${DEFAULT_MIN_FILL_SIZE}px`;
 
-    const alignDirection = trackAxis === 'row' ? 'justifySelf' : 'alignSelf';
-    if (elementStyles.vertical_layout)
-      styles[alignDirection] = elementStyles.vertical_layout;
-
-    if (elementStyles.layout) {
-      let targetStyle = elementStyles.layout;
-      if (targetStyle === 'left') targetStyle = 'flex-start';
-      else if (targetStyle === 'right') targetStyle = 'flex-end';
-      const alignDirection = trackAxis === 'row' ? 'alignSelf' : 'justifySelf';
-      styles[alignDirection] = targetStyle;
+    if (trackAxis === 'row') {
+      styles.flexGrow = 1;
+      styles.flexShrink = 0;
+    } else if (!node.parent) {
+      styles.minHeight = '100%';
+    } else {
+      styles.height = '100%';
     }
+
+    if (!isEmpty && node.parent) {
+      styles.minHeight = 'min-content';
+    }
+  }
+
+  const alignDirection = trackAxis === 'row' ? 'justifySelf' : 'alignSelf';
+  if (nodeStyles.vertical_layout)
+    styles[alignDirection] = nodeStyles.vertical_layout;
+
+  if (nodeStyles.layout) {
+    let targetStyle = nodeStyles.layout;
+    if (targetStyle === 'left') targetStyle = 'flex-start';
+    else if (targetStyle === 'right') targetStyle = 'flex-end';
+    const alignDirection = trackAxis === 'row' ? 'alignSelf' : 'justifySelf';
+    styles[alignDirection] = targetStyle;
   }
 
   // Style rules when the parent is a root cell that is not pixel sized
@@ -350,6 +292,100 @@ const getCellContainerStyle = (
   return styles;
 };
 
+const getElementContainerStyle = (node: any, trackAxis: string) => {
+  const styles: any = {
+    display: 'flex',
+    boxSizing: 'border-box'
+  };
+  if (node.parent) styles.flexBasis = 'fit-content';
+
+  // Apply axis styles
+  styles.flexDirection = trackAxis;
+
+  // Element has styles and mobile_styles, so must use ResponsiveStyles
+  const rs = new ResponsiveStyles(node, ['container'], true);
+
+  rs.apply(
+    'container',
+    ['width', 'width_unit'],
+    (width: any, widthUnit: any) => {
+      const styles = {} as any;
+      if (widthUnit !== FIT) {
+        if (trackAxis === 'column') {
+          styles.flexBasis = `${width}${widthUnit}`;
+          styles.minWidth = 'min-content';
+        } else {
+          styles.minWidth = `${width}${widthUnit}`;
+          if (widthUnit === '%' || node.type === 'text')
+            styles.width = `${width}${widthUnit}`;
+        }
+      } else {
+        styles.width = 'fit-content !important';
+        styles.maxWidth = 'fit-content';
+        styles.minWidth = 'min-content';
+      }
+      return styles;
+    }
+  );
+
+  rs.apply(
+    'container',
+    ['height', 'height_unit'],
+    (height: any, heightUnit: any) => {
+      const styles = {} as any;
+      if (heightUnit !== FIT) {
+        if (trackAxis === 'row') {
+          styles.flexBasis = `${height}${heightUnit}`;
+          styles.minHeight = 'min-content';
+        } else {
+          styles.minHeight = `${height}${heightUnit}`;
+          if (heightUnit === '%') styles.height = `${height}${heightUnit}`;
+        }
+      } else {
+        styles.height = 'fit-content !important';
+        styles.maxHeight = 'fit-content';
+        styles.minHeight = 'min-content';
+      }
+      return styles;
+    }
+  );
+
+  rs.apply('container', 'vertical_layout', (layout: string) => {
+    const alignDirection = trackAxis === 'row' ? 'justifySelf' : 'alignSelf';
+    return { [alignDirection]: layout };
+  });
+
+  rs.apply('container', 'layout', (layout: string) => {
+    if (layout === 'left') layout = 'flex-start';
+    else if (layout === 'right') layout = 'flex-end';
+    const alignDirection = trackAxis === 'row' ? 'alignSelf' : 'justifySelf';
+    return { [alignDirection]: layout };
+  });
+
+  // Container content alignment happens in GridContainer, element alignment
+  // needs to happen here
+  rs.apply('container', 'vertical_align', (align: string) => {
+    const direction = trackAxis === 'column' ? 'alignItems' : 'justifyContent';
+    return { [direction]: align };
+  });
+  rs.apply('container', 'horizontal_align', (align: string) => {
+    const direction = trackAxis === 'column' ? 'justifyContent' : 'alignItems';
+    return { [direction]: align };
+  });
+
+  rs.applyPadding('container');
+
+  return { ...styles, ...rs.getTarget('container') };
+};
+
+const ElementContainer = ({ children, node, axis }: any) => {
+  // Prevent rendering the container if the element is supposed to be hidden
+  if (shouldElementHide({ element: node })) return null;
+
+  const styles = getElementContainerStyle(node, axis);
+  return <div css={styles}>{children}</div>;
+};
+
 const CellContainer = ({
   children,
   node,
@@ -358,12 +394,7 @@ const CellContainer = ({
   viewport = 'desktop',
   runElementActions = () => {}
 }: any) => {
-  const { isElement, properties: _properties = null } = node;
-
-  // Prevent rendering the CellContainer if the element is supposed to be hidden
-  if (node.isElement && shouldElementHide({ element: node })) {
-    return null;
-  }
+  const { properties: _properties = null } = node;
 
   const cellContainerStyle = getCellContainerStyle(node, axis, viewport); // TODO: [Andy] Pass element render data as third param
   const properties = _properties ?? {};
@@ -372,42 +403,39 @@ const CellContainer = ({
   const nodeStyles =
     actions.length > 0 && !node.cellStyles ? {} : node.cellStyles;
 
-  if (nodeStyles) {
-    const [cellStyle, cellHoverStyle, cellActiveStyle] = getCellStyle({
-      styles: nodeStyles
-    });
-    const selectableStyles =
-      !isElement && actions.length > 0
-        ? {
-            cursor: 'pointer',
-            transition: '0.2s ease all',
-            ...(selected ? cellActiveStyle : {}),
-            '&:hover': cellHoverStyle
-          }
-        : {};
+  if (!nodeStyles) return <div css={cellContainerStyle}>{children}</div>;
 
-    return (
-      <div
-        className='CellContainer-Styles'
-        css={{
-          ...cellContainerStyle,
-          ...cellStyle,
-          ...selectableStyles
-        }}
-        onClick={() => {
-          runElementActions({
-            actions: actions,
-            element: { id: properties.callback_id, properties },
-            elementType: 'container'
-          });
-        }}
-      >
-        {children}
-      </div>
-    );
-  }
+  const [cellStyle, cellHoverStyle, cellActiveStyle] = getCellStyle({
+    styles: nodeStyles
+  });
+  const selectableStyles =
+    actions.length > 0
+      ? {
+          cursor: 'pointer',
+          transition: '0.2s ease all',
+          ...(selected ? cellActiveStyle : {}),
+          '&:hover': cellHoverStyle
+        }
+      : {};
 
-  return <div style={cellContainerStyle}>{children}</div>;
+  return (
+    <div
+      css={{
+        ...cellContainerStyle,
+        ...cellStyle,
+        ...selectableStyles
+      }}
+      onClick={() => {
+        runElementActions({
+          actions: actions,
+          element: { id: properties.callback_id, properties },
+          elementType: 'container'
+        });
+      }}
+    >
+      {children}
+    </div>
+  );
 };
 
 const GridContainer = ({ children, node }: any) => {
@@ -418,16 +446,12 @@ const GridContainer = ({ children, node }: any) => {
     if (node.axis === 'column') {
       styles.alignItems = nodeStyles.vertical_align || 'flex-start';
       styles.justifyContent = nodeStyles.horizontal_align || 'left';
-    }
-
-    if (node.axis === 'row') {
+    } else if (node.axis === 'row') {
       styles.alignItems = nodeStyles.horizontal_align || 'flex-start';
       styles.justifyContent = nodeStyles.vertical_align || 'left';
     }
 
-    if (nodeStyles.gap) {
-      styles.gap = `${nodeStyles.gap}px`;
-    }
+    if (nodeStyles.gap) styles.gap = `${nodeStyles.gap}px`;
 
     if (nodeStyles.padding_top)
       styles.paddingTop = `${nodeStyles.padding_top}px`;
@@ -527,10 +551,7 @@ const convertToViewport = (obj: any, viewport: any, props: any) => {
 
   props.forEach((prop: any) => {
     const viewportProp = `${viewport}_${prop}`;
-
-    if (obj[viewportProp]) {
-      obj[prop] = obj[viewportProp];
-    }
+    if (obj[viewportProp]) obj[prop] = obj[viewportProp];
   });
 
   return obj;
