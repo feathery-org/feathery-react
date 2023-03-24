@@ -289,6 +289,14 @@ const getCellContainerStyle = (
   styles.marginBottom = nodeStyles.external_padding_bottom ?? 0;
   styles.marginLeft = nodeStyles.external_padding_left ?? 0;
 
+  const yTotalMargin = styles.marginTop + styles.marginBottom;
+  const xTotalMargin = styles.marginLeft + styles.marginRight;
+
+  if (xTotalMargin && styles.width === '100%')
+    styles.width = `calc(100% - ${xTotalMargin}px)`;
+  if (yTotalMargin && styles.height === '100%')
+    styles.height = `calc(100% - ${yTotalMargin}px)`;
+
   return styles;
 };
 
