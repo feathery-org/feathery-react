@@ -35,7 +35,33 @@ const mockStripeConfig = (checkoutType: 'custom' | 'stripe' = 'custom') => ({
   }
 });
 
-const mockFieldValues = {
+const paymentMethodFieldKey = 'payment-method-1';
+const mockServar = {
+  id: 'some id',
+  key: paymentMethodFieldKey,
+  type: 'payment_method'
+};
+const paymentMethodFieldKey2 = 'payment-method-2';
+const mockServarNotFilled = {
+  id: 'some id 2',
+  key: paymentMethodFieldKey2,
+  type: 'payment_method'
+};
+
+jest.mock('../../utils/init', () => ({
+  fieldValues: {
+    'customer-name': 'customer name value',
+    'customer-description-hidden': 'customer description',
+    addr_country: 'customer address country',
+    ship_line1: 'customer shipping line 1',
+    otherNonCustomerField: 'blaa',
+    payment_product_1_quantity: 1,
+    payment_product_2_quantity: 2,
+    'payment-method-1': { complete: true }
+  }
+}));
+
+const mockFormattedFieldValues = {
   'customer-name': { value: 'customer name value' },
   'customer-description-hidden': { value: 'customer description' },
   addr_country: { value: 'customer address country' },
@@ -94,15 +120,8 @@ const _mockClient = () => {
 
 describe('Stripe integration helper', () => {
   describe('getFlatStripeCustomerFieldValues', () => {
-    it('retrieves no customer fields when no field values', () => {
-      const result = getFlatStripeCustomerFieldValues(mockStripeConfig(), {});
-      expect(result).toStrictEqual({});
-    });
     it('retrieves only customer fields', () => {
-      const result = getFlatStripeCustomerFieldValues(
-        mockStripeConfig(),
-        mockFieldValues
-      );
+      const result = getFlatStripeCustomerFieldValues(mockStripeConfig());
       expect(result).toStrictEqual({
         'customer-name': 'customer name value',
         'customer-description-hidden': 'customer description',
@@ -118,10 +137,7 @@ describe('Stripe integration helper', () => {
     });
 
     it('retrieves no payment group fields when no dynamic quantity fields mapped', () => {
-      const result = getStripePaymentQuantityFieldValues(
-        mockPaymentGroup(),
-        mockFieldValues
-      );
+      const result = getStripePaymentQuantityFieldValues(mockPaymentGroup());
       expect(result).toStrictEqual({});
     });
     it('retrieves payment group fields when dynamic quantity fields mapped', () => {
@@ -133,21 +149,13 @@ describe('Stripe integration helper', () => {
           { product_id: 'p1', quantity_field: prod1Key },
           { product_id: 'p2', quantity_field: prod2Key },
           { product_id: 'p3', fixed_quantity: 100 }
-        ]),
-        mockFieldValues
+        ])
       );
       expect(result).toStrictEqual({ [prod1Key]: 1, [prod2Key]: 2 });
     });
   });
 
   describe('setupPaymentMethod', () => {
-    const paymentMethodFieldKey = 'payment-method-1';
-    const mockServar = {
-      id: 'some id',
-      key: paymentMethodFieldKey,
-      type: 'payment_method'
-    };
-
     const mockTargetElement = {};
 
     it('returns null if no card element', async () => {
@@ -158,7 +166,7 @@ describe('Stripe integration helper', () => {
       // act
       const result = await setupPaymentMethod(
         {
-          servar: mockServar,
+          servar: mockServarNotFilled,
           client: mockClient,
           formattedFields: mockFormattedFields,
           updateFieldValues: mockUpdateFieldValues,
@@ -240,12 +248,6 @@ describe('Stripe integration helper', () => {
     };
 
     it('sets up payment method for a card element', async () => {
-      const paymentMethodFieldKey = 'payment-method-1';
-      const mockServar = {
-        id: 'some id',
-        key: paymentMethodFieldKey,
-        type: 'payment_method'
-      };
       const mockTargetElement = {};
 
       const mockFormattedFields: Record<string, any> = {};
@@ -285,7 +287,7 @@ describe('Stripe integration helper', () => {
       const result = await collectPayment(
         {
           client: mockClient,
-          formattedFields: mockFieldValues,
+          formattedFields: mockFormattedFieldValues,
           updateFieldValues: mockUpdateFieldValues,
           integrationData: mockStripeConfig('custom'),
           triggerElement: mockButton,
@@ -310,7 +312,7 @@ describe('Stripe integration helper', () => {
       const result = await collectPayment(
         {
           client: mockClient,
-          formattedFields: mockFieldValues,
+          formattedFields: mockFormattedFieldValues,
           updateFieldValues: mockUpdateFieldValues,
           integrationData: mockStripeConfig('stripe'),
           triggerElement: mockButton,

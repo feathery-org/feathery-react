@@ -2,6 +2,7 @@ import { loadStripe } from '@stripe/stripe-js';
 import { useState } from 'react';
 import { runningInClient, featheryDoc } from '../utils/browser';
 import { ActionData } from './utils';
+import { fieldValues } from '../utils/init';
 import { ACTION_COLLECT_PAYMENT } from '../utils/elementActions';
 const stripePromise = new Promise((resolve) => {
   if (runningInClient())
@@ -31,27 +32,21 @@ export function installStripe(stripeConfig: any) {
 }
 
 // Returns mapping of servar key (or hidden field key) to value
-export function getFlatStripeCustomerFieldValues(
-  stripeConfig: any,
-  fieldValues: any
-) {
+export function getFlatStripeCustomerFieldValues(stripeConfig: any) {
   if (!stripeConfig?.metadata?.customer_field_mappings) return {};
-  return getObjectMappingValues(
-    stripeConfig.metadata.customer_field_mappings,
-    fieldValues
-  );
+  return getObjectMappingValues(stripeConfig.metadata.customer_field_mappings);
 }
-function getObjectMappingValues(mappingObj: any, fieldValues: any) {
+function getObjectMappingValues(mappingObj: any) {
   return Object.values(mappingObj).reduce((result: any, mappingInfo) => {
     if (typeof mappingInfo === 'string') {
       const key = mappingInfo;
-      if (key in fieldValues) result[key] = fieldValues[key].value;
+      if (key in fieldValues) result[key] = fieldValues[key];
     }
     // sub-object
     else if (typeof mappingInfo === 'object') {
       result = {
         ...result,
-        ...(getObjectMappingValues(mappingInfo, fieldValues) as {
+        ...(getObjectMappingValues(mappingInfo) as {
           [key: string]: any;
         })
       };
@@ -70,33 +65,29 @@ export interface PaymentGroup {
   products: PaymentProduct[];
 }
 export function getStripePaymentQuantityFieldValues(
-  paymentGroup: PaymentGroup,
-  fieldValues: any
+  paymentGroup: PaymentGroup
 ) {
   return paymentGroup.products
     .filter((p) => p.quantity_field)
     .reduce((result: any, p) => {
       const key = p.quantity_field as string;
-      if (key in fieldValues) result[key] = fieldValues[key].value;
+      if (key in fieldValues) result[key] = fieldValues[key];
       return result;
     }, {} as { [key: string]: any });
 }
 
 async function syncStripeFieldChanges(
   client: any,
-  formattedFields: any,
   integrationData: any,
   paymentGroup?: PaymentGroup
 ) {
   // Need to update the backend with any customer field values that might be on
   // the current step.
-  const stepCustomerFieldValues: any = getFlatStripeCustomerFieldValues(
-    integrationData,
-    formattedFields
-  );
+  const stepCustomerFieldValues: any =
+    getFlatStripeCustomerFieldValues(integrationData);
   // payment groups (from action props) also could have mapped product quantity fields that must be sync'd
   const stepPaymentQtyFieldValues = paymentGroup
-    ? getStripePaymentQuantityFieldValues(paymentGroup, formattedFields)
+    ? getStripePaymentQuantityFieldValues(paymentGroup)
     : {};
   const fieldValuesToSubmit = {
     ...stepCustomerFieldValues,
@@ -122,13 +113,12 @@ export async function setupPaymentMethod(
   syncFields = true,
   stripePromise = null
 ) {
-  if (formattedFields[servar.key]?.value?.complete) {
+  if ((fieldValues[servar.key] as any)?.complete) {
     try {
       const stripe: any = await (stripePromise ?? getStripe());
 
       // sync fields to BE
-      if (syncFields)
-        await syncStripeFieldChanges(client, formattedFields, integrationData);
+      if (syncFields) await syncStripeFieldChanges(client, integrationData);
 
       // Payment method setup
       const { intent_secret: intentSecret } = await client.setupPaymentIntent(
@@ -184,7 +174,6 @@ export async function collectPayment(
     client,
     triggerElement, // action button that triggered this
     triggerElementType,
-    formattedFields,
     updateFieldValues,
     integrationData: stripeConfig
   } = actionData;
@@ -196,7 +185,6 @@ export async function collectPayment(
   // sync fields to BE
   await syncStripeFieldChanges(
     client,
-    formattedFields,
     stripeConfig,
     collectPaymentAction?.payment_group
   );
