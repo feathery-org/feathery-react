@@ -7,7 +7,15 @@ const PLACEHOLDER_IMAGE =
 
 function applyImageStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets('imageContainer', 'image');
-  responsiveStyles.applyWidth('imageContainer');
+  responsiveStyles.apply(
+    'imageContainer',
+    ['width', 'width_unit'],
+    (width: any, widthUnit: any) => {
+      // TODO: this is a hack to prevent % from double applying
+      if (widthUnit === '%') return {};
+      else return { width: `${width}${widthUnit}` };
+    }
+  );
   responsiveStyles.applyHeight('image');
   responsiveStyles.applyCorners('imageContainer');
   responsiveStyles.applyCorners('image');
