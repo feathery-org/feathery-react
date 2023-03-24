@@ -8,7 +8,7 @@ import ImageElement from './basic/ImageElement';
 import ProgressBarElement from './basic/ProgressBarElement';
 import VideoElement from './basic/VideoElement';
 
-import ResponsiveStyles, { mobileBreakpointKey, ERROR_COLOR } from './styles';
+import ResponsiveStyles, { ERROR_COLOR } from './styles';
 
 const Basic = {
   ImageElement,
