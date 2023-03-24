@@ -1334,17 +1334,20 @@ function Form({
       else if (type === ACTION_COLLECT_PAYMENT) {
         if (!(await collectPaymentAction(element))) break;
       } else if (type === ACTION_STORE_FIELD) {
-        const { custom_store_field_key: key, custom_store_value: value } =
-          action;
+        const {
+          custom_store_field_key: key,
+          custom_store_value: value,
+          toggle
+        } = action;
 
         // TODO: get default value here for the field and set it instead of ''
         // However, we can link to a field not on this step, in which case we can't lookup the servar in activeStep
         // So either set to false for checkboxes, or '' for other fields
         const defaultValue = value === true ? false : '';
 
-        // Toggle 'off' the value if it has already been set
+        // Toggle 'off' the value if it has already been set (only if toggling)
         const newValue = {
-          [key]: fieldValues[key] === value ? defaultValue : value
+          [key]: fieldValues[key] === value && toggle ? defaultValue : value
         };
         updateFieldValues(newValue);
       }
