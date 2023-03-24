@@ -17,7 +17,6 @@ import useBorder from '../components/useBorder';
 // initialized with a key.  In a runtime form, it is crucial to use the real key.  However. in
 // the dashboard any key will do since the field is not operational nor would we want it to be.
 const stripeKey = 'any-key-does-not-matter-what';
-const stripePromise = getStripe();
 // Limit stripe css props to only those that are supported in order to avoid easy to miss warnings
 const supportedStripeCssProps = [
   'backgroundColor',
@@ -207,6 +206,7 @@ const CardField = ({
 };
 
 function PaymentMethodField({ editMode, children, ...props }: any) {
+  const stripePromise = getStripe();
   useEffect(() => {
     // if ediatble, i.e. running in dashboard, then just load stripe with key so cardElement shows
     if (editMode)
