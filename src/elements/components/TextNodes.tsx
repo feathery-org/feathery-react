@@ -67,7 +67,7 @@ function TextNodes({
   return useMemo(() => {
     const text = element.properties.text;
     let delta = new Delta(element.properties.text_formatted);
-    const actions = element.properties.actions;
+    const actions = element.properties.actions ?? [];
     if (actions.some((action: any) => action.type === ACTION_NEXT)) {
       conditions.forEach((cond: any) => {
         if (cond.element_type === 'text' && cond.element_id === element.id) {
