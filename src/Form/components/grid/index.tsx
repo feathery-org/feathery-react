@@ -60,6 +60,22 @@ const Subgrid = ({
     const { customClickSelectionState, runElementActions } = form;
     const containerId = node.properties?.callback_id ?? '';
     const customComponent = form.customComponents[containerId];
+
+    const children: any[] = (node.children || []).map((child: any, i: any) => {
+      axis = node.axis;
+      return (
+        <Subgrid
+          key={getMapKey(child) + ':' + i}
+          tree={child}
+          axis={axis}
+          form={form}
+          viewport={viewport}
+          flags={flags}
+        />
+      );
+    });
+    if (customComponent) children.push(customComponent);
+
     return (
       <CellContainer
         {...containerProps}
@@ -69,24 +85,9 @@ const Subgrid = ({
         })}
         runElementActions={runElementActions}
       >
-        {!node.isEmpty && (
-          <GridContainer node={node}>
-            {customComponent ??
-              (node.children || []).map((child: any, i: any) => {
-                axis = node.axis;
-                return (
-                  <Subgrid
-                    key={getMapKey(child) + ':' + i}
-                    tree={child}
-                    axis={axis}
-                    form={form}
-                    viewport={viewport}
-                    flags={flags}
-                  />
-                );
-              })}
-          </GridContainer>
-        )}
+        {children.length ? (
+          <GridContainer node={node}>{children}</GridContainer>
+        ) : null}
       </CellContainer>
     );
   }
