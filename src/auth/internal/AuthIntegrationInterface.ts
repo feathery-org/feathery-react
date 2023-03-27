@@ -49,8 +49,6 @@ async function inferAuthLogout() {
   }
 
   authState.onLogout();
-  authState.authPhoneNumber = '';
-  authState.authEmail = '';
   authState.setAuthId('');
 }
 

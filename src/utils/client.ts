@@ -357,19 +357,15 @@ export default class Client {
 
   async submitAuthInfo({
     authId,
-    authPhone = '',
-    authEmail = '',
-    isStytchTemplateKey
+    authData = {},
+    isStytchTemplateKey = false
   }: any) {
     const { userId } = initInfo();
     await authState.onLogin();
-    if (authPhone) authState.authPhoneNumber = authPhone;
-    if (authEmail) authState.authEmail = authEmail;
 
     const data = {
       auth_id: authId,
-      auth_phone: authPhone,
-      auth_email: authEmail,
+      auth_data: authData,
       is_stytch_template_key: isStytchTemplateKey,
       ...(userId ? { fuser_key: userId } : {})
     };

@@ -48,10 +48,15 @@ export function firebaseLoginMagicLink(featheryClient: any) {
         .auth()
         .signInWithEmailLink(authEmail, window.location.href)
         .then((result: any) => {
+          const user = result.user;
           return featheryClient
             .submitAuthInfo({
-              authId: result.user.uid,
-              authEmail
+              authId: user.uid,
+              authData: {
+                email: user.email,
+                phone: user.phoneNumber,
+                first_name: user.displayName
+              }
             })
             .then((session: any) => {
               return session;
@@ -101,7 +106,7 @@ export async function firebaseSendSms({
       authState.sentAuth = true;
       // SMS sent
       window.firebaseConfirmationResult = confirmationResult;
-      (window as any).firebasePhoneNumber = fieldVal;
+      window.firebasePhoneNumber = fieldVal;
       return {};
     })
     .catch((error: any) => {
@@ -129,11 +134,16 @@ export async function firebaseVerifySms({ fieldVal, featheryClient }: any) {
     return await fcr
       .confirm(fieldVal)
       .then(async (result: any) => {
+        const user = result.user;
         // User signed in successfully.
         return await featheryClient
           .submitAuthInfo({
-            authId: result.user.uid,
-            authPhone: (window as any).firebasePhoneNumber
+            authId: user.uid,
+            authData: {
+              email: user.email,
+              phone: user.phoneNumber,
+              first_name: user.displayName
+            }
           })
           .then((session: any) => {
             updateSessionValues(session);

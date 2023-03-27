@@ -28,9 +28,7 @@ export const AuthContext = createContext<any>(null);
 
 export const authState = {
   client: null as any,
-  authEmail: '',
   authId: '',
-  authPhoneNumber: '',
   // This is a flag so we only redirect to the login start step immediately
   // after auth, not during other form navigation
   redirectAfterLogin: false,
