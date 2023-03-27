@@ -28,6 +28,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     })
   );
   responsiveStyles.applyCorners('button');
+  responsiveStyles.applyBoxShadow('button');
   responsiveStyles.applyFlexDirection('button');
   responsiveStyles.applyContentAlign('button');
   responsiveStyles.applyTextAlign('buttonLabel');
@@ -184,7 +185,6 @@ function ButtonElement({
       style={{
         display: 'flex',
         cursor: editMode || actions.length === 0 ? 'default' : 'pointer',
-        boxShadow: 'none',
         maxWidth: '100%',
         position: 'relative'
       }}

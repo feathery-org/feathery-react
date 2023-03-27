@@ -101,6 +101,7 @@ const getCellStyle = (cell: any) => {
   ]);
   responsiveStyles.applyBorders({ target: 'cell' });
   responsiveStyles.applyCorners('cell');
+  responsiveStyles.applyBoxShadow('cell');
   responsiveStyles.applyBackgroundImageStyles('cell');
   responsiveStyles.apply('cell', 'background_color', (c: any) => ({
     backgroundColor: c ? `#${c}` : null

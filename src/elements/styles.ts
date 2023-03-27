@@ -251,7 +251,7 @@ class ResponsiveStyles {
       ],
       // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
       (a, b, c, d) => ({
-        boxShadow: `${a}px ${b}px ${c}px #${d}`
+        boxShadow: `${a ?? 0}px ${b ?? 0}px ${c ?? 0}px #${d ?? '000000'}`
       })
     );
   }
