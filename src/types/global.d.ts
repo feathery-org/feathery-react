@@ -13,6 +13,7 @@ declare global {
   interface Window {
     firebaseRecaptchaVerifier: any;
     firebaseConfirmationResult: any;
+    firebasePhoneNumber: any;
     analytics: Array;
     heap: any;
   }
