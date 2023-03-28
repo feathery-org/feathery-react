@@ -31,7 +31,7 @@ function ButtonGroupField({
   const servar = element.servar;
   const labels = servar.metadata.option_labels;
   return (
-    <div css={{ position: 'relative' }}>
+    <div css={{ position: 'relative', width: '100%' }}>
       {children}
       {fieldLabel}
       <div

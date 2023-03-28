@@ -272,7 +272,7 @@ export default class Client {
       return Promise.resolve(preloadForms[this.formKey]);
 
     const params = encodeGetParams({ form_key: this.formKey });
-    const url = `${CDN_URL}panel/v14/?${params}`;
+    const url = `${CDN_URL}panel/v15/?${params}`;
     const options: Record<string, any> = {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
