@@ -49,10 +49,8 @@ export default function DevNavBar({ allSteps, curStep, history }: any) {
     const depthMap = getStepDepthMap(allSteps);
     if (curStep.key in depthMap) {
       // Then sort by step depth
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       const curDepth = depthMap[curStep.key];
       [...prevCondKeys, ...nextCondKeys].forEach((key) => {
-        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
         const depth = depthMap[key];
         if (depth < curDepth) prevStepKeys.add(key);
         else nextStepKeys.add(key);

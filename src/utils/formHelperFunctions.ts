@@ -174,32 +174,32 @@ export const getOrigin = (steps: any) =>
   NO_ORIGIN_DEFAULT;
 
 export const getStepDepthMap = (steps: any, hasProgressBar = false) => {
-  const depthMap = {};
+  const depthMap: Record<string, any> = {};
   const stepQueue = [[getOrigin(steps), 0]];
+
   while (stepQueue.length > 0) {
     // @ts-expect-error TS(2461): Type 'unknown[] | undefined' is not an array type.
     const [step, depth] = stepQueue.shift();
-    if (
-      step.key in depthMap ||
-      // Optionally filter only for steps with progress bar
-      (hasProgressBar && step.progress_bars.length === 0)
-    )
-      continue;
-    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-    depthMap[step.key] = depth;
+    if (step.key in depthMap) continue;
+
+    // Optionally filter only for steps with progress bar
+    const missingBar = hasProgressBar && step.progress_bars.length === 0;
+    depthMap[step.key] = missingBar ? 0 : depth;
+
+    const incr = missingBar ? 0 : 1;
     step.next_conditions.forEach((condition: any) => {
-      stepQueue.push([steps[condition.next_step_key], depth + 1]);
+      stepQueue.push([steps[condition.next_step_key], depth + incr]);
     });
     step.previous_conditions.forEach((condition: any) => {
-      stepQueue.push([steps[condition.previous_step_key], depth + 1]);
+      stepQueue.push([steps[condition.previous_step_key], depth + incr]);
     });
   }
+
   return depthMap;
 };
 
 export const recurseProgressDepth = (steps: any, curKey: any) => {
   const depthMap = getStepDepthMap(steps, true);
-  // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
   return [depthMap[curKey], Math.max(...Object.values(depthMap))];
 };
 
