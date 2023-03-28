@@ -25,7 +25,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     ['width', 'width_unit', 'content_responsive'],
     (a: any, b: any, c: boolean) => {
       // TODO: this is a hack to prevent % from double applying
-      if (b === '%') return {};
+      if (b === '%') return { width: '100%' };
       else
         return {
           [c ? 'minWidth' : 'width']: `${a}${b}`
