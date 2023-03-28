@@ -136,7 +136,7 @@ export default function SelectorStyles() {
         }
 
         .react-datepicker-popper {
-          z-index: 1;
+          z-index: 2;
         }
         .react-datepicker-popper[data-placement^='bottom'] {
           padding-top: 10px;
