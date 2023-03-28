@@ -1,5 +1,6 @@
 import { StytchHeadlessClient } from '@stytch/vanilla-js/headless';
 import { authState } from '../auth/LoginForm';
+import { getRedirectUrl } from '../auth/internal/utils';
 
 let stytchPromise: any = null;
 let config: any = null;
@@ -66,7 +67,7 @@ export function stytchSendSms({ fieldVal }: any) {
 }
 
 // Login with query params from oauth redirect or magic link
-export function stytchUrlLogin(featheryClient: any) {
+export function stytchLoginOnLoad(featheryClient: any) {
   const stytchClient = authState.client;
   // If there is no auth client, no config or auth has already been sent, then return early
   if (!stytchClient || !config || authSent) return;
@@ -167,18 +168,4 @@ function removeStytchQueryParams() {
     // Removes stytch query params without triggering page refresh
     history.replaceState(null, '', '?' + queryParams + window.location.hash);
   }
-}
-
-function getRedirectUrl() {
-  const { origin, pathname, hash } = window.location;
-  const queryParams = new URLSearchParams(window.location.search);
-  queryParams.forEach((value, key) => {
-    if (!['feathery_1', 'feathery_2', '_slug'].includes(key))
-      queryParams.delete(key);
-  });
-  const queryString =
-    queryParams.has('feathery_1') || queryParams.has('_slug')
-      ? `?${queryParams}`
-      : '';
-  return `${origin}${pathname}${queryString}${hash}`;
 }

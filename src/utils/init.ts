@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Client from './client';
 import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
-import { runningInClient, featheryDoc } from './browser';
+import { runningInClient, setCookie, getCookie } from './browser';
 import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
 
 export type FeatheryFieldTypes =
@@ -120,14 +120,10 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
           .then((fp: any) => fp.get())
           .then((result: any) => (initState.userId = result.visitorId));
       } else if (initState.userTracking === 'cookie') {
-        featheryDoc()
-          .cookie.split(/; */)
-          .map((c: any) => {
-            const [key, v] = c.split('=', 2);
-            if (key === `feathery-user-id-${sdkKey}`) initState.userId = v;
-          });
-        if (!initState.userId) initState.userId = uuidv4();
-        featheryDoc().cookie = `feathery-user-id-${sdkKey}=${initState.userId}; max-age=31536000; SameSite=strict`;
+        const cookieKey = `feathery-user-id-${sdkKey}`;
+        const cookieId = getCookie(cookieKey);
+        initState.userId = cookieId || uuidv4();
+        setCookie(`feathery-user-id-${sdkKey}`, initState.userId as string);
       }
     }
   }
@@ -159,7 +155,7 @@ async function updateUserId(newUserId: string, merge = false): Promise<void> {
   if (merge) await defaultClient.updateUserId(newUserId, true);
   initState.userId = newUserId;
   if (initState.userTracking === 'cookie') {
-    featheryDoc().cookie = `feathery-user-id-${initState.sdkKey}=${newUserId}; max-age=31536000; SameSite=strict`;
+    setCookie(`feathery-user-id-${initState.sdkKey}`, newUserId);
   }
   if (!merge) {
     fieldValues = {};

@@ -32,3 +32,17 @@ export function isTerminalStepAuth(
     !authIntegration?.auth_gate_steps.includes(stepId)
   );
 }
+
+export function getRedirectUrl() {
+  const { origin, pathname, hash } = window.location;
+  const queryParams = new URLSearchParams(window.location.search);
+  queryParams.forEach((value, key) => {
+    if (!['feathery_1', 'feathery_2', '_slug'].includes(key))
+      queryParams.delete(key);
+  });
+  const queryString =
+    queryParams.has('feathery_1') || queryParams.has('_slug')
+      ? `?${queryParams}`
+      : '';
+  return `${origin}${pathname}${queryString}${hash}`;
+}
