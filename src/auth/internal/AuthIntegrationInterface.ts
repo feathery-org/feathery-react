@@ -13,8 +13,7 @@ import {
   stytchSendMagicLink,
   stytchSendSms,
   stytchVerifySms,
-  setStytchDomainCookie,
-  clearStytchDomainCookie
+  setStytchDomainCookie
 } from '../../integrations/stytch';
 import Client from '../../utils/client';
 import { isAuthStytch } from './utils';
@@ -93,16 +92,12 @@ function initializeAuthClientListeners() {
     const unsubUser = authState.client.user.onChange((newUser: any) => {
       if (newUser) {
         defaultClient.submitAuthInfo({ authId: newUser.user_id });
+        // [Hosted Login] Once the stytch user has initialized, we need to set the cookie to enable multi-domain SSO
         setStytchDomainCookie();
       }
     });
     const unsubSession = authState.client.session.onChange(
-      (newSession: any) => {
-        if (newSession === null) {
-          clearStytchDomainCookie();
-          authState.setAuthId('');
-        }
-      }
+      (newSession: any) => !newSession && authState.setAuthId('')
     );
     window.addEventListener('beforeunload', () => {
       unsubUser && unsubUser();

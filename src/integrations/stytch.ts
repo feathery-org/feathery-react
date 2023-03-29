@@ -88,16 +88,12 @@ export async function stytchLoginOnLoad(featheryClient: any) {
   if (stytchSession) {
     try {
       const submitInfo = () => stytchSubmitAuthInfo(featheryClient);
-      // We only need to validate if the session is valid for hosted forms, as
+      // [Hosted Login] We only need to validate if the session is valid for hosted forms, as
       // the session could have been revoked on a different subdomain
-      if (!authState.isHostedOnFeathery) return submitInfo();
+      if (!authState.featheryHosted) return submitInfo();
       await authState.client.session.authenticate();
-      return submitInfo;
+      return submitInfo();
     } catch (e) {
-      console.log(
-        'Your existing JWT was invalid. Possibly because you logged out on a different subdomain. You should now be able to login again.\n',
-        e
-      );
       authState.setAuthId('');
     }
   }
@@ -112,7 +108,10 @@ export async function stytchLoginOnLoad(featheryClient: any) {
     return authFn()
       .then(() => stytchSubmitAuthInfo(featheryClient))
       .catch((e: any) =>
-        console.log('Auth failed. Possibly because your magic link expired.', e)
+        console.warn(
+          'Auth failed. Possibly because your magic link expired.',
+          e
+        )
       );
   }
 }
@@ -134,6 +133,12 @@ export function stytchVerifySms({
     });
 }
 
+/**
+ * [Hosted Login] This fn will set the Stytch cookie on the primary site domain.
+ * For example, if a form is hosted at login.feathery.io the default Stytch
+ * cookie will be set to login.feathery.io, so we set the same values for the
+ * domain feathery.io, so that subdomains can be authenticated
+ */
 export function setStytchDomainCookie() {
   const domainParts = window.location.hostname.split('.');
   const domain =
@@ -148,6 +153,10 @@ export function setStytchDomainCookie() {
   )}${commonCookieOptions}`;
 }
 
+/**
+ * [Hosted Login] This fn will clear the cookies set by setStytchDomainCookie.
+ * This is needed if the session was revoked on another domain.
+ */
 export function clearStytchDomainCookie() {
   const domainParts = window.location.hostname.split('.');
   const domain =

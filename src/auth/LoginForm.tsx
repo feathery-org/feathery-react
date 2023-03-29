@@ -30,7 +30,7 @@ export const AuthContext = createContext<any>(null);
 export const authState = {
   client: null as any,
   authId: '',
-  isHostedOnFeathery: false,
+  featheryHosted: false,
   // This is a flag so we only redirect to the login start step immediately
   // after auth, not during other form navigation
   redirectAfterLogin: false,
@@ -53,7 +53,7 @@ const LoginForm = ({
   onLogin = () => {},
   onLogout = () => {},
   onClientReady = () => {},
-  isHostedOnFeathery = false,
+  featheryHosted = false,
   children
 }: {
   authId?: string;
@@ -63,7 +63,7 @@ const LoginForm = ({
   onLogin?: () => void;
   onLogout?: () => void;
   onClientReady?: (authClient: any) => void;
-  isHostedOnFeathery?: boolean;
+  featheryHosted?: boolean;
   children?: JSX.Element;
 }) => {
   const [_internalId] = useState(uuidv4());
@@ -114,13 +114,15 @@ const LoginForm = ({
     authState.onLogout = onLogout;
     authState.setAuthId = (newId: string) => {
       if (newId === '') {
-        // Cleanup if user is logged out. Necessary if user was logged out on another domain
+        // [Hosted Login] Cleanup if user is logged out. Necessary if user was
+        // logged out on another domain, but appropriate logic to run in any
+        // case.
         authState.redirectAfterLogin = false;
         setShowLoader(false);
         clearStytchDomainCookie();
       }
       authState.authId = newId;
-      authState.isHostedOnFeathery = isHostedOnFeathery;
+      authState.featheryHosted = featheryHosted;
       hasAuthedRef.current = newId !== '';
       // Execute render callbacks after setting authId, so that form navigation can be evaluated again
       rerenderAllForms();
