@@ -1125,12 +1125,13 @@ function Form({
         return null;
       } else if ([ACTION_STORE_FIELD, ACTION_CUSTOM].includes(action.type)) {
         if (state === null) state = false;
-        if (
-          action.type === ACTION_STORE_FIELD &&
-          fieldValues[action.custom_store_field_key]
-        )
-          state = true;
-        else if (
+        if (action.type === ACTION_STORE_FIELD) {
+          const val = action.custom_store_value;
+          // Treat the string 0 as the number 0, which is a bottom value
+          const turnOn = val && val !== '0';
+          if (turnOn && fieldValues[action.custom_store_field_key])
+            state = true;
+        } else if (
           action.type === ACTION_CUSTOM &&
           fieldValues[action.select_field_indicator_key]
         )
