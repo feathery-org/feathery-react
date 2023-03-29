@@ -61,7 +61,7 @@ function VideoElement({
           src={PLACEHOLDER_VIDEO}
           alt='Video Placeholder'
           css={{
-            objectFit: 'contain',
+            objectFit: 'cover',
             width: '100%',
             maxHeight: '100%'
           }}
