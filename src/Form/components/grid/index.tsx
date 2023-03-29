@@ -309,9 +309,6 @@ const getElementContainerStyle = (node: any, trackAxis: string) => {
   };
   if (node.parent) styles.flexBasis = 'fit-content';
 
-  // Apply axis styles
-  styles.flexDirection = trackAxis;
-
   // Element has styles and mobile_styles, so must use ResponsiveStyles
   const rs = new ResponsiveStyles(node, ['container'], true);
 
@@ -374,13 +371,12 @@ const getElementContainerStyle = (node: any, trackAxis: string) => {
 
   // Container content alignment happens in GridContainer, element alignment
   // needs to happen here
+  styles.flexDirection = 'column';
   rs.apply('container', 'vertical_align', (align: string) => {
-    const direction = trackAxis === 'column' ? 'alignItems' : 'justifyContent';
-    return { [direction]: align };
+    return { justifyContent: align };
   });
   rs.apply('container', 'horizontal_align', (align: string) => {
-    const direction = trackAxis === 'column' ? 'justifyContent' : 'alignItems';
-    return { [direction]: align };
+    return { alignItems: align };
   });
 
   rs.applyPadding('container');
