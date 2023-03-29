@@ -29,12 +29,12 @@ function isHrefMagicLink(): boolean {
   );
 }
 
-async function inferLoginOnLoad(featheryClient: Client) {
+function inferLoginOnLoad(featheryClient: Client) {
   const queryParams = new URLSearchParams(window.location.search);
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
   if (isAuthStytch() || (type && token))
-    return await stytchLoginOnLoad(featheryClient);
+    return stytchLoginOnLoad(featheryClient);
   else return firebaseLoginOnLoad(featheryClient);
 }
 

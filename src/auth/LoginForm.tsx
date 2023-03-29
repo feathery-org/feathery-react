@@ -30,7 +30,7 @@ export const AuthContext = createContext<any>(null);
 export const authState = {
   client: null as any,
   authId: '',
-  featheryHosted: false,
+  _featheryHosted: false,
   // This is a flag so we only redirect to the login start step immediately
   // after auth, not during other form navigation
   redirectAfterLogin: false,
@@ -53,7 +53,7 @@ const LoginForm = ({
   onLogin = () => {},
   onLogout = () => {},
   onClientReady = () => {},
-  featheryHosted = false,
+  _featheryHosted = false,
   children
 }: {
   authId?: string;
@@ -63,7 +63,7 @@ const LoginForm = ({
   onLogin?: () => void;
   onLogout?: () => void;
   onClientReady?: (authClient: any) => void;
-  featheryHosted?: boolean;
+  _featheryHosted?: boolean;
   children?: JSX.Element;
 }) => {
   const [_internalId] = useState(uuidv4());
@@ -122,7 +122,7 @@ const LoginForm = ({
         clearStytchDomainCookie();
       }
       authState.authId = newId;
-      authState.featheryHosted = featheryHosted;
+      authState._featheryHosted = _featheryHosted;
       hasAuthedRef.current = newId !== '';
       // Execute render callbacks after setting authId, so that form navigation can be evaluated again
       rerenderAllForms();

@@ -87,13 +87,15 @@ export async function stytchLoginOnLoad(featheryClient: any) {
   // Feathery form, we need to update the auth info from Feathery's side
   if (stytchSession) {
     try {
-      const submitInfo = () => stytchSubmitAuthInfo(featheryClient);
       // [Hosted Login] We only need to validate if the session is valid for hosted forms, as
       // the session could have been revoked on a different subdomain
-      if (!authState.featheryHosted) return submitInfo();
+      if (!authState._featheryHosted)
+        return stytchSubmitAuthInfo(featheryClient);
+
       await authState.client.session.authenticate();
-      return submitInfo();
+      return stytchSubmitAuthInfo(featheryClient);
     } catch (e) {
+      // [Hosted Login] If the session was revoked, we want to reset auth state
       authState.setAuthId('');
     }
   }

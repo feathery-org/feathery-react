@@ -428,7 +428,7 @@ export function getUrlHash() {
   try {
     return decodeURI(location.hash.substr(1));
   } catch (e) {
-    console.log(e);
+    console.warn(e);
     return '';
   }
 }
