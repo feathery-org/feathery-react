@@ -1129,7 +1129,7 @@ function Form({
           const val = action.custom_store_value;
           // Treat the string 0 as the number 0, which is a bottom value
           const turnOn = val && val !== '0';
-          if (turnOn && fieldValues[action.custom_store_field_key])
+          if (turnOn && fieldValues[action.custom_store_field_key] === val)
             state = true;
         } else if (
           action.type === ACTION_CUSTOM &&
