@@ -174,7 +174,7 @@ function ButtonElement({
         ...borderStyles.active
       };
 
-  const actions = element.properties.actions;
+  const actions = element.properties.actions ?? [];
   // type=submit is important for HTML5 type validation messages
   const type = actions.some(
     (action: any) => SUBMITTABLE_ACTIONS.includes(action.type) && action.submit
