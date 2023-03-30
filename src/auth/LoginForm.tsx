@@ -75,7 +75,7 @@ const LoginForm = ({
   // is the one containing the token. subsequent events do not contain the token
   const hasAuthedRef = useRef(false);
   // Use this render state to force re-evaluation of authId, since authState isn't reactive as-is
-  const [, setRender] = useState(true);
+  const [, setRender] = useState({ v: 1 });
   const [showLoader, setShowLoader] = useState(false);
 
   useEffect(() => {
@@ -133,7 +133,7 @@ const LoginForm = ({
     };
 
     registerRenderCallback(_internalId, 'loginForm', () => {
-      setRender((render) => !render);
+      setRender((render) => ({ ...render }));
     });
   }, []);
 
