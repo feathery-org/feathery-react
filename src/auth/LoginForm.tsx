@@ -78,12 +78,6 @@ const LoginForm = ({
   const [, setRender] = useState(true);
   const [showLoader, setShowLoader] = useState(false);
 
-  const logoutActions = () => {
-    hasAuthedRef.current = false;
-    authState.authId = '';
-    onLogout();
-  };
-
   useEffect(() => {
     if (
       // We should set loader for new auth sessions
@@ -113,7 +107,11 @@ const LoginForm = ({
     };
     authState.onLogout = onLogout;
     authState.setAuthId = (newId: string) => {
-      if (newId === '') {
+      // No-op if the value is already set. Prevents double rerenderAllForms
+      // from flipping render back to the original value, which can prevent
+      // actions such as useEffect's from firing
+      if (newId === authState.authId) return;
+      else if (newId === '') {
         // [Hosted Login] Cleanup if user is logged out. Necessary if user was
         // logged out on another domain, but appropriate logic to run in any
         // case.
@@ -121,6 +119,7 @@ const LoginForm = ({
         setShowLoader(false);
         clearStytchDomainCookie();
       }
+
       authState.authId = newId;
       authState._featheryHosted = _featheryHosted;
       hasAuthedRef.current = newId !== '';
@@ -149,7 +148,12 @@ const LoginForm = ({
 
   const onActive = useCallback(
     throttle(
-      () => Auth.idleTimerAction(hasAuthedRef.current, logoutActions),
+      () =>
+        Auth.idleTimerAction(hasAuthedRef.current, () => {
+          hasAuthedRef.current = false;
+          authState.setAuthId('');
+          onLogout();
+        }),
       FIVE_MINUTES_IN_MILLISECONDS,
       { leading: true, trailing: false }
     ),

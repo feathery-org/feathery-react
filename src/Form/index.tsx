@@ -12,7 +12,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'loda... Remove this comment to see the full error message
 import debounce from 'lodash.debounce';
 
-import { calculateStepCSS, isFill } from '../utils/hydration';
+import { calculateStepCSS } from '../utils/hydration';
 import {
   castVal,
   changeStep,

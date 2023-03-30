@@ -1910,21 +1910,21 @@
   resolved "https://registry.yarnpkg.com/@stripe/stripe-js/-/stripe-js-1.35.0.tgz#f809e2e5e0a00f01aa12e8aed0b89d27728c05c0"
   integrity sha512-UIuzpbJqgXCTvJhY/aZYvBtaKdMfQgnIv6kkLlfRJ9smZcC4zoPvq3j7k9wobYI+idHAWP4BRiPnqA8lvzJCtg==
 
-"@stytch/core@0.5.1":
-  version "0.5.1"
-  resolved "https://registry.yarnpkg.com/@stytch/core/-/core-0.5.1.tgz#658bf9492cc400c5226a5270fd9d00cc4c64152a"
-  integrity sha512-R40mSAgtvgMxyXfzO+UW5GyUBOgeDXSeF4oBEUBw7Tya/TeC3o+DgRDXUvHR9HPJsLJ/94jDMIGQMSZQuDoIDA==
+"@stytch/core@0.8.0":
+  version "0.8.0"
+  resolved "https://registry.yarnpkg.com/@stytch/core/-/core-0.8.0.tgz#b24f46f3e2959b065cf9766c5e693b52340fc3d6"
+  integrity sha512-+0LmOz4AItO+zEU/vSFfkWOSP1IxfRSR5Yjqm/id+HXIvZpAnZ6FQvIgFaulvb2ZBMVzHuzmRSkpljHgrdKDUg==
   dependencies:
     uuid "8.3.2"
 
-"@stytch/vanilla-js@^0.9.3":
-  version "0.9.3"
-  resolved "https://registry.yarnpkg.com/@stytch/vanilla-js/-/vanilla-js-0.9.3.tgz#0088349cfd6bb15a49861924c5e5bd9a94862025"
-  integrity sha512-GhVxMmIK7d7P9q1EeFl9FhpBdRU8GTAZUJlDnPAsksL1Has/KAHGhL4IHhI5V4Ya4tgBWT8KtpW8uD0LrswIVA==
+"@stytch/vanilla-js@0.11.0":
+  version "0.11.0"
+  resolved "https://registry.yarnpkg.com/@stytch/vanilla-js/-/vanilla-js-0.11.0.tgz#6cc85447ad133334c584aecfa51c973026e36d2b"
+  integrity sha512-KpEDl+ACurD0LJGKjZ0ISbvGIG3xR7XwUtxUdaQLcuNLC7fDbC/aLTLIxlq6lOIt8HPN8ZeU455MZFoSfmDzxw==
   dependencies:
     "@github/webauthn-json" "1.0.3"
     "@radix-ui/react-tabs" "0.1.5"
-    "@stytch/core" "0.5.1"
+    "@stytch/core" "0.8.0"
     awesome-phonenumber "3.2.0"
     js-cookie "3.0.1"
     lodash.merge "4.6.2"
