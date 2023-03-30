@@ -1,6 +1,7 @@
 import { StytchHeadlessClient } from '@stytch/vanilla-js/headless';
 import { authState } from '../auth/LoginForm';
 import { getRedirectUrl } from '../auth/internal/utils';
+import { getCookie, getStytchJwt } from '../utils/browser';
 
 let stytchPromise: any = null;
 let config: any = null;
@@ -67,7 +68,7 @@ export function stytchSendSms({ fieldVal }: any) {
 }
 
 // Login with query params from oauth redirect or magic link
-export function stytchLoginOnLoad(featheryClient: any) {
+export async function stytchLoginOnLoad(featheryClient: any) {
   const stytchClient = authState.client;
   // If there is no auth client, no config or auth has already been sent, then return early
   if (!stytchClient || !config || authSent) return;
@@ -84,7 +85,20 @@ export function stytchLoginOnLoad(featheryClient: any) {
 
   // If there is an existing Stytch session when a user returns to an embedded
   // Feathery form, we need to update the auth info from Feathery's side
-  if (stytchSession) return stytchSubmitAuthInfo(featheryClient);
+  if (stytchSession) {
+    try {
+      // [Hosted Login] We only need to validate if the session is valid for hosted forms, as
+      // the session could have been revoked on a different subdomain
+      if (!authState._featheryHosted)
+        return stytchSubmitAuthInfo(featheryClient);
+
+      await authState.client.session.authenticate();
+      return stytchSubmitAuthInfo(featheryClient);
+    } catch (e) {
+      // [Hosted Login] If the session was revoked, we want to reset auth state
+      authState.setAuthId('');
+    }
+  }
   // If there is no existing Stytch session & the stytch query params are
   // present, then attempt auth. If the Stytch query params exist, but a
   // session also exists, then we don't want to execute stytch auth again as
@@ -96,7 +110,10 @@ export function stytchLoginOnLoad(featheryClient: any) {
     return authFn()
       .then(() => stytchSubmitAuthInfo(featheryClient))
       .catch((e: any) =>
-        console.log('Auth failed. Possibly because your magic link expired.', e)
+        console.warn(
+          'Auth failed. Possibly because your magic link expired.',
+          e
+        )
       );
   }
 }
@@ -116,6 +133,41 @@ export function stytchVerifySms({
       stytchPhoneMethodId = '';
       return stytchSubmitAuthInfo(featheryClient);
     });
+}
+
+/**
+ * [Hosted Login] This fn will set the Stytch cookie on the primary site domain.
+ * For example, if a form is hosted at login.feathery.io the default Stytch
+ * cookie will be set to login.feathery.io, so we set the same values for the
+ * domain feathery.io, so that subdomains can be authenticated
+ */
+export function setStytchDomainCookie() {
+  const domainParts = window.location.hostname.split('.');
+  const domain =
+    domainParts.length === 1
+      ? 'localhost'
+      : domainParts.at(-2) + '.' + domainParts.at(-1);
+
+  const commonCookieOptions = `; Domain=${domain}; Path=/; Max-Age=86400; Secure`;
+  document.cookie = `stytch_session_jwt=${getStytchJwt()}${commonCookieOptions}`;
+  document.cookie = `stytch_session=${getCookie(
+    'stytch_session'
+  )}${commonCookieOptions}`;
+}
+
+/**
+ * [Hosted Login] This fn will clear the cookies set by setStytchDomainCookie.
+ * This is needed if the session was revoked on another domain.
+ */
+export function clearStytchDomainCookie() {
+  const domainParts = window.location.hostname.split('.');
+  const domain =
+    domainParts.length === 1
+      ? 'localhost'
+      : domainParts.at(-2) + '.' + domainParts.at(-1);
+
+  document.cookie = `stytch_session_jwt=; Max-Age=-1; Domain=${domain}`;
+  document.cookie = `stytch_session=; Max-Age=-1; Domain=${domain}`;
 }
 
 function stytchSubmitAuthInfo(featheryClient: any): Promise<any> {

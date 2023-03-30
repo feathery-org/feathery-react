@@ -12,7 +12,8 @@ import {
   stytchOauthRedirect,
   stytchSendMagicLink,
   stytchSendSms,
-  stytchVerifySms
+  stytchVerifySms,
+  setStytchDomainCookie
 } from '../../integrations/stytch';
 import Client from '../../utils/client';
 import { isAuthStytch } from './utils';
@@ -85,10 +86,15 @@ function oauthRedirect(oauthType: string) {
 }
 
 function initializeAuthClientListeners() {
-  if (getStytchJwt()) {
+  if (isAuthStytch()) {
+    if (getStytchJwt()) setStytchDomainCookie();
     // When logging in via re-direct we need to set the authId once the user object has initialized
     const unsubUser = authState.client.user.onChange((newUser: any) => {
-      if (newUser) defaultClient.submitAuthInfo({ authId: newUser.user_id });
+      if (newUser) {
+        defaultClient.submitAuthInfo({ authId: newUser.user_id });
+        // [Hosted Login] Once the stytch user has initialized, we need to set the cookie to enable multi-domain SSO
+        setStytchDomainCookie();
+      }
     });
     const unsubSession = authState.client.session.onChange(
       (newSession: any) => !newSession && authState.setAuthId('')

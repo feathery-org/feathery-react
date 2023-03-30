@@ -27,6 +27,7 @@ import {
   getOrigin,
   getPrevStepUrl,
   getServarTypeMap,
+  getUrlHash,
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
@@ -705,13 +706,8 @@ function Form({
 
   useEffect(() => {
     return history.listen(async () => {
-      let hashKey;
-      try {
-        hashKey = decodeURI(location.hash.substr(1));
-        if (hashKey in steps) setStepKey(hashKey);
-      } catch (e) {
-        console.log(e);
-      }
+      const hashKey = getUrlHash();
+      if (hashKey in steps) setStepKey(hashKey);
     });
   }, [steps]);
 

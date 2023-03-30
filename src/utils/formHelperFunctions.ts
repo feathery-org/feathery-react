@@ -420,6 +420,19 @@ export function remountAllForms() {
   Object.values(initInfo().remountCallbacks).forEach((cb) => cb());
 }
 
+/**
+ *
+ * @returns Url hash without the #, or '' if decodeURI fails
+ */
+export function getUrlHash() {
+  try {
+    return decodeURI(location.hash.substr(1));
+  } catch (e) {
+    console.warn(e);
+    return '';
+  }
+}
+
 export function getInitialStep({
   initialStepId,
   steps,
@@ -429,7 +442,7 @@ export function getInitialStep({
   steps: any;
   sessionCurrentStep?: string;
 }) {
-  const hashKey = decodeURI(location.hash.substr(1));
+  const hashKey = getUrlHash();
   return (
     initialStepId ||
     (hashKey && hashKey in steps && hashKey) ||

@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
 import { authState } from '../LoginForm';
-import { setUrlStepHash } from '../../utils/formHelperFunctions';
+import { getUrlHash, setUrlStepHash } from '../../utils/formHelperFunctions';
 import { getAuthIntegrationMetadata } from './utils';
+import { getStytchJwt } from '../../utils/browser';
 
 const useFormAuth = ({
   initialStep,
@@ -66,6 +67,8 @@ const useFormAuth = ({
   const getNextAuthStep = (nextStepCandidate?: any): string => {
     const metadata = getAuthIntegrationMetadata(integrations);
     const authSteps = metadata?.auth_gate_steps ?? [];
+    const hashKey = getUrlHash();
+    const currentStepIsProtected = authSteps.includes(steps[hashKey]?.id);
     const nextStepIsProtected = nextStepCandidate
       ? authSteps.includes(nextStepCandidate.id)
       : false;
@@ -84,7 +87,10 @@ const useFormAuth = ({
     const userAuthed = Boolean(authState.authId);
 
     if (userAuthed && authState.redirectAfterLogin)
-      nextStep = findStepName(metadata.login_step);
+      // If already on a protected step, don't redirect
+      nextStep = currentStepIsProtected
+        ? hashKey
+        : findStepName(metadata.login_step);
     else if (!userAuthed && nextStepIsProtected)
       nextStep = findStepName(metadata.logout_step);
 
