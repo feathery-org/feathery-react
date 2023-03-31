@@ -3,6 +3,7 @@ import { FieldOptions } from './formHelperFunctions';
 type InternalState = {
   [formUuid: string]: {
     currentStep: any;
+    visibleElements: any;
     client: any;
     formName: string;
     formRef: React.MutableRefObject<any>;

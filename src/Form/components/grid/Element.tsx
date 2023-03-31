@@ -10,9 +10,8 @@ import {
   clearFilePathMapEntry
 } from '../../../utils/formHelperFunctions';
 import { isObjectEmpty, stringifyWithNull } from '../../../utils/primitives';
-import { shouldElementHide } from '../../../utils/hideIfs';
 import { isFieldValueEmpty } from '../../../utils/validation';
-import { justRemove } from '../../../utils/array';
+import { justInsert, justRemove } from '../../../utils/array';
 import { fieldValues } from '../../../utils/init';
 import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 
@@ -24,7 +23,57 @@ const mapFieldTypes = new Set([
   'gmap_zip'
 ]);
 
-const Cell = ({ node: el, form, flags }: any) => {
+const handleOtherStateChange = (
+  oldOtherVal: any,
+  e: any,
+  updateFieldValues: any
+) => {
+  const target = e.target;
+  const curOtherVal = target.value;
+  let curFieldVal = fieldValues[target.id];
+  if (Array.isArray(curFieldVal)) {
+    // @ts-expect-error TS(2349): This expression is not callable.
+    curFieldVal = curFieldVal.filter(
+      (val: any) => val !== oldOtherVal || (!val && !oldOtherVal)
+    );
+    if (curOtherVal) {
+      (curFieldVal as any).push(curOtherVal);
+    }
+  } else {
+    if (curFieldVal === oldOtherVal) curFieldVal = curOtherVal;
+  }
+  updateFieldValues({ [target.id]: curFieldVal });
+};
+
+const handleCheckboxGroupChange = (
+  e: any,
+  servarKey: any,
+  step: any,
+  updateFieldValues: any
+) => {
+  const target = e.target;
+  const opt = target.name;
+  step.servar_fields.forEach((field: any) => {
+    const servar = field.servar;
+    if (servar.key !== servarKey) return;
+
+    const fieldValue = getFieldValue(field);
+    const { value } = fieldValue;
+    const newValue = target.checked
+      ? [...value, opt]
+      : value.filter((v: any) => v !== opt);
+    if (fieldValue.repeated) {
+      const { valueList, index } = fieldValue;
+      updateFieldValues({
+        [servar.key]: justInsert(valueList, newValue, index)
+      });
+    } else {
+      updateFieldValues({ [servar.key]: newValue });
+    }
+  });
+};
+
+const Element = ({ node: el, form, flags }: any) => {
   const { type } = el;
 
   const {
@@ -43,8 +92,6 @@ const Cell = ({ node: el, form, flags }: any) => {
     repeatTriggerExists,
     changeValue,
     updateFieldValues,
-    handleCheckboxGroupChange,
-    handleOtherStateChange,
     setGMapBlurKey,
     elementOnView,
     onViewElements,
@@ -52,11 +99,9 @@ const Cell = ({ node: el, form, flags }: any) => {
     formRef,
     focusRef,
     steps,
-    setCardElement
+    setCardElement,
+    visibleElements
   } = form;
-
-  const shouldHide = shouldElementHide({ element: el });
-  if (shouldHide) return null;
 
   const inlineError =
     formSettings.errorType === 'inline' && getInlineError(el, inlineErrors);
@@ -104,20 +149,15 @@ const Cell = ({ node: el, form, flags }: any) => {
   else if (type === 'button') {
     let disabled = false;
     if (el.properties.disable_if_fields_incomplete) {
-      const fieldsMissingValue = activeStep.servar_fields
-        .filter(
-          (field: any) =>
-            !shouldElementHide({
-              element: field
-            })
-        )
-        .some((field: any) => {
+      const fieldsMissingValue = visibleElements.servar_fields.some(
+        (field: any) => {
           if (isFieldActuallyRequired(field, repeatTriggerExists)) {
             const servar = field.servar;
             return isFieldValueEmpty(fieldValues[servar.key], servar);
           }
           return false;
-        });
+        }
+      );
       const storeFieldButtons = activeStep.buttons.filter(
         ({ properties }: any) =>
           properties.actions.some(
@@ -308,11 +348,16 @@ const Cell = ({ node: el, form, flags }: any) => {
             fieldVal={fieldVal}
             otherVal={otherVal}
             onChange={(e: any) => {
-              handleCheckboxGroupChange(e, servar.key);
+              handleCheckboxGroupChange(
+                e,
+                servar.key,
+                activeStep,
+                updateFieldValues
+              );
               onChange();
             }}
             onOtherChange={(e: any) => {
-              handleOtherStateChange(otherVal)(e);
+              handleOtherStateChange(otherVal, e, updateFieldValues);
               onChange();
             }}
           />
@@ -329,7 +374,7 @@ const Cell = ({ node: el, form, flags }: any) => {
               onChange({ submitData: autosubmit && val });
             }}
             onOtherChange={(e: any) => {
-              handleOtherStateChange(otherVal)(e);
+              handleOtherStateChange(otherVal, e, updateFieldValues);
               onChange({ submitData: autosubmit && e.target.value });
             }}
           />
@@ -498,4 +543,4 @@ const Cell = ({ node: el, form, flags }: any) => {
   return null;
 };
 
-export default Cell;
+export default Element;

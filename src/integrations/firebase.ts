@@ -2,7 +2,6 @@ import { dynamicImport } from './utils';
 import { updateSessionValues } from '../utils/formHelperFunctions';
 import { authState } from '../auth/LoginForm';
 import { useEffect } from 'react';
-import { shouldElementHide } from '../utils/hideIfs';
 import { ACTION_SEND_SMS } from '../utils/elementActions';
 import { deleteCookie, getCookie, setCookie } from '../utils/browser';
 
@@ -179,18 +178,12 @@ export function isHrefFirebaseMagicLink(): boolean {
   return authState.client.auth().isSignInWithEmailLink(window.location.href);
 }
 
-export function useFirebaseRecaptcha(activeStep: any) {
+export function useFirebaseRecaptcha(id: any, visibleElements: any) {
   // Logic to run on each step once firebase is loaded
   useEffect(() => {
-    if (!activeStep || !global.firebase) return;
+    if (!visibleElements || !global.firebase) return;
 
-    const renderedButtons = activeStep.buttons.filter(
-      (element: any) =>
-        !shouldElementHide({
-          element: element
-        })
-    );
-    const smsButton = renderedButtons.find((b: any) =>
+    const smsButton = visibleElements.buttons.find((b: any) =>
       b.properties.actions.some(
         (action: any) => action.type === ACTION_SEND_SMS
       )
@@ -203,7 +196,7 @@ export function useFirebaseRecaptcha(activeStep: any) {
           size: 'invisible'
         });
     }
-  }, [activeStep?.id]);
+  }, [id]);
 }
 
 const OAUTH_PROVIDER_MAP = {

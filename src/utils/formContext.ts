@@ -43,14 +43,14 @@ export const getFormContext = (formUuid: string) => ({
   },
   validateStep: (showErrors = true) => {
     const {
-      currentStep,
+      visibleElements,
       formRef,
       formSettings,
       getErrorCallback,
       setInlineErrors
     } = internalState[formUuid];
     const { errors } = validateElements({
-      elements: [...currentStep.servar_fields, ...currentStep.buttons],
+      visibleElements,
       triggerErrors: showErrors,
       errorType: formSettings.errorType,
       formRef: formRef,

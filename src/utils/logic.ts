@@ -78,7 +78,7 @@ const valueTypeIsField = (v: ValueType): v is FieldValueType =>
 
 const evalComparisonRule = (
   rule: ResolvedComparisonRule,
-  repeatIndex?: number
+  repeatIndex?: number | undefined
 ): boolean => {
   // flatten the right side values/fields into flat list of values
   const flatValues = rule.values.flatMap((value) => {
