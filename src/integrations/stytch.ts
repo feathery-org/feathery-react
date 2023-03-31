@@ -148,7 +148,7 @@ export function setStytchDomainCookie() {
       ? 'localhost'
       : domainParts.at(-2) + '.' + domainParts.at(-1);
 
-  const commonCookieOptions = `; Domain=${domain}; Path=/; Max-Age=86400; Secure`;
+  const commonCookieOptions = `; Domain=${domain}; Path=/; Max-Age=86400; SameSite=Lax; Secure`;
   document.cookie = `stytch_session_jwt=${getStytchJwt()}${commonCookieOptions}`;
   document.cookie = `stytch_session=${getCookie(
     'stytch_session'
