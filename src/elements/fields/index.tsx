@@ -161,42 +161,42 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'button_group':
       styles.addTargets('img', 'label');
-      styles.apply('fc', 'vertical_alignment', (a: any) => ({
-        alignItems: a
+      styles.apply('fc', 'vertical_align', (a: any) => ({
+        alignItems: a,
+        alignContent: a
       }));
       styles.apply(
         'fc',
-        'horizontal_alignment',
+        'horizontal_align',
         (a: keyof typeof justifyContentTextAlignMap) => ({
           justifyContent: a,
           textAlign: justifyContentTextAlignMap[a]
         })
       );
-      // Cancel out extra margins on the element edges
-      styles.apply(
-        'fc',
-        ['padding_top', 'padding_right', 'padding_bottom', 'padding_left'],
-        (a: any, b: any, c: any, d: any) => {
-          return {
-            margin: `${-a}px ${-b}px ${-c}px ${-d}px`
-          };
-        }
-      );
-      styles.applyHeight('field', '', true);
+      styles.applyWidth('fc', '', true);
+      styles.applyHeight('fc', '', true);
       styles.apply(
         'field',
-        ['width', 'width_unit', 'content_responsive'],
+        ['button_width', 'button_width_unit', 'content_responsive'],
         (a: any, b: any, c: boolean) => ({
-          [c ? 'minWidth' : 'width']: `${a}${b}`
+          [c ? 'minWidth' : 'width']: `${a}${b}`,
+          flex: c ? '1' : ''
+        })
+      );
+      styles.apply(
+        'field',
+        ['button_height', 'button_height_unit', 'content_responsive'],
+        (a: any, b: any, c: boolean) => ({
+          [c ? 'minHeight' : 'height']: `${a}${b}`
         })
       );
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
-      styles.applyPadding('field', '', true);
       styles.applyFlexDirection('field');
       styles.applyContentAlign('field');
       styles.applyTextAlign('label');
+      styles.applyMargin('field', 'button_');
       styles.apply(
         'field',
         [
