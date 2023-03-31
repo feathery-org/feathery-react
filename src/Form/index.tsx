@@ -252,7 +252,7 @@ function Form({
   const prevStepKey = usePrevious(stepKey);
 
   // Set to trigger conditional renders on field value updates, no need to use the value itself
-  const [render, setRender] = useState(false);
+  const [render, setRender] = useState({ v: 1 });
 
   const [loaders, setLoaders] = useState<Record<string, any>>({});
   const clearLoaders = () => setLoaders({});
@@ -308,7 +308,7 @@ function Form({
   // All mount and unmount logic should live here
   useEffect(() => {
     registerRenderCallback(_internalId, 'form', () => {
-      setRender((render) => !render);
+      setRender((render) => ({ ...render }));
     });
     if (formSettings.redirectUrl)
       initState.redirectCallbacks[_internalId] = () => {
@@ -501,7 +501,7 @@ function Form({
   // Debouncing the rerender due to changing values of referenced fields in hide if rules.
   // Need to rate limit re-renders here for performance reasons.
   const debouncedRerender = useCallback(
-    debounce(() => setRender((render) => !render), 500),
+    debounce(() => setRender((render) => ({ ...render })), 500),
     [setRender, render]
   );
 
@@ -527,7 +527,7 @@ function Form({
     // If any fields involved in a hideIf have changed, then rerender if
     // its dependencies have changed. The field that changed needs to immediately
     // rerender if specified, but hideIf rerenders can be debounced
-    if (rerender || empty) setRender((render) => !render);
+    if (rerender || empty) setRender((render) => ({ ...render }));
     else if (hideIfDependenciesChanged) debouncedRerender();
 
     // Only validate on each field change if auto validate is enabled due to prev a submit attempt
