@@ -89,14 +89,15 @@ function initializeAuthClientListeners() {
   if (!authState.client) return;
 
   if (isAuthStytch()) {
-    if (getStytchJwt()) setStytchDomainCookie();
+    if (getStytchJwt() && authState._featheryHosted) setStytchDomainCookie();
+
     const unsubSession = authState.client.session.onChange(
       (newSession: any) => {
         if (newSession) {
           // [Hosted Login] When logging in via re-direct we need to set the authId once the user object has initialized
           defaultClient.submitAuthInfo({ authId: newSession.user_id });
           // [Hosted Login] Once the stytch user has initialized, we need to set the cookie to enable multi-domain SSO
-          setStytchDomainCookie();
+          if (authState._featheryHosted) setStytchDomainCookie();
         } else {
           authState.setAuthId('');
         }
