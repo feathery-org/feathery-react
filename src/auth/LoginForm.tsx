@@ -100,6 +100,8 @@ const LoginForm = ({
       history.replaceState(null, '', loginPath + window.location.search);
     }
 
+    authState._featheryHosted = _featheryHosted;
+
     // Register onLogin cb so it can be called by Client.submitAuthInfo
     authState.onLogin = async () => {
       await onLogin();
@@ -107,11 +109,7 @@ const LoginForm = ({
     };
     authState.onLogout = onLogout;
     authState.setAuthId = (newId: string) => {
-      // No-op if the value is already set. Prevents double rerenderAllForms
-      // from flipping render back to the original value, which can prevent
-      // actions such as useEffect's from firing
-      if (newId === authState.authId) return;
-      else if (newId === '') {
+      if (newId === '') {
         // [Hosted Login] Cleanup if user is logged out. Necessary if user was
         // logged out on another domain, but appropriate logic to run in any
         // case.
@@ -121,7 +119,6 @@ const LoginForm = ({
       }
 
       authState.authId = newId;
-      authState._featheryHosted = _featheryHosted;
       hasAuthedRef.current = newId !== '';
       // Execute render callbacks after setting authId, so that form navigation can be evaluated again
       rerenderAllForms();
