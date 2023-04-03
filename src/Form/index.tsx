@@ -37,7 +37,10 @@ import {
   setUrlStepHash,
   updateStepFieldOptions
 } from '../utils/formHelperFunctions';
-import { getHideIfReferences, getVisibleElements } from '../utils/hideIfs';
+import {
+  getHideIfReferences,
+  getVisiblePositions
+} from '../utils/hideAndRepeats';
 import { validators, validateElements } from '../utils/validation';
 import { initState, fieldValues, FieldValues } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
@@ -58,7 +61,7 @@ import { openTab, runningInClient } from '../utils/browser';
 import FormOff from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
-import Grid from './components/grid';
+import Grid from './grid';
 import { mobileBreakpointValue } from '../elements/styles';
 import {
   ContextOnChange,
@@ -270,11 +273,11 @@ function Form({
     );
   }, [loaders]);
 
-  const visibleElements = useMemo(
-    () => (activeStep ? getVisibleElements(activeStep) : null),
+  const visiblePositions = useMemo(
+    () => (activeStep ? getVisiblePositions(activeStep) : null),
     [activeStep, render]
   );
-  useFirebaseRecaptcha(activeStep?.id, visibleElements);
+  useFirebaseRecaptcha(activeStep, visiblePositions);
   const getNextAuthStep = useFormAuth({
     initialStep: getInitialStep({ initialStepId, steps }),
     integrations,
@@ -294,17 +297,6 @@ function Form({
   // Tracks if the form has redirected
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
-
-  // Determine if there is a field with a custom repeat_trigger configuration anywhere in the step
-  const repeatTriggerExists = useMemo(
-    () =>
-      activeStep
-        ? activeStep.servar_fields.some(
-            (field: any) => field.servar.repeat_trigger
-          )
-        : false,
-    [activeStep]
-  );
 
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
@@ -490,9 +482,10 @@ function Form({
   const debouncedValidate = useCallback(
     debounce((setInlineErrors: any) => {
       // default form validation
-      visibleElements &&
+      visiblePositions &&
         validateElements({
-          visibleElements,
+          step: activeStep,
+          visiblePositions,
           triggerErrors: true,
           errorType: formSettings.errorType,
           formRef,
@@ -589,7 +582,7 @@ function Form({
 
     internalState[_internalId] = {
       currentStep: newStep,
-      visibleElements,
+      visiblePositions,
       client,
       formName,
       formRef,
@@ -801,7 +794,11 @@ function Form({
     nextStepKey(activeStep.next_conditions, metadata);
 
   const submitStep = async ({ metadata, repeat = 0 }: any) => {
-    const formattedFields = formatStepFields(visibleElements, false);
+    const formattedFields = formatStepFields(
+      activeStep,
+      visiblePositions,
+      false
+    );
     const trigger = lookUpTrigger(
       activeStep,
       metadata.elementIDs[0],
@@ -950,7 +947,8 @@ function Form({
     });
     // validate all step fields and buttons.  Must be valid before payment.
     const { invalid, inlineErrors: newInlineErrors } = validateElements({
-      visibleElements,
+      step: activeStep,
+      visiblePositions,
       triggerErrors: true,
       errorType: formSettings.errorType,
       formRef,
@@ -970,7 +968,6 @@ function Form({
         : 'container',
       servar: pm ? pm.servar : null,
       client,
-      formattedFields: formatStepFields(activeStep, false),
       updateFieldValues,
       integrationData: integrations?.stripe,
       targetElement: pm ? getCardElement(pm.servar.key) : null
@@ -1148,7 +1145,8 @@ function Form({
       const trigger = lookUpTrigger(activeStep, element.id, elementType);
       // run default form validation
       const { invalid } = validateElements({
-        visibleElements,
+        step: activeStep,
+        visiblePositions,
         triggerErrors: true,
         errorType: formSettings.errorType,
         formRef,
@@ -1409,7 +1407,6 @@ function Form({
     fieldOnChange,
     inlineErrors,
     setInlineErrors,
-    repeatTriggerExists,
     changeValue,
     updateFieldValues,
     setGMapBlurKey,
@@ -1420,7 +1417,7 @@ function Form({
     formRef,
     steps,
     setCardElement,
-    visibleElements
+    visiblePositions
   };
 
   let completeState;
@@ -1528,10 +1525,8 @@ export function JSForm({
   // Check client for NextJS support
   if (formName && runningInClient())
     return (
-      /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */
       /* @ts-ignore */
       <BrowserRouter>
-        {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
         {/* @ts-ignore */}
         <Route path='/'>
           <Form

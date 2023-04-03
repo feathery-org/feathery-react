@@ -1,4 +1,4 @@
-import { shouldElementHide } from '../hideIfs';
+import { shouldElementHide } from '../hideAndRepeats';
 import { fieldValues } from '../init';
 
 describe('shouldElementHide', () => {

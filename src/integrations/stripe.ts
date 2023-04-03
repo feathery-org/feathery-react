@@ -99,7 +99,7 @@ async function syncStripeFieldChanges(
 }
 
 /**
- * Used to setup a payment method.
+ * Used to set up a payment method.
  */
 export async function setupPaymentMethod(
   {
@@ -147,11 +147,13 @@ export async function setupPaymentMethod(
         updateFieldValues({
           [servar.key]: paymentMethodData
         });
-        formattedFields[servar.key] = {
-          value: paymentMethodData,
-          type: servar.type,
-          displayText: servar.name
-        };
+        if (formattedFields) {
+          formattedFields[servar.key] = {
+            value: paymentMethodData,
+            type: servar.type,
+            displayText: servar.name
+          };
+        }
       }
     } catch (e) {
       return {

@@ -4,6 +4,7 @@ import { authState } from '../auth/LoginForm';
 import { useEffect } from 'react';
 import { ACTION_SEND_SMS } from '../utils/elementActions';
 import { deleteCookie, getCookie, setCookie } from '../utils/browser';
+import { getVisibleElements } from '../utils/hideAndRepeats';
 
 let firebasePromise: any = null;
 
@@ -178,13 +179,15 @@ export function isHrefFirebaseMagicLink(): boolean {
   return authState.client.auth().isSignInWithEmailLink(window.location.href);
 }
 
-export function useFirebaseRecaptcha(id: any, visibleElements: any) {
+export function useFirebaseRecaptcha(step: any, visiblePositions: any) {
   // Logic to run on each step once firebase is loaded
   useEffect(() => {
-    if (!visibleElements || !global.firebase) return;
+    if (!step || !global.firebase) return;
 
-    const smsButton = visibleElements.buttons.find((b: any) =>
-      b.properties.actions.some(
+    const smsButton = getVisibleElements(step, visiblePositions, [
+      'buttons'
+    ]).find(({ element }: any) =>
+      element.properties.actions.some(
         (action: any) => action.type === ACTION_SEND_SMS
       )
     );
@@ -196,7 +199,7 @@ export function useFirebaseRecaptcha(id: any, visibleElements: any) {
           size: 'invisible'
         });
     }
-  }, [id]);
+  }, [step?.id]);
 }
 
 const OAUTH_PROVIDER_MAP = {
