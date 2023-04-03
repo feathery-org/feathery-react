@@ -49,7 +49,7 @@ function reshapeHideIfs(hideIfs: any): ResolvedComparisonRule[][] {
 /**
  * Determines if the provided element should be hidden based on its "hide-if" rules.
  */
-function shouldElementHide({ element }: { element: any }) {
+function shouldElementHide(element: any) {
   const reshapedHideIfs = reshapeHideIfs(element.hide_ifs ?? []);
 
   return reshapedHideIfs.some((hideIfRules: ResolvedComparisonRule[]) =>
@@ -57,4 +57,63 @@ function shouldElementHide({ element }: { element: any }) {
   );
 }
 
-export { shouldElementHide, getHideIfReferences };
+const stepElementTypes = [
+  'subgrids',
+  'texts',
+  'buttons',
+  'servar_fields',
+  'progress_bars',
+  'images',
+  'videos'
+];
+
+const getPositionKey = (node: any) => {
+  if (!node.position) return null;
+  return node.position.join(',') || 'root';
+};
+
+function getVisibleElements(step: any) {
+  const visibleElements: Record<string, any> = {
+    subgrids: {},
+    positions: new Set()
+  };
+  const toIgnore: string[] = [];
+  step.subgrids.forEach((subgrid: any) => {
+    const gridKey = getPositionKey(subgrid);
+    if (shouldElementHide(subgrid)) toIgnore.push(gridKey);
+    else {
+      visibleElements.subgrids[gridKey] = subgrid;
+      visibleElements.positions.add(gridKey);
+    }
+  });
+  stepElementTypes.forEach((type) => {
+    if (type === 'subgrids') return;
+
+    visibleElements[type] = step[type].filter((el: any) => {
+      const elKey = getPositionKey(el);
+      if (
+        toIgnore.some((key: string) => elKey.startsWith(key)) ||
+        shouldElementHide(el)
+      ) {
+        // Element or one of its parent containers is hidden
+        visibleElements.positions.delete(elKey);
+        return false;
+      }
+
+      if (shouldElementHide(el)) return false;
+      else {
+        visibleElements.positions.add(elKey);
+        return true;
+      }
+    });
+  });
+  return visibleElements;
+}
+
+export {
+  shouldElementHide,
+  getHideIfReferences,
+  getVisibleElements,
+  stepElementTypes,
+  getPositionKey
+};

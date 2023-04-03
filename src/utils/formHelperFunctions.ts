@@ -2,7 +2,6 @@ import getRandomBoolean from './random';
 import { fieldValues, filePathMap, initInfo, initState } from './init';
 import { toBase64 } from './image';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
-import { shouldElementHide } from './hideIfs';
 
 /**
  *
@@ -10,25 +9,15 @@ import { shouldElementHide } from './hideIfs';
  * @param {boolean} forUser indicate whether the result of this function is
  * meant for the user, or Feathery's BE. Presently the only difference is
  * whether signature field values are base64 or a JS File obj
- * @param {boolean} onlyVisibleFields if true, only includes fields that are
  * visible to user as determined by the hide if rules
  * @returns Formatted fields for the step
  */
-export const formatStepFields = (
-  step: any,
-  forUser: boolean,
-  onlyVisibleFields: boolean
-) => {
+export const formatStepFields = (step: any, forUser: boolean) => {
   const formattedFields: Record<
     string,
     { value: any; type: string; displayText: string }
   > = {};
-  let fields = step.servar_fields;
-  if (onlyVisibleFields)
-    fields = fields.filter(
-      (servar: any) => !shouldElementHide({ element: servar })
-    );
-  fields.forEach((field: any) => {
+  step.servar_fields.forEach((field: any) => {
     const servar = field.servar;
     let value;
     // Only use base64 for signature if these values will be presented to the user
@@ -51,7 +40,7 @@ export const formatStepFields = (
 export const formatAllFormFields = (steps: any, forUser = false) => {
   let formattedFields = {};
   Object.values(steps).forEach((step) => {
-    const stepFields = formatStepFields(step, forUser, false);
+    const stepFields = formatStepFields(step, forUser);
     formattedFields = { ...formattedFields, ...stepFields };
   });
   return formattedFields;
@@ -122,7 +111,8 @@ export const getAllElements = (step: any) => {
     ...step.videos.map((e: any) => [e, 'video']),
     ...step.texts.map((e: any) => [e, 'text']),
     ...step.buttons.map((e: any) => [e, 'button']),
-    ...step.servar_fields.map((e: any) => [e, 'field'])
+    ...step.servar_fields.map((e: any) => [e, 'field']),
+    ...step.subgrids.map((e: any) => [e, 'subgrid'])
   ];
 };
 

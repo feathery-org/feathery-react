@@ -10,7 +10,7 @@ describe('shouldElementHide', () => {
     field_id: 'dont care',
     field_key: fieldKeyRight
   };
-  const element = (...fieldValues) => ({
+  const element = (...fieldValues: any[]) => ({
     hide_ifs: [
       {
         field_type: 'servar',
@@ -23,10 +23,10 @@ describe('shouldElementHide', () => {
       }
     ]
   });
-  const newFieldValues = (...values) => ({
+  const newFieldValues = (...values: any[]) => ({
     [fieldKey]: values.length > 1 ? [...values] : values[0]
   });
-  const fieldValuesLR = (valuesLeft, valuesRight) => ({
+  const fieldValuesLR = (valuesLeft: any, valuesRight: any) => ({
     [fieldKey]: valuesLeft.length > 1 ? [...valuesLeft] : valuesLeft[0],
     [fieldKeyRight]: valuesRight.length > 1 ? [...valuesRight] : valuesRight[0]
   });
@@ -34,41 +34,23 @@ describe('shouldElementHide', () => {
   it('test various element hide rules', () => {
     Object.assign(fieldValues, newFieldValues(testValue));
 
+    expect(shouldElementHide(element(testValue))).toBeTruthy();
     expect(
-      shouldElementHide({
-        element: element(testValue)
-      })
-    ).toBeTruthy();
-    expect(
-      shouldElementHide({
-        element: element(testValue, 'blaa') // more than one value - only need to match one
-      })
+      shouldElementHide(element(testValue, 'blaa')) // more than one value - only need to match one
     ).toBeTruthy();
 
     Object.assign(fieldValues, newFieldValues('non-matching value'));
 
-    expect(
-      shouldElementHide({
-        element: element(testValue)
-      })
-    ).toBeFalsy();
+    expect(shouldElementHide(element(testValue))).toBeFalsy();
   });
   it('test various element field-field hide rules', () => {
     Object.assign(fieldValues, fieldValuesLR([testValue], [testValue]));
-    expect(
-      shouldElementHide({
-        element: element(testRightSideField)
-      })
-    ).toBeTruthy();
+    expect(shouldElementHide(element(testRightSideField))).toBeTruthy();
 
     Object.assign(
       fieldValues,
       fieldValuesLR([testValue], ['non-matching value'])
     );
-    expect(
-      shouldElementHide({
-        element: element(testRightSideField)
-      })
-    ).toBeFalsy();
+    expect(shouldElementHide(element(testRightSideField))).toBeFalsy();
   });
 });

@@ -1,11 +1,11 @@
 import React from 'react';
-import Cell from './Cell';
+import Element from './Element';
 import ResponsiveStyles from '../../../elements/styles';
 import { getDefaultFieldValue } from '../../../utils/formHelperFunctions';
 import { fieldValues } from '../../../utils/init';
 import { TEXT_VARIABLE_PATTERN } from '../../../elements/components/TextNodes';
 import { FIT, isFill, isFit, isPx, getPxValue } from '../../../utils/hydration';
-import { shouldElementHide } from '../../../utils/hideIfs';
+import { getPositionKey, stepElementTypes } from '../../../utils/hideIfs';
 
 const DEFAULT_MIN_SIZE = 50;
 const DEFAULT_MIN_FILL_SIZE = 10;
@@ -13,7 +13,8 @@ const DEFAULT_MIN_FILL_SIZE = 10;
 const Grid = ({ step, form, viewport }: any) => {
   const formattedStep: any = formatStep(
     JSON.parse(JSON.stringify(step)),
-    viewport
+    viewport,
+    form.visibleElements
   );
 
   const repeatPosition =
@@ -23,7 +24,7 @@ const Grid = ({ step, form, viewport }: any) => {
 
   if (Array.isArray(repeatPosition) && repeatPosition.length > 0) {
     const repeatNode =
-      formattedStep.map[getMapKey({ position: repeatPosition })];
+      formattedStep.map[getPositionKey({ position: repeatPosition })];
     if (repeatNode) addRepeatedCells(repeatNode);
   }
 
@@ -44,41 +45,36 @@ const Subgrid = ({
   viewport = 'desktop',
   flags
 }: any) => {
-  const containerProps = {
-    key: getMapKey(node),
-    node,
-    axis,
-    viewport
-  };
   if (node.isElement) {
+    const styles = getElementContainerStyle(node, axis);
     return (
-      <ElementContainer {...containerProps}>
-        <Cell form={form} node={node} flags={flags} />
-      </ElementContainer>
+      <div css={styles} key={getPositionKey(node)}>
+        <Element form={form} node={node} flags={flags} />
+      </div>
     );
   } else {
     const { customClickSelectionState, runElementActions } = form;
     const containerId = node.properties?.callback_id ?? '';
     const customComponent = form.customComponents[containerId];
 
-    const children: any[] = (node.children || []).map((child: any, i: any) => {
-      axis = node.axis;
-      return (
-        <Subgrid
-          key={getMapKey(child) + ':' + i}
-          tree={child}
-          axis={axis}
-          form={form}
-          viewport={viewport}
-          flags={flags}
-        />
-      );
-    });
+    const children: any[] = (node.children || []).map((child: any, i: any) => (
+      <Subgrid
+        key={getPositionKey(child) + ':' + i}
+        tree={child}
+        axis={node.axis}
+        form={form}
+        viewport={viewport}
+        flags={flags}
+      />
+    ));
     if (customComponent) children.push(customComponent);
 
     return (
       <CellContainer
-        {...containerProps}
+        key={getPositionKey(node)}
+        node={node}
+        axis={axis}
+        viewport={viewport}
         selected={customClickSelectionState({
           id: node.key,
           properties: node.properties
@@ -135,7 +131,6 @@ const getCellContainerStyle = (
   // Apply axis styles
   styles.flexDirection = trackAxis;
 
-  const isEmpty = node.isEmpty;
   const nodeWidth = node.width;
   const nodeHeight = node.height;
   const isAligned =
@@ -143,7 +138,6 @@ const getCellContainerStyle = (
 
   // Used for "Fit" parents of purely px-width children cells
   const pxWidthChildren =
-    !isEmpty &&
     node.children &&
     node.axis === 'column' &&
     node.children.every((child: any) => !child.isElement && isPx(child.width));
@@ -163,46 +157,34 @@ const getCellContainerStyle = (
   }
 
   if (isFit(nodeWidth)) {
-    styles.maxWidth = `${DEFAULT_MIN_SIZE}px`;
+    if (trackAxis === 'column') styles.flexBasis = '100%';
 
-    if (!isEmpty) {
-      if (trackAxis === 'column') {
-        styles.flexBasis = '100%';
-      }
+    styles.width = 'fit-content !important';
+    styles.maxWidth = 'fit-content';
+    styles.minWidth = 'min-content';
 
-      styles.width = 'fit-content !important';
-      styles.maxWidth = 'fit-content';
-      styles.minWidth = 'min-content';
+    // TODO: This is not ideal. This is calculating the px width of all px children (every child is px)
+    // and setting that to the max width of fit parents. Ideally it should allow the children to grow to this size without
+    // calculating the px size of children.
+    if (pxWidthChildren) {
+      const pxValueOfChildren = node.children.reduce(
+        (pxValue: number, child: any) => {
+          return pxValue + getPxValue(child.width);
+        },
+        0
+      );
 
-      // TODO: This is not ideal. This is calculating the px width of all px children (every child is px)
-      // and setting that to the max width of fit parents. Ideally it should allow the children to grow to this size without
-      // calculating the px size of children.
-      if (pxWidthChildren) {
-        const pxValueOfChildren = node.children.reduce(
-          (pxValue: number, child: any) => {
-            return pxValue + getPxValue(child.width);
-          },
-          0
-        );
-
-        styles.maxWidth = `${pxValueOfChildren}px`;
-      }
+      styles.maxWidth = `${pxValueOfChildren}px`;
     }
   } else if (isFill(nodeWidth)) {
     if (!isAligned) styles.alignSelf = 'stretch';
     styles.width = 'auto';
-    styles.minWidth = `${DEFAULT_MIN_FILL_SIZE}px`;
+    styles.minWidth = 'min-content';
 
     if (trackAxis === 'column') {
       styles.flexGrow = 1;
       styles.flexShrink = 0;
-    } else {
-      styles.width = '100%';
-    }
-
-    if (!isEmpty) {
-      styles.minWidth = 'min-content';
-    }
+    } else styles.width = '100%';
   }
 
   /**
@@ -216,13 +198,9 @@ const getCellContainerStyle = (
 
     styles.maxHeight = nodeHeight;
   } else if (isFit(nodeHeight)) {
-    styles.maxHeight = `${DEFAULT_MIN_SIZE}px`;
-
-    if (!isEmpty) {
-      styles.height = 'fit-content !important';
-      styles.maxHeight = 'fit-content';
-      styles.minHeight = 'min-content';
-    }
+    styles.height = 'fit-content !important';
+    styles.maxHeight = 'fit-content';
+    styles.minHeight = 'min-content';
   } else if (isFill(nodeHeight)) {
     if (!isAligned) styles.alignSelf = 'stretch';
     styles.height = 'auto';
@@ -237,9 +215,7 @@ const getCellContainerStyle = (
       styles.height = '100%';
     }
 
-    if (!isEmpty && node.parent) {
-      styles.minHeight = 'min-content';
-    }
+    if (node.parent) styles.minHeight = 'min-content';
   }
 
   const alignDirection = trackAxis === 'row' ? 'justifySelf' : 'alignSelf';
@@ -384,14 +360,6 @@ const getElementContainerStyle = (node: any, trackAxis: string) => {
   return { ...styles, ...rs.getTarget('container') };
 };
 
-const ElementContainer = ({ children, node, axis }: any) => {
-  // Prevent rendering the container if the element is supposed to be hidden
-  if (shouldElementHide({ element: node })) return null;
-
-  const styles = getElementContainerStyle(node, axis);
-  return <div css={styles}>{children}</div>;
-};
-
 const CellContainer = ({
   children,
   node,
@@ -497,18 +465,13 @@ const GridContainer = ({ children, node }: any) => {
   );
 };
 
-const formatStep = (step: any, viewport: string) => {
+const formatStep = (step: any, viewport: string, visibleElements: any) => {
   step = convertStepToViewport(JSON.parse(JSON.stringify(step)), viewport);
 
   const map = buildGridMap(step);
-  const tree = buildGridTree(map, [], viewport);
+  const tree = buildGridTree(map, [], visibleElements);
 
   return { map, tree };
-};
-
-const getMapKey = (node: any) => {
-  if (!node.position) return null;
-  return node.position.join(',') || 'root';
 };
 
 // TODO use getAllElements
@@ -521,21 +484,11 @@ const typeMap = {
   videos: 'video'
 };
 
-const fields = [
-  'subgrids',
-  'texts',
-  'buttons',
-  'servar_fields',
-  'progress_bars',
-  'images',
-  'videos'
-];
-
 const convertStepToViewport = (step: any, viewport: any) => {
-  fields.forEach((field) => {
-    step[field].forEach((obj: any, i: any) => {
-      step[field][i] =
-        field === 'subgrids'
+  stepElementTypes.forEach((type) => {
+    step[type].forEach((obj: any, i: any) => {
+      step[type][i] =
+        type === 'subgrids'
           ? convertToViewport(obj, viewport, viewportProperties.subgrids)
           : convertToViewport(obj, viewport, viewportProperties.elements);
     });
@@ -566,7 +519,6 @@ const convertToViewport = (obj: any, viewport: any, props: any) => {
 const buildGridMap = (step: any) => {
   const map: any[string] = {};
   let rootSubgrid = {};
-  const cells: any = [];
 
   const addObjectsToMap = (obj: any, type: any) => {
     // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
@@ -581,7 +533,7 @@ const buildGridMap = (step: any) => {
       }
     }
 
-    const previous = map[getMapKey(obj)];
+    const previous = map[getPositionKey(obj)];
     const prevObj: any = {};
     if (previous) {
       prevObj.width = previous.width;
@@ -593,25 +545,12 @@ const buildGridMap = (step: any) => {
       prevObj.isElement = true;
     }
 
-    map[getMapKey(obj)] = { ...obj, ...prevObj };
+    map[getPositionKey(obj)] = { ...obj, ...prevObj };
   };
 
-  fields.forEach((field) =>
-    step[field]?.forEach((obj: any) => addObjectsToMap(obj, field))
+  stepElementTypes.forEach((type) =>
+    step[type]?.forEach((obj: any) => addObjectsToMap(obj, type))
   );
-
-  if (cells) {
-    // @ts-expect-error TS(7006): Parameter 'cell' implicitly has an 'any' type.
-    cells.forEach((cell) => {
-      const key = getMapKey(cell);
-
-      if (!map[key]) {
-        map[key] = { isEmpty: true, position: cell.position };
-      }
-
-      map[key].cellData = cell;
-    });
-  }
 
   (map as any).root = { step, ...rootSubgrid };
 
@@ -733,26 +672,35 @@ const repeatCount = (node: any) => {
   return Math.max(repeatCountByFields(node), repeatCountByTextVariables(node));
 };
 
-const buildGridTree = (gridMap: any, position: any[] = [], viewport: any) => {
-  const node = gridMap[getMapKey({ position })];
-  if (!node) return { isEmpty: true, position };
+const buildGridTree = (
+  gridMap: any,
+  position: any[] = [],
+  visibleElements: any
+) => {
+  const positionKey = getPositionKey({ position });
+  const node = gridMap[positionKey];
+  if (!node || !visibleElements.positions.has(positionKey)) return;
 
   let i = 0;
   let nextPos = [...position, i];
-  let hasNextChild = gridMap[getMapKey({ position: nextPos })];
+  let hasNextChild = gridMap[getPositionKey({ position: nextPos })];
 
-  if (hasNextChild) {
-    node.children = [];
-  }
+  if (hasNextChild) node.children = [];
 
   while (hasNextChild) {
-    const actualChild = buildGridTree(gridMap, [...position, i], viewport);
-    actualChild.parent = node;
-    node.children.push(actualChild);
+    const actualChild = buildGridTree(
+      gridMap,
+      [...position, i],
+      visibleElements
+    );
+    if (actualChild) {
+      actualChild.parent = node;
+      node.children.push(actualChild);
+    }
 
     i = i + 1;
     nextPos = [...position, i];
-    hasNextChild = gridMap[getMapKey({ position: nextPos })];
+    hasNextChild = gridMap[getPositionKey({ position: nextPos })];
   }
 
   return node;

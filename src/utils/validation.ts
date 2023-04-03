@@ -1,6 +1,5 @@
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { setFormElementError } from './formHelperFunctions';
-import { shouldElementHide } from './hideIfs';
 import { dynamicImport } from '../integrations/utils';
 import React from 'react';
 import { fieldValues, initInfo } from './init';
@@ -14,14 +13,14 @@ export interface ResolvedCustomValidation {
  * Validate elements on a form
  */
 function validateElements({
-  elements,
+  visibleElements,
   triggerErrors,
   errorType,
   formRef,
   errorCallback = () => {},
   setInlineErrors
 }: {
-  elements: any[];
+  visibleElements: any;
   triggerErrors: boolean;
   errorType: string;
   formRef: React.MutableRefObject<any>;
@@ -33,34 +32,34 @@ function validateElements({
   invalid: boolean;
 } {
   const inlineErrors = {};
-  const errors = elements
-    // Skip validation on hidden elements
-    .filter((element: any) => !shouldElementHide({ element }))
-    .reduce((errors: any, element: any) => {
-      let key, type;
-      if (element.servar) {
-        type = element.servar.type;
-        key = element.servar.key;
-      } else {
-        // if not a servar, then a button
-        type = 'button';
-        key = element.id;
-      }
-      const message = validateElement(element);
-      errors[key] = message;
-      if (triggerErrors) {
-        setFormElementError({
-          formRef,
-          errorCallback,
-          fieldKey: key,
-          message,
-          errorType: errorType,
-          servarType: type,
-          inlineErrors
-        });
-      }
-      return errors;
-    }, {});
+  const errors = [
+    ...visibleElements.servar_fields,
+    ...visibleElements.buttons
+  ].reduce((errors: any, element: any) => {
+    let key, type;
+    if (element.servar) {
+      type = element.servar.type;
+      key = element.servar.key;
+    } else {
+      // if not a servar, then a button
+      type = 'button';
+      key = element.id;
+    }
+    const message = validateElement(element);
+    errors[key] = message;
+    if (triggerErrors) {
+      setFormElementError({
+        formRef,
+        errorCallback,
+        fieldKey: key,
+        message,
+        errorType: errorType,
+        servarType: type,
+        inlineErrors
+      });
+    }
+    return errors;
+  }, {});
   if (triggerErrors) {
     setFormElementError({
       formRef,

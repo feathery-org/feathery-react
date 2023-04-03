@@ -37,7 +37,7 @@ import {
   setUrlStepHash,
   updateStepFieldOptions
 } from '../utils/formHelperFunctions';
-import { getHideIfReferences } from '../utils/hideIfs';
+import { getHideIfReferences, getVisibleElements } from '../utils/hideIfs';
 import { validators, validateElements } from '../utils/validation';
 import { initState, fieldValues, FieldValues } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
@@ -270,7 +270,11 @@ function Form({
     );
   }, [loaders]);
 
-  useFirebaseRecaptcha(activeStep);
+  const visibleElements = useMemo(
+    () => (activeStep ? getVisibleElements(activeStep) : null),
+    [activeStep, render]
+  );
+  useFirebaseRecaptcha(activeStep?.id, visibleElements);
   const getNextAuthStep = useFormAuth({
     initialStep: getInitialStep({ initialStepId, steps }),
     integrations,
@@ -486,16 +490,16 @@ function Form({
   const debouncedValidate = useCallback(
     debounce((setInlineErrors: any) => {
       // default form validation
-      activeStep &&
+      visibleElements &&
         validateElements({
-          elements: [...activeStep.servar_fields, ...activeStep.buttons],
+          visibleElements,
           triggerErrors: true,
           errorType: formSettings.errorType,
           formRef,
           setInlineErrors
         });
     }, 750),
-    [activeStep?.id, formRef, validateElements]
+    [activeStep?.id, formRef]
   );
 
   // Debouncing the rerender due to changing values of referenced fields in hide if rules.
@@ -585,6 +589,7 @@ function Form({
 
     internalState[_internalId] = {
       currentStep: newStep,
+      visibleElements,
       client,
       formName,
       formRef,
@@ -792,52 +797,11 @@ function Form({
     return change;
   };
 
-  const handleOtherStateChange = (oldOtherVal: any) => (e: any) => {
-    const target = e.target;
-    const curOtherVal = target.value;
-    let curFieldVal = fieldValues[target.id];
-    if (Array.isArray(curFieldVal)) {
-      // @ts-expect-error TS(2349): This expression is not callable.
-      curFieldVal = curFieldVal.filter(
-        (val: any) => val !== oldOtherVal || (!val && !oldOtherVal)
-      );
-      if (curOtherVal) {
-        (curFieldVal as any).push(curOtherVal);
-      }
-    } else {
-      if (curFieldVal === oldOtherVal) curFieldVal = curOtherVal;
-    }
-    updateFieldValues({ [target.id]: curFieldVal });
-  };
-
-  const handleCheckboxGroupChange = (e: any, servarKey: any) => {
-    const target = e.target;
-    const opt = target.name;
-    activeStep.servar_fields.forEach((field: any) => {
-      const servar = field.servar;
-      if (servar.key !== servarKey) return;
-
-      const fieldValue = getFieldValue(field);
-      const { value } = fieldValue;
-      const newValue = target.checked
-        ? [...value, opt]
-        : value.filter((v: any) => v !== opt);
-      if (fieldValue.repeated) {
-        const { valueList, index } = fieldValue;
-        updateFieldValues({
-          [servar.key]: justInsert(valueList, newValue, index)
-        });
-      } else {
-        updateFieldValues({ [servar.key]: newValue });
-      }
-    });
-  };
-
   const getNextStepKey = (metadata: any) =>
     nextStepKey(activeStep.next_conditions, metadata);
 
   const submitStep = async ({ metadata, repeat = 0 }: any) => {
-    const formattedFields = formatStepFields(activeStep, false, true);
+    const formattedFields = formatStepFields(visibleElements, false);
     const trigger = lookUpTrigger(
       activeStep,
       metadata.elementIDs[0],
@@ -986,7 +950,7 @@ function Form({
     });
     // validate all step fields and buttons.  Must be valid before payment.
     const { invalid, inlineErrors: newInlineErrors } = validateElements({
-      elements: [...activeStep.servar_fields, ...activeStep.buttons],
+      visibleElements,
       triggerErrors: true,
       errorType: formSettings.errorType,
       formRef,
@@ -1006,7 +970,7 @@ function Form({
         : 'container',
       servar: pm ? pm.servar : null,
       client,
-      formattedFields: formatStepFields(activeStep, false, false),
+      formattedFields: formatStepFields(activeStep, false),
       updateFieldValues,
       integrationData: integrations?.stripe,
       targetElement: pm ? getCardElement(pm.servar.key) : null
@@ -1184,7 +1148,7 @@ function Form({
       const trigger = lookUpTrigger(activeStep, element.id, elementType);
       // run default form validation
       const { invalid } = validateElements({
-        elements: [...activeStep.servar_fields, ...activeStep.buttons],
+        visibleElements,
         triggerErrors: true,
         errorType: formSettings.errorType,
         formRef,
@@ -1448,8 +1412,6 @@ function Form({
     repeatTriggerExists,
     changeValue,
     updateFieldValues,
-    handleCheckboxGroupChange,
-    handleOtherStateChange,
     setGMapBlurKey,
     elementOnView,
     onViewElements,
@@ -1457,7 +1419,8 @@ function Form({
     focusRef,
     formRef,
     steps,
-    setCardElement
+    setCardElement,
+    visibleElements
   };
 
   let completeState;
