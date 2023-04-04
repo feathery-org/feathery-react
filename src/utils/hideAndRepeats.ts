@@ -169,10 +169,10 @@ function _collectHideFlags(
 
 function getVisiblePositions(step: any) {
   let numRepeats = 1;
+  const repeatGrid = step.subgrids.filter((grid: any) => grid.repeated)[0];
   let repeatKey = '';
-  const repeatPosition = step.repeat_position;
-  if (repeatPosition) {
-    repeatKey = getPositionKey({ position: repeatPosition });
+  if (repeatGrid) {
+    repeatKey = getPositionKey(repeatGrid);
     numRepeats = Math.max(
       repeatCountByFields(step, repeatKey),
       repeatCountByTextVariables(step, repeatKey),
