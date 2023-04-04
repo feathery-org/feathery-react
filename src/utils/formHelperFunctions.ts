@@ -2,32 +2,48 @@ import getRandomBoolean from './random';
 import { fieldValues, filePathMap, initInfo, initState } from './init';
 import { toBase64 } from './image';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
+import { getVisibleElements } from './hideAndRepeats';
+
+function _transformSignatureVal(value: any) {
+  return value !== null && (value instanceof File || value instanceof Promise)
+    ? Promise.resolve(value).then((file) => toBase64(file))
+    : Promise.resolve('');
+}
 
 /**
  *
  * @param {*} step
+ * @param {*} visiblePositions
  * @param {boolean} forUser indicate whether the result of this function is
  * meant for the user, or Feathery's BE. Presently the only difference is
  * whether signature field values are base64 or a JS File obj
  * visible to user as determined by the hide if rules
  * @returns Formatted fields for the step
  */
-export const formatStepFields = (step: any, forUser: boolean) => {
+export const formatStepFields = (
+  step: any,
+  visiblePositions: any,
+  forUser: boolean
+) => {
+  const fields = visiblePositions
+    ? getVisibleElements(step, visiblePositions, ['servar_fields']).map(
+        ({ element }) => element
+      )
+    : step.servar_fields;
+
   const formattedFields: Record<
     string,
     { value: any; type: string; displayText: string }
   > = {};
-  step.servar_fields.forEach((field: any) => {
+  fields.forEach((field: any) => {
     const servar = field.servar;
-    let value;
     // Only use base64 for signature if these values will be presented to the user
-    const val = fieldValues[servar.key];
+    let value: any = fieldValues[servar.key];
     if (forUser && servar.type === 'signature') {
-      value =
-        val !== null && (val instanceof File || val instanceof Promise)
-          ? Promise.resolve(val).then((file) => toBase64(file))
-          : Promise.resolve('');
-    } else value = val;
+      value = servar.repeated
+        ? value.map(_transformSignatureVal)
+        : _transformSignatureVal(value);
+    }
     formattedFields[servar.key] = {
       value,
       type: servar.type,
@@ -40,7 +56,7 @@ export const formatStepFields = (step: any, forUser: boolean) => {
 export const formatAllFormFields = (steps: any, forUser = false) => {
   let formattedFields = {};
   Object.values(steps).forEach((step) => {
-    const stepFields = formatStepFields(step, forUser);
+    const stepFields = formatStepFields(step, null, forUser);
     formattedFields = { ...formattedFields, ...stepFields };
   });
   return formattedFields;
@@ -194,13 +210,6 @@ export const recurseProgressDepth = (steps: any, curKey: any) => {
 };
 
 /**
- * Creates a unique key value for an element (taking repeated instances into account).
- */
-export function reactFriendlyKey(field: any) {
-  return field.id + (field.repeat ? `-${field.repeat}` : '');
-}
-
-/**
  * Retrieves the value of the servar from the provided values.
  * If the servar field is repeated, gets the indexed value.
  */
@@ -299,18 +308,6 @@ export async function setFormElementError({
   return invalid;
 }
 
-/**
- * Return inline error object
- * @param field
- * @param inlineErrors
- */
-export function getInlineError(field: any, inlineErrors: any) {
-  const data = inlineErrors[field.servar ? field.servar.key : field.id];
-  if (!data) return;
-  if (Number.isInteger(data.index) && data.index !== field.repeat) return;
-  return data.message;
-}
-
 export function objectMap(obj: any, transform: any) {
   return Object.entries(obj).reduce((newObj, [key, val]) => {
     return { ...newObj, [key]: transform(val) };
@@ -327,23 +324,6 @@ export async function fetchS3File(url: any) {
   return new File([blob], decodeURI(url.split('?')[0].split('/').slice(-1)), {
     type: blob.type
   });
-}
-
-export function textFieldShouldSubmit(servar: any, value: any) {
-  switch (servar.type) {
-    case 'ssn':
-      return value.length === 9;
-    default:
-      return false;
-  }
-}
-
-// To determine if a field should actually be required, we need to consider the repeat_trigger config
-// If this is the trailing element in a set of repeat_trigger elements, then it shouldn't be required
-// Because we render the trailing element as a way to create a new row, NOT as a required field for the user
-export function isFieldActuallyRequired(field: any, repeatTriggerExists: any) {
-  const isTrailingRepeatField = repeatTriggerExists && field.lastRepeat;
-  return field.servar.required && !isTrailingRepeatField;
 }
 
 export function changeStep(newKey: any, oldKey: any, steps: any, history: any) {
@@ -373,7 +353,6 @@ export function getPrevStepUrl(curStep: any, stepMap: Record<string, string>) {
 export function clearFilePathMapEntry(key: any, index = null) {
   if (index !== null) {
     if (!filePathMap[key]) filePathMap[key] = [];
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     filePathMap[key][index] = null;
   } else {

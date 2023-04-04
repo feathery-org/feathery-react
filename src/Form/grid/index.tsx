@@ -1,32 +1,22 @@
 import React from 'react';
 import Element from './Element';
-import ResponsiveStyles from '../../../elements/styles';
-import { getDefaultFieldValue } from '../../../utils/formHelperFunctions';
-import { fieldValues } from '../../../utils/init';
-import { TEXT_VARIABLE_PATTERN } from '../../../elements/components/TextNodes';
-import { FIT, isFill, isFit, isPx, getPxValue } from '../../../utils/hydration';
-import { getPositionKey, stepElementTypes } from '../../../utils/hideIfs';
+import ResponsiveStyles from '../../elements/styles';
+import { FIT, isFill, isFit, isPx, getPxValue } from '../../utils/hydration';
+import {
+  getPositionKey,
+  stepElementTypes,
+  VisiblePositions
+} from '../../utils/hideAndRepeats';
 
 const DEFAULT_MIN_SIZE = 50;
 const DEFAULT_MIN_FILL_SIZE = 10;
 
 const Grid = ({ step, form, viewport }: any) => {
-  const formattedStep: any = formatStep(
+  const formattedStep: any = buildStepGrid(
     JSON.parse(JSON.stringify(step)),
     viewport,
-    form.visibleElements
+    form.visiblePositions
   );
-
-  const repeatPosition =
-    viewport === 'mobile'
-      ? step.mobile_repeat_position || step.repeat_position
-      : step.repeat_position;
-
-  if (Array.isArray(repeatPosition) && repeatPosition.length > 0) {
-    const repeatNode =
-      formattedStep.map[getPositionKey({ position: repeatPosition })];
-    if (repeatNode) addRepeatedCells(repeatNode);
-  }
 
   return (
     <Subgrid
@@ -48,7 +38,7 @@ const Subgrid = ({
   if (node.isElement) {
     const styles = getElementContainerStyle(node, axis);
     return (
-      <div css={styles} key={getPositionKey(node)}>
+      <div css={styles}>
         <Element form={form} node={node} flags={flags} />
       </div>
     );
@@ -71,7 +61,6 @@ const Subgrid = ({
 
     return (
       <CellContainer
-        key={getPositionKey(node)}
         node={node}
         axis={axis}
         viewport={viewport}
@@ -465,23 +454,23 @@ const GridContainer = ({ children, node }: any) => {
   );
 };
 
-const formatStep = (step: any, viewport: string, visibleElements: any) => {
+const buildStepGrid = (step: any, viewport: string, visiblePositions: any) => {
   step = convertStepToViewport(JSON.parse(JSON.stringify(step)), viewport);
 
   const map = buildGridMap(step);
-  const tree = buildGridTree(map, [], visibleElements);
+  const rp = step.repeat_position;
+  const repeatKey =
+    Array.isArray(rp) && rp.length > 0 ? getPositionKey({ position: rp }) : '';
+  const tree = buildGridTree(
+    map,
+    [],
+    visiblePositions,
+    repeatKey,
+    undefined,
+    false
+  );
 
   return { map, tree };
-};
-
-// TODO use getAllElements
-const typeMap = {
-  progress_bars: 'progress_bar',
-  images: 'image',
-  texts: 'text',
-  buttons: 'button',
-  servar_fields: 'field',
-  videos: 'video'
 };
 
 const convertStepToViewport = (step: any, viewport: any) => {
@@ -493,8 +482,6 @@ const convertStepToViewport = (step: any, viewport: any) => {
           : convertToViewport(obj, viewport, viewportProperties.elements);
     });
   });
-
-  step.subgrids = step.subgrids.filter((subgrid: any) => subgrid.position);
 
   return step;
 };
@@ -514,6 +501,16 @@ const convertToViewport = (obj: any, viewport: any, props: any) => {
   });
 
   return obj;
+};
+
+// TODO use getAllElements
+const typeMap = {
+  progress_bars: 'progress_bar',
+  images: 'image',
+  texts: 'text',
+  buttons: 'button',
+  servar_fields: 'field',
+  videos: 'video'
 };
 
 const buildGridMap = (step: any) => {
@@ -557,153 +554,74 @@ const buildGridMap = (step: any) => {
   return map;
 };
 
-const addRepeatedCells = (node: any) => {
-  const index = [...node.position].pop();
-  if (!node.parent) return 0;
-
-  const numberOfRepeats = repeatCount(node);
-  if (numberOfRepeats) {
-    node.parent.children[index] = repeat({ ...node }, 0);
-    for (let i = 0; i < numberOfRepeats; ++i) {
-      const repeatIndex = i + 1;
-      node.parent.children.splice(
-        index + repeatIndex,
-        0,
-        repeat(
-          { ...node.parent.children[index] },
-          repeatIndex,
-          repeatIndex === numberOfRepeats
-        )
-      );
-    }
-  } else {
-    node.parent.children[index] = repeat({ ...node }, 0);
-  }
-
-  return numberOfRepeats;
-};
-
-const repeat = (node: any, repeatIndex: number, last = false) => {
-  node.repeat = repeatIndex;
-  node.lastRepeat = last;
-  if (node.children) {
-    const newChildren: any = [];
-    node.children.forEach((child: any) => {
-      newChildren.push(repeat({ ...child }, repeatIndex, last));
-    });
-    node.children = newChildren;
-  }
-  return node;
-};
-
-const getTextVariables = (node: any) => {
-  let textVariables = [];
-
-  const text = node?.properties?.text;
-  if (text) {
-    const match = text.match(TEXT_VARIABLE_PATTERN);
-    if (match) textVariables = match;
-  }
-
-  return textVariables.map((variable: any) => variable.slice(2, -2));
-};
-
-const getAllTextVariables = (node: any, variables = []) => {
-  const textVariables = getTextVariables(node);
-  if (textVariables)
-    // @ts-expect-error TS(2345): Argument of type 'any' is not assignable to parame... Remove this comment to see the full error message
-    textVariables.forEach((variable: any) => variables.push(variable));
-
-  if (node.children) {
-    node.children.forEach((child: any) =>
-      getAllTextVariables(child, variables)
-    );
-  }
-
-  return variables;
-};
-
-const repeatCountByTextVariables = (node: any) => {
-  let count = 0;
-  const textVariables = getAllTextVariables(node);
-  textVariables.forEach((variable) => {
-    const variableValues = fieldValues[variable];
-    if (Array.isArray(variableValues))
-      count = Math.max(count, variableValues.length - 1);
-  });
-  return count;
-};
-
-const getRepeatableFields = (node: any, servars: Array<any>) => {
-  if (node.servar?.repeated) servars.push(node);
-
-  if (node.children) {
-    node.children.forEach((child: any) => getRepeatableFields(child, servars));
-  }
-
-  return servars;
-};
-
-const repeatCountByFields = (node: any) => {
-  let count = 0;
-  const repeatableServars: Array<any> = [];
-  getRepeatableFields(node, repeatableServars);
-  repeatableServars.forEach((servar) => {
-    count = Math.max(count, getNumberOfRepeatingValues(servar));
-  });
-  return count;
-};
-
-// If the final value is still default, do not render another repeat
-const getNumberOfRepeatingValues = (node: any) => {
-  const servar = node.servar ?? {};
-  const fieldValue = fieldValues[servar.key ?? ''];
-  if (!Array.isArray(fieldValue)) return 0;
-
-  const defaultValue = getDefaultFieldValue(node);
-  const hasDefaultLastValue =
-    fieldValue[fieldValue.length - 1] === defaultValue;
-  return servar.repeat_trigger === 'set_value' && !hasDefaultLastValue
-    ? fieldValue.length
-    : fieldValue.length - 1;
-};
-
-const repeatCount = (node: any) => {
-  return Math.max(repeatCountByFields(node), repeatCountByTextVariables(node));
-};
-
 const buildGridTree = (
   gridMap: any,
-  position: any[] = [],
-  visibleElements: any
+  position: any[],
+  visiblePositions: VisiblePositions,
+  repeatKey: string,
+  repeatIndex: number | undefined,
+  lastRepeat: boolean
 ) => {
   const positionKey = getPositionKey({ position });
-  const node = gridMap[positionKey];
-  if (!node || !visibleElements.positions.has(positionKey)) return;
+  const node = { ...gridMap[positionKey] };
+  if (!node) return;
+
+  node.repeat = repeatIndex;
+  node.lastRepeat = lastRepeat;
 
   let i = 0;
   let nextPos = [...position, i];
-  let hasNextChild = gridMap[getPositionKey({ position: nextPos })];
+  let nextPosKey = getPositionKey({ position: nextPos });
+  let hasNextChild = gridMap[nextPosKey];
 
   if (hasNextChild) node.children = [];
 
   while (hasNextChild) {
-    const actualChild = buildGridTree(
-      gridMap,
-      [...position, i],
-      visibleElements
-    );
-    if (actualChild) {
-      actualChild.parent = node;
-      node.children.push(actualChild);
+    const repeats = visiblePositions[nextPosKey];
+    if (repeatKey === nextPosKey) {
+      repeats.forEach((flag, index) => {
+        _recurseTree(
+          flag,
+          node,
+          gridMap,
+          nextPos,
+          visiblePositions,
+          repeatKey,
+          index,
+          index === repeats.length - 1
+        );
+      });
+    } else {
+      _recurseTree(
+        repeats[repeatIndex ?? 0],
+        node,
+        gridMap,
+        nextPos,
+        visiblePositions,
+        repeatKey,
+        repeatIndex,
+        lastRepeat
+      );
     }
 
     i = i + 1;
     nextPos = [...position, i];
-    hasNextChild = gridMap[getPositionKey({ position: nextPos })];
+    nextPosKey = getPositionKey({ position: nextPos });
+    hasNextChild = gridMap[nextPosKey];
   }
 
   return node;
 };
+
+function _recurseTree(flag: boolean, node: any, ...args: any[]) {
+  if (flag) {
+    // @ts-ignore
+    const actualChild = buildGridTree(...args);
+    if (actualChild) {
+      actualChild.parent = node;
+      node.children.push(actualChild);
+    }
+  }
+}
 
 export default Grid;

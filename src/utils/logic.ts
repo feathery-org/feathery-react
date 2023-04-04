@@ -106,8 +106,7 @@ const getValuesAsArray = (values: unknown, repeatIndex?: number) => {
   // Array.isArray(values) ? (values.length ? values : [undefined]) : [values];
   if (Array.isArray(values)) {
     if (values.length) {
-      if (repeatIndex !== undefined && values.length > repeatIndex)
-        return [values[repeatIndex]];
+      if (repeatIndex !== undefined) return [values[repeatIndex]];
       return values;
     }
     return [undefined];

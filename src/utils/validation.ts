@@ -3,6 +3,7 @@ import { setFormElementError } from './formHelperFunctions';
 import { dynamicImport } from '../integrations/utils';
 import React from 'react';
 import { fieldValues, initInfo } from './init';
+import { getVisibleElements } from './hideAndRepeats';
 
 export interface ResolvedCustomValidation {
   message: string;
@@ -13,14 +14,16 @@ export interface ResolvedCustomValidation {
  * Validate elements on a form
  */
 function validateElements({
-  visibleElements,
+  step,
+  visiblePositions,
   triggerErrors,
   errorType,
   formRef,
   errorCallback = () => {},
   setInlineErrors
 }: {
-  visibleElements: any;
+  step: any;
+  visiblePositions: any;
   triggerErrors: boolean;
   errorType: string;
   formRef: React.MutableRefObject<any>;
@@ -31,13 +34,20 @@ function validateElements({
   inlineErrors: { [key: string]: any };
   invalid: boolean;
 } {
+  let invalid = false;
   const inlineErrors = {};
-  const errors = [
-    ...visibleElements.servar_fields,
-    ...visibleElements.buttons
-  ].reduce((errors: any, element: any) => {
+  const errors = getVisibleElements(
+    step,
+    visiblePositions,
+    ['servar_fields', 'buttons'],
+    true
+  ).reduce((errors: any, { element, repeat, last }) => {
     let key, type;
     if (element.servar) {
+      if (element.servar.repeat_trigger === 'set_value' && last && repeat > 0) {
+        // Skip validation on last repeat since it might be default value
+        return errors;
+      }
       type = element.servar.type;
       key = element.servar.key;
     } else {
@@ -45,8 +55,14 @@ function validateElements({
       type = 'button';
       key = element.id;
     }
-    const message = validateElement(element);
-    errors[key] = message;
+
+    const message = validateElement(element, repeat);
+    if (!(key in errors)) errors[key] = message;
+    else if (Array.isArray(errors[key])) errors[key].push(message);
+    else errors[key] = [errors[key], message];
+
+    if (message && !invalid) invalid = true;
+
     if (triggerErrors) {
       setFormElementError({
         formRef,
@@ -55,7 +71,8 @@ function validateElements({
         message,
         errorType: errorType,
         servarType: type,
-        inlineErrors
+        inlineErrors,
+        index: repeat
       });
     }
     return errors;
@@ -69,37 +86,39 @@ function validateElements({
       triggerErrors: true
     });
   }
-  return {
-    errors,
-    inlineErrors,
-    invalid: Object.values(errors).some(Boolean)
-  };
+  return { errors, inlineErrors, invalid };
 }
 
 /**
  * Performs all default/standard and custom validations on a field/element
  * and returns any validation message.
  */
-function validateElement(element: {
-  servar?: {
-    type: string;
-    key: string;
-    metadata?: any;
-    required: boolean;
-  };
-  validations?: ResolvedCustomValidation[];
-}): string {
+function validateElement(
+  element: {
+    servar?: {
+      type: string;
+      key: string;
+      metadata?: any;
+      required: boolean;
+      repeated: boolean;
+    };
+    validations?: ResolvedCustomValidation[];
+  },
+  repeat: number
+): string {
   // First priority is standard validations for servar fields
   const { servar, validations } = element;
   if (servar) {
-    const errorMsg = getStandardFieldError(fieldValues[servar.key], servar);
+    let fieldVal: any = fieldValues[servar.key];
+    if (servar.repeated) fieldVal = fieldVal[repeat];
+    const errorMsg = getStandardFieldError(fieldVal, servar);
     if (errorMsg) return errorMsg;
   }
 
   // Now apply any custom validations
   if (validations) {
     const firstMatchingValidation = validations.find((validation) =>
-      validation.rules.every((rule) => evalComparisonRule(rule))
+      validation.rules.every((rule) => evalComparisonRule(rule, repeat))
     );
     if (firstMatchingValidation) return firstMatchingValidation.message;
   }

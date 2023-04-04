@@ -71,7 +71,7 @@ export interface ActionData {
   triggerElement?: any;
   triggerElementType?: 'button' | 'container';
   client: any;
-  formattedFields: any;
+  formattedFields?: any;
   updateFieldValues: any;
   integrationData: any;
   targetElement?: any;

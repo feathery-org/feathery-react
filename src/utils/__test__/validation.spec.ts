@@ -49,7 +49,7 @@ describe('validation', () => {
       const expected = 'This is a required field';
 
       // Act
-      const actual = validateElement(field());
+      const actual = validateElement(field(), 0);
 
       // Assert
       expect(actual).toEqual(expected);
@@ -59,7 +59,7 @@ describe('validation', () => {
       Object.assign(fieldValues, { [fieldKey]: '100' });
 
       // Act
-      const actual = validateElement({ servar, validations });
+      const actual = validateElement({ servar, validations }, 0);
 
       // Assert
       expect(actual).toEqual(customErrorMessage);
@@ -69,7 +69,7 @@ describe('validation', () => {
       Object.assign(fieldValues, { [fieldKey]: '100' });
 
       // Act
-      const actual = validateElement({ servar });
+      const actual = validateElement({ servar }, 0);
 
       // Assert
       expect(actual).toEqual('');

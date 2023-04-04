@@ -3,10 +3,6 @@ import Elements from '../../../elements';
 import {
   getFieldValue,
   setFormElementError,
-  getInlineError,
-  isFieldActuallyRequired,
-  reactFriendlyKey,
-  textFieldShouldSubmit,
   clearFilePathMapEntry
 } from '../../../utils/formHelperFunctions';
 import { isObjectEmpty, stringifyWithNull } from '../../../utils/primitives';
@@ -14,6 +10,12 @@ import { isFieldValueEmpty } from '../../../utils/validation';
 import { justInsert, justRemove } from '../../../utils/array';
 import { fieldValues } from '../../../utils/init';
 import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
+import {
+  getInlineError,
+  isFieldActuallyRequired,
+  textFieldShouldSubmit
+} from './utils';
+import { getVisibleElements } from '../../../utils/hideAndRepeats';
 
 const mapFieldTypes = new Set([
   'gmap_line_1',
@@ -89,7 +91,6 @@ const Element = ({ node: el, form, flags }: any) => {
     fieldOnChange,
     inlineErrors,
     setInlineErrors,
-    repeatTriggerExists,
     changeValue,
     updateFieldValues,
     setGMapBlurKey,
@@ -100,13 +101,12 @@ const Element = ({ node: el, form, flags }: any) => {
     focusRef,
     steps,
     setCardElement,
-    visibleElements
+    visiblePositions
   } = form;
 
   const inlineError =
     formSettings.errorType === 'inline' && getInlineError(el, inlineErrors);
   const basicProps: Record<string, any> = {
-    key: reactFriendlyKey(el),
     componentOnly: false,
     element: el,
     elementProps: elementProps[el.id],
@@ -149,15 +149,20 @@ const Element = ({ node: el, form, flags }: any) => {
   else if (type === 'button') {
     let disabled = false;
     if (el.properties.disable_if_fields_incomplete) {
-      const fieldsMissingValue = visibleElements.servar_fields.some(
-        (field: any) => {
-          if (isFieldActuallyRequired(field, repeatTriggerExists)) {
-            const servar = field.servar;
-            return isFieldValueEmpty(fieldValues[servar.key], servar);
-          }
-          return false;
+      const fieldsMissingValue = getVisibleElements(
+        activeStep,
+        visiblePositions,
+        ['servar_fields'],
+        true
+      ).some(({ element, repeat }) => {
+        if (isFieldActuallyRequired(element, activeStep)) {
+          const servar = element.servar;
+          let fieldVal: any = fieldValues[servar.key];
+          if (servar.repeated) fieldVal = fieldVal[repeat];
+          return isFieldValueEmpty(fieldVal, servar);
         }
-      );
+        return false;
+      });
       const storeFieldButtons = activeStep.buttons.filter(
         ({ properties }: any) =>
           properties.actions.some(
@@ -217,7 +222,7 @@ const Element = ({ node: el, form, flags }: any) => {
       elementRepeatIndex: el.repeat || 0
     });
 
-    const required = isFieldActuallyRequired(el, repeatTriggerExists);
+    const required = isFieldActuallyRequired(el, activeStep);
     const fieldProps = {
       ...basicProps,
       elementProps: elementProps[servar.key],
@@ -523,8 +528,10 @@ const Element = ({ node: el, form, flags }: any) => {
             onAccept={(val: any, mask: any) => {
               const newVal = mask._unmaskedValue === '' ? '' : val;
               // Rerender only necessary if autocomplete dropdown needs
-              // to be updated
-              const rerender = (servar.metadata.options ?? []).length > 0;
+              // to be updated, first char is set, or last char is removed
+              const rerender =
+                (servar.metadata.options ?? []).length > 0 ||
+                newVal.length <= 1;
               const change = changeValue(newVal, el, index, rerender);
               if (change) {
                 const submitData =
