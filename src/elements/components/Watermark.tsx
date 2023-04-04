@@ -22,7 +22,7 @@ export default function Watermark({
       }}
     >
       <div
-        style={{
+        css={{
           width: `${width}px`,
           height: `${height}px`,
           marginRight: '5px',
@@ -35,7 +35,6 @@ export default function Watermark({
           borderRadius: '6px',
           color: '#6c7589',
           fontFamily: 'Axiforma, sans-serif',
-          // @ts-expect-error TS(2322): Type '{ width: string; height: string; display: "f... Remove this comment to see the full error message
           fontSmoothing: 'antialiased',
           fontWeight: 400,
           fontSize: '11px',
@@ -44,9 +43,9 @@ export default function Watermark({
         }}
         onClick={() => openTab('https://feathery.io')}
       >
-        <span>Built on</span>
+        Built on
         <img
-          style={{ maxWidth: '50%', maxHeight: '80%' }}
+          css={{ maxWidth: '50%', maxHeight: '80%', paddingBottom: '1px' }}
           src='https://feathery.s3.us-west-1.amazonaws.com/full-logo-1.png'
           alt='Feathery Logo'
         />
