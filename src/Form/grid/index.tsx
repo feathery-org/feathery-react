@@ -458,9 +458,8 @@ const buildStepGrid = (step: any, viewport: string, visiblePositions: any) => {
   step = convertStepToViewport(JSON.parse(JSON.stringify(step)), viewport);
 
   const map = buildGridMap(step);
-  const rp = step.repeat_position;
-  const repeatKey =
-    Array.isArray(rp) && rp.length > 0 ? getPositionKey({ position: rp }) : '';
+  const repeatGrid = step.subgrids.filter((grid: any) => grid.repeated)[0];
+  const repeatKey = repeatGrid ? getPositionKey(repeatGrid) : '';
   const tree = buildGridTree(
     map,
     [],
@@ -487,8 +486,8 @@ const convertStepToViewport = (step: any, viewport: any) => {
 };
 
 const viewportProperties = {
-  step: ['width', 'height', 'repeat_position'],
-  subgrids: ['position', 'axis', 'style', 'styles', 'width', 'height'],
+  step: ['width', 'height'],
+  subgrids: ['position', 'axis', 'styles', 'width', 'height'],
   elements: ['position']
 };
 
