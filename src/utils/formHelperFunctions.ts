@@ -286,8 +286,8 @@ export async function setFormElementError({
           : [singleOrList];
       elements = elements.filter((e) => e);
 
-      if (index !== null) elements = [elements[index]];
-      elements.forEach((e) => e.setCustomValidity(message));
+      if (index !== null && elements.length) elements = [elements[index]];
+      elements.forEach((e) => e && e.setCustomValidity(message));
     }
     if (triggerErrors) formRef.current.reportValidity();
     invalid = !formRef.current.checkValidity();
