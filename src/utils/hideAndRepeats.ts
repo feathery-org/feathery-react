@@ -221,6 +221,9 @@ function getVisibleElements(
   elementTypes: string[] = [],
   repeat = false
 ) {
+  const repeatGrid = step.subgrids.filter((grid: any) => grid.repeated)[0];
+  const repeatKey = repeatGrid ? getPositionKey(repeatGrid) : '';
+
   return elementTypes.flatMap((type) =>
     step[type].flatMap((el: any) => {
       const elKey = getPositionKey(el);
@@ -230,7 +233,9 @@ function getVisibleElements(
         if (flag && (repeat || !elements.length)) {
           elements.push({
             element: el,
-            repeat: index,
+            repeat: getPositionKey(el).startsWith(repeatKey)
+              ? index
+              : undefined,
             last: index === flags.length - 1
           });
         }

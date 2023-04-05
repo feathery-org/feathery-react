@@ -116,10 +116,14 @@ function initializeAuthClientListeners() {
   }
 }
 
+/**
+ * This function fires when the idle timer goes off. It either extends the auth
+ * session or performs logout actions
+ */
 function idleTimerAction(hasAuthed: boolean, logoutActions: () => void) {
-  if (!isAuthStytch()) return;
+  // No block for firebase because extending the session manually requires issuing a token from the BE
 
-  if (authState.client.session.getSync()) {
+  if (isAuthStytch() && authState.client.session.getSync()) {
     authState.client.session.authenticate({
       session_duration_minutes: 1440
     });

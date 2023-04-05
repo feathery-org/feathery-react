@@ -22,7 +22,12 @@ jest.mock('../init', () => ({
 
 describe('validation', () => {
   const fieldKey = 'text-field-1';
-  const servar = { required: true, type: 'text_field', key: fieldKey };
+  const servar = {
+    required: true,
+    type: 'text_field',
+    key: fieldKey,
+    repeated: false
+  };
   const field = (modifiedProps = {}) =>
     Object.assign({ servar, validations: [] }, modifiedProps);
   const customErrorMessage = 'Custom error message';
