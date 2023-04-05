@@ -307,10 +307,11 @@ export default class Client {
     // Block if there's a chance user id isn't available yet
     await (block ? initFormsPromise : Promise.resolve());
     const { userId, formSessions, fieldValuesInitialized: noData } = initInfo();
-    const formData = await (formPromise ?? Promise.resolve());
 
-    if (this.formKey in formSessions)
+    if (this.formKey in formSessions) {
+      const formData = await (formPromise ?? Promise.resolve());
       return [formSessions[this.formKey], formData];
+    }
 
     initState.fieldValuesInitialized = true;
     let params = { form_key: this.formKey };
@@ -352,6 +353,8 @@ export default class Client {
     if (initState.formSessions[this.formKey]?.form_completed)
       trueSession.form_completed = true;
     initState.formSessions[this.formKey] = trueSession;
+
+    const formData = await (formPromise ?? Promise.resolve());
     return [trueSession, formData];
   }
 
