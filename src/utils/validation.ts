@@ -104,7 +104,7 @@ function validateElement(
     };
     validations?: ResolvedCustomValidation[];
   },
-  repeat: number
+  repeat: any
 ): string {
   // First priority is standard validations for servar fields
   const { servar, validations } = element;
