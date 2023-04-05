@@ -230,7 +230,8 @@ function Form({
     formOff: undefined,
     showBrand: false,
     brandPosition: undefined,
-    allowEdit: 'yes'
+    allowEdit: 'yes',
+    autoscroll: 'top_of_form'
   });
   const [inlineErrors, setInlineErrors] = useState<
     Record<string, { message: string; index: number }>
@@ -389,14 +390,12 @@ function Form({
     return new Set<string>();
   }, [activeStep?.id]);
 
-  const scrollToRef = (ref: any) =>
-    window.scrollTo({
-      top: ref?.current?.offsetTop,
-      behavior: 'smooth'
-    });
   useEffect(() => {
-    if (shouldScrollToTop) {
-      scrollToRef(formRef);
+    const autoscroll = formSettings.autoscroll;
+    if (shouldScrollToTop && autoscroll !== 'none') {
+      const top =
+        autoscroll === 'top_of_form' ? formRef?.current?.offsetTop : 0;
+      window.scrollTo({ top, behavior: 'smooth' });
     }
   }, [stepKey]);
 
@@ -657,7 +656,8 @@ function Form({
             formOff: Boolean(res.formOff),
             allowEdit: res.allow_edit_after_completion,
             showBrand: Boolean(res.show_brand),
-            brandPosition: res.brand_position
+            brandPosition: res.brand_position,
+            autoscroll: res.autoscroll
           });
           setProductionEnv(res.production);
           return steps;
