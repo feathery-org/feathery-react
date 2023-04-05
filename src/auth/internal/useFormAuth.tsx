@@ -3,7 +3,6 @@ import { useHistory } from 'react-router-dom';
 import { authState } from '../LoginForm';
 import { getUrlHash, setUrlStepHash } from '../../utils/formHelperFunctions';
 import { getAuthIntegrationMetadata } from './utils';
-import { getStytchJwt } from '../../utils/browser';
 
 const useFormAuth = ({
   initialStep,

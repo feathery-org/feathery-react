@@ -1029,10 +1029,12 @@ function Form({
       const terminalStep = !hasNext && nextStep.next_conditions.length === 0;
       if (terminalStep) {
         const authIntegration = getAuthIntegrationMetadata(integrations);
-        eventData.completed = !isTerminalStepAuth(
+        const completed = !isTerminalStepAuth(
           authIntegration,
           steps[stepKey].id
         );
+        eventData.completed = completed;
+        session.form_completed = completed;
       }
       client
         .registerEvent(eventData, submitPromise)
