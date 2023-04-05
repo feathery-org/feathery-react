@@ -84,7 +84,7 @@ const Element = ({ node: el, form, flags }: any) => {
     maxDepth,
     elementProps,
     activeStep,
-    loaders,
+    buttonLoaders,
     customClickSelectionState,
     runElementActions,
     buttonOnClick,
@@ -180,9 +180,7 @@ const Element = ({ node: el, form, flags }: any) => {
     return (
       <Elements.ButtonElement
         active={customClickSelectionState(el)}
-        loader={
-          loaders[el.id]?.showOn === 'on_button' && loaders[el.id]?.loader
-        }
+        loader={buttonLoaders[el.id]}
         onClick={(e: MouseEvent) => {
           // prevent auto submission!
           e.preventDefault();

@@ -107,13 +107,13 @@ import {
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
-import LoaderContainer from '../elements/components/LoaderContainer';
 import {
   getAuthIntegrationMetadata,
   isTerminalStepAuth
 } from '../auth/internal/utils';
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
+import useLoader, { InitialLoader } from '../hooks/useLoader';
 
 export interface Props {
   formName: string;
@@ -131,6 +131,7 @@ export interface Props {
   initialValues?: FieldValues;
   initialStepId?: string;
   language?: string;
+  initialLoader?: InitialLoader;
   popupOptions?: PopupOptions;
   elementProps?: ElementProps;
   contextRef?: React.MutableRefObject<null | FormContext>;
@@ -143,6 +144,7 @@ export interface Props {
 
 interface InternalProps {
   _internalId: string; // Used to uniquely identify forms when the same form is rendered multiple times
+  _isAuthLoading?: boolean; // Flag to show the loader for auth purposes
 }
 
 interface ClickActionElement {
@@ -184,6 +186,7 @@ const isElementAButtonOnStep = (step: any, el: any) =>
 
 function Form({
   _internalId,
+  _isAuthLoading = false,
   formName,
   onChange = null,
   onLoad = null,
@@ -197,6 +200,7 @@ function Form({
   initialValues = {},
   initialStepId = '',
   language,
+  initialLoader,
   popupOptions,
   elementProps = {},
   contextRef,
@@ -257,21 +261,8 @@ function Form({
   // Set to trigger conditional renders on field value updates, no need to use the value itself
   const [render, setRender] = useState({ v: 1 });
 
-  const [loaders, setLoaders] = useState<Record<string, any>>({});
-  const clearLoaders = () => setLoaders({});
-  const stepLoader = useMemo(() => {
-    const data = Object.values(loaders).find(
-      (l) => (l as any)?.showOn === 'full_page'
-    );
-    if (!data) return null;
-    return (data as any).type === 'default' ? (
-      <div style={{ height: '20vh', width: '20vh' }}>
-        {(data as any).loader}
-      </div>
-    ) : (
-      (data as any).loader
-    );
-  }, [loaders]);
+  // When the active step changes, recalculate the dimensions of the new step
+  const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
 
   const visiblePositions = useMemo(
     () => (activeStep ? getVisiblePositions(activeStep) : null),
@@ -290,6 +281,14 @@ function Form({
     newNavs && setBackNavMap({ ...backNavMap, ...newNavs });
 
   const formRef = useRef<any>(null);
+
+  const { clearLoaders, stepLoader, buttonLoaders, setLoaders } = useLoader({
+    initialLoader,
+    _isAuthLoading,
+    loaderBackgroundColor: stepCSS?.backgroundColor,
+    formRef
+  });
+
   // Tracks element to focus
   const focusRef = useRef<any>();
   // Tracks the execution of user-provided callback functions
@@ -297,9 +296,6 @@ function Form({
   // Tracks if the form has redirected
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
-
-  // When the active step changes, recalculate the dimensions of the new step
-  const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
 
   // All mount and unmount logic should live here
   useEffect(() => {
@@ -553,7 +549,7 @@ function Form({
         ...getProps()
       });
     } catch (e) {
-      console.log(e);
+      console.warn(e);
     }
   };
 
@@ -692,7 +688,7 @@ function Form({
           setStepKey(newKey);
         })
         .catch(async (error) => {
-          console.log(error);
+          console.warn(error);
           // Go to first step if origin fails
           const [data] = await formPromise;
           const newKey = (getOrigin as any)(data).key;
@@ -1064,7 +1060,7 @@ function Form({
       );
       loader = <Lottie animationData={animationData} />;
     }
-    setLoaders((loaders) => ({
+    setLoaders((loaders: Record<string, any>) => ({
       ...loaders,
       [button.id]: {
         showOn: bp.show_loading_icon,
@@ -1348,8 +1344,7 @@ function Form({
             lastStep: activeStep.next_conditions.length === 0,
             elementRepeatIndex,
             valueRepeatIndex
-          })),
-          loaders
+          }))
         );
         setShouldScrollToTop(false);
       }
@@ -1388,8 +1383,7 @@ function Form({
           callbackRef.current.addCallback(
             runUserCallback(onView, () => ({
               visibilityStatus: { elementId, isVisible }
-            })),
-            loaders
+            }))
           );
         }
       : undefined;
@@ -1401,11 +1395,11 @@ function Form({
     elementProps,
     customComponents,
     activeStep,
-    loaders,
     customClickSelectionState,
     runElementActions,
     buttonOnClick,
     fieldOnChange,
+    buttonLoaders,
     inlineErrors,
     setInlineErrors,
     changeValue,
@@ -1449,19 +1443,13 @@ function Form({
   } else if (anyFinished) {
     return completeState ?? null;
   } else if (!activeStep) {
-    return null;
+    return stepLoader;
   }
 
   const addChin =
     formSettings.showBrand && stepCSS.minHeight !== '100%' && !popupOptions;
   return (
     <ReactPortal options={popupOptions}>
-      <LoaderContainer
-        showLoader={Boolean(stepLoader)}
-        backgroundColor={stepCSS.backgroundColor ?? 'white'}
-      >
-        {stepLoader}
-      </LoaderContainer>
       <BootstrapForm
         {...formProps}
         autoComplete={formSettings.autocomplete}
@@ -1476,6 +1464,7 @@ function Form({
           ...(popupOptions ? { borderRadius: '10px' } : {})
         }}
       >
+        {stepLoader}
         {children}
         <Grid step={activeStep} form={form} viewport={viewport} />
         {popupOptions && (
@@ -1510,6 +1499,7 @@ export function JSForm({
   formName,
   language,
   _internalId,
+  _isAuthLoading = false,
   ...props
 }: Props & InternalProps) {
   const [remount, setRemount] = useState(false);
@@ -1536,6 +1526,7 @@ export function JSForm({
             key={`${formName}_${language}_${remount}`}
             language={language}
             _internalId={_internalId}
+            _isAuthLoading={_isAuthLoading}
           />
         </Route>
       </BrowserRouter>
