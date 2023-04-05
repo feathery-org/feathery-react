@@ -130,7 +130,6 @@ export interface Props {
   onViewElements?: string[];
   initialValues?: FieldValues;
   initialStepId?: string;
-  display?: 'inline' | 'modal';
   language?: string;
   popupOptions?: PopupOptions;
   elementProps?: ElementProps;
