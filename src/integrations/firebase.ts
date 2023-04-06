@@ -182,7 +182,9 @@ export function isHrefFirebaseMagicLink(): boolean {
 export function useFirebaseRecaptcha(step: any, visiblePositions: any) {
   // Logic to run on each step once firebase is loaded
   useEffect(() => {
+    console.log('[useFirebaseRecaptcha]', { step, visiblePositions });
     if (!step || !global.firebase) return;
+    console.log('[useFirebaseRecaptcha] didnt return early');
 
     const smsButton = getVisibleElements(step, visiblePositions, [
       'buttons'
@@ -192,12 +194,25 @@ export function useFirebaseRecaptcha(step: any, visiblePositions: any) {
       )
     );
 
+    console.log('[useFirebaseRecaptcha] smsButton', smsButton);
+    console.log(
+      '[useFirebaseRecaptcha] document.getElementById(smsButton.id)',
+      document.getElementById(smsButton.id)
+    );
+
     if (smsButton) {
-      window.firebaseRecaptchaVerifier =
-        authState.client.auth &&
-        new authState.client.auth.RecaptchaVerifier(smsButton.id, {
+      console.log('[useFirebaseRecaptcha] attemtping new verifier');
+      const verifier = new authState.client.auth.RecaptchaVerifier(
+        smsButton.id,
+        {
           size: 'invisible'
-        });
+        }
+      );
+      console.log('[useFirebaseRecaptcha] setting verifier', {
+        auth: authState.client.auth,
+        verifier
+      });
+      window.firebaseRecaptchaVerifier = authState.client.auth && verifier;
     }
   }, [step?.id]);
 }
