@@ -190,14 +190,16 @@ export function useFirebaseRecaptcha(step: any, visiblePositions: any) {
       element.properties.actions.some(
         (action: any) => action.type === ACTION_SEND_SMS
       )
-    );
+    )?.element;
 
     if (smsButton) {
-      window.firebaseRecaptchaVerifier =
-        authState.client.auth &&
-        new authState.client.auth.RecaptchaVerifier(smsButton.id, {
+      const verifier = new authState.client.auth.RecaptchaVerifier(
+        smsButton.id,
+        {
           size: 'invisible'
-        });
+        }
+      );
+      window.firebaseRecaptchaVerifier = authState.client.auth && verifier;
     }
   }, [step?.id]);
 }
