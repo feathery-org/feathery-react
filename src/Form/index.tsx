@@ -1493,12 +1493,11 @@ function Form({
         {!productionEnv && (
           <DevNavBar allSteps={steps} curStep={activeStep} history={history} />
         )}
-        {formSettings.showBrand && (
-          <Watermark
-            addChin={addChin}
-            brandPosition={formSettings.brandPosition}
-          />
-        )}
+        <Watermark
+          show={formSettings.showBrand}
+          addChin={addChin}
+          brandPosition={formSettings.brandPosition}
+        />
       </BootstrapForm>
     </ReactPortal>
   );
