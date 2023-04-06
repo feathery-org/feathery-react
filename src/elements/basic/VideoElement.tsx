@@ -39,6 +39,49 @@ function VideoElement({
     () => applyVideoStyles(element, responsiveStyles),
     [responsiveStyles]
   );
+
+  const props = element.properties;
+  let component;
+  if (props.source_url) {
+    const videoType = props.source_type ?? 'iframe';
+    if (videoType === 'iframe') {
+      component = (
+        <iframe
+          width='100%'
+          height='100%'
+          frameBorder='0'
+          src={getEmbedUrl(props.source_url)}
+          {...elementProps}
+        />
+      );
+    } else {
+      component = (
+        <video
+          width='100%'
+          height='100%'
+          autoPlay={props.autoplay}
+          controls={props.controls}
+          muted={props.muted}
+          loop={props.loop}
+        >
+          <source src={props.source_url} type={props.video_extension} />
+        </video>
+      );
+    }
+  } else {
+    component = (
+      <img
+        src={PLACEHOLDER_VIDEO}
+        alt='Video Placeholder'
+        css={{
+          objectFit: 'cover',
+          width: '100%',
+          maxHeight: '100%'
+        }}
+        {...elementProps}
+      />
+    );
+  }
   return (
     <div
       css={{
@@ -48,26 +91,7 @@ function VideoElement({
       }}
     >
       {children}
-      {element.properties.source_url ? (
-        <iframe
-          width='100%'
-          height='100%'
-          frameBorder='0'
-          src={getEmbedUrl(element.properties.source_url)}
-          {...elementProps}
-        />
-      ) : (
-        <img
-          src={PLACEHOLDER_VIDEO}
-          alt='Video Placeholder'
-          css={{
-            objectFit: 'cover',
-            width: '100%',
-            maxHeight: '100%'
-          }}
-          {...elementProps}
-        />
-      )}
+      {component}
     </div>
   );
 }
