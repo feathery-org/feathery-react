@@ -14,9 +14,11 @@ export default class CallbackQueue {
     this.setLoaders = setLoaders;
   }
 
-  addCallback(promise: any, loaders: any) {
+  addCallback(promise: any) {
     if (promise) {
-      if (isObjectEmpty(loaders)) {
+      this.setLoaders((loaders: any) => {
+        if (isObjectEmpty(loaders)) return loaders;
+
         const payload = {
           showOn: 'on_button',
           loader: <Spinner />,
@@ -30,13 +32,14 @@ export default class CallbackQueue {
             loaders[button.id] = payload;
             return loaders;
           }, {});
-        if (!isObjectEmpty(newLoaders)) {
-          this.setLoaders((loaders: any) => ({
-            ...loaders,
-            ...newLoaders
-          }));
-        }
-      }
+
+        if (isObjectEmpty(newLoaders)) return loaders;
+
+        return {
+          ...loaders,
+          ...newLoaders
+        };
+      });
 
       this.queue.push(promise);
 

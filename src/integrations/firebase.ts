@@ -125,7 +125,7 @@ export async function firebaseSendSms({
       return {};
     })
     .catch((error: any) => {
-      console.log(error);
+      console.warn(error);
       // Error; SMS not sent. Reset Recaptcha
       window.firebaseRecaptchaVerifier
         .render()
@@ -135,7 +135,7 @@ export async function firebaseSendSms({
           // eslint-disable-next-line no-undef
           grecaptcha.reset(widgetId);
         })
-        .catch((e: any) => console.log(e));
+        .catch((e: any) => console.warn(e));
       return {
         errorMessage: error.message,
         errorField: servar

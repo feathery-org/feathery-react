@@ -7,20 +7,18 @@ import React, {
 } from 'react';
 import { JSForm, Props as FormProps } from '../Form';
 import { defaultClient, initInfo } from '../utils/init';
-import Spinner from '../elements/components/Spinner';
-import LoaderContainer from '../elements/components/LoaderContainer';
 import { v4 as uuidv4 } from 'uuid';
 import {
   registerRenderCallback,
   rerenderAllForms
 } from '../utils/formHelperFunctions';
+import Auth from './internal/AuthIntegrationInterface';
+import { clearStytchDomainCookie } from '../integrations/stytch';
 /** TODO: These next 2 should maybe be dynamically imported, but having trouble with that
  * combined 6.9k gzipped, so OK for now
  */
 import { useIdleTimer } from 'react-idle-timer';
 import throttle from 'lodash.throttle';
-import Auth from './internal/AuthIntegrationInterface';
-import { clearStytchDomainCookie } from '../integrations/stytch';
 
 const TEN_SECONDS_IN_MILLISECONDS = 1000 * 10;
 const FIVE_MINUTES_IN_MILLISECONDS = 1000 * 60 * 5;
@@ -48,7 +46,6 @@ export const authState = {
 const LoginForm = ({
   authId: authIdProp,
   formProps,
-  loader = <Spinner />,
   loginPath,
   onLogin = () => {},
   onLogout = () => {},
@@ -58,7 +55,6 @@ const LoginForm = ({
 }: {
   authId?: string;
   formProps: FormProps;
-  loader?: JSX.Element;
   loginPath?: string;
   onLogin?: () => void;
   onLogout?: () => void;
@@ -182,11 +178,11 @@ const LoginForm = ({
     return (
       // Since we want to auth gate we should make the login form take up the entire page
       <div style={{ height: '100vh', width: '100vw' }}>
-        <LoaderContainer showLoader={showLoader}>
-          <div style={{ height: '10vh', width: '10vh' }}>{loader}</div>
-        </LoaderContainer>
-
-        <JSForm {...formProps} _internalId={_internalId} />
+        <JSForm
+          {...formProps}
+          _internalId={_internalId}
+          _isAuthLoading={showLoader}
+        />
       </div>
     );
   } else {
