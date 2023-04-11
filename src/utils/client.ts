@@ -83,6 +83,8 @@ export default class Client {
     const { headers, ...otherOptions } = options;
     options = {
       cache: 'no-store',
+      // Write requests must succeed so data is tracked
+      keepalive: ['POST', 'PATCH', 'PUT'].includes(options.method),
       headers: {
         Authorization: 'Token ' + sdkKey,
         ...headers
