@@ -42,7 +42,7 @@ import {
   getVisiblePositions
 } from '../utils/hideAndRepeats';
 import { validators, validateElements } from '../utils/validation';
-import { initState, fieldValues, FieldValues, initInfo } from '../utils/init';
+import { initState, fieldValues, FieldValues } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
@@ -108,10 +108,8 @@ import {
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
 import {
-  areThereOnboardingQuestions,
   getAuthIntegrationMetadata,
-  isTerminalStepAuth,
-  sendCompletedEventIfNoOnboarding
+  isTerminalStepAuth
 } from '../auth/internal/utils';
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
@@ -229,7 +227,6 @@ function Form({
   const [curDepth, setCurDepth] = useState(0);
   const [maxDepth, setMaxDepth] = useState(0);
   const [formSettings, setFormSettings] = useState({
-    redirectUrl: '',
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
@@ -275,7 +272,9 @@ function Form({
     initialStep: getInitialStep({ initialStepId, steps }),
     integrations,
     setStepKey,
-    steps
+    steps,
+    client,
+    _internalId
   });
 
   const [backNavMap, setBackNavMap] = useState({});
@@ -304,10 +303,6 @@ function Form({
     registerRenderCallback(_internalId, 'form', () => {
       setRender((render) => ({ ...render }));
     });
-    if (formSettings.redirectUrl)
-      initState.redirectCallbacks[_internalId] = () => {
-        window.location.href = formSettings.redirectUrl;
-      };
     if (
       contextRef &&
       Object.prototype.hasOwnProperty.call(contextRef, 'current')
@@ -636,19 +631,20 @@ function Form({
       const clientInstance = new Client(formName, hasRedirected);
       setClient(clientInstance);
       setFirst(true);
-      let redirectUrl = '';
       // render form without values first for speed
       const formPromise = clientInstance
         .fetchForm(initialValues, language)
         .then(({ steps, ...res }) => {
-          redirectUrl = res.redirect_url;
           steps = steps.reduce((result: any, step: any) => {
             result[step.key] = step;
             return result;
           }, {});
           setSteps(steps);
+          if (res.redirect_url)
+            initState.redirectCallbacks[_internalId] = () => {
+              window.location.href = res.redirect_url;
+            };
           setFormSettings({
-            redirectUrl: res.redirect_url,
             errorType: res.error_type,
             autocomplete: res.autocomplete ? 'on' : 'off',
             autofocus: res.autofocus,
@@ -680,19 +676,8 @@ function Form({
             clientInstance.submitCustom(castValues, false);
           }
 
-          const onboardingExists = areThereOnboardingQuestions(
-            session.integrations
-          );
-          const isFormComplete = session.form_completed;
-
-          // can I drop onboardingExists?
-          if (isFormComplete && !onboardingExists && authState.authId)
-            // Redirect callbacks aren't yet set
-            window.location.href = redirectUrl;
-
-          if (authState.redirectAfterLogin)
-            // User is authenticating. auth hook will set the initial stepKey once auth has finished
-            return;
+          // User is authenticating. auth hook will set the initial stepKey once auth has finished
+          if (authState.redirectAfterLogin) return;
 
           const newKey = getInitialStep({
             initialStepId,
@@ -715,21 +700,15 @@ function Form({
   useEffect(() => {
     return history.listen(async () => {
       const hashKey = getUrlHash();
-      if (hashKey in steps) {
-        setStepKey(hashKey);
-      }
+      if (hashKey in steps) setStepKey(hashKey);
     });
   }, [steps]);
 
   useEffect(() => {
     // We set render to re-evaluate auth nav rules - but should only getNewStep if either the step or authId has changed.
     // Should not fetch new step if render was set for another reason
-    if (
-      stepKey &&
-      (prevStepKey !== stepKey || prevAuthId !== authState.authId)
-    ) {
+    if (stepKey && (prevStepKey !== stepKey || prevAuthId !== authState.authId))
       getNewStep(stepKey);
-    }
   }, [stepKey, render]);
 
   // Note: If index is provided, handleChange assumes the field is a repeated field
@@ -1245,13 +1224,8 @@ function Form({
       } else if (type === ACTION_SEND_SMS) {
         const phoneNum = fieldValues[action.auth_target_field_key] as string;
         if (validators.phone(phoneNum)) {
-          sendCompletedEventIfNoOnboarding(
-            integrations,
-            activeStep.key,
-            client,
-            // Don't block to make potential subsequent navigation snappy
-            () => Auth.sendSms(phoneNum)
-          );
+          // Don't block to make potential subsequent navigation snappy
+          Auth.sendSms(phoneNum);
         } else {
           setElementError(
             'A valid phone number is needed to send your login code.'
@@ -1267,40 +1241,19 @@ function Form({
           hasErr = true;
         });
         if (hasErr) break;
-        else {
-          const onboardingExists = areThereOnboardingQuestions(
-            session.integrations
-          );
-          const isFormComplete = session.form_completed;
-
-          // can I drop onboardingExists?
-          if (isFormComplete && !onboardingExists && authState.authId)
-            initInfo().redirectCallbacks[_internalId]();
-          else authState.redirectAfterLogin = true;
-        }
+        else authState.redirectAfterLogin = true;
       } else if (type === ACTION_SEND_MAGIC_LINK) {
         const email = fieldValues[action.auth_target_field_key] as string;
         if (validators.email(email)) {
-          sendCompletedEventIfNoOnboarding(
-            integrations,
-            activeStep.key,
-            client,
-            // Don't block to make potential subsequent navigation snappy
-            () => Auth.sendMagicLink(email)
-          );
+          // Don't block to make potential subsequent navigation snappy
+          Auth.sendMagicLink(email);
         } else {
           setElementError('A valid email is needed to send your magic link.');
           break;
         }
-      } else if (type === ACTION_OAUTH_LOGIN) {
-        // TODO: should we check to see if completed is already true and short circuit this logic?
-        sendCompletedEventIfNoOnboarding(
-          integrations,
-          activeStep.key,
-          client,
-          () => Auth.oauthRedirect(action.oauth_type)
-        );
-      } else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
+      } else if (type === ACTION_OAUTH_LOGIN)
+        Auth.oauthRedirect(action.oauth_type);
+      else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEXT) {
         const metadata = {
           elementType,
@@ -1476,9 +1429,9 @@ function Form({
     if (!anyFinished) return;
     const redirectForm = () => {
       history.replace(location.pathname + location.search);
-      if (formSettings.redirectUrl) {
+      if (initState.redirectCallbacks[_internalId]) {
         hasRedirected.current = true;
-        window.location.href = formSettings.redirectUrl;
+        initState.redirectCallbacks[_internalId]();
       }
     };
     runUserCallback(onFormComplete).then(redirectForm);

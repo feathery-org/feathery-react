@@ -33,7 +33,7 @@ export function isTerminalStepAuth(
   );
 }
 
-export function areThereOnboardingQuestions(integrations: any): boolean {
+export function hasOnboardingSteps(integrations: any): boolean {
   const authIntegration = getAuthIntegrationMetadata(integrations);
   if (!authIntegration) return false;
   // Form should be considered complete if there is no login step or
@@ -44,25 +44,6 @@ export function areThereOnboardingQuestions(integrations: any): boolean {
     authIntegration.logout_step !== '';
 
   return !isOnboarding;
-}
-
-// TODO: need to set local formCompleted so that the flag is set when verifying sms code
-export function sendCompletedEventIfNoOnboarding(
-  integrations: any,
-  stepKey: string,
-  client: any,
-  authAction: () => void
-) {
-  const onboardingExists = areThereOnboardingQuestions(integrations);
-  if (!onboardingExists) {
-    const eventData: Record<string, any> = {
-      step_key: stepKey,
-      event: 'complete'
-    };
-    client.registerEvent(eventData).then(authAction);
-  } else {
-    authAction();
-  }
 }
 
 export function getRedirectUrl() {
