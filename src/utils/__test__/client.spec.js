@@ -36,6 +36,7 @@ describe('client', () => {
         `${CDN_URL}panel/v16/?form_key=formKey`,
         {
           cache: 'no-store',
+          keepalive: false,
           importance: 'high',
           headers: {
             Authorization: 'Token sdkKey',
@@ -76,6 +77,7 @@ describe('client', () => {
         `${API_URL}panel/session/v2/?form_key=formKey&fuser_key=userId`,
         {
           cache: 'no-store',
+          keepalive: false,
           importance: 'high',
           headers: { Authorization: 'Token sdkKey' }
         }
@@ -104,6 +106,7 @@ describe('client', () => {
         `${API_URL}panel/custom/submit/v3/`,
         {
           cache: 'no-store',
+          keepalive: true,
           headers: { Authorization: 'Token sdkKey' },
           method: 'POST',
           body: expect.any(FormData)
@@ -144,6 +147,7 @@ describe('client', () => {
         `${API_URL}panel/step/submit/v3/`,
         {
           cache: 'no-store',
+          keepalive: true,
           headers: {
             Authorization: 'Token sdkKey',
             'Content-Type': 'application/json'
@@ -185,6 +189,7 @@ describe('client', () => {
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(`${API_URL}event/`, {
         cache: 'no-store',
+        keepalive: true,
         headers: {
           Authorization: 'Token sdkKey',
           'Content-Type': 'application/json'
@@ -232,6 +237,7 @@ describe('client', () => {
         {
           body: JSON.stringify(body),
           cache: 'no-store',
+          keepalive: true,
           headers: {
             Authorization: 'Token sdkKey',
             'Content-Type': 'application/json'
@@ -270,6 +276,7 @@ describe('client', () => {
         `${API_URL}stripe/payment_method/card/?field_id=${paymentMethodFieldId}&form_key=${formKey}&user_id=${userId}&stripe_payment_method_id=${stripePaymentMethodId}`,
         {
           cache: 'no-store',
+          keepalive: false,
           headers: {
             Authorization: 'Token sdkKey',
             'Content-Type': 'application/json'
@@ -298,6 +305,7 @@ describe('client', () => {
       expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/payment/`, {
         body: JSON.stringify(body),
         cache: 'no-store',
+        keepalive: true,
         headers: {
           Authorization: 'Token sdkKey',
           'Content-Type': 'application/json'
@@ -322,6 +330,7 @@ describe('client', () => {
       expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/payment/`, {
         body: JSON.stringify(body),
         cache: 'no-store',
+        keepalive: true,
         headers: {
           Authorization: 'Token sdkKey',
           'Content-Type': 'application/json'
@@ -359,6 +368,7 @@ describe('client', () => {
       expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/checkout/`, {
         body: JSON.stringify(body),
         cache: 'no-store',
+        keepalive: true,
         headers: {
           Authorization: 'Token sdkKey',
           'Content-Type': 'application/json'
