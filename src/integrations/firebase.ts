@@ -41,7 +41,7 @@ export function installFirebase(firebaseConfig: any) {
   }
 }
 
-export function firebaseLoginOnLoad(featheryClient: any) {
+export function firebaseLoginOnLoad(featheryClient: any): Promise<any> {
   if (isHrefFirebaseMagicLink()) {
     const authEmail = getCookie('featheryFirebaseEmail');
     if (authEmail) {
@@ -66,7 +66,7 @@ export function firebaseLoginOnLoad(featheryClient: any) {
     const oauthRedirect = getCookie('featheryFirebaseRedirect');
     if (oauthRedirect) {
       deleteCookie('featheryFirebaseRedirect');
-      authState.client
+      return authState.client
         .auth()
         .getRedirectResult()
         .then((result: any) => {
@@ -79,6 +79,7 @@ export function firebaseLoginOnLoad(featheryClient: any) {
         });
     }
   }
+  return Promise.resolve();
 }
 
 export async function firebaseSendMagicLink({

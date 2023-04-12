@@ -1022,8 +1022,9 @@ function Form({
       const hasNext = nextStep.buttons.some((b: any) =>
         b.properties.actions.some((action: any) => action.type === ACTION_NEXT)
       );
-      const terminalStep = !hasNext && nextStep.next_conditions.length === 0;
-      if (terminalStep) {
+      const nextStepIsTerminal =
+        !hasNext && nextStep.next_conditions.length === 0;
+      if (nextStepIsTerminal) {
         const authIntegration = getAuthIntegrationMetadata(integrations);
         const completed = !isTerminalStepAuth(
           authIntegration,

@@ -37,6 +37,8 @@ const useFormAuth = ({
         setUrlStepHash(history, steps, stepName);
         authState.redirectAfterLogin = false;
       } else {
+        // If there are no onboarding steps, we can mark the form as complete.
+        // This is only guaranteed to happen for OAuth - both magic link & SMS have potential to set completed via goToNewStep
         client.registerEvent({
           step_key: initialStep,
           event: 'complete'
