@@ -19,6 +19,7 @@ import { clearStytchDomainCookie } from '../integrations/stytch';
  */
 import { useIdleTimer } from 'react-idle-timer';
 import throttle from 'lodash.throttle';
+import LoginError from './LoginError';
 
 const TEN_SECONDS_IN_MILLISECONDS = 1000 * 10;
 const FIVE_MINUTES_IN_MILLISECONDS = 1000 * 60 * 5;
@@ -40,7 +41,8 @@ export const authState = {
     authState.client = newClient;
   },
   onLogin: () => {},
-  onLogout: () => {}
+  onLogout: () => {},
+  showError: () => {}
 };
 
 const LoginForm = ({
@@ -73,6 +75,7 @@ const LoginForm = ({
   // Use this render state to force re-evaluation of authId, since authState isn't reactive as-is
   const [, setRender] = useState({ v: 1 });
   const [showLoader, setShowLoader] = useState(false);
+  const [loginError, setLoginError] = useState(false);
 
   useEffect(() => {
     if (
@@ -98,6 +101,7 @@ const LoginForm = ({
 
     authState._featheryHosted = _featheryHosted;
 
+    authState.showError = () => setLoginError(true);
     // Register onLogin cb so it can be called by Client.submitAuthInfo
     authState.onLogin = async () => {
       await onLogin();
@@ -178,11 +182,15 @@ const LoginForm = ({
     return (
       // Since we want to auth gate we should make the login form take up the entire page
       <div style={{ height: '100vh', width: '100vw' }}>
-        <JSForm
-          {...formProps}
-          _internalId={_internalId}
-          _isAuthLoading={showLoader}
-        />
+        {loginError ? (
+          <LoginError />
+        ) : (
+          <JSForm
+            {...formProps}
+            _internalId={_internalId}
+            _isAuthLoading={showLoader}
+          />
+        )}
       </div>
     );
   } else {

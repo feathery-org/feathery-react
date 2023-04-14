@@ -109,12 +109,13 @@ export async function stytchLoginOnLoad(featheryClient: any) {
     // @ts-expect-error TS(2721): Cannot invoke an object which is possibly 'null'.
     return authFn()
       .then(() => stytchSubmitAuthInfo(featheryClient))
-      .catch((e: any) =>
+      .catch((e: any) => {
+        authState.showError();
         console.warn(
           'Auth failed. Possibly because your magic link expired.',
           e
-        )
-      );
+        );
+      });
   }
 }
 
@@ -210,7 +211,7 @@ function determineAuthFn({ token, type }: any) {
   return authFn;
 }
 
-function removeStytchQueryParams() {
+export function removeStytchQueryParams() {
   const queryParams = new URLSearchParams(window.location.search);
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
