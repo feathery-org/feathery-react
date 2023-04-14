@@ -2,18 +2,23 @@ import React, { useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
 import { authState } from '../LoginForm';
 import { getUrlHash, setUrlStepHash } from '../../utils/formHelperFunctions';
-import { getAuthIntegrationMetadata } from './utils';
+import { hasOnboardingSteps, getAuthIntegrationMetadata } from './utils';
+import { initState } from '../../utils/init';
 
 const useFormAuth = ({
   initialStep,
   integrations,
   setStepKey,
-  steps
+  steps,
+  client,
+  _internalId
 }: {
   initialStep: string;
   integrations: null | Record<string, any>;
   setStepKey: React.Dispatch<React.SetStateAction<string>>;
   steps: any;
+  client: any;
+  _internalId: string;
 }) => {
   const history = useHistory();
 
@@ -26,10 +31,20 @@ const useFormAuth = ({
       integrations &&
       Object.keys(integrations).length
     ) {
-      const stepName = getNextAuthStep();
-      setStepKey(stepName);
-      setUrlStepHash(history, steps, stepName);
-      authState.redirectAfterLogin = false;
+      if (hasOnboardingSteps(integrations)) {
+        const stepName = getNextAuthStep();
+        setStepKey(stepName);
+        setUrlStepHash(history, steps, stepName);
+        authState.redirectAfterLogin = false;
+      } else {
+        // If there are no onboarding steps, we can mark the form as complete.
+        // This is only guaranteed to happen for OAuth - both magic link & SMS have potential to set completed via goToNewStep
+        client.registerEvent({
+          step_key: initialStep,
+          event: 'complete'
+        });
+        initState.redirectCallbacks[_internalId]();
+      }
     }
   }, [authState.redirectAfterLogin, steps, integrations, authState.authId]);
 

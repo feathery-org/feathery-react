@@ -227,7 +227,6 @@ function Form({
   const [curDepth, setCurDepth] = useState(0);
   const [maxDepth, setMaxDepth] = useState(0);
   const [formSettings, setFormSettings] = useState({
-    redirectUrl: '',
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
@@ -273,7 +272,9 @@ function Form({
     initialStep: getInitialStep({ initialStepId, steps }),
     integrations,
     setStepKey,
-    steps
+    steps,
+    client,
+    _internalId
   });
 
   const [backNavMap, setBackNavMap] = useState({});
@@ -302,10 +303,6 @@ function Form({
     registerRenderCallback(_internalId, 'form', () => {
       setRender((render) => ({ ...render }));
     });
-    if (formSettings.redirectUrl)
-      initState.redirectCallbacks[_internalId] = () => {
-        window.location.href = formSettings.redirectUrl;
-      };
     if (
       contextRef &&
       Object.prototype.hasOwnProperty.call(contextRef, 'current')
@@ -643,8 +640,11 @@ function Form({
             return result;
           }, {});
           setSteps(steps);
+          if (res.redirect_url)
+            initState.redirectCallbacks[_internalId] = () => {
+              window.location.href = res.redirect_url;
+            };
           setFormSettings({
-            redirectUrl: res.redirect_url,
             errorType: res.error_type,
             autocomplete: res.autocomplete ? 'on' : 'off',
             autofocus: res.autofocus,
@@ -1022,8 +1022,9 @@ function Form({
       const hasNext = nextStep.buttons.some((b: any) =>
         b.properties.actions.some((action: any) => action.type === ACTION_NEXT)
       );
-      const terminalStep = !hasNext && nextStep.next_conditions.length === 0;
-      if (terminalStep) {
+      const nextStepIsTerminal =
+        !hasNext && nextStep.next_conditions.length === 0;
+      if (nextStepIsTerminal) {
         const authIntegration = getAuthIntegrationMetadata(integrations);
         const completed = !isTerminalStepAuth(
           authIntegration,
@@ -1429,9 +1430,9 @@ function Form({
     if (!anyFinished) return;
     const redirectForm = () => {
       history.replace(location.pathname + location.search);
-      if (formSettings.redirectUrl) {
+      if (initState.redirectCallbacks[_internalId]) {
         hasRedirected.current = true;
-        window.location.href = formSettings.redirectUrl;
+        initState.redirectCallbacks[_internalId]();
       }
     };
     runUserCallback(onFormComplete).then(redirectForm);

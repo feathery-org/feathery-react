@@ -33,6 +33,19 @@ export function isTerminalStepAuth(
   );
 }
 
+export function hasOnboardingSteps(integrations: any): boolean {
+  const authIntegration = getAuthIntegrationMetadata(integrations);
+  if (!authIntegration) return false;
+  // Form should be considered complete if there is no login step or
+  // protected steps. That means there are no onboarding questions.
+  const isOnboarding =
+    authIntegration.auth_gate_steps.length === 0 &&
+    authIntegration.login_step === '' &&
+    authIntegration.logout_step !== '';
+
+  return !isOnboarding;
+}
+
 export function getRedirectUrl() {
   const { origin, pathname, hash } = window.location;
   const queryParams = new URLSearchParams(window.location.search);
