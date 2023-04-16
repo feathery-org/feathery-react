@@ -43,7 +43,8 @@ const useFormAuth = ({
           step_key: initialStep,
           event: 'complete'
         });
-        initState.redirectCallbacks[_internalId]();
+        const redirect = initState.redirectCallbacks[_internalId];
+        if (redirect) redirect();
       }
     }
   }, [authState.redirectAfterLogin, steps, integrations, authState.authId]);
