@@ -135,6 +135,15 @@ export function stytchVerifySms({
     });
 }
 
+function _getDomain() {
+  const domainParts = window.location.hostname.split('.');
+  return domainParts.length === 1
+    ? 'localhost'
+    : domainParts[domainParts.length - 2] +
+        '.' +
+        domainParts[domainParts.length - 1];
+}
+
 /**
  * [Hosted Login] This fn will set the Stytch cookie on the primary site domain.
  * For example, if a form is hosted at login.feathery.io the default Stytch
@@ -142,12 +151,7 @@ export function stytchVerifySms({
  * domain feathery.io, so that subdomains can be authenticated
  */
 export function setStytchDomainCookie() {
-  const domainParts = window.location.hostname.split('.');
-  const domain =
-    domainParts.length === 1
-      ? 'localhost'
-      : domainParts.at(-2) + '.' + domainParts.at(-1);
-
+  const domain = _getDomain();
   const commonCookieOptions = `; Domain=${domain}; Path=/; Max-Age=86400; SameSite=Lax; Secure`;
   document.cookie = `stytch_session_jwt=${getStytchJwt()}${commonCookieOptions}`;
   document.cookie = `stytch_session=${getCookie(
@@ -160,12 +164,7 @@ export function setStytchDomainCookie() {
  * This is needed if the session was revoked on another domain.
  */
 export function clearStytchDomainCookie() {
-  const domainParts = window.location.hostname.split('.');
-  const domain =
-    domainParts.length === 1
-      ? 'localhost'
-      : domainParts.at(-2) + '.' + domainParts.at(-1);
-
+  const domain = _getDomain();
   document.cookie = `stytch_session_jwt=; Max-Age=-1; Domain=${domain}`;
   document.cookie = `stytch_session=; Max-Age=-1; Domain=${domain}`;
 }
