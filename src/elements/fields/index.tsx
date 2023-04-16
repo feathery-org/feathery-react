@@ -179,8 +179,7 @@ function applyFieldStyles(field: any, styles: any) {
         'field',
         ['button_width', 'button_width_unit', 'content_responsive'],
         (a: any, b: any, c: boolean) => ({
-          [c ? 'minWidth' : 'width']: `${a}${b}`,
-          flex: c ? '1' : ''
+          [c ? 'minWidth' : 'width']: `${a}${b}`
         })
       );
       styles.apply(
