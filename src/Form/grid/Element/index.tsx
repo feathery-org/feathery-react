@@ -11,6 +11,7 @@ import { justInsert, justRemove } from '../../../utils/array';
 import { fieldValues } from '../../../utils/init';
 import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 import {
+  findEnterButton,
   getInlineError,
   isFieldActuallyRequired,
   textFieldShouldSubmit
@@ -228,6 +229,17 @@ const Element = ({ node: el, form, flags }: any) => {
       required
     };
 
+    const onEnter = (e: any) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Submit steps by pressing `Enter`
+      const enterButton = findEnterButton(activeStep);
+      if (enterButton) {
+        // Simulate button click if available
+        buttonOnClick(enterButton);
+      }
+    };
+
     switch (servar.type) {
       case 'date_selector':
         return (
@@ -363,6 +375,7 @@ const Element = ({ node: el, form, flags }: any) => {
               handleOtherStateChange(otherVal, e, updateFieldValues);
               onChange();
             }}
+            onEnter={onEnter}
           />
         );
       case 'select':
@@ -380,6 +393,7 @@ const Element = ({ node: el, form, flags }: any) => {
               handleOtherStateChange(otherVal, e, updateFieldValues);
               onChange({ submitData: autosubmit && e.target.value });
             }}
+            onEnter={onEnter}
           />
         );
       case 'hex_color':
@@ -490,6 +504,7 @@ const Element = ({ node: el, form, flags }: any) => {
                 });
               }
             }}
+            onEnter={onEnter}
             setRef={(ref: any) => {
               if (firstField) focusRef.current = ref;
             }}
@@ -540,6 +555,7 @@ const Element = ({ node: el, form, flags }: any) => {
             setRef={(ref: any) => {
               if (firstField) focusRef.current = ref;
             }}
+            onEnter={onEnter}
           />
         );
     }

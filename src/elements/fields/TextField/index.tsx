@@ -128,6 +128,7 @@ function TextField({
   required = false,
   editMode,
   onAccept = () => {},
+  onEnter = () => {},
   setRef = () => {},
   rawValue = '',
   inlineError,
@@ -206,9 +207,10 @@ function TextField({
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
             onKeyDown={(e) => {
-              if (options.length === 0) return;
-              if (e.key === 'Escape') setShowAutocomplete(false);
-              else if (e.key !== 'Enter') setShowAutocomplete(true);
+              if (e.key === 'Enter') onEnter(e);
+              else if (options.length) {
+                setShowAutocomplete(e.key !== 'Escape');
+              }
             }}
             onBlur={() => {
               if (options.length > 0) {

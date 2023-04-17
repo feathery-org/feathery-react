@@ -21,6 +21,7 @@ function CheckboxGroupField({
   otherVal = '',
   onChange = () => {},
   onOtherChange = () => {},
+  onEnter = () => {},
   elementProps = {},
   children
 }: any) {
@@ -93,6 +94,9 @@ function CheckboxGroupField({
             id={servar.key}
             value={otherVal || ''}
             onChange={onOtherChange}
+            onKeyDown={(e: any) => {
+              if (e.key === 'Enter') onEnter(e);
+            }}
             maxLength={servar.max_length}
             minLength={servar.min_length}
             required={otherChecked}

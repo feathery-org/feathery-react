@@ -23,6 +23,7 @@ function AddressLine1({
   editMode,
   onSelect = () => {},
   onBlur = () => {},
+  onEnter = () => {},
   setRef = () => {},
   value = '',
   inlineError,
@@ -129,8 +130,8 @@ function AddressLine1({
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
             onKeyDown={(e) => {
-              if (e.key === 'Escape') setShowOptions(false);
-              else if (e.key !== 'Enter') setShowOptions(true);
+              if (e.key === 'Enter') onEnter(e);
+              else setShowOptions(e.key !== 'Escape');
             }}
             onFocus={() => setFocused(true)}
             onBlur={(e) => {

@@ -163,24 +163,6 @@ const findSubmitButton = (step: any) =>
         SUBMITTABLE_ACTIONS.includes(action.type) && action.submit
     )
   );
-const findEnterButton = (step: any) => {
-  const buttons = step.buttons;
-  // Enter should first trigger a submittable button
-  const target = buttons.find((b: any) =>
-    b.properties.actions.some(
-      (action: any) =>
-        SUBMITTABLE_ACTIONS.includes(action.type) && action.submit
-    )
-  );
-  if (target) return target;
-
-  // Otherwise it should trigger actions that use a step field
-  return buttons.find((b: any) =>
-    b.properties.actions.some((action: any) =>
-      ACTIONS_TO_VALIDATE.includes(action.type)
-    )
-  );
-};
 const isElementAButtonOnStep = (step: any, el: any) =>
   el.id && step.buttons.find((b: any) => b.id === el.id);
 
@@ -391,25 +373,6 @@ function Form({
       window.scrollTo({ top, behavior: 'smooth' });
     }
   }, [stepKey]);
-
-  useHotkeys(
-    'enter',
-    (e) => {
-      if (!activeStep) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-      // Submit steps by pressing `Enter`
-      const enterButton = findEnterButton(activeStep);
-      if (enterButton) {
-        // Simulate button click if available
-        buttonOnClick(enterButton);
-      }
-    },
-    {
-      enableOnTags: ['INPUT', 'SELECT']
-    }
-  );
 
   function addRepeatedRow() {
     // Collect a list of all repeated elements
