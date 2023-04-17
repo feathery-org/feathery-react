@@ -240,6 +240,7 @@ function ButtonElement({
               responsiveStyles={responsiveStyles}
               cssTarget='buttonLabel'
               editMode={editMode}
+              disabled={disabled}
               focused={focused}
               textCallbacks={textCallbacks}
             />
