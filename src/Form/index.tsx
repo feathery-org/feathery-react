@@ -1264,12 +1264,12 @@ function Form({
         // However, we can link to a field not on this step, in which case we can't lookup the servar in activeStep
         // So either set to false for checkboxes, or '' for other fields
         const defaultValue = value === true ? false : '';
-
         // Toggle 'off' the value if it has already been set (only if toggling)
-        const newValue = {
+        const newValues = {
           [key]: fieldValues[key] === value && toggle ? defaultValue : value
         };
-        updateFieldValues(newValue);
+        updateFieldValues(newValues);
+        client.submitCustom(newValues);
       }
     }
 
