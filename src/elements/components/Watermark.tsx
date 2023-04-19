@@ -11,7 +11,7 @@ export default function Watermark({
     ? { right: 0 }
     : { left: 0 };
   const verticalAlignment = brandPosition.startsWith('bottom')
-    ? { bottom: addChin ? -60 : 0 }
+    ? { bottom: addChin ? -65 : 0 }
     : { top: 0 };
 
   const anchorWrap = (children?: any) => {
@@ -41,8 +41,8 @@ export default function Watermark({
           css={{
             width: `${width}px`,
             height: `${height}px`,
-            marginRight: '5px',
-            marginBottom: '5px',
+            marginRight: '10px',
+            marginBottom: '10px',
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
