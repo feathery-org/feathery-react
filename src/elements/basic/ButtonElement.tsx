@@ -215,7 +215,7 @@ function ButtonElement({
         ...(active === null ? { '&:focus:enabled': activeStyles } : {}),
         '&&': styles.getTarget('button')
       }}
-      disabled={actions.length === 0 || loader || disabled}
+      disabled={!editMode && (actions.length === 0 || loader || disabled)}
       onClick={onClick}
       {...elementProps}
     >
