@@ -100,7 +100,7 @@ export default class Client {
         // Ignore TypeErrors if form has redirected because `fetch` in
         // Safari will error after redirect
         if (
-          (this.ignoreNetworkErrors.current ||
+          (this.ignoreNetworkErrors?.current ||
             TYPE_MESSAGES_TO_IGNORE.includes(e.message)) &&
           e instanceof TypeError
         )
