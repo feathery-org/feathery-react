@@ -61,8 +61,6 @@ function calculateStepCSS(step: any): Record<string, any> {
   const mobile = calculateDimensionsHelper(root, 'mobile_');
 
   const stepCSS = {
-    backgroundColor: `#${root.styles.background_color ?? 'FFFFFF'}`,
-    backgroundImage: `url("${root.styles.background_image_url}")`,
     backgroundSize: 'cover',
     width: '100%',
     minWidth: (desktop as any).minWidth,
