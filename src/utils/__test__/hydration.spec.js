@@ -27,7 +27,6 @@ describe('hydration', () => {
         ]
       };
       const expected = {
-        backgroundColor: '#000000FF',
         width: '100%',
         '@media (max-width: 478px)': {
           width: '100%',
@@ -86,7 +85,6 @@ describe('hydration', () => {
         ]
       };
       const expected = {
-        backgroundColor: '#000000FF',
         width: '100%',
         '@media (max-width: 478px)': {
           width: '100%'
