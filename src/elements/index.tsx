@@ -43,15 +43,14 @@ Object.entries(Elements).map(([key, Element]) => {
       ...props
     }: any) => {
       const responsiveStyles = useMemo(() => {
-        const as = new ResponsiveStyles(element, ['container'], !componentOnly);
-        as.apply('container', 'vertical_alignment', (a: any) => ({
+        const rs = new ResponsiveStyles(element, ['container'], !componentOnly);
+        rs.apply('container', 'vertical_alignment', (a: any) => ({
           justifyContent: a
         }));
-        as.apply('container', 'horizontal_alignment', (a: any) => ({
+        rs.apply('container', 'horizontal_alignment', (a: any) => ({
           alignItems: legacyAlignment(a)
         }));
-        if (key in Basic) as.applyVisibility('container');
-        return as;
+        return rs;
       }, [element, componentOnly]);
       const featheryElement = (
         <Element
