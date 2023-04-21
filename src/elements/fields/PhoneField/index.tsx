@@ -44,7 +44,12 @@ function PhoneField({
 
   const [show, setShow] = useState(false);
   const [curFullNumber, setCurFullNumber] = useState('');
-  const [curCountryCode, setCurCountryCode] = useState(DEFAULT_COUNTRY);
+  const servar = element.servar;
+  const defaultCountry = servar.metadata.default_country ?? DEFAULT_COUNTRY;
+  const [curCountryCode, setCurCountryCode] = useState(defaultCountry);
+
+  useEffect(() => setCurCountryCode(defaultCountry), [defaultCountry]);
+
   const phoneCode = countryMap[curCountryCode].phoneCode;
   const [rawNumber, setRawNumber] = useState('');
   const [formattedNumber, setFormattedNumber] = useState('');
@@ -122,7 +127,6 @@ function PhoneField({
     }
   }, [triggerOnChange]);
 
-  const servar = element.servar;
   return (
     <div
       css={{

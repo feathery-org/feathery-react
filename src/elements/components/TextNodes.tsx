@@ -49,6 +49,7 @@ function TextNodes({
   cssTarget = '',
   conditions = [],
   editMode,
+  disabled = false,
   focused = false,
   textSpanOnClick = () => {},
   textCallbacks = {}
@@ -91,7 +92,7 @@ function TextNodes({
             const attrs = op.attributes || {};
             let onClick = () => {};
             let cursor = 'inherit';
-            if (!editMode) {
+            if (!editMode && !disabled) {
               if (attrs.font_link) {
                 onClick = () => openTab(attrs.font_link);
                 cursor = 'pointer';

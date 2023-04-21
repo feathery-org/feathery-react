@@ -163,24 +163,6 @@ const findSubmitButton = (step: any) =>
         SUBMITTABLE_ACTIONS.includes(action.type) && action.submit
     )
   );
-const findEnterButton = (step: any) => {
-  const buttons = step.buttons;
-  // Enter should first trigger a submittable button
-  const target = buttons.find((b: any) =>
-    b.properties.actions.some(
-      (action: any) =>
-        SUBMITTABLE_ACTIONS.includes(action.type) && action.submit
-    )
-  );
-  if (target) return target;
-
-  // Otherwise it should trigger actions that use a step field
-  return buttons.find((b: any) =>
-    b.properties.actions.some((action: any) =>
-      ACTIONS_TO_VALIDATE.includes(action.type)
-    )
-  );
-};
 const isElementAButtonOnStep = (step: any, el: any) =>
   el.id && step.buttons.find((b: any) => b.id === el.id);
 
@@ -391,25 +373,6 @@ function Form({
       window.scrollTo({ top, behavior: 'smooth' });
     }
   }, [stepKey]);
-
-  useHotkeys(
-    'enter',
-    (e) => {
-      if (!activeStep) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-      // Submit steps by pressing `Enter`
-      const enterButton = findEnterButton(activeStep);
-      if (enterButton) {
-        // Simulate button click if available
-        buttonOnClick(enterButton);
-      }
-    },
-    {
-      enableOnTags: ['INPUT', 'SELECT']
-    }
-  );
 
   function addRepeatedRow() {
     // Collect a list of all repeated elements
@@ -1026,12 +989,10 @@ function Form({
         !hasNext && nextStep.next_conditions.length === 0;
       if (nextStepIsTerminal) {
         const authIntegration = getAuthIntegrationMetadata(integrations);
-        const completed = !isTerminalStepAuth(
+        eventData.completed = !isTerminalStepAuth(
           authIntegration,
           steps[stepKey].id
         );
-        eventData.completed = completed;
-        session.form_completed = completed;
       }
       client
         .registerEvent(eventData, submitPromise)
@@ -1301,12 +1262,12 @@ function Form({
         // However, we can link to a field not on this step, in which case we can't lookup the servar in activeStep
         // So either set to false for checkboxes, or '' for other fields
         const defaultValue = value === true ? false : '';
-
         // Toggle 'off' the value if it has already been set (only if toggling)
-        const newValue = {
+        const newValues = {
           [key]: fieldValues[key] === value && toggle ? defaultValue : value
         };
-        updateFieldValues(newValue);
+        updateFieldValues(newValues);
+        client.submitCustom(newValues);
       }
     }
 
