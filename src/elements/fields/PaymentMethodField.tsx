@@ -12,6 +12,7 @@ import { filterKeys } from '../../utils/primitives';
 import InlineTooltip from '../components/Tooltip';
 import { ERROR_COLOR } from '../styles';
 import useBorder from '../components/useBorder';
+import { featheryDoc } from '../../utils/browser';
 
 // In order for the stripe card element to operate and show the hybrid fields, stripe must be loaded and
 // initialized with a key.  In a runtime form, it is crucial to use the real key.  However. in
@@ -210,7 +211,7 @@ function PaymentMethodField({ editMode, children, ...props }: any) {
   useEffect(() => {
     // if ediatble, i.e. running in dashboard, then just load stripe with key so cardElement shows
     if (editMode)
-      document.dispatchEvent(
+      featheryDoc().dispatchEvent(
         new CustomEvent('stripe_key_loaded', {
           detail: { key: stripeKey }
         })
