@@ -495,6 +495,7 @@ const convertToViewport = (obj: any, viewport: any, props: any) => {
   if (viewport === 'desktop') return obj;
 
   props.forEach((prop: any) => {
+    // Leave styles and mobile_styles untouched so deeper inheritance can happen between them depending on the viewport
     if (prop !== 'styles') {
       const viewportProp = `${viewport}_${prop}`;
       if (obj[viewportProp]) obj[prop] = obj[viewportProp];
