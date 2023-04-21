@@ -288,12 +288,6 @@ class ResponsiveStyles {
     );
   }
 
-  applyVisibility(target: string) {
-    this.apply(target, 'visibility', (a: any) => ({
-      visibility: a
-    }));
-  }
-
   applyColor(target: string, jsonProp: any, cssProp: any, important = false) {
     this.apply(target, jsonProp, (color: any) => {
       if (!color) return {};
