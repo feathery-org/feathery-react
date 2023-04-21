@@ -41,6 +41,13 @@
         "ts-nocheck": true,
         "ts-check": true
       }
+    ],
+    "no-restricted-globals": [
+      "error",
+      {
+        "name": "document",
+        "message": "Use featheryDoc() instead - for SSR purposes."
+      }
     ]
   },
   "overrides": [

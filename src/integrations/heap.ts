@@ -1,3 +1,5 @@
+import { featheryDoc } from '../utils/browser';
+
 export let heapInstalled = false;
 
 export function installHeap(heapConfig: any) {
@@ -8,11 +10,11 @@ export function installHeap(heapConfig: any) {
     window.heap.load = function (e: string) {
       window.heap.appid = e;
       window.heap.config = {};
-      const r = document.createElement('script');
+      const r = featheryDoc().createElement('script');
       r.type = 'text/javascript';
       r.async = !0;
       r.src = 'https://cdn.heapanalytics.com/js/heap-' + e + '.js';
-      const a = document.getElementsByTagName('script')[0] as any;
+      const a = featheryDoc().getElementsByTagName('script')[0] as any;
       a.parentNode.insertBefore(r, a);
       for (
         let n = function (e: any) {

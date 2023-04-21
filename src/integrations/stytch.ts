@@ -1,7 +1,7 @@
 import { StytchHeadlessClient } from '@stytch/vanilla-js/headless';
 import { authState } from '../auth/LoginForm';
 import { getRedirectUrl } from '../auth/internal/utils';
-import { getCookie, getStytchJwt } from '../utils/browser';
+import { featheryDoc, getCookie, getStytchJwt } from '../utils/browser';
 
 let stytchPromise: any = null;
 let config: any = null;
@@ -154,8 +154,8 @@ function _getDomain() {
 export function setStytchDomainCookie() {
   const domain = _getDomain();
   const commonCookieOptions = `; Domain=${domain}; Path=/; Max-Age=86400; SameSite=Lax; Secure`;
-  document.cookie = `stytch_session_jwt=${getStytchJwt()}${commonCookieOptions}`;
-  document.cookie = `stytch_session=${getCookie(
+  featheryDoc().cookie = `stytch_session_jwt=${getStytchJwt()}${commonCookieOptions}`;
+  featheryDoc().cookie = `stytch_session=${getCookie(
     'stytch_session'
   )}${commonCookieOptions}`;
 }
@@ -166,8 +166,8 @@ export function setStytchDomainCookie() {
  */
 export function clearStytchDomainCookie() {
   const domain = _getDomain();
-  document.cookie = `stytch_session_jwt=; Max-Age=-1; Domain=${domain}`;
-  document.cookie = `stytch_session=; Max-Age=-1; Domain=${domain}`;
+  featheryDoc().cookie = `stytch_session_jwt=; Max-Age=-1; Domain=${domain}`;
+  featheryDoc().cookie = `stytch_session=; Max-Age=-1; Domain=${domain}`;
 }
 
 function stytchSubmitAuthInfo(featheryClient: any): Promise<any> {
