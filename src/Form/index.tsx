@@ -1258,13 +1258,23 @@ function Form({
           toggle
         } = action;
 
-        // TODO: get default value here for the field and set it instead of ''
-        // However, we can link to a field not on this step, in which case we can't lookup the servar in activeStep
-        // So either set to false for checkboxes, or '' for other fields
-        const defaultValue = value === true ? false : '';
-        // Toggle 'off' the value if it has already been set (only if toggling)
+        // Nested find statements return an item from the outer collection, so
+        // short circuit the some statement once the field has been found
+        let field: any;
+        Object.values(steps).some((step) => {
+          field = step.servar_fields.find(
+            (field: any) => field.servar.key === key
+          );
+          if (field) return true;
+        });
+
+        const castValue = castVal(field.servar.type, value);
+        const setToDefaultValue =
+          toggle &&
+          JSON.stringify(fieldValues[key]) === JSON.stringify(castValue);
+
         const newValues = {
-          [key]: fieldValues[key] === value && toggle ? defaultValue : value
+          [key]: setToDefaultValue ? getDefaultFieldValue(field) : castValue
         };
         updateFieldValues(newValues);
         client.submitCustom(newValues);
@@ -1310,10 +1320,6 @@ function Form({
         );
         setShouldScrollToTop(false);
       }
-      const metadata = {
-        elementType: 'field',
-        elementIDs: fieldIDs
-      };
       if (submitData) {
         const submitButton = findSubmitButton(activeStep);
         // Simulate button submit if available and valid to trigger button loader
@@ -1326,17 +1332,19 @@ function Form({
         ) {
           buttonOnClick(submitButton);
         } else {
-          submitStep({ metadata, repeat: elementRepeatIndex }).then(
-            (submitPromise) =>
-              submitPromise &&
-              goToNewStep({
-                metadata,
-                submitPromise: Promise.all(submitPromise),
-                submitData: true
-              })
-          );
+          runElementActions({
+            actions: [{ type: ACTION_NEXT, submit: true }],
+            element: { id: fieldIDs[0] },
+            elementType: 'field'
+          });
         }
-      } else goToNewStep({ metadata });
+      } else
+        goToNewStep({
+          metadata: {
+            elementType: 'field',
+            elementIDs: fieldIDs
+          }
+        });
     };
 
   const elementOnView =
