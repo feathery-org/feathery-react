@@ -1310,10 +1310,6 @@ function Form({
         );
         setShouldScrollToTop(false);
       }
-      const metadata = {
-        elementType: 'field',
-        elementIDs: fieldIDs
-      };
       if (submitData) {
         const submitButton = findSubmitButton(activeStep);
         // Simulate button submit if available and valid to trigger button loader
@@ -1326,17 +1322,19 @@ function Form({
         ) {
           buttonOnClick(submitButton);
         } else {
-          submitStep({ metadata, repeat: elementRepeatIndex }).then(
-            (submitPromise) =>
-              submitPromise &&
-              goToNewStep({
-                metadata,
-                submitPromise: Promise.all(submitPromise),
-                submitData: true
-              })
-          );
+          runElementActions({
+            actions: [{ type: ACTION_NEXT, submit: true }],
+            element: { id: fieldIDs[0] },
+            elementType: 'field'
+          });
         }
-      } else goToNewStep({ metadata });
+      } else
+        goToNewStep({
+          metadata: {
+            elementType: 'field',
+            elementIDs: fieldIDs
+          }
+        });
     };
 
   const elementOnView =
