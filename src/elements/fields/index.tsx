@@ -419,14 +419,12 @@ Object.entries(Fields).map(([key, Field]) => {
       [element]
     );
     return (
-      <>
-        <Field
-          element={element}
-          fieldLabel={fieldLabel}
-          responsiveStyles={styles}
-          {...props}
-        />
-      </>
+      <Field
+        element={element}
+        fieldLabel={fieldLabel}
+        responsiveStyles={styles}
+        {...props}
+      />
     );
   });
 });

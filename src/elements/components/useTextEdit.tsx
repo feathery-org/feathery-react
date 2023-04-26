@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { featheryDoc } from '../../utils/browser';
 
 function useTextEdit({
   editable,
@@ -20,7 +21,7 @@ function useTextEdit({
     if (editMode === 'edit') {
       // @ts-expect-error TS(2532): Object is possibly 'undefined'.
       const node = spanRef.current.childNodes[0];
-      const range = document.createRange();
+      const range = featheryDoc().createRange();
       range.setStart(node, 0);
       range.setEnd(node, 0);
       const sel = window.getSelection();

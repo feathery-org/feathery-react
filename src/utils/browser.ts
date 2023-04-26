@@ -3,8 +3,8 @@ export function runningInClient() {
 }
 
 // Safeguard for NextJS support
-// NOTE: This is not needed inside useEffect hooks.
 export function featheryDoc() {
+  // eslint-disable-next-line no-restricted-globals
   return runningInClient() ? document : ({} as any);
 }
 

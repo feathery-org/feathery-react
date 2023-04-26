@@ -345,6 +345,9 @@ const getElementContainerStyle = (node: any, trackAxis: string) => {
   });
 
   rs.applyPadding('container');
+  rs.apply('container', 'visibility', (a: any) => {
+    return { display: a === 'hidden' ? 'none' : 'flex' };
+  });
 
   return { ...styles, ...rs.getTarget('container') };
 };

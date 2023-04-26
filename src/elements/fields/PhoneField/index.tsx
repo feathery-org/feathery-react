@@ -10,6 +10,7 @@ import { isNum } from '../../../utils/primitives';
 import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
+import { featheryDoc } from '../../../utils/browser';
 
 const DEFAULT_COUNTRY = 'US';
 
@@ -94,8 +95,9 @@ function PhoneField({
       );
       if (!clickedWithin) setShow(false);
     }
-    document.addEventListener('mousedown', hideOnClickAway);
-    return () => document.removeEventListener('mousedown', hideOnClickAway);
+    featheryDoc().addEventListener('mousedown', hideOnClickAway);
+    return () =>
+      featheryDoc().removeEventListener('mousedown', hideOnClickAway);
   }, []);
 
   useEffect(() => {
