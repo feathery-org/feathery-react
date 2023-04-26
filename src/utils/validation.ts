@@ -140,7 +140,14 @@ const loadPhoneValidator = () =>
   (phoneLibPromise = dynamicImport(LIB_PHONE_NUMBER_URL));
 
 const validators = {
-  email: (a: string) => emailPattern.test(a),
+  email: (a: string) => {
+    const parts = a.split('@');
+    if (parts.length !== 2) return false;
+    // Email handle cannot end with '.'
+    if (parts[0].endsWith('.')) return false;
+
+    return emailPattern.test(a);
+  },
   phone: (a: string) => {
     try {
       return global.libphonenumber.isValidPhoneNumber(`+${a}`);
