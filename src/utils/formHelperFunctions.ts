@@ -434,6 +434,10 @@ export function castVal(servarType: string | undefined, val: any) {
     case 'checkbox':
       castVal = !['False', 'false'].includes(val);
       break;
+    case 'multiselect':
+    case 'button_group':
+      castVal = [val];
+      break;
     default:
       castVal = String(val);
       break;
