@@ -460,7 +460,7 @@ const GridContainer = ({ children, node }: any) => {
 const buildStepGrid = (step: any, viewport: string, visiblePositions: any) => {
   step = convertStepToViewport(JSON.parse(JSON.stringify(step)), viewport);
 
-  const map = buildGridMap(step);
+  const map = buildGridMap(step, viewport);
   const repeatGrid = step.subgrids.filter((grid: any) => grid.repeated)[0];
   const repeatKey = repeatGrid ? getPositionKey(repeatGrid) : '';
   const tree = buildGridTree(
@@ -498,8 +498,11 @@ const convertToViewport = (obj: any, viewport: any, props: any) => {
   if (viewport === 'desktop') return obj;
 
   props.forEach((prop: any) => {
-    const viewportProp = `${viewport}_${prop}`;
-    if (obj[viewportProp]) obj[prop] = obj[viewportProp];
+    // Leave styles and mobile_styles untouched so deeper inheritance can happen between them depending on the viewport
+    if (prop !== 'styles') {
+      const viewportProp = `${viewport}_${prop}`;
+      if (obj[viewportProp]) obj[prop] = obj[viewportProp];
+    }
   });
 
   return obj;
@@ -515,7 +518,7 @@ const typeMap = {
   videos: 'video'
 };
 
-const buildGridMap = (step: any) => {
+const buildGridMap = (step: any, viewport: string) => {
   const map: any[string] = {};
   let rootSubgrid = {};
 
@@ -526,6 +529,10 @@ const buildGridMap = (step: any) => {
     if (type === 'subgrids') {
       obj.cellStyles = obj.styles;
       delete obj.styles;
+
+      if (viewport === 'mobile') {
+        Object.assign(obj.cellStyles, obj.mobile_styles || {});
+      }
 
       if (obj.position.length === 0) {
         return (rootSubgrid = obj);
