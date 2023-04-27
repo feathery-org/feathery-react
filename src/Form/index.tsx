@@ -1269,7 +1269,7 @@ function Form({
           if (field) return true;
         });
 
-        const castValue = castVal(field.servar.type, value);
+        const castValue = castVal(field?.servar.type, value);
         const setToDefaultValue =
           toggle &&
           JSON.stringify(fieldValues[key]) === JSON.stringify(castValue);
