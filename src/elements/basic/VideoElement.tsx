@@ -24,7 +24,6 @@ function getEmbedUrl(url: any) {
 
 function applyVideoStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets('video');
-  responsiveStyles.applyWidth('video');
   responsiveStyles.applyHeight('video');
   return responsiveStyles;
 }

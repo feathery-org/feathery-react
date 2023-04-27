@@ -200,6 +200,7 @@ function FileUploadField({
             flexDirection: 'column',
             overflow: 'hidden',
             boxSizing: 'border-box',
+            width: '100%',
             ...responsiveStyles.getTarget('ac')
           }}
         >
