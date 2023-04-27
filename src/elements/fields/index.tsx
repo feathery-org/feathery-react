@@ -98,15 +98,6 @@ function applyFieldStyles(field: any, styles: any) {
 
   switch (type) {
     case 'signature':
-      styles.apply('fc', ['width', 'width_unit'], (a: any, b: any) => {
-        if (b === 'px') {
-          return {
-            maxWidth: `${a}${b}`
-          };
-        }
-
-        return {};
-      });
       styles.applyHeight('sub-fc');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyCorners('field');
@@ -116,15 +107,6 @@ function applyFieldStyles(field: any, styles: any) {
     case 'file_upload':
       styles.addTargets('ac', 'add');
       styles.applyHeight('ac');
-      styles.apply('fc', ['width', 'width_unit'], (a: any, b: any) => {
-        if (b === 'px') {
-          return {
-            maxWidth: `${a}${b}`
-          };
-        }
-
-        return {};
-      });
       if (!field.servar.metadata.multiple) {
         styles.applyHeight('fc');
       }
@@ -187,15 +169,6 @@ function applyFieldStyles(field: any, styles: any) {
           textAlign: justifyContentTextAlignMap[a]
         })
       );
-      styles.apply('fc', ['width', 'width_unit'], (a: any, b: any) => {
-        if (b === 'px') {
-          return {
-            maxWidth: `${a}${b}`
-          };
-        }
-
-        return {};
-      });
       styles.applyHeight('fc', '', true);
       styles.apply(
         'field',
@@ -346,15 +319,6 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'phone_number':
       styles.addTargets('fieldToggle');
-      styles.apply('fc', ['width', 'width_unit'], (a: any, b: any) => {
-        if (b === 'px') {
-          return {
-            maxWidth: `${a}${b}`
-          };
-        }
-
-        return {};
-      });
       styles.applyHeight('sub-fc');
       styles.applyBoxShadow('sub-fc');
       styles.applyCorners('sub-fc');
