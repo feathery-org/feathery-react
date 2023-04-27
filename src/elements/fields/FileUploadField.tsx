@@ -130,7 +130,6 @@ function FileUploadField({
               justifyContent: 'center',
               alignItems: 'center',
               boxSizing: 'border-box',
-              margin: isMultiple ? '0 6px 6px 0' : undefined,
               ...responsiveStyles.getTarget('field')
             }}
           >
@@ -191,7 +190,6 @@ function FileUploadField({
           onClick={onClick}
           css={{
             position: 'relative',
-            margin: isMultiple ? '0 6px 6px 0' : undefined,
             cursor: 'pointer',
             maxHeight: '100%',
             display: 'flex',
