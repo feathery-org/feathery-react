@@ -421,9 +421,9 @@ export function getInitialStep({
 }
 
 export function castVal(servarType: string | undefined, val: any) {
-  // If there is no type it is a hidden field and we will treat it as a string
+  // If there is no type, it is a hidden field and we will treat it as a string
   if (servarType === undefined) return String(val);
-  let castVal = val;
+  let castVal;
   switch (servarType) {
     case 'currency':
     case 'integer_field':
