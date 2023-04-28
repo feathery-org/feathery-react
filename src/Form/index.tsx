@@ -8,7 +8,6 @@ import React, {
 } from 'react';
 
 import BootstrapForm from 'react-bootstrap/Form';
-import { useHotkeys } from 'react-hotkeys-hook';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'loda... Remove this comment to see the full error message
 import debounce from 'lodash.debounce';
 
@@ -98,7 +97,6 @@ import {
   ACTION_TRIGGER_PLAID,
   ACTION_URL,
   ACTION_VERIFY_SMS,
-  ACTIONS_TO_VALIDATE,
   shouldValidateStep,
   SUBMITTABLE_ACTIONS,
   ACTION_TRIGGER_ARGYLE,
@@ -1417,8 +1415,6 @@ function Form({
     return stepLoader;
   }
 
-  const addChin =
-    formSettings.showBrand && stepCSS.minHeight !== '100%' && !popupOptions;
   return (
     <ReactPortal options={popupOptions}>
       <BootstrapForm
@@ -1430,7 +1426,6 @@ function Form({
           ...stepCSS,
           ...style,
           position: 'relative',
-          marginBottom: addChin ? '80px' : '0',
           display: 'flex',
           ...(popupOptions ? { borderRadius: '10px' } : {})
         }}
@@ -1455,7 +1450,6 @@ function Form({
         )}
         <Watermark
           show={formSettings.showBrand}
-          addChin={addChin}
           brandPosition={formSettings.brandPosition}
         />
       </BootstrapForm>
