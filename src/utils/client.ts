@@ -50,9 +50,11 @@ export default class Client {
   formKey: string;
   version?: string;
   ignoreNetworkErrors: any; // this should be a ref
-  constructor(formKey = '', ignoreNetworkErrors?: any) {
+  draft: boolean;
+  constructor(formKey = '', ignoreNetworkErrors?: any, draft = false) {
     this.formKey = formKey;
     this.ignoreNetworkErrors = ignoreNetworkErrors;
+    this.draft = draft;
   }
 
   async _checkResponseSuccess(response: any) {
@@ -116,7 +118,8 @@ export default class Client {
       fuser_key: userId,
       servars,
       panel_key: this.formKey,
-      __feathery_version: this.version
+      __feathery_version: this.version,
+      draft: this.draft
     };
 
     const options = {
@@ -273,7 +276,10 @@ export default class Client {
     if (!formLanguage && this.formKey in preloadForms)
       return Promise.resolve(preloadForms[this.formKey]);
 
-    const params = encodeGetParams({ form_key: this.formKey });
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      draft: this.draft
+    });
     const url = `${CDN_URL}panel/v16/?${params}`;
     const options: Record<string, any> = {
       importance: 'high',
@@ -316,7 +322,7 @@ export default class Client {
     }
 
     initState.fieldValuesInitialized = true;
-    let params = { form_key: this.formKey };
+    let params = { form_key: this.formKey, draft: this.draft };
     if (userId) (params as any).fuser_key = userId;
     if (authState.authId) (params as any).auth_id = authState.authId;
     if (noData) (params as any).no_data = 'true';
@@ -394,6 +400,7 @@ export default class Client {
   }
 
   async submitCustom(customKeyValues: any, override = true) {
+    if (this.draft) return Promise.resolve();
     const promiseResults = await Promise.all(
       Object.entries(customKeyValues).map(([key, val]) => {
         return Promise.all([key, val]);
@@ -432,6 +439,7 @@ export default class Client {
 
   // servars = [{key: <servarKey>, <type>: <value>}]
   submitStep(servars: any) {
+    if (this.draft) return Promise.resolve();
     const isFileServar = (servar: any) =>
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
@@ -456,8 +464,9 @@ export default class Client {
       method: 'POST',
       body: JSON.stringify(data)
     };
-    if (promise) return promise.then(() => this._fetch(url, options));
-    else return this._fetch(url, options);
+    // no events for draft
+    promise = promise || Promise.resolve();
+    return promise.then(() => !this.draft && this._fetch(url, options));
   }
 
   // THIRD-PARTY INTEGRATIONS

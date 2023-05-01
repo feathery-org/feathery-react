@@ -16,7 +16,13 @@ function handleBoth(prevData: any, nextData: any, func: any) {
   return [func(prevData, nextData), func(nextData, prevData)];
 }
 
-export default function DevNavBar({ allSteps, curStep, history }: any) {
+export default function DevNavBar({
+  allSteps,
+  curStep,
+  history,
+  formName,
+  draft
+}: any) {
   const [activeNav, setActiveNav] = useState('');
   const [isVisible, setIsVisible] = useState(true);
 
@@ -141,7 +147,22 @@ export default function DevNavBar({ allSteps, curStep, history }: any) {
             fontWeight: 700
           }}
         >
-          Preview
+          <span
+            css={{
+              color: '#007bff',
+              paddingRight: '8px',
+              borderRight: '2px solid #cfd4dd'
+            }}
+          >
+            {draft ? 'Draft Preview' : 'Test Form'}
+          </span>
+          <span
+            css={{
+              paddingLeft: '8px'
+            }}
+          >
+            {formName}
+          </span>
         </span>
         <div
           css={{
