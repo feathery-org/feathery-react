@@ -982,7 +982,9 @@ function Form({
       setFirst(false);
       const nextStep = steps[redirectKey];
       const hasNext = nextStep.buttons.some((b: any) =>
-        b.properties.actions.some((action: any) => action.type === ACTION_NEXT)
+        (b.properties.actions ?? []).some(
+          (action: any) => action.type === ACTION_NEXT
+        )
       );
       const nextStepIsTerminal =
         !hasNext && nextStep.next_conditions.length === 0;
@@ -1258,7 +1260,7 @@ function Form({
         } = action;
 
         // Nested find statements return an item from the outer collection, so
-        // short circuit the some statement once the field has been found
+        // short circuit the "some" statement once the field has been found
         let field: any;
         Object.values(steps).some((step) => {
           field = step.servar_fields.find(
