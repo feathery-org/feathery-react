@@ -729,9 +729,13 @@ function Form({
       activeStep.servar_fields.forEach((field: any) => {
         const servar = field.servar;
         if (
-          ['gmap_line_2', 'gmap_city', 'gmap_state', 'gmap_zip'].includes(
-            servar.type
-          )
+          [
+            'gmap_line_2',
+            'gmap_city',
+            'gmap_state',
+            'gmap_country',
+            'gmap_zip'
+          ].includes(servar.type)
         ) {
           // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
           updateValues[servar.key] =

@@ -3,6 +3,7 @@ import { bootstrapStyles } from '../styles';
 import React, { useState } from 'react';
 import InlineTooltip from '../components/Tooltip';
 import useBorder from '../components/useBorder';
+import countryData from './PhoneField/countryData';
 
 export default function DropdownField({
   element,
@@ -39,6 +40,12 @@ export default function DropdownField({
           {state}
         </option>
       ));
+  } else if (servar.type === 'gmap_country') {
+    options = countryData.map(({ countryCode, countryName }) => (
+      <option key={countryCode} value={countryCode}>
+        {countryName}
+      </option>
+    ));
   } else {
     const labels = servar.metadata.option_labels;
     options = servar.metadata.options.map((option: any, index: number) => {
