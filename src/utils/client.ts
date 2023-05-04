@@ -62,7 +62,7 @@ export default class Client {
       case 201:
         return;
       case 400:
-        payload = JSON.stringify(await response.text());
+        payload = JSON.stringify(await response.clone().text());
         throw new errors.FetchError(`Invalid parameters: ${payload}`);
       case 401:
         throw new errors.SDKKeyError();
@@ -330,13 +330,7 @@ export default class Client {
 
     const session = await response.json().catch((reason) => {
       throw new Error(
-        reason +
-          ' ' +
-          userId +
-          ' ' +
-          this.formKey +
-          response.status +
-          response.text()
+        reason + ' ' + userId + ' ' + this.formKey + response.status
       );
     });
     // Auth session only contains new field data
