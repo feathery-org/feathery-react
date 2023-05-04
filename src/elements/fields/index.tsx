@@ -237,6 +237,7 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'dropdown':
     case 'gmap_state':
+    case 'gmap_country':
       styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
       styles.applyCorners('sub-fc');
