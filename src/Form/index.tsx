@@ -138,6 +138,7 @@ export interface Props {
   style?: { [cssProperty: string]: string };
   className?: string;
   children?: JSX.Element;
+  _draft?: boolean;
 }
 
 interface InternalProps {
@@ -188,7 +189,8 @@ function Form({
   customComponents = {},
   style = {},
   className = '',
-  children
+  children,
+  _draft = false
 }: InternalProps & Props) {
   const [client, setClient] = useState<any>(null);
   const history = useHistory();
@@ -590,7 +592,7 @@ function Form({
 
   useEffect(() => {
     if (client === null) {
-      const clientInstance = new Client(formName, hasRedirected);
+      const clientInstance = new Client(formName, hasRedirected, _draft);
       setClient(clientInstance);
       setFirst(true);
       // render form without values first for speed
@@ -882,71 +884,81 @@ function Form({
   const [getCardElement, setCardElement] = usePayments();
 
   async function setupStepPaymentMethod(formattedFields: any) {
-    for (let i = 0; i < activeStep.servar_fields.length; i++) {
-      const servar = activeStep.servar_fields[i].servar;
-      if (servar.type === 'payment_method') {
-        const integrationData = integrations?.stripe;
-        const actionData: ActionData = {
-          servar,
-          client,
-          formattedFields,
-          updateFieldValues,
-          integrationData,
-          targetElement: getCardElement(servar.key)
-        };
-        const actionResult = await setupPaymentMethod(actionData);
-        return actionResult ?? {};
+    // Stripe payment setup is disabled on a draft.  This is because setup is mostly
+    // done on the BE either on step submit or on a collect payment action, both of which
+    // are themselves disabled for draft.  Also mapped field data may also be configured
+    // and would require a custom submit prior to payment setup (which is also disabled for draft).
+    if (!_draft)
+      for (let i = 0; i < activeStep.servar_fields.length; i++) {
+        const servar = activeStep.servar_fields[i].servar;
+        if (servar.type === 'payment_method') {
+          const integrationData = integrations?.stripe;
+          const actionData: ActionData = {
+            servar,
+            client,
+            formattedFields,
+            updateFieldValues,
+            integrationData,
+            targetElement: getCardElement(servar.key)
+          };
+          const actionResult = await setupPaymentMethod(actionData);
+          return actionResult ?? {};
+        }
       }
-    }
     return {};
   }
 
   async function collectPaymentAction(triggerElement: any) {
-    const errorCallback = getErrorCallback({
-      // could be container or button but model as button for the time being...
-      trigger: lookUpTrigger(activeStep, triggerElement.id, 'container')
-    });
-    // validate all step fields and buttons.  Must be valid before payment.
-    const { invalid, inlineErrors: newInlineErrors } = validateElements({
-      step: activeStep,
-      visiblePositions,
-      triggerErrors: true,
-      errorType: formSettings.errorType,
-      formRef,
-      errorCallback,
-      setInlineErrors
-    });
-    if (invalid) return false;
-
-    // payment/checkout
-    const pm = activeStep.servar_fields.find(
-      ({ servar: { type } }: any) => type === 'payment_method'
-    );
-    const errors = await collectPayment({
-      triggerElement,
-      triggerElementType: isElementAButtonOnStep(activeStep, triggerElement)
-        ? 'button'
-        : 'container',
-      servar: pm ? pm.servar : null,
-      client,
-      updateFieldValues,
-      integrationData: integrations?.stripe,
-      targetElement: pm ? getCardElement(pm.servar.key) : null
-    });
-    if (errors) {
-      const { errorMessage, errorField } = errors;
-      await setFormElementError({
+    // Stripe collect payment is disabled on a draft.  This is because payment is mostly
+    // done on the BE using collect payment action.  Mapped field data may also be configured
+    // and would require a custom submit prior to collect payment (which is also disabled for draft).
+    if (!_draft) {
+      const errorCallback = getErrorCallback({
+        // could be container or button but model as button for the time being...
+        trigger: lookUpTrigger(activeStep, triggerElement.id, 'container')
+      });
+      // validate all step fields and buttons.  Must be valid before payment.
+      const { invalid, inlineErrors: newInlineErrors } = validateElements({
+        step: activeStep,
+        visiblePositions,
+        triggerErrors: true,
+        errorType: formSettings.errorType,
         formRef,
         errorCallback,
-        fieldKey: errorField.servar ? errorField.servar.key : errorField.id,
-        message: errorMessage,
-        servarType: errorField.servar ? errorField.servar.type : '',
-        errorType: formSettings.errorType,
-        inlineErrors: newInlineErrors,
-        setInlineErrors: setInlineErrors,
-        triggerErrors: true
+        setInlineErrors
       });
-      return false;
+      if (invalid) return false;
+
+      // payment/checkout
+      const pm = activeStep.servar_fields.find(
+        ({ servar: { type } }: any) => type === 'payment_method'
+      );
+      const errors = await collectPayment({
+        triggerElement,
+        triggerElementType: isElementAButtonOnStep(activeStep, triggerElement)
+          ? 'button'
+          : 'container',
+        servar: pm ? pm.servar : null,
+        client,
+        updateFieldValues,
+        integrationData: integrations?.stripe,
+        targetElement: pm ? getCardElement(pm.servar.key) : null
+      });
+      if (errors) {
+        const { errorMessage, errorField } = errors;
+        await setFormElementError({
+          formRef,
+          errorCallback,
+          fieldKey: errorField.servar ? errorField.servar.key : errorField.id,
+          message: errorMessage,
+          servarType: errorField.servar ? errorField.servar.type : '',
+          errorType: formSettings.errorType,
+          inlineErrors: newInlineErrors,
+          setInlineErrors: setInlineErrors,
+          triggerErrors: true
+        });
+        return false;
+      }
     }
     return true;
   }
@@ -1452,7 +1464,13 @@ function Form({
           />
         )}
         {!productionEnv && (
-          <DevNavBar allSteps={steps} curStep={activeStep} history={history} />
+          <DevNavBar
+            allSteps={steps}
+            curStep={activeStep}
+            history={history}
+            formName={formName}
+            draft={_draft}
+          />
         )}
         <Watermark
           show={formSettings.showBrand}

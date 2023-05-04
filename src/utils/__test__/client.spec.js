@@ -33,7 +33,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${CDN_URL}panel/v16/?form_key=formKey`,
+        `${CDN_URL}panel/v16/?form_key=formKey&draft=false`,
         {
           cache: 'no-store',
           keepalive: false,
@@ -74,7 +74,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}panel/session/v2/?form_key=formKey&fuser_key=userId`,
+        `${API_URL}panel/session/v2/?form_key=formKey&draft=false&fuser_key=userId`,
         {
           cache: 'no-store',
           keepalive: false,
@@ -135,7 +135,12 @@ describe('client', () => {
           type: 'type1'
         }
       ];
-      const body = { fuser_key: 'userId', servars, panel_key: formKey };
+      const body = {
+        fuser_key: 'userId',
+        servars,
+        panel_key: formKey,
+        draft: false
+      };
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
