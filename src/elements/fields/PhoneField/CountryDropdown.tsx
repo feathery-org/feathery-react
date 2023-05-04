@@ -1,6 +1,8 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 
-import countryData, { firebaseSMSCountries } from './countryData';
+import countryData, {
+  firebaseSMSCountries
+} from '../../components/data/countries';
 import { authState } from '../../../auth/LoginForm';
 
 function CountryDropdown({ show, hide, itemOnClick, ...props }: any, ref: any) {
