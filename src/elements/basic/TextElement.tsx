@@ -67,6 +67,7 @@ function TextElement({
       css={{
         position: 'relative',
         maxWidth: '100%',
+        width: '100%',
         ...styles.getTarget('text'),
         '&:hover': editMode
           ? {}

@@ -86,7 +86,8 @@ function VideoElement({
       css={{
         ...styles.getTarget('video'),
         position: 'relative',
-        maxHeight: '100%'
+        maxHeight: '100%',
+        width: '100%'
       }}
     >
       {children}

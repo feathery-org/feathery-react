@@ -55,8 +55,9 @@ function SignatureField({
   return (
     <div
       css={{
-        ...responsiveStyles.getTarget('fc'),
         maxWidth: '100%',
+        width: '100%',
+        ...responsiveStyles.getTarget('fc'),
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto'
       }}

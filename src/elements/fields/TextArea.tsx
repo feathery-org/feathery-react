@@ -31,6 +31,7 @@ function TextArea({
         maxWidth: '100%',
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
+        width: '100%',
         ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}

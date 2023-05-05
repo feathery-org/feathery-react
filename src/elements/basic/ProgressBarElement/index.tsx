@@ -79,6 +79,7 @@ function ProgressBarElement({
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
+        width: '100%',
         ...styles.getTarget('barContainer')
       }}
       {...elementProps}
