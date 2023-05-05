@@ -3,7 +3,7 @@ import React, { memo, useEffect, useRef, useState } from 'react';
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/Tooltip';
 import { bootstrapStyles } from '../../styles';
-import countryData from './countryData';
+import countryData from '../../components/data/countries';
 import exampleNumbers from './exampleNumbers';
 import { Overlay } from 'react-bootstrap';
 import { isNum } from '../../../utils/primitives';
@@ -46,7 +46,7 @@ function PhoneField({
   const [show, setShow] = useState(false);
   const [curFullNumber, setCurFullNumber] = useState('');
   const servar = element.servar;
-  const defaultCountry = servar.metadata.default_country ?? DEFAULT_COUNTRY;
+  const defaultCountry = servar.metadata.default_country || DEFAULT_COUNTRY;
   const [curCountryCode, setCurCountryCode] = useState(defaultCountry);
 
   useEffect(() => setCurCountryCode(defaultCountry), [defaultCountry]);

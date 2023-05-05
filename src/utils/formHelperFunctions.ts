@@ -74,10 +74,11 @@ export const getABVariant = (stepRes: any) => {
 
 export function getDefaultFieldValue(field: any) {
   const servar = field.servar;
+  const meta = servar.metadata;
   switch (servar.type) {
     case 'checkbox':
       // eslint-disable-next-line camelcase
-      return !!servar.metadata.always_checked;
+      return !!meta.always_checked;
     case 'hex_color':
       return 'FFFFFFFF';
     case 'rating':
@@ -91,6 +92,10 @@ export function getDefaultFieldValue(field: any) {
     case 'button_group':
     case 'multiselect':
       return [];
+    case 'gmap_state':
+      return meta.default_state ?? '';
+    case 'gmap_country':
+      return meta.default_country ?? '';
     default:
       return '';
   }
@@ -421,9 +426,9 @@ export function getInitialStep({
 }
 
 export function castVal(servarType: string | undefined, val: any) {
-  // If there is no type it is a hidden field and we will treat it as a string
+  // If there is no type, it is a hidden field and we will treat it as a string
   if (servarType === undefined) return String(val);
-  let castVal = val;
+  let castVal;
   switch (servarType) {
     case 'currency':
     case 'integer_field':

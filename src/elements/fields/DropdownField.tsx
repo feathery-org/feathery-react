@@ -3,6 +3,8 @@ import { bootstrapStyles } from '../styles';
 import React, { useState } from 'react';
 import InlineTooltip from '../components/Tooltip';
 import useBorder from '../components/useBorder';
+import countryData from '../components/data/countries';
+import states from '../components/data/states';
 
 export default function DropdownField({
   element,
@@ -39,6 +41,12 @@ export default function DropdownField({
           {state}
         </option>
       ));
+  } else if (servar.type === 'gmap_country') {
+    options = countryData.map(({ countryCode, countryName }) => (
+      <option key={countryCode} value={countryCode}>
+        {countryName}
+      </option>
+    ));
   } else {
     const labels = servar.metadata.option_labels;
     options = servar.metadata.options.map((option: any, index: number) => {
@@ -134,57 +142,3 @@ export default function DropdownField({
     </div>
   );
 }
-
-const states = [
-  'Alabama',
-  'Alaska',
-  'Arizona',
-  'Arkansas',
-  'California',
-  'Colorado',
-  'Connecticut',
-  'Delaware',
-  'District Of Columbia',
-  'Florida',
-  'Georgia',
-  'Hawaii',
-  'Idaho',
-  'Illinois',
-  'Indiana',
-  'Iowa',
-  'Kansas',
-  'Kentucky',
-  'Louisiana',
-  'Maine',
-  'Maryland',
-  'Massachusetts',
-  'Michigan',
-  'Minnesota',
-  'Mississippi',
-  'Missouri',
-  'Montana',
-  'Nebraska',
-  'Nevada',
-  'New Hampshire',
-  'New Jersey',
-  'New Mexico',
-  'New York',
-  'North Carolina',
-  'North Dakota',
-  'Ohio',
-  'Oklahoma',
-  'Oregon',
-  'Pennsylvania',
-  'Rhode Island',
-  'South Carolina',
-  'South Dakota',
-  'Tennessee',
-  'Texas',
-  'Utah',
-  'Vermont',
-  'Virginia',
-  'Washington',
-  'West Virginia',
-  'Wisconsin',
-  'Wyoming'
-];

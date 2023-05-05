@@ -8,12 +8,11 @@ export default function useBorder({
   error = false
 }: any) {
   const styles = useMemo(() => {
-    const styles = new ResponsiveStyles(element, [
-      'border',
-      'borderHover',
-      'borderActive',
-      'borderDisabled'
-    ]);
+    const styles = new ResponsiveStyles(
+      element,
+      ['border', 'borderHover', 'borderActive', 'borderDisabled'],
+      true
+    );
     styles.applyCorners('border');
     styles.applyBorders({ target: 'border' });
 

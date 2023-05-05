@@ -2,17 +2,16 @@ import React from 'react';
 
 export default function Watermark({
   show,
-  addChin,
   brandPosition = 'bottom_right',
-  width = 135,
-  height = 40
+  width = 150,
+  height = 35
 }: any) {
   const horizontalAlignment = brandPosition.endsWith('right')
-    ? { right: 0 }
-    : { left: 0 };
+    ? { right: 15 }
+    : { left: 15 };
   const verticalAlignment = brandPosition.startsWith('bottom')
-    ? { bottom: addChin ? -65 : 0 }
-    : { top: 0 };
+    ? { bottom: 15 }
+    : { top: 15 };
 
   const anchorWrap = (children?: any) => {
     return (
@@ -20,7 +19,7 @@ export default function Watermark({
       <a
         href='https://feathery.io'
         target='_blank'
-        css={{ textDecoration: 'none' }}
+        style={{ textDecoration: 'none' }}
         rel='noopener'
       >
         {children}
@@ -30,37 +29,35 @@ export default function Watermark({
 
   return show ? (
     <div
-      css={{
-        position: 'absolute',
+      style={{
+        position: 'fixed',
+        zIndex: 1000,
         ...horizontalAlignment,
         ...verticalAlignment
       }}
     >
       {anchorWrap(
         <div
-          css={{
+          style={{
             width: `${width}px`,
             height: `${height}px`,
-            marginRight: '10px',
-            marginBottom: '10px',
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
             background: '#FFFFFF',
-            boxShadow: '0px 2px 10px rgba(151, 161, 172, 0.3)',
+            boxShadow: '0px 0px 8px rgba(151, 161, 172, 0.4)',
             borderRadius: '6px',
             color: '#6c7589',
             fontFamily: 'Axiforma, sans-serif',
-            fontSmoothing: 'antialiased',
-            fontWeight: 400,
+            fontWeight: 500,
             fontSize: '11px',
             gap: '8px',
             cursor: 'pointer'
           }}
         >
-          Built on
+          Form by
           <img
-            css={{ maxWidth: '50%', maxHeight: '80%', paddingBottom: '1px' }}
+            style={{ maxWidth: '50%', maxHeight: '80%', paddingBottom: '1px' }}
             src='https://feathery.s3.us-west-1.amazonaws.com/full-logo-1.png'
             alt='Feathery Logo'
           />

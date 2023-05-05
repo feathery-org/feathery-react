@@ -23,6 +23,7 @@ const mapFieldTypes = new Set([
   'gmap_line_2',
   'gmap_city',
   'gmap_state',
+  'gmap_country',
   'gmap_zip'
 ]);
 
@@ -330,6 +331,7 @@ const Element = ({ node: el, form, flags }: any) => {
         );
       case 'dropdown':
       case 'gmap_state':
+      case 'gmap_country':
         return (
           <Elements.DropdownField
             {...fieldProps}
