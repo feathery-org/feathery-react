@@ -46,7 +46,7 @@ function PhoneField({
   const [show, setShow] = useState(false);
   const [curFullNumber, setCurFullNumber] = useState('');
   const servar = element.servar;
-  const defaultCountry = servar.metadata.default_country ?? DEFAULT_COUNTRY;
+  const defaultCountry = servar.metadata.default_country || DEFAULT_COUNTRY;
   const [curCountryCode, setCurCountryCode] = useState(defaultCountry);
 
   useEffect(() => setCurCountryCode(defaultCountry), [defaultCountry]);
