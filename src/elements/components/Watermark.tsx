@@ -19,7 +19,7 @@ export default function Watermark({
       <a
         href='https://feathery.io'
         target='_blank'
-        css={{ textDecoration: 'none' }}
+        style={{ textDecoration: 'none' }}
         rel='noopener'
       >
         {children}
@@ -29,7 +29,7 @@ export default function Watermark({
 
   return show ? (
     <div
-      css={{
+      style={{
         position: 'fixed',
         zIndex: 1000,
         ...horizontalAlignment,
@@ -38,7 +38,7 @@ export default function Watermark({
     >
       {anchorWrap(
         <div
-          css={{
+          style={{
             width: `${width}px`,
             height: `${height}px`,
             display: 'flex',
@@ -49,7 +49,6 @@ export default function Watermark({
             borderRadius: '6px',
             color: '#6c7589',
             fontFamily: 'Axiforma, sans-serif',
-            fontSmoothing: 'antialiased',
             fontWeight: 500,
             fontSize: '11px',
             gap: '8px',
@@ -58,7 +57,7 @@ export default function Watermark({
         >
           Form by
           <img
-            css={{ maxWidth: '50%', maxHeight: '80%', paddingBottom: '1px' }}
+            style={{ maxWidth: '50%', maxHeight: '80%', paddingBottom: '1px' }}
             src='https://feathery.s3.us-west-1.amazonaws.com/full-logo-1.png'
             alt='Feathery Logo'
           />

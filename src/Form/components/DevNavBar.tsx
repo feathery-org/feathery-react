@@ -149,19 +149,19 @@ export default function DevNavBar({
         >
           <span
             css={{
-              color: '#007bff',
+              color: '#e2626e',
               paddingRight: '8px',
               borderRight: '2px solid #cfd4dd'
             }}
           >
-            {draft ? 'Draft Preview' : 'Test Form'}
+            {formName}
           </span>
           <span
             css={{
               paddingLeft: '8px'
             }}
           >
-            {formName}
+            {draft ? 'Draft Preview' : 'Test Form'}
           </span>
         </span>
         <div
