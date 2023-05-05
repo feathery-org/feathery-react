@@ -6,7 +6,7 @@ export function installArgyle(isArgyleActive: any) {
   if (argylePromise) return argylePromise;
   else if (!isArgyleActive) return Promise.resolve();
   else {
-    argylePromise = dynamicImport('https://plugin.argyle.com/argyle.web.v3.js');
+    argylePromise = dynamicImport('https://plugin.argyle.com/argyle.web.v5.js');
     return argylePromise;
   }
 }
