@@ -187,6 +187,7 @@ export default function DevNavBar({
       </div>
       <div
         css={{
+          zIndex: 2,
           position: 'fixed',
           bottom: '30px',
           left: '50%',
@@ -234,6 +235,7 @@ export default function DevNavBar({
   ) : (
     <div
       css={{
+        zIndex: 2,
         position: 'fixed',
         top: '0',
         backgroundColor: 'white',
