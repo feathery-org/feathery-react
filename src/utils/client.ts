@@ -314,7 +314,12 @@ export default class Client {
   async fetchSession(formPromise = null, block = false) {
     // Block if there's a chance user id isn't available yet
     await (block ? initFormsPromise : Promise.resolve());
-    const { userId, formSessions, fieldValuesInitialized: noData } = initInfo();
+    const {
+      userId,
+      overrideUserId,
+      formSessions,
+      fieldValuesInitialized: noData
+    } = initInfo();
 
     if (this.formKey in formSessions) {
       const formData = await (formPromise ?? Promise.resolve());
@@ -322,10 +327,14 @@ export default class Client {
     }
 
     initState.fieldValuesInitialized = true;
-    let params = { form_key: this.formKey, draft: this.draft };
-    if (userId) (params as any).fuser_key = userId;
-    if (authState.authId) (params as any).auth_id = authState.authId;
-    if (noData) (params as any).no_data = 'true';
+    let params: Record<string, any> = {
+      form_key: this.formKey,
+      draft: this.draft,
+      override: overrideUserId
+    };
+    if (userId) params.fuser_key = userId;
+    if (authState.authId) params.auth_id = authState.authId;
+    if (noData) params.no_data = 'true';
     // @ts-expect-error TS(2322): Type 'string' is not assignable to type '{ form_ke... Remove this comment to see the full error message
     params = encodeGetParams(params);
     const url = `${API_URL}panel/session/v2/?${params}`;
