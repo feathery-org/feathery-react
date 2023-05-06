@@ -49,8 +49,8 @@ function VideoElement({
         <iframe
           width='100%'
           height='100%'
-          frameBorder='0'
           src={getEmbedUrl(props.source_url)}
+          css={{ border: 'none' }}
           {...elementProps}
         />
       );
