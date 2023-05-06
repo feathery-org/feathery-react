@@ -39,6 +39,7 @@ type InitOptions = {
 type InitState = {
   initialized: boolean;
   sdkKey: string;
+  overrideUserId: boolean;
   preloadForms: { [formName: string]: any };
   formSessions: { [formName: string]: any };
   fieldValuesInitialized: boolean;
@@ -55,6 +56,7 @@ const initState: InitState = {
   userTracking: 'cookie',
   sdkKey: '',
   userId: '',
+  overrideUserId: false,
   language: '',
   preloadForms: [],
   formSessions: {},
@@ -66,10 +68,6 @@ const initState: InitState = {
   renderCallbacks: {},
   remountCallbacks: {}
 };
-const optionsAsInitState: (keyof InitOptions & keyof InitState)[] = [
-  'userId',
-  'userTracking'
-];
 let fieldValues: FieldValues = {};
 let filePathMap: Record<string, null | string | (string | null)[]> = {};
 
@@ -96,10 +94,11 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   initState.initialized = true;
 
   initState.sdkKey = sdkKey;
-  optionsAsInitState.forEach((key) => {
-    // @ts-expect-error Type 'string | string[] | undefined' is not assignable to type...
-    if (options[key]) initState[key] = options[key];
-  });
+  if (options.userId) {
+    initState.userId = options.userId;
+    initState.overrideUserId = true;
+  }
+  if (options.userTracking) initState.userTracking = options.userTracking;
   if (options.language) {
     const langPieces = options.language.split(',');
     initState.language = langPieces
