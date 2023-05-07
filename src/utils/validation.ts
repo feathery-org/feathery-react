@@ -141,6 +141,7 @@ const loadPhoneValidator = () =>
 
 const validators = {
   email: (a: string) => {
+    if (!a) return false;
     const parts = a.split('@');
     if (parts.length !== 2) return false;
     // Email handle cannot end with '.'
