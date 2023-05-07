@@ -159,7 +159,11 @@ const validators = {
   },
   url: (a: string) => {
     try {
-      return Boolean(new URL(a));
+      const urlObj = new URL(a);
+      if (!urlObj) return false;
+      const parts = urlObj.hostname.split('.');
+      if (parts.some((part) => !part)) return false;
+      return parts.length > 1;
     } catch (e) {
       return false;
     }
