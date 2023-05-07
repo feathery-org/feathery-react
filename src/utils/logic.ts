@@ -52,7 +52,6 @@ const valueTypeIsField = (v: ValueType): v is FieldValueType =>
 /**
  * Evaluates a comparison rule.
  * @param rule
- * @param fieldValues
  * @param repeatIndex If evaluating for a specific index of a repeat, use the index to
  * only compare repeating fields (left and right) at THAT index, i.e. only use that indexed
  * value in the comparison.
