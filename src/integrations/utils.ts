@@ -77,7 +77,12 @@ export interface ActionData {
   targetElement?: any;
 }
 
-export function trackEvent(title: string, stepId: string, formId: string) {
+export function trackEvent(
+  title: string,
+  stepId: string,
+  formId: string,
+  fieldData?: any
+) {
   const metadata = { stepId, formId };
 
   // Google Tag Manager
@@ -88,5 +93,7 @@ export function trackEvent(title: string, stepId: string, formId: string) {
   // Google Analytics
   if (gaInstalled) trackGAEvent(formId, title, stepId);
   // Segment
-  if (window.analytics) window.analytics.track(title, metadata);
+  const segmentData: any = { ...metadata };
+  if (fieldData) segmentData.submittedData = fieldData;
+  if (window.analytics) window.analytics.track(title, segmentData);
 }
