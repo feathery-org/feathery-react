@@ -58,6 +58,7 @@ describe('client', () => {
         userId: 'userId',
         formSessions: {},
         preloadForms: {},
+        overrideUserId: true,
         fieldValuesInitialized: false
       });
       global.fetch = jest.fn().mockResolvedValue({
@@ -74,7 +75,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}panel/session/v2/?form_key=formKey&draft=false&fuser_key=userId`,
+        `${API_URL}panel/session/v2/?form_key=formKey&draft=false&override=true&fuser_key=userId`,
         {
           cache: 'no-store',
           keepalive: false,

@@ -370,8 +370,12 @@ function Form({
     if (shouldScrollToTop && autoscroll !== 'none') {
       const top =
         autoscroll === 'top_of_form' ? formRef?.current?.offsetTop : 0;
-      // Some browsers may not have support for scrollTo
-      if (window.scrollTo) window.scrollTo({ top, behavior: 'smooth' });
+      try {
+        window.scrollTo({ top, behavior: 'smooth' });
+      } catch (e) {
+        // Some browsers may not have support for scrollTo
+        console.log(e);
+      }
     }
   }, [stepKey]);
 
@@ -855,7 +859,10 @@ function Form({
         ? client.submitStep(featheryFields)
         : Promise.resolve();
 
-    trackEvent('FeatheryStepSubmit', activeStep.key, formName);
+    const fieldData = integrations?.segment?.metadata.track_fields
+      ? formattedFields
+      : null;
+    trackEvent('FeatheryStepSubmit', activeStep.key, formName, fieldData);
 
     return [hiddenPromise, stepPromise];
   };

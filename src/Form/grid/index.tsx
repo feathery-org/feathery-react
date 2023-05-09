@@ -7,6 +7,7 @@ import {
   stepElementTypes,
   VisiblePositions
 } from '../../utils/hideAndRepeats';
+import DangerouslySetHTMLContent from '../../utils/DangerouslySetHTMLContent';
 
 const DEFAULT_MIN_SIZE = 50;
 const DEFAULT_MIN_FILL_SIZE = 10;
@@ -44,8 +45,8 @@ const Subgrid = ({
     );
   } else {
     const { customClickSelectionState, runElementActions } = form;
-    const containerId = node.properties?.callback_id ?? '';
-    const customComponent = form.customComponents[containerId];
+    const props = node.properties ?? {};
+    const customComponent = form.customComponents[props.callback_id ?? ''];
 
     const children: any[] = (node.children || []).map((child: any, i: any) => (
       <Subgrid
@@ -58,6 +59,24 @@ const Subgrid = ({
       />
     ));
     if (customComponent) children.push(customComponent);
+    if (props.iframe_url)
+      children.push(
+        <iframe
+          key='iframe-component'
+          width='100%'
+          height='100%'
+          src={props.iframe_url}
+          css={{ border: 'none' }}
+        />
+      );
+    if (props.custom_html)
+      children.push(
+        <DangerouslySetHTMLContent
+          key='custom-html-component'
+          html={props.custom_html}
+          css={{ height: '100%', width: '100%' }}
+        />
+      );
 
     return (
       <CellContainer
@@ -66,7 +85,7 @@ const Subgrid = ({
         viewport={viewport}
         selected={customClickSelectionState({
           id: node.key,
-          properties: node.properties
+          properties: props
         })}
         runElementActions={runElementActions}
       >
