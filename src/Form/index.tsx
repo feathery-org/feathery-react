@@ -859,7 +859,10 @@ function Form({
         ? client.submitStep(featheryFields)
         : Promise.resolve();
 
-    trackEvent('FeatheryStepSubmit', activeStep.key, formName);
+    const fieldData = integrations?.segment.metadata.track_fields
+      ? formattedFields
+      : null;
+    trackEvent('FeatheryStepSubmit', activeStep.key, formName, fieldData);
 
     return [hiddenPromise, stepPromise];
   };
