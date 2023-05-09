@@ -42,7 +42,11 @@ function RadioButtonGroupField({
   const labels = servar.metadata.option_labels;
   return (
     <div
-      css={{ ...responsiveStyles.getTarget('fc'), position: 'relative' }}
+      css={{
+        width: '100%',
+        ...responsiveStyles.getTarget('fc'),
+        position: 'relative'
+      }}
       {...elementProps}
     >
       {children}

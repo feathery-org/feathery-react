@@ -23,6 +23,7 @@ export default function RatingField({
     <div
       css={{
         maxWidth: '100%',
+        width: '100%',
         position: 'relative',
         ...responsiveStyles.getTarget('fc')
       }}

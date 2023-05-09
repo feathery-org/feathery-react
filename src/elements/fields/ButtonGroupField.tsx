@@ -38,6 +38,7 @@ function ButtonGroupField({
         css={{
           display: 'flex',
           flexWrap: 'wrap',
+          width: '100%',
           ...responsiveStyles.getTarget('fc')
         }}
         {...elementProps}

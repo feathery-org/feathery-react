@@ -40,6 +40,7 @@ function CheckboxGroupField({
     <div
       css={{
         position: 'relative',
+        width: '100%',
         ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}

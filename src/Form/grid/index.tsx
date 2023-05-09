@@ -310,6 +310,13 @@ const getElementContainerStyle = (node: any, trackAxis: string) => {
           if (widthUnit === '%' || node.type === 'text')
             styles.width = `${width}${widthUnit}`;
         }
+
+        if (
+          widthUnit === 'px' &&
+          !['checkbox', 'pin_input'].includes(node.servar?.type)
+        ) {
+          styles.maxWidth = `${width}${widthUnit}`;
+        }
       } else {
         styles.width = 'fit-content !important';
         styles.maxWidth = 'fit-content';

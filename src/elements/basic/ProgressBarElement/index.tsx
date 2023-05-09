@@ -13,7 +13,6 @@ function applyProgressBarStyles(element: any, responsiveStyles: any) {
   responsiveStyles.apply('barContainer', 'horizontal_alignment', (a: any) => ({
     alignItems: a
   }));
-  responsiveStyles.applyWidth('barContainer');
 
   responsiveStyles.apply('bar', 'bar_color', (a: any) => ({
     backgroundColor: `#${a}`
@@ -80,6 +79,7 @@ function ProgressBarElement({
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
+        width: '100%',
         ...styles.getTarget('barContainer')
       }}
       {...elementProps}

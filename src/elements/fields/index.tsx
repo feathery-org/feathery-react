@@ -98,7 +98,6 @@ function applyFieldStyles(field: any, styles: any) {
 
   switch (type) {
     case 'signature':
-      styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyCorners('field');
@@ -108,10 +107,8 @@ function applyFieldStyles(field: any, styles: any) {
     case 'file_upload':
       styles.addTargets('ac', 'add');
       styles.applyHeight('ac');
-      styles.applyWidth('ac');
       if (!field.servar.metadata.multiple) {
         styles.applyHeight('fc');
-        styles.applyWidth('fc');
       }
       styles.applyHeight('field');
       styles.applyWidth('field');
@@ -154,7 +151,6 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'rating':
       styles.addTargets('selectedRating', 'hoverRating');
-      styles.applyWidth('fc');
       styles.applyColor('field', 'background_color', 'fill');
       styles.applyColor('selectedRating', 'selected_background_color', 'fill');
       styles.applyColor('hoverRating', 'hover_background_color', 'fill');
@@ -173,7 +169,6 @@ function applyFieldStyles(field: any, styles: any) {
           textAlign: justifyContentTextAlignMap[a]
         })
       );
-      styles.applyWidth('fc', '', true);
       styles.applyHeight('fc', '', true);
       styles.apply(
         'field',
@@ -238,7 +233,6 @@ function applyFieldStyles(field: any, styles: any) {
     case 'dropdown':
     case 'gmap_state':
     case 'gmap_country':
-      styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
       styles.applyCorners('sub-fc');
       styles.applyBoxShadow('sub-fc');
@@ -255,7 +249,6 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       break;
     case 'multiselect':
-      styles.applyWidth('fc');
       styles.applyCorners('field');
       styles.applyBorders({ target: 'field' });
       styles.applyBoxShadow('field');
@@ -265,7 +258,6 @@ function applyFieldStyles(field: any, styles: any) {
       }));
       break;
     case 'select':
-      styles.applyWidth('fc');
       styles.applyCorners('field');
       styles.applyBorders({ target: 'field' });
       styles.applyBoxShadow('field');
@@ -275,7 +267,6 @@ function applyFieldStyles(field: any, styles: any) {
       }));
       break;
     case 'hex_color':
-      styles.applyWidth('fc');
       styles.applyHeight('field');
       styles.applyCorners('field');
       styles.applyBoxShadow('field');
@@ -283,7 +274,6 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'slider':
       styles.addTargets('handle', 'track');
-      styles.applyWidth('fc');
       styles.apply('handle', ['height', 'height_unit'], (a: any, b: any) => {
         const value = `${a}${b}`;
         return {
@@ -304,7 +294,6 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'payment_method':
       styles.addTargets('completedFont', 'activeFont', 'hoverFont');
-      styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
       styles.applyCorners('sub-fc');
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
@@ -331,8 +320,6 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'phone_number':
       styles.addTargets('fieldToggle');
-
-      styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
       styles.applyBoxShadow('sub-fc');
       styles.applyCorners('sub-fc');
@@ -386,8 +373,6 @@ function applyFieldStyles(field: any, styles: any) {
         return { backgroundColor: `#${color}` };
       });
 
-      // Avoid applying width to checkbox to ensure the checkbox width is properly set by the component
-      if (type !== 'checkbox') styles.applyWidth('fc');
       styles.applyHeight('sub-fc');
       styles.applyCorners('sub-fc');
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');

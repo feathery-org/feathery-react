@@ -50,6 +50,7 @@ function ImageElement({
   return (
     <div
       css={{
+        width: '100%',
         ...styles.getTarget('imageContainer'),
         maxHeight: '100%',
         position: 'relative',

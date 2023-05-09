@@ -24,7 +24,6 @@ function getEmbedUrl(url: any) {
 
 function applyVideoStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets('video');
-  responsiveStyles.applyWidth('video');
   responsiveStyles.applyHeight('video');
   return responsiveStyles;
 }
@@ -87,7 +86,8 @@ function VideoElement({
       css={{
         ...styles.getTarget('video'),
         position: 'relative',
-        maxHeight: '100%'
+        maxHeight: '100%',
+        width: '100%'
       }}
     >
       {children}
