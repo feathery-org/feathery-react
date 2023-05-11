@@ -6,7 +6,6 @@ import { bootstrapStyles } from '../styles';
 import Client from '../../utils/client';
 import useMounted from '../../hooks/useMounted';
 
-// @ts-expect-error TS(7016): Could not find a declaration file for module 'loda... Remove this comment to see the full error message
 import debounce from 'lodash.debounce';
 import { OverlayTrigger } from 'react-bootstrap';
 import useBorder from '../components/useBorder';
