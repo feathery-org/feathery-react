@@ -112,6 +112,7 @@ function validateElement(
     let fieldVal: any = fieldValues[servar.key];
     if (servar.repeated) fieldVal = fieldVal[repeat];
     const errorMsg = getStandardFieldError(fieldVal, servar);
+    console.log('validateElement', errorMsg);
     if (errorMsg) return errorMsg;
   }
 
@@ -151,6 +152,7 @@ const validators = {
   },
   phone: (a: string) => {
     try {
+      console.log('validtor', a);
       return global.libphonenumber.isValidPhoneNumber(`+${a}`);
     } catch (e) {
       // Invalid phone number
@@ -212,6 +214,7 @@ function getStandardFieldError(value: any, servar: any) {
   const defaultErr = defaultErrors[servar.type];
   // Check if value is badly formatted
   if (servar.type === 'phone_number' && !validators.phone(value)) {
+    console.log('phone validator getStandardFieldError', value, servar);
     return defaultErr;
   } else if (servar.type === 'email' && !validators.email(value)) {
     return defaultErr;
