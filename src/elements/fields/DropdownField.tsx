@@ -4,7 +4,9 @@ import React, { useState } from 'react';
 import InlineTooltip from '../components/Tooltip';
 import useBorder from '../components/useBorder';
 import countryData from '../components/data/countries';
-import states from '../components/data/states';
+import states from '../components/data/usStates';
+import australiaProvinces from '../components/data/australiaProvinces';
+import canadianProvinces from '../components/data/canadianProvinces';
 
 export default function DropdownField({
   element,
@@ -13,6 +15,7 @@ export default function DropdownField({
   inlineError,
   required = false,
   fieldVal = '',
+  countryCode = '',
   editMode,
   onChange = () => {},
   elementProps = {},
@@ -28,7 +31,11 @@ export default function DropdownField({
 
   let options;
   if (servar.type === 'gmap_state') {
-    if (fieldVal && !states.includes(fieldVal))
+    const code = countryCode.toLowerCase();
+    let stateData = states;
+    if (code === 'au') stateData = australiaProvinces;
+    else if (code === 'ca') stateData = canadianProvinces;
+    if (fieldVal && !stateData.includes(fieldVal))
       // If user selected an international address
       options = [
         <option key={fieldVal} value={fieldVal}>
@@ -36,7 +43,7 @@ export default function DropdownField({
         </option>
       ];
     else
-      options = states.map((state) => (
+      options = stateData.map((state) => (
         <option key={state} value={state}>
           {state}
         </option>

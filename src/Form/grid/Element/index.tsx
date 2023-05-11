@@ -241,6 +241,8 @@ const Element = ({ node: el, form, flags }: any) => {
       }
     };
 
+    let countryCode = '';
+
     switch (servar.type) {
       case 'date_selector':
         return (
@@ -332,6 +334,13 @@ const Element = ({ node: el, form, flags }: any) => {
       case 'dropdown':
       case 'gmap_state':
       case 'gmap_country':
+        if (servar.type === 'gmap_state') {
+          const field = activeStep.servar_fields.find(
+            (field: any) => field.servar.type === 'gmap_country'
+          );
+          if (field)
+            countryCode = (fieldValues[field.servar.key] ?? '') as string;
+        }
         return (
           <Elements.DropdownField
             {...fieldProps}
@@ -341,6 +350,7 @@ const Element = ({ node: el, form, flags }: any) => {
               changeValue(val, el, index);
               onChange({ submitData: autosubmit && val });
             }}
+            countryCode={countryCode}
           />
         );
       case 'pin_input':
