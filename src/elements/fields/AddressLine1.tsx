@@ -83,7 +83,8 @@ function AddressLine1({
                 margin: 0,
                 backgroundColor: 'white',
                 cursor: 'pointer',
-                boxShadow: '0 0 4px rgb(0 0 0 / 15%)'
+                boxShadow: '0 0 4px rgb(0 0 0 / 15%)',
+                ...responsiveStyles.getTarget('dropdown')
               }}
             >
               {options.map(({ display }) => (
