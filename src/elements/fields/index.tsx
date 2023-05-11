@@ -319,7 +319,15 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyPlaceholderStyles(type, field.styles);
       break;
     case 'phone_number':
-      styles.addTargets('fieldToggle');
+      styles.addTargets('fieldToggle', 'dropdown');
+
+      styles.applyFontStyles('dropdown');
+      styles.apply('dropdown', 'background_color', (color: any) => {
+        if (color.substring(6).toLowerCase() !== 'ff')
+          return { backgroundColor: 'white', color: 'black' };
+        return { backgroundColor: `#${color}` };
+      });
+
       styles.applyHeight('sub-fc');
       styles.applyBoxShadow('sub-fc');
       styles.applyCorners('sub-fc');

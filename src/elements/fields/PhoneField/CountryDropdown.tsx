@@ -5,7 +5,10 @@ import countryData, {
 } from '../../components/data/countries';
 import { authState } from '../../../auth/LoginForm';
 
-function CountryDropdown({ show, hide, itemOnClick, ...props }: any, ref: any) {
+function CountryDropdown(
+  { show, hide, itemOnClick, responsiveStyles, ...props }: any,
+  ref: any
+) {
   const listItemRef = useRef<Record<string, any>>({});
   const [query, setQuery] = useState('');
 
@@ -122,7 +125,8 @@ function CountryDropdown({ show, hide, itemOnClick, ...props }: any, ref: any) {
         maxHeight: '210px',
         overflowY: 'scroll',
         overflowX: 'hidden',
-        width: '400px'
+        width: '400px',
+        ...responsiveStyles.getTarget('dropdown')
       }}
       ref={ref}
       {...props}

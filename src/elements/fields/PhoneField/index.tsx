@@ -198,6 +198,7 @@ function PhoneField({
                   setTriggerOnChange(!triggerOnChange);
                   inputRef.current.focus();
                 }}
+                responsiveStyles={responsiveStyles}
                 {...props}
                 ref={(ref: any) => {
                   dropdownRef.current = ref;
