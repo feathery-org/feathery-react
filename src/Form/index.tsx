@@ -373,7 +373,7 @@ function Form({
         window.scrollTo({ top, behavior: 'smooth' });
       } catch (e) {
         // Some browsers may not have support for scrollTo
-        console.log(e);
+        console.warn(e);
       }
     }
   }, [stepKey]);

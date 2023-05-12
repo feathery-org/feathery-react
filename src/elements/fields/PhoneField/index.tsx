@@ -38,6 +38,10 @@ function PhoneField({
   const triggerRef = useRef(null);
   const dropdownRef = useRef<any>(null);
   const inputRef = useRef<any>(null);
+  const [cursor, setCursor] = useState<number | null>(null);
+  // Track cursorChange since cursor may stay in same place but need to be
+  // re-applied (e.g. delete)
+  const [cursorChange, setCursorChange] = useState(false);
 
   const [show, setShow] = useState(false);
   const [curFullNumber, setCurFullNumber] = useState('');
@@ -50,16 +54,10 @@ function PhoneField({
   const phoneCode = countryMap[curCountryCode].phoneCode;
   const [rawNumber, setRawNumber] = useState('');
   const [formattedNumber, setFormattedNumber] = useState('');
+  const [triggerOnChange, setTriggerOnChange] = useState<boolean | null>(null);
   const [placeholder, setPlaceholder] = useState(
     element.properties.placeholder
   );
-  // const [cursor, setCursor] = useState<number | null>(formattedNumber.length);
-  const [cursor, setCursor] = useState<number | null>(null);
-  // Track cursorChange since cursor may stay in same place but need to be
-  // re-applied (e.g. delete)
-  const [cursorChange, setCursorChange] = useState(false);
-  const [triggerOnChange, setTriggerOnChange] = useState<boolean | null>(null);
-
   const [focused, setFocused] = useState(false);
 
   const { borderStyles, customBorder } = useBorder({
@@ -84,12 +82,7 @@ function PhoneField({
       if (numberObj) {
         setCurFullNumber(fullNumber);
         setRawNumber(numberObj.nationalNumber);
-        // setFormattedNumber('+' + numberObj.formatNational());
         setFormattedNumber(numberObj.formatInternational());
-        console.log(
-          'useEffect fullNumber -setting formatted',
-          numberObj.formatNational()
-        );
         setCurCountryCode(numberObj.country ?? DEFAULT_COUNTRY);
       }
     });
@@ -129,11 +122,9 @@ function PhoneField({
   useEffect(() => {
     if (triggerOnChange === null) return;
 
-    // const newNumber = `${phoneCode}${rawNumber}`;
-    const newNumber = `${rawNumber}`;
-    if ((fullNumber || rawNumber) && newNumber !== fullNumber) {
-      setCurFullNumber(newNumber);
-      onChange(newNumber);
+    if ((fullNumber || rawNumber) && rawNumber !== fullNumber) {
+      setCurFullNumber(rawNumber);
+      onChange(rawNumber);
     }
   }, [triggerOnChange]);
 
@@ -200,13 +191,8 @@ function PhoneField({
                 hide={() => setShow(false)}
                 itemOnClick={(countryCode: string, phoneCode: string) => {
                   setCurCountryCode(countryCode);
-                  console.log('countryCode', countryCode);
-                  console.log('phoneCode', phoneCode);
-                  console.log('phoneCode', typeof phoneCode);
-                  // setRawNumber('');
-                  // setFormattedNumber('');
                   setRawNumber(phoneCode);
-                  setFormattedNumber('+' + phoneCode);
+                  setFormattedNumber(`+${phoneCode}`);
                   setCursor(phoneCode.length + 1);
                   setShow(false);
                   setTriggerOnChange(!triggerOnChange);
@@ -256,9 +242,8 @@ function PhoneField({
             onFocus={() => {
               setRawNumber((prevNum) => {
                 // We only want to set the country code if the field is empty
-                console.log('setRawNumber prevNum', prevNum);
                 if (prevNum === '') {
-                  setFormattedNumber('+' + phoneCode);
+                  setFormattedNumber(`+${phoneCode}`);
                   setCursor(phoneCode.length + 1);
                   return phoneCode;
                 }
@@ -268,8 +253,9 @@ function PhoneField({
             }}
             onBlur={() => {
               setRawNumber((prevNum) => {
-                // We only want to set the country code if the field is empty
-                if (prevNum === phoneCode) {
+                // Clear a full or partial country code when the user clicks
+                // away, if that's all that is present in the field
+                if (phoneCode.startsWith(prevNum)) {
                   setFormattedNumber('');
                   setCursor(null);
                   return '';
@@ -286,46 +272,27 @@ function PhoneField({
             onChange={(e) => {
               let start = e.target.selectionStart;
               const newNum = e.target.value;
-              console.log('-----onChange-------');
               if (newNum) {
                 const LPN = global.libphonenumber;
                 if (!LPN) return;
+                // Don't let user delete the country code
+                else if (!newNum.startsWith(`+${phoneCode}`)) return;
 
-                console.log('newNum', newNum);
                 const onlyDigits = LPN.parseDigits(newNum, curCountryCode);
-                console.log('onlyDigits', onlyDigits);
-                // console.log(
-                //   'onlyDigits[0] === phoneCode[0]',
-                //   onlyDigits[0] === phoneCode[0]
-                // );
-                // console.log(
-                //   'isValidPhoneNumber',
-                //   LPN.isValidPhoneNumber(onlyDigits, curCountryCode)
-                // );
-                // Prevent user from starting national number with country code.
-                // This is valid for all countries aside from a few, like Indonesia
-                // We do this because libphonenumber national number parsing
-                // removes the national prefix, so we can't rely on that
-                // if (onlyDigits[0] === phoneCode[0]) return;
-
-                // don't let user delete the country code
-                if (newNum === '+' + phoneCode) return;
                 const validate = LPN.validatePhoneNumberLength;
                 if (validate(onlyDigits, curCountryCode) === 'TOO_LONG') return;
 
                 const asYouType = new LPN.AsYouType(curCountryCode);
-                // console.log('asYouType', asYouType);
-                const formatted = asYouType.input('+' + onlyDigits);
-                console.log('formatted', formatted);
+                const formatted = asYouType.input(`+${onlyDigits}`);
                 const prevNumDigits = LPN.parseDigits(
                   formattedNumber.slice(0, cursor ?? 0)
                 ).length;
-                // console.log('prevNumDigits', prevNumDigits);
 
-                // setFormattedNumber('+' + formatted);
                 setFormattedNumber(formatted);
                 setRawNumber(onlyDigits);
-                const diff = formatted.length - formattedNumber.length;
+                const diff =
+                  LPN.parseDigits(formatted, curCountryCode).length -
+                  LPN.parseDigits(formattedNumber, curCountryCode).length;
                 if (start && diff > 0) {
                   // When inserting characters, skip non-digits
                   // Also cursor must be in front of at least 1 more digit now
@@ -337,12 +304,10 @@ function PhoneField({
                     start++;
                 }
               } else {
-                console.log('WIPING NUMBER STATE');
-                setFormattedNumber('');
-                setRawNumber('');
+                setFormattedNumber(`+${phoneCode}`);
+                setRawNumber(phoneCode);
+                start = phoneCode.length + 1;
               }
-
-              console.log('-------------------');
 
               setCursor(start);
               setCursorChange(!cursorChange);

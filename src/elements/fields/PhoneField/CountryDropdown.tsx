@@ -89,7 +89,7 @@ function CountryDropdown(
                 };
                 if (e.key === 'Enter') {
                   disable();
-                  itemOnClick(countryCode);
+                  itemOnClick(countryCode, phoneCode);
                 } else if (['ArrowDown', 'ArrowRight'].includes(e.key)) {
                   disable();
                   listItemRef.current[countryCode].nextSibling?.focus();
