@@ -31,7 +31,7 @@ export default function DropdownField({
   let options;
   if (servar.type === 'gmap_state') {
     const code = countryCode.toLowerCase();
-    const stateData = stateMap[code] ?? usStates;
+    const stateData = code ? stateMap[code] ?? [] : usStates;
     if (fieldVal && !stateData.includes(fieldVal))
       // If user selected an international address
       options = [
