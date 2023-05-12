@@ -1296,8 +1296,10 @@ function Form({
           toggle &&
           JSON.stringify(fieldValues[key]) === JSON.stringify(castValue);
 
+        // could be a hidden field
+        const defaultValue = field ? getDefaultFieldValue(field) : '';
         const newValues = {
-          [key]: setToDefaultValue ? getDefaultFieldValue(field) : castValue
+          [key]: setToDefaultValue ? defaultValue : castValue
         };
         updateFieldValues(newValues);
         client.submitCustom(newValues);
