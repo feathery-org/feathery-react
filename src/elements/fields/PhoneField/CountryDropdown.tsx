@@ -89,7 +89,7 @@ function CountryDropdown(
                 };
                 if (e.key === 'Enter') {
                   disable();
-                  itemOnClick(countryCode);
+                  itemOnClick(countryCode, phoneCode);
                 } else if (['ArrowDown', 'ArrowRight'].includes(e.key)) {
                   disable();
                   listItemRef.current[countryCode].nextSibling?.focus();
@@ -98,7 +98,7 @@ function CountryDropdown(
                   listItemRef.current[countryCode].previousSibling?.focus();
                 }
               }}
-              onClick={() => itemOnClick(countryCode)}
+              onClick={() => itemOnClick(countryCode, phoneCode)}
             >
               <span css={{ fontSize: '24px', marginRight: '7px' }}>{flag}</span>
               {countryName}
