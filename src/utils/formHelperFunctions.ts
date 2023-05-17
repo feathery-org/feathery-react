@@ -3,6 +3,7 @@ import { fieldValues, filePathMap, initInfo, initState } from './init';
 import { toBase64 } from './image';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { getVisibleElements } from './hideAndRepeats';
+import debounce from 'lodash.debounce';
 
 function _transformSignatureVal(value: any) {
   return value !== null && (value instanceof File || value instanceof Promise)
@@ -311,6 +312,19 @@ export async function setFormElementError({
     });
   }
   return invalid;
+}
+
+const clearBrowserErrorsDebounced = debounce(
+  (formRef: React.MutableRefObject<any>) => {
+    Array.from(formRef.current.elements).forEach((element: any) => {
+      element.setCustomValidity('');
+    });
+  },
+  1000
+);
+
+export function clearBrowserErrors(formRef: React.MutableRefObject<any>) {
+  clearBrowserErrorsDebounced(formRef);
 }
 
 export function objectMap(obj: any, transform: any) {

@@ -14,6 +14,7 @@ import { calculateStepCSS } from '../utils/hydration';
 import {
   castVal,
   changeStep,
+  clearBrowserErrors,
   FieldOptions,
   formatAllFormFields,
   formatStepFields,
@@ -468,6 +469,7 @@ function Form({
   }, [debouncedValidate, debouncedRerender]);
 
   const updateFieldValues = (newFieldValues: any, rerender = true) => {
+    clearBrowserErrors(formRef);
     const entries = Object.entries(newFieldValues);
     if (entries.every(([key, val]) => fieldValues[key] === val)) return false;
 
