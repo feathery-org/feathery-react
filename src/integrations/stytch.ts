@@ -1,7 +1,12 @@
 import { StytchHeadlessClient } from '@stytch/vanilla-js/headless';
 import { authState } from '../auth/LoginForm';
 import { getRedirectUrl } from '../auth/internal/utils';
-import { featheryDoc, getCookie, getStytchJwt } from '../utils/browser';
+import {
+  featheryDoc,
+  featheryWindow,
+  getCookie,
+  getStytchJwt
+} from '../utils/browser';
 
 let stytchPromise: any = null;
 let config: any = null;
@@ -74,7 +79,7 @@ export async function stytchLoginOnLoad(featheryClient: any) {
   if (!stytchClient || !config || authSent) return;
 
   const stytchSession = stytchClient.session.getSync();
-  const queryParams = new URLSearchParams(window.location.search);
+  const queryParams = new URLSearchParams(featheryWindow().location.search);
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
 
@@ -137,7 +142,7 @@ export function stytchVerifySms({
 }
 
 function _getDomain() {
-  const domainParts = window.location.hostname.split('.');
+  const domainParts = featheryWindow().location.hostname.split('.');
   return domainParts.length === 1
     ? 'localhost'
     : domainParts[domainParts.length - 2] +
@@ -211,13 +216,17 @@ function determineAuthFn({ token, type }: any) {
 }
 
 export function removeStytchQueryParams() {
-  const queryParams = new URLSearchParams(window.location.search);
+  const queryParams = new URLSearchParams(featheryWindow().location.search);
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
   if (type && token) {
     queryParams.delete('stytch_token_type');
     queryParams.delete('token');
     // Removes stytch query params without triggering page refresh
-    history.replaceState(null, '', '?' + queryParams + window.location.hash);
+    history.replaceState(
+      null,
+      '',
+      '?' + queryParams + featheryWindow().location.hash
+    );
   }
 }

@@ -47,6 +47,10 @@
       {
         "name": "document",
         "message": "Use featheryDoc() instead - for SSR purposes."
+      },
+      {
+        "name": "window",
+        "message": "Use featheryWindow() instead - for SSR purposes."
       }
     ]
   },

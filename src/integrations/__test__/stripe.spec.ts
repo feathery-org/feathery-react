@@ -1,3 +1,4 @@
+import { featheryWindow } from '../../utils/browser';
 import {
   setupPaymentMethod,
   collectPayment,
@@ -215,8 +216,8 @@ describe('Stripe integration helper', () => {
   });
 
   describe('collectPayment', () => {
-    delete window.location;
-    window.location = {}; // get rid of jest warning
+    delete featheryWindow().location;
+    featheryWindow().location = {}; // get rid of jest warning
 
     const buttonId = 'button_id';
     const successUrl = 'http://www.example.com';

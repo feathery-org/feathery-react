@@ -14,6 +14,7 @@ import Auth from '../auth/internal/AuthIntegrationInterface';
 import Client from '../utils/client';
 import { installArgyle } from './argyle';
 import { installHeap } from './heap';
+import { featheryWindow } from '../utils/browser';
 
 const IMPORTED_URLS = new Set();
 
@@ -95,5 +96,6 @@ export function trackEvent(
   // Segment
   const segmentData: any = { ...metadata };
   if (fieldData) segmentData.submittedData = fieldData;
-  if (window.analytics) window.analytics.track(title, segmentData);
+  if (featheryWindow().analytics)
+    featheryWindow().analytics.track(title, segmentData);
 }

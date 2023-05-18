@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { featheryDoc } from '../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../utils/browser';
 
 function useTextEdit({
   editable,
@@ -24,7 +24,7 @@ function useTextEdit({
       const range = featheryDoc().createRange();
       range.setStart(node, 0);
       range.setEnd(node, 0);
-      const sel = window.getSelection();
+      const sel = featheryWindow().getSelection();
       if (sel) {
         sel.removeAllRanges();
         sel.addRange(range);
@@ -58,12 +58,12 @@ function useTextEdit({
         onMouseDown: (e: MouseEvent) => !focused && e.preventDefault(),
         onSelect: (e: any) => {
           if (!focused) e.preventDefault();
-          onTextSelect && onTextSelect(window.getSelection());
+          onTextSelect && onTextSelect(featheryWindow().getSelection());
         },
         onKeyDown: (e: any) => {
           if (!focused) e.preventDefault();
           if (onTextKeyDown)
-            onTextKeyDown(e, spanRef.current, window.getSelection());
+            onTextKeyDown(e, spanRef.current, featheryWindow().getSelection());
         },
         onBlur: (e: any) => {
           updateEditMode('hover');
