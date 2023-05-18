@@ -1,10 +1,11 @@
-import { featheryDoc } from '../utils/browser';
+import { featheryDoc, featheryWindow } from '../utils/browser';
 
 export function installSegment(segmentConfig: any) {
   if (segmentConfig) {
     // Script from https://segment.com/docs/connections/sources/catalog/libraries/website/javascript/quickstart/#step-2-add-the-segment-snippet
     // Create a queue, but don't obliterate an existing one!
-    const analytics = (window.analytics = window.analytics || []);
+    const analytics = (featheryWindow().analytics =
+      featheryWindow().analytics || []);
     // If the real analytics.js is already on the page return.
     if (analytics.initialize) return;
     // If the snippet was invoked already show an error.

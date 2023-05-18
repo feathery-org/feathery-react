@@ -17,20 +17,20 @@ import {
 } from '../../integrations/stytch';
 import Client from '../../utils/client';
 import { isAuthStytch } from './utils';
-import { getCookie, getStytchJwt } from '../../utils/browser';
+import { featheryWindow, getCookie, getStytchJwt } from '../../utils/browser';
 import { defaultClient } from '../../utils/init';
 
 // All code that needs to do something different based on the auth integration should go in this file
 
 function isHrefMagicLink(): boolean {
   return (
-    window.location.search.includes('stytch_token_type') ||
+    featheryWindow().location.search.includes('stytch_token_type') ||
     isHrefFirebaseMagicLink()
   );
 }
 
 function inferLoginOnLoad(featheryClient: Client) {
-  const queryParams = new URLSearchParams(window.location.search);
+  const queryParams = new URLSearchParams(featheryWindow().location.search);
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
   if (isAuthStytch() || (type && token))
@@ -103,14 +103,14 @@ function initializeAuthClientListeners() {
         }
       }
     );
-    window.addEventListener('beforeunload', () => {
+    featheryWindow().addEventListener('beforeunload', () => {
       unsubSession && unsubSession();
     });
   } else if (global.firebase) {
     const unsubSession = authState.client
       .auth()
       .onAuthStateChanged((user: any) => !user && authState.setAuthId(''));
-    window.addEventListener('beforeunload', () => {
+    featheryWindow().addEventListener('beforeunload', () => {
       unsubSession && unsubSession();
     });
   }

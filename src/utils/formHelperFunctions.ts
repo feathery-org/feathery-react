@@ -316,6 +316,7 @@ export async function setFormElementError({
 
 const clearBrowserErrorsDebounced = throttle(
   (formRef: React.MutableRefObject<any>) => {
+    if (!formRef.current) return;
     Array.from(formRef.current.elements).forEach((element: any) => {
       element.setCustomValidity('');
     });

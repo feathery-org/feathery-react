@@ -56,7 +56,7 @@ import DevNavBar from './components/DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
-import { openTab, runningInClient } from '../utils/browser';
+import { featheryWindow, openTab, runningInClient } from '../utils/browser';
 import FormOff from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
@@ -153,7 +153,9 @@ interface ClickActionElement {
 }
 
 const getViewport = () => {
-  return window.innerWidth > mobileBreakpointValue ? 'desktop' : 'mobile';
+  return featheryWindow().innerWidth > mobileBreakpointValue
+    ? 'desktop'
+    : 'mobile';
 };
 const findSubmitButton = (step: any) =>
   step.buttons.find((b: any) =>
@@ -298,8 +300,8 @@ function Form({
   }, []);
 
   useEffect(() => {
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    featheryWindow().addEventListener('resize', handleResize);
+    return () => featheryWindow().removeEventListener('resize', handleResize);
   }, []);
 
   useEffect(() => {}, [viewport]);
@@ -371,7 +373,7 @@ function Form({
       const top =
         autoscroll === 'top_of_form' ? formRef?.current?.offsetTop : 0;
       try {
-        window.scrollTo({ top, behavior: 'smooth' });
+        featheryWindow().scrollTo({ top, behavior: 'smooth' });
       } catch (e) {
         // Some browsers may not have support for scrollTo
         console.warn(e);
@@ -611,7 +613,7 @@ function Form({
           setSteps(steps);
           if (res.redirect_url)
             initState.redirectCallbacks[_internalId] = () => {
-              window.location.href = res.redirect_url;
+              featheryWindow().location.href = res.redirect_url;
             };
           setFormSettings({
             errorType: res.error_type,

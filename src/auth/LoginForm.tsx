@@ -20,6 +20,7 @@ import { clearStytchDomainCookie } from '../integrations/stytch';
 import { useIdleTimer } from 'react-idle-timer';
 import throttle from 'lodash.throttle';
 import LoginError from './LoginError';
+import { featheryWindow } from '../utils/browser';
 
 const TEN_SECONDS_IN_MILLISECONDS = 1000 * 10;
 const FIVE_MINUTES_IN_MILLISECONDS = 1000 * 60 * 5;
@@ -88,7 +89,7 @@ const LoginForm = ({
       setShowLoader(true);
     }
 
-    const { location, history } = window;
+    const { location, history } = featheryWindow();
     // only need to redirect to login path for new logins
     if (
       !Auth.isThereAnExistingSession() &&
@@ -96,7 +97,7 @@ const LoginForm = ({
       location.pathname !== loginPath
     ) {
       // If user is not at the URL whitelisted for auth, take them there for login
-      history.replaceState(null, '', loginPath + window.location.search);
+      history.replaceState(null, '', loginPath + location.search);
     }
 
     authState._featheryHosted = _featheryHosted;
