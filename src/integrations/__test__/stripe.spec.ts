@@ -1,11 +1,13 @@
 import { featheryWindow } from '../../utils/browser';
 import {
   setupPaymentMethod,
-  collectPayment,
+  purchaseCart,
   getFlatStripeCustomerFieldValues,
-  getStripePaymentQuantityFieldValues,
-  PaymentProduct
+  getPaymentsReservedFieldValues,
+  addToCart,
+  removeFromCart
 } from '../stripe';
+import { fieldValues } from '../../utils/init';
 
 const mockStripeConfig = (checkoutType: 'custom' | 'stripe' = 'custom') => ({
   metadata: {
@@ -42,12 +44,16 @@ const mockServar = {
   key: paymentMethodFieldKey,
   type: 'payment_method'
 };
+const mockPmField = { servar: mockServar };
 const paymentMethodFieldKey2 = 'payment-method-2';
 const mockServarNotFilled = {
   id: 'some id 2',
   key: paymentMethodFieldKey2,
   type: 'payment_method'
 };
+const mockPmNotFilledField = { servar: mockServarNotFilled };
+
+const mockCartSelections = { 'stripe-prod-1': 1, 'stripe-prod-2': 2 };
 
 jest.mock('../../utils/init', () => ({
   fieldValues: {
@@ -58,7 +64,11 @@ jest.mock('../../utils/init', () => ({
     otherNonCustomerField: 'blaa',
     payment_product_1_quantity: 1,
     payment_product_2_quantity: 2,
-    'payment-method-1': { complete: true }
+    'payment-method-1': { complete: true },
+    'feathery.payments.selections': {
+      'stripe-prod-1': 1,
+      'stripe-prod-2': 2
+    }
   }
 }));
 
@@ -109,9 +119,6 @@ const _mockClient = () => {
   mockObj.createPayment = jest
     .fn()
     .mockResolvedValue({ intent_secret: 'payment_intent_secret' });
-  mockObj.paymentComplete = jest.fn().mockResolvedValue({
-    product_fields_to_clear: ['field_key_1', 'field_key_2']
-  });
   mockObj.createCheckoutSession = jest.fn().mockResolvedValue({
     checkout_url: 'mock_checkout_url'
   });
@@ -131,28 +138,12 @@ describe('Stripe integration helper', () => {
       });
     });
   });
-  describe('getStripePaymentQuantityFieldValues', () => {
-    const mockPaymentGroup = (products: PaymentProduct[] = []) => ({
-      payment_group_id: 'blaa',
-      products: products
-    });
-
-    it('retrieves no payment group fields when no dynamic quantity fields mapped', () => {
-      const result = getStripePaymentQuantityFieldValues(mockPaymentGroup());
-      expect(result).toStrictEqual({});
-    });
-    it('retrieves payment group fields when dynamic quantity fields mapped', () => {
-      const prod1Key = 'payment_product_1_quantity';
-      const prod2Key = 'payment_product_2_quantity';
-
-      const result = getStripePaymentQuantityFieldValues(
-        mockPaymentGroup([
-          { product_id: 'p1', quantity_field: prod1Key },
-          { product_id: 'p2', quantity_field: prod2Key },
-          { product_id: 'p3', fixed_quantity: 100 }
-        ])
-      );
-      expect(result).toStrictEqual({ [prod1Key]: 1, [prod2Key]: 2 });
+  describe('getPaymentsReservedFieldValues', () => {
+    it('retrieves feathery.payments.selections', () => {
+      const result = getPaymentsReservedFieldValues();
+      expect(result).toStrictEqual({
+        'feathery.payments.selections': mockCartSelections
+      });
     });
   });
 
@@ -167,7 +158,7 @@ describe('Stripe integration helper', () => {
       // act
       const result = await setupPaymentMethod(
         {
-          servar: mockServarNotFilled,
+          pmField: mockPmNotFilledField,
           client: mockClient,
           formattedFields: mockFormattedFields,
           updateFieldValues: mockUpdateFieldValues,
@@ -192,7 +183,7 @@ describe('Stripe integration helper', () => {
       // act
       const result = await setupPaymentMethod(
         {
-          servar: mockServar,
+          pmField: mockPmField,
           client: mockClient,
           formattedFields: mockFormattedFields,
           updateFieldValues: mockUpdateFieldValues,
@@ -215,7 +206,110 @@ describe('Stripe integration helper', () => {
     });
   });
 
-  describe('collectPayment', () => {
+  describe('cart functions', () => {
+    const mockProdId = 'stripe-prod-1';
+    const mockProdId2 = 'stripe-prod-2';
+    const mockProdIdNew = 'stripe-prod-new';
+    const mockAction = () => ({
+      type: 'add_to_cart',
+      product_id: mockProdId,
+      quantity_field: 'payment_product_1_quantity',
+      toggle: true,
+      clear_cart: true
+    });
+
+    beforeEach(() => {
+      fieldValues['feathery.payments.selections'] = {
+        'stripe-prod-1': 1,
+        'stripe-prod-2': 2
+      };
+    });
+    describe('addToCart', () => {
+      it('adds to cart', () => {
+        // arrange
+        const _mockAction = mockAction();
+        _mockAction.product_id = mockProdIdNew;
+        _mockAction.toggle = false;
+        _mockAction.clear_cart = false;
+        const mockUpdateFieldValues = jest.fn();
+
+        // act
+        const cartSelections = addToCart(_mockAction, mockUpdateFieldValues);
+
+        // Assert
+        // expect cartSelections to not be null
+        expect(cartSelections).not.toBeNull();
+        if (cartSelections) {
+          expect(cartSelections[mockProdId]).toEqual(1);
+          expect(cartSelections[mockProdId2]).toEqual(2);
+          expect(cartSelections[mockProdIdNew]).toEqual(1);
+        }
+      });
+      it('toggles off a selection', () => {
+        const mockUpdateFieldValues = jest.fn();
+
+        // arrange
+        const _mockAction = mockAction();
+        _mockAction.clear_cart = false;
+        // act
+        const cartSelections = addToCart(_mockAction, mockUpdateFieldValues);
+
+        // Assert
+        expect(cartSelections).not.toBeNull();
+        if (cartSelections) {
+          // expect cartSelections[mockProdId] to be undefined
+          expect(cartSelections[mockProdId]).toBeUndefined();
+          expect(cartSelections[mockProdId2]).toEqual(2);
+        }
+      });
+      it('toggles off and clears cart', () => {
+        const mockUpdateFieldValues = jest.fn();
+
+        // act
+        const cartSelections = addToCart(mockAction(), mockUpdateFieldValues);
+
+        // Assert
+        expect(cartSelections).toBeNull();
+      });
+    });
+    describe('removeFromCart', () => {
+      it('removes from cart', () => {
+        const mockUpdateFieldValues = jest.fn();
+
+        // arrange
+        const _mockAction = mockAction();
+        _mockAction.product_id = mockProdId;
+        _mockAction.clear_cart = false;
+
+        // act
+        const cartSelections = removeFromCart(
+          _mockAction,
+          mockUpdateFieldValues
+        );
+
+        // Assert
+        expect(cartSelections).not.toBeNull();
+        if (cartSelections) {
+          // expect cartSelections[mockProdId] to be undefined
+          expect(cartSelections[mockProdId]).toBeUndefined();
+          expect(cartSelections[mockProdId2]).toEqual(2);
+        }
+      });
+      it('clears cart', () => {
+        const mockUpdateFieldValues = jest.fn();
+        // act
+        const cartSelections = removeFromCart(
+          mockAction(),
+          mockUpdateFieldValues
+        );
+
+        // Assert
+        expect(cartSelections).toBeNull();
+      });
+    });
+  });
+
+  describe('purchaseProducts', () => {
     delete featheryWindow().location;
     featheryWindow().location = {}; // get rid of jest warning
 
@@ -229,20 +323,7 @@ describe('Stripe integration helper', () => {
           {
             success_url: successUrl,
             cancel_url: cancelUrl,
-            type: 'collect_payment',
-            payment_group: {
-              payment_group_id: 'some id',
-              products: [
-                {
-                  product_id: 'some prod id 1',
-                  quantity_field: 'payment_product_1_quantity'
-                },
-                {
-                  product_id: 'some prod id 2',
-                  quantity_field: 'payment_product_2_quantity'
-                }
-              ]
-            }
+            type: 'purchase_products'
           }
         ]
       }
@@ -259,9 +340,9 @@ describe('Stripe integration helper', () => {
       const mockStripe = _mockStripe();
 
       // act
-      await collectPayment(
+      await purchaseCart(
         {
-          servar: mockServar,
+          pmField: mockPmField,
           client: mockClient,
           formattedFields: mockFormattedFields,
           updateFieldValues: mockUpdateFieldValues,
@@ -285,7 +366,7 @@ describe('Stripe integration helper', () => {
       const mockUpdateFieldValues = jest.fn();
 
       // act
-      const result = await collectPayment(
+      const result = await purchaseCart(
         {
           client: mockClient,
           formattedFields: mockFormattedFieldValues,
@@ -299,7 +380,6 @@ describe('Stripe integration helper', () => {
 
       // Assert
       expect(mockClient.createPayment).toHaveBeenCalled();
-      expect(mockClient.paymentComplete).toHaveBeenCalled();
       expect(mockUpdateFieldValues).toHaveBeenCalled();
       expect(result).toBeNull();
     });
@@ -310,7 +390,7 @@ describe('Stripe integration helper', () => {
       const mockUpdateFieldValues = jest.fn();
 
       // act
-      const result = await collectPayment(
+      const result = await purchaseCart(
         {
           client: mockClient,
           formattedFields: mockFormattedFieldValues,

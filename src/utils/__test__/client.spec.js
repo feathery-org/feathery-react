@@ -293,19 +293,15 @@ describe('client', () => {
     });
     it('createPayment properly calls the end point', async () => {
       // Arrange
-      const elementId = 'some element id';
-      const elementType = 'button';
       const body = {
         form_key: formKey,
-        user_id: userId,
-        element_id: elementId,
-        element_type: elementType
+        user_id: userId
       };
       const intentSecret = 'intent_secret';
       mockFetch(intentSecret);
 
       // Act
-      const response = await client.createPayment(elementId, elementType);
+      const response = await client.createPayment();
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/payment/`, {
@@ -320,52 +316,21 @@ describe('client', () => {
       });
       expect(response).toEqual(intentSecret);
     });
-    it('paymentComplete properly calls the end point', async () => {
-      // Arrange
-      const body = {
-        form_key: formKey,
-        user_id: userId
-      };
-      const intentSecret = 'intent_secret';
-      mockFetch(intentSecret);
-
-      // Act
-      const response = await client.paymentComplete();
-
-      // Assert
-      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/payment/`, {
-        body: JSON.stringify(body),
-        cache: 'no-store',
-        keepalive: true,
-        headers: {
-          Authorization: 'Token sdkKey',
-          'Content-Type': 'application/json'
-        },
-        method: 'PUT'
-      });
-      expect(response).toEqual(intentSecret);
-    });
     it('createCheckoutSession properly calls the end point', async () => {
       // Arrange
       const successUrl = 'success';
       const cancelUrl = 'cancel';
-      const elementId = 'some element id';
-      const elementType = 'button';
       const body = {
         form_key: formKey,
         user_id: userId,
         success_url: successUrl,
-        cancel_url: cancelUrl,
-        element_id: elementId,
-        element_type: elementType
+        cancel_url: cancelUrl
       };
       const expectedResponse = { checkout_url: 'checkoutUrl' };
       mockFetch(expectedResponse);
 
       // Act
       const response = await client.createCheckoutSession(
-        elementId,
-        elementType,
         successUrl,
         cancelUrl
       );

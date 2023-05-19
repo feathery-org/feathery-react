@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { runningInClient, featheryDoc, featheryWindow } from '../utils/browser';
 import { ActionData } from './utils';
 import { fieldValues } from '../utils/init';
-import { ACTION_COLLECT_PAYMENT } from '../utils/elementActions';
+import { ACTION_PURCHASE_PRODUCTS } from '../utils/elementActions';
 const stripePromise = new Promise((resolve) => {
   if (runningInClient())
     featheryDoc().addEventListener('stripe_key_loaded', (e: any) => {
@@ -55,43 +55,28 @@ function getObjectMappingValues(mappingObj: any) {
   }, {} as { [key: string]: any });
 }
 
-export interface PaymentProduct {
-  product_id: string;
-  quantity_field?: string; // resolved servar key of hidden field key
-  fixed_quantity?: number;
-}
-export interface PaymentGroup {
-  payment_group_id: string;
-  products: PaymentProduct[];
-}
-export function getStripePaymentQuantityFieldValues(
-  paymentGroup: PaymentGroup
-) {
-  return paymentGroup.products
-    .filter((p) => p.quantity_field)
-    .reduce((result: any, p) => {
-      const key = p.quantity_field as string;
-      if (key in fieldValues) result[key] = fieldValues[key];
-      return result;
-    }, {} as { [key: string]: any });
+export const FEATHERY_PAYMENTS_SELECTIONS = 'feathery.payments.selections';
+export const FEATHERY_PAYMENTS_TOTAL = 'feathery.payments.total';
+
+export function getPaymentsReservedFieldValues() {
+  return Object.entries(fieldValues).reduce((result, [key, value]) => {
+    if (key.startsWith('feathery.payments.')) {
+      result[key] = value;
+    }
+    return result;
+  }, {} as { [key: string]: any });
 }
 
-async function syncStripeFieldChanges(
-  client: any,
-  integrationData: any,
-  paymentGroup?: PaymentGroup
-) {
+async function syncStripeFieldChanges(client: any, integrationData: any) {
   // Need to update the backend with any customer field values that might be on
   // the current step.
   const stepCustomerFieldValues: any =
     getFlatStripeCustomerFieldValues(integrationData);
-  // payment groups (from action props) also could have mapped product quantity fields that must be sync'd
-  const stepPaymentQtyFieldValues = paymentGroup
-    ? getStripePaymentQuantityFieldValues(paymentGroup)
-    : {};
+  // payment reserved fields
+  const paymentsReservedFieldValues = getPaymentsReservedFieldValues();
   const fieldValuesToSubmit = {
     ...stepCustomerFieldValues,
-    ...stepPaymentQtyFieldValues
+    ...paymentsReservedFieldValues
   };
   if (Object.keys(fieldValuesToSubmit).length) {
     await client.submitCustom(fieldValuesToSubmit);
@@ -103,7 +88,7 @@ async function syncStripeFieldChanges(
  */
 export async function setupPaymentMethod(
   {
-    servar,
+    pmField,
     client,
     formattedFields,
     updateFieldValues,
@@ -113,6 +98,7 @@ export async function setupPaymentMethod(
   syncFields = true,
   stripePromise = null
 ) {
+  const { servar } = pmField;
   if ((fieldValues[servar.key] as any)?.complete) {
     try {
       const stripe: any = await (stripePromise ?? getStripe());
@@ -134,7 +120,7 @@ export async function setupPaymentMethod(
       });
       if (result.error)
         return {
-          errorField: servar,
+          errorField: pmField,
           errorMessage: result.error.message
         };
       else {
@@ -145,7 +131,10 @@ export async function setupPaymentMethod(
         );
         // Got data for the payment method field, set it on the field
         updateFieldValues({
-          [servar.key]: paymentMethodData
+          [servar.key]: Object.assign(
+            fieldValues[servar.key] ?? {},
+            paymentMethodData
+          )
         });
         if (formattedFields) {
           formattedFields[servar.key] = {
@@ -157,7 +146,7 @@ export async function setupPaymentMethod(
       }
     } catch (e) {
       return {
-        errorField: servar,
+        errorField: pmField,
         errorMessage: e instanceof Error ? e.message : ''
       };
     }
@@ -165,31 +154,125 @@ export async function setupPaymentMethod(
   return null;
 }
 
+interface PaymentAction {
+  product_id: string;
+  quantity_field?: string; // resolved servar key or hidden field key
+  fixed_quantity?: number;
+  toggle?: boolean;
+  clear_cart: boolean;
+  success_url?: string;
+  cancel_url?: string;
+}
+
+// get the cart selections from fields values object key feathery.payments.selections
+function getCartSelections(): Record<string, number> {
+  return (
+    (fieldValues[FEATHERY_PAYMENTS_SELECTIONS] as Record<string, number>) ??
+    ({} as Record<string, number>)
+  );
+}
+// save the cart selections into fields values object key feathery.payments.selections
+function saveCartSelections(
+  cartSelections: Record<string, number> | null,
+  updateFieldValues: any
+) {
+  updateFieldValues({ [FEATHERY_PAYMENTS_SELECTIONS]: cartSelections });
+}
+
+/**
+ * Determines if a product is in the cart selections with a quantity greater than 0
+ * @param productId
+ * @returns
+ */
+export function isProductInPurchaseSelections(productId: string) {
+  const cartSelections = getCartSelections();
+  return cartSelections[productId] && cartSelections[productId] > 0;
+}
+
+/**
+ * Add to cart function
+ */
+export function addToCart(
+  paymentAction: PaymentAction,
+  updateFieldValues: any
+) {
+  const {
+    product_id: productId,
+    quantity_field: quantityField,
+    fixed_quantity: fixedQuantity,
+    toggle,
+    clear_cart: clearCart
+  } = paymentAction;
+
+  const cartSelections = getCartSelections();
+  const currentQuantity = cartSelections[productId] ?? 0;
+  if (clearCart) {
+    // clear cart
+    Object.keys(cartSelections).forEach((key) => {
+      delete cartSelections[key];
+    });
+  }
+  if (toggle && currentQuantity > 0) {
+    // toggle off
+    delete cartSelections[productId];
+  } else {
+    // toggle on
+    const newQty = quantityField
+      ? (fieldValues[quantityField] as number) ?? 0
+      : fixedQuantity ?? 0;
+    // if newQty is 0, remove from cart, otherwise add to cart
+    if (newQty) cartSelections[productId] = newQty;
+    else delete cartSelections[productId];
+  }
+  const newCartSelections = Object.keys(cartSelections).length
+    ? cartSelections
+    : null;
+  saveCartSelections(newCartSelections, updateFieldValues);
+  return newCartSelections;
+}
+
+/**
+ * Remove from cart function.
+ * Clear the cart completely if clear_cart is true.
+ */
+export function removeFromCart(
+  paymentAction: PaymentAction,
+  updateFieldValues: any
+) {
+  const { product_id: productId, clear_cart: clearCart } = paymentAction;
+  const cartSelections = getCartSelections();
+  if (clearCart) {
+    // clear cart
+    Object.keys(cartSelections).forEach((key) => {
+      delete cartSelections[key];
+    });
+  } else {
+    // remove from cart
+    delete cartSelections[productId];
+  }
+  const newCartSelections = Object.keys(cartSelections).length
+    ? cartSelections
+    : null;
+  saveCartSelections(newCartSelections, updateFieldValues);
+  return newCartSelections;
+}
+
 /**
  * Used to either collect payment directly or launch stripe checkout to collect payment.
  */
-export async function collectPayment(
+export async function purchaseCart(
   actionData: ActionData,
   stripePromise = null
 ) {
   const {
     client,
     triggerElement, // action button that triggered this
-    triggerElementType,
     updateFieldValues,
     integrationData: stripeConfig
   } = actionData;
 
-  // there can only be one collect payment action and therefore at most one payment group
-  const collectPaymentAction = triggerElement.properties.actions.find(
-    (action: { type: string }) => action.type === ACTION_COLLECT_PAYMENT
-  );
   // sync fields to BE
-  await syncStripeFieldChanges(
-    client,
-    stripeConfig,
-    collectPaymentAction?.payment_group
-  );
+  await syncStripeFieldChanges(client, stripeConfig);
 
   // setup any payment method on this step
   if (actionData.targetElement) {
@@ -206,31 +289,29 @@ export async function collectPayment(
 
   // Now collect payment or do stripe checkout
   try {
-    const stripe: any = await (stripePromise ?? getStripe());
+    await (stripePromise ?? getStripe());
     const checkoutType = stripeConfig.metadata.checkout_type ?? 'custom';
-    const paymentElementId =
-      triggerElementType === 'button'
-        ? triggerElement.id
-        : triggerElement.properties.callback_id;
 
-    if (!paymentElementId)
-      return {
-        errorField: triggerElement,
-        errorMessage: 'Payment Error: Missing ID' // could happen on a container.
-      };
+    const purchaseCartAction: PaymentAction =
+      triggerElement?.properties?.actions?.find(
+        (action: any) => action.type === ACTION_PURCHASE_PRODUCTS
+      );
 
     if (checkoutType === 'stripe') {
       // stripe checkout
-      // If the urls are not supplied, default to the current step
-      const successUrl =
-        triggerElement?.properties?.success_url ||
-        featheryWindow().location.href;
+      // success url always comes back to the current step so we can handle the payment completion
+
+      // add or replace the _feathery_paid=true parameter in the window location and use as the
+      // success url for the stripe checkout
+      const { origin, pathname, hash, search } = featheryWindow().location;
+      const queryParams = new URLSearchParams(search);
+      queryParams.set('_feathery_paid', 'true');
+      const successUrl = `${origin}${pathname}?${queryParams}${hash}`;
+
+      // If the cancel url not supplied, default to the current step
       const cancelUrl =
-        triggerElement?.properties?.cancel_url ||
-        featheryWindow().location.href;
+        purchaseCartAction?.cancel_url || featheryWindow().location.href;
       const { checkout_url: checkoutUrl } = await client.createCheckoutSession(
-        paymentElementId,
-        triggerElementType,
         successUrl,
         cancelUrl
       );
@@ -238,28 +319,17 @@ export async function collectPayment(
       checkoutUrl && (featheryWindow().location.href = checkoutUrl);
     } else if (checkoutType === 'custom') {
       // custom payment from Feathery
-      const { intent_secret: paymentIntentSecret } = await client.createPayment(
-        paymentElementId,
-        triggerElementType
-      );
-      // No paymentIntentSecret means no payment will be done
-      if (paymentIntentSecret) {
-        const result = await stripe.confirmCardPayment(paymentIntentSecret);
-        if (result.error)
-          return {
-            errorField: triggerElement,
-            errorMessage: result.error.message
-          };
-        else {
-          // Complete the payment (clears fields, sets paid indicator)
-          const { field_values: newFieldValues } =
-            await client.paymentComplete();
-
-          // BE is the source of truth here.  Update fieldValues.
-          // This will clear the selected product hidden fields and the total hidden field
-          // as well as set the has_paid field.
-          updateFieldValues(newFieldValues);
-        }
+      const result = await client.createPayment();
+      if (result.error)
+        return {
+          errorField: triggerElement,
+          errorMessage: result.error.message
+        };
+      else {
+        const { field_values: newFieldValues } = result;
+        // BE is the source of truth here.  Update fieldValues.
+        // This will set the any payment indicator field.
+        updateFieldValues(newFieldValues ?? {});
       }
     }
   } catch (e) {
@@ -269,6 +339,64 @@ export async function collectPayment(
     };
   }
   return null;
+}
+
+export async function checkForPaymentCheckoutCompletion(
+  step: any,
+  client: any,
+  updateFieldValues: (fieldValues: any) => void,
+  integrationData: any
+) {
+  // check if this is a checkout completion
+  const queryParams = new URLSearchParams(featheryWindow().location.search);
+  if (queryParams.get('_feathery_paid') === 'true') {
+    // remove the _feathery_paid parameter from the url
+    queryParams.delete('_feathery_paid');
+    const { origin, pathname, hash } = featheryWindow().location;
+    const newUrl = `${origin}${pathname}?${queryParams}${hash}`;
+    featheryWindow().history.replaceState({}, '', newUrl);
+
+    // search all step buttons and subgrids for the purchase action and complete the payment
+    const paymentElement = [...step.buttons, ...step.subgrids].find((element) =>
+      element.properties.actions?.find(
+        (action: any) => action.type === ACTION_PURCHASE_PRODUCTS
+      )
+    );
+    if (paymentElement) {
+      // auto clear the cart on successful payment
+      saveCartSelections(null, updateFieldValues);
+
+      // clearing after successful payment
+      const fieldValuesToSubmit: Record<string, any> = {
+        [FEATHERY_PAYMENTS_SELECTIONS]: {},
+        [FEATHERY_PAYMENTS_TOTAL]: 0
+      };
+
+      // Only get here if the stripe checkout payment was successful - set the has_paid mapped field.
+      if (integrationData.metadata.payment_field_mappings?.has_paid) {
+        updateFieldValues({
+          [integrationData.metadata.payment_field_mappings.has_paid]: true
+        });
+        fieldValuesToSubmit[
+          integrationData.metadata.payment_field_mappings.has_paid
+        ] = true;
+      }
+
+      // sync to BE
+      await client.submitCustom(fieldValuesToSubmit);
+
+      if (integrationData.metadata.checkout_type === 'stripe') {
+        // redirect to any success url
+        const purchaseCartAction: PaymentAction =
+          paymentElement?.properties?.actions?.find(
+            (action: any) => action.type === ACTION_PURCHASE_PRODUCTS
+          );
+        if (purchaseCartAction?.success_url)
+          // redirect to any success url
+          featheryWindow().location.href = purchaseCartAction.success_url;
+      }
+    }
+  }
 }
 
 export function usePayments(): [

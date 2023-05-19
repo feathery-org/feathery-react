@@ -15,7 +15,8 @@ export type FeatheryFieldTypes =
   | number
   | number[]
   | Promise<File>
-  | Promise<File>[];
+  | Promise<File>[]
+  | Record<string, any>;
 
 export type FieldValues = {
   [fieldKey: string]: FeatheryFieldTypes;
@@ -182,7 +183,6 @@ function setValues(userVals: FieldValues, rerender = true): void {
   const result: FieldValues = {};
   Object.entries(userVals).forEach(([key, value]) => {
     if (Array.isArray(value))
-      // @ts-expect-error TS(2322): Type 'FeatheryFieldTypes[]' is not assignable to t... Remove this comment to see the full error message
       result[key] = value.map((entry) => _parseUserVal(entry, key));
     else result[key] = _parseUserVal(value, key);
   });

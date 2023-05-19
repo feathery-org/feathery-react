@@ -149,16 +149,25 @@ const COMPARISON_FUNCTIONS: {
         r
       )
     ),
-  selections_include: (l, r) =>
-    l.some((l: any) =>
+  selections_include: (l, r) => {
+    const compareRight = (l: any, r: any) =>
       someRight(
         (l, r) => (!l && !r) || deepEquals(coerceType(l), coerceType(r)),
         l,
         r
-      )
-    ),
-  selections_dont_include: (l, r) =>
-    l.every((l: any) =>
+      );
+    return l.some((l: any) => {
+      if (l && detectType(l) === 'object')
+        // Special behavior for left side objects.  Their keys will be compared to the right side
+        // values.  While generally useful, this is specifically for the case where the left side
+        // is the feathery.payments.selections field which is an object with keys that are the
+        // product ids selected for purchase.
+        return Object.keys(l).some((key) => compareRight(key, r));
+      return compareRight(l, r);
+    });
+  },
+  selections_dont_include: (l, r) => {
+    const compareRight = (l: any, r: any) =>
       everyRight(
         (l, r) => {
           if (!l) return !!r;
@@ -167,8 +176,17 @@ const COMPARISON_FUNCTIONS: {
         },
         l,
         r
-      )
-    ),
+      );
+    return l.every((l: any) => {
+      if (l && detectType(l) === 'object')
+        // Special behavior for left side objects.  Their keys will be compared to the right side
+        // values.  While generally useful, this is specifically for the case where the left side
+        // is the feathery.payments.selections field which is an object with keys that are the
+        // product ids selected for purchase.
+        return Object.keys(l).every((key) => compareRight(key, r));
+      return compareRight(l, r);
+    });
+  },
   is_filled: (l) =>
     l.some((l: any) => {
       const type = detectType(l);
