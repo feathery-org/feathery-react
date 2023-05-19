@@ -13,8 +13,10 @@ export class UserIdError extends Error {
 }
 
 export class FetchError extends Error {
-  constructor(message: any) {
+  payload: any;
+  constructor(message: any, payload: any = null) {
     super(message);
     this.name = 'FetchError';
+    this.payload = payload;
   }
 }

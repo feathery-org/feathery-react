@@ -639,6 +639,14 @@ function Form({
       }
     };
 
+    // This could be a redirect from Stripe following a successful payment checkout
+    checkForPaymentCheckoutCompletion(
+      newStep,
+      client,
+      updateFieldValues,
+      integrations?.stripe
+    );
+
     await runUserLogic('load');
     const newHash = getUrlHash();
     // This indicates user programmatically changed the step via the onLoad function
@@ -1341,9 +1349,9 @@ function Form({
         const actionSuccess = await purchaseProductsAction(element);
         if (!actionSuccess) break;
       } else if (type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
-        addToCart(action, updateFieldValues);
+        addToCart(action, updateFieldValues, integrations?.stripe);
       } else if (type === ACTION_REMOVE_PRODUCT_FROM_PURCHASE) {
-        removeFromCart(action, updateFieldValues);
+        removeFromCart(action, updateFieldValues, integrations?.stripe);
       } else if (type === ACTION_STORE_FIELD) {
         let val;
         if (action.custom_store_value_type === 'field') {
