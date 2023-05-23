@@ -251,7 +251,7 @@ function Form({
     () => (activeStep ? getVisiblePositions(activeStep) : null),
     [activeStep, render]
   );
-  useFirebaseRecaptcha(activeStep, visiblePositions);
+  useFirebaseRecaptcha(activeStep);
   const getNextAuthStep = useFormAuth({
     initialStep: getInitialStep({ initialStepId, steps }),
     integrations,
@@ -1486,6 +1486,12 @@ function Form({
             history={history}
             formName={formName}
             draft={_draft}
+          />
+        )}
+        {global.firebase && (
+          <div
+            id='featheryRecaptcha'
+            style={{ position: 'absolute', visibility: 'hidden' }}
           />
         )}
         <Watermark

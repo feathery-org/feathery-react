@@ -190,29 +190,20 @@ export function isHrefFirebaseMagicLink(): boolean {
     .isSignInWithEmailLink(featheryWindow().location.href);
 }
 
-export function useFirebaseRecaptcha(step: any, visiblePositions: any) {
-  // Logic to run on each step once firebase is loaded
+export function useFirebaseRecaptcha(step: any) {
+  // Once step has been set, load captcha verifier if using firebase
   useEffect(() => {
-    if (!step || !global.firebase) return;
+    if (!step || !global.firebase || featheryWindow().firebaseRecaptchaVerifier)
+      return;
 
-    const smsButton = getVisibleElements(step, visiblePositions, [
-      'buttons'
-    ]).find(({ element }: any) =>
-      element.properties.actions.some(
-        (action: any) => action.type === ACTION_SEND_SMS
-      )
-    )?.element;
-
-    if (smsButton) {
-      const verifier = new authState.client.auth.RecaptchaVerifier(
-        smsButton.id,
-        {
-          size: 'invisible'
-        }
-      );
-      featheryWindow().firebaseRecaptchaVerifier =
-        authState.client.auth && verifier;
-    }
+    const verifier = new authState.client.auth.RecaptchaVerifier(
+      'featheryRecaptcha',
+      {
+        size: 'invisible'
+      }
+    );
+    featheryWindow().firebaseRecaptchaVerifier =
+      authState.client.auth && verifier;
   }, [step?.id]);
 }
 
