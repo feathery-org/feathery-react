@@ -1200,7 +1200,7 @@ function Form({
         break;
       } else if (type === ACTION_URL) {
         const url = action.url;
-        action.open_tab ? openTab(url) : (location.href = url);
+        action.open_tab ? openTab(url) : (featheryWindow().location.href = url);
       } else if (type === ACTION_CUSTOM) {
         if (action.submit)
           await submitStep({
