@@ -2,14 +2,12 @@ import { dynamicImport } from './utils';
 import { updateSessionValues } from '../utils/formHelperFunctions';
 import { authState } from '../auth/LoginForm';
 import { useEffect } from 'react';
-import { ACTION_SEND_SMS } from '../utils/elementActions';
 import {
   deleteCookie,
   featheryWindow,
   getCookie,
   setCookie
 } from '../utils/browser';
-import { getVisibleElements } from '../utils/hideAndRepeats';
 
 let firebasePromise: any = null;
 
@@ -123,7 +121,7 @@ export async function firebaseSendSms({
   return await authState.client
     .auth()
     .signInWithPhoneNumber(
-      `+1${fieldVal}`,
+      `+${fieldVal}`,
       featheryWindow().firebaseRecaptchaVerifier
     )
     .then((confirmationResult: any) => {

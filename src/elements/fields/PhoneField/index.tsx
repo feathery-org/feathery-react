@@ -123,8 +123,8 @@ function PhoneField({
     if (triggerOnChange === null) return;
 
     if ((fullNumber || rawNumber) && rawNumber !== fullNumber) {
-      setCurFullNumber(rawNumber);
-      onChange(rawNumber);
+      setCurFullNumber(fullNumber);
+      onChange(fullNumber);
     }
   }, [triggerOnChange]);
 
