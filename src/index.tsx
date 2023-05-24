@@ -54,6 +54,9 @@ const Feathery = {
   renderAt
 };
 
+export * from './grid';
+export type { ContainerProps } from './grid';
+
 export {
   Form,
   Elements,
@@ -67,4 +70,5 @@ export {
   useAuthClient,
   Feathery
 };
+
 export type { OPERATOR_CODE, FormContext };

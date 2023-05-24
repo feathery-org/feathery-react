@@ -19,18 +19,6 @@ const Basic = {
 };
 const Elements = { ...Basic, ...Fields };
 
-// TODO(peter): deprecate once customers have upgraded and backend migrated
-function legacyAlignment(alignment: any) {
-  switch (alignment) {
-    case 'left':
-      return 'flex-start';
-    case 'right':
-      return 'flex-end';
-    default:
-      return alignment;
-  }
-}
-
 Object.entries(Elements).map(([key, Element]) => {
   // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
   Elements[key] = memo(
@@ -43,15 +31,9 @@ Object.entries(Elements).map(([key, Element]) => {
       ...props
     }: any) => {
       const responsiveStyles = useMemo(() => {
-        const rs = new ResponsiveStyles(element, ['container'], !componentOnly);
-        rs.apply('container', 'vertical_alignment', (a: any) => ({
-          justifyContent: a
-        }));
-        rs.apply('container', 'horizontal_alignment', (a: any) => ({
-          alignItems: legacyAlignment(a)
-        }));
-        return rs;
+        return new ResponsiveStyles(element, ['container'], !componentOnly);
       }, [element, componentOnly]);
+
       const featheryElement = (
         <Element
           element={element}
@@ -59,11 +41,13 @@ Object.entries(Elements).map(([key, Element]) => {
           {...props}
         />
       );
+
       const e = onView ? (
         <VisibilitySensor onChange={onView}>{featheryElement}</VisibilitySensor>
       ) : (
         featheryElement
       );
+
       if (componentOnly) {
         return (
           <>
@@ -73,14 +57,7 @@ Object.entries(Elements).map(([key, Element]) => {
         );
       } else {
         return (
-          <div
-            css={{
-              display: 'flex',
-              flexDirection: 'column',
-              width: '100%',
-              ...responsiveStyles.getTarget('container')
-            }}
-          >
+          <>
             {e}
             {inlineError && (
               <span
@@ -93,7 +70,7 @@ Object.entries(Elements).map(([key, Element]) => {
                 {inlineError}
               </span>
             )}
-          </div>
+          </>
         );
       }
     }

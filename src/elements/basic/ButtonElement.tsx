@@ -19,19 +19,6 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   );
 
   responsiveStyles.applyColor('button', 'background_color', 'backgroundColor');
-  responsiveStyles.applyHeight('button');
-  responsiveStyles.apply(
-    'button',
-    ['width', 'width_unit', 'content_responsive'],
-    (a: any, b: any, c: boolean) => {
-      // TODO: this is a hack to prevent % from double applying
-      if (b === '%') return { width: '100%' };
-      else
-        return {
-          [c ? 'minWidth' : 'width']: `${a}${b}`
-        };
-    }
-  );
   responsiveStyles.applyCorners('button');
   responsiveStyles.applyBoxShadow('button');
   responsiveStyles.applyFlexDirection('button');
@@ -190,7 +177,8 @@ function ButtonElement({
       style={{
         display: 'flex',
         cursor: editMode || actions.length === 0 ? 'default' : 'pointer',
-        maxWidth: '100%',
+        width: '100%',
+        height: '100%',
         position: 'relative'
       }}
       css={{
