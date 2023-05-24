@@ -47,7 +47,7 @@ function PhoneField({
   const [curFullNumber, setCurFullNumber] = useState('');
   const servar = element.servar;
   const defaultCountry = servar.metadata.default_country || DEFAULT_COUNTRY;
-  const [curCountryCode, setCurCountryCode] = useState(defaultCountry);
+  const [curCountryCode, setCurCountryCode] = useState<string>(defaultCountry);
 
   useEffect(() => setCurCountryCode(defaultCountry), [defaultCountry]);
 
@@ -55,7 +55,7 @@ function PhoneField({
   const [rawNumber, setRawNumber] = useState('');
   const [formattedNumber, setFormattedNumber] = useState('');
   const [triggerOnChange, setTriggerOnChange] = useState<boolean | null>(null);
-  const [placeholder, setPlaceholder] = useState(
+  const [placeholder, setPlaceholder] = useState<string>(
     element.properties.placeholder
   );
   const [focused, setFocused] = useState(false);
@@ -123,8 +123,8 @@ function PhoneField({
     if (triggerOnChange === null) return;
 
     if ((fullNumber || rawNumber) && rawNumber !== fullNumber) {
-      setCurFullNumber(fullNumber);
-      onChange(fullNumber);
+      setCurFullNumber(rawNumber);
+      onChange(rawNumber);
     }
   }, [triggerOnChange]);
 
