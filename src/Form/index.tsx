@@ -1199,7 +1199,8 @@ function Form({
         );
         break;
       } else if (type === ACTION_URL) {
-        const url = action.url;
+        let url = action.url;
+        if (!url.includes('://')) url = 'https://' + url;
         action.open_tab ? openTab(url) : (featheryWindow().location.href = url);
       } else if (type === ACTION_CUSTOM) {
         if (action.submit)
