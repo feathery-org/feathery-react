@@ -1,5 +1,5 @@
-import ResponsiveStyles from '../../elements/styles';
-import { isFill, isFit, isPx } from '../../utils/hydration';
+import ResponsiveStyles from '../../../elements/styles';
+import { isFill, isFit, isPx } from '../../../utils/hydration';
 
 export const DEFAULT_MIN_FILL_SIZE = 10;
 export const DEFAULT_MIN_SIZE = 50;

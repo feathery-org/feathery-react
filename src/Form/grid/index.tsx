@@ -6,8 +6,8 @@ import {
   VisiblePositions
 } from '../../utils/hideAndRepeats';
 import DangerouslySetHTMLContent from '../../utils/DangerouslySetHTMLContent';
-import { Cell } from './Cell';
-import { Container } from '../../grid';
+import { Container } from './Container';
+import { StyledContainer } from './StyledContainer';
 
 const Grid = ({ step, form, viewport }: any) => {
   const formattedStep: any = buildStepGrid(
@@ -28,9 +28,9 @@ const Grid = ({ step, form, viewport }: any) => {
 const Subgrid = ({ tree: node, form, flags }: any) => {
   if (node.isElement) {
     return (
-      <Container node={node}>
+      <StyledContainer node={node}>
         <Element form={form} node={node} flags={flags} />
-      </Container>
+      </StyledContainer>
     );
   } else {
     const { customClickSelectionState, runElementActions } = form;
@@ -74,7 +74,7 @@ const Subgrid = ({ tree: node, form, flags }: any) => {
     }
 
     return (
-      <Cell
+      <Container
         node={node}
         selected={customClickSelectionState({
           id: node.key,
@@ -83,7 +83,7 @@ const Subgrid = ({ tree: node, form, flags }: any) => {
         runElementActions={runElementActions}
       >
         {children.length ? children : null}
-      </Cell>
+      </Container>
     );
   }
 };

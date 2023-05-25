@@ -3,7 +3,7 @@ import { getContainerStyles, getCellStyle, DEFAULT_MIN_SIZE } from './styles';
 import { formatContainerStyles } from './transform';
 import { getRawNode } from './utils';
 
-export type ContainerProps = PropsWithChildren & {
+export type StyledContainerProps = PropsWithChildren & {
   node: any;
   raw?: any;
   css?: any;
@@ -12,7 +12,7 @@ export type ContainerProps = PropsWithChildren & {
   [key: string]: any;
 };
 
-export const Container = forwardRef<HTMLDivElement, ContainerProps>(
+export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
   (
     { node: _node, raw, css = {}, viewport, component, children, ...props },
     ref
@@ -77,3 +77,5 @@ export const Container = forwardRef<HTMLDivElement, ContainerProps>(
     );
   }
 );
+
+export { getCellStyle };

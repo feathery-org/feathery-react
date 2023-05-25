@@ -1,19 +1,18 @@
 import React, { PropsWithChildren } from 'react';
-import { Container } from '../../../grid';
-import { getCellStyle } from '../../../grid/Container/styles';
+import { StyledContainer, getCellStyle } from '../StyledContainer';
 
-type CellProps = PropsWithChildren & {
+type ContainerProps = PropsWithChildren & {
   node: any;
   runElementActions: any;
   selected: boolean;
 };
 
-export const Cell = ({
+export const Container = ({
   node,
   runElementActions = () => {},
   selected,
   children
-}: CellProps) => {
+}: ContainerProps) => {
   const properties = node.properties ?? {};
   const actions = properties.actions ?? [];
   const additionalCss: any = {};
@@ -32,7 +31,7 @@ export const Cell = ({
   Object.assign(additionalCss, selectableStyles);
 
   return (
-    <Container
+    <StyledContainer
       node={node}
       css={additionalCss}
       onClick={() => {
@@ -44,6 +43,6 @@ export const Cell = ({
       }}
     >
       {children}
-    </Container>
+    </StyledContainer>
   );
 };
