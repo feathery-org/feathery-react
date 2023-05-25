@@ -58,6 +58,8 @@ export const getContainerStyles = (
       'parent_axis',
       'external_padding_left',
       'external_padding_right',
+      'padding_left',
+      'padding_right',
       'content_responsive'
     ],
     (
@@ -69,10 +71,14 @@ export const getContainerStyles = (
       parentAxis: any,
       marginLeft: any,
       marginRight: any,
+      paddingLeft: any,
+      paddingRight: any,
       contentResponsive: any
     ) => {
       const s: any = {};
-      const xTotalMargin = marginLeft + marginRight;
+      const xTotalMargin = node.isElement
+        ? paddingLeft + paddingRight
+        : marginLeft + marginRight;
 
       if (widthUnit === 'px') {
         s.minWidth = 'min-content';
@@ -128,8 +134,8 @@ export const getContainerStyles = (
         }
       }
 
-      if (xTotalMargin && s.width === '100%') {
-        s.width = `calc(100% - ${xTotalMargin}px)`;
+      if (xTotalMargin && s.width) {
+        s.width = `calc(${s.width} - ${xTotalMargin}px)`;
       }
 
       if (contentResponsive) {
