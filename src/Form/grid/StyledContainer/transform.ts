@@ -1,4 +1,4 @@
-import { getPxValue, isPx } from '../../utils/hydration';
+import { getPxValue, isPx } from '../../../utils/hydration';
 import { getRawNode } from './utils';
 
 const getFieldValue = (obj: any, key: string, prefix = '') => {
