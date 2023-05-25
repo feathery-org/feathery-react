@@ -12,6 +12,12 @@ export type StyledContainerProps = PropsWithChildren & {
   [key: string]: any;
 };
 
+/**
+ * StyledContainer
+ * This component applies all of the style properties to "Containers" which are used
+ * around elements and other "Containers". This component is used by both hosted forms
+ * and the editor to render "Containers".
+ */
 export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
   (
     { node: _node, raw, css = {}, viewport, component, children, ...props },
