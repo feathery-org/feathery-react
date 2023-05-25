@@ -7,6 +7,11 @@ type ContainerProps = PropsWithChildren & {
   selected: boolean;
 };
 
+/**
+ * Container
+ * This component adds additional logic to the StyledContainer that is unique
+ * to rendering containers on hosted forms (not the editor).
+ */
 export const Container = ({
   node,
   runElementActions = () => {},
