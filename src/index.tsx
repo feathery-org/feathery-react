@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM, { unmountComponentAtNode } from 'react-dom';
 import Elements from './elements';
-import Form, { JSForm, Props as FormProps, StyledContainer } from './Form';
+import Form, { JSForm, Props as FormProps } from './Form';
 import { init, updateUserId, setValues, fieldValues } from './utils/init';
 import { OPERATOR_CODE } from './utils/logic';
 import { featheryDoc } from './utils/browser';
@@ -65,9 +65,6 @@ export {
   renderAt,
   LoginForm,
   useAuthClient,
-  Feathery,
-  StyledContainer
+  Feathery
 };
-
 export type { OPERATOR_CODE, FormContext };
-export type { StyledContainerProps } from './Form/grid/StyledContainer';

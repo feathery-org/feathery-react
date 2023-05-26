@@ -53,26 +53,13 @@ class ResponsiveStyles {
   }
 
   // Return CSS for a particular target HTML element
-  getTarget(targetId: string, desktopOnly = false, includeMobile = false) {
+  getTarget(targetId: string, desktopOnly = false) {
     const target = this.targets[targetId];
     if (!target) return {};
 
     if (!desktopOnly && this.handleMobile) {
       target[mobileBreakpointKey] = this.mobileTargets[targetId];
     }
-
-    // Merge the mobile styles onto the base styles
-    if (includeMobile) {
-      const mobileStyles = target[mobileBreakpointKey];
-
-      delete target[mobileBreakpointKey];
-
-      return {
-        ...target,
-        ...mobileStyles
-      };
-    }
-
     return target;
   }
 

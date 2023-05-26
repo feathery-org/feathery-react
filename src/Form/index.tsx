@@ -113,9 +113,6 @@ import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
 
-export * from './grid/StyledContainer';
-export type { StyledContainerProps } from './grid/StyledContainer';
-
 export interface Props {
   formName: string;
   onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
