@@ -226,15 +226,7 @@ export const getContainerStyles = (
         }
 
         if (!hasChildren && !node.isElement) {
-          if (parentAxis === 'row') {
-            s.height = 'auto';
-            s.flexBasis = `${DEFAULT_MIN_SIZE}px`;
-            s.flexGrow = 0;
-            s.flexShrink = 0;
-          } else {
-            s.height = `${DEFAULT_MIN_SIZE}px`;
-            s.maxHeight = `${DEFAULT_MIN_SIZE}px`;
-          }
+          s.minHeight = `${DEFAULT_MIN_SIZE}px`;
         }
       } else if (heightUnit === '%') {
         if (parentAxis === 'row') {
