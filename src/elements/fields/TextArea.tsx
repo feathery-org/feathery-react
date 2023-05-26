@@ -72,7 +72,9 @@ function TextArea({
               ? {}
               : { color: 'transparent !important' })
           }}
-          maxLength={servar.max_length}
+          maxLength={
+            servar.max_length ? Math.min(servar.max_length, 4096) : 4096
+          }
           minLength={servar.min_length}
           required={required}
           onChange={onChange}
