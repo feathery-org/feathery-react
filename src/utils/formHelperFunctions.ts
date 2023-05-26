@@ -44,6 +44,8 @@ export const formatStepFields = (
       value = servar.repeated
         ? value.map(_transformSignatureVal)
         : _transformSignatureVal(value);
+    } else if (!forUser && servar.type === 'url') {
+      value = value.replaceAll(' ', '%20');
     }
     formattedFields[servar.key] = {
       value,
