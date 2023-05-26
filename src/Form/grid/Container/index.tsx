@@ -21,7 +21,7 @@ export const Container = ({
   const properties = node.properties ?? {};
   const actions = properties.actions ?? [];
   const additionalCss: any = {};
-  const [cellHoverStyle = {}, cellActiveStyle = {}] = getCellStyle(node);
+  const [, cellHoverStyle = {}, cellActiveStyle = {}] = getCellStyle(node);
 
   const selectableStyles =
     actions.length > 0
