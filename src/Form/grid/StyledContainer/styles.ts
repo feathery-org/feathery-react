@@ -297,7 +297,7 @@ export const getContainerStyles = (
   /**
    * Apply styles for when parent is the root without pixel dimensions
    */
-  if (node.parent && !node.parent.parent) {
+  if (node.parent && !node.parent.parent && !node.isElement) {
     styles.apply(
       'container',
       ['parent_width', 'viewport', 'width', 'width_unit'],
