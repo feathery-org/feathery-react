@@ -209,6 +209,10 @@ function getStandardFieldError(value: any, servar: any) {
     return servar.required ? defaultErrors.required : '';
   }
 
+  if (servar.min_length && value.length < servar.min_length) {
+    return `Your entry must be at least ${servar.min_length} characters`;
+  }
+
   const defaultErr = defaultErrors[servar.type];
   // Check if value is badly formatted
   if (servar.type === 'phone_number' && !validators.phone(value)) {

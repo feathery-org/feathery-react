@@ -1,3 +1,4 @@
+import { featheryWindow } from '../../utils/browser';
 import { authState } from '../LoginForm';
 
 export function isAuthStytch() {
@@ -47,8 +48,8 @@ export function hasOnboardingSteps(integrations: any): boolean {
 }
 
 export function getRedirectUrl() {
-  const { origin, pathname, hash } = window.location;
-  const queryParams = new URLSearchParams(window.location.search);
+  const { origin, pathname, hash, search } = featheryWindow().location;
+  const queryParams = new URLSearchParams(search);
   queryParams.forEach((value, key) => {
     if (!['feathery_1', 'feathery_2', '_slug'].includes(key))
       queryParams.delete(key);

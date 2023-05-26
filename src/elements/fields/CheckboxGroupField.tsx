@@ -49,23 +49,31 @@ function CheckboxGroupField({
       {fieldLabel}
       {servar.metadata.options.map((opt: any, i: number) => {
         const optionLabel = labels && labels[i] ? labels[i] : opt;
+        const checked = fieldVal.includes(opt);
+        const disabled =
+          servar.max_length && servar.max_length <= fieldVal.length && !checked;
         return (
-          <div key={`${servar.key}-${i}`} css={{ display: 'flex' }}>
+          <div
+            key={`${servar.key}-${i}`}
+            css={{ display: 'flex', pointerEvents: disabled ? 'none' : 'auto' }}
+          >
             <input
               type='checkbox'
               id={`${servar.key}-${i}`}
               name={opt}
-              checked={fieldVal.includes(opt)}
+              checked={checked}
               onChange={onChange}
               style={{
                 marginBottom: '18px',
                 padding: 0,
-                lineHeight: 'normal'
+                lineHeight: 'normal',
+                filter: disabled ? 'brightness(85%)' : 'none'
               }}
               css={{
                 ...composeCheckableInputStyle(styles, true),
                 ...styles.getTarget('checkboxGroup')
               }}
+              disabled={disabled}
             />
             <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
           </div>

@@ -1,4 +1,4 @@
-import { featheryDoc } from '../utils/browser';
+import { featheryDoc, featheryWindow } from '../utils/browser';
 
 export let heapInstalled = false;
 
@@ -6,10 +6,10 @@ export function installHeap(heapConfig: any) {
   if (heapConfig && !heapInstalled) {
     heapInstalled = true;
 
-    window.heap = window.heap || [];
-    window.heap.load = function (e: string) {
-      window.heap.appid = e;
-      window.heap.config = {};
+    featheryWindow().heap = featheryWindow().heap || [];
+    featheryWindow().heap.load = function (e: string) {
+      featheryWindow().heap.appid = e;
+      featheryWindow().heap.config = {};
       const r = featheryDoc().createElement('script');
       r.type = 'text/javascript';
       r.async = !0;
@@ -19,7 +19,7 @@ export function installHeap(heapConfig: any) {
       for (
         let n = function (e: any) {
             return function () {
-              window.heap.push(
+              featheryWindow().heap.push(
                 // eslint-disable-next-line prefer-rest-params
                 [e].concat(Array.prototype.slice.call(arguments, 0))
               );
@@ -40,9 +40,9 @@ export function installHeap(heapConfig: any) {
         o < p.length;
         o++
       )
-        window.heap[p[o]] = n(p[o]);
+        featheryWindow().heap[p[o]] = n(p[o]);
     };
-    window.heap.load(heapConfig.metadata.api_key);
+    featheryWindow().heap.load(heapConfig.metadata.api_key);
   }
 
   return Promise.resolve();

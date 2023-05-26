@@ -8,13 +8,13 @@ import React, {
 } from 'react';
 
 import BootstrapForm from 'react-bootstrap/Form';
-// @ts-expect-error TS(7016): Could not find a declaration file for module 'loda... Remove this comment to see the full error message
 import debounce from 'lodash.debounce';
 
 import { calculateStepCSS } from '../utils/hydration';
 import {
   castVal,
   changeStep,
+  clearBrowserErrors,
   FieldOptions,
   formatAllFormFields,
   formatStepFields,
@@ -56,7 +56,7 @@ import DevNavBar from './components/DevNavBar';
 import Spinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
-import { openTab, runningInClient } from '../utils/browser';
+import { featheryWindow, openTab, runningInClient } from '../utils/browser';
 import FormOff from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
@@ -156,7 +156,9 @@ interface ClickActionElement {
 }
 
 const getViewport = () => {
-  return window.innerWidth > mobileBreakpointValue ? 'desktop' : 'mobile';
+  return featheryWindow().innerWidth > mobileBreakpointValue
+    ? 'desktop'
+    : 'mobile';
 };
 const findSubmitButton = (step: any) =>
   step.buttons.find((b: any) =>
@@ -252,7 +254,7 @@ function Form({
     () => (activeStep ? getVisiblePositions(activeStep) : null),
     [activeStep, render]
   );
-  useFirebaseRecaptcha(activeStep, visiblePositions);
+  useFirebaseRecaptcha(activeStep);
   const getNextAuthStep = useFormAuth({
     initialStep: getInitialStep({ initialStepId, steps }),
     integrations,
@@ -301,8 +303,8 @@ function Form({
   }, []);
 
   useEffect(() => {
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    featheryWindow().addEventListener('resize', handleResize);
+    return () => featheryWindow().removeEventListener('resize', handleResize);
   }, []);
 
   useEffect(() => {}, [viewport]);
@@ -374,10 +376,10 @@ function Form({
       const top =
         autoscroll === 'top_of_form' ? formRef?.current?.offsetTop : 0;
       try {
-        window.scrollTo({ top, behavior: 'smooth' });
+        featheryWindow().scrollTo({ top, behavior: 'smooth' });
       } catch (e) {
         // Some browsers may not have support for scrollTo
-        console.log(e);
+        console.warn(e);
       }
     }
   }, [stepKey]);
@@ -472,6 +474,7 @@ function Form({
   }, [debouncedValidate, debouncedRerender]);
 
   const updateFieldValues = (newFieldValues: any, rerender = true) => {
+    clearBrowserErrors(formRef);
     const entries = Object.entries(newFieldValues);
     if (entries.every(([key, val]) => fieldValues[key] === val)) return false;
 
@@ -613,7 +616,7 @@ function Form({
           setSteps(steps);
           if (res.redirect_url)
             initState.redirectCallbacks[_internalId] = () => {
-              window.location.href = res.redirect_url;
+              featheryWindow().location.href = res.redirect_url;
             };
           setFormSettings({
             errorType: res.error_type,
@@ -636,6 +639,10 @@ function Form({
         // @ts-expect-error TS(2345): Argument of type 'Promise<any[]>' is not assignabl... Remove this comment to see the full error message
         .fetchSession(formPromise, true)
         .then(([session, steps]) => {
+          if (!session.track_users) {
+            // Clear URL hash on new session if not tracking users
+            history.replace(location.pathname + location.search);
+          }
           updateBackNavMap(session.back_nav_map);
           setIntegrations(session.integrations);
           if (!isObjectEmpty(initialValues)) {
@@ -1195,8 +1202,9 @@ function Form({
         );
         break;
       } else if (type === ACTION_URL) {
-        const url = action.url;
-        action.open_tab ? openTab(url) : (location.href = url);
+        let url = action.url;
+        if (!url.includes(':')) url = 'https://' + url;
+        action.open_tab ? openTab(url) : (featheryWindow().location.href = url);
       } else if (type === ACTION_CUSTOM) {
         if (action.submit)
           await submitStep({
@@ -1300,8 +1308,10 @@ function Form({
           toggle &&
           JSON.stringify(fieldValues[key]) === JSON.stringify(castValue);
 
+        // could be a hidden field
+        const defaultValue = field ? getDefaultFieldValue(field) : '';
         const newValues = {
-          [key]: setToDefaultValue ? getDefaultFieldValue(field) : castValue
+          [key]: setToDefaultValue ? defaultValue : castValue
         };
         updateFieldValues(newValues);
         client.submitCustom(newValues);
@@ -1480,6 +1490,12 @@ function Form({
             history={history}
             formName={formName}
             draft={_draft}
+          />
+        )}
+        {global.firebase && (
+          <div
+            id='featheryRecaptcha'
+            style={{ position: 'absolute', visibility: 'hidden' }}
           />
         )}
         <Watermark

@@ -52,7 +52,7 @@ function reshapeHideIfs(hideIfs: any): ResolvedComparisonRule[][] {
 /**
  * Determines if the provided element should be hidden based on its "hide-if" rules.
  */
-function shouldElementHide(element: any, repeat: number) {
+function shouldElementHide(element: any, repeat?: number) {
   const reshapedHideIfs = reshapeHideIfs(element.hide_ifs ?? []);
 
   return reshapedHideIfs.some((hideIfRules: ResolvedComparisonRule[]) =>
@@ -140,11 +140,12 @@ function _collectHideFlags(
   numRepeats: number
 ) {
   const elKey = getPositionKey(element);
-  const curRepeats = repeatKey && elKey.startsWith(repeatKey) ? numRepeats : 1;
+  const insideRepeat = repeatKey && elKey.startsWith(repeatKey);
+  const curRepeats = insideRepeat ? numRepeats : 1;
 
   const visible: boolean[] = [];
   for (let i = 0; i < curRepeats; i++) {
-    let shouldHide = shouldElementHide(element, i);
+    let shouldHide = shouldElementHide(element, insideRepeat ? i : undefined);
     if (shouldHide) {
       if (!(elKey in hiddenPositions)) hiddenPositions[elKey] = [];
       hiddenPositions[elKey].push(i);

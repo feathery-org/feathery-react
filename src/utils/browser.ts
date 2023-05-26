@@ -1,4 +1,5 @@
 export function runningInClient() {
+  // eslint-disable-next-line no-restricted-globals
   return typeof window === 'object';
 }
 
@@ -6,6 +7,11 @@ export function runningInClient() {
 export function featheryDoc() {
   // eslint-disable-next-line no-restricted-globals
   return runningInClient() ? document : ({} as any);
+}
+
+export function featheryWindow() {
+  // eslint-disable-next-line no-restricted-globals
+  return runningInClient() ? window : ({} as any);
 }
 
 /**
@@ -31,4 +37,5 @@ export function getStytchJwt() {
   return getCookie('stytch_session_jwt');
 }
 
-export const openTab = (url: any) => window.open(url, '_blank', 'noopener');
+export const openTab = (url: any) =>
+  featheryWindow().open(url, '_blank', 'noopener');

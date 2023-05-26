@@ -5,7 +5,10 @@ import countryData, {
 } from '../../components/data/countries';
 import { authState } from '../../../auth/LoginForm';
 
-function CountryDropdown({ show, hide, itemOnClick, ...props }: any, ref: any) {
+function CountryDropdown(
+  { show, hide, itemOnClick, responsiveStyles, ...props }: any,
+  ref: any
+) {
   const listItemRef = useRef<Record<string, any>>({});
   const [query, setQuery] = useState('');
 
@@ -86,7 +89,7 @@ function CountryDropdown({ show, hide, itemOnClick, ...props }: any, ref: any) {
                 };
                 if (e.key === 'Enter') {
                   disable();
-                  itemOnClick(countryCode);
+                  itemOnClick(countryCode, phoneCode);
                 } else if (['ArrowDown', 'ArrowRight'].includes(e.key)) {
                   disable();
                   listItemRef.current[countryCode].nextSibling?.focus();
@@ -95,7 +98,7 @@ function CountryDropdown({ show, hide, itemOnClick, ...props }: any, ref: any) {
                   listItemRef.current[countryCode].previousSibling?.focus();
                 }
               }}
-              onClick={() => itemOnClick(countryCode)}
+              onClick={() => itemOnClick(countryCode, phoneCode)}
             >
               <span css={{ fontSize: '24px', marginRight: '7px' }}>{flag}</span>
               {countryName}
@@ -122,7 +125,8 @@ function CountryDropdown({ show, hide, itemOnClick, ...props }: any, ref: any) {
         maxHeight: '210px',
         overflowY: 'scroll',
         overflowX: 'hidden',
-        width: '400px'
+        width: '400px',
+        ...responsiveStyles.getTarget('dropdown')
       }}
       ref={ref}
       {...props}

@@ -1,6 +1,6 @@
 import { loadStripe } from '@stripe/stripe-js';
 import { useState } from 'react';
-import { runningInClient, featheryDoc } from '../utils/browser';
+import { runningInClient, featheryDoc, featheryWindow } from '../utils/browser';
 import { ActionData } from './utils';
 import { fieldValues } from '../utils/init';
 import { ACTION_COLLECT_PAYMENT } from '../utils/elementActions';
@@ -223,9 +223,11 @@ export async function collectPayment(
       // stripe checkout
       // If the urls are not supplied, default to the current step
       const successUrl =
-        triggerElement?.properties?.success_url || window.location.href;
+        triggerElement?.properties?.success_url ||
+        featheryWindow().location.href;
       const cancelUrl =
-        triggerElement?.properties?.cancel_url || window.location.href;
+        triggerElement?.properties?.cancel_url ||
+        featheryWindow().location.href;
       const { checkout_url: checkoutUrl } = await client.createCheckoutSession(
         paymentElementId,
         triggerElementType,
@@ -233,7 +235,7 @@ export async function collectPayment(
         cancelUrl
       );
       // preserve browser back button function to current page/step
-      checkoutUrl && (window.location.href = checkoutUrl);
+      checkoutUrl && (featheryWindow().location.href = checkoutUrl);
     } else if (checkoutType === 'custom') {
       // custom payment from Feathery
       const { intent_secret: paymentIntentSecret } = await client.createPayment(

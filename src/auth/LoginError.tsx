@@ -1,6 +1,7 @@
 import React from 'react';
 import WarningIcon from '../elements/components/icons/Warning';
 import { removeStytchQueryParams } from '../integrations/stytch';
+import { featheryWindow } from '../utils/browser';
 
 export default function LoginError() {
   return (
@@ -32,7 +33,7 @@ export default function LoginError() {
       <button
         onClick={() => {
           removeStytchQueryParams();
-          window.location.reload();
+          featheryWindow().location.reload();
         }}
         style={{
           display: 'block',

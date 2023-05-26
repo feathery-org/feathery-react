@@ -1,10 +1,11 @@
 import { bootstrapStyles } from '../styles';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import InlineTooltip from '../components/Tooltip';
 import useBorder from '../components/useBorder';
 import countryData from '../components/data/countries';
-import states from '../components/data/states';
+import usStates from '../components/data/states/us';
+import stateMap from '../components/data/states';
 
 export default function DropdownField({
   element,
@@ -13,6 +14,7 @@ export default function DropdownField({
   inlineError,
   required = false,
   fieldVal = '',
+  countryCode = '',
   editMode,
   onChange = () => {},
   elementProps = {},
@@ -23,12 +25,30 @@ export default function DropdownField({
     error: inlineError
   });
   const [focused, setFocused] = useState(false);
+  const [curStates, setCurStates] = useState<any>(null);
+
+  useEffect(() => {
+    if (servar.type === 'gmap_state') {
+      const code =
+        countryCode.toLowerCase() ?? servar.metadata.default_country ?? '';
+      let stateData = usStates;
+      if (code) {
+        stateData = stateMap[code] ?? [];
+        if (fieldVal && !stateData.includes(fieldVal)) {
+          fieldVal = '';
+          onChange({ target: { value: fieldVal } });
+        }
+      }
+      setCurStates(stateData);
+    }
+  }, [countryCode, setCurStates]);
 
   const servar = element.servar;
 
   let options;
   if (servar.type === 'gmap_state') {
-    if (fieldVal && !states.includes(fieldVal))
+    if (curStates === null) options = [];
+    else if (fieldVal && !curStates.includes(fieldVal))
       // If user selected an international address
       options = [
         <option key={fieldVal} value={fieldVal}>
@@ -36,7 +56,7 @@ export default function DropdownField({
         </option>
       ];
     else
-      options = states.map((state) => (
+      options = curStates.map((state: string) => (
         <option key={state} value={state}>
           {state}
         </option>

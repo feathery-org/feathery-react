@@ -47,7 +47,7 @@ function PhoneField({
   const [curFullNumber, setCurFullNumber] = useState('');
   const servar = element.servar;
   const defaultCountry = servar.metadata.default_country || DEFAULT_COUNTRY;
-  const [curCountryCode, setCurCountryCode] = useState(defaultCountry);
+  const [curCountryCode, setCurCountryCode] = useState<string>(defaultCountry);
 
   useEffect(() => setCurCountryCode(defaultCountry), [defaultCountry]);
 
@@ -55,7 +55,7 @@ function PhoneField({
   const [rawNumber, setRawNumber] = useState('');
   const [formattedNumber, setFormattedNumber] = useState('');
   const [triggerOnChange, setTriggerOnChange] = useState<boolean | null>(null);
-  const [placeholder, setPlaceholder] = useState(
+  const [placeholder, setPlaceholder] = useState<string>(
     element.properties.placeholder
   );
   const [focused, setFocused] = useState(false);
@@ -82,7 +82,7 @@ function PhoneField({
       if (numberObj) {
         setCurFullNumber(fullNumber);
         setRawNumber(numberObj.nationalNumber);
-        setFormattedNumber(numberObj.formatNational());
+        setFormattedNumber(numberObj.formatInternational());
         setCurCountryCode(numberObj.country ?? DEFAULT_COUNTRY);
       }
     });
@@ -114,7 +114,7 @@ function PhoneField({
       setPlaceholder(
         global.libphonenumber
           .parsePhoneNumber(exampleNumber, curCountryCode)
-          .formatNational()
+          .formatInternational()
       );
     });
   }, [curCountryCode, element]);
@@ -122,10 +122,9 @@ function PhoneField({
   useEffect(() => {
     if (triggerOnChange === null) return;
 
-    const newNumber = `${phoneCode}${rawNumber}`;
-    if ((fullNumber || rawNumber) && newNumber !== fullNumber) {
-      setCurFullNumber(newNumber);
-      onChange(newNumber);
+    if ((fullNumber || rawNumber) && rawNumber !== fullNumber) {
+      setCurFullNumber(rawNumber);
+      onChange(rawNumber);
     }
   }, [triggerOnChange]);
 
@@ -190,14 +189,16 @@ function PhoneField({
             return (
               <CountryDropdown
                 hide={() => setShow(false)}
-                itemOnClick={(countryCode: string) => {
+                itemOnClick={(countryCode: string, phoneCode: string) => {
                   setCurCountryCode(countryCode);
-                  setRawNumber('');
-                  setFormattedNumber('');
+                  setRawNumber(phoneCode);
+                  setFormattedNumber(`+${phoneCode}`);
+                  setCursor(phoneCode.length + 1);
                   setShow(false);
                   setTriggerOnChange(!triggerOnChange);
                   inputRef.current.focus();
                 }}
+                responsiveStyles={responsiveStyles}
                 {...props}
                 ref={(ref: any) => {
                   dropdownRef.current = ref;
@@ -238,8 +239,29 @@ function PhoneField({
               setRef(ref);
             }}
             type='tel'
-            onFocus={() => setFocused(true)}
+            onFocus={() => {
+              setRawNumber((prevNum) => {
+                // We only want to set the country code if the field is empty
+                if (prevNum === '') {
+                  setFormattedNumber(`+${phoneCode}`);
+                  setCursor(phoneCode.length + 1);
+                  return phoneCode;
+                }
+                return prevNum;
+              });
+              setFocused(true);
+            }}
             onBlur={() => {
+              setRawNumber((prevNum) => {
+                // Clear a full or partial country code when the user clicks
+                // away, if that's all that is present in the field
+                if (phoneCode.startsWith(prevNum)) {
+                  setFormattedNumber('');
+                  setCursor(null);
+                  return '';
+                }
+                return prevNum;
+              });
               setTriggerOnChange(!triggerOnChange);
               setFocused(false);
             }}
@@ -253,25 +275,24 @@ function PhoneField({
               if (newNum) {
                 const LPN = global.libphonenumber;
                 if (!LPN) return;
+                // Don't let user delete the country code
+                else if (!newNum.startsWith(`+${phoneCode}`)) return;
 
                 const onlyDigits = LPN.parseDigits(newNum, curCountryCode);
-                // Prevent user from starting national number with country code.
-                // This is valid for all countries aside from a few, like Indonesia
-                // We do this because libphonenumber national number parsing
-                // removes the national prefix, so we can't rely on that
-                if (onlyDigits[0] === phoneCode[0]) return;
                 const validate = LPN.validatePhoneNumberLength;
                 if (validate(onlyDigits, curCountryCode) === 'TOO_LONG') return;
 
                 const asYouType = new LPN.AsYouType(curCountryCode);
-                const formatted = asYouType.input(onlyDigits);
+                const formatted = asYouType.input(`+${onlyDigits}`);
                 const prevNumDigits = LPN.parseDigits(
                   formattedNumber.slice(0, cursor ?? 0)
                 ).length;
 
                 setFormattedNumber(formatted);
                 setRawNumber(onlyDigits);
-                const diff = formatted.length - formattedNumber.length;
+                const diff =
+                  LPN.parseDigits(formatted, curCountryCode).length -
+                  LPN.parseDigits(formattedNumber, curCountryCode).length;
                 if (start && diff > 0) {
                   // When inserting characters, skip non-digits
                   // Also cursor must be in front of at least 1 more digit now
@@ -283,8 +304,9 @@ function PhoneField({
                     start++;
                 }
               } else {
-                setFormattedNumber('');
-                setRawNumber('');
+                setFormattedNumber(`+${phoneCode}`);
+                setRawNumber(phoneCode);
+                start = phoneCode.length + 1;
               }
 
               setCursor(start);

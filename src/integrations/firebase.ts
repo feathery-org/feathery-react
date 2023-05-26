@@ -2,9 +2,12 @@ import { dynamicImport } from './utils';
 import { updateSessionValues } from '../utils/formHelperFunctions';
 import { authState } from '../auth/LoginForm';
 import { useEffect } from 'react';
-import { ACTION_SEND_SMS } from '../utils/elementActions';
-import { deleteCookie, getCookie, setCookie } from '../utils/browser';
-import { getVisibleElements } from '../utils/hideAndRepeats';
+import {
+  deleteCookie,
+  featheryWindow,
+  getCookie,
+  setCookie
+} from '../utils/browser';
 
 let firebasePromise: any = null;
 
@@ -47,7 +50,7 @@ export function firebaseLoginOnLoad(featheryClient: any): Promise<any> {
     if (authEmail) {
       return authState.client
         .auth()
-        .signInWithEmailLink(authEmail, window.location.href)
+        .signInWithEmailLink(authEmail, featheryWindow().location.href)
         .then((result: any) => {
           const user = result.user;
           return featheryClient
@@ -92,7 +95,7 @@ export async function firebaseSendMagicLink({
   return await authState.client
     .auth()
     .sendSignInLinkToEmail(fieldVal, {
-      url: window.location.href,
+      url: featheryWindow().location.href,
       handleCodeInApp: true
     })
     .then(() => {
@@ -117,19 +120,22 @@ export async function firebaseSendSms({
 }) {
   return await authState.client
     .auth()
-    .signInWithPhoneNumber(`+1${fieldVal}`, window.firebaseRecaptchaVerifier)
+    .signInWithPhoneNumber(
+      `+${fieldVal}`,
+      featheryWindow().firebaseRecaptchaVerifier
+    )
     .then((confirmationResult: any) => {
       authState.sentAuth = true;
       // SMS sent
-      window.firebaseConfirmationResult = confirmationResult;
-      window.firebasePhoneNumber = fieldVal;
+      featheryWindow().firebaseConfirmationResult = confirmationResult;
+      featheryWindow().firebasePhoneNumber = fieldVal;
       return {};
     })
     .catch((error: any) => {
       console.warn(error);
       // Error; SMS not sent. Reset Recaptcha
-      window.firebaseRecaptchaVerifier
-        .render()
+      featheryWindow()
+        .firebaseRecaptchaVerifier.render()
         .then(function (widgetId: any) {
           // Reset reCaptcha
           // @ts-expect-error TS(2304): Cannot find name 'grecaptcha'.
@@ -145,7 +151,7 @@ export async function firebaseSendSms({
 }
 
 export async function firebaseVerifySms({ fieldVal, featheryClient }: any) {
-  const fcr = window.firebaseConfirmationResult;
+  const fcr = featheryWindow().firebaseConfirmationResult;
   if (fcr) {
     return await fcr
       .confirm(fieldVal)
@@ -177,31 +183,25 @@ export async function firebaseVerifySms({ fieldVal, featheryClient }: any) {
 
 export function isHrefFirebaseMagicLink(): boolean {
   if (!authState.client?.auth) return false;
-  return authState.client.auth().isSignInWithEmailLink(window.location.href);
+  return authState.client
+    .auth()
+    .isSignInWithEmailLink(featheryWindow().location.href);
 }
 
-export function useFirebaseRecaptcha(step: any, visiblePositions: any) {
-  // Logic to run on each step once firebase is loaded
+export function useFirebaseRecaptcha(step: any) {
+  // Once step has been set, load captcha verifier if using firebase
   useEffect(() => {
-    if (!step || !global.firebase) return;
+    if (!step || !global.firebase || featheryWindow().firebaseRecaptchaVerifier)
+      return;
 
-    const smsButton = getVisibleElements(step, visiblePositions, [
-      'buttons'
-    ]).find(({ element }: any) =>
-      element.properties.actions.some(
-        (action: any) => action.type === ACTION_SEND_SMS
-      )
-    )?.element;
-
-    if (smsButton) {
-      const verifier = new authState.client.auth.RecaptchaVerifier(
-        smsButton.id,
-        {
-          size: 'invisible'
-        }
-      );
-      window.firebaseRecaptchaVerifier = authState.client.auth && verifier;
-    }
+    const verifier = new authState.client.auth.RecaptchaVerifier(
+      'featheryRecaptcha',
+      {
+        size: 'invisible'
+      }
+    );
+    featheryWindow().firebaseRecaptchaVerifier =
+      authState.client.auth && verifier;
   }, [step?.id]);
 }
 

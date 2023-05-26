@@ -14,6 +14,7 @@ export default function SliderField({
   children
 }: any) {
   const [internalValue, setInternalValue] = useState(fieldVal);
+  const [showValue, setShowValue] = useState(false);
 
   const servar = element.servar;
   const minVal = servar.min_length ?? 0;
@@ -63,16 +64,29 @@ export default function SliderField({
           onChange={(val) => {
             setInternalValue(val);
             onChange(val);
+            setShowValue(true);
           }}
+          // onAfterChange is marked for deprecation, but there is no suitable
+          // alternative... I tried using a debounced timer but it has issues.
+          // see https://github.com/react-component/slider/issues/849 for
+          // details
+          onAfterChange={() => setTimeout(() => setShowValue(false), 300)}
         />
       </div>
       <div
         css={{
           display: 'flex',
-          justifyContent: 'space-between'
+          justifyContent: 'space-between',
+          position: 'relative'
         }}
       >
         <span>{minLabel}</span>
+        {showValue && (
+          // 49 not 50 because we want this value centered, not starting at the center
+          <span css={{ position: 'absolute', left: '49%' }}>
+            {internalValue}
+          </span>
+        )}
         <span>{maxLabel}</span>
       </div>
     </div>
