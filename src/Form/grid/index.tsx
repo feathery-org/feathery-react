@@ -7,7 +7,6 @@ import {
 } from '../../utils/hideAndRepeats';
 import DangerouslySetHTMLContent from '../../utils/DangerouslySetHTMLContent';
 import { Container } from './Container';
-import { StyledContainer } from './StyledContainer';
 
 const Grid = ({ step, form, viewport }: any) => {
   const formattedStep: any = buildStepGrid(
@@ -28,9 +27,9 @@ const Grid = ({ step, form, viewport }: any) => {
 const Subgrid = ({ tree: node, form, flags }: any) => {
   if (node.isElement) {
     return (
-      <StyledContainer node={node}>
+      <Container node={node}>
         <Element form={form} node={node} flags={flags} />
-      </StyledContainer>
+      </Container>
     );
   } else {
     const { customClickSelectionState, runElementActions } = form;

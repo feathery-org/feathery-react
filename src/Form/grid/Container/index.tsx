@@ -3,8 +3,8 @@ import { StyledContainer, getCellStyle } from '../StyledContainer';
 
 type ContainerProps = PropsWithChildren & {
   node: any;
-  runElementActions: any;
-  selected: boolean;
+  runElementActions?: any;
+  selected?: boolean;
 };
 
 /**
@@ -18,35 +18,37 @@ export const Container = ({
   selected,
   children
 }: ContainerProps) => {
-  const properties = node.properties ?? {};
-  const actions = properties.actions ?? [];
   const additionalCss: any = {};
-  const [, cellHoverStyle = {}, cellActiveStyle = {}] = getCellStyle(node);
+  let handleClick = () => {};
 
-  const selectableStyles =
-    actions.length > 0
-      ? {
-          cursor: 'pointer',
-          transition: '0.2s ease all',
-          ...(selected ? cellActiveStyle : {}),
-          '&:hover': cellHoverStyle
-        }
-      : {};
+  if (!node.isElement) {
+    const properties = node.properties ?? {};
+    const actions = properties.actions ?? [];
+    const [, cellHoverStyle = {}, cellActiveStyle = {}] = getCellStyle(node);
 
-  Object.assign(additionalCss, selectableStyles);
+    const selectableStyles =
+      actions.length > 0
+        ? {
+            cursor: 'pointer',
+            transition: '0.2s ease all',
+            ...(selected ? cellActiveStyle : {}),
+            '&:hover': cellHoverStyle
+          }
+        : {};
+
+    handleClick = () => {
+      runElementActions({
+        actions: actions,
+        element: { id: properties.callback_id, properties },
+        elementType: 'container'
+      });
+    };
+
+    Object.assign(additionalCss, selectableStyles);
+  }
 
   return (
-    <StyledContainer
-      node={node}
-      css={additionalCss}
-      onClick={() => {
-        runElementActions({
-          actions: actions,
-          element: { id: properties.callback_id, properties },
-          elementType: 'container'
-        });
-      }}
-    >
+    <StyledContainer node={node} css={additionalCss} onClick={handleClick}>
       {children}
     </StyledContainer>
   );
