@@ -863,7 +863,7 @@ function Form({
     });
     const stepPromise =
       featheryFields.length > 0
-        ? client.submitStep(featheryFields)
+        ? client.submitStep(featheryFields, activeStep.key)
         : Promise.resolve();
 
     const fieldData = integrations?.segment?.metadata.track_fields
