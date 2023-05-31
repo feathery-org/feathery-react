@@ -61,14 +61,6 @@ function PhoneField({
   );
   const [focused, setFocused] = useState(false);
 
-  const formattedNumber = useMemo(() => {
-    if (rawNumber === '') return '';
-    const LPN = global.libphonenumber;
-    const asYouType = new LPN.AsYouType(curCountryCode);
-    const onlyDigits = LPN.parseDigits(rawNumber, curCountryCode);
-    return asYouType.input(`+${onlyDigits}`);
-  }, [curCountryCode, rawNumber]);
-
   const { borderStyles, customBorder } = useBorder({
     element,
     error: inlineError
@@ -95,6 +87,15 @@ function PhoneField({
       }
     });
   }, [fullNumber]);
+
+  const formattedNumber = useMemo(() => {
+    const LPN = global.libphonenumber;
+    if (rawNumber === '' || !LPN) return '';
+
+    const asYouType = new LPN.AsYouType(curCountryCode);
+    const onlyDigits = LPN.parseDigits(rawNumber, curCountryCode);
+    return asYouType.input(`+${onlyDigits}`);
+  }, [curCountryCode, rawNumber]);
 
   useEffect(() => {
     function hideOnClickAway(event: any) {
