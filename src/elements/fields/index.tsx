@@ -156,20 +156,20 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyColor('hoverRating', 'hover_background_color', 'fill');
       break;
     case 'button_group':
-      styles.addTargets('img', 'label');
-      styles.apply('fc', 'vertical_align', (a: any) => ({
+      styles.addTargets('img', 'label', 'bc');
+      styles.apply('bc', 'vertical_align', (a: any) => ({
         alignItems: a,
         alignContent: a
       }));
       styles.apply(
-        'fc',
+        'bc',
         'horizontal_align',
         (a: keyof typeof justifyContentTextAlignMap) => ({
           justifyContent: a,
           textAlign: justifyContentTextAlignMap[a]
         })
       );
-      styles.applyHeight('fc', '', true);
+      styles.applyHeight('bc', '', true);
       styles.apply(
         'field',
         ['button_width', 'button_width_unit', 'content_responsive'],
