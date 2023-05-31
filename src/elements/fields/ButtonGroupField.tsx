@@ -31,7 +31,13 @@ function ButtonGroupField({
   const servar = element.servar;
   const labels = servar.metadata.option_labels;
   return (
-    <div css={{ position: 'relative', width: '100%' }}>
+    <div
+      css={{
+        position: 'relative',
+        width: '100%',
+        ...responsiveStyles.getTarget('fc')
+      }}
+    >
       {children}
       {fieldLabel}
       <div
@@ -39,7 +45,7 @@ function ButtonGroupField({
           display: 'flex',
           flexWrap: 'wrap',
           width: '100%',
-          ...responsiveStyles.getTarget('fc')
+          ...responsiveStyles.getTarget('bc')
         }}
         {...elementProps}
       >
