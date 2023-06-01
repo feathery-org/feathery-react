@@ -287,7 +287,8 @@ export async function setFormElementError({
     if (fieldKey) {
       if (['pin_input', 'select', 'multiselect'].includes(servarType))
         fieldKey = `${fieldKey}-0`;
-      const singleOrList = formRef.current.elements[fieldKey];
+      // form.elements has reserved props so must use namedItem to get by id
+      const singleOrList = formRef.current.elements.namedItem(fieldKey);
       let elements =
         singleOrList instanceof RadioNodeList
           ? Array.from(singleOrList)
