@@ -338,8 +338,13 @@ const Element = ({ node: el, form, flags }: any) => {
           const field = activeStep.servar_fields.find(
             (field: any) => field.servar.type === 'gmap_country'
           );
-          if (field)
-            countryCode = (fieldValues[field.servar.key] ?? '') as string;
+          if (field) {
+            let value = fieldValues[field.servar.key] as string | string[];
+            // Hacky patch for repeating country fields
+            // TODO: fix
+            if (Array.isArray(value)) value = value[0];
+            countryCode = value ?? '';
+          }
         }
         return (
           <Elements.DropdownField
