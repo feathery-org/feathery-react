@@ -37,6 +37,7 @@ export default function InlineTooltip({ element, responsiveStyles }: any) {
           right: '10px',
           top: 0,
           bottom: 0,
+          zIndex: 1,
           margin: 'auto',
           cursor: 'pointer',
           height: '100%',
