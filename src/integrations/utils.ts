@@ -15,6 +15,7 @@ import Client from '../utils/client';
 import { installArgyle } from './argyle';
 import { installHeap } from './heap';
 import { featheryWindow } from '../utils/browser';
+import { installIntercom } from './intercom';
 
 const IMPORTED_URLS = new Set();
 
@@ -58,7 +59,8 @@ export async function initializeIntegrations(
     installStripe(integs.stripe),
     installSegment(integs.segment),
     installGoogleAnalytics(integs['google-analytics']),
-    installHeap(integs.heap)
+    installHeap(integs.heap),
+    installIntercom(integs['intercom-embedded'])
   ]);
 
   const gtm = integs['google-tag-manager'];
