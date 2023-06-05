@@ -45,9 +45,9 @@ function TextAutocomplete({
               ...responsiveStyles.getTarget('dropdown')
             }}
           >
-            {options.map((opt) => (
+            {options.map((opt, index) => (
               <li
-                key={opt}
+                key={`${opt}-${index}`}
                 css={{
                   padding: '8px 14px',
                   transition: '0.1s ease all',
