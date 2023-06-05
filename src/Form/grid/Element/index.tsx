@@ -106,13 +106,11 @@ const Element = ({ node: el, form, flags }: any) => {
     visiblePositions
   } = form;
 
-  const inlineError =
-    formSettings.errorType === 'inline' && getInlineError(el, inlineErrors);
   const basicProps: Record<string, any> = {
     componentOnly: false,
     element: el,
     elementProps: elementProps[el.id],
-    inlineError
+    inlineError: getInlineError(el, inlineErrors)
   };
   const fieldId = el.servar?.key ?? el.id;
   if (elementOnView && onViewElements.includes(fieldId))
