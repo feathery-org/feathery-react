@@ -52,9 +52,6 @@ export const getContainerStyles = (
     [
       'width',
       'width_unit',
-      'children_width',
-      'parent_vertical_align',
-      'parent_horizontal_align',
       'parent_axis',
       'external_padding_left',
       'external_padding_right',
@@ -65,9 +62,6 @@ export const getContainerStyles = (
     (
       width: any,
       widthUnit: any,
-      childrenWidth: any,
-      parentVerticalAlign: any,
-      parentHorizontalAlign: any,
       parentAxis: any,
       marginLeft: any,
       marginRight: any,
@@ -80,57 +74,70 @@ export const getContainerStyles = (
         ? paddingLeft + paddingRight
         : marginLeft + marginRight;
 
-      if (widthUnit === 'px') {
-        s.minWidth = 'min-content';
-        s.width = '100%';
+      s.minWidth = 'min-content';
+      s.width = '100%';
 
-        if (parentAxis === 'column') {
-          s.flexBasis = '100%';
+      if (node.isElement) {
+        s.flex = '0 1 auto';
+
+        if (isFill(widthUnit)) {
+          s.maxWidth = '100%';
         }
 
-        s.maxWidth = `${width}${widthUnit}`;
-      } else if (isFit(width)) {
-        s.width = 'fit-content !important';
-        s.minWidth = 'min-content';
-        s.maxWidth = childrenWidth ? `${childrenWidth}px` : 'fit-content';
+        if (isFit(widthUnit)) {
+          s.maxWidth = 'fit-content';
+        }
 
-        if (!hasChildren && !node.isElement) {
+        if (widthUnit === 'px' || widthUnit === '%') {
+          s.maxWidth = `${width}${widthUnit}`;
+        }
+
+        if (xTotalMargin && s.width) {
+          s.width = `calc(${s.width} - ${xTotalMargin}px)`;
+        }
+
+        if (contentResponsive) {
+          s.minWidth = 'fit-content !important';
+        }
+
+        return s;
+      }
+
+      if (parentAxis === 'column') {
+        s.flexGrow = 0;
+        s.flexShrink = 1;
+        s.flexBasis = 'auto';
+      }
+
+      if (widthUnit === 'px') {
+        s.maxWidth = `${width}${widthUnit}`;
+      }
+
+      if (isFit(width) || isFit(widthUnit)) {
+        s.minWidth = 'fit-content';
+        s.maxWidth = 'fit-content';
+
+        if (!hasChildren) {
           if (parentAxis === 'column') {
-            s.width = 'auto';
-            s.flexBasis = `${DEFAULT_MIN_SIZE}px`;
             s.minWidth = `${DEFAULT_MIN_SIZE}px`;
-            s.flexGrow = 0;
-            s.flexShrink = 0;
           } else {
             s.width = `${DEFAULT_MIN_SIZE}px`;
-            s.maxWidth = `${DEFAULT_MIN_SIZE}px`;
           }
-        } else if (parentAxis === 'column') {
-          s.flexBasis = '100%';
         }
-      } else if (isFill(width)) {
-        if (
-          !(parentVerticalAlign || parentHorizontalAlign) &&
-          parentAxis === 'column'
-        ) {
-          s.alignSelf = 'stretch';
-        }
+      }
 
-        s.width = 'auto';
-        s.minWidth = 'min-content';
+      if (isFill(width) || isFill(widthUnit)) {
+        s.maxWidth = '100%';
 
         if (parentAxis === 'column') {
           s.flexGrow = 1;
-          s.flexShrink = 0;
+          s.flexShrink = 100;
         } else {
           s.width = '100%';
         }
-      } else if (widthUnit === '%') {
-        if (parentAxis === 'column') {
-          s.flexBasis = `${width}${widthUnit}`;
-          s.minWidth = 'min-content';
-        } else {
-          s.width = `${width}${widthUnit}`;
+
+        if (!hasChildren) {
+          s.minWidth = `${DEFAULT_MIN_SIZE}px`;
         }
       }
 
@@ -154,8 +161,6 @@ export const getContainerStyles = (
     [
       'height',
       'height_unit',
-      'parent_vertical_align',
-      'parent_horizontal_align',
       'parent_axis',
       'external_padding_top',
       'external_padding_bottom',
@@ -165,8 +170,6 @@ export const getContainerStyles = (
     (
       height: any,
       heightUnit: any,
-      parentVerticalAlign: any,
-      parentHorizontalAlign: any,
       parentAxis: any,
       marginTop: any,
       marginBottom: any,
@@ -178,66 +181,80 @@ export const getContainerStyles = (
         ? paddingTop + paddingBottom
         : marginTop + marginBottom;
 
-      if (heightUnit === 'px') {
-        s.minHeight = 'fit-content';
-        s.height = 'auto';
+      s.minHeight = 'fit-content';
+      s.height = 'auto';
 
-        if (parentAxis === 'row') {
-          s.flexBasis = `${height}${heightUnit}`;
-          s.flexGrow = 0;
-          s.flexShrink = 0;
+      if (node.isElement) {
+        s.flex = '0 1 auto';
+
+        if (isFill(heightUnit)) {
+          s.maxHeight = '100%';
         }
-      } else if (isFit(height)) {
-        s.height = 'fit-content !important';
-        s.maxHeight = 'fit-content';
-        s.minHeight = 'min-content';
 
-        if (!hasChildren && !node.isElement) {
-          if (parentAxis === 'row') {
-            s.height = 'auto';
-            s.flexBasis = `${DEFAULT_MIN_SIZE}px`;
-            s.flexGrow = 0;
-            s.flexShrink = 0;
-          } else {
-            s.height = `${DEFAULT_MIN_SIZE}px`;
-            s.maxHeight = `${DEFAULT_MIN_SIZE}px`;
+        if (isFit(heightUnit)) {
+          s.maxHeight = 'fit-content';
+        }
+
+        if (heightUnit === 'px') {
+          s.minHeight = `${height}${heightUnit}`;
+        }
+
+        if (heightUnit === '%') {
+          s.maxHeight = `${height}${heightUnit}`;
+
+          if (parentAxis === 'column') {
+            s.height = `100%`;
           }
         }
-      } else if (isFill(height)) {
-        if (
-          !(parentVerticalAlign || parentHorizontalAlign) &&
-          parentAxis === 'row'
-        ) {
-          s.alignSelf = 'stretch';
+
+        if (yTotalMargin && s.height === '100%' && heightUnit !== 'px') {
+          s.height = `calc(100% - ${yTotalMargin}px)`;
         }
 
-        s.height = 'auto';
-        s.minHeight = node.parent
-          ? 'min-content'
-          : `${DEFAULT_MIN_FILL_SIZE}px`;
+        return s;
+      }
 
-        if (parentAxis === 'row') {
-          s.flexGrow = 1;
-          s.flexShrink = 0;
-        } else if (!node.parent) {
-          s.minHeight = '100%';
-        } else {
-          s.height = '100%';
-        }
+      if (parentAxis === 'row') {
+        s.flexGrow = 0;
+        s.flexShrink = 0;
+        s.flexBasis = 'auto';
+      }
 
-        if (!hasChildren && !node.isElement) {
-          s.minHeight = `${DEFAULT_MIN_SIZE}px`;
-        }
-      } else if (heightUnit === '%') {
-        if (parentAxis === 'row') {
-          s.flexBasis = `${height}${heightUnit}`;
-          s.minHeight = 'min-content';
-        } else {
-          s.height = `${height}${heightUnit}`;
+      // Pixel containers
+      if (heightUnit === 'px') {
+        s.minHeight = `${height}${heightUnit}`;
+        s.maxHeight = `max-content`;
+      }
+
+      // Fit containers
+      if (isFit(height) || isFit(heightUnit)) {
+        s.maxHeight = 'fit-content';
+
+        if (!hasChildren) {
+          if (parentAxis === 'row') {
+            s.minHeight = `${DEFAULT_MIN_SIZE}px`;
+          } else {
+            s.height = `${DEFAULT_MIN_SIZE}px`;
+          }
         }
       }
 
-      if (yTotalMargin && s.height === '100%') {
+      // Fill containers
+      if (isFill(height) || isFill(heightUnit)) {
+        s.maxHeight = '100%';
+
+        if (parentAxis === 'row') {
+          s.flexGrow = 1;
+        } else {
+          s.alignSelf = 'stretch';
+        }
+
+        if (!hasChildren) {
+          s.minHeight = `${DEFAULT_MIN_SIZE}px`;
+        }
+      }
+
+      if (yTotalMargin && s.height === '100%' && heightUnit !== 'px') {
         s.height = `calc(100% - ${yTotalMargin}px)`;
       }
 

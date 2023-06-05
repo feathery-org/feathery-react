@@ -179,7 +179,8 @@ function ButtonElement({
         cursor: editMode || actions.length === 0 ? 'default' : 'pointer',
         width: '100%',
         height: '100%',
-        position: 'relative'
+        position: 'relative',
+        flex: 1
       }}
       css={{
         justifyContent: 'center',

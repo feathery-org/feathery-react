@@ -20,14 +20,15 @@ const Grid = ({ step, form, viewport }: any) => {
       tree={formattedStep.tree}
       form={form}
       flags={{ fieldSeen: false }}
+      viewport={viewport}
     />
   );
 };
 
-const Subgrid = ({ tree: node, form, flags }: any) => {
+const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
   if (node.isElement) {
     return (
-      <Container node={node}>
+      <Container node={node} viewport={viewport}>
         <Element form={form} node={node} flags={flags} />
       </Container>
     );
@@ -75,6 +76,7 @@ const Subgrid = ({ tree: node, form, flags }: any) => {
     return (
       <Container
         node={node}
+        viewport={viewport}
         selected={customClickSelectionState({
           id: node.key,
           properties: props

@@ -8,7 +8,7 @@ export const FILL = 'fill';
 export const isFill = (v: any) => v === FILL;
 export const isFit = (v: any) => v === FIT;
 export const isPx = (v: string) =>
-  typeof v === 'string' && v.indexOf('px') >= 0;
+  typeof v === 'string' && v.indexOf('px') >= 0 && v.indexOf('calc') < 0;
 
 export const getPxValue = (size: string) => {
   return isPx(size) ? Number.parseFloat(size) : MIN_AXIS_SIZE;

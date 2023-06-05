@@ -1,8 +1,9 @@
-import React, { PropsWithChildren } from 'react';
+import React, { PropsWithChildren, useRef } from 'react';
 import { StyledContainer, getCellStyle } from '../StyledContainer';
 
 type ContainerProps = PropsWithChildren & {
   node: any;
+  viewport: any;
   runElementActions?: any;
   selected?: boolean;
 };
@@ -16,8 +17,10 @@ export const Container = ({
   node,
   runElementActions = () => {},
   selected,
+  viewport,
   children
 }: ContainerProps) => {
+  const ref = useRef<HTMLDivElement>(null);
   const additionalCss: any = {};
   let handleClick = () => {};
 
@@ -48,7 +51,13 @@ export const Container = ({
   }
 
   return (
-    <StyledContainer node={node} css={additionalCss} onClick={handleClick}>
+    <StyledContainer
+      ref={ref}
+      node={node}
+      css={additionalCss}
+      onClick={handleClick}
+      viewport={viewport}
+    >
       {children}
     </StyledContainer>
   );
