@@ -16,6 +16,8 @@ import { installArgyle } from './argyle';
 import { installHeap } from './heap';
 import { featheryWindow } from '../utils/browser';
 import { installIntercom } from './intercom';
+import { installAmplitude } from './amplitude';
+import { installMixpanel } from './mixpanel';
 
 const IMPORTED_URLS = new Set();
 
@@ -60,6 +62,8 @@ export async function initializeIntegrations(
     installSegment(integs.segment),
     installGoogleAnalytics(integs['google-analytics']),
     installHeap(integs.heap),
+    installAmplitude(integs.amplitude),
+    installMixpanel(integs.mixpanel),
     installIntercom(integs['intercom-embedded'])
   ]);
 
@@ -100,4 +104,8 @@ export function trackEvent(
   if (fieldData) segmentData.submittedData = fieldData;
   if (featheryWindow().analytics)
     featheryWindow().analytics.track(title, segmentData);
+  if (featheryWindow().amplitude)
+    featheryWindow().amplitude.track(title, metadata);
+  if (featheryWindow().mixpanel)
+    featheryWindow().mixpanel.track(title, metadata);
 }
