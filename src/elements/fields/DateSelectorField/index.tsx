@@ -26,6 +26,9 @@ function formatDateString(date: any, chooseTime: boolean) {
   return formatted;
 }
 
+const parseTimeThreshold = (timeThreshold: string) =>
+  timeThreshold.split(':').map((entry) => parseInt(entry));
+
 function DateSelectorField({
   element,
   responsiveStyles,
@@ -39,20 +42,38 @@ function DateSelectorField({
   inlineError,
   children
 }: any) {
-  const servar = element.servar;
-  const chooseTime = servar.metadata.choose_time;
+  const servarMeta = element.servar.metadata;
 
   let internalVal: any = '';
   if (value) {
     internalVal = parseISO(value);
-    if (!chooseTime) internalVal.setHours(0, 0, 0);
+    if (!servarMeta.choose_time) internalVal.setHours(0, 0, 0);
   }
   const [internalDate, setInternalDate] = useState(internalVal);
+
+  const filterPassedTime = (time: any) => {
+    const hour = time.getHours();
+    const minutes = time.getMinutes();
+
+    if (servarMeta.min_time) {
+      const [minHour, minMinutes] = parseTimeThreshold(servarMeta.min_time);
+      if (minHour > hour || (minHour === hour && minMinutes > minutes))
+        return false;
+    }
+
+    if (servarMeta.max_time) {
+      const [maxHour, maxMinutes] = parseTimeThreshold(servarMeta.max_time);
+      if (maxHour < hour || (maxHour === hour && maxMinutes < minutes))
+        return false;
+    }
+
+    return true;
+  };
 
   const onDateChange = (newDate: any) => {
     newDate = newDate ?? '';
     setInternalDate(newDate);
-    onChange(formatDateString(newDate, chooseTime));
+    onChange(formatDateString(newDate, servarMeta.choose_time));
   };
 
   const { borderStyles, customBorder } = useBorder({
@@ -61,7 +82,7 @@ function DateSelectorField({
   });
   const [focused, setFocused] = useState(false);
 
-  const dateMask = chooseTime ? 'MM/d/yy h:mm aa' : 'MM/d/yy';
+  const dateMask = servarMeta.choose_time ? 'MM/d/yy h:mm aa' : 'MM/d/yy';
   return (
     <div
       css={{
@@ -101,9 +122,10 @@ function DateSelectorField({
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           required={required}
-          autoComplete={servar.metadata.autocomplete || 'on'}
+          autoComplete={servarMeta.autocomplete || 'on'}
           placeholder=''
-          showTimeSelect={servar.metadata.choose_time ?? false}
+          filterTime={filterPassedTime}
+          showTimeSelect={servarMeta.choose_time ?? false}
           dateFormat={dateMask}
           css={{
             height: '100%',
