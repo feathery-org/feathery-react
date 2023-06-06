@@ -7,17 +7,23 @@ import DatePicker from 'react-datepicker';
 import DateSelectorStyles from './styles';
 
 import { bootstrapStyles } from '../../styles';
-import { IMaskInput } from 'react-imask';
 import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';
 
-function formatDateString(date: any) {
+function formatDateString(date: any, chooseTime: boolean) {
   if (!date) return '';
 
   const day = date.getDate().toString().padStart(2, '0');
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
   const year = date.getFullYear();
-  return `${year}-${month}-${day}`;
+  let formatted = `${year}-${month}-${day}`;
+  if (chooseTime) {
+    const hour = date.getHours().toString().padStart(2, '0');
+    const minute = date.getMinutes().toString().padStart(2, '0');
+    const second = date.getSeconds().toString().padStart(2, '0');
+    formatted = `${formatted}T${hour}:${minute}:${second}`;
+  }
+  return formatted;
 }
 
 function DateSelectorField({
@@ -33,21 +39,29 @@ function DateSelectorField({
   inlineError,
   children
 }: any) {
-  const [internalDate, setInternalDate] = useState(
-    value ? parseISO(value) : ''
-  );
+  const servar = element.servar;
+  const chooseTime = servar.metadata.choose_time;
+
+  let internalVal: any = '';
+  if (value) {
+    internalVal = parseISO(value);
+    if (!chooseTime) internalVal.setHours(0, 0, 0);
+  }
+  const [internalDate, setInternalDate] = useState(internalVal);
+
   const onDateChange = (newDate: any) => {
     newDate = newDate ?? '';
     setInternalDate(newDate);
-    onChange(formatDateString(newDate));
+    onChange(formatDateString(newDate, chooseTime));
   };
+
   const { borderStyles, customBorder } = useBorder({
     element,
     error: inlineError
   });
   const [focused, setFocused] = useState(false);
 
-  const servar = element.servar;
+  const dateMask = chooseTime ? 'MM/d/yy h:mm aa' : 'MM/d/yy';
   return (
     <div
       css={{
@@ -89,26 +103,20 @@ function DateSelectorField({
           required={required}
           autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
-          customInput={
-            <IMaskInput
-              id={servar.key}
-              css={{
-                height: '100%',
-                width: '100%',
-                border: 'none',
-                background: 'transparent',
-                ...bootstrapStyles,
-                ...responsiveStyles.getTarget('field'),
-                ...(focused || value || !element.properties.placeholder
-                  ? {}
-                  : { color: 'transparent !important' })
-              }}
-              type='tel'
-              mask='00/00/0000'
-              unmask={false}
-              inputRef={setRef}
-            />
-          }
+          showTimeSelect={servar.metadata.choose_time ?? false}
+          dateFormat={dateMask}
+          css={{
+            height: '100%',
+            width: '100%',
+            border: 'none',
+            background: 'transparent',
+            ...bootstrapStyles,
+            ...responsiveStyles.getTarget('field'),
+            ...(focused || value || !element.properties.placeholder
+              ? {}
+              : { color: 'transparent !important' })
+          }}
+          ref={setRef}
         />
         <Placeholder
           value={value}
