@@ -341,7 +341,7 @@ function Form({
 
     setAutoValidate(false); // Each step to initially not auto validate
 
-    if (formSettings.autofocus && focusRef.current) {
+    if (formSettings.autofocus && focusRef.current?.focus) {
       focusRef.current.focus({
         preventScroll: true
       });
