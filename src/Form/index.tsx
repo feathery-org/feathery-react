@@ -220,9 +220,10 @@ function Form({
     formOff: undefined,
     showBrand: false,
     brandPosition: undefined,
-    allowEdit: 'yes',
     autoscroll: 'top_of_form',
-    rightToLeft: false
+    rightToLeft: false,
+    allowEdits: true,
+    completionBehavior: ''
   });
   const [inlineErrors, setInlineErrors] = useState<
     Record<string, { message: string; index: number }>
@@ -617,7 +618,7 @@ function Form({
             return result;
           }, {});
           setSteps(steps);
-          if (res.redirect_url)
+          if (res.completion_behavior === 'redirect' && res.redirect_url)
             initState.redirectCallbacks[_internalId] = () => {
               featheryWindow().location.href = res.redirect_url;
             };
@@ -627,7 +628,8 @@ function Form({
             autofocus: res.autofocus,
             // @ts-expect-error TS(2322): Type 'boolean' is not assignable to type 'undefine... Remove this comment to see the full error message
             formOff: Boolean(res.formOff),
-            allowEdit: res.allow_edit_after_completion,
+            allowEdits: res.allow_edits,
+            completionBehavior: res.completion_behavior,
             showBrand: Boolean(res.show_brand),
             brandPosition: res.brand_position,
             autoscroll: res.autoscroll,
@@ -1437,15 +1439,15 @@ function Form({
     visiblePositions
   };
 
-  let completeState;
-  if (formSettings.allowEdit === 'hide') completeState = null;
-  else if (formSettings.allowEdit === 'disable')
-    completeState = <FormOff noEdit />;
+  const completeState =
+    formSettings.completionBehavior === 'show_completed_screen' ? (
+      <FormOff noEdit />
+    ) : null;
 
   // If form was completed in a previous session and edits are disabled,
   // consider the form finished
   const anyFinished =
-    finished || (session?.form_completed && completeState !== undefined);
+    finished || (session?.form_completed && !formSettings.allowEdits);
 
   useEffect(() => {
     if (!anyFinished) return;
@@ -1459,14 +1461,10 @@ function Form({
     runUserCallback(onFormComplete).then(redirectForm);
   }, [anyFinished]);
 
-  if (formSettings.formOff) {
-    // Form is turned off
-    return <FormOff />;
-  } else if (anyFinished) {
-    return completeState ?? null;
-  } else if (!activeStep) {
-    return stepLoader;
-  }
+  // Form is turned off
+  if (formSettings.formOff) return <FormOff />;
+  else if (anyFinished) return completeState;
+  else if (!activeStep) return stepLoader;
 
   return (
     <ReactPortal options={popupOptions}>
