@@ -106,13 +106,11 @@ const Element = ({ node: el, form, flags }: any) => {
     visiblePositions
   } = form;
 
-  const inlineError =
-    formSettings.errorType === 'inline' && getInlineError(el, inlineErrors);
   const basicProps: Record<string, any> = {
     componentOnly: false,
     element: el,
     elementProps: elementProps[el.id],
-    inlineError
+    inlineError: getInlineError(el, inlineErrors)
   };
   const fieldId = el.servar?.key ?? el.id;
   if (elementOnView && onViewElements.includes(fieldId))
@@ -338,8 +336,13 @@ const Element = ({ node: el, form, flags }: any) => {
           const field = activeStep.servar_fields.find(
             (field: any) => field.servar.type === 'gmap_country'
           );
-          if (field)
-            countryCode = (fieldValues[field.servar.key] ?? '') as string;
+          if (field) {
+            let value = fieldValues[field.servar.key] as string | string[];
+            // Hacky patch for repeating country fields
+            // TODO: fix
+            if (Array.isArray(value)) value = value[0];
+            countryCode = value ?? '';
+          }
         }
         return (
           <Elements.DropdownField

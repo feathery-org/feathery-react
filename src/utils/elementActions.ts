@@ -16,10 +16,10 @@ export const ACTION_VERIFY_SMS = 'verify_sms';
 
 export const ACTIONS_TO_VALIDATE = [ACTION_VERIFY_SMS];
 export const SUBMITTABLE_ACTIONS = [ACTION_NEXT, ACTION_CUSTOM];
-export const REQUIRED_FLOW_ACTIONS = [
-  ACTION_TRIGGER_ARGYLE,
-  ACTION_TRIGGER_PLAID
-];
+export const REQUIRED_FLOW_ACTIONS = {
+  [ACTION_TRIGGER_ARGYLE]: 'You must authorize Argyle before proceeding',
+  [ACTION_TRIGGER_PLAID]: 'You must authorize Plaid before proceeding'
+};
 
 export function shouldValidateStep(actions: any[]) {
   return actions.some(
@@ -30,5 +30,5 @@ export function shouldValidateStep(actions: any[]) {
 }
 
 export function hasFlowActions(actions: any[]) {
-  return actions.some((action) => REQUIRED_FLOW_ACTIONS.includes(action.type));
+  return actions.find((action) => action.type in REQUIRED_FLOW_ACTIONS);
 }

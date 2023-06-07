@@ -190,7 +190,7 @@ const CardField = ({
           <CardElement
             css={{
               position: 'absolute',
-              top: 4,
+              top: 0,
               left: 5,
               right: 5,
               width: '100%'

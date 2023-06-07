@@ -232,7 +232,9 @@ function Form({
     null
   );
   const flowCompleted = useRef(false);
-  const [stepHasRequiredFlow, setStepHasRequiredFlow] = useState(false);
+  const [requiredStepAction, setRequiredStepAction] = useState<
+    keyof typeof REQUIRED_FLOW_ACTIONS | ''
+  >('');
   const [gMapFilled, setGMapFilled] = useState(false);
   const [gMapBlurKey, setGMapBlurKey] = useState('');
   const [gMapTimeoutId, setGMapTimeoutId] = useState<NodeJS.Timeout | number>(
@@ -326,7 +328,7 @@ function Form({
             fieldKey: gMapBlurKey,
             message: 'An address must be selected',
             errorType: formSettings.errorType,
-            setInlineErrors: setInlineErrors,
+            setInlineErrors,
             triggerErrors: true
           }),
         500
@@ -342,19 +344,19 @@ function Form({
 
     setAutoValidate(false); // Each step to initially not auto validate
 
-    if (formSettings.autofocus && focusRef.current) {
+    if (formSettings.autofocus && focusRef.current?.focus) {
       focusRef.current.focus({
         preventScroll: true
       });
       focusRef.current = null;
     }
 
-    setStepHasRequiredFlow(
-      activeStep.buttons.some((b: any) =>
-        b.properties.actions.some((action: any) =>
-          REQUIRED_FLOW_ACTIONS.includes(action.type)
-        )
-      )
+    activeStep.buttons.forEach((b: any) =>
+      b.properties.actions.forEach((action: any) => {
+        if (action.type in REQUIRED_FLOW_ACTIONS) {
+          setRequiredStepAction(action.type);
+        }
+      })
     );
     setGMapFilled(
       activeStep.servar_fields.some(
@@ -799,7 +801,7 @@ function Form({
           servarType: errorField.type,
           errorType: formSettings.errorType,
           inlineErrors: newInlineErrors,
-          setInlineErrors: setInlineErrors,
+          setInlineErrors,
           triggerErrors: true
         });
         return;
@@ -971,7 +973,7 @@ function Form({
           servarType: errorField.servar ? errorField.servar.type : '',
           errorType: formSettings.errorType,
           inlineErrors: newInlineErrors,
-          setInlineErrors: setInlineErrors,
+          setInlineErrors,
           triggerErrors: true
         });
         return false;
@@ -1097,8 +1099,8 @@ function Form({
         formRef,
         fieldKey: button.id,
         message,
-        errorType: formSettings.errorType,
-        setInlineErrors: setInlineErrors,
+        errorType: 'inline',
+        setInlineErrors,
         triggerErrors: true
       });
 
@@ -1132,6 +1134,8 @@ function Form({
     if (id && elementClicks[id]) return;
     elementClicks[id] = true;
 
+    if (Object.keys(inlineErrors).length > 0) setInlineErrors({});
+
     if (shouldValidateStep(actions)) {
       setAutoValidate(true);
 
@@ -1155,10 +1159,13 @@ function Form({
     // Do not proceed until user has gone through required flows
     if (
       !hasFlowActions(actions) &&
-      stepHasRequiredFlow &&
+      requiredStepAction &&
       !flowCompleted.current
-    )
+    ) {
+      setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
+      elementClicks[id] = false;
       return;
+    }
 
     const flowOnSuccess = (index: number) => async () => {
       flowCompleted.current = true;
@@ -1340,7 +1347,7 @@ function Form({
             fieldKey,
             message: '',
             errorType: formSettings.errorType,
-            setInlineErrors: setInlineErrors,
+            setInlineErrors,
             triggerErrors: true
           });
         });
