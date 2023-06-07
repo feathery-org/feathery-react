@@ -218,7 +218,8 @@ function Form({
     showBrand: false,
     brandPosition: undefined,
     allowEdit: 'yes',
-    autoscroll: 'top_of_form'
+    autoscroll: 'top_of_form',
+    rightToLeft: false
   });
   const [inlineErrors, setInlineErrors] = useState<
     Record<string, { message: string; index: number }>
@@ -626,7 +627,8 @@ function Form({
             allowEdit: res.allow_edit_after_completion,
             showBrand: Boolean(res.show_brand),
             brandPosition: res.brand_position,
-            autoscroll: res.autoscroll
+            autoscroll: res.autoscroll,
+            rightToLeft: res.right_to_left
           });
           setProductionEnv(res.production);
           return steps;
@@ -1473,6 +1475,7 @@ function Form({
           display: 'flex',
           ...(popupOptions ? { borderRadius: '10px' } : {})
         }}
+        dir={formSettings.rightToLeft ? 'rtl' : 'ltr'}
       >
         {stepLoader}
         {children}
