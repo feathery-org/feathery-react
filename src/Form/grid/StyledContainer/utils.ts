@@ -1,8 +1,15 @@
 import { getPxValue, isPx } from '../../../utils/hydration';
 
-export const getRawNode = (node: any) => {
-  if (node.uuid) return node.renderData;
-  else return node;
+export const isFillContainer = (div: HTMLDivElement) => {
+  return Array.from(div.classList).includes('fill-container');
+};
+
+export const isFitContainer = (div: HTMLDivElement) => {
+  return Array.from(div.classList).includes('fit-container');
+};
+
+export const isFitElement = (div: HTMLDivElement) => {
+  return Array.from(div.classList).includes('fit-element');
 };
 
 export const getFieldValue = (obj: any, key: string, prefix = '') => {
@@ -40,18 +47,21 @@ export const getImmediateDivs = (el: any) => {
   return children;
 };
 
-export const isFillContainer = (div: HTMLDivElement) => {
-  return Array.from(div.classList).includes('fill-container');
+/**
+ * getRawNode
+ * Returns the raw data of a node if necessary. `node.uuid` indicates that the node
+ * is passed from the editor which means it needs to return `node.renderData`.
+ */
+export const getRawNode = (node: any) => {
+  if (node.uuid) return node.renderData;
+  else return node;
 };
 
-export const isFitContainer = (div: HTMLDivElement) => {
-  return Array.from(div.classList).includes('fit-container');
-};
-
-export const isFitElement = (div: HTMLDivElement) => {
-  return Array.from(div.classList).includes('fit-element');
-};
-
+/**
+ * hasDescendantFitNodes
+ * Returns a boolean indicating whether the ref has descendant elements
+ * that are Fit-width containers or elements.
+ */
 export const hasDescendantFitNodes = (ref: any) => {
   return (
     Array.from(ref.querySelectorAll('.fit-container')).length > 0 ||
@@ -59,6 +69,11 @@ export const hasDescendantFitNodes = (ref: any) => {
   );
 };
 
+/**
+ * getParentFitContainers
+ * Returns parent divs that are either a Fit-width container or element along
+ * with utility functions for these divs.
+ */
 export const getParentFitContainers = (ref: any) => {
   const parents: any[] = [];
 
@@ -84,6 +99,7 @@ export const getParentFitContainers = (ref: any) => {
     return null;
   }
 
+  // Capture the original maxWidth and width of all Fit-width parent containers
   const originalWidths = parents.map((parent: any) => ({
     width: parent.style.width,
     maxWidth: parent.style.maxWidth
@@ -92,12 +108,14 @@ export const getParentFitContainers = (ref: any) => {
   return {
     parents,
     expand: () => {
+      // Allows expanding all the Fit-width containers to 100% width
       parents.forEach((parent: any) => {
         parent.style.maxWidth = '100%';
         parent.style.width = '100%';
       });
     },
     collapse: () => {
+      // Collapses the parent Fit-width containers back to their original size
       parents.forEach((parent: any, i: number) => {
         parent.style.width = originalWidths[i].width;
         parent.style.maxWidth = originalWidths[i].maxWidth;
@@ -113,6 +131,8 @@ export const resizeFitContainer = (div: any) => {
     return; // Do nothing
   }
 
+  // Expanding the width of the container to 100% allows to get an accurate size of it's children
+  // if the container took up 100% of it's parent.
   div.style.maxWidth = '100%';
   div.style.width = '100%';
 
@@ -120,6 +140,7 @@ export const resizeFitContainer = (div: any) => {
 
   let childrenWidth = 0;
 
+  // If the container is a "Column" axis, we add up the widths (or maxWidths) of it's children
   if (containerStyles.flexDirection === 'row') {
     childrenWidth = children.reduce((total: number, child: any) => {
       const childStyles = getComputedStyle(child);
@@ -147,6 +168,7 @@ export const resizeFitContainer = (div: any) => {
     childrenWidth +=
       getStylePxValue(containerStyles.gap) * (children.length - 1);
   } else {
+    // If the container is a "Row" axis, we find the greatest width immediate child
     childrenWidth = children.reduce((greatest: number, child: any) => {
       if (isFillContainer(child)) {
         return greatest; // Disregard fill containers
@@ -180,6 +202,7 @@ export const resizeFitContainer = (div: any) => {
   const containerMarginRight = getStylePxValue(containerStyles.marginRight);
   const totalMargin = containerMarginLeft + containerMarginRight;
 
+  // Set the maxWidth to the calculated width of it's children and the width to 100% - total margin
   div.style.maxWidth = `${childrenWidth}px`;
   div.style.width = `calc(100% - ${totalMargin}px)`;
 };

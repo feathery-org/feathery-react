@@ -12,6 +12,11 @@ import { formatContainerStyles } from './transform';
 import { DEFAULT_MIN_SIZE, getCellStyle, getContainerStyles } from './styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
 
+/**
+ * useFormattedNode
+ * In order to purely use ResponsiveStyles on Containers for styles, useFormattedNode appends additional
+ * meta data to the node's styles such as it's parent's axis, etc
+ */
 export const useFormattedNode = (_node: any, raw?: any) => {
   const [node, rawNode] = useMemo(() => {
     const targetNode = raw ?? getRawNode(_node);
@@ -67,6 +72,11 @@ export const useContainerStyles = (
   }, [node, rawNode, css, viewport]);
 };
 
+/**
+ * useNodeType
+ * Returns a memoized string that indicates the type of node. This is attached to each container as a class on the div
+ * to allow identifying divs without knowledge of their node.
+ */
 export const useNodeType = (node: any, rawNode: any, viewport: any) => {
   return useMemo(() => {
     const targetNode = rawNode ?? node;
@@ -114,6 +124,12 @@ export const useContainerEngine = (node: any, rawNode: any, ref: any) => {
     };
   }, []);
 
+  /**
+   * This effect is used to resize Fit-width containers according to their children.
+   * Resizing is required because pixel-width elements should be responsive in a way where they can
+   * shrink if there isn't enough space but the Fit-width container should not force this. The Fit-width
+   * container should allow it's children to expand if there is room exterior to the container.
+   */
   useEffect(() => {
     if (
       !ref ||
