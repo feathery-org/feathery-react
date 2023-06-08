@@ -77,6 +77,10 @@ export const hasDescendantFitNodes = (ref: any) => {
 export const getParentFitContainers = (ref: any) => {
   const parents: any[] = [];
 
+  if (!ref || !ref.parentNode) {
+    return null;
+  }
+
   const _getParentFitContainers = (div: any) => {
     const classes = Array.from(div.classList);
 
