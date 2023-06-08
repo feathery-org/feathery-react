@@ -140,7 +140,7 @@ function _collectHideFlags(
   numRepeats: number
 ) {
   const elKey = getPositionKey(element);
-  const insideRepeat = repeatKey && elKey.startsWith(repeatKey);
+  const insideRepeat = repeatKey && elKey.startsWith(repeatKey + ',');
   const curRepeats = insideRepeat ? numRepeats : 1;
 
   const visible: boolean[] = [];
@@ -154,13 +154,15 @@ function _collectHideFlags(
       shouldHide ||
       // Is a parent container hidden
       Object.entries(hiddenPositions).some(([key, indices]) => {
+        const parentKey = key + ','; // make sure 1,1,23,1 is not a parent of 1,1,23,10 etc
         const repeatParentHidden =
-          repeatKey.startsWith(key) && repeatKey !== key;
+          repeatKey.startsWith(parentKey) && repeatKey !== key;
         // Parent container is hidden AND (
         // it's the current repetition OR
         // it's a parent of the repeatable block)
         return (
-          elKey.startsWith(key) && (indices.includes(i) || repeatParentHidden)
+          elKey.startsWith(parentKey) &&
+          (indices.includes(i) || repeatParentHidden)
         );
       });
     visible.push(!shouldHide);
