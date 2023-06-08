@@ -1080,7 +1080,10 @@ function Form({
       } else if ([ACTION_STORE_FIELD, ACTION_CUSTOM].includes(action.type)) {
         if (state === null) state = false;
         if (action.type === ACTION_STORE_FIELD) {
-          const val = action.custom_store_value;
+          let val;
+          if (action.custom_store_value_type === 'field') {
+            val = fieldValues[action.custom_store_value_field_key];
+          } else val = action.custom_store_value;
           // Treat the string 0 as the number 0, which is a bottom value
           const turnOn = val && val !== '0';
           if (turnOn && fieldValues[action.custom_store_field_key] === val)
@@ -1298,11 +1301,12 @@ function Form({
       else if (type === ACTION_COLLECT_PAYMENT) {
         if (!(await collectPaymentAction(element))) break;
       } else if (type === ACTION_STORE_FIELD) {
-        const {
-          custom_store_field_key: key,
-          custom_store_value: value,
-          toggle
-        } = action;
+        let val;
+        if (action.custom_store_value_type === 'field') {
+          val = fieldValues[action.custom_store_value_field_key];
+        } else val = action.custom_store_value;
+
+        const key = action.custom_store_field_key;
 
         // Nested find statements return an item from the outer collection, so
         // short circuit the "some" statement once the field has been found
@@ -1314,9 +1318,9 @@ function Form({
           if (field) return true;
         });
 
-        const castValue = castVal(field?.servar.type, value);
+        const castValue = castVal(field?.servar.type, val);
         const setToDefaultValue =
-          toggle &&
+          action.toggle &&
           JSON.stringify(fieldValues[key]) === JSON.stringify(castValue);
 
         // could be a hidden field
