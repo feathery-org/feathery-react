@@ -146,11 +146,13 @@ export const useContainerEngine = (node: any, rawNode: any, ref: any) => {
     // If the element is fit, we must observe if the content changes to resize parent fit containers
     if (isFitElement(div) && node.uuid) {
       observer = new ResizeObserver(() => {
-        const parentFitContainers = getParentFitContainers(ref.current);
+        if (ref.current) {
+          const parentFitContainers = getParentFitContainers(ref.current);
 
-        if (parentFitContainers) {
-          for (const parent of parentFitContainers.parents) {
-            resizeFitContainer(parent);
+          if (parentFitContainers) {
+            for (const parent of parentFitContainers.parents) {
+              resizeFitContainer(parent);
+            }
           }
         }
       });
