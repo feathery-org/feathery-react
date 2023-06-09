@@ -89,7 +89,11 @@ export const getContainerStyles = (
         }
 
         if (widthUnit === 'px' || widthUnit === '%') {
-          s.maxWidth = `${width}${widthUnit}`;
+          if (node._type === 'checkbox') {
+            s.maxWidth = 'max-content';
+          } else {
+            s.maxWidth = `${width}${widthUnit}`;
+          }
         }
 
         if (xTotalMargin && s.width) {
