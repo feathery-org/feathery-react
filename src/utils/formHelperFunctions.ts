@@ -81,7 +81,7 @@ export function getDefaultFieldValue(field: any) {
   switch (servar.type) {
     case 'checkbox':
       // eslint-disable-next-line camelcase
-      return !!meta.always_checked;
+      return !!meta.always_checked || !!meta.default_checked;
     case 'hex_color':
       return 'FFFFFFFF';
     case 'rating':
