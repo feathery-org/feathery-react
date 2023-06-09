@@ -286,7 +286,7 @@ export default class Client {
       form_key: this.formKey,
       draft: this.draft
     });
-    const url = `${CDN_URL}panel/v16/?${params}`;
+    const url = `${CDN_URL}panel/v17/?${params}`;
     const options: Record<string, any> = {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
