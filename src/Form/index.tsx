@@ -1441,7 +1441,7 @@ function Form({
 
   const completeState =
     formSettings.completionBehavior === 'show_completed_screen' ? (
-      <FormOff noEdit />
+      <FormOff noEdit showCTA={formSettings.showBrand} />
     ) : null;
 
   // If form was completed in a previous session and edits are disabled,
@@ -1462,7 +1462,7 @@ function Form({
   }, [anyFinished]);
 
   // Form is turned off
-  if (formSettings.formOff) return <FormOff />;
+  if (formSettings.formOff) return <FormOff showCTA={formSettings.showBrand} />;
   else if (anyFinished) return completeState;
   else if (!activeStep) return stepLoader;
 
