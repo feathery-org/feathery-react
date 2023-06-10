@@ -49,7 +49,7 @@ export default function FormOff({
           }}
           onClick={() => openTab('https://feathery.io')}
         >
-          Create your Feathery form
+          Create a Feathery form
         </button>
       )}
     </div>
