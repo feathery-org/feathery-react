@@ -440,7 +440,7 @@ const Element = ({ node: el, form, flags }: any) => {
             fieldVal={fieldVal}
             onChange={(val: number) => {
               const change = changeValue(val, el, index);
-              if (change) onChange();
+              if (change) onChange({ submitData: autosubmit && val });
             }}
           />
         );
