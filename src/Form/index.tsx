@@ -1463,8 +1463,10 @@ function Form({
 
   // Form is turned off
   if (formSettings.formOff) return <FormOff showCTA={formSettings.showBrand} />;
-  else if (anyFinished) return completeState;
-  else if (!activeStep) return stepLoader;
+  else if (anyFinished) {
+    if (!completeState && !productionEnv) console.log('Form has been hidden');
+    return completeState;
+  } else if (!activeStep) return stepLoader;
 
   return (
     <ReactPortal options={popupOptions}>
