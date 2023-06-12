@@ -1,4 +1,4 @@
-import { loadStripe } from '@stripe/stripe-js';
+import { loadStripe } from '@stripe/stripe-js/pure';
 import { useState } from 'react';
 import { runningInClient, featheryDoc, featheryWindow } from '../utils/browser';
 import { ActionData } from './utils';
