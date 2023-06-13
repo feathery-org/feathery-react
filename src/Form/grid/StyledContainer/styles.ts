@@ -1,5 +1,6 @@
 import ResponsiveStyles from '../../../elements/styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
+import { getElementType } from './utils';
 
 export const DEFAULT_MIN_FILL_SIZE = 10;
 export const DEFAULT_MIN_SIZE = 50;
@@ -89,7 +90,7 @@ export const getContainerStyles = (
         }
 
         if (widthUnit === 'px' || widthUnit === '%') {
-          if (node._type === 'checkbox') {
+          if (getElementType(node) === 'checkbox') {
             s.maxWidth = 'max-content';
           } else {
             s.maxWidth = `${width}${widthUnit}`;
