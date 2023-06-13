@@ -19,7 +19,8 @@ export default function FormOff({
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
-        alignItems: 'center'
+        alignItems: 'center',
+        backgroundColor: 'white'
       }}
     >
       <FormClosedIcon width={width} />
