@@ -1,5 +1,17 @@
 import { getPxValue, isPx } from '../../../utils/hydration';
 
+/**
+ * Returns the type of the element that is being passed.
+ * @param element - Element data
+ * @returns {string | null}
+ */
+export const getElementType = (element: any) => {
+  if (element?._type) return element._type;
+  else if (element?.type) return element.type;
+  else if (element?.servar?.type) return element.servar.type;
+  return null;
+};
+
 export const isFillContainer = (div: HTMLDivElement) => {
   return Array.from(div.classList).includes('fill-container');
 };
