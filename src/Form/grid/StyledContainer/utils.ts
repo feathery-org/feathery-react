@@ -7,8 +7,8 @@ import { getPxValue, isPx } from '../../../utils/hydration';
  */
 export const getElementType = (element: any) => {
   if (element?._type) return element._type;
-  else if (element?.type) return element.type;
   else if (element?.servar?.type) return element.servar.type;
+  else if (element?.type) return element.type;
   return null;
 };
 
