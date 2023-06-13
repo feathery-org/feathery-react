@@ -1022,7 +1022,9 @@ function Form({
       const nextStep = steps[redirectKey];
       const hasNext = nextStep.buttons.some((b: any) =>
         (b.properties.actions ?? []).some(
-          (action: any) => action.type === ACTION_NEXT
+          (action: any) =>
+            action.type === ACTION_NEXT ||
+            (action.type === ACTION_URL && !action.open_tab)
         )
       );
       const nextStepIsTerminal =
@@ -1246,15 +1248,18 @@ function Form({
           break;
         }
       } else if (type === ACTION_VERIFY_SMS) {
-        const pin = fieldValues[action.auth_target_field_key] as string;
+        const pinKey = action.auth_target_field_key;
+        const pin = fieldValues[pinKey] as string;
         const params = { fieldVal: pin, featheryClient: client };
         let hasErr = false;
-        await Auth.verifySms(params).catch((err: any) => {
-          setElementError(err.message);
+        await Auth.verifySms(params).catch(() => {
+          setElementError('Your code is invalid');
           hasErr = true;
         });
         if (hasErr) break;
-        else authState.redirectAfterLogin = true;
+
+        client.submitCustom({ [pinKey]: pin });
+        authState.redirectAfterLogin = true;
       } else if (type === ACTION_SEND_MAGIC_LINK) {
         const email = fieldValues[action.auth_target_field_key] as string;
         if (validators.email(email)) {
