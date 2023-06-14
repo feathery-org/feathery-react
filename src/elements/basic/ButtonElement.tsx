@@ -5,7 +5,6 @@ import TextNodes from '../components/TextNodes';
 import { imgMaxSizeStyles } from '../styles';
 import { adjustColor } from '../../utils/styles';
 import useBorder from '../components/useBorder';
-import { SUBMITTABLE_ACTIONS } from '../../utils/elementActions';
 
 function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets(

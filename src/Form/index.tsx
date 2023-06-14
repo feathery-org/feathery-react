@@ -97,8 +97,6 @@ import {
   ACTION_TRIGGER_PLAID,
   ACTION_URL,
   ACTION_VERIFY_SMS,
-  shouldValidateStep,
-  SUBMITTABLE_ACTIONS,
   ACTION_TRIGGER_ARGYLE,
   REQUIRED_FLOW_ACTIONS,
   hasFlowActions
@@ -160,13 +158,6 @@ const getViewport = () => {
     ? 'desktop'
     : 'mobile';
 };
-const findSubmitButton = (step: any) =>
-  step.buttons.find((b: any) =>
-    b.properties.actions.some(
-      (action: any) =>
-        SUBMITTABLE_ACTIONS.includes(action.type) && action.submit
-    )
-  );
 const isElementAButtonOnStep = (step: any, el: any) =>
   el.id && step.buttons.find((b: any) => b.id === el.id);
 
@@ -988,20 +979,16 @@ function Form({
 
   async function goToNewStep({
     metadata,
-    redirectKey = '',
     submitPromise = null,
     submitData = false
   }: any) {
     let eventData: Record<string, any> = {
       step_key: activeStep.key,
-      next_step_key: redirectKey,
       event: submitData ? 'complete' : 'skip'
     };
 
-    if (!redirectKey) {
-      redirectKey = getNextStepKey(metadata);
-      eventData = { ...eventData, next_step_key: redirectKey };
-    }
+    const redirectKey = getNextStepKey(metadata);
+    eventData = { ...eventData, next_step_key: redirectKey };
 
     await callbackRef.current.all();
     const explicitNav =
@@ -1118,6 +1105,7 @@ function Form({
       actions: button.properties.actions,
       element: button,
       elementType: 'button',
+      submit: button.properties.submit,
       setElementError: setButtonError
     });
     clearLoaders();
@@ -1127,6 +1115,7 @@ function Form({
     actions,
     element,
     elementType,
+    submit = false,
     setElementError = () => {},
     textSpanStart,
     textSpanEnd
@@ -1134,6 +1123,7 @@ function Form({
     actions: any[];
     element: any;
     elementType: string;
+    submit?: boolean;
     setElementError?: any;
     textSpanStart?: number | undefined;
     textSpanEnd?: number | undefined;
@@ -1145,7 +1135,14 @@ function Form({
 
     if (Object.keys(inlineErrors).length > 0) setInlineErrors({});
 
-    if (shouldValidateStep(actions)) {
+    const metadata = {
+      elementType,
+      elementIDs: [element.id],
+      start: textSpanStart,
+      end: textSpanEnd
+    };
+    let submitPromise;
+    if (submit) {
       setAutoValidate(true);
 
       const trigger = lookUpTrigger(activeStep, element.id, elementType);
@@ -1160,6 +1157,15 @@ function Form({
         setInlineErrors
       });
       if (invalid) {
+        elementClicks[id] = false;
+        return;
+      }
+
+      submitPromise = await submitStep({
+        metadata,
+        repeat: element.repeat || 0
+      });
+      if (!submitPromise) {
         elementClicks[id] = false;
         return;
       }
@@ -1221,18 +1227,21 @@ function Form({
         let url = action.url;
         if (url) {
           if (!url.includes(':')) url = 'https://' + url;
-          action.open_tab ? openTab(url) : (location.href = url);
+          if (action.open_tab) openTab(url);
+          else {
+            const eventData: Record<string, any> = {
+              step_key: activeStep.key,
+              next_step_key: '',
+              event: submit ? 'complete' : 'skip',
+              completed: true
+            };
+            const prom = submitPromise ? Promise.all(submitPromise) : null;
+            client.registerEvent(eventData, prom).then(() => {
+              location.href = url;
+            });
+          }
         }
       } else if (type === ACTION_CUSTOM) {
-        if (action.submit)
-          await submitStep({
-            metadata: {
-              elementType,
-              elementIDs: [element.id]
-            },
-            repeat: element.repeat || 0
-          });
-
         await runUserCallback(onCustomAction, () => ({
           trigger: lookUpTrigger(activeStep, element.id, elementType)
         }));
@@ -1273,24 +1282,12 @@ function Form({
         Auth.oauthRedirect(action.oauth_type);
       else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEXT) {
-        const metadata = {
-          elementType,
-          elementIDs: [element.id],
-          start: textSpanStart,
-          end: textSpanEnd
-        };
-        if (action.submit) {
-          const submitPromise = await submitStep({
+        if (submit) {
+          await goToNewStep({
             metadata,
-            repeat: element.repeat || 0
+            submitPromise: Promise.all(submitPromise ?? []),
+            submitData: true
           });
-          if (submitPromise) {
-            await goToNewStep({
-              metadata,
-              submitPromise: Promise.all(submitPromise),
-              submitData: true
-            });
-          }
         } else {
           let stepChanged = false;
           await runUserCallback(onSkip, () => ({
@@ -1380,7 +1377,9 @@ function Form({
         setShouldScrollToTop(false);
       }
       if (submitData) {
-        const submitButton = findSubmitButton(activeStep);
+        const submitButton = activeStep.buttons.find(
+          (b: any) => b.properties.submit
+        );
         // Simulate button submit if available and valid to trigger button loader
         if (
           submitButton &&
@@ -1392,9 +1391,10 @@ function Form({
           buttonOnClick(submitButton);
         } else {
           runElementActions({
-            actions: [{ type: ACTION_NEXT, submit: true }],
+            actions: [{ type: ACTION_NEXT }],
             element: { id: fieldIDs[0] },
-            elementType: 'field'
+            elementType: 'field',
+            submit: true
           });
         }
       } else
