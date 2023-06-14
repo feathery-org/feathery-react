@@ -162,18 +162,13 @@ function ButtonElement({
       };
 
   const actions = element.properties.actions ?? [];
-  // type=submit is important for HTML5 type validation messages
-  const type = actions.some(
-    (action: any) => SUBMITTABLE_ACTIONS.includes(action.type) && action.submit
-  )
-    ? 'submit'
-    : 'button';
   return (
     <ReactButton
       id={element.id}
       key={element.id}
       active={active}
-      type={type}
+      // type=submit is important for HTML5 type validation messages
+      type='submit'
       style={{
         display: 'flex',
         cursor: editMode || actions.length === 0 ? 'default' : 'pointer',

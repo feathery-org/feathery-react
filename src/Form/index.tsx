@@ -1108,7 +1108,7 @@ function Form({
         formRef,
         fieldKey: button.id,
         message,
-        errorType: 'inline',
+        errorType: formSettings.errorType,
         setInlineErrors,
         triggerErrors: true
       });
