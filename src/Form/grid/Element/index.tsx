@@ -11,7 +11,6 @@ import { justInsert, justRemove } from '../../../utils/array';
 import { fieldValues } from '../../../utils/init';
 import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 import {
-  findEnterButton,
   getInlineError,
   isFieldActuallyRequired,
   textFieldShouldSubmit
@@ -232,7 +231,9 @@ const Element = ({ node: el, form, flags }: any) => {
       e.preventDefault();
       e.stopPropagation();
       // Submit steps by pressing `Enter`
-      const enterButton = findEnterButton(activeStep);
+      const enterButton = activeStep.buttons.find(
+        (b: any) => b.properties.submit
+      );
       if (enterButton) {
         // Simulate button click if available
         buttonOnClick(enterButton);

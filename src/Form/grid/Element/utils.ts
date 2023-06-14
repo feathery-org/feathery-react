@@ -1,8 +1,3 @@
-import {
-  ACTIONS_TO_VALIDATE,
-  SUBMITTABLE_ACTIONS
-} from '../../../utils/elementActions';
-
 /**
  * Return inline error object
  * @param field
@@ -34,22 +29,3 @@ export function isFieldActuallyRequired(field: any, step: any) {
   const isTrailingRepeatField = repeatTriggerExists && field.lastRepeat;
   return field.servar.required && !isTrailingRepeatField;
 }
-
-export const findEnterButton = (step: any) => {
-  const buttons = step.buttons;
-  // Enter should first trigger a submittable button
-  const target = buttons.find((b: any) =>
-    b.properties.actions.some(
-      (action: any) =>
-        SUBMITTABLE_ACTIONS.includes(action.type) && action.submit
-    )
-  );
-  if (target) return target;
-
-  // Otherwise it should trigger actions that use a step field
-  return buttons.find((b: any) =>
-    b.properties.actions.some((action: any) =>
-      ACTIONS_TO_VALIDATE.includes(action.type)
-    )
-  );
-};
