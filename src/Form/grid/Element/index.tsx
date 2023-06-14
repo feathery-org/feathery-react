@@ -165,8 +165,8 @@ const Element = ({ node: el, form, flags }: any) => {
     }
 
     const onChange = fieldOnChange({
-      fieldIDs: [el.id],
-      fieldKeys: [servar.key],
+      fieldID: el.id,
+      fieldKey: servar.key,
       elementRepeatIndex: el.repeat || 0
     });
 
@@ -476,15 +476,9 @@ const Element = ({ node: el, form, flags }: any) => {
                 });
 
                 updateFieldValues(addrValues);
-                fieldOnChange({
-                  fieldIDs: Object.values(keyIDMap),
-                  fieldKeys: Object.keys(keyIDMap)
-                })({
-                  trigger: 'addressSelect',
-                  integrationData: {
-                    id: addressId,
-                    ...address
-                  }
+                onChange({
+                  triggerType: 'addressSelect',
+                  integrationData: { id: addressId, ...address }
                 });
               }
             }}
