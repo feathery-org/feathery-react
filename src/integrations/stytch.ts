@@ -53,12 +53,16 @@ export function stytchSendMagicLink({ fieldVal }: any) {
   if (!client) return;
 
   const redirectUrl = getRedirectUrl();
-  return client.magicLinks.email.loginOrCreate(fieldVal, {
-    login_magic_link_url: redirectUrl,
-    signup_magic_link_url: redirectUrl,
-    login_expiration_minutes: config.metadata.login_expiration,
-    signup_expiration_minutes: config.metadata.signup_expiration
-  });
+  return client.magicLinks.email
+    .loginOrCreate(fieldVal, {
+      login_magic_link_url: redirectUrl,
+      signup_magic_link_url: redirectUrl,
+      login_expiration_minutes: config.metadata.login_expiration,
+      signup_expiration_minutes: config.metadata.signup_expiration
+    })
+    .catch((e: any) => {
+      throw new Error(handleLoginOrCreateErrors(e));
+    });
 }
 
 export function stytchSendSms({ fieldVal }: any) {
@@ -66,10 +70,15 @@ export function stytchSendSms({ fieldVal }: any) {
   if (!client) return;
 
   // need to add + in front, https://stytch.com/docs/api/log-in-or-create-user-by-sms
-  return client.otps.sms.loginOrCreate(`+${fieldVal}`).then((resp: any) => {
-    stytchPhoneMethodId = resp.method_id;
-    return resp;
-  });
+  return client.otps.sms
+    .loginOrCreate(`+${fieldVal}`)
+    .then((resp: any) => {
+      stytchPhoneMethodId = resp.method_id;
+      return resp;
+    })
+    .catch((e: any) => {
+      throw new Error(handleLoginOrCreateErrors(e));
+    });
 }
 
 // Login with query params from oauth redirect or magic link
@@ -115,7 +124,12 @@ export async function stytchLoginOnLoad(featheryClient: any) {
     return authFn()
       .then(() => stytchSubmitAuthInfo(featheryClient))
       .catch((e: any) => {
-        authState.showError();
+        const type = e.error_type;
+        let errorMsg;
+        if (type === 'bad_domain_for_stytch_sdk')
+          errorMsg = 'Please register this domain with Stytch.';
+
+        authState.showError(errorMsg);
         console.warn(
           'Auth failed. Possibly because your magic link expired.',
           e
@@ -229,4 +243,36 @@ export function removeStytchQueryParams() {
       '?' + queryParams + featheryWindow().location.hash
     );
   }
+}
+
+/**
+ * This function sets error messages for specific error types. We can bundle
+ * phone and email together because they have some shared error types, and
+ * otherwise they are mutually exclusive.
+ * @param e The error from stytch API response
+ */
+function handleLoginOrCreateErrors(e: any) {
+  const type = e.error_type;
+  let errorMsg = 'Please try again.';
+
+  // shared errors
+  if (type === 'invalid_authorization_header') {
+    errorMsg = 'Please try again.';
+  } else if (type === 'bad_domain_for_stytch_sdk') {
+    errorMsg = 'Please register this domain with Stytch.';
+  }
+
+  // email
+  if (['invalid_email', 'inactive_email'].includes(type)) {
+    errorMsg = 'Please try a different email address.';
+  }
+
+  // phone
+  if (type === 'invalid_phone_number_country_code') {
+    errorMsg =
+      'Unfortunately, we do not yet support your country for SMS login.';
+  }
+
+  // throw new Error(errorMsg);
+  return errorMsg;
 }

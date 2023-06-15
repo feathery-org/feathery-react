@@ -43,7 +43,8 @@ export const authState = {
   },
   onLogin: () => {},
   onLogout: () => {},
-  showError: () => {}
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  showError: (msg?: string) => {}
 };
 
 const LoginForm = ({
@@ -77,6 +78,7 @@ const LoginForm = ({
   const [, setRender] = useState({ v: 1 });
   const [showLoader, setShowLoader] = useState(false);
   const [loginError, setLoginError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('Your magic link expired.');
 
   useEffect(() => {
     if (
@@ -102,7 +104,10 @@ const LoginForm = ({
 
     authState._featheryHosted = _featheryHosted;
 
-    authState.showError = () => setLoginError(true);
+    authState.showError = (msg?: string) => {
+      if (msg) setErrorMessage(msg);
+      setLoginError(true);
+    };
     // Register onLogin cb so it can be called by Client.submitAuthInfo
     authState.onLogin = async () => {
       await onLogin();
@@ -184,7 +189,7 @@ const LoginForm = ({
       // Since we want to auth gate we should make the login form take up the entire page
       <div style={{ height: '100vh', width: '100vw' }}>
         {loginError ? (
-          <LoginError />
+          <LoginError message={errorMessage} />
         ) : (
           <JSForm
             {...formProps}

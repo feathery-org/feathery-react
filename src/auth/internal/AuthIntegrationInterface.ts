@@ -56,9 +56,9 @@ async function inferAuthLogout() {
 }
 
 function sendSms(phoneNum: string) {
-  if (isAuthStytch()) stytchSendSms({ fieldVal: phoneNum });
+  if (isAuthStytch()) return stytchSendSms({ fieldVal: phoneNum });
   else
-    firebaseSendSms({
+    return firebaseSendSms({
       fieldVal: phoneNum,
       servar: null
     });
@@ -72,9 +72,9 @@ function verifySms(params: {
 }
 
 function sendMagicLink(email: string) {
-  if (isAuthStytch()) stytchSendMagicLink({ fieldVal: email });
+  if (isAuthStytch()) return stytchSendMagicLink({ fieldVal: email });
   else
-    firebaseSendMagicLink({
+    return firebaseSendMagicLink({
       fieldVal: email,
       servar: null
     });

@@ -3,7 +3,7 @@ import WarningIcon from '../elements/components/icons/Warning';
 import { removeStytchQueryParams } from '../integrations/stytch';
 import { featheryWindow } from '../utils/browser';
 
-export default function LoginError() {
+export default function LoginError({ message }: { message: string }) {
   return (
     <div
       style={{
@@ -28,7 +28,7 @@ export default function LoginError() {
           marginBlock: '10px 30px'
         }}
       >
-        Your magic link expired
+        {message}
       </h2>
       <button
         onClick={() => {
