@@ -133,6 +133,7 @@ export default function DropdownField({
           id={servar.key}
           value={fieldVal}
           required={required}
+          disabled={element.properties.disabled ?? false}
           onChange={onChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}

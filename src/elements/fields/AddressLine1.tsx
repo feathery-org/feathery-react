@@ -126,6 +126,7 @@ function AddressLine1({
             maxLength={servar.max_length}
             minLength={servar.min_length}
             placeholder=''
+            disabled={element.properties.disabled ?? false}
             value={value}
             ref={setRef}
             // Not on focus because if error is showing, it will

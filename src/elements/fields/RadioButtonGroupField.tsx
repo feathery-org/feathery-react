@@ -39,6 +39,7 @@ function RadioButtonGroupField({
     return responsiveStyles;
   }, [responsiveStyles]);
 
+  const allDisabled = element.properties.disabled ?? false;
   const labels = servar.metadata.option_labels;
   return (
     <div
@@ -63,6 +64,7 @@ function RadioButtonGroupField({
               name={servar.key}
               checked={fieldVal === opt}
               required={required}
+              disabled={allDisabled}
               onChange={onChange}
               value={opt}
               style={{
@@ -87,6 +89,7 @@ function RadioButtonGroupField({
             key={`${servar.key}-`}
             name={servar.key}
             checked={otherChecked}
+            disabled={allDisabled}
             onChange={(e) => {
               setOtherSelect({
                 ...otherSelect,
@@ -116,7 +119,7 @@ function RadioButtonGroupField({
             maxLength={servar.max_length}
             minLength={servar.min_length}
             required={otherChecked}
-            disabled={!otherChecked}
+            disabled={allDisabled || !otherChecked}
           />
         </div>
       )}

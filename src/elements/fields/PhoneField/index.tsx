@@ -241,6 +241,7 @@ function PhoneField({
                 : { color: 'transparent !important' })
             }}
             required={required}
+            disabled={element.properties.disabled ?? false}
             autoComplete={servar.metadata.autocomplete || 'on'}
             placeholder=''
             value={formattedNumber}

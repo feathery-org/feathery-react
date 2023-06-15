@@ -82,6 +82,7 @@ function TextArea({
           onBlur={() => setFocused(false)}
           autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
+          disabled={element.properties.disabled ?? false}
           value={rawValue}
           rows={element.styles.num_rows}
           ref={setRef}
