@@ -47,9 +47,15 @@ import Client from '../utils/client';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
 import {
+  addToCart,
+  checkForPaymentCheckoutCompletion,
+  isProductInPurchaseSelections,
   usePayments,
+  removeFromCart,
   setupPaymentMethod,
-  collectPayment
+  purchaseCart,
+  FEATHERY_PAYMENTS_SELECTIONS,
+  FEATHERY_PAYMENTS_TOTAL
 } from '../integrations/stripe';
 import { ActionData, trackEvent } from '../integrations/utils';
 import DevNavBar from './components/DevNavBar';
@@ -90,7 +96,9 @@ import {
   ACTION_LOGOUT,
   ACTION_NEXT,
   ACTION_REMOVE_REPEATED_ROW,
-  ACTION_COLLECT_PAYMENT,
+  ACTION_PURCHASE_PRODUCTS,
+  ACTION_SELECT_PRODUCT_TO_PURCHASE,
+  ACTION_REMOVE_PRODUCT_FROM_PURCHASE,
   ACTION_SEND_MAGIC_LINK,
   ACTION_SEND_SMS,
   ACTION_STORE_FIELD,
@@ -158,8 +166,6 @@ const getViewport = () => {
     ? 'desktop'
     : 'mobile';
 };
-const isElementAButtonOnStep = (step: any, el: any) =>
-  el.id && step.buttons.find((b: any) => b.id === el.id);
 
 function Form({
   _internalId,
@@ -540,6 +546,14 @@ function Form({
       return;
     newStep = JSON.parse(JSON.stringify(newStep));
 
+    // This could be a redirect from Stripe following a successful payment checkout
+    checkForPaymentCheckoutCompletion(
+      newStep,
+      client,
+      updateFieldValues,
+      integrations?.stripe
+    );
+
     internalState[_internalId] = {
       currentStep: newStep,
       visiblePositions,
@@ -791,9 +805,9 @@ function Form({
         await setFormElementError({
           formRef,
           errorCallback: getErrorCallback({ trigger }),
-          fieldKey: errorField.key,
+          fieldKey: errorField.servar.key,
           message: errorMessage,
-          servarType: errorField.type,
+          servarType: errorField.servar.type,
           errorType: formSettings.errorType,
           inlineErrors: newInlineErrors,
           setInlineErrors,
@@ -891,6 +905,13 @@ function Form({
       // need to include value === '' so that we can clear out hidden fields
       if (value !== undefined) hiddenFields[fieldKey] = value;
     });
+    // submit feathery reserved hidden fields
+    if (fieldValues[FEATHERY_PAYMENTS_SELECTIONS] !== undefined)
+      hiddenFields[FEATHERY_PAYMENTS_SELECTIONS] =
+        fieldValues[FEATHERY_PAYMENTS_SELECTIONS];
+    if (fieldValues[FEATHERY_PAYMENTS_TOTAL] !== undefined)
+      hiddenFields[FEATHERY_PAYMENTS_TOTAL] =
+        fieldValues[FEATHERY_PAYMENTS_TOTAL];
     return client.submitCustom(hiddenFields);
   };
 
@@ -904,16 +925,16 @@ function Form({
     // and would require a custom submit prior to payment setup (which is also disabled for draft).
     if (!_draft)
       for (let i = 0; i < activeStep.servar_fields.length; i++) {
-        const servar = activeStep.servar_fields[i].servar;
-        if (servar.type === 'payment_method') {
+        const field = activeStep.servar_fields[i];
+        if (field.servar.type === 'payment_method') {
           const integrationData = integrations?.stripe;
           const actionData: ActionData = {
-            servar,
+            pmField: field,
             client,
             formattedFields,
             updateFieldValues,
             integrationData,
-            targetElement: getCardElement(servar.key)
+            targetElement: getCardElement(field.servar.key)
           };
           const actionResult = await setupPaymentMethod(actionData);
           return actionResult ?? {};
@@ -922,10 +943,10 @@ function Form({
     return {};
   }
 
-  async function collectPaymentAction(triggerElement: any) {
-    // Stripe collect payment is disabled on a draft.  This is because payment is mostly
-    // done on the BE using collect payment action.  Mapped field data may also be configured
-    // and would require a custom submit prior to collect payment (which is also disabled for draft).
+  async function purchaseProductsAction(triggerElement: any) {
+    // Stripe purchasing is disabled on a draft.  This is because payment is mostly
+    // done on the BE using collect payment EP.  Mapped field data may also be configured
+    // and would require a custom submit prior to payment (which is also disabled for draft).
     if (!_draft) {
       const errorCallback = getErrorCallback({
         // could be container or button but model as button for the time being...
@@ -944,19 +965,16 @@ function Form({
       if (invalid) return false;
 
       // payment/checkout
-      const pm = activeStep.servar_fields.find(
+      const pmField = activeStep.servar_fields.find(
         ({ servar: { type } }: any) => type === 'payment_method'
       );
-      const errors = await collectPayment({
+      const errors = await purchaseCart({
         triggerElement,
-        triggerElementType: isElementAButtonOnStep(activeStep, triggerElement)
-          ? 'button'
-          : 'container',
-        servar: pm ? pm.servar : null,
+        pmField,
         client,
         updateFieldValues,
         integrationData: integrations?.stripe,
-        targetElement: pm ? getCardElement(pm.servar.key) : null
+        targetElement: pmField ? getCardElement(pmField.servar.key) : null
       });
       if (errors) {
         const { errorMessage, errorField } = errors;
@@ -1084,6 +1102,9 @@ function Form({
           fieldValues[action.select_field_indicator_key]
         )
           state = true;
+      } else if (action.type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
+        if (state === null) state = false;
+        if (isProductInPurchaseSelections(action.product_id)) state = true;
       }
     }
     return state;
@@ -1302,8 +1323,13 @@ function Form({
           }
         }
       } else if (type === ACTION_BACK) await goToPreviousStep();
-      else if (type === ACTION_COLLECT_PAYMENT) {
-        if (!(await collectPaymentAction(element))) break;
+      else if (type === ACTION_PURCHASE_PRODUCTS) {
+        const actionSuccess = await purchaseProductsAction(element);
+        if (!actionSuccess) break;
+      } else if (type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
+        addToCart(action, updateFieldValues);
+      } else if (type === ACTION_REMOVE_PRODUCT_FROM_PURCHASE) {
+        removeFromCart(action, updateFieldValues);
       } else if (type === ACTION_STORE_FIELD) {
         let val;
         if (action.custom_store_value_type === 'field') {

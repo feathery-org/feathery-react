@@ -187,6 +187,14 @@ describe('logic', () => {
         expect(evalComparisonRule(rule(op, 300))).toBeFalsy();
         setFieldValues([]);
         expect(evalComparisonRule(rule(op, ''))).toBeTruthy();
+
+        // for the selections include operator,
+        // with a field containing an object the keys are tested against the right side values.
+        setFieldValues({ a: 1, b: 2 });
+        expect(evalComparisonRule(rule(op, 'a'))).toBeTruthy();
+        expect(evalComparisonRule(rule(op, 'a', 'b'))).toBeTruthy();
+        expect(evalComparisonRule(rule(op, 'a', 'b', 'c'))).toBeTruthy();
+        expect(evalComparisonRule(rule(op, 'c'))).toBeFalsy();
       });
 
       it('selections_dont_include', () => {
@@ -213,6 +221,14 @@ describe('logic', () => {
         expect(evalComparisonRule(rule(op, 300))).toBeTruthy();
         setFieldValues([]);
         expect(evalComparisonRule(rule(op, ''))).toBeFalsy();
+
+        // for the selections don't include operator,
+        // with a field containing an object the keys are tested against the right side values.
+        setFieldValues({ a: 1, b: 2 });
+        expect(evalComparisonRule(rule(op, 'a'))).toBeFalsy();
+        expect(evalComparisonRule(rule(op, 'a', 'b'))).toBeFalsy();
+        expect(evalComparisonRule(rule(op, 'a', 'b', 'c'))).toBeFalsy();
+        expect(evalComparisonRule(rule(op, 'c'))).toBeTruthy();
       });
 
       it('is_filled', () => {

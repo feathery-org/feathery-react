@@ -629,23 +629,11 @@ export default class Client {
     );
   }
 
-  createPayment(elementId: string, elementType: 'button' | 'container') {
-    return this._payment('POST', {
-      element_id: elementId,
-      element_type: elementType
-    });
+  createPayment() {
+    return this._payment('POST');
   }
 
-  paymentComplete() {
-    return this._payment('PUT');
-  }
-
-  async createCheckoutSession(
-    elementId: string,
-    elementType: 'button' | 'container',
-    successUrl: string,
-    cancelUrl?: string
-  ) {
+  async createCheckoutSession(successUrl: string, cancelUrl?: string) {
     await initFormsPromise;
     const { userId } = initInfo();
     const url = `${API_URL}stripe/checkout/`;
@@ -653,9 +641,7 @@ export default class Client {
       form_key: this.formKey,
       user_id: userId,
       success_url: successUrl,
-      cancel_url: cancelUrl || '',
-      element_id: elementId,
-      element_type: elementType
+      cancel_url: cancelUrl || ''
     };
     const options = {
       headers: { 'Content-Type': 'application/json' },

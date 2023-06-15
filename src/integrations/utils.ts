@@ -74,7 +74,7 @@ export async function initializeIntegrations(
 }
 
 export interface ActionData {
-  servar?: any;
+  pmField?: any;
   triggerElement?: any;
   triggerElementType?: 'button' | 'container';
   client: any;
