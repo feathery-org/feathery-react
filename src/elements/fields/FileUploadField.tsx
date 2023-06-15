@@ -221,6 +221,7 @@ function FileUploadField({
         onChange={onChange}
         required={required && !fileExists}
         accept={servar.metadata.file_types}
+        disabled={element.properties.disabled ?? false}
         style={{
           position: 'absolute',
           bottom: 0,

@@ -200,6 +200,7 @@ function TextField({
             maxLength={servar.max_length}
             minLength={servar.min_length}
             required={required}
+            disabled={element.properties.disabled ?? false}
             autoComplete={
               options.length > 0 ? 'off' : servar.metadata.autocomplete || 'on'
             }

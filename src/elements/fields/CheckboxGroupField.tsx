@@ -36,6 +36,7 @@ function CheckboxGroupField({
   }, [responsiveStyles]);
 
   const labels = servar.metadata.option_labels;
+  const allDisabled = element.properties.disabled ?? false;
   return (
     <div
       css={{
@@ -73,7 +74,7 @@ function CheckboxGroupField({
                 ...composeCheckableInputStyle(styles, true),
                 ...styles.getTarget('checkboxGroup')
               }}
-              disabled={disabled}
+              disabled={allDisabled || disabled}
             />
             <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
           </div>
@@ -87,6 +88,7 @@ function CheckboxGroupField({
             key={`${servar.key}-`}
             name={otherVal}
             checked={otherChecked}
+            disabled={allDisabled}
             onChange={onChange}
             style={{ padding: 0, lineHeight: 'normal' }}
             css={composeCheckableInputStyle(styles, true)}
@@ -109,7 +111,7 @@ function CheckboxGroupField({
             maxLength={servar.max_length}
             minLength={servar.min_length}
             required={otherChecked}
-            disabled={!otherChecked}
+            disabled={allDisabled || !otherChecked}
           />
         </div>
       )}

@@ -220,6 +220,7 @@ function CheckboxField({
         id={servar.key}
         type='checkbox'
         checked={fieldVal}
+        disabled={element.properties.disabled ?? false}
         onChange={onChange}
         style={{ marginTop: '5px', marginRight: '5px' }}
         css={composeCheckableInputStyle(styles)}

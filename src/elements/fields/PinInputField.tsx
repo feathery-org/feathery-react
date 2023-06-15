@@ -114,6 +114,7 @@ function SingleOtpInput({
           ...responsiveStyles.getTarget('field')
         }}
         type='tel'
+        disabled={element.properties.disabled ?? false}
         ref={input}
         value={value || ''}
         onChange={onChange}

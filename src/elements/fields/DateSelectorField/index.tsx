@@ -124,6 +124,7 @@ function DateSelectorField({
           required={required}
           autoComplete={servarMeta.autocomplete || 'on'}
           placeholder=''
+          readOnly={element.properties.disabled ?? false}
           filterTime={filterPassedTime}
           showTimeSelect={servarMeta.choose_time ?? false}
           dateFormat={dateMask}
