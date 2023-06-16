@@ -162,7 +162,7 @@ describe('client', () => {
           body: JSON.stringify(body)
         }
       );
-      expect(response).toEqual([{ status: 200 }, undefined]);
+      expect(response).toEqual([{ status: 200 }]);
     });
   });
 
