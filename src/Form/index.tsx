@@ -1269,8 +1269,13 @@ function Form({
       } else if (type === ACTION_SEND_SMS) {
         const phoneNum = fieldValues[action.auth_target_field_key] as string;
         if (validators.phone(phoneNum)) {
-          // Don't block to make potential subsequent navigation snappy
-          Auth.sendSms(phoneNum);
+          try {
+            await Auth.sendSms(phoneNum);
+          } catch (e) {
+            setElementError((e as Error).message);
+            elementClicks[id] = false;
+            break;
+          }
         } else {
           setElementError(
             'A valid phone number is needed to send your login code.'
@@ -1293,8 +1298,13 @@ function Form({
       } else if (type === ACTION_SEND_MAGIC_LINK) {
         const email = fieldValues[action.auth_target_field_key] as string;
         if (validators.email(email)) {
-          // Don't block to make potential subsequent navigation snappy
-          Auth.sendMagicLink(email);
+          try {
+            await Auth.sendMagicLink(email);
+          } catch (e) {
+            setElementError((e as Error).message);
+            elementClicks[id] = false;
+            break;
+          }
         } else {
           setElementError('A valid email is needed to send your magic link.');
           break;

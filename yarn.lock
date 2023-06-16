@@ -1910,28 +1910,29 @@
   resolved "https://registry.yarnpkg.com/@stripe/stripe-js/-/stripe-js-1.35.0.tgz#f809e2e5e0a00f01aa12e8aed0b89d27728c05c0"
   integrity sha512-UIuzpbJqgXCTvJhY/aZYvBtaKdMfQgnIv6kkLlfRJ9smZcC4zoPvq3j7k9wobYI+idHAWP4BRiPnqA8lvzJCtg==
 
-"@stytch/core@0.8.0":
-  version "0.8.0"
-  resolved "https://registry.yarnpkg.com/@stytch/core/-/core-0.8.0.tgz#b24f46f3e2959b065cf9766c5e693b52340fc3d6"
-  integrity sha512-+0LmOz4AItO+zEU/vSFfkWOSP1IxfRSR5Yjqm/id+HXIvZpAnZ6FQvIgFaulvb2ZBMVzHuzmRSkpljHgrdKDUg==
+"@stytch/core@0.13.1":
+  version "0.13.1"
+  resolved "https://registry.yarnpkg.com/@stytch/core/-/core-0.13.1.tgz#4083720b4a3506f8bf3e1611352c4838a431ce4f"
+  integrity sha512-SL9Sqx/FX40MpJRQC+IrgkvINNSY/+badzlb7eBBue/kI1YR+mtFDMi3gX3dtgMtGb2YfRxl/hsLeVPR6WTg+A==
   dependencies:
     uuid "8.3.2"
 
-"@stytch/vanilla-js@0.11.0":
-  version "0.11.0"
-  resolved "https://registry.yarnpkg.com/@stytch/vanilla-js/-/vanilla-js-0.11.0.tgz#6cc85447ad133334c584aecfa51c973026e36d2b"
-  integrity sha512-KpEDl+ACurD0LJGKjZ0ISbvGIG3xR7XwUtxUdaQLcuNLC7fDbC/aLTLIxlq6lOIt8HPN8ZeU455MZFoSfmDzxw==
+"@stytch/vanilla-js@0.14.4":
+  version "0.14.4"
+  resolved "https://registry.yarnpkg.com/@stytch/vanilla-js/-/vanilla-js-0.14.4.tgz#6ab9e4c40a7e18c95f6f9d2032ec592b39c097c5"
+  integrity sha512-BLEMp0NYUJPkqiCrsdPqm0pRMhfQJYrIrEYojR/nyTVyeLzqjyRNGQ0kwB+gM9vl6S/XboeMRsreFD3HGJEVbg==
   dependencies:
     "@github/webauthn-json" "1.0.3"
     "@radix-ui/react-tabs" "0.1.5"
-    "@stytch/core" "0.8.0"
+    "@stytch/core" "0.13.1"
     awesome-phonenumber "3.2.0"
     js-cookie "3.0.1"
     lodash.merge "4.6.2"
-    react "17.0.2"
-    react-dom "17.0.2"
+    react "^17.0.2"
+    react-dom "^17.0.2"
     react-hot-toast "2.2.0"
     styled-components "5.3.5"
+    swr "2.1.1"
     uuid "8.3.2"
 
 "@testing-library/dom@^8.0.0":
@@ -6386,15 +6387,6 @@ react-datepicker@^4.10.0:
     react-onclickoutside "^6.12.2"
     react-popper "^2.3.0"
 
-react-dom@17.0.2:
-  version "17.0.2"
-  resolved "https://registry.yarnpkg.com/react-dom/-/react-dom-17.0.2.tgz#ecffb6845e3ad8dbfcdc498f0d0a939736502c23"
-  integrity sha512-s4h96KtLDUQlsENhMn1ar8t2bEa+q/YAtj8pPPdIjPDGBDIVNsrD9aXNWqspUe6AzKCIG0C1HZZLqLV7qpOBGA==
-  dependencies:
-    loose-envify "^1.1.0"
-    object-assign "^4.1.1"
-    scheduler "^0.20.2"
-
 react-dom@18.2:
   version "18.2.0"
   resolved "https://registry.yarnpkg.com/react-dom/-/react-dom-18.2.0.tgz#22aaf38708db2674ed9ada224ca4aa708d821e3d"
@@ -6402,6 +6394,15 @@ react-dom@18.2:
   dependencies:
     loose-envify "^1.1.0"
     scheduler "^0.23.0"
+
+react-dom@^17.0.2:
+  version "17.0.2"
+  resolved "https://registry.yarnpkg.com/react-dom/-/react-dom-17.0.2.tgz#ecffb6845e3ad8dbfcdc498f0d0a939736502c23"
+  integrity sha512-s4h96KtLDUQlsENhMn1ar8t2bEa+q/YAtj8pPPdIjPDGBDIVNsrD9aXNWqspUe6AzKCIG0C1HZZLqLV7qpOBGA==
+  dependencies:
+    loose-envify "^1.1.0"
+    object-assign "^4.1.1"
+    scheduler "^0.20.2"
 
 react-fast-compare@^3.0.1:
   version "3.2.0"
@@ -6569,20 +6570,20 @@ react-visibility-sensor@^5.1.1:
   dependencies:
     prop-types "^15.7.2"
 
-react@17.0.2:
-  version "17.0.2"
-  resolved "https://registry.yarnpkg.com/react/-/react-17.0.2.tgz#d0b5cc516d29eb3eee383f75b62864cfb6800037"
-  integrity sha512-gnhPt75i/dq/z3/6q/0asP78D0u592D5L1pd7M8P+dck6Fu/jJeL6iVVK23fptSUZj8Vjf++7wXA8UNclGQcbA==
-  dependencies:
-    loose-envify "^1.1.0"
-    object-assign "^4.1.1"
-
 react@18.2:
   version "18.2.0"
   resolved "https://registry.yarnpkg.com/react/-/react-18.2.0.tgz#555bd98592883255fa00de14f1151a917b5d77d5"
   integrity sha512-/3IjMdb2L9QbBdWiW5e3P2/npwMBaU9mHCSCUzNln0ZCYbcfTsGbTJrU/kGemdH2IWmB2ioZ+zkxtmq6g09fGQ==
   dependencies:
     loose-envify "^1.1.0"
+
+react@^17.0.2:
+  version "17.0.2"
+  resolved "https://registry.yarnpkg.com/react/-/react-17.0.2.tgz#d0b5cc516d29eb3eee383f75b62864cfb6800037"
+  integrity sha512-gnhPt75i/dq/z3/6q/0asP78D0u592D5L1pd7M8P+dck6Fu/jJeL6iVVK23fptSUZj8Vjf++7wXA8UNclGQcbA==
+  dependencies:
+    loose-envify "^1.1.0"
+    object-assign "^4.1.1"
 
 reactcss@^1.2.0:
   version "1.2.3"
@@ -7341,6 +7342,13 @@ supports-preserve-symlinks-flag@^1.0.0:
   resolved "https://registry.yarnpkg.com/supports-preserve-symlinks-flag/-/supports-preserve-symlinks-flag-1.0.0.tgz#6eda4bd344a3c94aea376d4cc31bc77311039e09"
   integrity sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==
 
+swr@2.1.1:
+  version "2.1.1"
+  resolved "https://registry.yarnpkg.com/swr/-/swr-2.1.1.tgz#9b9fd7f96236c9c0db8c96183b26661f857a64b8"
+  integrity sha512-OgwqZmpjOgxNbaez6qzTVqiRWn+Ti5Uzmktk2c01Afqwc50q6z15DeNC8m9G1aY+w2BwEAsKvk59iq6aHlhgyw==
+  dependencies:
+    use-sync-external-store "^1.2.0"
+
 symbol-tree@^3.2.4:
   version "3.2.4"
   resolved "https://registry.yarnpkg.com/symbol-tree/-/symbol-tree-3.2.4.tgz#430637d248ba77e078883951fb9aa0eed7c63fa2"
@@ -7655,6 +7663,11 @@ urix@^0.1.0:
   version "0.1.0"
   resolved "https://registry.yarnpkg.com/urix/-/urix-0.1.0.tgz#da937f7a62e21fec1fd18d49b35c2935067a6c72"
   integrity sha512-Am1ousAhSLBeB9cG/7k7r2R0zj50uDRlZHPGbazid5s9rlF1F/QKYObEKSIunSjIOkJZqwRRLpvewjEkM7pSqg==
+
+use-sync-external-store@^1.2.0:
+  version "1.2.0"
+  resolved "https://registry.yarnpkg.com/use-sync-external-store/-/use-sync-external-store-1.2.0.tgz#7dbefd6ef3fe4e767a0cf5d7287aacfb5846928a"
+  integrity sha512-eEgnFxGQ1Ife9bzYs6VLi8/4X6CObHMw9Qr9tPY43iKwsPw8xE8+EFsf/2cFZ5S3esXgpWgtSCtLNS41F+sKPA==
 
 use@^3.1.0:
   version "3.1.1"
