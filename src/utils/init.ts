@@ -1,7 +1,7 @@
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { v4 as uuidv4 } from 'uuid';
 
-import Client, { API_URL, API_URL_OPTIONS } from './client';
+import Client, { updateRegionApiUrls } from './client';
 import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient, setCookie, getCookie } from './browser';
@@ -96,8 +96,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   initState.initialized = true;
 
   initState.sdkKey = sdkKey;
-  if (options._enterpriseRegion === 'au')
-    API_URL.url = API_URL_OPTIONS.productionAU;
+  updateRegionApiUrls(options._enterpriseRegion ?? '');
 
   if (options.userId) {
     initState.userId = options.userId;

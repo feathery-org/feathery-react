@@ -75,7 +75,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL.url}panel/session/v2/?form_key=formKey&draft=false&override=true&fuser_key=userId`,
+        `${API_URL}panel/session/v2/?form_key=formKey&draft=false&override=true&fuser_key=userId`,
         {
           cache: 'no-store',
           keepalive: false,
@@ -104,7 +104,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL.url}panel/custom/submit/v3/`,
+        `${API_URL}panel/custom/submit/v3/`,
         {
           cache: 'no-store',
           keepalive: true,
@@ -150,7 +150,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL.url}panel/step/submit/v3/`,
+        `${API_URL}panel/step/submit/v3/`,
         {
           cache: 'no-store',
           keepalive: true,
@@ -193,7 +193,7 @@ describe('client', () => {
       });
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(`${API_URL.url}event/`, {
+      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}event/`, {
         cache: 'no-store',
         keepalive: true,
         headers: {
@@ -239,7 +239,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL.url}stripe/payment_method/`,
+        `${API_URL}stripe/payment_method/`,
         {
           body: JSON.stringify(body),
           cache: 'no-store',
@@ -279,7 +279,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL.url}stripe/payment_method/card/?field_id=${paymentMethodFieldId}&form_key=${formKey}&user_id=${userId}&stripe_payment_method_id=${stripePaymentMethodId}`,
+        `${API_URL}stripe/payment_method/card/?field_id=${paymentMethodFieldId}&form_key=${formKey}&user_id=${userId}&stripe_payment_method_id=${stripePaymentMethodId}`,
         {
           cache: 'no-store',
           keepalive: false,
@@ -304,19 +304,16 @@ describe('client', () => {
       const response = await client.createPayment();
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL.url}stripe/payment/`,
-        {
-          body: JSON.stringify(body),
-          cache: 'no-store',
-          keepalive: true,
-          headers: {
-            Authorization: 'Token sdkKey',
-            'Content-Type': 'application/json'
-          },
-          method: 'POST'
-        }
-      );
+      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/payment/`, {
+        body: JSON.stringify(body),
+        cache: 'no-store',
+        keepalive: true,
+        headers: {
+          Authorization: 'Token sdkKey',
+          'Content-Type': 'application/json'
+        },
+        method: 'POST'
+      });
       expect(response).toEqual(intentSecret);
     });
     it('createCheckoutSession properly calls the end point', async () => {
@@ -339,19 +336,16 @@ describe('client', () => {
       );
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL.url}stripe/checkout/`,
-        {
-          body: JSON.stringify(body),
-          cache: 'no-store',
-          keepalive: true,
-          headers: {
-            Authorization: 'Token sdkKey',
-            'Content-Type': 'application/json'
-          },
-          method: 'POST'
-        }
-      );
+      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/checkout/`, {
+        body: JSON.stringify(body),
+        cache: 'no-store',
+        keepalive: true,
+        headers: {
+          Authorization: 'Token sdkKey',
+          'Content-Type': 'application/json'
+        },
+        method: 'POST'
+      });
       expect(response).toEqual(expectedResponse);
     });
   });

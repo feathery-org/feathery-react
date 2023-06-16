@@ -32,13 +32,21 @@ export const API_URL_OPTIONS = {
 const CDN_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
   staging: 'https://staging.feathery.io/api/',
-  production: 'https://cdn.feathery.io/api/'
+  production: 'https://cdn.feathery.io/api/',
+  productionAU: 'https://cdn-au.feathery.io/api/'
 };
 
 const environment = 'production';
 
-export const API_URL = { url: API_URL_OPTIONS[environment] };
-export const CDN_URL = CDN_URL_OPTIONS[environment];
+export let API_URL = API_URL_OPTIONS[environment];
+export let CDN_URL = CDN_URL_OPTIONS[environment];
+
+export const updateRegionApiUrls = (region: string) => {
+  if (region === 'au') {
+    CDN_URL = CDN_URL_OPTIONS.productionAU;
+    API_URL = API_URL_OPTIONS.productionAU;
+  }
+};
 
 const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -114,7 +122,7 @@ export default class Client {
 
   _submitJSONData(servars: any, stepKey: string) {
     const { userId } = initInfo();
-    const url = `${API_URL.url}panel/step/submit/v3/`;
+    const url = `${API_URL}panel/step/submit/v3/`;
     const data = {
       fuser_key: userId,
       step_key: stepKey,
@@ -164,7 +172,7 @@ export default class Client {
     if (servars.length === 0) return;
 
     const { userId } = initInfo();
-    const url = `${API_URL.url}panel/step/submit/file/${userId}/`;
+    const url = `${API_URL}panel/step/submit/file/${userId}/`;
 
     const formData = new FormData();
     const files = await Promise.all(
@@ -204,7 +212,7 @@ export default class Client {
       merge,
       ...(oldUserId ? { fuser_key: oldUserId } : {})
     };
-    const url = `${API_URL.url}fuser/update_key/`;
+    const url = `${API_URL}fuser/update_key/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'PATCH',
@@ -344,7 +352,7 @@ export default class Client {
     if (noData) params.no_data = 'true';
     // @ts-expect-error TS(2322): Type 'string' is not assignable to type '{ form_ke... Remove this comment to see the full error message
     params = encodeGetParams(params);
-    const url = `${API_URL.url}panel/session/v2/?${params}`;
+    const url = `${API_URL}panel/session/v2/?${params}`;
     const options = { importance: 'high' };
 
     const response = await this._fetch(url, options);
@@ -390,7 +398,7 @@ export default class Client {
       is_stytch_template_key: isStytchTemplateKey,
       ...(userId ? { fuser_key: userId } : {})
     };
-    const url = `${API_URL.url}panel/update_auth/v2/`;
+    const url = `${API_URL}panel/update_auth/v2/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'PATCH',
@@ -425,7 +433,7 @@ export default class Client {
     if (promiseResults.length === 0) return;
 
     const { userId } = initInfo();
-    const url = `${API_URL.url}panel/custom/submit/v3/`;
+    const url = `${API_URL}panel/custom/submit/v3/`;
 
     const jsonKeyVals = {};
     const formData = new FormData();
@@ -469,7 +477,7 @@ export default class Client {
   async registerEvent(eventData: any, promise: any = null) {
     await initFormsPromise;
     const { userId } = initInfo();
-    const url = `${API_URL.url}event/`;
+    const url = `${API_URL}event/`;
     const data = {
       form_key: this.formKey,
       ...eventData,
@@ -493,7 +501,7 @@ export default class Client {
       form_key: this.formKey,
       fuser_key: userId
     });
-    const url = `${API_URL.url}plaid/link_token/?${params}`;
+    const url = `${API_URL}plaid/link_token/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
     return this._fetch(url, options).then((response) =>
       response ? response.json() : Promise.resolve()
@@ -503,7 +511,7 @@ export default class Client {
   async submitPlaidUserData(publicToken: string) {
     await initFormsPromise;
     const { userId } = initInfo();
-    const url = `${API_URL.url}plaid/user_data/`;
+    const url = `${API_URL}plaid/user_data/`;
     const data = {
       public_token: publicToken,
       form_key: this.formKey,
@@ -526,7 +534,7 @@ export default class Client {
       form_key: this.formKey,
       fuser_key: userId
     });
-    const url = `${API_URL.url}argyle/user_token/?${params}`;
+    const url = `${API_URL}argyle/user_token/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
     return this._fetch(url, options).then((response) =>
       response ? response.json() : Promise.resolve()
@@ -536,7 +544,7 @@ export default class Client {
   async submitArgyleUserData(linkItemId: string) {
     await initFormsPromise;
     const { userId } = initInfo();
-    const url = `${API_URL.url}argyle/user_data/`;
+    const url = `${API_URL}argyle/user_data/`;
     const data = {
       link_item_id: linkItemId,
       form_key: this.formKey,
@@ -554,7 +562,7 @@ export default class Client {
 
   addressSearchResults(searchTerm: any) {
     const params = encodeGetParams({ search_term: searchTerm });
-    const url = `${API_URL.url}integration/address/search/?${params}`;
+    const url = `${API_URL}integration/address/search/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
     return this._fetch(url, options).then((response) =>
       response ? response.json() : Promise.resolve()
@@ -563,7 +571,7 @@ export default class Client {
 
   addressDetail(addressId: any) {
     const params = encodeGetParams({ address_id: addressId });
-    const url = `${API_URL.url}integration/address/detail/?${params}`;
+    const url = `${API_URL}integration/address/detail/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
     return this._fetch(url, options).then((response) =>
       response ? response.json() : Promise.resolve()
@@ -574,7 +582,7 @@ export default class Client {
   async setupPaymentIntent(paymentMethodFieldId: any) {
     await initFormsPromise;
     const { userId } = initInfo();
-    const url = `${API_URL.url}stripe/payment_method/`;
+    const url = `${API_URL}stripe/payment_method/`;
     const data = {
       form_key: this.formKey,
       ...(userId ? { user_id: userId } : {}),
@@ -603,7 +611,7 @@ export default class Client {
       ...(userId ? { user_id: userId } : {}),
       stripe_payment_method_id: stripePaymentMethodId
     });
-    const url = `${API_URL.url}stripe/payment_method/card/?${params}`;
+    const url = `${API_URL}stripe/payment_method/card/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
     return this._fetch(url, options).then((response) =>
       response ? response.json() : Promise.resolve()
@@ -614,7 +622,7 @@ export default class Client {
   async _payment(method: 'POST' | 'PUT', extraParams = {}) {
     await initFormsPromise;
     const { userId } = initInfo();
-    const url = `${API_URL.url}stripe/payment/`;
+    const url = `${API_URL}stripe/payment/`;
     const data = {
       form_key: this.formKey,
       user_id: userId,
@@ -637,7 +645,7 @@ export default class Client {
   async createCheckoutSession(successUrl: string, cancelUrl?: string) {
     await initFormsPromise;
     const { userId } = initInfo();
-    const url = `${API_URL.url}stripe/checkout/`;
+    const url = `${API_URL}stripe/checkout/`;
     const data = {
       form_key: this.formKey,
       user_id: userId,
