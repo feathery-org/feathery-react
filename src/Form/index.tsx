@@ -880,9 +880,17 @@ function Form({
         ? client.submitStep(featheryFields, activeStep.key)
         : Promise.resolve();
 
-    const fieldData = integrations?.segment?.metadata.track_fields
-      ? formattedFields
-      : null;
+    const fieldData: Record<string, any> = {};
+    if (integrations?.segment?.metadata.track_fields)
+      fieldData.segment = formattedFields;
+    if (integrations?.['google-tag-manager']?.metadata.track_fields)
+      fieldData['google-tag-manager'] = Object.entries(formattedFields).reduce(
+        (obj, [key, val]) => {
+          obj[key] = val.value;
+          return obj;
+        },
+        {} as Record<string, any>
+      );
     trackEvent('FeatheryStepSubmit', activeStep.key, formName, fieldData);
 
     return [hiddenPromise, stepPromise];
