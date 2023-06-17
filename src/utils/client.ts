@@ -168,32 +168,22 @@ export default class Client {
       : resolveFile(fileValue);
   }
 
-  async _submitFileData(servars: any) {
-    if (servars.length === 0) return;
-
+  async _submitFileData(servar: any) {
     const { userId } = initInfo();
     const url = `${API_URL}panel/step/submit/file/${userId}/`;
 
     const formData = new FormData();
-    const files = await Promise.all(
-      servars.map(async (servar: any) => {
-        const file = await this._getFileValue(servar);
-        return [servar.key, file];
-      })
-    );
+    const fileValue = await this._getFileValue(servar);
 
-    // Append files to the HTTP formData (and handle lists of files)
-    files.forEach(([key, fileValue]) => {
-      if (fileValue) {
-        if (Array.isArray(fileValue)) {
-          fileValue
-            .filter((file) => !!file)
-            .forEach((file) => formData.append(key, file));
-        } else {
-          formData.append(key, fileValue);
-        }
+    if (fileValue) {
+      if (Array.isArray(fileValue)) {
+        fileValue
+          .filter((file) => !!file)
+          .forEach((file) => formData.append(servar.key, file));
+      } else {
+        formData.append(servar.key, fileValue);
       }
-    });
+    }
 
     formData.set('__feathery_form_key', this.formKey);
     if (this.version) formData.set('__feathery_version', this.version);
@@ -470,7 +460,7 @@ export default class Client {
     const fileServars = servars.filter(isFileServar);
     return Promise.all([
       this._submitJSONData(jsonServars, stepKey),
-      this._submitFileData(fileServars)
+      ...fileServars.map((servar: any) => this._submitFileData(servar))
     ]);
   }
 
