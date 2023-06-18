@@ -15,10 +15,10 @@ export const getPxValue = (size: string) => {
 };
 
 const formatDimensionValue = (value: any, type: string) => {
-  // fit-content is needed here, for both fill and fit, to allow elements to push beyond the parent container's explicit height.
+  // fit-content is needed to allow elements to push beyond the parent container's explicit height.
   switch (value) {
     case FILL:
-      return type === 'width' ? '100%' : 'max-content';
+      return type === 'width' ? '100%' : 'auto';
     case FIT:
       return 'fit-content';
     default:
@@ -27,23 +27,19 @@ const formatDimensionValue = (value: any, type: string) => {
 };
 
 const calculateDimensionsHelper = (root: any, p = '') => {
-  const gridWidth = root[`${p}width`] || root.width;
-  const gridHeight = root[`${p}height`] || root.height;
+  const width = root[`${p}width`] || root.width;
+  const height = root[`${p}height`] || root.height;
 
-  const dimensions = {
-    gridWidth: formatDimensionValue(gridWidth, 'width'),
-    gridHeight: formatDimensionValue(gridHeight, 'height')
+  const dimensions: Record<string, any> = {
+    maxWidth: formatDimensionValue(width, 'width'),
+    height: formatDimensionValue(height, 'height')
   };
 
   // to allow responsiveness, min width shouldn't be set for fixed widths
-  (dimensions as any).minWidth = isNum(gridWidth)
-    ? undefined
-    : dimensions.gridWidth;
+  dimensions.minWidth = isNum(width) ? undefined : dimensions.maxWidth;
 
   // min and max height must be 100% to prevent fit-content from collapsing, which would break fill's non-collapsing intent
-  (dimensions as any).minHeight = isFill(gridHeight)
-    ? '100%'
-    : dimensions.gridHeight;
+  dimensions.minHeight = isFill(height) ? '100%' : dimensions.height;
 
   return dimensions;
 };
@@ -60,27 +56,14 @@ function calculateStepCSS(step: any): Record<string, any> {
   const desktop = calculateDimensionsHelper(root);
   const mobile = calculateDimensionsHelper(root, 'mobile_');
 
-  const stepCSS = {
+  const stepCSS: Record<string, any> = {
     backgroundSize: 'cover',
     width: '100%',
-    minWidth: (desktop as any).minWidth,
-    maxWidth: desktop.gridWidth,
-    height: desktop.gridHeight,
-    minHeight: (desktop as any).minHeight,
-    maxHeight: (desktop as any).maxHeight
+    ...desktop
   };
 
-  // 478
-  // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-  stepCSS[`@media (max-width: 478px)`] = {
-    // width will be controlled by maxWidth in the case it is fixed below 478px
-    width: '100%',
-    minWidth: (mobile as any).minWidth,
-    maxWidth: mobile.gridWidth,
-    height: mobile.gridHeight,
-    minHeight: (mobile as any).minHeight,
-    maxHeight: (desktop as any).maxHeight
-  };
+  // width will be controlled by maxWidth in the case it is fixed below 478px
+  stepCSS[`@media (max-width: 478px)`] = { width: '100%', ...mobile };
 
   return stepCSS;
 }
