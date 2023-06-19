@@ -377,7 +377,11 @@ function Form({
       const top =
         autoscroll === 'top_of_form' ? formRef?.current?.offsetTop : 0;
       try {
-        featheryWindow().scrollTo({ top, behavior: 'smooth' });
+        // Needs to be async to scroll up in Safari sometimes
+        setTimeout(
+          () => featheryWindow().scrollTo({ top, behavior: 'smooth' }),
+          100
+        );
       } catch (e) {
         // Some browsers may not have support for scrollTo
         console.warn(e);
