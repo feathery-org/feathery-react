@@ -1,5 +1,5 @@
 import { isObjectEmpty } from './primitives';
-import Spinner from '../elements/components/Spinner';
+import FeatherySpinner from '../elements/components/Spinner';
 import React from 'react';
 
 export default class CallbackQueue {
@@ -21,7 +21,7 @@ export default class CallbackQueue {
 
         const payload = {
           showOn: 'on_button',
-          loader: <Spinner />,
+          loader: <FeatherySpinner />,
           type: 'default'
         };
         const newLoaders = this.step.buttons

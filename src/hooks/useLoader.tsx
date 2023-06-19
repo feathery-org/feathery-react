@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { validate as uuidValidate } from 'uuid';
 import LoaderContainer from '../elements/components/LoaderContainer';
-import Spinner from '../elements/components/Spinner';
+import FeatherySpinner from '../elements/components/Spinner';
 
 export interface InitialLoader {
   show?: boolean;
@@ -107,7 +107,7 @@ const useLoader = ({
 };
 
 const getLoaderComponent = (initialLoader?: InitialLoader) => {
-  if (!initialLoader || !initialLoader.loader) return <Spinner />;
+  if (!initialLoader || !initialLoader.loader) return <FeatherySpinner />;
 
   if (typeof initialLoader?.loader === 'string')
     return <div dangerouslySetInnerHTML={{ __html: initialLoader.loader }} />;

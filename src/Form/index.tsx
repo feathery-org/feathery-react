@@ -59,7 +59,7 @@ import {
 } from '../integrations/stripe';
 import { ActionData, trackEvent } from '../integrations/utils';
 import DevNavBar from './components/DevNavBar';
-import Spinner from '../elements/components/Spinner';
+import FeatherySpinner from '../elements/components/Spinner';
 import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
 import { featheryWindow, openTab, runningInClient } from '../utils/browser';
@@ -1072,7 +1072,7 @@ function Form({
   const setButtonLoader = async (button: any) => {
     const bp = button.properties;
     let loader: any = null;
-    if (!bp.loading_icon) loader = <Spinner />;
+    if (!bp.loading_icon) loader = <FeatherySpinner />;
     else if (bp.loading_icon_type === 'image/*') {
       loader = <img src={bp.loading_icon} alt='Button Loader' />;
     } else if (bp.loading_icon_type === 'application/json') {
