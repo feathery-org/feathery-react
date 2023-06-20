@@ -27,6 +27,7 @@ import {
   getPrevStepUrl,
   getServarTypeMap,
   getUrlHash,
+  isStepTerminal,
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
@@ -1037,16 +1038,7 @@ function Form({
     } else {
       setFirst(false);
       const nextStep = steps[redirectKey];
-      const hasNext = nextStep.buttons.some((b: any) =>
-        (b.properties.actions ?? []).some(
-          (action: any) =>
-            action.type === ACTION_NEXT ||
-            (action.type === ACTION_URL && !action.open_tab)
-        )
-      );
-      const nextStepIsTerminal =
-        !hasNext && nextStep.next_conditions.length === 0;
-      if (nextStepIsTerminal) {
+      if (isStepTerminal(nextStep)) {
         const authIntegration = getAuthIntegrationMetadata(integrations);
         eventData.completed = !isTerminalStepAuth(
           authIntegration,

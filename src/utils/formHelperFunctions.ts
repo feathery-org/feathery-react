@@ -4,6 +4,7 @@ import { toBase64 } from './image';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { getVisibleElements } from './hideAndRepeats';
 import throttle from 'lodash.throttle';
+import { ACTION_NEXT, ACTION_URL } from './elementActions';
 
 function _transformSignatureVal(value: any) {
   return value !== null && (value instanceof File || value instanceof Promise)
@@ -479,4 +480,27 @@ export function getServarTypeMap(steps: any) {
     });
   }
   return servarKeyToTypeMap;
+}
+
+export function isStepTerminal(step: any) {
+  // If step is navigatable to another step, it's not terminal
+  if (step.next_conditions.length > 0) return false;
+
+  if (
+    step.servar_fields.some((field: any) => field.servar.required) &&
+    step.buttons.some((b: any) => b.properties.submit)
+  ) {
+    // Not terminal if there is a required field on the step that can be saved
+    return false;
+  }
+
+  const hasNext = step.buttons.some((b: any) =>
+    (b.properties.actions ?? []).some(
+      (action: any) =>
+        action.type === ACTION_NEXT ||
+        (action.type === ACTION_URL && !action.open_tab)
+    )
+  );
+
+  return !hasNext;
 }
