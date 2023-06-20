@@ -1026,11 +1026,11 @@ function Form({
     if (!redirectKey) {
       if (explicitNav) {
         eventData.completed = true;
-        session.form_completed = true;
         // Need to rerender when onboarding questions are complete so
         // LoginForm can render children
         rerenderAllForms();
         client.registerEvent(eventData, submitPromise).then(() => {
+          session.form_completed = true;
           setFinished(true);
         });
       }
