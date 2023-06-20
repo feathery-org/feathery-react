@@ -42,7 +42,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
   ) => {
     const { node, rawNode } = useFormattedNode(_node, raw);
     const type = useNodeType(node, rawNode, viewport);
-    const styles = useContainerStyles(
+    const { styles, innerStyles } = useContainerStyles(
       node,
       rawNode,
       css,
@@ -62,7 +62,9 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           className={classNames('styled-container', type, className)}
           {...props}
         >
-          {children}
+          <div className='inner-container' css={innerStyles}>
+            {children}
+          </div>
         </Component>
       );
     }
@@ -74,7 +76,9 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
         className={classNames('styled-container', type, className)}
         {...props}
       >
-        {children}
+        <div className='inner-container' css={innerStyles}>
+          {children}
+        </div>
       </div>
     );
   }

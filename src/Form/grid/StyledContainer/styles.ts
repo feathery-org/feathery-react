@@ -200,11 +200,8 @@ export const getContainerStyles = (
           s.maxHeight = 'fit-content';
         }
 
-        if (heightUnit === 'px') {
-          s.minHeight = `${height}${heightUnit}`;
-        }
-
         if (heightUnit === '%') {
+          s.height = '100%';
           s.maxHeight = `${height}${heightUnit}`;
 
           if (parentAxis === 'column') {
@@ -386,48 +383,6 @@ export const getContainerStyles = (
     }
   );
 
-  /**
-   * Apply grid styles
-   */
-  if (hasChildren) {
-    // Apply flex direction
-    styles.apply('container', ['axis'], (axis: any) => {
-      return {
-        flexDirection: axis === 'column' ? 'row' : 'column'
-      };
-    });
-
-    // Apply gap
-    styles.apply('container', ['gap'], (gap: any) => {
-      if (gap) {
-        return {
-          gap: `${gap}px`
-        };
-      }
-
-      return {};
-    });
-  }
-
-  // Apply alignment
-  styles.apply(
-    'container',
-    ['vertical_align', 'horizontal_align', 'axis'],
-    (verticalAlign: any, horizontalAlign: any, axis: any) => {
-      const s: any = {};
-
-      if (axis === 'column') {
-        s.alignItems = verticalAlign ?? 'flex-start';
-        s.justifyContent = horizontalAlign ?? 'left';
-      } else {
-        s.alignItems = horizontalAlign ?? 'flex-start';
-        s.justifyContent = verticalAlign ?? 'left';
-      }
-
-      return s;
-    }
-  );
-
   // Apply padding
   styles.apply(
     'container',
@@ -458,4 +413,80 @@ export const getContainerStyles = (
   });
 
   return styles.getTarget('container', undefined, viewport === 'mobile');
+};
+
+export const getInnerContainerStyles = (
+  node: any,
+  rawNode?: any,
+  viewport?: 'desktop' | 'mobile'
+): ResponsiveStyles => {
+  const hasChildren = node.children && node.children.length > 0;
+  const styles = new ResponsiveStyles(
+    rawNode ?? node,
+    ['inner-container'],
+    true
+  );
+
+  /**
+   * Apply height styles
+   */
+  styles.apply(
+    'inner-container',
+    ['height', 'height_unit'],
+    (height: any, heightUnit: any) => {
+      const s: any = {};
+
+      if (node.isElement) {
+        if (heightUnit === 'px') {
+          s.minHeight = `${height}${heightUnit}`;
+        }
+      }
+
+      return s;
+    }
+  );
+
+  /**
+   * Apply grid styles
+   */
+  if (hasChildren) {
+    // Apply flex direction
+    styles.apply('inner-container', ['axis'], (axis: any) => {
+      return {
+        flexDirection: axis === 'column' ? 'row' : 'column'
+      };
+    });
+
+    // Apply gap
+    styles.apply('inner-container', ['gap'], (gap: any) => {
+      if (gap) {
+        return {
+          gap: `${gap}px`
+        };
+      }
+
+      return {};
+    });
+  }
+
+  // Apply alignment
+  styles.apply(
+    'inner-container',
+    ['vertical_align', 'horizontal_align', 'axis'],
+    (verticalAlign: any, horizontalAlign: any, axis: any) => {
+      const s: any = {};
+
+      if (axis === 'column') {
+        s.alignItems = verticalAlign ?? 'flex-start';
+        s.justifyContent = horizontalAlign ?? 'left';
+      } else {
+        s.alignItems = horizontalAlign ?? 'flex-start';
+        s.justifyContent = verticalAlign ?? 'left';
+      }
+
+      return s;
+    }
+  );
+
+  return styles.getTarget('inner-container', undefined, viewport === 'mobile');
 };
