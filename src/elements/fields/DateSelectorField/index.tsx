@@ -128,6 +128,7 @@ function DateSelectorField({
           filterTime={filterPassedTime}
           showTimeSelect={servarMeta.choose_time ?? false}
           dateFormat={dateMask}
+          maxDate={servarMeta.no_future ? new Date() : undefined}
           css={{
             height: '100%',
             width: '100%',
