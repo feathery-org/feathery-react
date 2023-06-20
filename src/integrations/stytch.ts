@@ -258,6 +258,9 @@ function handleLoginOrCreateErrors(e: any) {
   // shared errors
   if (type === 'invalid_authorization_header') {
     errorMsg = 'Please try again.';
+  } else if (type === 'invalid_session_duration') {
+    errorMsg =
+      'Your auth session length exceeds the max allowed by Stytch. Either increase the max from your Stytch dashboard or reduce the session length from your Feathery integration config.';
   } else if (type === 'bad_domain_for_stytch_sdk') {
     errorMsg = 'Please register this domain with Stytch.';
   }
@@ -273,6 +276,5 @@ function handleLoginOrCreateErrors(e: any) {
       'Unfortunately, we do not yet support your country for SMS login.';
   }
 
-  // throw new Error(errorMsg);
   return errorMsg;
 }
