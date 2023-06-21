@@ -51,12 +51,8 @@ export function getRedirectUrl() {
   const { origin, pathname, hash, search } = featheryWindow().location;
   const queryParams = new URLSearchParams(search);
   queryParams.forEach((value, key) => {
-    if (!['feathery_1', 'feathery_2', '_slug'].includes(key))
-      queryParams.delete(key);
+    if (!['_slug'].includes(key)) queryParams.delete(key);
   });
-  const queryString =
-    queryParams.has('feathery_1') || queryParams.has('_slug')
-      ? `?${queryParams}`
-      : '';
+  const queryString = queryParams.has('_slug') ? `?${queryParams}` : '';
   return `${origin}${pathname}${queryString}${hash}`;
 }
