@@ -253,7 +253,7 @@ function OtpInput({
           changeCodeAtFocus={changeCodeAtFocus}
           focusPrevInput={focusPrevInput}
           focusNextInput={focusNextInput}
-          shouldFocus={shouldFocus}
+          shouldFocus={shouldFocus && activeInput > -1}
         />
       );
     }
