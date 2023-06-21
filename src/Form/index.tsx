@@ -1241,12 +1241,7 @@ function Form({
         await openPlaidLink(client, flowOnSuccess(i), updateFieldValues);
         break;
       } else if (type === ACTION_TRIGGER_ARGYLE) {
-        await openArgyleLink(
-          client,
-          flowOnSuccess(i),
-          integrations?.argyle,
-          updateFieldValues
-        );
+        await openArgyleLink(client, flowOnSuccess(i), integrations?.argyle);
         break;
       } else if (type === ACTION_URL) {
         let url = action.url;
