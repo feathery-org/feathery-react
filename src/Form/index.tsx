@@ -27,6 +27,7 @@ import {
   getPrevStepUrl,
   getServarTypeMap,
   getUrlHash,
+  isStepTerminal,
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
@@ -1026,27 +1027,18 @@ function Form({
     if (!redirectKey) {
       if (explicitNav) {
         eventData.completed = true;
-        session.form_completed = true;
         // Need to rerender when onboarding questions are complete so
         // LoginForm can render children
         rerenderAllForms();
         client.registerEvent(eventData, submitPromise).then(() => {
+          session.form_completed = true;
           setFinished(true);
         });
       }
     } else {
       setFirst(false);
       const nextStep = steps[redirectKey];
-      const hasNext = nextStep.buttons.some((b: any) =>
-        (b.properties.actions ?? []).some(
-          (action: any) =>
-            action.type === ACTION_NEXT ||
-            (action.type === ACTION_URL && !action.open_tab)
-        )
-      );
-      const nextStepIsTerminal =
-        !hasNext && nextStep.next_conditions.length === 0;
-      if (nextStepIsTerminal) {
+      if (isStepTerminal(nextStep)) {
         const authIntegration = getAuthIntegrationMetadata(integrations);
         eventData.completed = !isTerminalStepAuth(
           authIntegration,
@@ -1249,12 +1241,7 @@ function Form({
         await openPlaidLink(client, flowOnSuccess(i), updateFieldValues);
         break;
       } else if (type === ACTION_TRIGGER_ARGYLE) {
-        await openArgyleLink(
-          client,
-          flowOnSuccess(i),
-          integrations?.argyle,
-          updateFieldValues
-        );
+        await openArgyleLink(client, flowOnSuccess(i), integrations?.argyle);
         break;
       } else if (type === ACTION_URL) {
         let url = action.url;

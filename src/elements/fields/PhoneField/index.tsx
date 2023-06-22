@@ -69,7 +69,7 @@ function PhoneField({
   useEffect(() => {
     const input = inputRef.current;
     if (input) input.setSelectionRange(cursor, cursor);
-  }, [inputRef, cursor, cursorChange]);
+  }, [cursorChange]);
 
   useEffect(() => {
     if (fullNumber === curFullNumber || editMode) return;

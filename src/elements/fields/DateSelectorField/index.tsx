@@ -82,7 +82,8 @@ function DateSelectorField({
   });
   const [focused, setFocused] = useState(false);
 
-  const dateMask = servarMeta.choose_time ? 'MM/d/yyyy h:mm aa' : 'MM/d/yyyy';
+  let dateMask = servarMeta.display_format ? 'd/MM/yyyy' : 'MM/d/yyyy';
+  if (servarMeta.choose_time) dateMask = `${dateMask} h:mm aa`;
   return (
     <div
       css={{
