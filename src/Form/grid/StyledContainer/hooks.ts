@@ -82,7 +82,7 @@ export const useContainerStyles = (
       width: '100%',
       height: '100%',
       boxSizing: 'border-box',
-      ...getInnerContainerStyles(node, rawNode)
+      ...getInnerContainerStyles(node, rawNode, viewport)
     };
 
     if (node.isElement) {
