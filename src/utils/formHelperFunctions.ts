@@ -5,6 +5,8 @@ import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { getVisibleElements } from './hideAndRepeats';
 import throttle from 'lodash.throttle';
 import { ACTION_NEXT, ACTION_URL } from './elementActions';
+import { featheryWindow } from '../utils/browser';
+import Client from '../utils/client';
 
 function _transformSignatureVal(value: any) {
   return value !== null && (value instanceof File || value instanceof Promise)
@@ -503,4 +505,36 @@ export function isStepTerminal(step: any) {
   );
 
   return !hasNext;
+}
+
+export function saveUrlParams(
+  updateFieldValues: (newFieldValues: any, rerender?: boolean) => boolean,
+  client: Client
+) {
+  const params = new URLSearchParams(featheryWindow().location.search);
+  // If there is only one query param and it is the slug, don't save it
+  if (params.has('_slug') && Array.from(params.keys()).length === 1) return;
+  const hiddenFields: any = {};
+  params.forEach((value, key) => {
+    if (key === '_slug') return;
+    hiddenFields[key] = value;
+  });
+  updateFieldValues(hiddenFields, false);
+  client.submitCustom(hiddenFields);
+}
+
+export function mapFormSettingsResponse(res: any) {
+  return {
+    errorType: res.error_type,
+    autocomplete: res.autocomplete ? 'on' : 'off',
+    autofocus: res.autofocus,
+    formOff: Boolean(res.formOff),
+    allowEdits: res.allow_edits,
+    completionBehavior: res.completion_behavior,
+    showBrand: Boolean(res.show_brand),
+    brandPosition: res.brand_position,
+    autoscroll: res.autoscroll,
+    rightToLeft: res.right_to_left,
+    saveUrlParams: res.save_url_params
+  };
 }

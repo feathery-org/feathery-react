@@ -35,7 +35,9 @@ import {
   rerenderAllForms,
   setFormElementError,
   setUrlStepHash,
-  updateStepFieldOptions
+  updateStepFieldOptions,
+  mapFormSettingsResponse,
+  saveUrlParams
 } from '../utils/formHelperFunctions';
 import {
   getHideIfReferences,
@@ -119,7 +121,6 @@ import {
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
-
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -215,12 +216,13 @@ function Form({
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
-    formOff: undefined,
+    formOff: undefined as undefined | boolean,
     showBrand: false,
     brandPosition: undefined,
     autoscroll: 'top_of_form',
     rightToLeft: false,
     allowEdits: true,
+    saveUrlParams: false,
     completionBehavior: ''
   });
   const [inlineErrors, setInlineErrors] = useState<
@@ -632,19 +634,10 @@ function Form({
             initState.redirectCallbacks[_internalId] = () => {
               featheryWindow().location.href = res.redirect_url;
             };
-          setFormSettings({
-            errorType: res.error_type,
-            autocomplete: res.autocomplete ? 'on' : 'off',
-            autofocus: res.autofocus,
-            // @ts-expect-error TS(2322): Type 'boolean' is not assignable to type 'undefine... Remove this comment to see the full error message
-            formOff: Boolean(res.formOff),
-            allowEdits: res.allow_edits,
-            completionBehavior: res.completion_behavior,
-            showBrand: Boolean(res.show_brand),
-            brandPosition: res.brand_position,
-            autoscroll: res.autoscroll,
-            rightToLeft: res.right_to_left
-          });
+          if (res.save_url_params) {
+            saveUrlParams(updateFieldValues, clientInstance);
+          }
+          setFormSettings(mapFormSettingsResponse(res));
           setProductionEnv(res.production);
           return steps;
         });
