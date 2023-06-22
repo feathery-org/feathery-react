@@ -78,6 +78,7 @@ export default function DropdownField({
       );
     });
   }
+  const disabled = element.properties.disabled ?? false;
 
   responsiveStyles.applyFontStyles('field', !fieldVal);
   return (
@@ -100,10 +101,12 @@ export default function DropdownField({
           whiteSpace: 'nowrap',
           overflowX: 'hidden',
           ...responsiveStyles.getTarget('sub-fc'),
-          '&:hover': {
-            ...responsiveStyles.getTarget('hover'),
-            ...borderStyles.hover
-          },
+          '&:hover': disabled
+            ? {}
+            : {
+                ...responsiveStyles.getTarget('hover'),
+                ...borderStyles.hover
+              },
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),
@@ -133,7 +136,7 @@ export default function DropdownField({
           id={servar.key}
           value={fieldVal}
           required={required}
-          disabled={element.properties.disabled ?? false}
+          disabled={disabled}
           onChange={onChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}

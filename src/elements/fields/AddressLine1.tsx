@@ -38,6 +38,7 @@ function AddressLine1({
     error: inlineError
   });
 
+  const disabled = element.properties.disabled ?? false;
   return (
     <div
       css={{
@@ -56,10 +57,12 @@ function AddressLine1({
           position: 'relative',
           width: '100%',
           ...responsiveStyles.getTarget('sub-fc'),
-          '&:hover': {
-            ...responsiveStyles.getTarget('hover'),
-            ...borderStyles.hover
-          },
+          '&:hover': disabled
+            ? {}
+            : {
+                ...responsiveStyles.getTarget('hover'),
+                ...borderStyles.hover
+              },
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),
@@ -126,7 +129,7 @@ function AddressLine1({
             maxLength={servar.max_length}
             minLength={servar.min_length}
             placeholder=''
-            disabled={element.properties.disabled ?? false}
+            disabled={disabled}
             value={value}
             ref={setRef}
             // Not on focus because if error is showing, it will

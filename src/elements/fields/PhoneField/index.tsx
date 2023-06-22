@@ -138,6 +138,7 @@ function PhoneField({
   }, [triggerOnChange]);
 
   const triggerChange = () => setTriggerOnChange((prev) => !prev);
+  const disabled = element.properties.disabled ?? false;
 
   return (
     <div
@@ -157,10 +158,12 @@ function PhoneField({
           display: 'flex',
           position: 'relative',
           ...responsiveStyles.getTarget('sub-fc'),
-          '&:hover': {
-            ...responsiveStyles.getTarget('hover'),
-            ...borderStyles.hover
-          },
+          '&:hover': disabled
+            ? {}
+            : {
+                ...responsiveStyles.getTarget('hover'),
+                ...borderStyles.hover
+              },
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),
@@ -241,7 +244,7 @@ function PhoneField({
                 : { color: 'transparent !important' })
             }}
             required={required}
-            disabled={element.properties.disabled ?? false}
+            disabled={disabled}
             autoComplete={servar.metadata.autocomplete || 'on'}
             placeholder=''
             value={formattedNumber}
