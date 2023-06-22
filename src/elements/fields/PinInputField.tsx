@@ -77,6 +77,7 @@ function SingleOtpInput({
     }
   );
 
+  const disabled = element.properties.disabled ?? false;
   return (
     <div
       css={{
@@ -85,10 +86,12 @@ function SingleOtpInput({
         alignItems: 'center',
         marginLeft: '8px',
         ...responsiveStyles.getTarget('sub-fc'),
-        '&:hover': {
-          ...responsiveStyles.getTarget('hover'),
-          ...borderStyles.hover
-        },
+        '&:hover': disabled
+          ? {}
+          : {
+              ...responsiveStyles.getTarget('hover'),
+              ...borderStyles.hover
+            },
         '&&': focus
           ? {
               ...responsiveStyles.getTarget('active'),
@@ -114,7 +117,7 @@ function SingleOtpInput({
           ...responsiveStyles.getTarget('field')
         }}
         type='tel'
-        disabled={element.properties.disabled ?? false}
+        disabled={disabled}
         ref={input}
         value={value || ''}
         onChange={onChange}

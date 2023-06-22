@@ -82,6 +82,7 @@ function DateSelectorField({
   });
   const [focused, setFocused] = useState(false);
 
+  const disabled = element.properties.disabled ?? false;
   let dateMask = servarMeta.display_format ? 'd/MM/yyyy' : 'MM/d/yyyy';
   if (servarMeta.choose_time) dateMask = `${dateMask} h:mm aa`;
   return (
@@ -102,10 +103,12 @@ function DateSelectorField({
           position: 'relative',
           width: '100%',
           ...responsiveStyles.getTarget('sub-fc'),
-          '&:hover': {
-            ...responsiveStyles.getTarget('hover'),
-            ...borderStyles.hover
-          },
+          '&:hover': disabled
+            ? {}
+            : {
+                ...responsiveStyles.getTarget('hover'),
+                ...borderStyles.hover
+              },
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),
@@ -125,7 +128,7 @@ function DateSelectorField({
           required={required}
           autoComplete={servarMeta.autocomplete || 'on'}
           placeholder=''
-          readOnly={element.properties.disabled ?? false}
+          readOnly={disabled}
           filterTime={filterPassedTime}
           showTimeSelect={servarMeta.choose_time ?? false}
           dateFormat={dateMask}

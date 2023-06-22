@@ -24,6 +24,7 @@ function TextArea({
     error: inlineError
   });
 
+  const disabled = element.properties.disabled ?? false;
   const servar = element.servar;
   return (
     <div
@@ -43,10 +44,12 @@ function TextArea({
           position: 'relative',
           width: '100%',
           ...responsiveStyles.getTarget('sub-fc'),
-          '&:hover': {
-            ...responsiveStyles.getTarget('hover'),
-            ...borderStyles.hover
-          },
+          '&:hover': disabled
+            ? {}
+            : {
+                ...responsiveStyles.getTarget('hover'),
+                ...borderStyles.hover
+              },
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),
@@ -82,7 +85,7 @@ function TextArea({
           onBlur={() => setFocused(false)}
           autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
-          disabled={element.properties.disabled ?? false}
+          disabled={disabled}
           value={rawValue}
           rows={element.styles.num_rows}
           ref={setRef}
