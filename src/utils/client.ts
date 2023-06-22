@@ -531,25 +531,6 @@ export default class Client {
     );
   }
 
-  async submitArgyleUserData(linkItemId: string) {
-    await initFormsPromise;
-    const { userId } = initInfo();
-    const url = `${API_URL}argyle/user_data/`;
-    const data = {
-      link_item_id: linkItemId,
-      form_key: this.formKey,
-      fuser_key: userId
-    };
-    const options = {
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-      body: JSON.stringify(data)
-    };
-    return this._fetch(url, options).then((response) =>
-      response ? response.json() : Promise.resolve()
-    );
-  }
-
   addressSearchResults(searchTerm: any) {
     const params = encodeGetParams({ search_term: searchTerm });
     const url = `${API_URL}integration/address/search/?${params}`;

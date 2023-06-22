@@ -14,8 +14,7 @@ export function installArgyle(isArgyleActive: any) {
 export async function openArgyleLink(
   client: any,
   onSuccess: any,
-  argyleConfig: any,
-  updateFieldValues: any
+  argyleConfig: any
 ) {
   await argylePromise;
 
@@ -24,11 +23,9 @@ export async function openArgyleLink(
     linkKey: argyleConfig.metadata.link_key,
     sandbox: argyleConfig.metadata.environment === 'sandbox',
     userToken,
-    onAccountConnected: async ({ linkItemId }: { linkItemId: string }) => {
-      const fieldVals = await client.submitArgyleUserData(linkItemId);
-      updateFieldValues(fieldVals);
-      await onSuccess();
+    onAccountConnected: () => {
       argyle.close();
+      return onSuccess();
     }
   });
   argyle.open();

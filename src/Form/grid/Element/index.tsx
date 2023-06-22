@@ -486,28 +486,19 @@ const Element = ({ node: el, form, flags }: any) => {
               if (change) onChange();
             }}
             onSelect={(address: any) => {
-              const keyIDMap = {};
-              const addrValues = {};
+              const keyIDMap: Record<string, string> = {};
+              const addrValues: Record<string, any> = {};
 
-              const trackMapFields = (step: any) => {
-                step.servar_fields.forEach((field: any) => {
-                  const servar = field.servar;
-                  if (servar.type in address) {
-                    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-                    addrValues[servar.key] = address[servar.type];
-                    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-                    keyIDMap[servar.key] = field.id;
-                  } else if (mapFieldTypes.has(servar.type)) {
-                    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-                    addrValues[servar.key] = '';
-                    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-                    keyIDMap[servar.key] = field.id;
-                  }
-                });
-              };
-              Object.values(steps).forEach((step) => trackMapFields(step));
-              // register current step field IDs if possible
-              trackMapFields(activeStep);
+              activeStep.servar_fields.forEach((field: any) => {
+                const servar = field.servar;
+                if (servar.type in address) {
+                  addrValues[servar.key] = address[servar.type];
+                  keyIDMap[servar.key] = field.id;
+                } else if (mapFieldTypes.has(servar.type)) {
+                  addrValues[servar.key] = '';
+                  keyIDMap[servar.key] = field.id;
+                }
+              });
 
               if (!isObjectEmpty(addrValues)) {
                 updateFieldValues(addrValues);
