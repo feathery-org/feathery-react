@@ -452,9 +452,15 @@ export const getContainerStyles = (
 
   // Apply visibility
   styles.apply('container', 'visibility', (visibility: any) => {
-    return {
-      display: visibility === 'hidden' ? 'none' : 'flex'
-    };
+    const s: any = {};
+
+    if (node.uuid) {
+      s.opacity = visibility === 'hidden' ? '0.25' : '1';
+    } else {
+      s.display = visibility === 'hidden' ? 'none' : 'flex';
+    }
+
+    return s;
   });
 
   return styles.getTarget('container', undefined, viewport === 'mobile');
