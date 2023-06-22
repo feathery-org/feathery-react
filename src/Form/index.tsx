@@ -25,7 +25,6 @@ import {
   getNewStepUrl,
   getOrigin,
   getPrevStepUrl,
-  getServarTypeMap,
   getUrlHash,
   isStepTerminal,
   lookUpTrigger,
@@ -37,7 +36,7 @@ import {
   setUrlStepHash,
   updateStepFieldOptions,
   mapFormSettingsResponse,
-  saveUrlParams
+  saveInitialValuesAndUrlParams
 } from '../utils/formHelperFunctions';
 import {
   getHideIfReferences,
@@ -137,6 +136,7 @@ export interface Props {
     | ((context: ContextOnCustomAction) => Promise<any> | void);
   onView?: null | ((context: ContextOnView) => Promise<any> | void);
   onViewElements?: string[];
+  saveUrlParams?: boolean;
   initialValues?: FieldValues;
   initialStepId?: string;
   language?: string;
@@ -182,6 +182,7 @@ function Form({
   onCustomAction = null,
   onView = null,
   onViewElements = [],
+  saveUrlParams = false,
   initialValues = {},
   initialStepId = '',
   language,
@@ -621,6 +622,7 @@ function Form({
       const clientInstance = new Client(formName, hasRedirected, _draft);
       setClient(clientInstance);
       setFirst(true);
+      let saveUrlParamsFormSetting = false;
       // render form without values first for speed
       const formPromise = clientInstance
         .fetchForm(initialValues, language)
@@ -634,9 +636,7 @@ function Form({
             initState.redirectCallbacks[_internalId] = () => {
               featheryWindow().location.href = res.redirect_url;
             };
-          if (res.save_url_params) {
-            saveUrlParams(updateFieldValues, clientInstance);
-          }
+          if (res.save_url_params) saveUrlParamsFormSetting = true;
           setFormSettings(mapFormSettingsResponse(res));
           setProductionEnv(res.production);
           return steps;
@@ -654,14 +654,14 @@ function Form({
           }
           updateBackNavMap(session.back_nav_map);
           setIntegrations(session.integrations);
-          if (!isObjectEmpty(initialValues)) {
-            const servarKeyToTypeMap = getServarTypeMap(steps);
-            const castValues = { ...initialValues };
-            Object.entries(castValues).map(([key, val]) => {
-              castValues[key] = castVal(servarKeyToTypeMap[key], val);
-            });
-            clientInstance.submitCustom(castValues, false);
-          }
+
+          saveInitialValuesAndUrlParams({
+            updateFieldValues,
+            client: clientInstance,
+            saveUrlParams: saveUrlParams || saveUrlParamsFormSetting,
+            initialValues,
+            steps
+          });
 
           // User is authenticating. auth hook will set the initial stepKey once auth has finished
           if (authState.redirectAfterLogin) return;

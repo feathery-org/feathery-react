@@ -7,6 +7,7 @@ import throttle from 'lodash.throttle';
 import { ACTION_NEXT, ACTION_URL } from './elementActions';
 import { featheryWindow } from '../utils/browser';
 import Client from '../utils/client';
+import { isObjectEmpty } from './primitives';
 
 function _transformSignatureVal(value: any) {
   return value !== null && (value instanceof File || value instanceof Promise)
@@ -507,20 +508,41 @@ export function isStepTerminal(step: any) {
   return !hasNext;
 }
 
-export function saveUrlParams(
-  updateFieldValues: (newFieldValues: any, rerender?: boolean) => boolean,
-  client: Client
-) {
+export function saveInitialValuesAndUrlParams({
+  updateFieldValues,
+  client,
+  saveUrlParams,
+  initialValues,
+  steps
+}: {
+  updateFieldValues: (newFieldValues: any, rerender?: boolean) => boolean;
+  client: Client;
+  saveUrlParams: boolean;
+  initialValues: any;
+  steps: any;
+}) {
+  let rerenderRequired = false;
+  // Submit initial values & URL params
+  let valuesToSubmit: Record<string, any> = {};
+  if (!isObjectEmpty(initialValues)) {
+    rerenderRequired = true;
+    const servarKeyToTypeMap = getServarTypeMap(steps);
+    valuesToSubmit = { ...initialValues };
+    Object.entries(valuesToSubmit).map(([key, val]) => {
+      valuesToSubmit[key] = castVal(servarKeyToTypeMap[key], val);
+    });
+  }
   const params = new URLSearchParams(featheryWindow().location.search);
-  // If there is only one query param and it is the slug, don't save it
-  if (params.has('_slug') && Array.from(params.keys()).length === 1) return;
-  const hiddenFields: any = {};
-  params.forEach((value, key) => {
-    if (key === '_slug') return;
-    hiddenFields[key] = value;
-  });
-  updateFieldValues(hiddenFields, false);
-  client.submitCustom(hiddenFields);
+  if (saveUrlParams) {
+    params.forEach((value, key) => {
+      if (key === '_slug') return;
+      valuesToSubmit[key] = value;
+    });
+  }
+  if (!isObjectEmpty(valuesToSubmit)) {
+    updateFieldValues(valuesToSubmit, rerenderRequired);
+    client.submitCustom(valuesToSubmit, false);
+  }
 }
 
 export function mapFormSettingsResponse(res: any) {
