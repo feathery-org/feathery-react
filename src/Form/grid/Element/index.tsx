@@ -135,7 +135,7 @@ const Element = ({ node: el, form, flags }: any) => {
         ) => {
           runElementActions({
             element: el,
-            actions: el.properties.actions,
+            actions: el.properties.actions ?? [],
             elementType: 'text',
             textSpanStart,
             textSpanEnd
@@ -164,7 +164,7 @@ const Element = ({ node: el, form, flags }: any) => {
       });
       const storeFieldButtons = activeStep.buttons.filter(
         ({ properties }: any) =>
-          properties.actions.some(
+          (properties.actions ?? []).some(
             (action: any) => action.type === ACTION_STORE_FIELD
           )
       );

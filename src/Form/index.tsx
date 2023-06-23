@@ -355,7 +355,7 @@ function Form({
     }
 
     activeStep.buttons.forEach((b: any) =>
-      b.properties.actions.forEach((action: any) => {
+      (b.properties.actions ?? []).forEach((action: any) => {
         if (action.type in REQUIRED_FLOW_ACTIONS) {
           setRequiredStepAction(action.type);
         }
@@ -1120,7 +1120,7 @@ function Form({
 
     await setButtonLoader(button);
     await runElementActions({
-      actions: button.properties.actions,
+      actions: button.properties.actions ?? [],
       element: button,
       elementType: 'button',
       submit: button.properties.submit,
