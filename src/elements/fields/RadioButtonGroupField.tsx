@@ -73,7 +73,7 @@ function RadioButtonGroupField({
                 lineHeight: 'normal'
               }}
               css={{
-                ...composeCheckableInputStyle(styles, true, true),
+                ...composeCheckableInputStyle(styles, allDisabled, true, true),
                 ...styles.getTarget('radioGroup')
               }}
             />
@@ -99,7 +99,7 @@ function RadioButtonGroupField({
             }}
             value={otherVal || ''}
             style={{ padding: 0, lineHeight: 'normal' }}
-            css={composeCheckableInputStyle(styles, true, true)}
+            css={composeCheckableInputStyle(styles, allDisabled, true, true)}
           />
           <label htmlFor={`${servar.key}-`}>Other</label>
           <ReactForm.Control

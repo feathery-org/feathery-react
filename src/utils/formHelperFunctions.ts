@@ -5,6 +5,9 @@ import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { getVisibleElements } from './hideAndRepeats';
 import throttle from 'lodash.throttle';
 import { ACTION_NEXT, ACTION_URL } from './elementActions';
+import { featheryWindow } from '../utils/browser';
+import Client from '../utils/client';
+import { isObjectEmpty } from './primitives';
 
 function _transformSignatureVal(value: any) {
   return value !== null && (value instanceof File || value instanceof Promise)
@@ -483,7 +486,7 @@ export function getServarTypeMap(steps: any) {
 }
 
 export function isStepTerminal(step: any) {
-  // If step is navigatable to another step, it's not terminal
+  // If step is navigable to another step, it's not terminal
   if (step.next_conditions.length > 0) return false;
 
   if (
@@ -503,4 +506,57 @@ export function isStepTerminal(step: any) {
   );
 
   return !hasNext;
+}
+
+export function saveInitialValuesAndUrlParams({
+  updateFieldValues,
+  client,
+  saveUrlParams,
+  initialValues,
+  steps
+}: {
+  updateFieldValues: (newFieldValues: any, rerender?: boolean) => boolean;
+  client: Client;
+  saveUrlParams: boolean;
+  initialValues: any;
+  steps: any;
+}) {
+  let rerenderRequired = false;
+  // Submit initial values & URL params
+  let valuesToSubmit: Record<string, any> = {};
+  if (!isObjectEmpty(initialValues)) {
+    rerenderRequired = true;
+    const servarKeyToTypeMap = getServarTypeMap(steps);
+    valuesToSubmit = { ...initialValues };
+    Object.entries(valuesToSubmit).map(([key, val]) => {
+      valuesToSubmit[key] = castVal(servarKeyToTypeMap[key], val);
+    });
+  }
+  const params = new URLSearchParams(featheryWindow().location.search);
+  if (saveUrlParams) {
+    params.forEach((value, key) => {
+      if (key === '_slug') return;
+      valuesToSubmit[key] = value;
+    });
+  }
+  if (!isObjectEmpty(valuesToSubmit)) {
+    updateFieldValues(valuesToSubmit, rerenderRequired);
+    client.submitCustom(valuesToSubmit, false);
+  }
+}
+
+export function mapFormSettingsResponse(res: any) {
+  return {
+    errorType: res.error_type,
+    autocomplete: res.autocomplete ? 'on' : 'off',
+    autofocus: res.autofocus,
+    formOff: Boolean(res.formOff),
+    allowEdits: res.allow_edits,
+    completionBehavior: res.completion_behavior,
+    showBrand: Boolean(res.show_brand),
+    brandPosition: res.brand_position,
+    autoscroll: res.autoscroll,
+    rightToLeft: res.right_to_left,
+    saveUrlParams: res.save_url_params
+  };
 }

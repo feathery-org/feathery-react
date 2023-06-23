@@ -157,6 +157,7 @@ export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
 
 export const composeCheckableInputStyle = (
   styles: any,
+  noHover = false,
   group = false,
   isRadio = false
 ) => {
@@ -171,7 +172,7 @@ export const composeCheckableInputStyle = (
     placeContent: 'center',
     borderRadius: isRadio ? '50%' : null, // Force radio buttons to be round
     ...styles.getTarget('checkbox'),
-    '&:hover': styles.getTarget('checkboxHover'),
+    '&:hover': noHover ? {} : styles.getTarget('checkboxHover'),
     '&::before': {
       content: "''",
       transform: 'scale(0)',
@@ -206,6 +207,7 @@ function CheckboxField({
 
   const servar = element.servar;
 
+  const disabled = element.properties.disabled ?? false;
   return (
     <div
       css={{
@@ -220,10 +222,10 @@ function CheckboxField({
         id={servar.key}
         type='checkbox'
         checked={fieldVal}
-        disabled={element.properties.disabled ?? false}
+        disabled={disabled}
         onChange={onChange}
         style={{ marginTop: '5px', marginRight: '5px' }}
-        css={composeCheckableInputStyle(styles)}
+        css={composeCheckableInputStyle(styles, disabled)}
       />
       {fieldLabel}
     </div>
