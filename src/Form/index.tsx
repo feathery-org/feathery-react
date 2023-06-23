@@ -1020,12 +1020,12 @@ function Form({
     if (!redirectKey) {
       if (explicitNav) {
         eventData.completed = true;
-        // Need to rerender when onboarding questions are complete so
-        // LoginForm can render children
-        rerenderAllForms();
         client.registerEvent(eventData, submitPromise).then(() => {
-          session.form_completed = true;
           setFinished(true);
+          // Need to rerender when the session is marked complete so
+          // LoginForm can render children
+          session.form_completed = true;
+          rerenderAllForms();
         });
       }
     } else {

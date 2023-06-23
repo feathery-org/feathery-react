@@ -486,7 +486,7 @@ export function getServarTypeMap(steps: any) {
 }
 
 export function isStepTerminal(step: any) {
-  // If step is navigatable to another step, it's not terminal
+  // If step is navigable to another step, it's not terminal
   if (step.next_conditions.length > 0) return false;
 
   if (
