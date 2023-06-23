@@ -25,7 +25,6 @@ import {
   getNewStepUrl,
   getOrigin,
   getPrevStepUrl,
-  getServarTypeMap,
   getUrlHash,
   isStepTerminal,
   lookUpTrigger,
@@ -35,7 +34,9 @@ import {
   rerenderAllForms,
   setFormElementError,
   setUrlStepHash,
-  updateStepFieldOptions
+  updateStepFieldOptions,
+  mapFormSettingsResponse,
+  saveInitialValuesAndUrlParams
 } from '../utils/formHelperFunctions';
 import {
   getHideIfReferences,
@@ -119,7 +120,6 @@ import {
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
-
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -136,6 +136,7 @@ export interface Props {
     | ((context: ContextOnCustomAction) => Promise<any> | void);
   onView?: null | ((context: ContextOnView) => Promise<any> | void);
   onViewElements?: string[];
+  saveUrlParams?: boolean;
   initialValues?: FieldValues;
   initialStepId?: string;
   language?: string;
@@ -181,6 +182,7 @@ function Form({
   onCustomAction = null,
   onView = null,
   onViewElements = [],
+  saveUrlParams = false,
   initialValues = {},
   initialStepId = '',
   language,
@@ -215,12 +217,13 @@ function Form({
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
-    formOff: undefined,
+    formOff: undefined as undefined | boolean,
     showBrand: false,
     brandPosition: undefined,
     autoscroll: 'top_of_form',
     rightToLeft: false,
     allowEdits: true,
+    saveUrlParams: false,
     completionBehavior: ''
   });
   const [inlineErrors, setInlineErrors] = useState<
@@ -352,7 +355,7 @@ function Form({
     }
 
     activeStep.buttons.forEach((b: any) =>
-      b.properties.actions.forEach((action: any) => {
+      (b.properties.actions ?? []).forEach((action: any) => {
         if (action.type in REQUIRED_FLOW_ACTIONS) {
           setRequiredStepAction(action.type);
         }
@@ -619,6 +622,7 @@ function Form({
       const clientInstance = new Client(formName, hasRedirected, _draft);
       setClient(clientInstance);
       setFirst(true);
+      let saveUrlParamsFormSetting = false;
       // render form without values first for speed
       const formPromise = clientInstance
         .fetchForm(initialValues, language)
@@ -632,19 +636,8 @@ function Form({
             initState.redirectCallbacks[_internalId] = () => {
               featheryWindow().location.href = res.redirect_url;
             };
-          setFormSettings({
-            errorType: res.error_type,
-            autocomplete: res.autocomplete ? 'on' : 'off',
-            autofocus: res.autofocus,
-            // @ts-expect-error TS(2322): Type 'boolean' is not assignable to type 'undefine... Remove this comment to see the full error message
-            formOff: Boolean(res.formOff),
-            allowEdits: res.allow_edits,
-            completionBehavior: res.completion_behavior,
-            showBrand: Boolean(res.show_brand),
-            brandPosition: res.brand_position,
-            autoscroll: res.autoscroll,
-            rightToLeft: res.right_to_left
-          });
+          if (res.save_url_params) saveUrlParamsFormSetting = true;
+          setFormSettings(mapFormSettingsResponse(res));
           setProductionEnv(res.production);
           return steps;
         });
@@ -661,14 +654,14 @@ function Form({
           }
           updateBackNavMap(session.back_nav_map);
           setIntegrations(session.integrations);
-          if (!isObjectEmpty(initialValues)) {
-            const servarKeyToTypeMap = getServarTypeMap(steps);
-            const castValues = { ...initialValues };
-            Object.entries(castValues).map(([key, val]) => {
-              castValues[key] = castVal(servarKeyToTypeMap[key], val);
-            });
-            clientInstance.submitCustom(castValues, false);
-          }
+
+          saveInitialValuesAndUrlParams({
+            updateFieldValues,
+            client: clientInstance,
+            saveUrlParams: saveUrlParams || saveUrlParamsFormSetting,
+            initialValues,
+            steps
+          });
 
           // User is authenticating. auth hook will set the initial stepKey once auth has finished
           if (authState.redirectAfterLogin) return;
@@ -1027,12 +1020,12 @@ function Form({
     if (!redirectKey) {
       if (explicitNav) {
         eventData.completed = true;
-        // Need to rerender when onboarding questions are complete so
-        // LoginForm can render children
-        rerenderAllForms();
         client.registerEvent(eventData, submitPromise).then(() => {
-          session.form_completed = true;
           setFinished(true);
+          // Need to rerender when the session is marked complete so
+          // LoginForm can render children
+          session.form_completed = true;
+          rerenderAllForms();
         });
       }
     } else {
@@ -1127,7 +1120,7 @@ function Form({
 
     await setButtonLoader(button);
     await runElementActions({
-      actions: button.properties.actions,
+      actions: button.properties.actions ?? [],
       element: button,
       elementType: 'button',
       submit: button.properties.submit,

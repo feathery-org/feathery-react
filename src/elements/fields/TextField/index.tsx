@@ -142,6 +142,7 @@ function TextField({
 
   const servar = element.servar;
   const options = servar.metadata.options ?? [];
+  const disabled = element.properties.disabled ?? false;
   const inputProps = getInputProps(servar);
   return (
     <div
@@ -163,10 +164,12 @@ function TextField({
           whiteSpace: 'nowrap',
           overflowX: 'hidden',
           ...responsiveStyles.getTarget('sub-fc'),
-          '&:hover': {
-            ...responsiveStyles.getTarget('hover'),
-            ...borderStyles.hover
-          }
+          '&:hover': disabled
+            ? {}
+            : {
+                ...responsiveStyles.getTarget('hover'),
+                ...borderStyles.hover
+              }
         }}
       >
         <TextAutocomplete
@@ -200,7 +203,7 @@ function TextField({
             maxLength={servar.max_length}
             minLength={servar.min_length}
             required={required}
-            disabled={element.properties.disabled ?? false}
+            disabled={disabled}
             autoComplete={
               options.length > 0 ? 'off' : servar.metadata.autocomplete || 'on'
             }

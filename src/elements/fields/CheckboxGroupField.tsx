@@ -71,7 +71,11 @@ function CheckboxGroupField({
                 filter: disabled ? 'brightness(85%)' : 'none'
               }}
               css={{
-                ...composeCheckableInputStyle(styles, true),
+                ...composeCheckableInputStyle(
+                  styles,
+                  allDisabled || disabled,
+                  true
+                ),
                 ...styles.getTarget('checkboxGroup')
               }}
               disabled={allDisabled || disabled}
@@ -91,7 +95,7 @@ function CheckboxGroupField({
             disabled={allDisabled}
             onChange={onChange}
             style={{ padding: 0, lineHeight: 'normal' }}
-            css={composeCheckableInputStyle(styles, true)}
+            css={composeCheckableInputStyle(styles, allDisabled, true)}
           />
           <label htmlFor={`${servar.key}-`}>Other</label>
           <ReactForm.Control
