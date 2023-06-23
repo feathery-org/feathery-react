@@ -94,13 +94,11 @@ const Element = ({ node: el, form, flags }: any) => {
     setInlineErrors,
     changeValue,
     updateFieldValues,
-    setGMapBlurKey,
     elementOnView,
     onViewElements,
     formSettings,
     formRef,
     focusRef,
-    steps,
     setCardElement,
     visiblePositions
   } = form;
@@ -479,7 +477,6 @@ const Element = ({ node: el, form, flags }: any) => {
           <Elements.AddressLine1
             {...fieldProps}
             value={stringifyWithNull(fieldVal)}
-            onBlur={() => setGMapBlurKey(servar.key)}
             onChange={(e: any) => {
               const val = e.target.value;
               const change = changeValue(val, el, index);

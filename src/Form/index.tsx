@@ -62,7 +62,6 @@ import {
 import { ActionData, trackEvent } from '../integrations/utils';
 import DevNavBar from './components/DevNavBar';
 import FeatherySpinner from '../elements/components/Spinner';
-import { isObjectEmpty } from '../utils/primitives';
 import CallbackQueue from '../utils/callbackQueue';
 import { featheryWindow, openTab, runningInClient } from '../utils/browser';
 import FormOff from '../elements/components/FormOff';
@@ -238,11 +237,7 @@ function Form({
   const [requiredStepAction, setRequiredStepAction] = useState<
     keyof typeof REQUIRED_FLOW_ACTIONS | ''
   >('');
-  const [gMapFilled, setGMapFilled] = useState(false);
-  const [gMapBlurKey, setGMapBlurKey] = useState('');
-  const [gMapTimeoutId, setGMapTimeoutId] = useState<NodeJS.Timeout | number>(
-    -1
-  );
+
   const [viewport, setViewport] = useState(getViewport());
   const handleResize = () => setViewport(getViewport());
 
@@ -312,35 +307,6 @@ function Form({
     return () => featheryWindow().removeEventListener('resize', handleResize);
   }, []);
 
-  useEffect(() => {}, [viewport]);
-
-  useEffect(() => {
-    if (gMapFilled) clearTimeout(gMapTimeoutId);
-    else if (gMapBlurKey) {
-      // Delay by 0.5 seconds to ensure onChange finishes running first if it needs to
-      const timeoutId = setTimeout(
-        () =>
-          setFormElementError({
-            formRef,
-            errorCallback: getErrorCallback({
-              trigger: {
-                id: gMapBlurKey,
-                type: 'field'
-              }
-            }),
-            fieldKey: gMapBlurKey,
-            message: 'An address must be selected',
-            errorType: formSettings.errorType,
-            setInlineErrors,
-            triggerErrors: true
-          }),
-        500
-      );
-      setGMapBlurKey('');
-      setGMapTimeoutId(timeoutId);
-    }
-  }, [gMapTimeoutId, gMapFilled, gMapBlurKey]);
-
   // Logic to run every time step changes
   useEffect(() => {
     if (!activeStep) return;
@@ -360,11 +326,6 @@ function Form({
           setRequiredStepAction(action.type);
         }
       })
-    );
-    setGMapFilled(
-      activeStep.servar_fields.some(
-        (f: any) => f.servar.type === 'gmap_line_1' && fieldValues[f.servar.key]
-      )
     );
   }, [activeStep?.id]);
 
@@ -1378,7 +1339,6 @@ function Form({
       valueRepeatIndex = null
     } = {}) => {
       if (trigger === 'addressSelect') {
-        setGMapFilled(true);
         fieldKeys.forEach((fieldKey: any) => {
           setFormElementError({
             formRef,
@@ -1461,13 +1421,11 @@ function Form({
     setInlineErrors,
     changeValue,
     updateFieldValues,
-    setGMapBlurKey,
     elementOnView,
     onViewElements,
     formSettings,
     focusRef,
     formRef,
-    steps,
     setCardElement,
     visiblePositions
   };
