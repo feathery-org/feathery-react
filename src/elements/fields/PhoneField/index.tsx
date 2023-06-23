@@ -1,5 +1,6 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 
+import timeZoneCountries from './timeZoneCountries';
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/Tooltip';
 import { bootstrapStyles } from '../../styles';
@@ -47,7 +48,17 @@ function PhoneField({
   // The number parsed from the fullNumber prop, updated via triggerOnChange to rawNumber
   const [curFullNumber, setCurFullNumber] = useState('');
   const servar = element.servar;
-  const defaultCountry = servar.metadata.default_country || DEFAULT_COUNTRY;
+  const defaultCountry = useMemo(() => {
+    if (servar.metadata.default_country === 'auto') {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (!timezone) return DEFAULT_COUNTRY;
+
+      const countryCode = timeZoneCountries[timezone].c[0];
+      return countryCode || DEFAULT_COUNTRY;
+    } else {
+      return servar.metadata.default_country || DEFAULT_COUNTRY;
+    }
+  }, [servar.metadata.default_country]);
   const [curCountryCode, setCurCountryCode] = useState<string>(defaultCountry);
 
   useEffect(() => setCurCountryCode(defaultCountry), [defaultCountry]);
