@@ -1114,6 +1114,17 @@ function Form({
 
     if (Object.keys(inlineErrors).length > 0) setInlineErrors({});
 
+    // Do not proceed until user has gone through required flows
+    if (
+      !hasFlowActions(actions) &&
+      requiredStepAction &&
+      !flowCompleted.current
+    ) {
+      setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
+      elementClicks[id] = false;
+      return;
+    }
+
     const metadata = {
       elementType,
       elementIDs: [element.id],
@@ -1148,17 +1159,6 @@ function Form({
         elementClicks[id] = false;
         return;
       }
-    }
-
-    // Do not proceed until user has gone through required flows
-    if (
-      !hasFlowActions(actions) &&
-      requiredStepAction &&
-      !flowCompleted.current
-    ) {
-      setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
-      elementClicks[id] = false;
-      return;
     }
 
     const flowOnSuccess = (index: number) => async () => {
