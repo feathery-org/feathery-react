@@ -667,7 +667,6 @@ function Form({
     rerender = true
   ) => {
     const updateValues = {};
-    let clearGMaps = false;
     let repeatRowOperation;
 
     const servar = field.servar;
@@ -693,7 +692,6 @@ function Form({
 
     if (servar.type === 'integer_field' && value !== '')
       value = parseFloat(value);
-    else if (servar.type === 'gmap_line_1' && !value) clearGMaps = true;
     else if (servar.type === 'file_upload' && index !== null)
       // For file_upload in repeating rows
       // If empty array, insert null. Otherwise de-reference the single file in the array
@@ -710,27 +708,6 @@ function Form({
       index === null
         ? value
         : justInsert(fieldValues[servar.key] || [], value, index);
-
-    if (clearGMaps) {
-      activeStep.servar_fields.forEach((field: any) => {
-        const servar = field.servar;
-        if (
-          [
-            'gmap_line_2',
-            'gmap_city',
-            'gmap_state',
-            'gmap_country',
-            'gmap_zip'
-          ].includes(servar.type)
-        ) {
-          // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-          updateValues[servar.key] =
-            index === null
-              ? ''
-              : justInsert(fieldValues[servar.key], '', index);
-        }
-      });
-    }
 
     const change = updateFieldValues(updateValues, rerender);
     if (repeatRowOperation === 'add') addRepeatedRow();
@@ -1338,18 +1315,6 @@ function Form({
       // Multi-file upload is not a repeated row but a repeated field
       valueRepeatIndex = null
     } = {}) => {
-      if (trigger === 'addressSelect') {
-        fieldKeys.forEach((fieldKey: any) => {
-          setFormElementError({
-            formRef,
-            fieldKey,
-            message: '',
-            errorType: formSettings.errorType,
-            setInlineErrors,
-            triggerErrors: true
-          });
-        });
-      }
       if (typeof onChange === 'function') {
         callbackRef.current.addCallback(
           runUserCallback(onChange, () => ({
