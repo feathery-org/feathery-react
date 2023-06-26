@@ -454,6 +454,8 @@ export const getContainerStyles = (
   styles.apply('container', 'visibility', (visibility: any) => {
     const s: any = {};
 
+    // Apply visibility depending on if the node is from the editor or hosted forms.
+    // (node.uuid indicates that the node is from the editor)
     if (node.uuid) {
       s.opacity = visibility === 'hidden' ? '0.25' : '1';
     } else {
