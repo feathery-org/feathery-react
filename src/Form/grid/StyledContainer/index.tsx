@@ -62,6 +62,8 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           className={classNames('styled-container', type, className)}
           {...props}
         >
+          {/* An inner container is required to properly size px-height
+            elements as the outer container is dependent on content size. */}
           <div className='inner-container' css={innerStyles}>
             {children}
           </div>
@@ -76,6 +78,8 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
         className={classNames('styled-container', type, className)}
         {...props}
       >
+        {/* An inner container is required to properly size px-height
+            elements as the outer container is dependent on content size. */}
         <div className='inner-container' css={innerStyles}>
           {children}
         </div>
