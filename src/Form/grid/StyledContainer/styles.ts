@@ -395,7 +395,7 @@ export const getInnerContainerStyles = (
    */
   if (node.parent && !node.parent.parent && !node.isElement) {
     styles.apply(
-      'container',
+      'inner-container',
       ['parent_width', 'viewport', 'width', 'width_unit'],
       (parentWidth: any, viewport: any, width: any, widthUnit: any) => {
         const s: any = {};
@@ -409,7 +409,7 @@ export const getInnerContainerStyles = (
     );
 
     styles.apply(
-      'container',
+      'inner-container',
       ['parent_height', 'viewport', 'height', 'height_unit'],
       (parentHeight: any, viewport: any, height: any, heightUnit: any) => {
         const s: any = {};
