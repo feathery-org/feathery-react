@@ -306,43 +306,6 @@ export const getContainerStyles = (
   );
 
   /**
-   * Apply styles for when parent is the root without pixel dimensions
-   */
-  if (node.parent && !node.parent.parent && !node.isElement) {
-    styles.apply(
-      'container',
-      ['parent_width', 'viewport', 'width', 'width_unit'],
-      (parentWidth: any, viewport: any, width: any, widthUnit: any) => {
-        const s: any = {};
-
-        if (!isPx(parentWidth) && viewport !== 'mobile' && widthUnit === 'px') {
-          s.minWidth = `${width}${widthUnit}`;
-        }
-
-        return s;
-      }
-    );
-
-    styles.apply(
-      'container',
-      ['parent_height', 'viewport', 'height', 'height_unit'],
-      (parentHeight: any, viewport: any, height: any, heightUnit: any) => {
-        const s: any = {};
-
-        if (
-          !isPx(parentHeight) &&
-          viewport !== 'mobile' &&
-          heightUnit === 'px'
-        ) {
-          s.minHeight = `${height}${heightUnit}`;
-        }
-
-        return s;
-      }
-    );
-  }
-
-  /**
    * Apply empty root container styles
    */
   if (!node.parent && !hasChildren) {
@@ -426,6 +389,43 @@ export const getInnerContainerStyles = (
     ['inner-container'],
     true
   );
+
+  /**
+   * Apply styles for when parent is the root without pixel dimensions
+   */
+  if (node.parent && !node.parent.parent && !node.isElement) {
+    styles.apply(
+      'container',
+      ['parent_width', 'viewport', 'width', 'width_unit'],
+      (parentWidth: any, viewport: any, width: any, widthUnit: any) => {
+        const s: any = {};
+
+        if (!isPx(parentWidth) && viewport !== 'mobile' && widthUnit === 'px') {
+          s.minWidth = `${width}${widthUnit}`;
+        }
+
+        return s;
+      }
+    );
+
+    styles.apply(
+      'container',
+      ['parent_height', 'viewport', 'height', 'height_unit'],
+      (parentHeight: any, viewport: any, height: any, heightUnit: any) => {
+        const s: any = {};
+
+        if (
+          !isPx(parentHeight) &&
+          viewport !== 'mobile' &&
+          heightUnit === 'px'
+        ) {
+          s.minHeight = `${height}${heightUnit}`;
+        }
+
+        return s;
+      }
+    );
+  }
 
   /**
    * Apply height styles
