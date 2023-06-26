@@ -375,6 +375,25 @@ export const getContainerStyles = (
     };
   });
 
+  /**
+   * Apply styles for when parent is the root without pixel dimensions
+   */
+  if (!node.parent) {
+    styles.apply(
+      'container',
+      ['viewport', 'width_unit'],
+      (viewport: any, widthUnit: any) => {
+        const s: any = {};
+
+        if (!isPx(widthUnit) && viewport !== 'mobile') {
+          s.boxSizing = 'content-box';
+        }
+
+        return s;
+      }
+    );
+  }
+
   return styles.getTarget('container', undefined, viewport === 'mobile');
 };
 
