@@ -96,6 +96,7 @@ export function getDefaultFieldValue(field: any) {
     case 'signature':
     case 'file_upload':
       return null;
+    case 'dropdown_multi':
     case 'button_group':
     case 'multiselect':
       return [];
@@ -463,6 +464,7 @@ export function castVal(servarType: string | undefined, val: any) {
       break;
     case 'multiselect':
     case 'button_group':
+    case 'dropdown_multi':
       castVal = [val];
       break;
     default:
