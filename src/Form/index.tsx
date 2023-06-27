@@ -976,9 +976,8 @@ function Form({
           steps[stepKey].id
         );
       }
-      client
-        .registerEvent(eventData, submitPromise)
-        .then(() => updateBackNavMap({ [redirectKey]: activeStep.key }));
+      client.registerEvent(eventData, submitPromise);
+      updateBackNavMap({ [redirectKey]: activeStep.key });
       const newURL = getNewStepUrl(redirectKey);
       setShouldScrollToTop(explicitNav);
       if (explicitNav) history.push(newURL);
