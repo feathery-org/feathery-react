@@ -48,11 +48,18 @@ export const getStylePxValue = (style: any) => {
 };
 
 export const getImmediateDivs = (el: any) => {
-  const children = [];
+  if (!el) {
+    return [];
+  }
 
-  for (let i = 0; i < el.childNodes.length; i++) {
-    if (el.childNodes[i].nodeName === 'DIV') {
-      children.push(el.childNodes[i]);
+  const children = [];
+  const node = Array.from(el.classList).includes('styled-container')
+    ? el.childNodes[0]
+    : el;
+
+  for (let i = 0; i < node.childNodes.length; i++) {
+    if (node.childNodes[i].nodeName === 'DIV') {
+      children.push(node.childNodes[i]);
     }
   }
 
@@ -89,7 +96,7 @@ export const hasDescendantFitNodes = (ref: any) => {
 export const getParentFitContainers = (ref: any) => {
   const parents: any[] = [];
 
-  if (!ref || !ref.parentNode) {
+  if (!ref || !ref.parentNode.parentNode) {
     return null;
   }
 
@@ -100,16 +107,16 @@ export const getParentFitContainers = (ref: any) => {
       parents.push(div);
     }
 
-    if (div.parentNode) {
-      const parentClasses = Array.from(div.parentNode.classList);
+    if (div.parentNode?.parentNode) {
+      const parentClasses = Array.from(div.parentNode.parentNode.classList);
 
       if (parentClasses.includes('styled-container')) {
-        _getParentFitContainers(div.parentNode);
+        _getParentFitContainers(div.parentNode.parentNode);
       }
     }
   };
 
-  _getParentFitContainers(ref.parentNode);
+  _getParentFitContainers(ref.parentNode.parentNode);
 
   if (!parents.length) {
     return null;
@@ -153,11 +160,12 @@ export const resizeFitContainer = (div: any) => {
   div.style.width = '100%';
 
   const containerStyles = getComputedStyle(div);
+  const innerContainerStyles = getComputedStyle(div.childNodes[0]);
 
   let childrenWidth = 0;
 
   // If the container is a "Column" axis, we add up the widths (or maxWidths) of it's children
-  if (containerStyles.flexDirection === 'row') {
+  if (innerContainerStyles.flexDirection === 'row') {
     childrenWidth = children.reduce((total: number, child: any) => {
       const childStyles = getComputedStyle(child);
       const childMaxWidth = childStyles.maxWidth;
@@ -182,7 +190,7 @@ export const resizeFitContainer = (div: any) => {
     }, 0);
 
     childrenWidth +=
-      getStylePxValue(containerStyles.gap) * (children.length - 1);
+      getStylePxValue(innerContainerStyles.gap) * (children.length - 1);
   } else {
     // If the container is a "Row" axis, we find the greatest width immediate child
     childrenWidth = children.reduce((greatest: number, child: any) => {
