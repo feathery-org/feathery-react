@@ -6,6 +6,7 @@ import CheckboxGroupField from './CheckboxGroupField';
 import ColorPickerField from './ColorPickerField';
 import DateSelectorField from './DateSelectorField';
 import DropdownField from './DropdownField';
+import DropdownMultiField from './DropdownMultiField';
 import FileUploadField from './FileUploadField';
 import PhoneField from './PhoneField';
 import PinInputField from './PinInputField';
@@ -27,6 +28,7 @@ const Fields = {
   ColorPickerField,
   DateSelectorField,
   DropdownField,
+  DropdownMultiField,
   FileUploadField,
   PaymentMethodField,
   PhoneField,
@@ -233,6 +235,7 @@ function applyFieldStyles(field: any, styles: any) {
     case 'dropdown':
     case 'gmap_state':
     case 'gmap_country':
+    case 'dropdown_multi':
       styles.applyHeight('sub-fc');
       styles.applyCorners('sub-fc');
       styles.applyBoxShadow('sub-fc');
