@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/Tooltip';
@@ -44,12 +44,16 @@ function DateSelectorField({
 }: any) {
   const servarMeta = element.servar.metadata;
 
-  let internalVal: any = '';
-  if (value) {
-    internalVal = parseISO(value);
-    if (!servarMeta.choose_time) internalVal.setHours(0, 0, 0);
-  }
-  const [internalDate, setInternalDate] = useState(internalVal);
+  const [internalDate, setInternalDate] = useState('');
+
+  useEffect(() => {
+    let internalVal: any = '';
+    if (value) {
+      internalVal = parseISO(value);
+      if (!servarMeta.choose_time) internalVal.setHours(0, 0, 0);
+    }
+    setInternalDate(internalVal);
+  }, [value]);
 
   const filterPassedTime = (time: any) => {
     const hour = time.getHours();
