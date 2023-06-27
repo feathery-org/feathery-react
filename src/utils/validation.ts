@@ -184,6 +184,7 @@ function isFieldValueEmpty(value: any, servar: any) {
     case 'file_upload':
     case 'button_group':
     case 'multiselect':
+    case 'dropdown_multi':
       noVal = !value || value.length === 0;
       break;
     case 'payment_method':

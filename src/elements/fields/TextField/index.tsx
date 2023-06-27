@@ -64,15 +64,14 @@ function getMaskProps(servar: any, value: any) {
             signed: false,
             scale: 2,
             // Larger numbers get converted to scientific notation when sent to backend
-            max: Number.MAX_SAFE_INTEGER,
-            min: Number.MIN_SAFE_INTEGER
+            max: servar.max_length ?? Number.MAX_SAFE_INTEGER,
+            min: servar.min_length ?? Number.MIN_SAFE_INTEGER
           }
         },
         value: value.toString()
       };
       if (servar.format === 'currency') {
         maskProps.mask = '$num';
-        maskProps.blocks.num.scale = 2;
       }
       break;
     case 'ssn':
@@ -101,20 +100,26 @@ function getMaskProps(servar: any, value: any) {
 }
 
 function getInputProps(servar: any) {
+  const maxConstraints = {
+    maxLength: servar.max_length,
+    minLength: servar.min_length
+  };
+
   switch (servar.type) {
     case 'integer_field':
       return { type: 'tel' };
     case 'email':
       return {
         type: 'email',
-        pattern: emailPatternStr
+        pattern: emailPatternStr,
+        ...maxConstraints
       };
     case 'ssn':
-      return { type: 'tel' };
+      return { type: 'tel', ...maxConstraints };
     case 'url':
-      return { type: 'url' };
+      return { type: 'url', ...maxConstraints };
     default:
-      return {};
+      return maxConstraints;
   }
 }
 
@@ -143,7 +148,6 @@ function TextField({
   const servar = element.servar;
   const options = servar.metadata.options ?? [];
   const disabled = element.properties.disabled ?? false;
-  const inputProps = getInputProps(servar);
   return (
     <div
       css={{
@@ -200,8 +204,6 @@ function TextField({
                   ? {}
                   : { color: 'transparent !important' }
             }}
-            maxLength={servar.max_length}
-            minLength={servar.min_length}
             required={required}
             disabled={disabled}
             autoComplete={
@@ -225,7 +227,7 @@ function TextField({
               }
             }}
             inputRef={setRef}
-            {...inputProps}
+            {...getInputProps(servar)}
             {...getMaskProps(servar, rawValue)}
             onAccept={onAccept}
           />

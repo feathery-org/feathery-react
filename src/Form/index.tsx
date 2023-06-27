@@ -667,7 +667,6 @@ function Form({
     rerender = true
   ) => {
     const updateValues = {};
-    let clearGMaps = false;
     let repeatRowOperation;
 
     const servar = field.servar;
@@ -692,8 +691,7 @@ function Form({
     }
 
     if (servar.type === 'integer_field' && value !== '')
-      value = parseInt(value);
-    else if (servar.type === 'gmap_line_1' && !value) clearGMaps = true;
+      value = parseFloat(value);
     else if (servar.type === 'file_upload' && index !== null)
       // For file_upload in repeating rows
       // If empty array, insert null. Otherwise de-reference the single file in the array
@@ -710,27 +708,6 @@ function Form({
       index === null
         ? value
         : justInsert(fieldValues[servar.key] || [], value, index);
-
-    if (clearGMaps) {
-      activeStep.servar_fields.forEach((field: any) => {
-        const servar = field.servar;
-        if (
-          [
-            'gmap_line_2',
-            'gmap_city',
-            'gmap_state',
-            'gmap_country',
-            'gmap_zip'
-          ].includes(servar.type)
-        ) {
-          // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-          updateValues[servar.key] =
-            index === null
-              ? ''
-              : justInsert(fieldValues[servar.key], '', index);
-        }
-      });
-    }
 
     const change = updateFieldValues(updateValues, rerender);
     if (repeatRowOperation === 'add') addRepeatedRow();
@@ -999,9 +976,8 @@ function Form({
           steps[stepKey].id
         );
       }
-      client
-        .registerEvent(eventData, submitPromise)
-        .then(() => updateBackNavMap({ [redirectKey]: activeStep.key }));
+      client.registerEvent(eventData, submitPromise);
+      updateBackNavMap({ [redirectKey]: activeStep.key });
       const newURL = getNewStepUrl(redirectKey);
       setShouldScrollToTop(explicitNav);
       if (explicitNav) history.push(newURL);
@@ -1114,6 +1090,17 @@ function Form({
 
     if (Object.keys(inlineErrors).length > 0) setInlineErrors({});
 
+    // Do not proceed until user has gone through required flows
+    if (
+      !hasFlowActions(actions) &&
+      requiredStepAction &&
+      !flowCompleted.current
+    ) {
+      setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
+      elementClicks[id] = false;
+      return;
+    }
+
     const metadata = {
       elementType,
       elementIDs: [element.id],
@@ -1148,17 +1135,6 @@ function Form({
         elementClicks[id] = false;
         return;
       }
-    }
-
-    // Do not proceed until user has gone through required flows
-    if (
-      !hasFlowActions(actions) &&
-      requiredStepAction &&
-      !flowCompleted.current
-    ) {
-      setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
-      elementClicks[id] = false;
-      return;
     }
 
     const flowOnSuccess = (index: number) => async () => {
@@ -1338,18 +1314,6 @@ function Form({
       // Multi-file upload is not a repeated row but a repeated field
       valueRepeatIndex = null
     } = {}) => {
-      if (trigger === 'addressSelect') {
-        fieldKeys.forEach((fieldKey: any) => {
-          setFormElementError({
-            formRef,
-            fieldKey,
-            message: '',
-            errorType: formSettings.errorType,
-            setInlineErrors,
-            triggerErrors: true
-          });
-        });
-      }
       if (typeof onChange === 'function') {
         callbackRef.current.addCallback(
           runUserCallback(onChange, () => ({

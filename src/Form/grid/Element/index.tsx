@@ -355,6 +355,18 @@ const Element = ({ node: el, form, flags }: any) => {
             countryCode={countryCode}
           />
         );
+      case 'dropdown_multi':
+        return (
+          <Elements.DropdownMultiField
+            {...fieldProps}
+            fieldVal={fieldVal}
+            onChange={(val: any) => {
+              val = val.map((entry: any) => entry.value);
+              changeValue(val, el, index);
+              onChange();
+            }}
+          />
+        );
       case 'pin_input':
         return (
           <Elements.PinInputField
@@ -489,10 +501,17 @@ const Element = ({ node: el, form, flags }: any) => {
               activeStep.servar_fields.forEach((field: any) => {
                 const servar = field.servar;
                 if (servar.type in address) {
-                  addrValues[servar.key] = address[servar.type];
+                  const val = address[servar.type];
+                  addrValues[servar.key] =
+                    index === null
+                      ? val
+                      : justInsert(fieldValues[servar.key] || [], val, index);
                   keyIDMap[servar.key] = field.id;
                 } else if (mapFieldTypes.has(servar.type)) {
-                  addrValues[servar.key] = '';
+                  addrValues[servar.key] =
+                    index === null
+                      ? ''
+                      : justInsert(fieldValues[servar.key] || [], '', index);
                   keyIDMap[servar.key] = field.id;
                 }
               });
