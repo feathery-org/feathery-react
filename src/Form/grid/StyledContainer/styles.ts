@@ -370,9 +370,17 @@ export const getContainerStyles = (
 
   // Apply visibility
   styles.apply('container', 'visibility', (visibility: any) => {
-    return {
-      display: visibility === 'hidden' ? 'none' : 'flex'
-    };
+    const s: any = {};
+
+    // Apply visibility depending on if the node is from the editor or hosted forms.
+    // (node.uuid indicates that the node is from the editor)
+    if (node.uuid) {
+      s.opacity = visibility === 'hidden' ? '0.25' : '1';
+    } else {
+      s.display = visibility === 'hidden' ? 'none' : 'flex';
+    }
+
+    return s;
   });
 
   /**
