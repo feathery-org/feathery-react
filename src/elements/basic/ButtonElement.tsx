@@ -161,6 +161,7 @@ function ButtonElement({
       };
 
   const actions = element.properties.actions ?? [];
+  const noActions = actions.length === 0 && !element.properties.submit;
   return (
     <ReactButton
       id={element.id}
@@ -170,7 +171,7 @@ function ButtonElement({
       type='submit'
       style={{
         display: 'flex',
-        cursor: editMode || actions.length === 0 ? 'default' : 'pointer',
+        cursor: editMode || noActions ? 'default' : 'pointer',
         width: '100%',
         height: '100%',
         position: 'relative',
@@ -198,7 +199,7 @@ function ButtonElement({
         ...(active === null ? { '&:focus:enabled': activeStyles } : {}),
         '&&': styles.getTarget('button')
       }}
-      disabled={!editMode && (actions.length === 0 || loader || disabled)}
+      disabled={!editMode && (noActions || loader || disabled)}
       onClick={onClick}
       {...elementProps}
     >

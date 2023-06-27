@@ -1,3 +1,4 @@
+import { DEFAULT_MIN_SIZE } from '../Form/grid/StyledContainer/styles';
 import { isNum, objectFromEntries } from '../utils/primitives';
 import { isDirectionColumn } from '../utils/styles';
 import { CSSProperties } from 'react';
@@ -274,12 +275,22 @@ class ResponsiveStyles {
       target,
       [`${prefix}height`, `${prefix}height_unit`],
       (a: any, b: any) => {
-        const value = `${a}${b}`;
-        const style = { height: value };
-        if (force) {
-          (style as any).minHeight = value;
-          (style as any).maxHeight = value;
+        const style: any = {};
+
+        if (b === '%') {
+          style.minHeight = `${DEFAULT_MIN_SIZE}px`;
+          style.height = 'auto';
+        } else {
+          const value = `${a}${b}`;
+
+          style.height = value;
+
+          if (force) {
+            (style as any).minHeight = value;
+            (style as any).maxHeight = value;
+          }
         }
+
         return style;
       }
     );

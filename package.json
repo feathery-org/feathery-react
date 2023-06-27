@@ -1,6 +1,6 @@
 {
   "name": "@feathery/react",
-  "version": "1.1.143",
+  "version": "1.1.148",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
@@ -103,6 +103,7 @@
     "react-imask": "6.4.2",
     "react-load-script": "^0.0.6",
     "react-router-dom": "^5.2.0",
+    "react-select": "^5.7.3",
     "react-signature-canvas": "^1.0.6",
     "react-visibility-sensor": "^5.1.1",
     "sass": "^1.49.11",

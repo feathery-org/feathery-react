@@ -42,7 +42,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
   ) => {
     const { node, rawNode } = useFormattedNode(_node, raw);
     const type = useNodeType(node, rawNode, viewport);
-    const styles = useContainerStyles(
+    const { styles, innerStyles } = useContainerStyles(
       node,
       rawNode,
       css,
@@ -62,7 +62,11 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           className={classNames('styled-container', type, className)}
           {...props}
         >
-          {children}
+          {/* An inner container is required to properly size px-height
+            elements as the outer container is dependent on content size. */}
+          <div className='inner-container' css={innerStyles}>
+            {children}
+          </div>
         </Component>
       );
     }
@@ -74,7 +78,11 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
         className={classNames('styled-container', type, className)}
         {...props}
       >
-        {children}
+        {/* An inner container is required to properly size px-height
+            elements as the outer container is dependent on content size. */}
+        <div className='inner-container' css={innerStyles}>
+          {children}
+        </div>
       </div>
     );
   }

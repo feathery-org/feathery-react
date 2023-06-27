@@ -9,7 +9,12 @@ import {
   resizeFitContainer
 } from './utils';
 import { formatContainerStyles } from './transform';
-import { DEFAULT_MIN_SIZE, getCellStyle, getContainerStyles } from './styles';
+import {
+  DEFAULT_MIN_SIZE,
+  getCellStyle,
+  getContainerStyles,
+  getInnerContainerStyles
+} from './styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
 
 /**
@@ -47,15 +52,13 @@ export const useContainerStyles = (
   css?: any,
   viewport?: any
 ) => {
-  return useMemo(() => {
+  const styles = useMemo(() => {
     const [cellStyle = {}] = node.isElement
       ? [{}]
       : getCellStyle(rawNode ?? node, viewport);
 
     const _styles = {
       position: 'relative',
-      display: 'flex',
-      flexWrap: 'nowrap',
       minWidth: !node.isElement ? `${DEFAULT_MIN_SIZE}px` : 'min-content',
       minHeight: !node.isElement ? `${DEFAULT_MIN_SIZE}px` : 'min-content',
       boxSizing: 'border-box',
@@ -70,6 +73,26 @@ export const useContainerStyles = (
 
     return _styles;
   }, [node, rawNode, css, viewport]);
+
+  const innerStyles = useMemo(() => {
+    const _innerStyles: any = {
+      position: 'relative',
+      display: 'flex',
+      flexWrap: 'nowrap',
+      width: '100%',
+      height: '100%',
+      boxSizing: 'border-box',
+      ...getInnerContainerStyles(node, rawNode, viewport)
+    };
+
+    if (node.isElement) {
+      _innerStyles.flexDirection = 'column';
+    }
+
+    return _innerStyles;
+  }, [node, rawNode, css, viewport]);
+
+  return { styles, innerStyles };
 };
 
 /**
