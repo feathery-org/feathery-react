@@ -11,7 +11,7 @@ export default function DropdownMultiField({
   fieldLabel,
   inlineError,
   required = false,
-  fieldVal,
+  fieldVal = [],
   editMode,
   onChange = () => {},
   elementProps = {},
