@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { featheryDoc } from '../../utils/browser';
+import { featheryDoc, runningInClient } from '../../utils/browser';
 
 const keyframes = {
   '@keyframes feathery-spinner-rotate': {
@@ -25,11 +25,13 @@ const keyframesCSS = Object.entries(keyframes)
   })
   .join('');
 
-const styleElement = featheryDoc().createElement('style');
-styleElement.id = 'feathery-spinner-styles';
-styleElement.textContent = keyframesCSS;
-// inject keyframes into the DOM without using styled-components
-featheryDoc().head.appendChild(styleElement);
+if (runningInClient()) {
+  const styleElement = featheryDoc().createElement('style');
+  styleElement.id = 'feathery-spinner-styles';
+  styleElement.textContent = keyframesCSS;
+  // inject keyframes into the DOM without using styled-components
+  featheryDoc().head.appendChild(styleElement);
+}
 
 function FeatherySpinner() {
   const spinnerSize = 4;
