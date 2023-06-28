@@ -43,7 +43,7 @@ import {
   getVisiblePositions
 } from '../utils/hideAndRepeats';
 import { validators, validateElements } from '../utils/validation';
-import { initState, fieldValues, FieldValues } from '../utils/init';
+import { initState, fieldValues, FieldValues, initInfo } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
@@ -208,6 +208,9 @@ function Form({
   const [activeStep, setActiveStep] = useState<any>(null);
   const [stepKey, setStepKey] = useState('');
   const [shouldScrollToTop, setShouldScrollToTop] = useState(false);
+  const [hasPopupBeenShown, setHasPopupBeenShown] = useState(
+    popupOptions?.show
+  );
   const [finished, setFinished] = useState(false);
   const [userProgress, setUserProgress] = useState(null);
   const [curDepth, setCurDepth] = useState(0);
@@ -328,6 +331,39 @@ function Form({
       })
     );
   }, [activeStep?.id]);
+
+  useEffect(() => {
+    if (
+      !hasPopupBeenShown &&
+      popupOptions !== undefined &&
+      popupOptions.show === true
+    ) {
+      // We don't want to run the cleanup logic below until the popup has been shown
+      setHasPopupBeenShown(true);
+    } else if (
+      hasPopupBeenShown &&
+      popupOptions !== undefined &&
+      popupOptions.show === false &&
+      !initInfo().formSessions[formName].track_users
+    ) {
+      const wipedValues = { ...fieldValues };
+      // @ts-expect-error
+      Object.keys(wipedValues).forEach((key) => (wipedValues[key] = undefined));
+      updateFieldValues(wipedValues);
+      initState.userId = uuidv4();
+      history.replace(location.pathname + location.search);
+      const newKey = getInitialStep({
+        initialStepId,
+        steps,
+        sessionCurrentStep: session.current_step_key
+      });
+      // if I set this, then the hash shows while the form is closed. If I don't
+      // set this, the hash stays cleared until the form is both reopened &
+      // navigated to a new step to another step
+      // setUrlStepHash(history, steps, newKey);
+      setStepKey(newKey);
+    }
+  }, [popupOptions?.show]);
 
   // Figure out which fields are used in hide rules so that observed changes can be used
   // to trigger rerenders

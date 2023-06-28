@@ -115,7 +115,8 @@ function CountryDropdown(
   return (
     <ul
       css={{
-        zIndex: 1,
+        // This is needed to be on top of the overlay when the form is displayed as a popup/modal
+        zIndex: 10,
         listStyleType: 'none',
         padding: 0,
         margin: 0,

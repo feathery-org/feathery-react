@@ -6,12 +6,12 @@ import InlineTooltip from '../../components/Tooltip';
 import { bootstrapStyles } from '../../styles';
 import countryData from '../../components/data/countries';
 import exampleNumbers from './exampleNumbers';
-import { Overlay } from 'react-bootstrap';
 import { isNum } from '../../../utils/primitives';
 import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
 import { featheryDoc } from '../../../utils/browser';
+import ElevatedMenu from '../../../core/ElevatedMenu';
 
 const DEFAULT_COUNTRY = 'US';
 
@@ -37,6 +37,7 @@ function PhoneField({
   children
 }: any) {
   const triggerRef = useRef(null);
+  const elevatedMenuRef = useRef(null);
   const dropdownRef = useRef<any>(null);
   const inputRef = useRef<any>(null);
   const [cursor, setCursor] = useState<number | null>(null);
@@ -45,6 +46,7 @@ function PhoneField({
   const [cursorChange, setCursorChange] = useState(false);
 
   const [show, setShow] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   // The number parsed from the fullNumber prop, updated via triggerOnChange to rawNumber
   const [curFullNumber, setCurFullNumber] = useState('');
   const servar = element.servar;
@@ -197,42 +199,44 @@ function PhoneField({
             '&:hover': { backgroundColor: '#e6e6e633' }
           }}
           ref={triggerRef}
-          onClick={() => setShow(!show)}
+          onClick={(e: any) => {
+            // TODO: position should be set staticly based on the input, not on the click. but refs were all null?
+            setMenuPosition({
+              x: e.pageX,
+              y: e.pageY
+            });
+            setShow(!show);
+          }}
         >
           {countryMap[curCountryCode].flag}
         </div>
-        <Overlay
-          target={triggerRef.current}
+        <ElevatedMenu
           show={show}
-          onHide={() => setShow(false)}
-          placement='bottom-start'
-        >
-          {(props) => {
-            ['placement', 'arrowProps', 'show', 'popper'].forEach(
-              (prop) => delete props[prop]
-            );
-            return (
-              <CountryDropdown
-                hide={() => setShow(false)}
-                itemOnClick={(countryCode: string, phoneCode: string) => {
-                  setCurCountryCode(countryCode);
-                  setRawNumber(phoneCode);
-                  setCursor(phoneCode.length + 1);
-                  setShow(false);
-                  triggerChange();
-                  inputRef.current.focus();
-                }}
-                responsiveStyles={responsiveStyles}
-                {...props}
-                ref={(ref: any) => {
-                  dropdownRef.current = ref;
-                  props.ref(ref);
-                }}
-                show={show}
-              />
-            );
+          bestFit
+          key='country-dropdown'
+          ref={elevatedMenuRef}
+          position={menuPosition}
+          styles={{
+            userSelect: 'none'
           }}
-        </Overlay>
+        >
+          <CountryDropdown
+            hide={() => setShow(false)}
+            itemOnClick={(countryCode: string, phoneCode: string) => {
+              setCurCountryCode(countryCode);
+              setRawNumber(phoneCode);
+              setCursor(phoneCode.length + 1);
+              setShow(false);
+              triggerChange();
+              inputRef.current.focus();
+            }}
+            responsiveStyles={responsiveStyles}
+            ref={(ref: any) => {
+              dropdownRef.current = ref;
+            }}
+            show={show}
+          />
+        </ElevatedMenu>
         <div
           css={{
             position: 'relative',
