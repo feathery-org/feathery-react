@@ -36,14 +36,21 @@ import {
   setUrlStepHash,
   updateStepFieldOptions,
   mapFormSettingsResponse,
-  saveInitialValuesAndUrlParams
+  saveInitialValuesAndUrlParams,
+  remountAllForms
 } from '../utils/formHelperFunctions';
 import {
   getHideIfReferences,
   getVisiblePositions
 } from '../utils/hideAndRepeats';
 import { validators, validateElements } from '../utils/validation';
-import { initState, fieldValues, FieldValues } from '../utils/init';
+import {
+  initState,
+  fieldValues,
+  FieldValues,
+  initInfo,
+  resetInit
+} from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
@@ -208,6 +215,9 @@ function Form({
   const [activeStep, setActiveStep] = useState<any>(null);
   const [stepKey, setStepKey] = useState('');
   const [shouldScrollToTop, setShouldScrollToTop] = useState(false);
+  const [hasPopupBeenShown, setHasPopupBeenShown] = useState(
+    popupOptions?.show
+  );
   const [finished, setFinished] = useState(false);
   const [userProgress, setUserProgress] = useState(null);
   const [curDepth, setCurDepth] = useState(0);
@@ -328,6 +338,29 @@ function Form({
       })
     );
   }, [activeStep?.id]);
+
+  // Logic to run every time the popup is shown or hidden. Needed to reset &
+  // remount the form if tracking is off
+  useEffect(() => {
+    if (!hasPopupBeenShown && popupOptions?.show === true) {
+      // We don't want to run the cleanup logic below until the popup has been shown
+      setHasPopupBeenShown(true);
+    } else if (
+      hasPopupBeenShown &&
+      popupOptions?.show === false &&
+      initInfo().formSessions[formName]?.track_users === false
+    ) {
+      resetInit({
+        updateFieldValues,
+        setStepKey,
+        history,
+        initialStepId,
+        steps,
+        session
+      });
+      remountAllForms();
+    }
+  }, [popupOptions?.show]);
 
   // Figure out which fields are used in hide rules so that observed changes can be used
   // to trigger rerenders

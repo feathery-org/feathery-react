@@ -5,7 +5,11 @@ import Client, { updateRegionApiUrls } from './client';
 import * as errors from './error';
 import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient, setCookie, getCookie } from './browser';
-import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
+import {
+  getInitialStep,
+  remountAllForms,
+  rerenderAllForms
+} from './formHelperFunctions';
 
 export type FeatheryFieldTypes =
   | null
@@ -137,6 +141,46 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   return initFormsPromise.then(() => initState.userId ?? '');
 }
 
+// This function resets most of initState for the purpose of remounting forms
+// which have tracking turned off
+function resetInit({
+  updateFieldValues,
+  setStepKey,
+  history,
+  initialStepId,
+  steps,
+  session
+}: any) {
+  const wipedValues: Record<string, any> = { ...fieldValues };
+  Object.keys(wipedValues).forEach((key) => (wipedValues[key] = undefined));
+  updateFieldValues(wipedValues);
+
+  history.replace(location.pathname + location.search);
+  setStepKey(
+    getInitialStep({
+      initialStepId,
+      steps,
+      sessionCurrentStep: session.current_step_key
+    })
+  );
+
+  // We want to reset everything except:
+  // * initState.initialized (we want to keep it true so init continues to be a
+  //   noop)
+  // * initState.sdkKey
+  // * fieldValues (handled above)
+  initState.userId = uuidv4(); // we only call this function if tracking is turned off
+  initState.overrideUserId = false;
+  initState.preloadForms = [];
+  initState.formSessions = {};
+  initState.fieldValuesInitialized = false;
+  initState.redirectCallbacks = {};
+  initState.renderCallbacks = {};
+  initState.remountCallbacks = {};
+  initState.defaultErrors = {};
+  filePathMap = {};
+}
+
 // must be called after userId loads
 function _fetchFormData(formIds: string[]) {
   formIds.forEach((key) => {
@@ -198,6 +242,7 @@ function setValues(userVals: FieldValues, rerender = true): void {
 
 export {
   init,
+  resetInit,
   initInfo,
   updateUserId,
   setValues,
