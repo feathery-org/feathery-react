@@ -79,6 +79,8 @@ export default function DropdownField({
     });
   }
   const disabled = element.properties.disabled ?? false;
+  const hasTooltip = !!element.properties.tooltipText;
+  const chevronPosition = hasTooltip ? 30 : 10;
 
   responsiveStyles.applyFontStyles('field', !fieldVal);
   return (
@@ -130,7 +132,7 @@ export default function DropdownField({
             MozAppearance: 'none',
             backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='%23${element.styles.font_color}'/></svg>")`,
             backgroundRepeat: 'no-repeat',
-            backgroundPosition: 'right 10px center',
+            backgroundPosition: `right ${chevronPosition}px center`,
             position: 'relative'
           }}
           id={servar.key}
