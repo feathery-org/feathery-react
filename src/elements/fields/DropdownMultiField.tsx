@@ -91,6 +91,7 @@ export default function DropdownMultiField({
           options={options}
           isMulti
           menuPortalTarget={featheryDoc().body}
+          placeholder={element.properties.placeholder || ''}
         />
       </div>
     </div>
