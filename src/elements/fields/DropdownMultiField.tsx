@@ -71,7 +71,6 @@ export default function DropdownMultiField({
           styles={{
             control: (baseStyles) => ({
               ...baseStyles,
-              ...bootstrapStyles,
               ...responsiveStyles.getTarget('field'),
               width: '100%',
               height: '100%',
@@ -79,6 +78,15 @@ export default function DropdownMultiField({
               boxShadow: 'none',
               backgroundColor: 'transparent',
               position: 'relative'
+            }),
+            container: (baseStyles) => ({
+              ...baseStyles,
+              height: '100%'
+            }),
+            indicatorSeparator: () => ({ display: 'none' }),
+            indicatorsContainer: (baseStyles) => ({
+              ...baseStyles,
+              marginRight: '-2px'
             })
           }}
           id={servar.key}
