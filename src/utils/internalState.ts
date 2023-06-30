@@ -11,7 +11,7 @@ type InternalState = {
     formSettings: any;
     getErrorCallback: (
       props1?: Record<string, unknown>
-    ) => (props2?: Record<string, unknown>) => Promise<void>;
+    ) => (props2?: Record<string, unknown>) => Promise<boolean>;
     history: any;
     setInlineErrors: React.Dispatch<
       React.SetStateAction<Record<string, { message: string; index: number }>>

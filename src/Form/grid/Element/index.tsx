@@ -9,7 +9,7 @@ import { isObjectEmpty, stringifyWithNull } from '../../../utils/primitives';
 import { isFieldValueEmpty } from '../../../utils/validation';
 import { justInsert, justRemove } from '../../../utils/array';
 import { fieldValues } from '../../../utils/init';
-import { ACTION_NEXT, ACTION_STORE_FIELD } from '../../../utils/elementActions';
+import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 import {
   getInlineError,
   handleCheckboxGroupChange,
