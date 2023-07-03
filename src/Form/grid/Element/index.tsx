@@ -12,12 +12,15 @@ import { fieldValues } from '../../../utils/init';
 import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 import {
   getInlineError,
+  handleCheckboxGroupChange,
+  handleOtherStateChange,
   isFieldActuallyRequired,
+  pickCloserElement,
   textFieldShouldSubmit
 } from './utils';
 import { getVisibleElements } from '../../../utils/hideAndRepeats';
 
-const mapFieldTypes = new Set([
+const MAP_FIELD_TYPES = new Set([
   'gmap_line_1',
   'gmap_line_2',
   'gmap_city',
@@ -25,56 +28,6 @@ const mapFieldTypes = new Set([
   'gmap_country',
   'gmap_zip'
 ]);
-
-const handleOtherStateChange = (
-  oldOtherVal: any,
-  e: any,
-  updateFieldValues: any
-) => {
-  const target = e.target;
-  const curOtherVal = target.value;
-  let curFieldVal = fieldValues[target.id];
-  if (Array.isArray(curFieldVal)) {
-    // @ts-expect-error TS(2349): This expression is not callable.
-    curFieldVal = curFieldVal.filter(
-      (val: any) => val !== oldOtherVal || (!val && !oldOtherVal)
-    );
-    if (curOtherVal) {
-      (curFieldVal as any).push(curOtherVal);
-    }
-  } else {
-    if (curFieldVal === oldOtherVal) curFieldVal = curOtherVal;
-  }
-  updateFieldValues({ [target.id]: curFieldVal });
-};
-
-const handleCheckboxGroupChange = (
-  e: any,
-  servarKey: any,
-  step: any,
-  updateFieldValues: any
-) => {
-  const target = e.target;
-  const opt = target.name;
-  step.servar_fields.forEach((field: any) => {
-    const servar = field.servar;
-    if (servar.key !== servarKey) return;
-
-    const fieldValue = getFieldValue(field);
-    const { value } = fieldValue;
-    const newValue = target.checked
-      ? [...value, opt]
-      : value.filter((v: any) => v !== opt);
-    if (fieldValue.repeated) {
-      const { valueList, index } = fieldValue;
-      updateFieldValues({
-        [servar.key]: justInsert(valueList, newValue, index)
-      });
-    } else {
-      updateFieldValues({ [servar.key]: newValue });
-    }
-  });
-};
 
 const Element = ({ node: el, form, flags }: any) => {
   const { type } = el;
@@ -495,28 +448,30 @@ const Element = ({ node: el, form, flags }: any) => {
               if (change) onChange();
             }}
             onSelect={(address: any) => {
-              const keyIDMap: Record<string, string> = {};
-              const addrValues: Record<string, any> = {};
-
+              const addrFields: Record<string, any> = {};
               activeStep.servar_fields.forEach((field: any) => {
                 const servar = field.servar;
-                if (servar.type in address) {
-                  const val = address[servar.type];
+                if (MAP_FIELD_TYPES.has(servar.type))
+                  addrFields[servar.type] = pickCloserElement(
+                    el,
+                    addrFields[servar.type],
+                    field
+                  );
+              });
+
+              if (!isObjectEmpty(addrFields)) {
+                const keyIDMap: Record<string, string> = {};
+                const addrValues: Record<string, any> = {};
+                Object.entries(addrFields).forEach(([, field]) => {
+                  const servar = field.servar;
+                  const val = address[servar.type] ?? '';
                   addrValues[servar.key] =
                     index === null
                       ? val
                       : justInsert(fieldValues[servar.key] || [], val, index);
                   keyIDMap[servar.key] = field.id;
-                } else if (mapFieldTypes.has(servar.type)) {
-                  addrValues[servar.key] =
-                    index === null
-                      ? ''
-                      : justInsert(fieldValues[servar.key] || [], '', index);
-                  keyIDMap[servar.key] = field.id;
-                }
-              });
+                });
 
-              if (!isObjectEmpty(addrValues)) {
                 updateFieldValues(addrValues);
                 fieldOnChange({
                   fieldIDs: Object.values(keyIDMap),
