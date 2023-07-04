@@ -559,6 +559,7 @@ export function mapFormSettingsResponse(res: any) {
     brandPosition: res.brand_position,
     autoscroll: res.autoscroll,
     rightToLeft: res.right_to_left,
-    saveUrlParams: res.save_url_params
+    saveUrlParams: res.save_url_params,
+    enterToSubmit: res.enter_submit
   };
 }
