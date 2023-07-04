@@ -242,7 +242,7 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       styles.applyCorners('field');
       if (field.properties.placeholder)
-        styles.applyPlaceholderStyles(type, field.styles, true);
+        styles.applyPlaceholderStyles(type, field.styles);
       break;
     case 'pin_input':
       styles.applyWidth('sub-fc');

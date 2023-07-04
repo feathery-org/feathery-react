@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import useBorder from '../components/useBorder';
 import Select from 'react-select';
 import { featheryDoc } from '../../utils/browser';
+import InlineTooltip from '../components/Tooltip';
 
 export default function DropdownMultiField({
   element,
@@ -29,7 +30,10 @@ export default function DropdownMultiField({
     const label = labels && labels[index] ? labels[index] : option;
     return { value: option, label };
   });
+
   const disabled = element.properties.disabled ?? false;
+  const hasTooltip = !!element.properties.tooltipText;
+  const chevronPosition = hasTooltip ? 30 : 10;
 
   responsiveStyles.applyFontStyles('field');
   return (
@@ -77,6 +81,9 @@ export default function DropdownMultiField({
               border: 'none',
               boxShadow: 'none',
               backgroundColor: 'transparent',
+              backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='%23${element.styles.font_color}'/></svg>")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: `right ${chevronPosition}px center`,
               position: 'relative'
             }),
             container: (baseStyles) => ({
@@ -84,10 +91,7 @@ export default function DropdownMultiField({
               height: '100%'
             }),
             indicatorSeparator: () => ({ display: 'none' }),
-            indicatorsContainer: (baseStyles) => ({
-              ...baseStyles,
-              marginRight: '-2px'
-            })
+            indicatorsContainer: () => ({ display: 'none' })
           }}
           id={servar.key}
           value={fieldVal.map((val: any) => ({ label: val, value: val }))}
@@ -99,8 +103,25 @@ export default function DropdownMultiField({
           options={options}
           isMulti
           menuPortalTarget={featheryDoc().body}
-          placeholder={element.properties.placeholder || ''}
+          placeholder=''
         />
+        <span
+          css={{
+            position: 'absolute',
+            pointerEvents: 'none',
+            left: '0.75rem',
+            transition: '0.2s ease all',
+            top: '50%',
+            ...responsiveStyles.getTarget('placeholder'),
+            ...(fieldVal.length > 0 || focused
+              ? responsiveStyles.getTarget('placeholderFocus')
+              : {}),
+            ...(focused ? responsiveStyles.getTarget('placeholderActive') : {})
+          }}
+        >
+          {element.properties.placeholder || ''}
+        </span>
+        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
       </div>
     </div>
   );
