@@ -181,6 +181,8 @@ const Element = ({ node: el, form, flags }: any) => {
     const onEnter = (e: any) => {
       e.preventDefault();
       e.stopPropagation();
+      if (!formSettings.enterToSubmit) return;
+
       // Submit steps by pressing `Enter`
       const enterButton = activeStep.buttons.find(
         (b: any) => b.properties.submit
