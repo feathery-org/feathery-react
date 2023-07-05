@@ -119,6 +119,7 @@ import {
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
+import { verifyRecaptcha } from '../integrations/recaptcha';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -1045,6 +1046,10 @@ function Form({
   };
 
   const buttonOnClick = async (button: ClickActionElement) => {
+    await setButtonLoader(button);
+
+    if (button.properties.captcha_verification) await verifyRecaptcha(client);
+
     const setButtonError = (message: string) =>
       setFormElementError({
         formRef,
@@ -1054,8 +1059,6 @@ function Form({
         setInlineErrors,
         triggerErrors: true
       });
-
-    await setButtonLoader(button);
     await runElementActions({
       actions: button.properties.actions ?? [],
       element: button,
@@ -1063,6 +1066,7 @@ function Form({
       submit: button.properties.submit,
       setElementError: setButtonError
     });
+
     clearLoaders();
   };
 
