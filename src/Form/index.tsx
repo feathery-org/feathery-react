@@ -1048,8 +1048,6 @@ function Form({
   const buttonOnClick = async (button: ClickActionElement) => {
     await setButtonLoader(button);
 
-    if (button.properties.captcha_verification) await verifyRecaptcha(client);
-
     const setButtonError = (message: string) =>
       setFormElementError({
         formRef,
@@ -1059,6 +1057,15 @@ function Form({
         setInlineErrors,
         triggerErrors: true
       });
+    if (button.properties.captcha_verification) {
+      const invalid = await verifyRecaptcha(client);
+      if (invalid) {
+        setButtonError('Submission failed');
+        clearLoaders();
+        return;
+      }
+    }
+
     await runElementActions({
       actions: button.properties.actions ?? [],
       element: button,
