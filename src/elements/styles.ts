@@ -422,7 +422,7 @@ class ResponsiveStyles {
     return styles;
   }
 
-  applyPlaceholderStyles(type: any, styles: any, isDropdown = false) {
+  applyPlaceholderStyles(type: any, styles: any) {
     this.addTargets('placeholder', 'placeholderActive', 'placeholderFocus');
     this.applyFontStyles('placeholder', true);
     this.apply('placeholder', 'font_size', (a: any) => ({
@@ -433,7 +433,7 @@ class ResponsiveStyles {
         marginTop: `-${a / 2}px`
       }));
     }
-    if (styles.placeholder_transition === 'shrink_top' && !isDropdown) {
+    if (styles.placeholder_transition === 'shrink_top') {
       this.apply('placeholderFocus', 'font_size', (a: any) => {
         const minFontSize = Math.min(a, 10);
         return {
