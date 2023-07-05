@@ -549,6 +549,18 @@ export default class Client {
     );
   }
 
+  verifyRecaptchaToken(token: string) {
+    const url = `${API_URL}google/recaptcha/verify/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({ token })
+    };
+    return this._fetch(url, options).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
+  }
+
   // Stripe
   async setupPaymentIntent(paymentMethodFieldId: any) {
     await initFormsPromise;

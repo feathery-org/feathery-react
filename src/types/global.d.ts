@@ -16,6 +16,7 @@ declare global {
     firebasePhoneNumber: any;
     analytics: Array;
     heap: any;
+    grecaptcha: any;
   }
 }
 
