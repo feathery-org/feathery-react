@@ -116,17 +116,22 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
     global.scriptjsLoadPromise = import('scriptjs');
     global.webfontloaderPromise = import('webfontloader');
 
-    // FingerprintJS.load cannot run server side
-    if (!initState.userId) {
-      if (initState.userTracking === 'fingerprint') {
+    // Client-side tracking logic
+    if (initState.userTracking === 'cookie') {
+      const cookieKey = `feathery-user-id-${sdkKey}`;
+      const cookieId = getCookie(cookieKey) || uuidv4();
+      if (!initState.userId) {
+        initState.userId = cookieId;
+        setCookie(cookieKey, cookieId);
+      } else if (initState.userId !== cookieId) {
+        // If user ID is manually specified, override and save cookie
+        setCookie(cookieKey, initState.userId);
+      }
+    } else if (initState.userTracking === 'fingerprint') {
+      if (!initState.userId) {
         initFormsPromise = FingerprintJS.load()
           .then((fp: any) => fp.get())
           .then((result: any) => (initState.userId = result.visitorId));
-      } else if (initState.userTracking === 'cookie') {
-        const cookieKey = `feathery-user-id-${sdkKey}`;
-        const cookieId = getCookie(cookieKey);
-        initState.userId = cookieId || uuidv4();
-        setCookie(`feathery-user-id-${sdkKey}`, initState.userId as string);
       }
     }
   }
