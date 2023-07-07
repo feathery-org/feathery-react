@@ -31,7 +31,7 @@ export const getCellStyle = (cell: any, viewport?: 'desktop' | 'mobile') => {
 export const getContainerStyles = (
   node: any,
   rawNode?: any,
-  viewport?: 'desktop' | 'mobile'
+  viewport?: 'desktop' | 'mobile' // Passed only by the editor, not hosted forms
 ): ResponsiveStyles => {
   const hasChildren = node.children && node.children.length > 0;
   const styles = new ResponsiveStyles(rawNode ?? node, ['container'], true);
@@ -409,7 +409,7 @@ export const getContainerStyles = (
 export const getInnerContainerStyles = (
   node: any,
   rawNode?: any,
-  viewport?: 'desktop' | 'mobile'
+  viewport?: 'desktop' | 'mobile' // Passed only by the editor, not hosted forms
 ): ResponsiveStyles => {
   const hasChildren = node.children && node.children.length > 0;
   const styles = new ResponsiveStyles(
