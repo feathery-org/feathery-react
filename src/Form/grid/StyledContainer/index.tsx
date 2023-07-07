@@ -44,6 +44,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
     const { node, rawNode } = useFormattedNode(_node, raw);
     const type = useNodeType(node, rawNode, viewport);
 
+    // TODO: Key should be changed to persistent ID post-persistent ID refactor
     const key = useMemo(() => {
       if (_key) return _key;
       else {
