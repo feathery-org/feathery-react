@@ -54,7 +54,7 @@ function PhoneField({
       if (!timezone) return DEFAULT_COUNTRY;
 
       const countryCode = timeZoneCountries[timezone].c[0];
-      return countryCode || DEFAULT_COUNTRY;
+      return countryCode in countryMap ? countryCode : DEFAULT_COUNTRY;
     } else {
       return servar.metadata.default_country || DEFAULT_COUNTRY;
     }
@@ -63,6 +63,7 @@ function PhoneField({
 
   useEffect(() => setCurCountryCode(defaultCountry), [defaultCountry]);
 
+  console.log(curCountryCode);
   const phoneCode = countryMap[curCountryCode].phoneCode;
   // The raw number entered by the user, including phone code
   const [rawNumber, setRawNumber] = useState('');
