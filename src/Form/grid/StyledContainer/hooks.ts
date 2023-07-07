@@ -199,6 +199,16 @@ export const useContainerEngine = (node: any, rawNode: any, ref: any) => {
     }
 
     return () => {
+      if (ref.current) {
+        /**
+         * If the ref still exists, we need to unset any changes that were made to the width
+         * and maxWidth as these changes could live between changing steps and cause the layout
+         * to look incorrect.
+         */
+        ref.current.style.width = null;
+        ref.current.style.maxWidth = null;
+      }
+
       if (observer) {
         observer.disconnect();
         observer = null; // For garbage collection

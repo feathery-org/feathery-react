@@ -1,4 +1,4 @@
-import React, { PropsWithChildren, forwardRef } from 'react';
+import React, { PropsWithChildren, forwardRef, useMemo } from 'react';
 import {
   useContainerEngine,
   useContainerStyles,
@@ -28,6 +28,7 @@ export type StyledContainerProps = PropsWithChildren & {
 export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
   (
     {
+      key: _key,
       node: _node,
       raw,
       css = {},
@@ -42,6 +43,20 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
   ) => {
     const { node, rawNode } = useFormattedNode(_node, raw);
     const type = useNodeType(node, rawNode, viewport);
+
+    // TODO: Key should be changed to persistent ID post-persistent ID refactor
+    const key = useMemo(() => {
+      if (_key) return _key;
+      else {
+        const nonCircularNode = { ...(rawNode || node || {}) };
+
+        delete nonCircularNode.parent;
+        delete nonCircularNode.children;
+
+        return JSON.stringify(nonCircularNode);
+      }
+    }, [_key, rawNode]);
+
     const { styles, innerStyles } = useContainerStyles(
       node,
       rawNode,
@@ -56,6 +71,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
 
       return (
         <Component
+          key={key}
           ref={ref}
           node={_node}
           css={styles}
@@ -73,6 +89,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
 
     return (
       <div
+        key={key}
         ref={ref}
         css={styles}
         className={classNames('styled-container', type, className)}
