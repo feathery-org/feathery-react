@@ -390,10 +390,11 @@ export const getContainerStyles = (
     styles.apply(
       'container',
       ['viewport', 'width_unit'],
-      (viewport: any, widthUnit: any) => {
+      (_viewport: any, widthUnit: any) => {
+        const vp = viewport || _viewport;
         const s: any = {};
 
-        if (!isPx(widthUnit) && viewport !== 'mobile') {
+        if (!isPx(widthUnit) && vp !== 'mobile') {
           s.boxSizing = 'content-box';
         }
 
@@ -424,10 +425,11 @@ export const getInnerContainerStyles = (
     styles.apply(
       'inner-container',
       ['parent_width', 'viewport', 'width', 'width_unit'],
-      (parentWidth: any, viewport: any, width: any, widthUnit: any) => {
+      (parentWidth: any, _viewport: any, width: any, widthUnit: any) => {
+        const vp = viewport || _viewport;
         const s: any = {};
 
-        if (!isPx(parentWidth) && viewport !== 'mobile' && widthUnit === 'px') {
+        if (!isPx(parentWidth) && vp !== 'mobile' && widthUnit === 'px') {
           s.minWidth = `${width}${widthUnit}`;
         }
 
@@ -438,14 +440,11 @@ export const getInnerContainerStyles = (
     styles.apply(
       'inner-container',
       ['parent_height', 'viewport', 'height', 'height_unit'],
-      (parentHeight: any, viewport: any, height: any, heightUnit: any) => {
+      (parentHeight: any, _viewport: any, height: any, heightUnit: any) => {
+        const vp = viewport || _viewport;
         const s: any = {};
 
-        if (
-          !isPx(parentHeight) &&
-          viewport !== 'mobile' &&
-          heightUnit === 'px'
-        ) {
+        if (!isPx(parentHeight) && vp !== 'mobile' && heightUnit === 'px') {
           s.minHeight = `${height}${heightUnit}`;
         }
 
