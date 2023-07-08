@@ -60,10 +60,17 @@ export default class Client {
   version?: string;
   ignoreNetworkErrors: any; // this should be a ref
   draft: boolean;
-  constructor(formKey = '', ignoreNetworkErrors?: any, draft = false) {
+  bypassCDN: boolean;
+  constructor(
+    formKey = '',
+    ignoreNetworkErrors?: any,
+    draft = false,
+    bypassCDN = false
+  ) {
     this.formKey = formKey;
     this.ignoreNetworkErrors = ignoreNetworkErrors;
     this.draft = draft;
+    this.bypassCDN = bypassCDN;
   }
 
   async _checkResponseSuccess(response: any) {
@@ -285,7 +292,8 @@ export default class Client {
       form_key: this.formKey,
       draft: this.draft
     });
-    const url = `${CDN_URL}panel/v18/?${params}`;
+    const baseURL = this.bypassCDN ? API_URL : CDN_URL;
+    const url = `${baseURL}panel/v18/?${params}`;
     const options: Record<string, any> = {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
