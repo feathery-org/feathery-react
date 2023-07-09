@@ -44,6 +44,7 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
         axis={node.axis}
         form={form}
         flags={flags}
+        viewport={viewport}
       />
     ));
 

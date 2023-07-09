@@ -119,7 +119,7 @@ export const getContainerStyles = (
       }
 
       if (isFit(width) || isFit(widthUnit)) {
-        s.minWidth = 'fit-content';
+        s.minWidth = 'min-content';
         s.maxWidth = 'fit-content';
 
         if (!hasChildren) {
