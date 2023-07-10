@@ -155,6 +155,7 @@ export interface Props {
 interface InternalProps {
   _internalId: string; // Used to uniquely identify forms when the same form is rendered multiple times
   _isAuthLoading?: boolean; // Flag to show the loader for auth purposes
+  _bypassCDN?: boolean; // Fetch form directly from API if true
 }
 
 interface ClickActionElement {
@@ -172,6 +173,7 @@ const getViewport = () => {
 function Form({
   _internalId,
   _isAuthLoading = false,
+  _bypassCDN = false,
   formName,
   onChange = null,
   onLoad = null,
@@ -581,7 +583,12 @@ function Form({
 
   useEffect(() => {
     if (client === null) {
-      const clientInstance = new Client(formName, hasRedirected, _draft);
+      const clientInstance = new Client(
+        formName,
+        hasRedirected,
+        _draft,
+        _bypassCDN
+      );
       setClient(clientInstance);
       setFirst(true);
       let saveUrlParamsFormSetting = false;
