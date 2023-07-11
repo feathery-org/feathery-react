@@ -7,7 +7,8 @@ function useTextEdit({
   onTextSelect = null,
   onTextKeyDown = null,
   onTextBlur = null,
-  onEditModeChange = null
+  onEditModeChange = null,
+  onLabelChange = null
 }: any) {
   const spanRef = useRef();
   const [editMode, setEditMode] = useState('hover');
@@ -68,6 +69,7 @@ function useTextEdit({
         onBlur: (e: any) => {
           updateEditMode('hover');
           onTextBlur && onTextBlur(e);
+          onLabelChange && onLabelChange(e.target.innerText);
         }
       };
 
@@ -89,7 +91,8 @@ function useTextEdit({
     spanRef,
     onTextBlur,
     onTextSelect,
-    onTextKeyDown
+    onTextKeyDown,
+    onLabelChange
   ]);
 
   return { spanRef, editableProps };

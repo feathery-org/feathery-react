@@ -3,6 +3,7 @@ import TextNodes from '../components/TextNodes';
 import { isNum } from '../../utils/primitives';
 import useBorder from '../components/useBorder';
 
+// remove this?
 // TODO(peter): deprecate once customers have upgraded and backend migrated
 function legacyAlignment(alignment: any) {
   if (!alignment) {
