@@ -172,6 +172,10 @@ export const resizeFitContainer = (div: any) => {
       const childWidth = childStyles.width;
       let newTotal = total;
 
+      if (childStyles.display === 'none') {
+        return total; // Hidden elements should not be included in the calculation
+      }
+
       if (isPx(childMaxWidth)) {
         newTotal += getPxValue(childMaxWidth);
       } else if (isPx(childWidth)) {
@@ -201,6 +205,10 @@ export const resizeFitContainer = (div: any) => {
       const childStyles = getComputedStyle(child);
       const childMaxWidth = childStyles.maxWidth;
       const childWidth = childStyles.width;
+
+      if (childStyles.display === 'none') {
+        return greatest; // Hidden elements should not be included in the calculation
+      }
 
       if (isPx(childMaxWidth)) {
         const val = getPxValue(childMaxWidth);
