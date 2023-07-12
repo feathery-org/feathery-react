@@ -13,6 +13,8 @@ type OPERATOR_CODE =
   | 'is_false'
   | 'contains'
   | 'not_contains'
+  | 'contains_ignore_case'
+  | 'not_contains_ignore_case'
   | 'starts_with'
   | 'not_starts_with'
   | 'ends_with'
@@ -250,6 +252,22 @@ const COMPARISON_FUNCTIONS: {
     l.some((l: any) => someRight((l, r) => String(l).includes(r), l, r)),
   not_contains: (l, r) =>
     l.some((l: any) => someRight((l, r) => !String(l).includes(r), l, r)),
+  contains_ignore_case: (l, r) =>
+    l.some((l: any) =>
+      someRight(
+        (l, r) => String(l.toLowerCase()).includes(r.toLowerCase()),
+        l,
+        r
+      )
+    ),
+  not_contains_ignore_case: (l, r) =>
+    l.some((l: any) =>
+      someRight(
+        (l, r) => !String(l.toLowerCase()).includes(r.toLowerCase()),
+        l,
+        r
+      )
+    ),
   starts_with: (l, r) =>
     l.some((l: any) => someRight((l, r) => String(l).startsWith(r), l, r)),
   not_starts_with: (l, r) =>
