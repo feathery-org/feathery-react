@@ -507,6 +507,22 @@ describe('logic', () => {
         setFieldValues([]);
         expect(evalComparisonRule(rule(op, 'test'))).toBeTruthy();
       });
+      it('contains_ignore_case', () => {
+        const op = 'contains_ignore_case';
+
+        setFieldValues('test');
+        expect(evalComparisonRule(rule(op, 'Test'))).toBeTruthy();
+      });
+      it('not_contains_ignore_case', () => {
+        const op = 'not_contains_ignore_case';
+
+        setFieldValues('test');
+        expect(evalComparisonRule(rule(op, 'Test'))).toBeFalsy();
+
+        setFieldValues('test');
+        expect(evalComparisonRule(rule(op, 'non-matching'))).toBeTruthy();
+      });
+
       it('starts_with', () => {
         const op = 'starts_with';
 
