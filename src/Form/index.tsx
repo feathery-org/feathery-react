@@ -1367,13 +1367,14 @@ function Form({
             submit: true
           });
         }
-      } else
+      } else {
         goToNewStep({
           metadata: {
             elementType: 'field',
             elementIDs: fieldIDs
           }
         });
+      }
     };
 
   const elementOnView =

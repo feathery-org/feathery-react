@@ -252,22 +252,21 @@ const Element = ({ node: el, form, flags }: any) => {
                 metadata: { multiple },
                 required
               } = el.servar;
+              let selected = !!option;
               if (multiple) {
                 const existingIndex = fieldVal.indexOf(option);
                 if (existingIndex === -1) {
                   changeValue([...fieldVal, option], el, index);
                 } else {
                   changeValue(justRemove(fieldVal, existingIndex), el, index);
+                  selected = false;
                 }
               } else {
-                changeValue(
-                  // Allow de-selection if field is optional
-                  !required && fieldVal[0] === option ? [] : [option],
-                  el,
-                  index
-                );
+                // Allow de-selection if field is optional
+                selected = required || fieldVal[0] !== option;
+                changeValue(selected ? [option] : [], el, index);
               }
-              onChange({ submitData: !multiple && autosubmit && option });
+              onChange({ submitData: !multiple && autosubmit && selected });
             }}
           />
         );
