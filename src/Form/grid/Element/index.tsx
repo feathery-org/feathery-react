@@ -429,7 +429,9 @@ const Element = ({ node: el, form, flags }: any) => {
           <Elements.PhoneField
             {...fieldProps}
             fullNumber={stringifyWithNull(fieldVal)}
-            onChange={(val: string) => {
+            // Set values as they change since hide if dependencies need to update
+            onChange={(val: string) => changeValue(val, el, index, false)}
+            onComplete={(val: string) => {
               const change = changeValue(val, el, index);
               if (change) onChange();
             }}

@@ -32,6 +32,7 @@ function PhoneField({
   required = false,
   editMode,
   onChange = () => {},
+  onComplete = () => {},
   setRef = () => {},
   inlineError,
   children
@@ -145,7 +146,7 @@ function PhoneField({
 
     if ((fullNumber || rawNumber) && rawNumber !== fullNumber) {
       setCurFullNumber(rawNumber);
-      onChange(rawNumber);
+      onComplete(rawNumber);
     }
   }, [triggerOnChange]);
 
@@ -327,6 +328,7 @@ function PhoneField({
                   )
                     start++;
                 }
+                onChange(onlyDigits);
               } else {
                 setRawNumber(phoneCode);
                 start = phoneCode.length + 1;
