@@ -483,7 +483,7 @@ const Element = ({ node: el, form, flags }: any) => {
                   trigger: 'addressSelect',
                   integrationData: {
                     id: addressId,
-                    ...address.address_components
+                    ...address
                   }
                 });
               }
