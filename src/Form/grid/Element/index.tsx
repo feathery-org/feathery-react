@@ -450,7 +450,7 @@ const Element = ({ node: el, form, flags }: any) => {
               const change = changeValue(val, el, index);
               if (change) onChange();
             }}
-            onSelect={(address: any) => {
+            onSelect={(address: any, addressId: string) => {
               const addrFields: Record<string, any> = {};
               activeStep.servar_fields.forEach((field: any) => {
                 const servar = field.servar;
@@ -481,7 +481,10 @@ const Element = ({ node: el, form, flags }: any) => {
                   fieldKeys: Object.keys(keyIDMap)
                 })({
                   trigger: 'addressSelect',
-                  integrationData: address.address_components
+                  integrationData: {
+                    id: addressId,
+                    ...address.address_components
+                  }
                 });
               }
             }}

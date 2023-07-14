@@ -103,7 +103,7 @@ function AddressLine1({
                       (opt) => (opt as any).display === display
                     ).address_id;
                     const details = await new Client().addressDetail(addressId);
-                    onSelect(details);
+                    onSelect(details, addressId);
                   }}
                 >
                   {display}
