@@ -243,8 +243,6 @@ function Form({
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
 
-  const [visiblePositions, setVisiblePositions] = useState<any>(null);
-
   useFirebaseRecaptcha(activeStep);
   const getNextAuthStep = useFormAuth({
     initialStep: getInitialStep({ initialStepId, steps }),
@@ -500,12 +498,10 @@ function Form({
       integrations?.stripe
     );
 
-    const newVisiblePositions = getVisiblePositions(newStep);
-
     internalState[_internalId] = {
       currentStep: newStep,
       previousStepName: activeStep?.key ?? '',
-      visiblePositions: newVisiblePositions,
+      visiblePositions: getVisiblePositions(newStep),
       client,
       formName,
       formRef,
@@ -560,9 +556,13 @@ function Form({
     // because it triggers a new render, before this fn finishes execution,
     // which can cause onView to fire before the callbackRef is set
     setActiveStep(newStep);
-    setVisiblePositions(newVisiblePositions);
     client.registerEvent({ step_key: newStep.key, event: 'load' });
   };
+
+  const visiblePositions = useMemo(
+    () => (activeStep ? getVisiblePositions(activeStep) : null),
+    [activeStep?.id]
+  );
 
   useEffect(() => {
     if (client === null) {
