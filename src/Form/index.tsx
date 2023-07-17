@@ -561,7 +561,7 @@ function Form({
 
   const visiblePositions = useMemo(
     () => (activeStep ? getVisiblePositions(activeStep) : null),
-    [activeStep?.id]
+    [activeStep, render]
   );
 
   useEffect(() => {
