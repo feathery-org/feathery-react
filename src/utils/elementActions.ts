@@ -1,11 +1,9 @@
 export const ACTION_ADD_REPEATED_ROW = 'add_repeated_row';
 export const ACTION_BACK = 'back';
-export const ACTION_COLLECT_PAYMENT = 'collect_payment';
 export const ACTION_PURCHASE_PRODUCTS = 'purchase_products';
 export const ACTION_SELECT_PRODUCT_TO_PURCHASE = 'select_product_to_purchase';
 export const ACTION_REMOVE_PRODUCT_FROM_PURCHASE =
   'remove_product_from_purchase';
-export const ACTION_CUSTOM = 'custom';
 export const ACTION_LOGOUT = 'logout';
 export const ACTION_NEXT = 'next';
 export const ACTION_OAUTH_LOGIN = 'trigger_oauth_login';

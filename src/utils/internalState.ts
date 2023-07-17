@@ -3,6 +3,7 @@ import { FieldOptions } from './formHelperFunctions';
 type InternalState = {
   [formUuid: string]: {
     currentStep: any;
+    previousStepName: string;
     visiblePositions: any;
     client: any;
     formName: string;
@@ -21,6 +22,9 @@ type InternalState = {
       stepData: any,
       loadStep?: null
     ) => (newOptions: FieldOptions) => void;
+    setFieldErrors: (
+      errors: Record<string, string | { index: number; message: string }>
+    ) => void;
   };
 };
 

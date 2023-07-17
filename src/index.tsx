@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM, { unmountComponentAtNode } from 'react-dom';
 import Elements from './elements';
 import Form, { JSForm, Props as FormProps, StyledContainer } from './Form';
-import { init, updateUserId, setValues, fieldValues } from './utils/init';
+import { init, updateUserId, setFieldValues, fieldValues } from './utils/init';
 import { OPERATOR_CODE } from './utils/logic';
 import { featheryDoc } from './utils/browser';
 import { getFormContext } from './utils/formContext';
@@ -39,17 +39,13 @@ function renderAt(elementId: any, props: FormProps) {
   };
 }
 
-// TODO: deprecate
-const updateUserKey = updateUserId;
-
 // Entrypoint for globally namespaced JS library
 const Feathery = {
   Form,
   Elements,
   init,
-  updateUserKey,
   updateUserId,
-  setValues,
+  setFieldValues,
   getAllValues,
   renderAt
 };
@@ -58,9 +54,8 @@ export {
   Form,
   Elements,
   init,
-  updateUserKey,
   updateUserId,
-  setValues,
+  setFieldValues,
   getAllValues,
   renderAt,
   LoginForm,

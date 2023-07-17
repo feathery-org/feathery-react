@@ -145,21 +145,25 @@ export const getAllElements = (step: any) => {
   ];
 };
 
-export const lookUpTrigger = (step: any, elementID: any, elementType: any) => {
+export const lookUpTrigger = (
+  step: any,
+  elementID: string,
+  type: string
+): Record<string, any> => {
   let payload = {};
-  if (elementType === 'button') {
+  if (type === 'button') {
     const element = step.buttons.find((button: any) => button.id === elementID);
     payload = { text: element?.properties?.text ?? '' };
-  } else if (elementType === 'text') {
+  } else if (type === 'text') {
     const element = step.texts.find((text: any) => text.id === elementID);
     payload = { text: element.properties.text };
-  } else if (elementType === 'field') {
+  } else if (type === 'field') {
     const element = step.servar_fields.find(
       (field: any) => field.id === elementID
     );
     payload = { id: element.servar.key, text: element.servar.name };
   }
-  return { id: elementID, elementType, ...payload };
+  return { id: elementID, type, ...payload };
 };
 
 export const nextStepKey = (nextConditions: any, metadata: any) => {

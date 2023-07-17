@@ -183,11 +183,11 @@ function _parseUserVal(userVal: FeatheryFieldTypes, key: string) {
 }
 
 /**
- * If customers provide files through setValues
+ * If customers provide files through setFieldValues
  * we need to explicitly convert any files to file Promises
  * since they may not have done so
  */
-function setValues(userVals: FieldValues, rerender = true): void {
+function setFieldValues(userVals: FieldValues, rerender = true): void {
   const result: FieldValues = {};
   Object.entries(userVals).forEach(([key, value]) => {
     if (Array.isArray(value))
@@ -205,7 +205,7 @@ export {
   init,
   initInfo,
   updateUserId,
-  setValues,
+  setFieldValues,
   initState,
   initFormsPromise,
   fieldValues,

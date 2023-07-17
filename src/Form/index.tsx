@@ -16,7 +16,6 @@ import {
   changeStep,
   clearBrowserErrors,
   FieldOptions,
-  formatAllFormFields,
   formatStepFields,
   getAllElements,
   getDefaultFieldValue,
@@ -71,16 +70,13 @@ import Grid from './grid';
 import { mobileBreakpointValue } from '../elements/styles';
 import {
   ContextOnChange,
-  ContextOnLoad,
   FormContext,
   ContextOnSubmit,
-  ContextOnSkip,
   ContextOnError,
-  ContextOnCustomAction,
   ContextOnView,
   ElementProps,
-  IntegrationData,
-  PopupOptions
+  PopupOptions,
+  ContextOnAction
 } from '../types/Form';
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
@@ -92,7 +88,6 @@ import useFormAuth from '../auth/internal/useFormAuth';
 import {
   ACTION_ADD_REPEATED_ROW,
   ACTION_BACK,
-  ACTION_CUSTOM,
   ACTION_OAUTH_LOGIN,
   ACTION_LOGOUT,
   ACTION_NEXT,
@@ -126,15 +121,12 @@ export type { StyledContainerProps } from './grid/StyledContainer';
 export interface Props {
   formName: string;
   onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
-  onLoad?: null | ((context: ContextOnLoad) => Promise<any> | void);
+  onLoad?: null | ((context: FormContext) => Promise<any> | void);
   onFormComplete?: null | ((context: FormContext) => Promise<any> | void);
   onSubmit?: null | ((context: ContextOnSubmit) => Promise<any> | void);
-  onSkip?: null | ((context: ContextOnSkip) => Promise<any> | void);
   onError?: null | ((context: ContextOnError) => Promise<any> | void);
-  onCustomAction?:
-    | null
-    | ((context: ContextOnCustomAction) => Promise<any> | void);
   onView?: null | ((context: ContextOnView) => Promise<any> | void);
+  onAction?: null | ((context: ContextOnAction) => Promise<any> | void);
   onViewElements?: string[];
   saveUrlParams?: boolean;
   initialValues?: FieldValues;
@@ -179,10 +171,9 @@ function Form({
   onLoad = null,
   onFormComplete = null,
   onSubmit = null,
-  onSkip = null,
   onError = null,
-  onCustomAction = null,
   onView = null,
+  onAction = null,
   onViewElements = [],
   saveUrlParams = false,
   initialValues = {},
@@ -204,7 +195,6 @@ function Form({
   const session = initState.formSessions[formName];
 
   const [autoValidate, setAutoValidate] = useState(false);
-  const [first, setFirst] = useState(true);
 
   const [productionEnv, setProductionEnv] = useState(true);
   const [steps, setSteps] = useState<Record<string, any>>({});
@@ -253,10 +243,8 @@ function Form({
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
 
-  const visiblePositions = useMemo(
-    () => (activeStep ? getVisiblePositions(activeStep) : null),
-    [activeStep, render]
-  );
+  const [visiblePositions, setVisiblePositions] = useState<any>(null);
+
   useFirebaseRecaptcha(activeStep);
   const getNextAuthStep = useFormAuth({
     initialStep: getInitialStep({ initialStepId, steps }),
@@ -365,8 +353,6 @@ function Form({
 
     // Update the values by appending a default value for each field
     const updatedValues = {};
-    const fieldIDs: any[] = [];
-    const fieldKeys: any[] = [];
     repeatedServarFields.forEach((field: any) => {
       const { servar } = field;
       // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
@@ -375,16 +361,10 @@ function Form({
         ...fieldValues[servar.key],
         getDefaultFieldValue(field)
       ];
-      fieldIDs.push(field.id);
-      fieldKeys.push(servar.key);
     });
 
     setRepeatChanged((repeatChanged) => !repeatChanged);
     updateFieldValues(updatedValues);
-    return {
-      fieldIDs,
-      fieldKeys
-    };
   }
 
   function removeRepeatedRow(index: number) {
@@ -397,8 +377,6 @@ function Form({
 
     // Update the values by removing the specified index from each field
     const updatedValues = {};
-    const fieldIDs: string[] = [];
-    const fieldKeys: string[] = [];
     repeatedServarFields.forEach((field: any) => {
       const { servar } = field;
       const newRepeatedValues = justRemove(fieldValues[servar.key], index);
@@ -406,13 +384,10 @@ function Form({
       // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       updatedValues[servar.key] =
         newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
-      fieldIDs.push(field.id);
-      fieldKeys.push(servar.key);
     });
 
     setRepeatChanged((repeatChanged) => !repeatChanged);
     updateFieldValues(updatedValues);
-    return { fieldIDs, fieldKeys };
   }
 
   // Debouncing the validateElements call to rate limit calls
@@ -501,7 +476,6 @@ function Form({
     (props1 = {}) =>
     (props2 = {}) =>
       runUserCallback(onError, () => ({
-        fields: formatAllFormFields(steps, true),
         ...props1,
         ...props2
       }));
@@ -526,9 +500,12 @@ function Form({
       integrations?.stripe
     );
 
+    const newVisiblePositions = getVisiblePositions(newStep);
+
     internalState[_internalId] = {
       currentStep: newStep,
-      visiblePositions,
+      previousStepName: activeStep?.key ?? '',
+      visiblePositions: newVisiblePositions,
       client,
       formName,
       formRef,
@@ -538,29 +515,34 @@ function Form({
       setInlineErrors,
       setUserProgress,
       steps,
-      updateFieldOptions
+      updateFieldOptions,
+      setFieldErrors: (errors) => {
+        Object.entries(errors).forEach(([fieldKey, error]) => {
+          let index = null;
+          let message = error;
+          // If the user provided an object for an error then use the specified index and message
+          // This allows users to specify an error on an element in a repeated row
+          if (typeof error === 'object') {
+            index = error.index;
+            message = error.message;
+          }
+          setFormElementError({
+            formRef,
+            fieldKey,
+            message,
+            index,
+            errorType: formSettings.errorType,
+            inlineErrors
+          });
+        });
+      }
     };
 
-    let stepChanged = false;
-    await runUserCallback(onLoad, () => {
-      const formattedFields = formatAllFormFields(steps, true);
-      const integrationData: IntegrationData = {};
-      if (authState.authId) integrationData.firebaseAuthId = authState.authId;
-
-      return {
-        fields: formattedFields,
-        previousStepName: activeStep?.key,
-        lastStep: steps[newKey].next_conditions.length === 0,
-        numSteps: Object.keys(steps).length,
-        firstStepLoaded: first,
-        integrationData,
-        // Override setStep fn from the common context props with this one for special bx
-        setStep: (stepKey: any) => {
-          stepChanged = changeStep(stepKey, newKey, steps, history);
-        }
-      };
-    });
-    if (stepChanged) return;
+    await runUserCallback(onLoad);
+    const newHash = getUrlHash();
+    // This indicates user programmatically changed the step via the onLoad function
+    // So loading of the old step must short circuit
+    if (newHash && newStep.key !== newHash) return;
 
     clearLoaders();
     const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
@@ -578,6 +560,7 @@ function Form({
     // because it triggers a new render, before this fn finishes execution,
     // which can cause onView to fire before the callbackRef is set
     setActiveStep(newStep);
+    setVisiblePositions(newVisiblePositions);
     client.registerEvent({ step_key: newStep.key, event: 'load' });
   };
 
@@ -590,7 +573,6 @@ function Form({
         _bypassCDN
       );
       setClient(clientInstance);
-      setFirst(true);
       let saveUrlParamsFormSetting = false;
       // render form without values first for speed
       const formPromise = clientInstance
@@ -651,7 +633,7 @@ function Form({
           history.replace(location.pathname + location.search + `#${newKey}`);
         });
     }
-  }, [client, activeStep, setClient, setFirst, setSteps, updateFieldValues]);
+  }, [client, activeStep, setClient, setSteps, updateFieldValues]);
 
   useEffect(() => {
     return history.listen(async () => {
@@ -736,6 +718,7 @@ function Form({
       metadata.elementIDs[0],
       metadata.elementType
     );
+    trigger.repeatIndex = repeat;
     const newInlineErrors: any = {};
 
     if (
@@ -763,42 +746,10 @@ function Form({
 
     // Execute user-provided onSubmit function if present
     if (typeof onSubmit === 'function') {
-      let stepChanged = false;
       await runUserCallback(onSubmit, () => ({
         submitFields: formattedFields,
-        elementRepeatIndex: repeat,
-        fields: formatAllFormFields(steps, true),
-        lastStep: !getNextStepKey(metadata),
-        setErrors: (
-          errors: Record<string, string | { index: number; message: string }>
-        ) => {
-          Object.entries(errors).forEach(([fieldKey, error]) => {
-            let index = null;
-            let message = error;
-            // If the user provided an object for an error then use the specified index and message
-            // This allows users to specify an error on an element in a repeated row
-            if (typeof error === 'object') {
-              index = error.index;
-              message = error.message;
-            }
-            setFormElementError({
-              formRef,
-              fieldKey,
-              message,
-              index,
-              errorType: formSettings.errorType,
-              inlineErrors: newInlineErrors
-            });
-          });
-        },
-        setStep: (stepKey: string) => {
-          stepChanged = changeStep(stepKey, activeStep.key, steps, history);
-        },
-        firstStepSubmitted: first,
-        integrationData: { authProviderId: authState.authId ?? '' },
         trigger
       }));
-      if (stepChanged) return;
 
       // do validation check in case user has manually invalidated the step
       const invalid = await setFormElementError({
@@ -902,7 +853,10 @@ function Form({
     if (!_draft) {
       const errorCallback = getErrorCallback({
         // could be container or button but model as button for the time being...
-        trigger: lookUpTrigger(activeStep, triggerElement.id, 'container')
+        trigger: {
+          ...lookUpTrigger(activeStep, triggerElement.id, 'container'),
+          repeatIndex: 0
+        }
       });
       // validate all step fields and buttons.  Must be valid before payment.
       const { invalid, inlineErrors: newInlineErrors } = validateElements({
@@ -975,7 +929,6 @@ function Form({
         });
       }
     } else {
-      setFirst(false);
       const nextStep = steps[redirectKey];
       if (isStepTerminal(nextStep)) {
         const authIntegration = getAuthIntegrationMetadata(integrations);
@@ -1028,21 +981,15 @@ function Form({
     for (const action of el.properties?.actions ?? []) {
       if ([ACTION_BACK, ACTION_NEXT].includes(action.type)) {
         return null;
-      } else if ([ACTION_STORE_FIELD, ACTION_CUSTOM].includes(action.type)) {
+      } else if (action.type === ACTION_STORE_FIELD) {
         if (state === null) state = false;
-        if (action.type === ACTION_STORE_FIELD) {
-          let val;
-          if (action.custom_store_value_type === 'field') {
-            val = fieldValues[action.custom_store_value_field_key];
-          } else val = action.custom_store_value;
-          // Treat the string 0 as the number 0, which is a bottom value
-          const turnOn = val && val !== '0';
-          if (turnOn && fieldValues[action.custom_store_field_key] === val)
-            state = true;
-        } else if (
-          action.type === ACTION_CUSTOM &&
-          fieldValues[action.select_field_indicator_key]
-        )
+        let val;
+        if (action.custom_store_value_type === 'field') {
+          val = fieldValues[action.custom_store_value_field_key];
+        } else val = action.custom_store_value;
+        // Treat the string 0 as the number 0, which is a bottom value
+        const turnOn = val && val !== '0';
+        if (turnOn && fieldValues[action.custom_store_field_key] === val)
           state = true;
       } else if (action.type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
         if (state === null) state = false;
@@ -1125,11 +1072,12 @@ function Form({
       start: textSpanStart,
       end: textSpanEnd
     };
+    const trigger = lookUpTrigger(activeStep, element.id, elementType);
+    trigger.repeatIndex = element.repeat;
     let submitPromise;
     if (submit) {
       setAutoValidate(true);
 
-      const trigger = lookUpTrigger(activeStep, element.id, elementType);
       // run default form validation
       const { invalid } = validateElements({
         step: activeStep,
@@ -1172,20 +1120,15 @@ function Form({
       const action = actions[i];
       const type = action.type;
 
-      if (
-        [ACTION_ADD_REPEATED_ROW, ACTION_REMOVE_REPEATED_ROW].includes(type)
-      ) {
-        let data: any;
-        if (type === ACTION_ADD_REPEATED_ROW) data = addRepeatedRow();
-        else data = removeRepeatedRow(element.repeat);
-        if (data && data.fieldKeys.length > 0) {
-          fieldOnChange({
-            fieldIds: data.fieldIDs,
-            fieldKeys: data.fieldKeys,
-            elementRepeatIndex: element.repeat
-          })();
-        }
-      } else if (type === ACTION_TRIGGER_PLAID) {
+      await runUserCallback(onAction, () => ({
+        trigger,
+        action: type
+      }));
+
+      if (type === ACTION_ADD_REPEATED_ROW) addRepeatedRow();
+      else if (type === ACTION_REMOVE_REPEATED_ROW)
+        removeRepeatedRow(element.repeat);
+      else if (type === ACTION_TRIGGER_PLAID) {
         await openPlaidLink(client, flowOnSuccess(i), updateFieldValues);
         break;
       } else if (type === ACTION_TRIGGER_ARGYLE) {
@@ -1209,10 +1152,6 @@ function Form({
             });
           }
         }
-      } else if (type === ACTION_CUSTOM) {
-        await runUserCallback(onCustomAction, () => ({
-          trigger: lookUpTrigger(activeStep, element.id, elementType)
-        }));
       } else if (type === ACTION_SEND_SMS) {
         const phoneNum = fieldValues[action.auth_target_field_key] as string;
         if (validators.phone(phoneNum)) {
@@ -1260,25 +1199,11 @@ function Form({
         Auth.oauthRedirect(action.oauth_type);
       else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEXT) {
-        if (submit) {
-          await goToNewStep({
-            metadata,
-            submitPromise: Promise.all(submitPromise ?? []),
-            submitData: true
-          });
-        } else {
-          let stepChanged = false;
-          await runUserCallback(onSkip, () => ({
-            setStep: (stepKey: string) => {
-              stepChanged = changeStep(stepKey, activeStep.key, steps, history);
-            },
-            trigger: lookUpTrigger(activeStep, element.id, elementType),
-            lastStep: !getNextStepKey(metadata)
-          }));
-          if (!stepChanged) {
-            await goToNewStep({ metadata });
-          }
-        }
+        await goToNewStep({
+          metadata,
+          submitPromise: submit ? Promise.all(submitPromise ?? []) : null,
+          submitData: submit
+        });
       } else if (type === ACTION_BACK) await goToPreviousStep();
       else if (type === ACTION_PURCHASE_PRODUCTS) {
         const actionSuccess = await purchaseProductsAction(element);
@@ -1324,9 +1249,9 @@ function Form({
   };
 
   const fieldOnChange =
-    ({ fieldIDs, fieldKeys, elementRepeatIndex = 0 }: any) =>
+    ({ fieldID, fieldKey, elementRepeatIndex = 0 }: any) =>
     ({
-      trigger = 'field',
+      triggerType = 'field',
       submitData = false,
       integrationData = {},
       // Multi-file upload is not a repeated row but a repeated field
@@ -1335,12 +1260,12 @@ function Form({
       if (typeof onChange === 'function') {
         callbackRef.current.addCallback(
           runUserCallback(onChange, () => ({
-            changeKeys: fieldKeys,
-            trigger,
+            trigger: {
+              id: fieldKey,
+              repeatIndex: elementRepeatIndex,
+              type: triggerType
+            },
             integrationData,
-            fields: formatAllFormFields(steps, true),
-            lastStep: activeStep.next_conditions.length === 0,
-            elementRepeatIndex,
             valueRepeatIndex
           }))
         );
@@ -1362,7 +1287,7 @@ function Form({
         } else {
           runElementActions({
             actions: [{ type: ACTION_NEXT }],
-            element: { id: fieldIDs[0] },
+            element: { id: fieldID },
             elementType: 'field',
             submit: true
           });
@@ -1371,7 +1296,7 @@ function Form({
         goToNewStep({
           metadata: {
             elementType: 'field',
-            elementIDs: fieldIDs
+            elementIDs: [fieldID]
           }
         });
       }
