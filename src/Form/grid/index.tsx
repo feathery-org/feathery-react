@@ -9,6 +9,8 @@ import DangerouslySetHTMLContent from '../../utils/DangerouslySetHTMLContent';
 import { Container } from './Container';
 
 const Grid = ({ step, form, viewport }: any) => {
+  if (!step || !form.visiblePositions) return null;
+
   const formattedStep: any = buildStepGrid(
     JSON.parse(JSON.stringify(step)),
     viewport,
