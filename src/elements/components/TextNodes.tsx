@@ -115,7 +115,7 @@ function TextNodes({
                 data-index={i}
                 css={{
                   whiteSpace: 'pre-wrap',
-                  overflowWrap: 'break-word',
+                  overflowWrap: 'anywhere',
                   cursor,
                   ...responsiveStyles.getRichFontStyles(attrs)
                 }}
