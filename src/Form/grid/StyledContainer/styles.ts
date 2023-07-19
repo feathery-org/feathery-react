@@ -399,7 +399,7 @@ export const getContainerStyles = (
         }
 
         // The following styles allow Fill containers to shrink regardless of margin in their children on mobile viewport
-        if (isFill(width) && vp === 'mobile') {
+        if (isFill(width)) {
           s.minWidth = 'auto';
           s.boxSizing = 'border-box';
         }
@@ -436,6 +436,7 @@ export const getInnerContainerStyles = (
         const s: any = {};
 
         if (!isPx(parentWidth) && widthUnit === 'px') {
+          // Ensure to set `auto` if mobile to unset the desktop property
           s.minWidth = vp !== 'mobile' ? `${width}${widthUnit}` : 'auto';
         }
 
@@ -451,6 +452,7 @@ export const getInnerContainerStyles = (
         const s: any = {};
 
         if (!isPx(parentHeight) && heightUnit === 'px') {
+          // Ensure to set `auto` if mobile to unset the desktop property
           s.minHeight = vp !== 'mobile' ? `${height}${heightUnit}` : 'auto';
         }
 
