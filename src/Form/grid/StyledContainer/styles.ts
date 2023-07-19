@@ -384,18 +384,24 @@ export const getContainerStyles = (
   });
 
   /**
-   * Apply styles for when parent is the root without pixel dimensions
+   * Apply root container styles
    */
   if (!node.parent) {
     styles.apply(
       'container',
-      ['viewport', 'width_unit'],
-      (_viewport: any, widthUnit: any) => {
+      ['viewport', 'width', 'width_unit'],
+      (_viewport: any, width: any, widthUnit: any) => {
         const vp = viewport || _viewport;
         const s: any = {};
 
         if (!isPx(widthUnit) && vp !== 'mobile') {
           s.boxSizing = 'content-box';
+        }
+
+        // The following styles allow Fill containers to shrink regardless of margin in their children on mobile viewport
+        if (isFill(width) && vp === 'mobile') {
+          s.minWidth = 'auto';
+          s.boxSizing = 'border-box';
         }
 
         return s;
