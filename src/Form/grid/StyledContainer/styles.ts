@@ -384,18 +384,24 @@ export const getContainerStyles = (
   });
 
   /**
-   * Apply styles for when parent is the root without pixel dimensions
+   * Apply root container styles
    */
   if (!node.parent) {
     styles.apply(
       'container',
-      ['viewport', 'width_unit'],
-      (_viewport: any, widthUnit: any) => {
+      ['viewport', 'width', 'width_unit'],
+      (_viewport: any, width: any, widthUnit: any) => {
         const vp = viewport || _viewport;
         const s: any = {};
 
         if (!isPx(widthUnit) && vp !== 'mobile') {
           s.boxSizing = 'content-box';
+        }
+
+        // The following styles allow Fill containers to shrink regardless of margin in their children on mobile viewport
+        if (isFill(width)) {
+          s.minWidth = 'auto';
+          s.boxSizing = 'border-box';
         }
 
         return s;
@@ -429,8 +435,9 @@ export const getInnerContainerStyles = (
         const vp = viewport || _viewport;
         const s: any = {};
 
-        if (!isPx(parentWidth) && vp !== 'mobile' && widthUnit === 'px') {
-          s.minWidth = `${width}${widthUnit}`;
+        if (!isPx(parentWidth) && widthUnit === 'px') {
+          // Ensure to set `auto` if mobile to unset the desktop property
+          s.minWidth = vp !== 'mobile' ? `${width}${widthUnit}` : 'auto';
         }
 
         return s;
@@ -444,8 +451,9 @@ export const getInnerContainerStyles = (
         const vp = viewport || _viewport;
         const s: any = {};
 
-        if (!isPx(parentHeight) && vp !== 'mobile' && heightUnit === 'px') {
-          s.minHeight = `${height}${heightUnit}`;
+        if (!isPx(parentHeight) && heightUnit === 'px') {
+          // Ensure to set `auto` if mobile to unset the desktop property
+          s.minHeight = vp !== 'mobile' ? `${height}${heightUnit}` : 'auto';
         }
 
         return s;
