@@ -429,8 +429,8 @@ export const getInnerContainerStyles = (
         const vp = viewport || _viewport;
         const s: any = {};
 
-        if (!isPx(parentWidth) && vp !== 'mobile' && widthUnit === 'px') {
-          s.minWidth = `${width}${widthUnit}`;
+        if (!isPx(parentWidth) && widthUnit === 'px') {
+          s.minWidth = vp !== 'mobile' ? `${width}${widthUnit}` : 'auto';
         }
 
         return s;
@@ -444,8 +444,8 @@ export const getInnerContainerStyles = (
         const vp = viewport || _viewport;
         const s: any = {};
 
-        if (!isPx(parentHeight) && vp !== 'mobile' && heightUnit === 'px') {
-          s.minHeight = `${height}${heightUnit}`;
+        if (!isPx(parentHeight) && heightUnit === 'px') {
+          s.minHeight = vp !== 'mobile' ? `${height}${heightUnit}` : 'auto';
         }
 
         return s;
