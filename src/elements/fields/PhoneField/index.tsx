@@ -64,7 +64,6 @@ function PhoneField({
 
   useEffect(() => setCurCountryCode(defaultCountry), [defaultCountry]);
 
-  console.log(curCountryCode);
   const phoneCode = countryMap[curCountryCode].phoneCode;
   // The raw number entered by the user, including phone code
   const [rawNumber, setRawNumber] = useState('');
