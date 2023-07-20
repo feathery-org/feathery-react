@@ -156,6 +156,19 @@ interface ClickActionElement {
   repeat?: any;
 }
 
+interface LogicRule {
+  id: string;
+  name: string;
+  trigger_event: string;
+  steps: string[];
+  elements: string[];
+  code: string;
+  enabled: boolean;
+  valid: boolean;
+}
+
+const AsyncFunction = async function () {}.constructor;
+
 const getViewport = () => {
   return featheryWindow().innerWidth > mobileBreakpointValue
     ? 'desktop'
@@ -218,6 +231,8 @@ function Form({
     saveUrlParams: false,
     completionBehavior: ''
   });
+
+  const [logicRules, setLogicRules] = useState<LogicRule[]>([]);
   const [inlineErrors, setInlineErrors] = useState<
     Record<string, { message: string; index: number }>
   >({});
@@ -317,6 +332,12 @@ function Form({
       })
     );
   }, [activeStep?.id]);
+
+  // viewElements state
+  const [viewElements, setViewElements] = useState<string[]>([]);
+  useEffect(() => {
+    setViewElements(onViewElements);
+  }, [onViewElements.length]);
 
   // Figure out which fields are used in hide rules so that observed changes can be used
   // to trigger rerenders
@@ -455,25 +476,93 @@ function Form({
       setActiveStep(JSON.parse(JSON.stringify(curStep)));
     };
 
-  const runUserCallback = async (
-    userCallback: any,
+  const eventCallbackMap: Record<string, any> = {
+    change: onChange,
+    load: onLoad,
+    form_complete: onFormComplete,
+    submit: onSubmit,
+    error: onError,
+    view: onView,
+    action: onAction
+  };
+
+  const eventHasUserLogic = (event: string) => {
+    return (
+      typeof eventCallbackMap[event] === 'function' ||
+      (logicRules &&
+        logicRules.some(
+          (logicRule: LogicRule) => logicRule.trigger_event === event
+        ))
+    );
+  };
+
+  const runUserLogic = async (
+    event: string,
     getProps: () => Record<string, any> = () => ({})
   ) => {
-    if (typeof userCallback !== 'function') return;
-    try {
-      await userCallback({
-        ...getFormContext(_internalId),
-        ...getProps()
-      });
-    } catch (e) {
-      console.warn(e);
+    const props = {
+      ...getFormContext(_internalId),
+      ...getProps()
+    };
+    let logicRan = false;
+    if (typeof eventCallbackMap[event] === 'function') {
+      logicRan = true;
+      await eventCallbackMap[event](props);
     }
+    // filter the logicRules that have trigger_event matching the trigger event (type_)
+    if (logicRules) {
+      const logicRulesForEvent = logicRules.filter(
+        (logicRule: any) => logicRule.trigger_event === event
+      );
+      // Run the logic rules in sequence!
+      for (const logicRule of logicRulesForEvent) {
+        // all disabled, invalid or empty rules are filtered out by the BE
+
+        // Run the rule only if no steps in logicRule.steps filter
+        // or if the current step (props.getStepProperties().stepId) is in the filter list
+        const currentStepId = (internalState[_internalId]?.currentStep ?? {})
+          .id;
+        if (
+          logicRule.steps.length === 0 ||
+          (logicRule.steps.length > 0 &&
+            logicRule.steps.includes(currentStepId))
+        ) {
+          // Only run the rule if the trigger_event is not view
+          // or if it is view then the props.visibilityStatus.elementId must be in the logicRule.elements filter
+          if (
+            logicRule.trigger_event !== 'view' ||
+            (logicRule.trigger_event === 'view' &&
+              logicRule.elements.includes(
+                (props as ContextOnView).visibilityStatus.elementId
+              ))
+          ) {
+            logicRan = true;
+            // @ts-ignore
+            const fn = new AsyncFunction('feathery', logicRule.code);
+            try {
+              await fn(props);
+            } catch (e) {
+              // rule had an error, log it to console for now
+              console.warn(
+                'Exception while running rule: ',
+                logicRule.name,
+                ' On Event: ',
+                logicRule.trigger_event,
+                ' Exception: ',
+                e
+              );
+            }
+          }
+        }
+      }
+    }
+    return logicRan;
   };
 
   const getErrorCallback =
     (props1 = {}) =>
     (props2 = {}) =>
-      runUserCallback(onError, () => ({
+      runUserLogic('error', () => ({
         ...props1,
         ...props2
       }));
@@ -534,7 +623,7 @@ function Form({
       }
     };
 
-    await runUserCallback(onLoad);
+    await runUserLogic('load');
     const newHash = getUrlHash();
     // This indicates user programmatically changed the step via the onLoad function
     // So loading of the old step must short circuit
@@ -589,6 +678,24 @@ function Form({
             };
           if (res.save_url_params) saveUrlParamsFormSetting = true;
           setFormSettings(mapFormSettingsResponse(res));
+          setLogicRules(res.logic_rules);
+
+          // Add any logic_rule.elements to viewElements so that onView called for then too.
+          // Make sure there are no duplicate entries.
+          if (res.logic_rules) {
+            const newViewElements: string[] = [...viewElements];
+            res.logic_rules.forEach((logicRule: LogicRule) => {
+              if (logicRule.trigger_event === 'view') {
+                logicRule.elements.forEach((elementId: any) => {
+                  if (!newViewElements.includes(elementId)) {
+                    newViewElements.push(elementId);
+                  }
+                });
+              }
+            });
+            setViewElements(newViewElements);
+          }
+
           setProductionEnv(res.production);
           return steps;
         });
@@ -744,13 +851,13 @@ function Form({
       }
     }
 
-    // Execute user-provided onSubmit function if present
-    if (typeof onSubmit === 'function') {
-      await runUserCallback(onSubmit, () => ({
+    // Execute user-provided onSubmit function or submit rules if present
+    if (
+      await runUserLogic('submit', () => ({
         submitFields: formattedFields,
         trigger
-      }));
-
+      }))
+    ) {
       // do validation check in case user has manually invalidated the step
       const invalid = await setFormElementError({
         formRef,
@@ -1120,7 +1227,7 @@ function Form({
       const action = actions[i];
       const type = action.type;
 
-      await runUserCallback(onAction, () => ({
+      await runUserLogic('action', () => ({
         trigger,
         action: type
       }));
@@ -1257,9 +1364,9 @@ function Form({
       // Multi-file upload is not a repeated row but a repeated field
       valueRepeatIndex = null
     } = {}) => {
-      if (typeof onChange === 'function') {
+      if (eventHasUserLogic('change')) {
         callbackRef.current.addCallback(
-          runUserCallback(onChange, () => ({
+          runUserLogic('change', () => ({
             trigger: {
               id: fieldKey,
               repeatIndex: elementRepeatIndex,
@@ -1303,10 +1410,11 @@ function Form({
     };
 
   const elementOnView =
-    typeof onView === 'function'
+    // be efficient and only create this function if we need it
+    eventHasUserLogic('view')
       ? (elementId: any, isVisible: any) => {
           callbackRef.current.addCallback(
-            runUserCallback(onView, () => ({
+            runUserLogic('view', () => ({
               visibilityStatus: { elementId, isVisible }
             }))
           );
@@ -1330,7 +1438,7 @@ function Form({
     changeValue,
     updateFieldValues,
     elementOnView,
-    onViewElements,
+    onViewElements: viewElements,
     formSettings,
     focusRef,
     formRef,
@@ -1357,7 +1465,7 @@ function Form({
         initState.redirectCallbacks[_internalId]();
       }
     };
-    runUserCallback(onFormComplete).then(redirectForm);
+    runUserLogic('form_complete').then(redirectForm);
   }, [anyFinished]);
 
   // Form is turned off
