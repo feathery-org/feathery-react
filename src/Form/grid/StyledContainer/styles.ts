@@ -123,6 +123,8 @@ export const getContainerStyles = (
         s.maxWidth = 'fit-content';
 
         if (!hasChildren) {
+          s.maxWidth = `${DEFAULT_MIN_SIZE}px`;
+
           if (parentAxis === 'column') {
             s.minWidth = `${DEFAULT_MIN_SIZE}px`;
           } else {
