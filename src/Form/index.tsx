@@ -814,7 +814,11 @@ function Form({
   const getNextStepKey = (metadata: any) =>
     nextStepKey(activeStep.next_conditions, metadata);
 
-  const submitStep = async ({ metadata, repeat = 0 }: any) => {
+  const submitStep = async (
+    metadata: any,
+    repeat: number,
+    hasNext: boolean
+  ) => {
     const formattedFields = formatStepFields(
       activeStep,
       visiblePositions,
@@ -877,7 +881,7 @@ function Form({
         : newVal;
       return { key, [(val as any).type]: newVal };
     });
-    const stepPromise =
+    let stepPromise =
       featheryFields.length > 0
         ? client.submitStep(featheryFields, activeStep.key)
         : Promise.resolve();
@@ -894,6 +898,18 @@ function Form({
         {} as Record<string, any>
       );
     trackEvent('FeatheryStepSubmit', activeStep.key, formName, fieldData);
+
+    if (!hasNext) {
+      // If step is saved but no navigation occurs, still send a complete event.
+      // Backend still needs to determine when a form completes.
+      stepPromise = stepPromise.then(() =>
+        client.registerEvent({
+          step_key: activeStep.key,
+          next_step_key: activeStep.key,
+          event: 'complete'
+        })
+      );
+    }
 
     return [hiddenPromise, stepPromise];
   };
@@ -1200,10 +1216,11 @@ function Form({
         return;
       }
 
-      submitPromise = await submitStep({
+      submitPromise = await submitStep(
         metadata,
-        repeat: element.repeat || 0
-      });
+        element.repeat || 0,
+        actions.some((action: any) => action.type === ACTION_NEXT)
+      );
       if (!submitPromise) {
         elementClicks[id] = false;
         return;
