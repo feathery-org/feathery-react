@@ -201,11 +201,17 @@ function setFieldValues(userVals: FieldValues, rerender = true): void {
   if (rerender) rerenderAllForms();
 }
 
+function getFieldValues() {
+  // Make a copy so users can't set fieldValues directly
+  return { ...fieldValues };
+}
+
 export {
   init,
   initInfo,
   updateUserId,
   setFieldValues,
+  getFieldValues,
   initState,
   initFormsPromise,
   fieldValues,
