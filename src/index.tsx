@@ -2,7 +2,12 @@ import React from 'react';
 import ReactDOM, { unmountComponentAtNode } from 'react-dom';
 import Elements from './elements';
 import Form, { JSForm, Props as FormProps, StyledContainer } from './Form';
-import { init, updateUserId, setFieldValues, fieldValues } from './utils/init';
+import {
+  init,
+  updateUserId,
+  setFieldValues,
+  getFieldValues
+} from './utils/init';
 import { OPERATOR_CODE } from './utils/logic';
 import { featheryDoc } from './utils/browser';
 import { getFormContext } from './utils/formContext';
@@ -11,11 +16,6 @@ import { FormContext } from './types/Form';
 import LoginForm from './auth/LoginForm';
 import useAuthClient from './auth/useAuthClient';
 import './utils/polyfills';
-
-function getAllValues() {
-  // Make a copy so users can't set fieldValues directly
-  return { ...fieldValues };
-}
 
 const mountedForms: Record<string, boolean> = {};
 /**
@@ -46,7 +46,9 @@ const Feathery = {
   init,
   updateUserId,
   setFieldValues,
-  getAllValues,
+  getFieldValues,
+  // TODO: deprecate
+  getAllValues: getFieldValues,
   renderAt
 };
 
@@ -56,7 +58,7 @@ export {
   init,
   updateUserId,
   setFieldValues,
-  getAllValues,
+  getFieldValues,
   renderAt,
   LoginForm,
   useAuthClient,

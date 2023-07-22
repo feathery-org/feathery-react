@@ -3,7 +3,7 @@ import {
   FieldOptions,
   formatAllFormFields
 } from './formHelperFunctions';
-import { setFieldValues } from './init';
+import { setFieldValues, getFieldValues } from './init';
 import internalState from './internalState';
 import { validateElements } from './validation';
 
@@ -16,6 +16,7 @@ import { validateElements } from './validation';
  */
 export const getFormContext = (formUuid: string) => ({
   setFieldValues,
+  getFieldValues,
   setFormCompletion: (flag: boolean) => {
     const { client, currentStep } = internalState[formUuid];
     return client.registerEvent({
