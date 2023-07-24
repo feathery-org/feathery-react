@@ -167,8 +167,6 @@ interface LogicRule {
   valid: boolean;
 }
 
-const AsyncFunction = async function () {}.constructor;
-
 const getViewport = () => {
   return featheryWindow().innerWidth > mobileBreakpointValue
     ? 'desktop'
@@ -537,10 +535,14 @@ function Form({
               ))
           ) {
             logicRan = true;
-            // @ts-ignore
-            const fn = new AsyncFunction('feathery', logicRule.code);
             try {
-              await fn(props);
+              // Note:
+              // AsyncFunction was nice and tidy but was throwing an error when trying to use await at
+              // the top level of the user code. So, going to use eval instead.
+              // The error was: Uncaught (in promise) SyntaxError: await is only valid in async functions and the top level bodies of modules
+              const asyncUserCode = `(async (feathery) => {${logicRule.code}})(props)`;
+              // eslint-disable-next-line no-eval
+              await eval(asyncUserCode);
             } catch (e) {
               // rule had an error, log it to console for now
               console.warn(
