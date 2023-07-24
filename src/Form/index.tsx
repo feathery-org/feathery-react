@@ -537,8 +537,17 @@ function Form({
               ))
           ) {
             logicRan = true;
+
+            // Note:
+            // AsyncFunction is nice and tidy but was throwing an error when trying to use await at
+            // the top level of the user code.
+            // The error was: Uncaught (in promise) SyntaxError: await is only valid in async functions and the top level bodies of modules.
+            // So, then tried eval instead, but had a serious issue with the webpacked published
+            // lib which was just invalid. So, now wrapping the rule code
+            // in an async function and calling it immediately from within an AsyncFunction.
+            const asyncWrappedCode = `return (async () => { ${logicRule.code} })()`;
             // @ts-ignore
-            const fn = new AsyncFunction('feathery', logicRule.code);
+            const fn = new AsyncFunction('feathery', asyncWrappedCode);
             try {
               await fn(props);
             } catch (e) {
