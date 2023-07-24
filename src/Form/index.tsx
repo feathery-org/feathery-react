@@ -504,6 +504,10 @@ function Form({
       ...getFormContext(_internalId),
       ...getProps()
     };
+    const stepEvents = ['submit', 'load'];
+    const elementEvents = ['view', 'change', 'action'];
+    const triggerElementEvents = ['change', 'action'];
+
     let logicRan = false;
     if (typeof eventCallbackMap[event] === 'function') {
       logicRan = true;
@@ -518,49 +522,52 @@ function Form({
       for (const logicRule of logicRulesForEvent) {
         // all disabled, invalid or empty rules are filtered out by the BE
 
-        // Run the rule only if no steps in logicRule.steps filter
-        // or if the current step (props.getStepProperties().stepId) is in the filter list
         const currentStepId = (internalState[_internalId]?.currentStep ?? {})
           .id;
+        // Apply steps and elements filters to the applicable event types
+        // to determine if the rule should be run.  Some event types support
+        // neither filter and will always run.
         if (
-          logicRule.steps.length === 0 ||
-          (logicRule.steps.length > 0 &&
-            logicRule.steps.includes(currentStepId))
+          ![...stepEvents, ...elementEvents].includes(
+            logicRule.trigger_event
+          ) ||
+          (stepEvents.includes(logicRule.trigger_event) &&
+            (logicRule.steps.length === 0 ||
+              (logicRule.steps.length > 0 &&
+                logicRule.steps.includes(currentStepId)))) ||
+          (logicRule.trigger_event === 'view' &&
+            logicRule.elements.includes(
+              (props as ContextOnView).visibilityStatus.elementId
+            )) ||
+          (triggerElementEvents.includes(logicRule.trigger_event) &&
+            logicRule.elements.includes(
+              (props as ContextOnChange | ContextOnAction).trigger.id
+            ))
         ) {
-          // Only run the rule if the trigger_event is not view
-          // or if it is view then the props.visibilityStatus.elementId must be in the logicRule.elements filter
-          if (
-            logicRule.trigger_event !== 'view' ||
-            (logicRule.trigger_event === 'view' &&
-              logicRule.elements.includes(
-                (props as ContextOnView).visibilityStatus.elementId
-              ))
-          ) {
-            logicRan = true;
+          logicRan = true;
 
-            // Note:
-            // AsyncFunction is nice and tidy but was throwing an error when trying to use await at
-            // the top level of the user code.
-            // The error was: Uncaught (in promise) SyntaxError: await is only valid in async functions and the top level bodies of modules.
-            // So, then tried eval instead, but had a serious issue with the webpacked published
-            // lib which was just invalid. So, now wrapping the rule code
-            // in an async function and calling it immediately from within an AsyncFunction.
-            const asyncWrappedCode = `return (async () => { ${logicRule.code} })()`;
-            // @ts-ignore
-            const fn = new AsyncFunction('feathery', asyncWrappedCode);
-            try {
-              await fn(props);
-            } catch (e) {
-              // rule had an error, log it to console for now
-              console.warn(
-                'Exception while running rule: ',
-                logicRule.name,
-                ' On Event: ',
-                logicRule.trigger_event,
-                ' Exception: ',
-                e
-              );
-            }
+          // Note:
+          // AsyncFunction is nice and tidy but was throwing an error when trying to use await at
+          // the top level of the user code.
+          // The error was: Uncaught (in promise) SyntaxError: await is only valid in async functions and the top level bodies of modules.
+          // So, then tried eval instead, but had a serious issue with the webpacked published
+          // lib which was just invalid. So, now wrapping the rule code
+          // in an async function and calling it immediately from within an AsyncFunction.
+          const asyncWrappedCode = `return (async () => { ${logicRule.code} })()`;
+          // @ts-ignore
+          const fn = new AsyncFunction('feathery', asyncWrappedCode);
+          try {
+            await fn(props);
+          } catch (e) {
+            // rule had an error, log it to console for now
+            console.warn(
+              'Exception while running rule: ',
+              logicRule.name,
+              ' On Event: ',
+              logicRule.trigger_event,
+              ' Exception: ',
+              e
+            );
           }
         }
       }
