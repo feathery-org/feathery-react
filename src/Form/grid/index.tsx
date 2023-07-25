@@ -37,7 +37,7 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
   } else {
     const { customClickSelectionState, runElementActions } = form;
     const props = node.properties ?? {};
-    const customComponent = form.customComponents[props.callback_id ?? ''];
+    const customComponent = form.customComponents[node.key ?? ''];
 
     const children: any[] = (node.children || []).map((child: any, i: any) => (
       <Subgrid
