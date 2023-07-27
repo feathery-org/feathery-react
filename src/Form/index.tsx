@@ -897,9 +897,11 @@ function Form({
         : newVal;
       return { key, [(val as any).type]: newVal };
     });
-    let stepPromise =
+    const stepPromise =
       featheryFields.length > 0
-        ? client.submitStep(featheryFields, activeStep.key)
+        ? // If step is saved but no navigation occurs, still send a complete event.
+          // Backend still needs to determine when a form completes.
+          client.submitStep(featheryFields, activeStep.key, !hasNext)
         : Promise.resolve();
 
     const fieldData: Record<string, any> = {};
@@ -914,18 +916,6 @@ function Form({
         {} as Record<string, any>
       );
     trackEvent('FeatheryStepSubmit', activeStep.key, formName, fieldData);
-
-    if (!hasNext) {
-      // If step is saved but no navigation occurs, still send a complete event.
-      // Backend still needs to determine when a form completes.
-      stepPromise = stepPromise.then(() =>
-        client.registerEvent({
-          step_key: activeStep.key,
-          next_step_key: activeStep.key,
-          event: 'complete'
-        })
-      );
-    }
 
     return [hiddenPromise, stepPromise];
   };
