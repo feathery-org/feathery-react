@@ -37,7 +37,11 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
   } else {
     const { customClickSelectionState, runElementActions } = form;
     const props = node.properties ?? {};
-    const customComponent = form.customComponents[node.key ?? ''];
+
+    // Until we fully deprecate `callback_id`, we will check for custom components using it if the node's key is not found
+    const customComponent =
+      form.customComponents[node.key ?? ''] ||
+      form.customComponents[props.callback_id ?? '']; // TODO: Eventually we'll remove the check for callback_id and solely rely on the node's key as we deprecate the callback_id
 
     const children: any[] = (node.children || []).map((child: any, i: any) => (
       <Subgrid
