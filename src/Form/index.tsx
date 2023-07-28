@@ -1203,7 +1203,7 @@ function Form({
     };
     const trigger = lookUpTrigger(activeStep, element.id, elementType);
     trigger.repeatIndex = element.repeat;
-    let submitPromise;
+    let submitPromise: Promise<any> = Promise.resolve();
     if (submit) {
       setAutoValidate(true);
 
@@ -1222,15 +1222,16 @@ function Form({
         return;
       }
 
-      submitPromise = await submitStep(
+      const newPromise = await submitStep(
         metadata,
         element.repeat || 0,
         actions.some((action: any) => action.type === ACTION_NEXT)
       );
-      if (!submitPromise) {
+      if (!newPromise) {
         elementClicks[id] = false;
         return;
       }
+      submitPromise = Promise.all(newPromise);
     }
 
     const flowOnSuccess = (index: number) => async () => {
@@ -1259,9 +1260,11 @@ function Form({
       else if (type === ACTION_REMOVE_REPEATED_ROW)
         removeRepeatedRow(element.repeat);
       else if (type === ACTION_TRIGGER_PLAID) {
+        await submitPromise;
         await openPlaidLink(client, flowOnSuccess(i), updateFieldValues);
         break;
       } else if (type === ACTION_TRIGGER_ARGYLE) {
+        await submitPromise;
         await openArgyleLink(client, flowOnSuccess(i), integrations?.argyle);
         break;
       } else if (type === ACTION_URL) {
@@ -1276,8 +1279,7 @@ function Form({
               event: submit ? 'complete' : 'skip',
               completed: true
             };
-            const prom = submitPromise ? Promise.all(submitPromise) : null;
-            client.registerEvent(eventData, prom).then(() => {
+            client.registerEvent(eventData, submitPromise).then(() => {
               location.href = url;
             });
           }
@@ -1331,7 +1333,7 @@ function Form({
       else if (type === ACTION_NEXT) {
         await goToNewStep({
           metadata,
-          submitPromise: submit ? Promise.all(submitPromise ?? []) : null,
+          submitPromise,
           submitData: submit
         });
       } else if (type === ACTION_BACK) await goToPreviousStep();
