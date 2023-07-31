@@ -57,8 +57,7 @@ function FileUploadField({
       fileInput.current.setCustomValidity(
         `File exceeds max size of ${sizeLabel}`
       );
-      const report = fileInput.current.reportValidity;
-      if (report) report();
+      fileInput.current.reportValidity();
       return;
     }
 

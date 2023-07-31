@@ -307,10 +307,7 @@ export async function setFormElementError({
       if (index !== null && elements.length) elements = [elements[index]];
       elements.forEach((e) => e && e.setCustomValidity(message));
     }
-    if (triggerErrors) {
-      const report = formRef.current.reportValidity;
-      if (report) report();
-    }
+    if (triggerErrors) formRef.current.reportValidity();
     invalid = !formRef.current.checkValidity();
   } else if (errorType === 'inline') {
     if (fieldKey) inlineErrors[fieldKey] = { message };
