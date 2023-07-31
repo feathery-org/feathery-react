@@ -76,7 +76,8 @@ import {
   ContextOnView,
   ElementProps,
   PopupOptions,
-  ContextOnAction
+  ContextOnAction,
+  Trigger
 } from '../types/Form';
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
@@ -988,12 +989,13 @@ function Form({
     // done on the BE using collect payment EP.  Mapped field data may also be configured
     // and would require a custom submit prior to payment (which is also disabled for draft).
     if (!_draft) {
+      const trigger = {
+        ...lookUpTrigger(activeStep, triggerElement.id, 'container'),
+        repeatIndex: 0
+      } as Trigger;
       const errorCallback = getErrorCallback({
         // could be container or button but model as button for the time being...
-        trigger: {
-          ...lookUpTrigger(activeStep, triggerElement.id, 'container'),
-          repeatIndex: 0
-        }
+        trigger
       });
       // validate all step fields and buttons.  Must be valid before payment.
       const { invalid, inlineErrors: newInlineErrors } = validateElements({
@@ -1003,7 +1005,8 @@ function Form({
         errorType: formSettings.errorType,
         formRef,
         errorCallback,
-        setInlineErrors
+        setInlineErrors,
+        trigger
       });
       if (invalid) return false;
 
@@ -1190,8 +1193,6 @@ function Form({
     if (id && elementClicks[id]) return;
     elementClicks[id] = true;
 
-    if (Object.keys(inlineErrors).length > 0) setInlineErrors({});
-
     // Do not proceed until user has gone through required flows
     if (
       !hasFlowActions(actions) &&
@@ -1209,8 +1210,10 @@ function Form({
       start: textSpanStart,
       end: textSpanEnd
     };
-    const trigger = lookUpTrigger(activeStep, element.id, elementType);
-    trigger.repeatIndex = element.repeat;
+    const trigger = {
+      ...lookUpTrigger(activeStep, element.id, elementType),
+      repeatIndex: element.repeat
+    } as Trigger;
     let submitPromise: Promise<any> = Promise.resolve();
     if (submit) {
       setAutoValidate(true);
@@ -1223,7 +1226,8 @@ function Form({
         errorType: formSettings.errorType,
         formRef,
         errorCallback: getErrorCallback({ trigger }),
-        setInlineErrors
+        setInlineErrors,
+        trigger
       });
       if (invalid) {
         elementClicks[id] = false;
