@@ -12,7 +12,7 @@ export interface PopupOptions {
   onHide?: () => void;
 }
 
-type Trigger = {
+export type Trigger = {
   id: string;
   text?: string;
   type: 'button' | 'text' | 'field' | 'addressSelect';
