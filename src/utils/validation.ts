@@ -59,16 +59,13 @@ function validateElements({
       key = element.id;
     }
 
-    const message = validateElement(element, repeat);
+    let message = validateElement(element, repeat);
 
     // We want to clear button errors when the button is not "relevant" to what the user is doing.
-    // If the element is a button and was NOT the trigger or no trigger and there is an error,
+    // If the element is a button and was NOT the trigger or no trigger,
     // then we don't show the error.
-    if (
-      type === 'button' &&
-      ((trigger && key !== trigger.id) || (!trigger && message))
-    )
-      return errors;
+    if (type === 'button' && ((trigger && key !== trigger.id) || !trigger))
+      message = '';
 
     if (!(key in errors)) errors[key] = message;
     else if (Array.isArray(errors[key])) errors[key].push(message);
