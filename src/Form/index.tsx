@@ -839,11 +839,7 @@ function Form({
   const getNextStepKey = (metadata: any) =>
     nextStepKey(activeStep.next_conditions, metadata);
 
-  const submitStep = async (
-    metadata: any,
-    repeat: number,
-    hasNext: boolean
-  ) => {
+  const submitStep = async (metadata: any, repeat: number) => {
     const formattedFields = formatStepFields(
       activeStep,
       visiblePositions,
@@ -908,9 +904,7 @@ function Form({
     });
     const stepPromise =
       featheryFields.length > 0
-        ? // If step is saved but no navigation occurs, still send a complete event.
-          // Backend still needs to determine when a form completes.
-          client.submitStep(featheryFields, activeStep.key, !hasNext)
+        ? client.submitStep(featheryFields, activeStep.key)
         : Promise.resolve();
 
     const fieldData: Record<string, any> = {};
@@ -1234,11 +1228,7 @@ function Form({
         return;
       }
 
-      const newPromise = await submitStep(
-        metadata,
-        element.repeat || 0,
-        actions.some((action: any) => action.type === ACTION_NEXT)
-      );
+      const newPromise = await submitStep(metadata, element.repeat || 0);
       if (!newPromise) {
         elementClicks[id] = false;
         return;
@@ -1415,6 +1405,8 @@ function Form({
         );
         setShouldScrollToTop(false);
       }
+
+      let triggered = false;
       if (submitData) {
         const submitButton = activeStep.buttons.find(
           (b: any) => b.properties.submit
@@ -1428,20 +1420,15 @@ function Form({
           })
         ) {
           buttonOnClick(submitButton);
-        } else {
-          runElementActions({
-            actions: [{ type: ACTION_NEXT }],
-            element: { id: fieldID },
-            elementType: 'field',
-            submit: true
-          });
+          triggered = true;
         }
-      } else {
-        goToNewStep({
-          metadata: {
-            elementType: 'field',
-            elementIDs: [fieldID]
-          }
+      }
+      if (!triggered) {
+        runElementActions({
+          actions: [{ type: ACTION_NEXT }],
+          element: { id: fieldID },
+          elementType: 'field',
+          submit: submitData
         });
       }
     };
