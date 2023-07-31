@@ -81,7 +81,7 @@ export default class Client {
         return;
       case 400:
         payload = JSON.stringify(await response.clone().text());
-        throw new errors.FetchError(`Invalid parameters: ${payload}`);
+        throw new errors.FetchError(`Invalid parameters: ${payload}`, payload);
       case 401:
         throw new errors.SDKKeyError();
       case 404:
