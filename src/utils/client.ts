@@ -127,7 +127,7 @@ export default class Client {
       });
   }
 
-  _submitJSONData(servars: any, stepKey: string) {
+  _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
     const { userId } = initInfo();
     const url = `${API_URL}panel/step/submit/v3/`;
     const data = {
@@ -136,7 +136,8 @@ export default class Client {
       servars,
       panel_key: this.formKey,
       __feathery_version: this.version,
-      draft: this.draft
+      draft: this.draft,
+      no_complete: noComplete
     };
 
     const options = {
@@ -460,14 +461,14 @@ export default class Client {
   }
 
   // servars = [{key: <servarKey>, <type>: <value>}]
-  submitStep(servars: any, stepKey: string) {
+  submitStep(servars: any, stepKey: string, hasNext: boolean) {
     if (this.draft) return Promise.resolve();
     const isFileServar = (servar: any) =>
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
     return Promise.all([
-      this._submitJSONData(jsonServars, stepKey),
+      this._submitJSONData(jsonServars, stepKey, hasNext),
       ...fileServars.map((servar: any) => this._submitFileData(servar))
     ]);
   }

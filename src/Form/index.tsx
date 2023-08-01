@@ -839,7 +839,11 @@ function Form({
   const getNextStepKey = (metadata: any) =>
     nextStepKey(activeStep.next_conditions, metadata);
 
-  const submitStep = async (metadata: any, repeat: number) => {
+  const submitStep = async (
+    metadata: any,
+    repeat: number,
+    hasNext: boolean
+  ) => {
     const formattedFields = formatStepFields(
       activeStep,
       visiblePositions,
@@ -904,7 +908,7 @@ function Form({
     });
     const stepPromise =
       featheryFields.length > 0
-        ? client.submitStep(featheryFields, activeStep.key)
+        ? client.submitStep(featheryFields, activeStep.key, hasNext)
         : Promise.resolve();
 
     const fieldData: Record<string, any> = {};
@@ -1228,7 +1232,19 @@ function Form({
         return;
       }
 
-      const newPromise = await submitStep(metadata, element.repeat || 0);
+      // Don't try to complete the form on step submission if navigating to
+      // a new step. The nav action goToNewStep will attempt to complete
+      // it. If navigating but there is no step to navigate to, still attempt
+      // to complete the form here since the user may leave before the
+      // nav action event gets sent
+      const hasNext =
+        actions.some((action: any) => action.type === ACTION_NEXT) &&
+        getNextStepKey(metadata);
+      const newPromise = await submitStep(
+        metadata,
+        element.repeat || 0,
+        hasNext
+      );
       if (!newPromise) {
         elementClicks[id] = false;
         return;
