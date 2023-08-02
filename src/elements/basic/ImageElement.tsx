@@ -7,16 +7,6 @@ const PLACEHOLDER_IMAGE =
 
 function applyImageStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets('imageContainer', 'image');
-  responsiveStyles.apply(
-    'imageContainer',
-    ['width', 'width_unit'],
-    (width: any, widthUnit: any) => {
-      // TODO: this is a hack to prevent % from double applying
-      if (widthUnit === '%') return {};
-      else return { width: `${width}${widthUnit}` };
-    }
-  );
-  responsiveStyles.applyHeight('image');
   responsiveStyles.applyCorners('imageContainer');
   responsiveStyles.applyCorners('image');
   return responsiveStyles;
@@ -51,6 +41,7 @@ function ImageElement({
     <div
       css={{
         width: '100%',
+        height: '100%',
         ...styles.getTarget('imageContainer'),
         maxHeight: '100%',
         position: 'relative',
@@ -66,6 +57,8 @@ function ImageElement({
           css={{
             objectFit: 'contain',
             width: '100%',
+            maxWidth: '100%',
+            height: '100%',
             maxHeight: '100%',
             ...styles.getTarget('image')
           }}
