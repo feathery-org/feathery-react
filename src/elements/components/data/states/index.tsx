@@ -29,8 +29,9 @@ import ru from './ru';
 import th from './th';
 import us from './us';
 import za from './za';
+import React from 'react';
 
-export default {
+export const stateMap: Record<string, { name: string; code: string }[]> = {
   ae,
   au,
   br,
@@ -62,4 +63,25 @@ export default {
   th,
   us,
   za
-} as Record<string, any>;
+};
+
+export function hasState(
+  country: string,
+  state: string,
+  shortcode: boolean,
+  coerce = false
+) {
+  if (coerce && !(country in stateMap)) return true;
+  const stateVals = (stateMap[country] ?? []).map(({ name, code }: any) =>
+    shortcode ? code : name
+  );
+  return stateVals.includes(state);
+}
+
+export function getStateOptions(country: string, shortcode: boolean) {
+  return (stateMap[country] ?? []).map(({ name, code }) => (
+    <option key={code} value={shortcode ? code : name}>
+      {name}
+    </option>
+  ));
+}
