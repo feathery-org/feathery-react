@@ -13,7 +13,6 @@ export default function InlineTooltip({ element, responsiveStyles }: any) {
         <Tooltip
           id={`tooltip-${element.id}`}
           css={{
-            opacity: 0.9,
             padding: '.4rem 0',
             transition: 'opacity .10s linear',
             '.tooltip-inner': {
