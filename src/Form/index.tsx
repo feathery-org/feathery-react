@@ -1243,7 +1243,7 @@ function Form({
       const newPromise = await submitStep(
         metadata,
         element.repeat || 0,
-        hasNext
+        !!hasNext
       );
       if (!newPromise) {
         elementClicks[id] = false;
