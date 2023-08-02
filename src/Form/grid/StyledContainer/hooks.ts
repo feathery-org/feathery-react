@@ -122,7 +122,11 @@ export const useContainerEngine = (node: any, rawNode: any, ref: any) => {
   // This effect is used to ignore "ResizeObserver loop limit exceeded" errors. They are benign.
   useEffect(() => {
     const errorHandler = (e: any) => {
-      if (e.message === 'ResizeObserver loop limit exceeded') {
+      if (
+        e.message === 'ResizeObserver loop limit exceeded' ||
+        e.message ===
+          'ResizeObserver loop completed with undelivered notifications.'
+      ) {
         // eslint-disable-next-line
         const resizeObserverErrDiv = document.getElementById(
           'webpack-dev-server-client-overlay-div'

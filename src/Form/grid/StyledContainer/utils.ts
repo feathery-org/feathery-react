@@ -47,6 +47,35 @@ export const getStylePxValue = (style: any) => {
   return 0;
 };
 
+/**
+ * Returns the total pixel width of the provided div. The pixel width will
+ * prioritize max-width if it's set and include the margin left + right.
+ * @param div - Div to get the total pixel width of
+ * @returns {number} - Total pixel width of the div
+ */
+export const getTotalPxWidth = (div: any) => {
+  const styles = getComputedStyle(div);
+  let totalWidth = 0;
+
+  if (styles.display === 'none') {
+    return totalWidth; // Hidden elements have a total width of 0
+  }
+
+  if (isPx(styles.maxWidth)) {
+    totalWidth += getPxValue(styles.maxWidth);
+  } else if (isPx(styles.width)) {
+    totalWidth += getPxValue(styles.width);
+  } else {
+    totalWidth += div.offsetWidth; // As a last resort, it will use the offsetWidth (assuming the width and max-width are non-pixel)
+  }
+
+  // Add margin to the total width
+  totalWidth +=
+    getStylePxValue(styles.marginLeft) + getStylePxValue(styles.marginRight);
+
+  return totalWidth;
+};
+
 export const getImmediateDivs = (el: any) => {
   if (!el) {
     return [];
@@ -167,30 +196,7 @@ export const resizeFitContainer = (div: any) => {
   // If the container is a "Column" axis, we add up the widths (or maxWidths) of it's children
   if (innerContainerStyles.flexDirection === 'row') {
     childrenWidth = children.reduce((total: number, child: any) => {
-      const childStyles = getComputedStyle(child);
-      const childMaxWidth = childStyles.maxWidth;
-      const childWidth = childStyles.width;
-      let newTotal = total;
-
-      if (childStyles.display === 'none') {
-        return total; // Hidden elements should not be included in the calculation
-      }
-
-      if (isPx(childMaxWidth)) {
-        newTotal += getPxValue(childMaxWidth);
-      } else if (isPx(childWidth)) {
-        newTotal += getPxValue(childWidth);
-      } else {
-        newTotal += child.offsetWidth;
-      }
-
-      if (isFitElement(child)) {
-        newTotal +=
-          getStylePxValue(childStyles.marginLeft) +
-          getStylePxValue(childStyles.marginRight);
-      }
-
-      return newTotal;
+      return total + getTotalPxWidth(child);
     }, 0);
 
     childrenWidth +=
@@ -202,28 +208,10 @@ export const resizeFitContainer = (div: any) => {
         return greatest; // Disregard fill containers
       }
 
-      const childStyles = getComputedStyle(child);
-      const childMaxWidth = childStyles.maxWidth;
-      const childWidth = childStyles.width;
+      const childTotalPxWidth = getTotalPxWidth(child);
 
-      if (childStyles.display === 'none') {
-        return greatest; // Hidden elements should not be included in the calculation
-      }
-
-      if (isPx(childMaxWidth)) {
-        const val = getPxValue(childMaxWidth);
-
-        if (val > greatest) {
-          return val;
-        }
-      } else if (isPx(childWidth)) {
-        const val = getPxValue(childWidth);
-
-        if (val > greatest) {
-          return val;
-        }
-      } else if (child.offsetWidth > greatest) {
-        return child.offsetWidth;
+      if (childTotalPxWidth > greatest) {
+        return childTotalPxWidth;
       }
 
       return greatest;
