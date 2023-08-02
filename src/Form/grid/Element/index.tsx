@@ -467,7 +467,15 @@ const Element = ({ node: el, form, flags }: any) => {
                 const addrValues: Record<string, any> = {};
                 Object.entries(addrFields).forEach(([, field]) => {
                   const servar = field.servar;
-                  const val = address[servar.type] ?? '';
+                  let val;
+                  if (
+                    servar.type === 'gmap_state' &&
+                    servar.metadata.store_abbreviation
+                  )
+                    val = address.gmap_state_short;
+                  else val = address[servar.type];
+                  val = val ?? '';
+
                   addrValues[servar.key] =
                     index === null
                       ? val

@@ -1,10 +1,10 @@
 export default [
-  'Queensland',
-  'New South Wales',
-  'Australian Capital Territory',
-  'Victoria',
-  'Tasmania',
-  'Northern Territory',
-  'South Australia',
-  'Western Australia'
+  { name: 'Australian Capital Territory', code: 'ACT' },
+  { name: 'New South Wales', code: 'NSW' },
+  { name: 'Northern Territory', code: 'NT' },
+  { name: 'Queensland', code: 'QLD' },
+  { name: 'South Australia', code: 'SA' },
+  { name: 'Tasmania', code: 'TAS' },
+  { name: 'Victoria', code: 'VIC' },
+  { name: 'Western Australia', code: 'WA' }
 ];
