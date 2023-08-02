@@ -210,11 +210,7 @@ export const resizeFitContainer = (div: any) => {
 
       const childTotalPxWidth = getTotalPxWidth(child);
 
-      if (childTotalPxWidth > greatest) {
-        return childTotalPxWidth;
-      }
-
-      return greatest;
+      return childTotalPxWidth > greatest ? childTotalPxWidth : greatest;
     }, 0);
   }
 
