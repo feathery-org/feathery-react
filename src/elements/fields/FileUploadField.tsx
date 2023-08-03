@@ -222,6 +222,7 @@ function FileUploadField({
         required={required && !fileExists}
         accept={servar.metadata.file_types}
         disabled={element.properties.disabled ?? false}
+        multiple={isMultiple}
         style={{
           position: 'absolute',
           bottom: 0,
