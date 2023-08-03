@@ -42,7 +42,7 @@ export const Container = ({
     handleClick = () => {
       runElementActions({
         actions: actions,
-        element: { id: properties.callback_id, properties },
+        element: { id: node.id, properties },
         elementType: 'container'
       });
     };

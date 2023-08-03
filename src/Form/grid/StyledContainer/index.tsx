@@ -28,7 +28,6 @@ export type StyledContainerProps = PropsWithChildren & {
 export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
   (
     {
-      key: _key,
       node: _node,
       raw,
       css = {},
@@ -46,16 +45,13 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
 
     // TODO: Key should be changed to persistent ID post-persistent ID refactor
     const key = useMemo(() => {
-      if (_key) return _key;
-      else {
-        const nonCircularNode = { ...(rawNode || node || {}) };
+      const nonCircularNode = { ...(rawNode || node || {}) };
 
-        delete nonCircularNode.parent;
-        delete nonCircularNode.children;
+      delete nonCircularNode.parent;
+      delete nonCircularNode.children;
 
-        return JSON.stringify(nonCircularNode);
-      }
-    }, [_key, rawNode]);
+      return JSON.stringify(nonCircularNode);
+    }, [rawNode]);
 
     const { styles, innerStyles } = useContainerStyles(
       node,
