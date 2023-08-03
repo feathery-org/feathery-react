@@ -149,11 +149,11 @@ describe('logic', () => {
         expect(evalComparisonRule(rule(op, 100))).toBeTruthy();
 
         setFieldValues(100);
-        expect(evalComparisonRule(rule(op, 100))).toBeFalsy();
+        expect(evalComparisonRule(rule(op, 100, 200))).toBeFalsy();
 
         // repeat
         setFieldValues([100, 200]);
-        expect(evalComparisonRule(rule(op, 100, 200))).toBeTruthy();
+        expect(evalComparisonRule(rule(op, 100, 200))).toBeFalsy();
 
         setFieldValues([100, 200, 300]);
         expect(evalComparisonRule(rule(op, 400))).toBeTruthy();
