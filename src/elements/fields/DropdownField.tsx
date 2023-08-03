@@ -4,8 +4,7 @@ import React, { useEffect, useState } from 'react';
 import InlineTooltip from '../components/Tooltip';
 import useBorder from '../components/useBorder';
 import countryData from '../components/data/countries';
-import usStates from '../components/data/states/us';
-import stateMap from '../components/data/states';
+import { getStateOptions, hasState, stateMap } from '../components/data/states';
 
 export default function DropdownField({
   element,
@@ -25,42 +24,33 @@ export default function DropdownField({
     error: inlineError
   });
   const [focused, setFocused] = useState(false);
-  const [curStates, setCurStates] = useState<any>(null);
+  const [curCountry, setCurCountry] = useState(null);
+
+  const servar = element.servar;
+  const short = servar.metadata.store_abbreviation;
 
   useEffect(() => {
     if (servar.type === 'gmap_state') {
-      const code =
-        countryCode.toLowerCase() ?? servar.metadata.default_country ?? '';
-      let stateData = usStates;
-      if (code) {
-        stateData = stateMap[code] ?? [];
-        if (fieldVal && !stateData.includes(fieldVal)) {
-          fieldVal = '';
-          onChange({ target: { value: fieldVal } });
-        }
+      const code = countryCode.toLowerCase() ?? servar.metadata.default_country;
+      if (code && fieldVal && !hasState(code, fieldVal, short, true)) {
+        fieldVal = '';
+        onChange({ target: { value: fieldVal } });
       }
-      setCurStates(stateData);
+      setCurCountry(code || 'us');
     }
-  }, [countryCode, setCurStates]);
-
-  const servar = element.servar;
+  }, [countryCode, setCurCountry]);
 
   let options;
   if (servar.type === 'gmap_state') {
-    if (curStates === null) options = [];
-    else if (fieldVal && !curStates.includes(fieldVal))
-      // If user selected an international address
+    if (curCountry === null) options = [];
+    else if (fieldVal && !hasState(curCountry, fieldVal, short)) {
+      // If user selected a country without states defined
       options = [
         <option key={fieldVal} value={fieldVal}>
           {fieldVal}
         </option>
       ];
-    else
-      options = curStates.map((state: string) => (
-        <option key={state} value={state}>
-          {state}
-        </option>
-      ));
+    } else options = getStateOptions(curCountry, short);
   } else if (servar.type === 'gmap_country') {
     options = countryData.map(({ countryCode, countryName }) => (
       <option key={countryCode} value={countryCode}>

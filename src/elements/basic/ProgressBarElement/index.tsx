@@ -7,10 +7,10 @@ function applyProgressBarStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets('barContainer', 'bar');
 
   responsiveStyles.applyFontStyles('barContainer');
-  responsiveStyles.apply('barContainer', 'vertical_alignment', (a: any) => ({
+  responsiveStyles.apply('barContainer', 'vertical_align', (a: any) => ({
     justifyContent: a
   }));
-  responsiveStyles.apply('barContainer', 'horizontal_alignment', (a: any) => ({
+  responsiveStyles.apply('barContainer', 'horizontal_align', (a: any) => ({
     alignItems: a
   }));
 

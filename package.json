@@ -1,6 +1,6 @@
 {
   "name": "@feathery/react",
-  "version": "2.0.15",
+  "version": "2.0.27",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
@@ -89,6 +89,7 @@
     "@stripe/stripe-js": "^1.35.0",
     "@stytch/vanilla-js": "0.14.4",
     "flat-map-polyfill": "^0.3.8",
+    "js-big-decimal": "^1.4.1",
     "lodash.debounce": "^4.0.8",
     "lodash.throttle": "^4.1.1",
     "quill-delta": "^4.2.2",

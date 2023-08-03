@@ -95,7 +95,7 @@ function PhoneField({
       if (numberObj) {
         setCurFullNumber(fullNumber);
         setRawNumber(fullNumber);
-        setCurCountryCode(numberObj.country ?? DEFAULT_COUNTRY);
+        setCurCountryCode(numberObj.country ?? curCountryCode);
       }
     });
   }, [fullNumber]);

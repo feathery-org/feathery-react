@@ -76,7 +76,8 @@ import {
   ContextOnView,
   ElementProps,
   PopupOptions,
-  ContextOnAction
+  ContextOnAction,
+  Trigger
 } from '../types/Form';
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
@@ -639,6 +640,14 @@ function Form({
       }
     };
 
+    // This could be a redirect from Stripe following a successful payment checkout
+    checkForPaymentCheckoutCompletion(
+      newStep,
+      client,
+      updateFieldValues,
+      integrations?.stripe
+    );
+
     await runUserLogic('load');
     const newHash = getUrlHash();
     // This indicates user programmatically changed the step via the onLoad function
@@ -897,9 +906,9 @@ function Form({
         : newVal;
       return { key, [(val as any).type]: newVal };
     });
-    let stepPromise =
+    const stepPromise =
       featheryFields.length > 0
-        ? client.submitStep(featheryFields, activeStep.key)
+        ? client.submitStep(featheryFields, activeStep.key, hasNext)
         : Promise.resolve();
 
     const fieldData: Record<string, any> = {};
@@ -914,18 +923,6 @@ function Form({
         {} as Record<string, any>
       );
     trackEvent('FeatheryStepSubmit', activeStep.key, formName, fieldData);
-
-    if (!hasNext) {
-      // If step is saved but no navigation occurs, still send a complete event.
-      // Backend still needs to determine when a form completes.
-      stepPromise = stepPromise.then(() =>
-        client.registerEvent({
-          step_key: activeStep.key,
-          next_step_key: activeStep.key,
-          event: 'complete'
-        })
-      );
-    }
 
     return [hiddenPromise, stepPromise];
   };
@@ -990,12 +987,13 @@ function Form({
     // done on the BE using collect payment EP.  Mapped field data may also be configured
     // and would require a custom submit prior to payment (which is also disabled for draft).
     if (!_draft) {
+      const trigger = {
+        ...lookUpTrigger(activeStep, triggerElement.id, 'container'),
+        repeatIndex: 0
+      } as Trigger;
       const errorCallback = getErrorCallback({
         // could be container or button but model as button for the time being...
-        trigger: {
-          ...lookUpTrigger(activeStep, triggerElement.id, 'container'),
-          repeatIndex: 0
-        }
+        trigger
       });
       // validate all step fields and buttons.  Must be valid before payment.
       const { invalid, inlineErrors: newInlineErrors } = validateElements({
@@ -1005,7 +1003,8 @@ function Form({
         errorType: formSettings.errorType,
         formRef,
         errorCallback,
-        setInlineErrors
+        setInlineErrors,
+        trigger
       });
       if (invalid) return false;
 
@@ -1192,8 +1191,6 @@ function Form({
     if (id && elementClicks[id]) return;
     elementClicks[id] = true;
 
-    if (Object.keys(inlineErrors).length > 0) setInlineErrors({});
-
     // Do not proceed until user has gone through required flows
     if (
       !hasFlowActions(actions) &&
@@ -1211,9 +1208,11 @@ function Form({
       start: textSpanStart,
       end: textSpanEnd
     };
-    const trigger = lookUpTrigger(activeStep, element.id, elementType);
-    trigger.repeatIndex = element.repeat;
-    let submitPromise;
+    const trigger = {
+      ...lookUpTrigger(activeStep, element.id, elementType),
+      repeatIndex: element.repeat
+    } as Trigger;
+    let submitPromise: Promise<any> = Promise.resolve();
     if (submit) {
       setAutoValidate(true);
 
@@ -1225,22 +1224,32 @@ function Form({
         errorType: formSettings.errorType,
         formRef,
         errorCallback: getErrorCallback({ trigger }),
-        setInlineErrors
+        setInlineErrors,
+        trigger
       });
       if (invalid) {
         elementClicks[id] = false;
         return;
       }
 
-      submitPromise = await submitStep(
+      // Don't try to complete the form on step submission if navigating to
+      // a new step. The nav action goToNewStep will attempt to complete
+      // it. If navigating but there is no step to navigate to, still attempt
+      // to complete the form here since the user may leave before the
+      // nav action event gets sent
+      const hasNext =
+        actions.some((action: any) => action.type === ACTION_NEXT) &&
+        getNextStepKey(metadata);
+      const newPromise = await submitStep(
         metadata,
         element.repeat || 0,
-        actions.some((action: any) => action.type === ACTION_NEXT)
+        !!hasNext
       );
-      if (!submitPromise) {
+      if (!newPromise) {
         elementClicks[id] = false;
         return;
       }
+      submitPromise = Promise.all(newPromise);
     }
 
     const flowOnSuccess = (index: number) => async () => {
@@ -1269,9 +1278,11 @@ function Form({
       else if (type === ACTION_REMOVE_REPEATED_ROW)
         removeRepeatedRow(element.repeat);
       else if (type === ACTION_TRIGGER_PLAID) {
+        await submitPromise;
         await openPlaidLink(client, flowOnSuccess(i), updateFieldValues);
         break;
       } else if (type === ACTION_TRIGGER_ARGYLE) {
+        await submitPromise;
         await openArgyleLink(client, flowOnSuccess(i), integrations?.argyle);
         break;
       } else if (type === ACTION_URL) {
@@ -1286,8 +1297,7 @@ function Form({
               event: submit ? 'complete' : 'skip',
               completed: true
             };
-            const prom = submitPromise ? Promise.all(submitPromise) : null;
-            client.registerEvent(eventData, prom).then(() => {
+            client.registerEvent(eventData, submitPromise).then(() => {
               location.href = url;
             });
           }
@@ -1341,7 +1351,7 @@ function Form({
       else if (type === ACTION_NEXT) {
         await goToNewStep({
           metadata,
-          submitPromise: submit ? Promise.all(submitPromise ?? []) : null,
+          submitPromise,
           submitData: submit
         });
       } else if (type === ACTION_BACK) await goToPreviousStep();
@@ -1349,9 +1359,9 @@ function Form({
         const actionSuccess = await purchaseProductsAction(element);
         if (!actionSuccess) break;
       } else if (type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
-        addToCart(action, updateFieldValues);
+        addToCart(action, updateFieldValues, integrations?.stripe);
       } else if (type === ACTION_REMOVE_PRODUCT_FROM_PURCHASE) {
-        removeFromCart(action, updateFieldValues);
+        removeFromCart(action, updateFieldValues, integrations?.stripe);
       } else if (type === ACTION_STORE_FIELD) {
         let val;
         if (action.custom_store_value_type === 'field') {
@@ -1411,6 +1421,8 @@ function Form({
         );
         setShouldScrollToTop(false);
       }
+
+      let triggered = false;
       if (submitData) {
         const submitButton = activeStep.buttons.find(
           (b: any) => b.properties.submit
@@ -1424,20 +1436,15 @@ function Form({
           })
         ) {
           buttonOnClick(submitButton);
-        } else {
-          runElementActions({
-            actions: [{ type: ACTION_NEXT }],
-            element: { id: fieldID },
-            elementType: 'field',
-            submit: true
-          });
+          triggered = true;
         }
-      } else {
-        goToNewStep({
-          metadata: {
-            elementType: 'field',
-            elementIDs: [fieldID]
-          }
+      }
+      if (!triggered) {
+        runElementActions({
+          actions: [{ type: ACTION_NEXT }],
+          element: { id: fieldID },
+          elementType: 'field',
+          submit: submitData
         });
       }
     };

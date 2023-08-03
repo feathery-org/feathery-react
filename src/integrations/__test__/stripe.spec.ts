@@ -5,12 +5,20 @@ import {
   getFlatStripeCustomerFieldValues,
   getPaymentsReservedFieldValues,
   addToCart,
-  removeFromCart
+  removeFromCart,
+  Product,
+  calculateSelectedProductsTotal,
+  calculateLineItemCost
 } from '../stripe';
 import { fieldValues } from '../../utils/init';
+import BigDecimal from 'js-big-decimal';
 
-const mockStripeConfig = (checkoutType: 'custom' | 'stripe' = 'custom') => ({
+const mockStripeConfig = (
+  checkoutType: 'custom' | 'stripe' = 'custom',
+  products: { [key: string]: Product } = {}
+) => ({
   metadata: {
+    test: { product_price_cache: products },
     checkout_type: checkoutType,
     customer_field_mappings: {
       name: 'customer-name',
@@ -230,11 +238,14 @@ describe('Stripe integration helper', () => {
         const _mockAction = mockAction();
         _mockAction.product_id = mockProdIdNew;
         _mockAction.toggle = false;
-        _mockAction.clear_cart = false;
         const mockUpdateFieldValues = jest.fn();
 
         // act
-        const cartSelections = addToCart(_mockAction, mockUpdateFieldValues);
+        const cartSelections = addToCart(
+          _mockAction,
+          mockUpdateFieldValues,
+          mockStripeConfig()
+        );
 
         // Assert
         // expect cartSelections to not be null
@@ -250,9 +261,12 @@ describe('Stripe integration helper', () => {
 
         // arrange
         const _mockAction = mockAction();
-        _mockAction.clear_cart = false;
         // act
-        const cartSelections = addToCart(_mockAction, mockUpdateFieldValues);
+        const cartSelections = addToCart(
+          _mockAction,
+          mockUpdateFieldValues,
+          mockStripeConfig()
+        );
 
         // Assert
         expect(cartSelections).not.toBeNull();
@@ -261,15 +275,6 @@ describe('Stripe integration helper', () => {
           expect(cartSelections[mockProdId]).toBeUndefined();
           expect(cartSelections[mockProdId2]).toEqual(2);
         }
-      });
-      it('toggles off and clears cart', () => {
-        const mockUpdateFieldValues = jest.fn();
-
-        // act
-        const cartSelections = addToCart(mockAction(), mockUpdateFieldValues);
-
-        // Assert
-        expect(cartSelections).toBeNull();
       });
     });
     describe('removeFromCart', () => {
@@ -284,7 +289,8 @@ describe('Stripe integration helper', () => {
         // act
         const cartSelections = removeFromCart(
           _mockAction,
-          mockUpdateFieldValues
+          mockUpdateFieldValues,
+          mockStripeConfig()
         );
 
         // Assert
@@ -300,7 +306,8 @@ describe('Stripe integration helper', () => {
         // act
         const cartSelections = removeFromCart(
           mockAction(),
-          mockUpdateFieldValues
+          mockUpdateFieldValues,
+          mockStripeConfig()
         );
 
         // Assert
@@ -405,6 +412,242 @@ describe('Stripe integration helper', () => {
       // Assert
       expect(mockClient.createCheckoutSession).toHaveBeenCalled();
       expect(result).toBeNull();
+    });
+  });
+
+  describe('purchase cost calculation', () => {
+    const prodId1 = 'prod_NDu5phIipHaZqZ';
+    const prodId2 = 'prod_MLwEIkqFPLtINN';
+    const mockProdId = 'stripe-prod-1';
+    const mockProdId2 = 'stripe-prod-2';
+
+    const prodIdPackage = 'prod_package';
+    const prodIdPackage2 = 'prod_package2';
+    const prodIdTieredGraduated = 'prod_graduated';
+    const prodIdTieredVolume = 'prod_volume';
+
+    const products: { [key: string]: Product } = {
+      [prodId1]: {
+        id: prodId1,
+        default_price: 'price_1MTSHfI26OLuOvXi5e1fCOx4',
+        prices: [
+          {
+            id: 'price_1MTSHfI26OLuOvXi5e1fCOx4',
+            type: 'recurring',
+            recurring_interval: 'month',
+            recurring_usage_type: 'licensed',
+            billing_scheme: 'per_unit',
+            unit_amount: 1200,
+            per_unit_units: 1,
+            per_unit_rounding: 'up'
+          }
+        ]
+      },
+      [prodId2]: {
+        id: prodId2,
+        default_price: 'price_1LdEMPI26OLuOvXiizpd23RP',
+        prices: [
+          {
+            id: 'price_1LdEMPI26OLuOvXiizpd23RP',
+            type: 'recurring',
+            recurring_interval: 'month',
+            recurring_usage_type: 'licensed',
+            billing_scheme: 'per_unit',
+            unit_amount: 2250,
+            per_unit_units: 1,
+            per_unit_rounding: 'up'
+          }
+        ]
+      },
+      [mockProdId]: {
+        id: mockProdId,
+        default_price: 'price_1LdH0QI26OLuOvXiVE7PCOKa',
+        prices: [
+          {
+            id: 'price_1LdH0QI26OLuOvXiVE7PCOKa',
+            type: 'one_time',
+            billing_scheme: 'per_unit',
+            unit_amount: 90000,
+            per_unit_units: 1,
+            per_unit_rounding: 'up'
+          }
+        ]
+      },
+      [mockProdId2]: {
+        id: mockProdId2,
+        default_price: 'price_2LdH0QI26dfkklfdgdflkdfj',
+        prices: [
+          {
+            id: 'price_2LdH0QI26dfkklfdgdflkdfj',
+            type: 'one_time',
+            billing_scheme: 'per_unit',
+            unit_amount: 30000,
+            per_unit_units: 1,
+            per_unit_rounding: 'up'
+          }
+        ]
+      },
+      [prodIdPackage]: {
+        id: prodIdPackage,
+        default_price: 'price_package',
+        prices: [
+          {
+            id: 'price_package',
+            type: 'one_time',
+            billing_scheme: 'per_unit',
+            unit_amount: 4200,
+            per_unit_units: 11,
+            per_unit_rounding: 'up'
+          }
+        ]
+      },
+      [prodIdPackage2]: {
+        id: prodIdPackage2,
+        default_price: 'price_package2',
+        prices: [
+          {
+            id: 'price_package2',
+            type: 'one_time',
+            billing_scheme: 'per_unit',
+            unit_amount: 4200,
+            per_unit_units: 11,
+            per_unit_rounding: 'down'
+          }
+        ]
+      },
+      [prodIdTieredGraduated]: {
+        id: prodIdTieredGraduated,
+        default_price: 'price_graduated',
+        prices: [
+          {
+            id: 'price_graduated',
+            type: 'one_time',
+            billing_scheme: 'tiered',
+            tiers_mode: 'graduated',
+            tiers: [
+              {
+                up_to: 10,
+                unit_amount: 1000,
+                flat_amount: 10000
+              },
+              {
+                up_to: 20,
+                unit_amount: 500,
+                flat_amount: 5000
+              },
+              {
+                up_to: null,
+                unit_amount: 100
+              }
+            ]
+          }
+        ]
+      },
+      [prodIdTieredVolume]: {
+        id: prodIdTieredVolume,
+        default_price: 'price_volume',
+        prices: [
+          {
+            id: 'price_volume',
+            type: 'one_time',
+            billing_scheme: 'tiered',
+            tiers_mode: 'volume',
+            tiers: [
+              {
+                up_to: 10,
+                unit_amount: 1000,
+                flat_amount: 10000
+              },
+              {
+                up_to: 20,
+                unit_amount: 500,
+                flat_amount: 5000
+              },
+              {
+                up_to: null,
+                unit_amount: 100
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    describe('calculateLineItemCost', () => {
+      it('ignore invalid product id', () => {
+        expect(
+          calculateLineItemCost(
+            'invalid',
+            1,
+            mockStripeConfig('stripe', products)
+          )
+        ).toStrictEqual(new BigDecimal(0));
+      });
+      it('per-unit, non-packaged - testing round up', () => {
+        expect(
+          calculateLineItemCost(
+            prodIdPackage,
+            10,
+            mockStripeConfig('stripe', products)
+          )
+        ).toStrictEqual(new BigDecimal(382 * 10));
+      });
+      it('per-unit, non-packaged - testing round down', () => {
+        expect(
+          calculateLineItemCost(
+            prodIdPackage2,
+            10,
+            mockStripeConfig('stripe', products)
+          )
+        ).toStrictEqual(new BigDecimal(381 * 10));
+      });
+      it('tiered, graduated, with tier flat pricing', () => {
+        expect(
+          calculateLineItemCost(
+            prodIdTieredGraduated,
+            32,
+            mockStripeConfig('stripe', products)
+          )
+        ).toStrictEqual(
+          new BigDecimal(1000 * 10 + 10000 + (500 * 10 + 5000) + 100 * 12)
+        );
+      });
+      it('tiered, graduated, with tier flat pricing, falls into second tier only', () => {
+        expect(
+          calculateLineItemCost(
+            prodIdTieredGraduated,
+            12,
+            mockStripeConfig('stripe', products)
+          )
+        ).toStrictEqual(new BigDecimal(1000 * 10 + 10000 + (500 * 2 + 5000)));
+      });
+      it('tiered, VOLUME, with flat pricing', () => {
+        expect(
+          calculateLineItemCost(
+            prodIdTieredVolume,
+            18,
+            mockStripeConfig('stripe', products)
+          )
+        ).toStrictEqual(new BigDecimal(500 * 18 + 5000));
+      });
+    });
+    describe('calculateSelectedProductsTotal', () => {
+      beforeEach(() => {
+        fieldValues['feathery.payments.selections'] = {
+          'stripe-prod-1': 1,
+          'stripe-prod-2': 2
+        };
+      });
+
+      it('calculates a total', () => {
+        const mockUpdateFieldValues = jest.fn();
+        expect(
+          calculateSelectedProductsTotal(
+            mockStripeConfig('stripe', products),
+            mockUpdateFieldValues
+          )
+        ).toBe('1500.00');
+      });
     });
   });
 });

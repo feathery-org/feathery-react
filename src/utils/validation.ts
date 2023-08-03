@@ -4,6 +4,7 @@ import { dynamicImport } from '../integrations/utils';
 import React from 'react';
 import { fieldValues, initInfo } from './init';
 import { getVisibleElements } from './hideAndRepeats';
+import { Trigger } from '../types/Form';
 
 export interface ResolvedCustomValidation {
   message: string;
@@ -20,7 +21,8 @@ function validateElements({
   errorType,
   formRef,
   errorCallback = () => {},
-  setInlineErrors
+  setInlineErrors,
+  trigger
 }: {
   step: any;
   visiblePositions: any;
@@ -29,6 +31,7 @@ function validateElements({
   formRef: React.MutableRefObject<any>;
   errorCallback?: any;
   setInlineErrors: any;
+  trigger?: Trigger;
 }): {
   errors: { [fieldKey: string]: string };
   inlineErrors: { [key: string]: any };
@@ -56,7 +59,14 @@ function validateElements({
       key = element.id;
     }
 
-    const message = validateElement(element, repeat);
+    let message = validateElement(element, repeat);
+
+    // We want to clear button errors when the button is not "relevant" to what the user is doing.
+    // If the element is a button and was NOT the trigger or no trigger,
+    // then we don't show the error.
+    if (type === 'button' && ((trigger && key !== trigger.id) || !trigger))
+      message = '';
+
     if (!(key in errors)) errors[key] = message;
     else if (Array.isArray(errors[key])) errors[key].push(message);
     else errors[key] = [errors[key], message];

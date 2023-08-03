@@ -4,6 +4,7 @@ import { runningInClient, featheryDoc, featheryWindow } from '../utils/browser';
 import { ActionData } from './utils';
 import { fieldValues } from '../utils/init';
 import { ACTION_PURCHASE_PRODUCTS } from '../utils/elementActions';
+import BigDecimal from 'js-big-decimal';
 const stripePromise = new Promise((resolve) => {
   if (runningInClient())
     featheryDoc().addEventListener('stripe_key_loaded', (e: any) => {
@@ -194,24 +195,18 @@ export function isProductInPurchaseSelections(productId: string) {
  */
 export function addToCart(
   paymentAction: PaymentAction,
-  updateFieldValues: any
+  updateFieldValues: any,
+  stripeConfig: any
 ) {
   const {
     product_id: productId,
     quantity_field: quantityField,
     fixed_quantity: fixedQuantity,
-    toggle,
-    clear_cart: clearCart
+    toggle
   } = paymentAction;
 
   const cartSelections = getCartSelections();
   const currentQuantity = cartSelections[productId] ?? 0;
-  if (clearCart) {
-    // clear cart
-    Object.keys(cartSelections).forEach((key) => {
-      delete cartSelections[key];
-    });
-  }
   if (toggle && currentQuantity > 0) {
     // toggle off
     delete cartSelections[productId];
@@ -228,6 +223,7 @@ export function addToCart(
     ? cartSelections
     : null;
   saveCartSelections(newCartSelections, updateFieldValues);
+  calculateSelectedProductsTotal(stripeConfig, updateFieldValues);
   return newCartSelections;
 }
 
@@ -237,7 +233,8 @@ export function addToCart(
  */
 export function removeFromCart(
   paymentAction: PaymentAction,
-  updateFieldValues: any
+  updateFieldValues: any,
+  stripeConfig: any
 ) {
   const { product_id: productId, clear_cart: clearCart } = paymentAction;
   const cartSelections = getCartSelections();
@@ -254,6 +251,7 @@ export function removeFromCart(
     ? cartSelections
     : null;
   saveCartSelections(newCartSelections, updateFieldValues);
+  calculateSelectedProductsTotal(stripeConfig, updateFieldValues);
   return newCartSelections;
 }
 
@@ -330,12 +328,18 @@ export async function purchaseCart(
         // BE is the source of truth here.  Update fieldValues.
         // This will set the any payment indicator field.
         updateFieldValues(newFieldValues ?? {});
+        calculateSelectedProductsTotal(stripeConfig, updateFieldValues);
       }
     }
-  } catch (e) {
+  } catch (e: any) {
     return {
       errorField: triggerElement,
-      errorMessage: 'Payment Error'
+      errorMessage:
+        e.payload &&
+        Array.isArray(e.payload) &&
+        e.payload[0]?.code === 'mixed-recurring'
+          ? 'Payment Error: Mixed recurring periods'
+          : 'Payment Error'
     };
   }
   return null;
@@ -365,6 +369,7 @@ export async function checkForPaymentCheckoutCompletion(
     if (paymentElement) {
       // auto clear the cart on successful payment
       saveCartSelections(null, updateFieldValues);
+      calculateSelectedProductsTotal(integrationData, updateFieldValues);
 
       // clearing after successful payment
       const fieldValuesToSubmit: Record<string, any> = {
@@ -416,4 +421,158 @@ export function usePayments(): [
   const getCardElement = (key: any) => cardElementMappings[key];
 
   return [getCardElement, setCardElement];
+}
+
+interface PricingTier {
+  up_to: number | null;
+  unit_amount?: number;
+  flat_amount?: number;
+}
+type PRICE_TYPE = 'one_time' | 'recurring';
+interface Price {
+  id: string;
+  currency?: string;
+  type: PRICE_TYPE;
+  recurring_interval?: 'month' | 'year' | 'week' | 'day' | null | '';
+  recurring_usage_type?: 'licensed' | 'metered';
+  billing_scheme: 'per_unit' | 'tiered';
+  unit_amount?: number;
+  per_unit_units?: number;
+  per_unit_rounding?: 'up' | 'down';
+  tiers_mode?: 'graduated' | 'volume';
+  tiers?: PricingTier[];
+}
+export interface Product {
+  id: string;
+  default_price: string;
+  prices: Price[];
+}
+
+interface ProductPriceCacheConfig {
+  product_price_cache: { [key: string]: Product };
+}
+export function calculateSelectedProductsTotal(
+  stripeConfig: {
+    metadata: {
+      test?: ProductPriceCacheConfig;
+      live?: ProductPriceCacheConfig;
+    };
+  },
+  updateFieldValues: (fv: { [key: string]: any }) => void
+): string {
+  // Each key in feathery.payments.cartSelections is a product id.
+  // Each value is the quantity of that product.
+  // Calculate each product's cost and sum them up.
+
+  let cost = new BigDecimal(0);
+  const cartSelections = getCartSelections();
+  for (const productId in cartSelections) {
+    const quantity = cartSelections[productId];
+    // call calculateLineItemCost to get the cost of this product
+    const lineItemCost = calculateLineItemCost(
+      productId,
+      quantity,
+      stripeConfig
+    );
+    cost = cost.add(lineItemCost);
+  }
+  // Note: this will not work when and if we internationalize and support international currencies!
+  // The text var needs to eventually support some sort of format specifier so that formatting is done during the display...
+  const totalCost = cost
+    .divide(new BigDecimal(100), 12)
+    .round(2, BigDecimal.RoundingModes.HALF_UP)
+    // .getPrettyValue(3, ',');
+    .getValue();
+  updateFieldValues({
+    [FEATHERY_PAYMENTS_TOTAL]: totalCost
+  });
+  return totalCost;
+}
+
+export function calculateLineItemCost(
+  productId: string,
+  quantity: number,
+  stripeConfig: {
+    metadata: {
+      test?: ProductPriceCacheConfig;
+      live?: ProductPriceCacheConfig;
+    };
+  }
+): BigDecimal {
+  // Pricing model (either one-time or recurring) is one of:
+  //
+  // 1. Per-unit or tiered (billing_scheme)
+  // 2. If per-unit, then either per-one-unit (standard) or package pricing (per_unit_units, per_unit_rounding)
+  // 3. If tiered, then either graduated or volume (tiers_mode, tiers)
+  // 4. If tiered, then charges in tier can be per-unit, flat or both.
+  //
+  // Any metered pricing is not supported and skipped if encountered.
+
+  let cost = new BigDecimal(0);
+  const allProductsPriceCache = {
+    ...(stripeConfig.metadata.test?.product_price_cache ?? {}),
+    ...(stripeConfig.metadata.live?.product_price_cache ?? {})
+  };
+  const product = allProductsPriceCache[productId];
+  if (product && product.default_price) {
+    // only supporting default price right now and no metered pricing
+    const price = product.prices.find(
+      (price) => price.id === product.default_price
+    );
+    if (price && price.recurring_usage_type !== 'metered') {
+      if (price.billing_scheme === 'per_unit') {
+        // per-unit standard and package pricing
+        const perUnitUnits = new BigDecimal(price.per_unit_units ?? 1);
+        const rounding =
+          price.per_unit_rounding && price.per_unit_rounding === 'down'
+            ? BigDecimal.RoundingModes.DOWN
+            : BigDecimal.RoundingModes.HALF_UP;
+
+        // carrying out to 12 decimal digits max (from Stripe)
+        const unitAmount = new BigDecimal(price.unit_amount)
+          .divide(perUnitUnits, 12)
+          .round(0, rounding);
+
+        cost = unitAmount.multiply(new BigDecimal(quantity));
+      } else if (price.billing_scheme === 'tiered' && price.tiers) {
+        if (price.tiers_mode === 'graduated') {
+          // tiered graduated
+          let remaining = quantity;
+          cost = price.tiers.reduce((cost, tier) => {
+            if (remaining) {
+              let sum = cost.add(new BigDecimal(tier.flat_amount ?? 0));
+              const unitsThisTier =
+                tier.up_to === null || quantity <= tier.up_to
+                  ? remaining
+                  : remaining - (quantity - tier.up_to);
+              remaining -= unitsThisTier;
+              sum = sum.add(
+                new BigDecimal(tier.unit_amount ?? 0).multiply(
+                  new BigDecimal(unitsThisTier)
+                )
+              );
+              return sum;
+            }
+            return cost;
+          }, new BigDecimal(0));
+        } else if (price.tiers_mode === 'volume') {
+          // tiered, volume
+          for (let i = 0; i < price.tiers.length; i++) {
+            const tier = price.tiers[i];
+            if (tier.up_to === null || quantity <= tier.up_to) {
+              let sum = new BigDecimal(tier.flat_amount ?? 0);
+              sum = sum.add(
+                new BigDecimal(tier.unit_amount ?? 0).multiply(
+                  new BigDecimal(quantity)
+                )
+              );
+              return sum;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return cost;
 }
