@@ -141,7 +141,7 @@ const COMPARISON_FUNCTIONS: {
     ),
   not_equal: (l, r) =>
     l.some((l: any) =>
-      someRight(
+      everyRight(
         (l, r) => {
           if (!l) return !!r;
           else if (!r) return !!l;
@@ -251,7 +251,7 @@ const COMPARISON_FUNCTIONS: {
   contains: (l, r) =>
     l.some((l: any) => someRight((l, r) => String(l).includes(r), l, r)),
   not_contains: (l, r) =>
-    l.some((l: any) => someRight((l, r) => !String(l).includes(r), l, r)),
+    l.some((l: any) => everyRight((l, r) => !String(l).includes(r), l, r)),
   contains_ignore_case: (l, r) =>
     l.some((l: any) =>
       someRight(
@@ -262,7 +262,7 @@ const COMPARISON_FUNCTIONS: {
     ),
   not_contains_ignore_case: (l, r) =>
     l.some((l: any) =>
-      someRight(
+      everyRight(
         (l, r) => !String(l.toLowerCase()).includes(r.toLowerCase()),
         l,
         r
@@ -271,11 +271,11 @@ const COMPARISON_FUNCTIONS: {
   starts_with: (l, r) =>
     l.some((l: any) => someRight((l, r) => String(l).startsWith(r), l, r)),
   not_starts_with: (l, r) =>
-    l.some((l: any) => someRight((l, r) => !String(l).startsWith(r), l, r)),
+    l.some((l: any) => everyRight((l, r) => !String(l).startsWith(r), l, r)),
   ends_with: (l, r) =>
     l.some((l: any) => someRight((l, r) => String(l).endsWith(r), l, r)),
   not_ends_with: (l, r) =>
-    l.some((l: any) => someRight((l, r) => !String(l).endsWith(r), l, r)),
+    l.some((l: any) => everyRight((l, r) => !String(l).endsWith(r), l, r)),
   is_true: (l) => l.some((l: any) => Boolean(l)),
   is_false: (l) => l.some((l: any) => !l)
 };

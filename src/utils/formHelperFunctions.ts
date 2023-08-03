@@ -5,7 +5,7 @@ import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { getVisibleElements } from './hideAndRepeats';
 import throttle from 'lodash.throttle';
 import { ACTION_NEXT, ACTION_URL } from './elementActions';
-import { featheryWindow } from '../utils/browser';
+import { featheryWindow } from './browser';
 import Client from '../utils/client';
 import { isObjectEmpty } from './primitives';
 
