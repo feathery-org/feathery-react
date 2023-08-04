@@ -1,5 +1,5 @@
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
-import { setFormElementError } from './formHelperFunctions';
+import { ARRAY_FIELD_TYPES, setFormElementError } from './formHelperFunctions';
 import { dynamicImport } from '../integrations/utils';
 import React from 'react';
 import { fieldValues, initInfo } from './init';
@@ -181,6 +181,9 @@ const validators = {
 };
 
 function isFieldValueEmpty(value: any, servar: any) {
+  if (ARRAY_FIELD_TYPES.includes(servar.type))
+    return !value || value.length === 0;
+
   let noVal;
   switch (servar.type) {
     case 'select':
@@ -190,12 +193,6 @@ function isFieldValueEmpty(value: any, servar: any) {
     case 'checkbox':
       // eslint-disable-next-line camelcase
       noVal = !value && servar.metadata?.must_check;
-      break;
-    case 'file_upload':
-    case 'button_group':
-    case 'multiselect':
-    case 'dropdown_multi':
-      noVal = !value || value.length === 0;
       break;
     case 'payment_method':
       noVal = !value?.complete;
