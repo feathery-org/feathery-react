@@ -17,6 +17,7 @@ import SliderField from './SliderField';
 import TextField from './TextField';
 import TextArea from './TextArea';
 import AddressLine1 from './AddressLine1';
+import PasswordField from './PasswordField';
 import PaymentMethodField from './PaymentMethodField';
 import { borderWidthProps } from '../styles';
 
@@ -30,6 +31,7 @@ const Fields = {
   DropdownField,
   DropdownMultiField,
   FileUploadField,
+  PasswordField,
   PaymentMethodField,
   PhoneField,
   PinInputField,
