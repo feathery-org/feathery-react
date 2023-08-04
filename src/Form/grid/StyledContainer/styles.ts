@@ -432,22 +432,6 @@ export const getInnerContainerStyles = (
   if (node.parent && !node.parent.parent && !node.isElement) {
     styles.apply(
       'inner-container',
-      ['parent_width', 'viewport', 'width', 'width_unit'],
-      (parentWidth: any, _viewport: any, width: any, widthUnit: any) => {
-        const vp = viewport || _viewport;
-        const s: any = {};
-
-        if (!isPx(parentWidth) && widthUnit === 'px') {
-          // Ensure to set `auto` if mobile to unset the desktop property
-          s.minWidth = vp !== 'mobile' ? `${width}${widthUnit}` : 'auto';
-        }
-
-        return s;
-      }
-    );
-
-    styles.apply(
-      'inner-container',
       ['parent_height', 'viewport', 'height', 'height_unit'],
       (parentHeight: any, _viewport: any, height: any, heightUnit: any) => {
         const vp = viewport || _viewport;
