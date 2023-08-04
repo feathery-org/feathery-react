@@ -9,6 +9,13 @@ import { featheryWindow } from './browser';
 import Client from '../utils/client';
 import { isObjectEmpty } from './primitives';
 
+export const ARRAY_FIELD_TYPES = [
+  'button_group',
+  'file_upload',
+  'multiselect',
+  'dropdown_multi'
+];
+
 function _transformSignatureVal(value: any) {
   return value !== null && (value instanceof File || value instanceof Promise)
     ? Promise.resolve(value).then((file) => toBase64(file))
@@ -452,31 +459,33 @@ export function getInitialStep({
   );
 }
 
-export function castVal(servarType: string | undefined, val: any) {
+export function castVal(servarType: string | undefined, val: any): any {
+  if (Array.isArray(val)) {
+    if (ARRAY_FIELD_TYPES.includes(servarType ?? '')) return val;
+    else return val.map((entry) => castVal(servarType, entry));
+  }
+
   // If there is no type, it is a hidden field and we will treat it as a string
   if (servarType === undefined) return String(val);
-  let castVal;
+  else if (ARRAY_FIELD_TYPES.includes(servarType)) return [val];
+
+  let newVal;
   switch (servarType) {
     case 'currency':
     case 'integer_field':
     case 'rating':
     case 'slider':
-      castVal = Number(val);
+      newVal = Number(val);
       break;
     case 'checkbox':
-      castVal = !['False', 'false', false].includes(val);
-      break;
-    case 'multiselect':
-    case 'button_group':
-    case 'dropdown_multi':
-      castVal = [val];
+      newVal = !['False', 'false', false].includes(val);
       break;
     default:
-      castVal = String(val);
+      newVal = String(val);
       break;
   }
 
-  return castVal;
+  return newVal;
 }
 
 export function getServarTypeMap(steps: any) {
