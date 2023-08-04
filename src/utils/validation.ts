@@ -11,6 +11,13 @@ export interface ResolvedCustomValidation {
   rules: ResolvedComparisonRule[];
 }
 
+const LETTER_MATCH = /[a-zA-Z]/;
+const UPPERCASE_LETTER_MATCH = /[A-Z]/;
+const LOWERCASE_LETTER_MATCH = /[a-z]/;
+const NUMBER_MATCH = /\d/;
+// eslint-disable-next-line no-useless-escape
+const SYMBOL_MATCH = /[#$\.%&'()\+,-/:;<=>?@\\\[\]\^_`{|}~\*]/;
+
 /**
  * Validate elements on a form
  */
@@ -236,6 +243,16 @@ function getStandardFieldError(value: any, servar: any) {
     value.length !== servar.max_length
   ) {
     return defaultErr;
+  } else if (servar.type === 'password') {
+    const meta = servar.metadata;
+    const msg = (key: string) => `Your password must have at least 1 ${key}`;
+    if (meta.letter_required && !LETTER_MATCH.test(value)) return msg('letter');
+    if (meta.uppercase_letter_required && !UPPERCASE_LETTER_MATCH.test(value))
+      return msg('uppercase letter');
+    if (meta.lowercase_letter_required && !LOWERCASE_LETTER_MATCH.test(value))
+      return msg('lowercase letter');
+    if (meta.number_required && !NUMBER_MATCH.test(value)) return msg('number');
+    if (meta.symbol_required && !SYMBOL_MATCH.test(value)) return msg('symbol');
   }
 
   // No error

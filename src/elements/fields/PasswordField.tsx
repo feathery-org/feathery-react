@@ -75,7 +75,11 @@ function PasswordField({
           maxLength={servar.max_length}
           minLength={servar.min_length}
           required={required}
-          onChange={onChange}
+          onChange={(e) => {
+            if (servar.max_length && e.target.value.length > servar.max_length)
+              return;
+            onChange(e);
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') onEnter(e);
           }}
