@@ -234,10 +234,6 @@ export const getContainerStyles = (
       if (isFit(height) || isFit(heightUnit)) {
         s.maxHeight = 'fit-content';
 
-        if (!hasChildren) {
-          console.log('node has no children', node);
-        }
-
         // Only on the editor, apply a min height if there are no children to the fit container (node.uuid indicates that the node is from the editor)
         if (!hasChildren && node.uuid) {
           if (parentAxis === 'row') {
