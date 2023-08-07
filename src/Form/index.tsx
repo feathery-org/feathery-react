@@ -1259,6 +1259,7 @@ function Form({
         actions: actions.slice(index + 1),
         element,
         elementType,
+        submit,
         setElementError,
         textSpanStart,
         textSpanEnd
