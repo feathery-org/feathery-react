@@ -234,7 +234,8 @@ export const getContainerStyles = (
       if (isFit(height) || isFit(heightUnit)) {
         s.maxHeight = 'fit-content';
 
-        if (!hasChildren) {
+        // Only on the editor, apply a min height if there are no children to the fit container (node.uuid indicates that the node is from the editor)
+        if (!hasChildren && node.uuid) {
           if (parentAxis === 'row') {
             s.minHeight = `${DEFAULT_MIN_SIZE}px`;
           } else {
@@ -430,22 +431,6 @@ export const getInnerContainerStyles = (
    * Apply styles for when parent is the root without pixel dimensions
    */
   if (node.parent && !node.parent.parent && !node.isElement) {
-    styles.apply(
-      'inner-container',
-      ['parent_width', 'viewport', 'width', 'width_unit'],
-      (parentWidth: any, _viewport: any, width: any, widthUnit: any) => {
-        const vp = viewport || _viewport;
-        const s: any = {};
-
-        if (!isPx(parentWidth) && widthUnit === 'px') {
-          // Ensure to set `auto` if mobile to unset the desktop property
-          s.minWidth = vp !== 'mobile' ? `${width}${widthUnit}` : 'auto';
-        }
-
-        return s;
-      }
-    );
-
     styles.apply(
       'inner-container',
       ['parent_height', 'viewport', 'height', 'height_unit'],
