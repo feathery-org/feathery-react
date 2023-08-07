@@ -1,5 +1,5 @@
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
-import { setFormElementError } from './formHelperFunctions';
+import { ARRAY_FIELD_TYPES, setFormElementError } from './formHelperFunctions';
 import { dynamicImport } from '../integrations/utils';
 import React from 'react';
 import { fieldValues, initInfo } from './init';
@@ -10,6 +10,13 @@ export interface ResolvedCustomValidation {
   message: string;
   rules: ResolvedComparisonRule[];
 }
+
+const LETTER_MATCH = /[a-zA-Z]/;
+const UPPERCASE_LETTER_MATCH = /[A-Z]/;
+const LOWERCASE_LETTER_MATCH = /[a-z]/;
+const NUMBER_MATCH = /\d/;
+// eslint-disable-next-line no-useless-escape
+const SYMBOL_MATCH = /[#$\.%&'()\+,-/:;<=>?@\\\[\]\^_`{|}~\*]/;
 
 /**
  * Validate elements on a form
@@ -181,6 +188,9 @@ const validators = {
 };
 
 function isFieldValueEmpty(value: any, servar: any) {
+  if (ARRAY_FIELD_TYPES.includes(servar.type))
+    return !value || value.length === 0;
+
   let noVal;
   switch (servar.type) {
     case 'select':
@@ -190,12 +200,6 @@ function isFieldValueEmpty(value: any, servar: any) {
     case 'checkbox':
       // eslint-disable-next-line camelcase
       noVal = !value && servar.metadata?.must_check;
-      break;
-    case 'file_upload':
-    case 'button_group':
-    case 'multiselect':
-    case 'dropdown_multi':
-      noVal = !value || value.length === 0;
       break;
     case 'payment_method':
       noVal = !value?.complete;
@@ -239,6 +243,16 @@ function getStandardFieldError(value: any, servar: any) {
     value.length !== servar.max_length
   ) {
     return defaultErr;
+  } else if (servar.type === 'password') {
+    const meta = servar.metadata;
+    const msg = (key: string) => `Your password must have at least 1 ${key}`;
+    if (meta.letter_required && !LETTER_MATCH.test(value)) return msg('letter');
+    if (meta.uppercase_letter_required && !UPPERCASE_LETTER_MATCH.test(value))
+      return msg('uppercase letter');
+    if (meta.lowercase_letter_required && !LOWERCASE_LETTER_MATCH.test(value))
+      return msg('lowercase letter');
+    if (meta.number_required && !NUMBER_MATCH.test(value)) return msg('number');
+    if (meta.symbol_required && !SYMBOL_MATCH.test(value)) return msg('symbol');
   }
 
   // No error

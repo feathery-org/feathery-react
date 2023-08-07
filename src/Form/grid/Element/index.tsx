@@ -409,6 +409,21 @@ const Element = ({ node: el, form, flags }: any) => {
             }}
           />
         );
+      case 'password':
+        return (
+          <Elements.PasswordField
+            {...fieldProps}
+            rawValue={stringifyWithNull(fieldVal)}
+            onChange={(e: any) => {
+              const val = e.target.value;
+              const change = changeValue(val, el, index);
+              if (change) onChange();
+            }}
+            setRef={(ref: any) => {
+              if (firstField) focusRef.current = ref;
+            }}
+          />
+        );
       case 'text_area':
         return (
           <Elements.TextArea
