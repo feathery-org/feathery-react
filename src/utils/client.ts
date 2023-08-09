@@ -492,6 +492,16 @@ export default class Client {
     return promise.then(() => !this.draft && this._fetch(url, options));
   }
 
+  // Logic custom APIs
+  runCustomRequest(method: string, url: string, userData: Record<string, any>) {
+    const data = { form_key: this.formKey, method, url, userData };
+    return this._fetch(`${API_URL}custom_request`, {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data)
+    }).then((response) => (response ? response.json() : Promise.resolve()));
+  }
+
   // THIRD-PARTY INTEGRATIONS
   async fetchPlaidLinkToken() {
     await initFormsPromise;
