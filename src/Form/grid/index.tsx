@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import Element from './Element';
 import {
   getPositionKey,
@@ -7,6 +7,7 @@ import {
 } from '../../utils/hideAndRepeats';
 import DangerouslySetHTMLContent from '../../utils/DangerouslySetHTMLContent';
 import { Container } from './Container';
+import { dynamicImport } from '../../integrations/utils';
 
 const Grid = ({ step, form, viewport }: any) => {
   if (!step || !form.visiblePositions) return null;
@@ -28,6 +29,15 @@ const Grid = ({ step, form, viewport }: any) => {
 };
 
 const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
+  const props = node.properties ?? {};
+
+  useEffect(() => {
+    // Script must be installed *after* Calendly div is rendered
+    if (props.embed_calendly && form.calendlyUrl) {
+      dynamicImport('https://assets.calendly.com/assets/external/widget.js');
+    }
+  }, []);
+
   if (node.isElement) {
     return (
       <Container node={node} viewport={viewport}>
@@ -36,7 +46,6 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
     );
   } else {
     const { customClickSelectionState, runElementActions } = form;
-    const props = node.properties ?? {};
 
     // Until we fully deprecate `callback_id`, we will check for custom components using it if the node's key is not found
     const customComponent =
@@ -53,6 +62,20 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
         viewport={viewport}
       />
     ));
+
+    if (props.embed_calendly && form.calendlyUrl) {
+      children.push(
+        <div
+          key='calendly-component'
+          className='calendly-inline-widget'
+          data-url='https://calendly.com/feathery-peter'
+          style={{
+            width: '100%',
+            height: '100%'
+          }}
+        />
+      );
+    }
 
     if (customComponent) {
       children.push(customComponent);
