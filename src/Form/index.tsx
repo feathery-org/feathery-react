@@ -1484,7 +1484,8 @@ function Form({
     focusRef,
     formRef,
     setCardElement,
-    visiblePositions
+    visiblePositions,
+    calendlyUrl: integrations?.calendly?.metadata.api_key
   };
 
   const completeState =
