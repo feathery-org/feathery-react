@@ -53,7 +53,7 @@ function ImageElement({
       {imageField && !imageUrl ? null : (
         <img
           src={imageUrl || PLACEHOLDER_IMAGE}
-          alt='Form Image'
+          alt=''
           css={{
             objectFit: 'contain',
             width: '100%',

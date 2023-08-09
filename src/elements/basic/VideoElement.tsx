@@ -71,7 +71,7 @@ function VideoElement({
     component = (
       <img
         src={PLACEHOLDER_VIDEO}
-        alt='Video Placeholder'
+        alt=''
         css={{
           objectFit: 'cover',
           width: '100%',
