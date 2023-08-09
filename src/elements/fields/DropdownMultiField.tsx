@@ -54,7 +54,6 @@ export default function DropdownMultiField({
           position: 'relative',
           width: '100%',
           whiteSpace: 'nowrap',
-          overflowX: 'hidden',
           ...responsiveStyles.getTarget('sub-fc'),
           '&:hover': disabled
             ? {}
