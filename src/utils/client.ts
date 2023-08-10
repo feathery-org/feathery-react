@@ -495,7 +495,7 @@ export default class Client {
   // Logic custom APIs
   runCustomRequest(method: string, url: string, userData: Record<string, any>) {
     const data = { form_key: this.formKey, method, url, userData };
-    return this._fetch(`${API_URL}custom_request`, {
+    return this._fetch(`${API_URL}custom_request/`, {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
