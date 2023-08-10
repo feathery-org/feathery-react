@@ -35,7 +35,8 @@ import {
   setUrlStepHash,
   updateStepFieldOptions,
   mapFormSettingsResponse,
-  saveInitialValuesAndUrlParams
+  saveInitialValuesAndUrlParams,
+  httpHelpers
 } from '../utils/formHelperFunctions';
 import {
   getHideIfReferences,
@@ -558,7 +559,7 @@ function Form({
           // @ts-ignore
           const fn = new AsyncFunction('feathery', asyncWrappedCode);
           try {
-            await fn(props);
+            await fn({ ...props, http: httpHelpers(client) });
           } catch (e) {
             // rule had an error, log it to console for now
             console.warn(
