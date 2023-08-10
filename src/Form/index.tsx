@@ -634,7 +634,8 @@ function Form({
             message,
             index,
             errorType: formSettings.errorType,
-            inlineErrors
+            inlineErrors,
+            triggerErrors: true
           });
         });
       }
