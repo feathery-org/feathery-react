@@ -91,7 +91,6 @@ export default function DropdownField({
           position: 'relative',
           width: '100%',
           whiteSpace: 'nowrap',
-          overflowX: 'hidden',
           ...responsiveStyles.getTarget('sub-fc'),
           '&:hover': disabled
             ? {}

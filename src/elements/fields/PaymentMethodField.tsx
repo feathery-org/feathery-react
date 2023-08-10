@@ -153,7 +153,6 @@ const CardField = ({
           position: 'relative',
           width: '100%',
           whiteSpace: 'nowrap',
-          overflowX: 'hidden',
           padding: '0 2px',
           display: 'flex',
           alignItems: 'center',

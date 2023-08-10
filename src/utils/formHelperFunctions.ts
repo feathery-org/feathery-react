@@ -300,6 +300,7 @@ export async function setFormElementError({
   if (errorType === 'html5') {
     if (!formRef.current) return false;
 
+    let errorTriggered = false;
     if (fieldKey) {
       if (['pin_input', 'select', 'multiselect'].includes(servarType))
         fieldKey = `${fieldKey}-0`;
@@ -312,9 +313,18 @@ export async function setFormElementError({
       elements = elements.filter((e) => e);
 
       if (index !== null && elements.length) elements = [elements[index]];
-      elements.forEach((e) => e && e.setCustomValidity(message));
+      elements.forEach((e) => {
+        if (e) {
+          e.setCustomValidity(message);
+          if (triggerErrors) {
+            // Trigger manually-set errors first before other form errors
+            e.reportValidity();
+            errorTriggered = true;
+          }
+        }
+      });
     }
-    if (triggerErrors) formRef.current.reportValidity();
+    if (triggerErrors && !errorTriggered) formRef.current.reportValidity();
     invalid = !formRef.current.checkValidity();
   } else if (errorType === 'inline') {
     if (fieldKey) inlineErrors[fieldKey] = { message };
