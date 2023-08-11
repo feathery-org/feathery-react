@@ -1443,12 +1443,18 @@ function Form({
         }
       }
       if (!triggered) {
-        runElementActions({
-          actions: [{ type: ACTION_NEXT }],
-          element: { id: fieldID },
+        const nextStep = getNextStepKey({
           elementType: 'field',
-          submit: submitData
+          elementIDs: [fieldID]
         });
+        if (nextStep) {
+          runElementActions({
+            actions: [{ type: ACTION_NEXT }],
+            element: { id: fieldID },
+            elementType: 'field',
+            submit: true
+          });
+        }
       }
     };
 
