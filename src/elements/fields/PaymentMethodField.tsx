@@ -84,8 +84,6 @@ const CardField = ({
   const cardElementOptions = {
     style: {
       base: {
-        background: 'none',
-        border: 'none',
         textDecoration: 'none', // Bug in card element - force the reset to none
         ...filterKeys(
           toSansSerif(responsiveStyles.getTarget('field')),
