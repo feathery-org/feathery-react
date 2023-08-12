@@ -733,8 +733,8 @@ function Form({
         // @ts-expect-error TS(2345): Argument of type 'Promise<any[]>' is not assignabl... Remove this comment to see the full error message
         .fetchSession(formPromise, true)
         .then(([session, steps]) => {
-          if (!session.track_users) {
-            // Clear URL hash on new session if not tracking users
+          if (!session.track_location) {
+            // Clear URL hash on new session if not tracking location
             history.replace(location.pathname + location.search);
           }
           updateBackNavMap(session.back_nav_map);
