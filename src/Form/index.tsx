@@ -117,6 +117,7 @@ import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
 import { verifyRecaptcha } from '../integrations/recaptcha';
+import BorderlessEyeIcon from '../elements/components/icons/BorderlessEyeIcon';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
