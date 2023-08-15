@@ -35,6 +35,7 @@ function PhoneField({
   onComplete = () => {},
   setRef = () => {},
   inlineError,
+  rightToLeft,
   children
 }: any) {
   const triggerRef = useRef(null);
@@ -248,6 +249,7 @@ function PhoneField({
               height: '100%',
               width: '100%',
               border: 'none',
+              ...(rightToLeft ? { textAlign: 'right' } : {}),
               ...bootstrapStyles,
               ...responsiveStyles.getTarget('field'),
               ...(focused || formattedNumber || !placeholder
@@ -264,6 +266,7 @@ function PhoneField({
               setRef(ref);
             }}
             type='tel'
+            dir='ltr' // always left-to-right numbers but will be right justified in RTL
             onFocus={() => {
               setRawNumber((prevNum) => {
                 // We only want to set the country code if the field is empty

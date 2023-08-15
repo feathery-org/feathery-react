@@ -175,6 +175,7 @@ const Element = ({ node: el, form, flags }: any) => {
       ...basicProps,
       elementProps: elementProps[servar.key],
       autoComplete: formSettings.autocomplete,
+      rightToLeft: formSettings.rightToLeft,
       required
     };
 
