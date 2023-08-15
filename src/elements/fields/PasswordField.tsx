@@ -1,9 +1,10 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/Tooltip';
 import { bootstrapStyles } from '../styles';
 import useBorder from '../components/useBorder';
+import BorderlessEyeIcon from '../components/icons/BorderlessEyeIcon';
 
 function PasswordField({
   element,
@@ -23,6 +24,7 @@ function PasswordField({
     element,
     error: inlineError
   });
+  const [showPassword, setShowPassword] = useState(false);
 
   const servar = element.servar;
   const disabled = element.properties.disabled ?? false;
@@ -87,8 +89,27 @@ function PasswordField({
           disabled={disabled}
           value={rawValue}
           ref={setRef}
-          type='password'
+          type={showPassword ? 'text' : 'password'}
         />
+        {rawValue && (
+          <div
+            css={{
+              position: 'absolute',
+              cursor: 'pointer',
+              right: '8px',
+              // We need to subtract half the height of the icon to center it
+              top: 'calc(50% - 12px)',
+              zIndex: 1
+            }}
+          >
+            <BorderlessEyeIcon
+              width={24}
+              height={24}
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label='Toggle password visibility'
+            />
+          </div>
+        )}
         {customBorder}
         <Placeholder
           value={rawValue}
