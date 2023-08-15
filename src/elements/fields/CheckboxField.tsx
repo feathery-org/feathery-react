@@ -147,7 +147,6 @@ export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
     'backgroundColor',
     true
   );
-  responsiveStyles.applyColor('checkbox', 'font_color', 'color', true);
 
   responsiveStyles.applySelectorStyles('checkboxHover', 'hover_', true);
   responsiveStyles.applySelectorStyles('checkboxSelected', 'selected_', true);

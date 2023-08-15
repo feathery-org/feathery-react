@@ -321,7 +321,11 @@ class ResponsiveStyles {
     });
   }
 
-  applyFontStyles(target: string, placeholder = false) {
+  applyFontStyles(
+    target: string,
+    placeholder = false,
+    ignoreSelectorFontColor = false
+  ) {
     this.apply(target, 'font_weight', (a: any) => ({
       fontWeight: a
     }));
@@ -354,7 +358,7 @@ class ResponsiveStyles {
         color: `#${a}`
       })
     );
-    if (!placeholder) {
+    if (!placeholder && !ignoreSelectorFontColor) {
       this.apply(target, 'hover_font_color', (color: any) => ({
         '&:hover': { color: `#${color}` }
       }));

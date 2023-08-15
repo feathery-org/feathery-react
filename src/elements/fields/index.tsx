@@ -71,8 +71,13 @@ function applyFieldStyles(field: any, styles: any) {
     'tooltipIcon'
   );
 
-  styles.applyFontStyles('fc');
-  styles.applyFontStyles('field');
+  // For these fields, selector font colors
+  // apply to the checkmark / radio fill
+  const ignoreSelectorColors = ['select', 'multiselect', 'checkbox'].includes(
+    type
+  );
+  styles.applyFontStyles('fc', false, ignoreSelectorColors);
+  styles.applyFontStyles('field', false, ignoreSelectorColors);
 
   // These are fields that don't have content inside, which won't be shifted by
   // a default border
