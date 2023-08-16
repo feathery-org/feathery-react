@@ -54,8 +54,10 @@ function PhoneField({
     if (servar.metadata.default_country === 'auto') {
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (!timezone) return DEFAULT_COUNTRY;
+      const timeZoneCountry = timeZoneCountries[timezone];
+      if (!timeZoneCountry) return DEFAULT_COUNTRY;
 
-      const countryCode = timeZoneCountries[timezone].c[0];
+      const countryCode = timeZoneCountry.c[0];
       return countryCode in countryMap ? countryCode : DEFAULT_COUNTRY;
     } else {
       return servar.metadata.default_country || DEFAULT_COUNTRY;

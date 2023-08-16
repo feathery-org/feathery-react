@@ -719,6 +719,9 @@ export default {
   'Asia/Brunei': {
     c: ['BN']
   },
+  'Asia/Calcutta': {
+    c: ['IN']
+  },
   'Asia/Chita': {
     c: ['RU']
   },
