@@ -1061,7 +1061,7 @@ function Form({
     if (!redirectKey) {
       if (explicitNav) {
         eventData.completed = true;
-        client.registerEvent(eventData, submitPromise).then(() => {
+        await client.registerEvent(eventData, submitPromise).then(() => {
           setFinished(true);
           // Need to rerender when the session is marked complete so
           // LoginForm can render children
