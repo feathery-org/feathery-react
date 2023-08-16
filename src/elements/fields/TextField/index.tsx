@@ -7,6 +7,7 @@ import { bootstrapStyles } from '../../styles';
 import { emailPatternStr } from '../../../utils/validation';
 import useBorder from '../../components/useBorder';
 import TextAutocomplete from './TextAutocomplete';
+import { isAlphaNumeric } from '../../../utils/primitives';
 
 const MAX_TEXT_FIELD_LENGTH = 512;
 
@@ -214,8 +215,14 @@ function TextField({
             // keep triggering dropdown after blur
             onKeyDown={(e) => {
               if (e.key === 'Enter') onEnter(e);
-              else if (options.length) {
-                setShowAutocomplete(e.key !== 'Escape');
+              else {
+                if (options.length) {
+                  setShowAutocomplete(e.key !== 'Escape');
+                }
+                if (servar.type === 'gmap_zip' && !isAlphaNumeric(e.key)) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
               }
             }}
             onBlur={() => {
