@@ -1327,8 +1327,12 @@ function Form({
         const pin = fieldValues[pinKey] as string;
         const params = { fieldVal: pin, featheryClient: client };
         let hasErr = false;
-        await Auth.verifySms(params).catch(() => {
-          setElementError('Your code is invalid');
+        await Auth.verifySms(params).catch((e) => {
+          setElementError(
+            (e as Error).message === 'Please try again.'
+              ? 'Your code is invalid'
+              : (e as Error).message
+          );
           hasErr = true;
         });
         if (hasErr) break;

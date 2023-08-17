@@ -124,16 +124,7 @@ export async function stytchLoginOnLoad(featheryClient: any) {
     return authFn()
       .then(() => stytchSubmitAuthInfo(featheryClient))
       .catch((e: any) => {
-        const type = e.error_type;
-        let errorMsg;
-        if (type === 'bad_domain_for_stytch_sdk')
-          errorMsg = 'Please register this domain with Stytch.';
-
-        authState.showError(errorMsg);
-        console.warn(
-          'Auth failed. Possibly because your magic link expired.',
-          e
-        );
+        authState.showError(handleLoginOrCreateErrors(e));
       });
   }
 }
@@ -148,6 +139,9 @@ export function stytchVerifySms({
   return client.otps
     .authenticate(fieldVal, stytchPhoneMethodId, {
       session_duration_minutes: config.metadata.session_duration
+    })
+    .catch((e: any) => {
+      throw new Error(handleLoginOrCreateErrors(e));
     })
     .then(() => {
       stytchPhoneMethodId = '';
