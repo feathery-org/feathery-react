@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import InlineTooltip from '../components/Tooltip';
 import useBorder from '../components/useBorder';
 import countryData from '../components/data/countries';
-import { getStateOptions, hasState, stateMap } from '../components/data/states';
+import { getStateOptions, hasState } from '../components/data/states';
 
 export default function DropdownField({
   element,
@@ -15,6 +15,7 @@ export default function DropdownField({
   fieldVal = '',
   countryCode = '',
   editMode,
+  rightToLeft,
   onChange = () => {},
   elementProps = {},
   children
@@ -121,7 +122,9 @@ export default function DropdownField({
             MozAppearance: 'none',
             backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='%23${element.styles.font_color}'/></svg>")`,
             backgroundRepeat: 'no-repeat',
-            backgroundPosition: `right ${chevronPosition}px center`,
+            backgroundPosition: `${
+              rightToLeft ? 'left' : 'right'
+            } ${chevronPosition}px center`,
             position: 'relative'
           }}
           id={servar.key}
@@ -139,7 +142,7 @@ export default function DropdownField({
           css={{
             position: 'absolute',
             pointerEvents: 'none',
-            left: '0.75rem',
+            [rightToLeft ? 'right' : 'left']: '0.75rem',
             transition: '0.2s ease all',
             top: '50%',
             ...responsiveStyles.getTarget('placeholder'),
