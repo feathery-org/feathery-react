@@ -5,7 +5,8 @@ export default function Placeholder({
   element,
   responsiveStyles,
   type = 'input',
-  inputFocused = false
+  inputFocused = false,
+  rightToLeft = false
 }: any) {
   const focusedStyles = {
     ...responsiveStyles.getTarget('placeholderFocus'),
@@ -16,7 +17,7 @@ export default function Placeholder({
       css={{
         position: 'absolute',
         pointerEvents: 'none',
-        left: '0.75rem',
+        [rightToLeft ? 'right' : 'left']: '0.75rem',
         transition: '0.2s ease all',
         top: type === 'input' ? '50%' : '0.5rem',
         ...responsiveStyles.getTarget('placeholder'),

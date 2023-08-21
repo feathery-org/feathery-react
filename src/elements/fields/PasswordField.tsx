@@ -13,6 +13,7 @@ function PasswordField({
   elementProps = {},
   required = false,
   editMode,
+  rightToLeft,
   onChange = () => {},
   onEnter = () => {},
   setRef = () => {},
@@ -115,6 +116,7 @@ function PasswordField({
           value={rawValue}
           element={element}
           responsiveStyles={responsiveStyles}
+          rightToLeft={rightToLeft}
         />
         <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
       </div>

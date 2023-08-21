@@ -20,6 +20,7 @@ function AddressLine1({
   fieldLabel,
   elementProps = {},
   editMode,
+  rightToLeft,
   onSelect = () => {},
   onBlur = () => {},
   onEnter = () => {},
@@ -153,6 +154,7 @@ function AddressLine1({
           value={value}
           element={element}
           responsiveStyles={responsiveStyles}
+          rightToLeft={rightToLeft}
         />
         <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
       </div>

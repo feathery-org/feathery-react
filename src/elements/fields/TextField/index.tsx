@@ -133,6 +133,7 @@ function TextField({
   elementProps = {},
   required = false,
   editMode,
+  rightToLeft,
   onAccept = () => {},
   onEnter = () => {},
   setRef = () => {},
@@ -240,6 +241,7 @@ function TextField({
         </TextAutocomplete>
         {customBorder}
         <Placeholder
+          rightToLeft={rightToLeft}
           value={rawValue}
           element={element}
           responsiveStyles={responsiveStyles}
