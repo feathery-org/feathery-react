@@ -191,7 +191,14 @@ export function isHrefFirebaseMagicLink(): boolean {
 export function useFirebaseRecaptcha(step: any) {
   // Once step has been set, load captcha verifier if using firebase
   useEffect(() => {
-    if (!step || !global.firebase || featheryWindow().firebaseRecaptchaVerifier)
+    if (
+      !step ||
+      !global.firebase ||
+      // Firebase could be from client's own Firebase instance
+      // without auth installed
+      !authState.client.auth ||
+      featheryWindow().firebaseRecaptchaVerifier
+    )
       return;
 
     const verifier = new authState.client.auth.RecaptchaVerifier(
