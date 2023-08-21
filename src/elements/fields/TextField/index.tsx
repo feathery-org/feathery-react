@@ -120,6 +120,9 @@ function getInputProps(servar: any) {
     case 'url':
       return { type: 'url', ...maxConstraints };
     default:
+      if (servar.metadata.allowed_characters === 'digits') {
+        return { type: 'tel', ...maxConstraints };
+      }
       return maxConstraints;
   }
 }
