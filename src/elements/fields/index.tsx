@@ -19,6 +19,7 @@ import TextArea from './TextArea';
 import AddressLine1 from './AddressLine1';
 import PasswordField from './PasswordField';
 import PaymentMethodField from './PaymentMethodField';
+import MatrixField from './MatrixField';
 import { borderWidthProps } from '../styles';
 
 const Fields = {
@@ -31,6 +32,7 @@ const Fields = {
   DropdownField,
   DropdownMultiField,
   FileUploadField,
+  MatrixField,
   PasswordField,
   PaymentMethodField,
   PhoneField,
