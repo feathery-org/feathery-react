@@ -18,7 +18,9 @@ export function replaceTextVariables(text: string, repeat: any) {
       if (Array.isArray(pVal)) {
         if (pVal.length === 0) {
           return pattern;
-        } else if (isNaN(repeat) || repeat >= pVal.length) {
+        } else if (isNaN(repeat)) {
+          return pVal.join(', ');
+        } else if (repeat >= pVal.length) {
           return stringifyWithNull(pVal[0]);
         } else {
           return stringifyWithNull(pVal[repeat]);
