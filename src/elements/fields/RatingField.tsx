@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import RatingStar from '../components/icons/RatingStar';
+import Heart from '../components/icons/Heart';
 
 export default function RatingField({
   element,
@@ -18,6 +19,8 @@ export default function RatingField({
 
   // If no field value, default to 1 less than the max
   fieldVal = fieldVal ?? numRatings - 1;
+
+  const Icon = element.styles.icon_type === 'heart' ? Heart : RatingStar;
 
   return (
     <div
@@ -42,7 +45,7 @@ export default function RatingField({
             } else if (index <= hoverIndex)
               activeStyles = responsiveStyles.getTarget('hoverRating');
             return (
-              <RatingStar
+              <Icon
                 key={index}
                 onClick={() => onChange(index + 1)}
                 onMouseEnter={() => setHoverIndex(index)}
