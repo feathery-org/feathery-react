@@ -196,7 +196,7 @@ export function useFirebaseRecaptcha(step: any) {
       !global.firebase ||
       // Firebase could be from client's own Firebase instance
       // without auth installed
-      !authState.client.auth ||
+      !authState.client?.auth ||
       featheryWindow().firebaseRecaptchaVerifier
     )
       return;
