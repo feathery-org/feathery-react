@@ -528,6 +528,15 @@ export function isStepTerminal(step: any) {
     return false;
   }
 
+  const onlyExits = ['buttons', 'texts', 'subgrids'].every((key) =>
+    step[key].every((b: any) =>
+      (b.properties.actions ?? []).every(
+        (action: any) => action.type === ACTION_URL
+      )
+    )
+  );
+  if (onlyExits && step.servar_fields.length === 0) return true;
+
   const hasNext = step.buttons.some((b: any) =>
     (b.properties.actions ?? []).some(
       (action: any) =>
