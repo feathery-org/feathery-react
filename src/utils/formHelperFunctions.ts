@@ -22,6 +22,10 @@ function _transformSignatureVal(value: any) {
     : Promise.resolve('');
 }
 
+function _transformUrlVal(value: any) {
+  return value.replaceAll(' ', '%20');
+}
+
 /**
  *
  * @param {*} step
@@ -56,7 +60,9 @@ export const formatStepFields = (
         ? value.map(_transformSignatureVal)
         : _transformSignatureVal(value);
     } else if (!forUser && servar.type === 'url') {
-      value = value.replaceAll(' ', '%20');
+      value = servar.repeated
+        ? value.map(_transformUrlVal)
+        : _transformUrlVal(value);
     }
     formattedFields[servar.key] = {
       value,
