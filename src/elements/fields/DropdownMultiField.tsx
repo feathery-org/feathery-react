@@ -1,8 +1,7 @@
-import { bootstrapStyles } from '../styles';
-
 import React, { useState } from 'react';
 import useBorder from '../components/useBorder';
 import Select from 'react-select';
+import CreatableSelect from 'react-select/creatable';
 import { featheryDoc } from '../../utils/browser';
 import InlineTooltip from '../components/Tooltip';
 
@@ -36,6 +35,9 @@ export default function DropdownMultiField({
   const chevronPosition = hasTooltip ? 30 : 10;
 
   responsiveStyles.applyFontStyles('field');
+  const Component = servar.metadata.creatable_options
+    ? CreatableSelect
+    : Select;
   return (
     <div
       css={{
@@ -70,7 +72,7 @@ export default function DropdownMultiField({
         }}
       >
         {customBorder}
-        <Select
+        <Component
           styles={{
             control: (baseStyles) => ({
               ...baseStyles,
