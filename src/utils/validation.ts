@@ -2,7 +2,7 @@ import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { ARRAY_FIELD_TYPES, setFormElementError } from './formHelperFunctions';
 import { dynamicImport } from '../integrations/utils';
 import React from 'react';
-import { fieldValues, initInfo } from './init';
+import { fieldValues, getFieldValues, initInfo } from './init';
 import { getVisibleElements } from './hideAndRepeats';
 import { Trigger } from '../types/Form';
 
@@ -79,6 +79,24 @@ function validateElements({
     else errors[key] = [errors[key], message];
 
     if (message && !invalid) invalid = true;
+
+    if (type === 'matrix' && message) {
+      // Get question index where error is
+      const fieldValue: any = getFieldValues()[key];
+      const { questions } = element.servar.metadata;
+      const questionIds = questions.map((q: { id: string }) => q.id);
+
+      for (let i = 0; i < questionIds.length; i++) {
+        const value = fieldValue[questionIds[i]];
+        if (
+          value === undefined ||
+          (Array.isArray(value) && value.length === 0)
+        ) {
+          key = `${key}-${i}`;
+          break;
+        }
+      }
+    }
 
     if (triggerErrors) {
       setFormElementError({
@@ -193,6 +211,14 @@ function isFieldValueEmpty(value: any, servar: any) {
 
   let noVal;
   switch (servar.type) {
+    case 'matrix':
+      // Each key in value needs to have an array with at least one value
+      noVal =
+        Object.keys(value).length > 0 &&
+        !Object.values(value).every(
+          (arr) => Array.isArray(arr) && arr.length > 0
+        );
+      break;
     case 'select':
     case 'signature':
       noVal = !value;
