@@ -71,7 +71,6 @@ function MatrixField({
             <div
               style={{
                 width: '100px',
-                fontStyle: 'italic',
                 fontWeight: 400,
                 padding: 8
               }}
