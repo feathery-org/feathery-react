@@ -33,11 +33,10 @@ export default function DropdownMultiField({
   const disabled = element.properties.disabled ?? false;
   const hasTooltip = !!element.properties.tooltipText;
   const chevronPosition = hasTooltip ? 30 : 10;
+  const create = servar.metadata.creatable_options;
+  const Component = create ? CreatableSelect : Select;
 
   responsiveStyles.applyFontStyles('field');
-  const Component = servar.metadata.creatable_options
-    ? CreatableSelect
-    : Select;
   return (
     <div
       css={{
@@ -101,6 +100,7 @@ export default function DropdownMultiField({
           onChange={onChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
+          noOptionsMessage={create ? () => null : undefined}
           options={options}
           isMulti
           menuPortalTarget={featheryDoc().body}
