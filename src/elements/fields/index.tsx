@@ -21,6 +21,7 @@ import PasswordField from './PasswordField';
 import PaymentMethodField from './PaymentMethodField';
 import MatrixField from './MatrixField';
 import { borderWidthProps } from '../styles';
+import { DEFAULT_MIN_SIZE } from '../../Form/grid/StyledContainer/styles';
 
 const Fields = {
   AddressLine1,
@@ -245,7 +246,17 @@ function applyFieldStyles(field: any, styles: any) {
     case 'gmap_state':
     case 'gmap_country':
     case 'dropdown_multi':
-      styles.applyHeight('sub-fc');
+      if (type === 'dropdown_multi') {
+        // Dropdown multiselect can grow in height as more options are selected
+        styles.apply('sub-fc', ['height', 'height_unit'], (a: any, b: any) => {
+          if (b === '%')
+            return {
+              minHeight: `${DEFAULT_MIN_SIZE}px`,
+              height: 'auto'
+            };
+          else return { minHeight: `${a}${b}` };
+        });
+      } else styles.applyHeight('sub-fc');
       styles.applyCorners('sub-fc');
       styles.applyBoxShadow('sub-fc');
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
