@@ -4,49 +4,102 @@ function MatrixField({
   element,
   responsiveStyles,
   fieldLabel,
-  required = false,
   fieldVal = {},
   onChange = () => {},
   elementProps = {},
   children
 }: any) {
   const servar = element.servar;
-
   const allDisabled = element.properties.disabled ?? false;
-  const labels = servar.metadata.option_labels;
+  const inputType = servar.metadata.multiple ? 'checkbox' : 'radio';
+
+  const { backgroundColor, borderRadius, height } =
+    responsiveStyles.getTarget('sub-fc');
+
   return (
     <div
       css={{
         width: '100%',
         ...responsiveStyles.getTarget('fc'),
-        position: 'relative'
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        height
       }}
       {...elementProps}
     >
       {children}
       {fieldLabel}
-      {servar.metadata.options.map((opt: any, i: number) => {
-        const optionLabel = labels && labels[i] ? labels[i] : opt;
-        return (
-          <div key={`${servar.key}-${i}`} css={{ display: 'flex' }}>
-            <input
-              type='radio'
-              id={`${servar.key}-${i}`}
-              // All radio buttons in group must have same name to be evaluated
-              // together
-              name={servar.key}
-              checked={fieldVal === opt}
-              required={required}
-              disabled={allDisabled}
-              onChange={onChange}
-              value={opt}
+      <div style={{ display: 'flex', flexDirection: 'row', marginBottom: 6 }}>
+        <div
+          style={{
+            width: '100px'
+          }}
+        />
+        {servar.metadata.options.map((opt: any, i: number) => {
+          // headers
+          return (
+            <div
+              key={i}
               style={{
-                marginBottom: '18px',
-                padding: 0,
-                lineHeight: 'normal'
+                flex: 1,
+                fontWeight: 600,
+                justifyContent: 'center',
+                alignItems: 'center',
+                display: 'flex',
+                textAlign: 'center'
               }}
-            />
-            <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
+            >
+              {opt}
+            </div>
+          );
+        })}
+      </div>
+      {servar.metadata.questions.map((question: any, i: number) => {
+        return (
+          <div
+            key={i}
+            style={{
+              display: 'flex',
+              flexDirection: 'row',
+              backgroundColor: backgroundColor,
+              borderRadius: borderRadius,
+              marginBottom: 6
+            }}
+          >
+            <div
+              style={{
+                width: '100px',
+                fontStyle: 'italic',
+                fontWeight: 400,
+                padding: 8
+              }}
+            >
+              {question.label}
+            </div>
+            {servar.metadata.options.map((opt: any, j: number) => {
+              const questionVal = fieldVal[question.id];
+              const isChecked =
+                Array.isArray(questionVal) && questionVal.includes(opt);
+
+              return (
+                <div
+                  key={j}
+                  style={{ flex: 1, justifyContent: 'center', display: 'flex' }}
+                >
+                  <input
+                    type={inputType}
+                    name={`${servar.key}-${i}`}
+                    data-question-id={question.id}
+                    value={opt}
+                    disabled={allDisabled}
+                    checked={isChecked}
+                    onChange={onChange}
+                  />
+                </div>
+              );
+            })}
           </div>
         );
       })}

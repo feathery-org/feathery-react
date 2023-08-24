@@ -197,6 +197,39 @@ const Element = ({ node: el, form, flags }: any) => {
     let countryCode = '';
 
     switch (servar.type) {
+      case 'matrix':
+        return (
+          <Elements.MatrixField
+            {...fieldProps}
+            fieldVal={fieldVal}
+            onChange={(e: any) => {
+              const val = e.target.value;
+              const questionId = e.target.dataset.questionId;
+              const checked = e.target.checked;
+              const type = e.target.type;
+              alert(`${type} -> ${val} -> ${questionId} -> ${checked}`);
+              const newFieldVal = { ...fieldVal };
+              if (type === 'radio') {
+                newFieldVal[questionId] = [val];
+              } else if (type === 'checkbox') {
+                // Add to existing array, or create new array
+                if (checked) {
+                  if (newFieldVal[questionId]) {
+                    newFieldVal[questionId].push(val);
+                  } else {
+                    newFieldVal[questionId] = [val];
+                  }
+                } else {
+                  newFieldVal[questionId] = newFieldVal[questionId].filter(
+                    (v: any) => v !== val
+                  );
+                }
+              }
+              changeValue(newFieldVal, el, index);
+              onChange();
+            }}
+          />
+        );
       case 'date_selector':
         return (
           <Elements.DateSelectorField
