@@ -213,11 +213,9 @@ function isFieldValueEmpty(value: any, servar: any) {
   switch (servar.type) {
     case 'matrix':
       // Each key in value needs to have an array with at least one value
-      noVal =
-        Object.keys(value).length > 0 &&
-        !Object.values(value).every(
-          (arr) => Array.isArray(arr) && arr.length > 0
-        );
+      noVal = servar.metadata.questions.some(
+        ({ id }: any) => !value[id] || value[id].length === 0
+      );
       break;
     case 'select':
     case 'signature':
