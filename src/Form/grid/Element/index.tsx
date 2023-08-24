@@ -207,7 +207,6 @@ const Element = ({ node: el, form, flags }: any) => {
               const questionId = e.target.dataset.questionId;
               const checked = e.target.checked;
               const type = e.target.type;
-              alert(`${type} -> ${val} -> ${questionId} -> ${checked}`);
               const newFieldVal = { ...fieldVal };
               if (type === 'radio') {
                 newFieldVal[questionId] = [val];
