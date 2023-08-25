@@ -534,7 +534,11 @@ const Element = ({ node: el, form, flags }: any) => {
                 updateFieldValues(addrValues);
                 onChange({
                   triggerType: 'addressSelect',
-                  integrationData: { id: addressId, ...address }
+                  integrationData: {
+                    id: addressId,
+                    addressComponents: address.address_components,
+                    geometry: address.geometry
+                  }
                 });
               }
             }}
