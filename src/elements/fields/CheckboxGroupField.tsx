@@ -56,7 +56,11 @@ function CheckboxGroupField({
         return (
           <div
             key={`${servar.key}-${i}`}
-            css={{ display: 'flex', pointerEvents: disabled ? 'none' : 'auto' }}
+            css={{
+              display: 'flex',
+              alignItems: 'center',
+              pointerEvents: disabled ? 'none' : 'auto'
+            }}
           >
             <input
               type='checkbox'
@@ -65,7 +69,6 @@ function CheckboxGroupField({
               checked={checked}
               onChange={onChange}
               style={{
-                marginBottom: '18px',
                 padding: 0,
                 lineHeight: 'normal',
                 filter: disabled ? 'brightness(85%)' : 'none'
