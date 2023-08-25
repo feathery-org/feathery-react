@@ -236,9 +236,10 @@ function getVisibleElements(
         if (flag && (repeat || !elements.length)) {
           elements.push({
             element: el,
-            repeat: getPositionKey(el).startsWith(repeatKey)
-              ? index
-              : undefined,
+            repeat:
+              repeatKey && getPositionKey(el).startsWith(repeatKey)
+                ? index
+                : undefined,
             last: index === flags.length - 1
           });
         }

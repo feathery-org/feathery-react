@@ -54,7 +54,7 @@ function validateElements({
   ).reduce((errors: any, { element, repeat, last }) => {
     let key, type;
     if (element.servar) {
-      if (element.servar.repeat_trigger === 'set_value' && last && repeat > 0) {
+      if (element.servar.repeat_trigger === 'set_value' && last && repeat) {
         // Skip validation on last repeat since it might be default value
         return errors;
       }
