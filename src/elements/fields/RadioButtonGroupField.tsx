@@ -55,7 +55,10 @@ function RadioButtonGroupField({
       {servar.metadata.options.map((opt: any, i: number) => {
         const optionLabel = labels && labels[i] ? labels[i] : opt;
         return (
-          <div key={`${servar.key}-${i}`} css={{ display: 'flex' }}>
+          <div
+            key={`${servar.key}-${i}`}
+            css={{ display: 'flex', alignItems: 'center' }}
+          >
             <input
               type='radio'
               id={`${servar.key}-${i}`}
@@ -68,7 +71,6 @@ function RadioButtonGroupField({
               onChange={onChange}
               value={opt}
               style={{
-                marginBottom: '18px',
                 padding: 0,
                 lineHeight: 'normal'
               }}

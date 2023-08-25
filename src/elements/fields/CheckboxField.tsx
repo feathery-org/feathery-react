@@ -164,7 +164,7 @@ export const composeCheckableInputStyle = (
     position: 'static',
     marginLeft: 5,
     marginRight: group ? 10 : 5,
-    marginTop: group ? (isRadio ? 4 : 3) : 0,
+    marginTop: 0,
     marginBottom: 0,
     appearance: 'none',
     display: 'grid',
