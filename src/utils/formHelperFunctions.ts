@@ -606,8 +606,11 @@ export function httpHelpers(client: any) {
   const helpers: Record<string, any> = {};
   ['GET', 'PATCH', 'POST', 'PUT', 'DELETE'].forEach(
     (method) =>
-      (helpers[method] = (url: string, data: Record<string, any>) =>
-        client.runCustomRequest(method, url, data))
+      (helpers[method] = (
+        url: string,
+        data: Record<string, any>,
+        headers: Record<string, string>
+      ) => client.runCustomRequest(method, url, data, headers))
   );
   return helpers;
 }
