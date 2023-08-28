@@ -3,7 +3,7 @@ import { FormClosedIcon } from './icons';
 import { openTab } from '../../utils/browser';
 
 export default function FormOff({
-  width = 500,
+  width = 400,
   noEdit = false,
   showCTA = true
 }) {
@@ -26,7 +26,7 @@ export default function FormOff({
       <FormClosedIcon width={width} />
       <div
         css={{
-          width: `${width}px`,
+          maxWidth: `${width}px`,
           fontWeight: 600,
           fontSize: '26px',
           lineHeight: '32px',

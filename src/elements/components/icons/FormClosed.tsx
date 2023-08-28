@@ -1,5 +1,9 @@
 import React from 'react';
-export default function FormClosedIcon({ width = 392, height = 169 }) {
+export default function FormClosedIcon({
+  width = 392,
+  height = 169,
+  ...props
+}) {
   return (
     <svg
       width={width}
@@ -7,6 +11,7 @@ export default function FormClosedIcon({ width = 392, height = 169 }) {
       viewBox='0 0 392 169'
       fill='none'
       xmlns='http://www.w3.org/2000/svg'
+      {...props}
     >
       <path
         d='M231.826 152.779C218.53 153.096 202.702 152.779 191.464 152.621C180.226 152.937 164.397 153.096 151.102 152.779C164.239 145.34 168.671 131.569 169.462 122.389H213.307C214.257 131.569 218.688 145.34 231.826 152.779Z'
