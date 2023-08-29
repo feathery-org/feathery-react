@@ -355,7 +355,17 @@ class ResponsiveStyles {
       target,
       placeholder ? 'placeholder_color' : 'font_color',
       (a: any) => ({
-        color: `#${a}`
+        color: `#${a}`,
+        '&:disabled': {
+          color: `#${a}`,
+          '-webkit-text-fill-color': `#${a}`,
+          opacity: 1
+        },
+        '&:readOnly': {
+          color: `#${a}`,
+          '-webkit-text-fill-color': `#${a}`,
+          opacity: 1
+        }
       })
     );
     if (!placeholder && !ignoreSelectorFontColor) {
