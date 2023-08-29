@@ -23,7 +23,7 @@ function _transformSignatureVal(value: any) {
 }
 
 function _transformUrlVal(value: any) {
-  return value.replaceAll(' ', '%20');
+  return value ? value.replaceAll(' ', '%20') : value;
 }
 
 /**
