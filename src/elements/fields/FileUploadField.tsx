@@ -127,6 +127,7 @@ function FileUploadField({
             key={index}
             css={{
               position: 'relative',
+              width: '100%',
               maxHeight: '100%',
               overflow: 'hidden',
               display: 'flex',

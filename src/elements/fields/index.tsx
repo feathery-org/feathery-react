@@ -123,7 +123,6 @@ function applyFieldStyles(field: any, styles: any) {
         styles.applyHeight('fc');
       }
       styles.applyHeight('field');
-      styles.applyWidth('field');
       styles.applyBorders({ target: 'field' });
       styles.applyCorners('field');
       styles.applyBoxShadow('field');
