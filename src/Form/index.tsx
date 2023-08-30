@@ -559,7 +559,7 @@ function Form({
           // So, then tried eval instead, but had a serious issue with the webpacked published
           // lib which was just invalid. So, now wrapping the rule code
           // in an async function and calling it immediately from within an AsyncFunction.
-          const asyncWrappedCode = `return (async () => { ${logicRule.code} })()`;
+          const asyncWrappedCode = `return (async () => { ${logicRule.code}\n })()`;
           // @ts-ignore
           const fn = new AsyncFunction('feathery', asyncWrappedCode);
           try {
