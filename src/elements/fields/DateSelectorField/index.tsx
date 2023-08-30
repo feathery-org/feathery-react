@@ -125,13 +125,15 @@ function DateSelectorField({
         {customBorder}
         <DateSelectorStyles />
         <DatePicker
+          id={element.servar.key}
           selected={internalDate}
+          preventOpenOnFocus
+          autoComplete='off'
           onSelect={onDateChange} // when day is clicked
           onChange={onDateChange} // only when value has changed
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           required={required}
-          autoComplete={servarMeta.autocomplete || 'on'}
           placeholder=''
           readOnly={disabled}
           filterTime={filterPassedTime}
