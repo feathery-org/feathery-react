@@ -438,9 +438,13 @@ function Form({
   useEffect(() => {
     return () => {
       debouncedValidate.cancel();
+    };
+  }, [debouncedValidate]);
+  useEffect(() => {
+    return () => {
       debouncedRerender.cancel();
     };
-  }, [debouncedValidate, debouncedRerender]);
+  }, [debouncedRerender]);
 
   const updateFieldValues = (newFieldValues: any, rerender = true) => {
     clearBrowserErrors(formRef);
@@ -585,6 +589,12 @@ function Form({
         ...props2
       }));
 
+  // keep internalState fresh
+  if (internalState[_internalId]) {
+    internalState[_internalId].setInlineErrors = setInlineErrors;
+    internalState[_internalId].inlineErrors = inlineErrors;
+  }
+
   const getNewStep = async (newKey: any) => {
     let newStep = steps[newKey];
 
@@ -615,12 +625,14 @@ function Form({
       formSettings,
       getErrorCallback,
       history,
+      inlineErrors,
       setInlineErrors,
       setUserProgress,
       steps,
       updateFieldOptions,
       setFieldErrors: (errors) => {
         Object.entries(errors).forEach(([fieldKey, error]) => {
+          const { inlineErrors, setInlineErrors } = internalState[_internalId];
           let index = null;
           let message = error;
           // If the user provided an object for an error then use the specified index and message
@@ -636,6 +648,7 @@ function Form({
             index,
             errorType: formSettings.errorType,
             inlineErrors,
+            setInlineErrors,
             triggerErrors: true
           });
         });
@@ -893,7 +906,7 @@ function Form({
       const invalid = await setFormElementError({
         formRef,
         errorType: formSettings.errorType,
-        inlineErrors: newInlineErrors,
+        inlineErrors,
         setInlineErrors,
         triggerErrors: true
       });
