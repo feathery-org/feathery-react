@@ -13,17 +13,22 @@ import useBorder from '../../components/useBorder';
 function formatDateString(date: any, chooseTime: boolean) {
   if (!date) return '';
 
-  const day = date.getDate().toString().padStart(2, '0');
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const year = date.getFullYear();
-  let formatted = `${year}-${month}-${day}`;
+  // If simply a date, then not in UTC.
+  // If it is a date time, then it is in UTC with the 'Z' at the end.
   if (chooseTime) {
-    const hour = date.getHours().toString().padStart(2, '0');
-    const minute = date.getMinutes().toString().padStart(2, '0');
-    const second = date.getSeconds().toString().padStart(2, '0');
-    formatted = `${formatted}T${hour}:${minute}:${second}`;
+    const day = date.getUTCDate().toString().padStart(2, '0');
+    const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+    const year = date.getUTCFullYear();
+    const hour = date.getUTCHours().toString().padStart(2, '0');
+    const minute = date.getUTCMinutes().toString().padStart(2, '0');
+    const second = date.getUTCSeconds().toString().padStart(2, '0');
+    return `${year}-${month}-${day}T${hour}:${minute}:${second}Z`;
+  } else {
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    return `${year}-${month}-${day}`;
   }
-  return formatted;
 }
 
 const parseTimeThreshold = (timeThreshold: string) =>
@@ -51,7 +56,8 @@ function DateSelectorField({
     let internalVal: any = '';
     if (value) {
       internalVal = parseISO(value);
-      if (!servarMeta.choose_time) internalVal.setHours(0, 0, 0);
+      if (internalVal.toString() === 'Invalid Date') internalVal = '';
+      else if (!servarMeta.choose_time) internalVal.setHours(0, 0, 0);
     }
     setInternalDate(internalVal);
   }, [value]);
@@ -89,7 +95,8 @@ function DateSelectorField({
 
   const disabled = element.properties.disabled ?? false;
   let dateMask = servarMeta.display_format ? 'd/MM/yyyy' : 'MM/d/yyyy';
-  if (servarMeta.choose_time) dateMask = `${dateMask} h:mm aa`;
+  const timeMask = servarMeta.time_format === '12hr' ? 'h:mm aa' : 'HH:mm';
+  if (servarMeta.choose_time) dateMask = `${dateMask} ${timeMask}`;
   return (
     <div
       css={{
@@ -139,6 +146,7 @@ function DateSelectorField({
           filterTime={filterPassedTime}
           showTimeSelect={servarMeta.choose_time ?? false}
           dateFormat={dateMask}
+          timeFormat={timeMask}
           maxDate={servarMeta.no_future ? new Date() : undefined}
           css={{
             height: '100%',
