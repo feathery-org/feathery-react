@@ -81,28 +81,24 @@ export function handleOtherStateChange(
 
 export function handleCheckboxGroupChange(
   e: any,
-  servarKey: any,
-  step: any,
+  field: any,
   updateFieldValues: any
 ) {
   const target = e.target;
   const opt = target.name;
-  step.servar_fields.forEach((field: any) => {
-    const servar = field.servar;
-    if (servar.key !== servarKey) return;
+  const servar = field.servar;
 
-    const fieldValue = getFieldValue(field);
-    const { value } = fieldValue;
-    const newValue = target.checked
-      ? [...value, opt]
-      : value.filter((v: any) => v !== opt);
-    if (fieldValue.repeated) {
-      const { valueList, index } = fieldValue;
-      updateFieldValues({
-        [servar.key]: justInsert(valueList, newValue, index)
-      });
-    } else {
-      updateFieldValues({ [servar.key]: newValue });
-    }
-  });
+  const fieldValue = getFieldValue(field);
+  const { value } = fieldValue;
+  const newValue = target.checked
+    ? [...value, opt]
+    : value.filter((v: any) => v !== opt);
+  if (fieldValue.repeated) {
+    const { valueList, index } = fieldValue;
+    updateFieldValues({
+      [servar.key]: justInsert(valueList, newValue, index)
+    });
+  } else {
+    updateFieldValues({ [servar.key]: newValue });
+  }
 }
