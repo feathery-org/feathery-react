@@ -906,7 +906,9 @@ function Form({
       const invalid = await setFormElementError({
         formRef,
         errorType: formSettings.errorType,
-        inlineErrors,
+        // Need the latest accrued inlineErrors here.
+        // This could have come potentially from multiple setFieldErrors calls.
+        inlineErrors: internalState[_internalId].inlineErrors,
         setInlineErrors,
         triggerErrors: true
       });
