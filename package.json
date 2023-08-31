@@ -1,6 +1,6 @@
 {
   "name": "@feathery/react",
-  "version": "2.0.72",
+  "version": "2.0.73",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
@@ -20,7 +20,6 @@
     "prepublishOnly": "yarn build",
     "test": "jest --coverage",
     "lint": "eslint ."
-    
   },
   "peerDependencies": {
     "react": ">=16",
