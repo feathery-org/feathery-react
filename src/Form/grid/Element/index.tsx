@@ -376,12 +376,7 @@ const Element = ({ node: el, form, flags }: any) => {
             fieldVal={fieldVal}
             otherVal={otherVal}
             onChange={(e: any) => {
-              handleCheckboxGroupChange(
-                e,
-                servar.key,
-                activeStep,
-                updateFieldValues
-              );
+              handleCheckboxGroupChange(e, el, updateFieldValues);
               onChange();
             }}
             onOtherChange={(e: any) => {
