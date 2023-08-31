@@ -95,6 +95,8 @@ export const getABVariant = (stepRes: any) => {
 export function getDefaultFieldValue(field: any) {
   const servar = field.servar;
   const meta = servar.metadata;
+  if (meta.default_value) return meta.default_value;
+
   switch (servar.type) {
     case 'checkbox':
       // eslint-disable-next-line camelcase
