@@ -1087,10 +1087,14 @@ function Form({
       const nextStep = steps[redirectKey];
       if (isStepTerminal(nextStep)) {
         const authIntegration = getAuthIntegrationMetadata(integrations);
-        eventData.completed = !isTerminalStepAuth(
+        const complete = !isTerminalStepAuth(
           authIntegration,
           steps[stepKey].id
         );
+        if (complete) {
+          eventData.completed = true;
+          await runUserLogic('form_complete');
+        }
       }
       client.registerEvent(eventData, submitPromise);
       updateBackNavMap({ [redirectKey]: activeStep.key });
