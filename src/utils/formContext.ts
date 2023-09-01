@@ -3,7 +3,7 @@ import {
   FieldOptions,
   formatAllFormFields
 } from './formHelperFunctions';
-import { setFieldValues, getFieldValues } from './init';
+import { setFieldValues, getFieldValues, initInfo } from './init';
 import internalState from './internalState';
 import { validateElements } from './validation';
 
@@ -15,6 +15,7 @@ import { validateElements } from './validation';
  * @returns Form context object
  */
 export const getFormContext = (formUuid: string) => ({
+  userId: initInfo().userId,
   setFieldValues,
   getFieldValues,
   setFormCompletion: (flag: boolean) => {
