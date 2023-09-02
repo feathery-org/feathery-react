@@ -249,7 +249,7 @@ function getStandardFieldError(value: any, servar: any) {
   }
 
   if (servar.min_length && value.length < servar.min_length) {
-    return `Your entry must be at least ${servar.min_length} characters`;
+    return defaultErrors.minimum.replace('{length}', servar.min_length);
   }
 
   const defaultErr = defaultErrors[servar.type];
