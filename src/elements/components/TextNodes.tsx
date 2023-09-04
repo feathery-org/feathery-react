@@ -96,7 +96,11 @@ function TextNodes({
             let cursor = 'inherit';
             if (!editMode && !disabled) {
               if (attrs.font_link) {
-                onClick = () => openTab(attrs.font_link);
+                const link = replaceTextVariables(
+                  attrs.font_link,
+                  element.repeat
+                );
+                onClick = () => openTab(link);
                 cursor = 'pointer';
               } else if (
                 attrs.fullSpan ||

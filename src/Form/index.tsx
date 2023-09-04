@@ -1308,7 +1308,7 @@ function Form({
         await openArgyleLink(client, flowOnSuccess(i), integrations?.argyle);
         break;
       } else if (type === ACTION_URL) {
-        let url = action.url;
+        let url = replaceTextVariables(action.url, element.repeat);
         if (url) {
           if (!url.includes(':')) url = 'https://' + url;
           if (action.open_tab) openTab(url);
