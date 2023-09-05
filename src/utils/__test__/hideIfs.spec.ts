@@ -1,4 +1,4 @@
-import { shouldElementHide } from '../hideAndRepeats';
+import { shouldElementHide, ShowHideBehavior } from '../hideAndRepeats';
 import { fieldValues } from '../init';
 
 describe('shouldElementHide', () => {
@@ -11,17 +11,20 @@ describe('shouldElementHide', () => {
     field_key: fieldKeyRight
   };
   const element = (...fieldValues: any[]) => ({
-    hide_ifs: [
-      {
-        field_type: 'servar',
-        comparison: 'equal',
-        index: 0,
-        field_id: 'blaa',
-        servar: 'blaa',
-        field_key: fieldKey,
-        values: fieldValues
-      }
-    ]
+    hide_show: {
+      behavior: 'hide',
+      rules: [
+        {
+          field_type: 'servar',
+          comparison: 'equal',
+          index: 0,
+          field_id: 'blaa',
+          servar: 'blaa',
+          field_key: fieldKey,
+          values: fieldValues
+        }
+      ]
+    } as ShowHideBehavior
   });
   const newFieldValues = (...values: any[]) => ({
     [fieldKey]: values.length > 1 ? [...values] : values[0]

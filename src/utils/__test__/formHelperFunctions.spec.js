@@ -10,6 +10,12 @@ import { fieldValues, initInfo } from '../init';
 
 jest.mock('../init');
 
+// eslint-disable-next-line camelcase
+const hide_show = {
+  behavior: 'hide',
+  rules: []
+};
+
 describe('formHelperFunctions', () => {
   describe('formatStepFields', () => {
     it('formats zero elements correctly', () => {
@@ -37,7 +43,8 @@ describe('formHelperFunctions', () => {
               name: 'Name 1',
               metadata: {}
             },
-            hide_ifs: []
+            // eslint-disable-next-line camelcase
+            show_hide: hide_show
           },
           {
             servar: {
@@ -46,7 +53,8 @@ describe('formHelperFunctions', () => {
               name: 'Name 2',
               metadata: {}
             },
-            hide_ifs: []
+            // eslint-disable-next-line camelcase
+            show_hide: hide_show
           }
         ]
       };
@@ -100,7 +108,8 @@ describe('formHelperFunctions', () => {
                 name: 'Name 1',
                 metadata: {}
               },
-              hide_ifs: []
+              // eslint-disable-next-line camelcase
+              show_hide: hide_show
             }
           ]
         },
@@ -113,7 +122,8 @@ describe('formHelperFunctions', () => {
                 name: 'Name 2',
                 metadata: {}
               },
-              hide_ifs: []
+              // eslint-disable-next-line camelcase
+              show_hide: hide_show
             }
           ]
         }

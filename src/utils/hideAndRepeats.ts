@@ -7,6 +7,11 @@ interface FlatHideRule extends ResolvedComparisonRule {
   index: number;
 }
 
+export interface ShowHideBehavior {
+  behavior: 'show' | 'hide';
+  rules: FlatHideRule[];
+}
+
 /**
  * Gets the set of elements that are referenced in a hide if rule for any of the elements.
  * Useful for knowing a field is involved in a rule.
@@ -16,18 +21,18 @@ interface FlatHideRule extends ResolvedComparisonRule {
 function getHideIfReferences(
   elements: [
     {
-      hide_ifs: FlatHideRule[];
+      hide_show?: ShowHideBehavior;
     },
     string
   ][]
 ): Set<string> {
   const refSet = new Set<string>();
   elements.forEach(([element]) => {
-    element.hide_ifs.forEach((hideRule) => {
+    element.hide_show?.rules.forEach((rule) => {
       // add the left side field
-      refSet.add(hideRule.field_key);
+      refSet.add(rule.field_key);
       // add any right side fields
-      hideRule.values.forEach(
+      rule.values.forEach(
         (v) => typeof v === 'object' && refSet.add(v.field_key)
       );
     });
@@ -35,29 +40,39 @@ function getHideIfReferences(
   return refSet;
 }
 
-function reshapeHideIfs(hideIfs: any): ResolvedComparisonRule[][] {
+function reshapeShowHides(showHideRules: any): ResolvedComparisonRule[][] {
   const max =
-    hideIfs.length === 0
+    showHideRules.length === 0
       ? 0
-      : Math.max(...hideIfs.map((hideIf: any) => hideIf.index)) + 1;
+      : Math.max(...showHideRules.map((rule: any) => rule.index)) + 1;
   const reshaped = Array.from(
     new Array(max),
     (): ResolvedComparisonRule[] => []
   );
-  hideIfs.forEach((hideIf: any) => {
-    reshaped[hideIf.index].push(hideIf);
+  showHideRules.forEach((rule: any) => {
+    reshaped[rule.index].push(rule);
   });
   return reshaped;
 }
 /**
- * Determines if the provided element should be hidden based on its "hide-if" rules.
+ * Determines if the provided element should be hidden based on its "show-hide" rules.
  */
-function shouldElementHide(element: any, repeat?: number) {
-  const reshapedHideIfs = reshapeHideIfs(element.hide_ifs ?? []);
+function shouldElementHide(
+  element: { hide_show?: ShowHideBehavior },
+  repeat?: number
+) {
+  const { hide_show: showHide } = element;
+  // The show-hide behavior can be either show or hide.
+  // If there are no rules, then the default is to show.
+  // Otherwise, the rules are evaluated and if true then the behavior is followed.
+  if (!showHide?.rules || showHide.rules.length === 0) return false;
 
-  return reshapedHideIfs.some((hideIfRules: ResolvedComparisonRule[]) =>
-    hideIfRules.every((rule) => evalComparisonRule(rule, repeat))
+  const reshapedShowHides = reshapeShowHides(showHide?.rules ?? []);
+
+  const result = reshapedShowHides.some((rules: ResolvedComparisonRule[]) =>
+    rules.every((rule) => evalComparisonRule(rule, repeat))
   );
+  return showHide.behavior === 'hide' ? result : !result;
 }
 
 const getTextVariables = (el: any) => {
