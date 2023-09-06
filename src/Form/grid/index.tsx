@@ -68,7 +68,7 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
         <div
           key='calendly-component'
           className='calendly-inline-widget'
-          data-url='https://calendly.com/feathery-peter'
+          data-url={form.calendlyUrl}
           style={{
             width: '100%',
             height: '100%'
