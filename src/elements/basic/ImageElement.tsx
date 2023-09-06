@@ -6,9 +6,10 @@ const PLACEHOLDER_IMAGE =
   'https://feathery.s3.us-west-1.amazonaws.com/theme-image-preview.png';
 
 function applyImageStyles(element: any, responsiveStyles: any) {
-  responsiveStyles.addTargets('imageContainer', 'image');
+  responsiveStyles.addTargets('imageContainer', 'image', 'dimension');
   responsiveStyles.applyCorners('imageContainer');
   responsiveStyles.applyCorners('image');
+  responsiveStyles.applyWidth('dimension');
   return responsiveStyles;
 }
 
@@ -23,6 +24,7 @@ function ImageElement({
   if (imageFieldFile) imageFieldFile = imageFieldFile[0];
 
   const [imageUrl, setImageUrl] = useState(element.properties.source_image);
+  const [applyWidth, setApplyWidth] = useState(true);
 
   const styles = useMemo(
     () => applyImageStyles(element, responsiveStyles),
@@ -60,8 +62,10 @@ function ImageElement({
             maxWidth: '100%',
             height: '100%',
             maxHeight: '100%',
-            ...styles.getTarget('image')
+            ...styles.getTarget('image'),
+            ...(applyWidth ? styles.getTarget('dimension') : {})
           }}
+          onLoad={() => setApplyWidth(false)}
           {...elementProps}
         />
       )}
