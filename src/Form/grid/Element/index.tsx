@@ -167,6 +167,7 @@ const Element = ({ node: el, form, flags }: any) => {
     const onChange = fieldOnChange({
       fieldID: el.id,
       fieldKey: servar.key,
+      servarId: servar.id,
       elementRepeatIndex: el.repeat || 0
     });
 

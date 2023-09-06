@@ -545,7 +545,12 @@ function Form({
             logicRule.elements.includes(
               (props as ContextOnView).visibilityStatus.elementId
             )) ||
-          (triggerElementEvents.includes(logicRule.trigger_event) &&
+          (logicRule.trigger_event === 'change' &&
+            logicRule.elements.includes(
+              (props as ContextOnChange | ContextOnAction).trigger._servarId ??
+                ''
+            )) ||
+          (logicRule.trigger_event === 'action' &&
             logicRule.elements.includes(
               (props as ContextOnChange | ContextOnAction).trigger.id
             ))
@@ -1425,7 +1430,7 @@ function Form({
   };
 
   const fieldOnChange =
-    ({ fieldID, fieldKey, elementRepeatIndex = 0 }: any) =>
+    ({ fieldID, fieldKey, servarId, elementRepeatIndex = 0 }: any) =>
     ({
       triggerType = 'field',
       submitData = false,
@@ -1438,6 +1443,7 @@ function Form({
           runUserLogic('change', () => ({
             trigger: {
               id: fieldKey,
+              _servarId: servarId,
               repeatIndex: elementRepeatIndex,
               type: triggerType
             },
