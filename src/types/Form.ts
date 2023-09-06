@@ -14,6 +14,7 @@ export interface PopupOptions {
 
 export type Trigger = {
   id: string;
+  _servarId?: string;
   text?: string;
   type: 'button' | 'text' | 'field' | 'addressSelect';
   repeatIndex: number;
