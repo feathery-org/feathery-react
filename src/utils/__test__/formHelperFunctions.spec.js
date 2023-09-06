@@ -34,7 +34,8 @@ describe('formHelperFunctions', () => {
             servar: {
               key: 'key1',
               type: 'text',
-              name: 'Name 1'
+              name: 'Name 1',
+              metadata: {}
             },
             hide_ifs: []
           },
@@ -42,7 +43,8 @@ describe('formHelperFunctions', () => {
             servar: {
               key: 'key2',
               type: 'file_upload',
-              name: 'Name 2'
+              name: 'Name 2',
+              metadata: {}
             },
             hide_ifs: []
           }
@@ -95,7 +97,8 @@ describe('formHelperFunctions', () => {
               servar: {
                 key: 'key1',
                 type: 'text',
-                name: 'Name 1'
+                name: 'Name 1',
+                metadata: {}
               },
               hide_ifs: []
             }
@@ -107,7 +110,8 @@ describe('formHelperFunctions', () => {
               servar: {
                 key: 'key2',
                 type: 'file_upload',
-                name: 'Name 2'
+                name: 'Name 2',
+                metadata: {}
               },
               hide_ifs: []
             }

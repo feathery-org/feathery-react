@@ -49,7 +49,7 @@ export const formatStepFields = (
 
   const formattedFields: Record<
     string,
-    { value: any; type: string; displayText: string }
+    { value: any; type: string; displayText: string; options?: any[] }
   > = {};
   fields.forEach((field: any) => {
     const servar = field.servar;
@@ -69,6 +69,14 @@ export const formatStepFields = (
       type: servar.type,
       displayText: servar.name
     };
+    if (servar.metadata.options) {
+      formattedFields[servar.key].options = servar.metadata.options.map(
+        (option: string, index: number) => ({
+          value: option,
+          label: (servar.metadata.option_labels ?? [])[index]
+        })
+      );
+    }
   });
   return formattedFields;
 };
