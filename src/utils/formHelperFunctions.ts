@@ -184,7 +184,12 @@ export const lookUpTrigger = (
     const element = step.servar_fields.find(
       (field: any) => field.id === elementID
     );
-    payload = { id: element.servar.key, text: element.servar.name };
+    // servarId will remain undocumented and only used internally
+    payload = {
+      id: element.servar.key,
+      _servarId: element.servar.id,
+      text: element.servar.name
+    };
   }
   return { id: elementID, type, ...payload };
 };
