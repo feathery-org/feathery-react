@@ -18,6 +18,11 @@ import { featheryWindow } from '../utils/browser';
 import { installIntercom } from './intercom';
 import { installAmplitude } from './amplitude';
 import { installMixpanel } from './mixpanel';
+import {
+  installRudderStack,
+  rudderStackInstalled,
+  trackRudderEvent
+} from './rudderstack';
 
 const IMPORTED_URLS = new Set();
 
@@ -64,7 +69,8 @@ export async function initializeIntegrations(
     installHeap(integs.heap),
     installAmplitude(integs.amplitude),
     installMixpanel(integs.mixpanel),
-    installIntercom(integs['intercom-embedded'])
+    installIntercom(integs['intercom-embedded']),
+    installRudderStack(integs.rudderstack)
   ]);
 
   const gtm = integs['google-tag-manager'];
@@ -100,6 +106,8 @@ export function trackEvent(
       gtmData = { ...gtmData, ...fieldData['google-tag-manager'] };
     TagManager.dataLayer({ dataLayer: { ...gtmData, event: title } });
   }
+  // RudderStack
+  if (rudderStackInstalled) trackRudderEvent(title, { formId, stepId });
   // Google Analytics
   if (gaInstalled) trackGAEvent(formId, title, stepId);
   // Segment
