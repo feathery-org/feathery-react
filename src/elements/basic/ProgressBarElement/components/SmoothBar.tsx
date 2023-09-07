@@ -8,7 +8,8 @@ function SmoothBar({ styles, percent }: any) {
         width: '100%',
         borderRadius: 0,
         display: 'flex',
-        backgroundColor: '#e9ecef'
+        backgroundColor: '#e9ecef',
+        ...styles.getTarget('barWrapper')
       }}
     >
       <div

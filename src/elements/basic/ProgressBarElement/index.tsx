@@ -4,7 +4,7 @@ import SmoothBar from './components/SmoothBar';
 import SegmentBar from './components/SegmentBar';
 
 function applyProgressBarStyles(element: any, responsiveStyles: any) {
-  responsiveStyles.addTargets('barContainer', 'bar');
+  responsiveStyles.addTargets('barContainer', 'bar', 'barWrapper');
 
   responsiveStyles.applyFontStyles('barContainer');
   responsiveStyles.apply('barContainer', 'vertical_align', (a: any) => ({
@@ -13,6 +13,7 @@ function applyProgressBarStyles(element: any, responsiveStyles: any) {
   responsiveStyles.apply('barContainer', 'horizontal_align', (a: any) => ({
     alignItems: a
   }));
+  responsiveStyles.applyCorners('barWrapper');
 
   responsiveStyles.apply('bar', 'bar_color', (a: any) => ({
     backgroundColor: `#${a}`

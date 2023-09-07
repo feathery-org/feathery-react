@@ -12,7 +12,8 @@ function SegmentBar({ styles, percent, numSegments }: any) {
           width: `calc(${100 / numSegments}% - ${spacer}px)`,
           marginRight: `${spacer}px`,
           borderRadius: '2px',
-          ...styles.getTarget('bar')
+          ...styles.getTarget('bar'),
+          ...styles.getTarget('barWrapper')
         }}
       />
     );
