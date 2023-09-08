@@ -6,7 +6,7 @@ import { Image } from 'react-bootstrap';
 import { CloseIcon, FileUploadIcon } from '../components/icons';
 import { imgMaxSizeStyles } from '../styles';
 
-const MAX_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
+const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 const NUM_FILES_LIMIT = 20;
 
 function FileUploadField({
@@ -35,11 +35,9 @@ function FileUploadField({
     fileInput.current.click();
   };
 
-  let fileSizeLimit = servar.max_length
+  const fileSizeLimit = servar.max_length
     ? servar.max_length * 1024
-    : MAX_FILE_SIZE_LIMIT;
-  // Upper-bound file size at 10 megabytes
-  fileSizeLimit = Math.min(fileSizeLimit, MAX_FILE_SIZE_LIMIT);
+    : DEFAULT_FILE_SIZE_LIMIT;
   // When the user uploads files to the multi-file upload, we just append to the existing set
   // By default the input element would just replace all the uploaded files (we don't want that)
   const onChange = async (event: any) => {
