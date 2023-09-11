@@ -16,8 +16,9 @@ function SmoothBar({ styles, percent }: any) {
         style={{ width: `${percent}%` }}
         css={{
           transition: 'width 0.6s ease',
-          ...styles.getTarget('bar'),
-          ...styles.getTarget('barWrapper')
+          // TODO: hack to not override bar mobile styles for now
+          ...styles.getTarget('barWrapper', true),
+          ...styles.getTarget('bar')
         }}
       />
     </div>
