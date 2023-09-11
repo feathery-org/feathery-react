@@ -675,4 +675,28 @@ export default class Client {
       response ? response.json() : Promise.resolve()
     );
   }
+
+  async sendOTP(phoneNumber: string) {
+    const url = `${API_URL}otp/send/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({ phoneNumber })
+    };
+    return this._fetch(url, options).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
+  }
+
+  async verifyOTP(phoneNumber: string, otp: string) {
+    const url = `${API_URL}otp/verify/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({ phoneNumber, otp })
+    };
+    return this._fetch(url, options).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
+  }
 }
