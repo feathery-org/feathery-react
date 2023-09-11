@@ -78,6 +78,7 @@ export default function DropdownMultiField({
               ...responsiveStyles.getTarget('field'),
               width: '100%',
               height: '100%',
+              minHeight: 'inherit',
               border: 'none',
               boxShadow: 'none',
               backgroundColor: 'transparent',
@@ -88,7 +89,8 @@ export default function DropdownMultiField({
             }),
             container: (baseStyles) => ({
               ...baseStyles,
-              height: '100%'
+              height: '100%',
+              minHeight: 'inherit'
             }),
             indicatorSeparator: () => ({ display: 'none' }),
             indicatorsContainer: () => ({ display: 'none' })
