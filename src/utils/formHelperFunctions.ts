@@ -127,6 +127,8 @@ export function getDefaultFieldValue(field: any) {
       return meta.default_state ?? '';
     case 'gmap_country':
       return meta.default_country ?? '';
+    case 'matrix':
+      return {};
     default:
       return '';
   }
