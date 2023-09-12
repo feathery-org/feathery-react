@@ -502,6 +502,19 @@ function Form({
     );
   };
 
+  const handleFormComplete = async () => {
+    // If embedded in webview/webkit, send message on form complete
+    if (featheryWindow().webkit?.messageHandlers?.feathery) {
+      featheryWindow().webkit.messageHandlers.feathery.postMessage(
+        'Form completed'
+      );
+    }
+    if (featheryWindow().ReactNativeWebView) {
+      featheryWindow().ReactNativeWebView.postMessage('Form completed');
+    }
+    await runUserLogic('form_complete');
+  };
+
   const runUserLogic = async (
     event: string,
     getProps: () => Record<string, any> = () => ({})
@@ -512,7 +525,6 @@ function Form({
     };
     const stepEvents = ['submit', 'load'];
     const elementEvents = ['view', 'change', 'action'];
-    const triggerElementEvents = ['change', 'action'];
 
     let logicRan = false;
     if (typeof eventCallbackMap[event] === 'function') {
@@ -1098,7 +1110,7 @@ function Form({
         );
         if (complete) {
           eventData.completed = true;
-          await runUserLogic('form_complete');
+          await handleFormComplete();
         }
       }
       client.registerEvent(eventData, submitPromise);
@@ -1544,7 +1556,7 @@ function Form({
         initState.redirectCallbacks[_internalId]();
       }
     };
-    runUserLogic('form_complete').then(redirectForm);
+    handleFormComplete().then(redirectForm);
   }, [anyFinished]);
 
   // Form is turned off
