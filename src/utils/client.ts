@@ -260,6 +260,7 @@ export default class Client {
         new FontFace(family, `url(${source})`, { style, weight })
           .load()
           .then((font) => featheryDoc().fonts.add(font))
+          .catch((e) => console.warn(e))
       );
     });
     // Load Lottie if form needs animations
