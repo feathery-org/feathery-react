@@ -16,16 +16,23 @@ async function waitOnRecaptcha() {
   });
 }
 
-export async function verifyRecaptcha(client: any) {
-  if (!recaptchaReady) {
+export async function installRecaptcha(steps: Record<string, any>) {
+  if (recaptchaReady) return;
+
+  const shouldInstall = Object.values(steps).some((step) =>
+    step.buttons.some((button: any) => button.properties.captcha_verification)
+  );
+  if (shouldInstall) {
     await dynamicImport(
       'https://www.google.com/recaptcha/api.js?render=6Lcx9vAmAAAAAKnC1kO1nIdr125hCRfukaMb_R_-'
     ).then(() =>
       featheryWindow().grecaptcha.ready(() => (recaptchaReady = true))
     );
   }
-  await waitOnRecaptcha();
+}
 
+export async function verifyRecaptcha(client: any) {
+  await waitOnRecaptcha();
   return featheryWindow()
     .grecaptcha.execute('6Lcx9vAmAAAAAKnC1kO1nIdr125hCRfukaMb_R_-', {
       action: 'submit'

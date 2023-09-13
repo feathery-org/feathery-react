@@ -116,7 +116,7 @@ import {
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
-import { verifyRecaptcha } from '../integrations/recaptcha';
+import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -736,6 +736,7 @@ function Form({
           if (res.save_url_params) saveUrlParamsFormSetting = true;
           setFormSettings(mapFormSettingsResponse(res));
           setLogicRules(res.logic_rules);
+          installRecaptcha(steps);
 
           // Add any logic_rule.elements to viewElements so that onView called for then too.
           // Make sure there are no duplicate entries.

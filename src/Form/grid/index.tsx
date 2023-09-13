@@ -52,16 +52,19 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
       form.customComponents[node.key ?? ''] ||
       form.customComponents[props.callback_id ?? '']; // TODO: Eventually we'll remove the check for callback_id and solely rely on the node's key as we deprecate the callback_id
 
-    const children: any[] = (node.children || []).map((child: any, i: any) => (
-      <Subgrid
-        key={getPositionKey(child) + ':' + i}
-        tree={child}
-        axis={node.axis}
-        form={form}
-        flags={flags}
-        viewport={viewport}
-      />
-    ));
+    const children: any[] = (node.children || []).map((child: any, i: any) => {
+      const fieldKey = child.servar?.key ?? '';
+      return (
+        <Subgrid
+          key={getPositionKey(child) + ':' + i + ':' + fieldKey}
+          tree={child}
+          axis={node.axis}
+          form={form}
+          flags={flags}
+          viewport={viewport}
+        />
+      );
+    });
 
     if (props.embed_calendly && form.calendlyUrl) {
       children.push(
