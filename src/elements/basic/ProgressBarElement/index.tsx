@@ -49,7 +49,7 @@ function ProgressBarElement({
   userProgress = userProgress ?? element.properties?.progress;
   const percent = isNum(userProgress)
     ? userProgress
-    : Math.round((100 * curDepth) / (maxDepth || 1));
+    : Math.round((100 * (curDepth + 1)) / ((maxDepth || 1) + 1));
 
   const BarComponent = userSegments ? SegmentBar : SmoothBar;
   const progressBarElements = [
