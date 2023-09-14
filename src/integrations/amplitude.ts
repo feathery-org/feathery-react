@@ -58,7 +58,7 @@ export function installAmplitude(amplitudeConfig: any) {
         a.crossOrigin = 'anonymous';
         a.async = !0;
         a.src =
-          'https://cdn.amplitude.com/libs/analytics-browser-1.9.1-min.js.gz';
+          'https://cdn.amplitude.com/libs/analytics-browser-2.2.3-min.js.gz';
         a.onload = function () {
           e.amplitude.runQueuedFunctions ||
             console.log('[Amplitude] Error: could not load SDK');
