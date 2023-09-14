@@ -113,19 +113,26 @@ const Element = ({ node: el, form, flags }: any) => {
         }
         return false;
       });
-      const storeFieldButtons = activeStep.buttons.filter(
-        ({ properties }: any) =>
+      const elementsHaveValues = ['buttons', 'subgrids'].every((elType) => {
+        const storeElements = activeStep[elType].filter(({ properties }: any) =>
           (properties.actions ?? []).some(
             (action: any) => action.type === ACTION_STORE_FIELD
           )
-      );
-      const buttonHasAValue =
-        storeFieldButtons.length === 0 ||
-        storeFieldButtons.some(
-          ({ properties }: any) =>
-            fieldValues[properties.custom_store_field_key]
         );
-      disabled = fieldsMissingValue || !buttonHasAValue;
+        return (
+          storeElements.length === 0 ||
+          // Loose check via "some" since "requiredness" of click action
+          // elements can depend on use case
+          storeElements.some(({ properties }: any) =>
+            (properties.actions ?? []).some(
+              (action: any) =>
+                action.type === ACTION_STORE_FIELD &&
+                fieldValues[action.custom_store_field_key]
+            )
+          )
+        );
+      });
+      disabled = fieldsMissingValue || !elementsHaveValues;
     }
     return (
       <Elements.ButtonElement
