@@ -115,8 +115,12 @@ export function trackEvent(
   if (fieldData?.segment) segmentData.submittedData = fieldData;
   if (featheryWindow().analytics)
     featheryWindow().analytics.track(title, segmentData);
+
+  const amplitudeData: any = { ...metadata };
+  if (fieldData?.amplitude) amplitudeData.submittedData = fieldData;
   if (featheryWindow().amplitude)
     featheryWindow().amplitude.track(title, metadata);
+
   if (featheryWindow().mixpanel)
     featheryWindow().mixpanel.track(title, metadata);
 }

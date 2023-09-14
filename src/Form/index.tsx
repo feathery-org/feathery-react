@@ -949,6 +949,8 @@ function Form({
     const fieldData: Record<string, any> = {};
     if (integrations?.segment?.metadata.track_fields)
       fieldData.segment = formattedFields;
+    if (integrations?.amplitude?.metadata.track_fields)
+      fieldData.amplitude = formattedFields;
     if (integrations?.['google-tag-manager']?.metadata.track_fields)
       fieldData['google-tag-manager'] = Object.entries(formattedFields).reduce(
         (obj, [key, val]) => {
