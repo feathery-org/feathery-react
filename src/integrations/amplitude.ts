@@ -1,4 +1,5 @@
 import { featheryDoc, featheryWindow } from '../utils/browser';
+import { initInfo } from '../utils/init';
 
 export let amplitudeInstalled = false;
 
@@ -146,6 +147,8 @@ export function installAmplitude(amplitudeConfig: any) {
     })(featheryWindow(), featheryDoc());
 
     featheryWindow().amplitude.init(amplitudeConfig.metadata.api_key);
+    if (amplitudeConfig.metadata.identify_user)
+      featheryWindow().amplitude.setUserId(initInfo().userId);
   }
 
   return Promise.resolve();
