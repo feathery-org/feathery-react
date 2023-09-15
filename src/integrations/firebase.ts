@@ -15,6 +15,7 @@ export function installFirebase(firebaseConfig: any) {
   if (firebasePromise) return firebasePromise;
   else if (!firebaseConfig) return Promise.resolve();
   else {
+    authState.authType = 'firebase';
     firebasePromise = new Promise((resolve) => {
       if (authState.client) resolve(authState.client);
       else {

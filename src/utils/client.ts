@@ -676,24 +676,30 @@ export default class Client {
     );
   }
 
-  async sendOTP(phoneNumber: string) {
+  async sendSMSOTP(phoneNumber: string) {
+    const { userId } = initInfo();
     const url = `${API_URL}otp/send/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
-      body: JSON.stringify({ phoneNumber })
+      body: JSON.stringify({
+        phone_number: phoneNumber,
+        form_key: this.formKey,
+        fuser_key: userId
+      })
     };
     return this._fetch(url, options).then((response) =>
       response ? response.json() : Promise.resolve()
     );
   }
 
-  async verifyOTP(phoneNumber: string, otp: string) {
+  async verifySMSOTP(otp: string) {
+    const { userId } = initInfo();
     const url = `${API_URL}otp/verify/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
-      body: JSON.stringify({ phoneNumber, otp })
+      body: JSON.stringify({ otp, fuser_key: userId, form_key: this.formKey })
     };
     return this._fetch(url, options).then((response) =>
       response ? response.json() : Promise.resolve()

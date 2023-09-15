@@ -22,7 +22,6 @@ import { defaultClient } from '../../utils/init';
 
 // All code that needs to do something different based on the auth integration should go in this file
 
-let nativeOtpNumber = '';
 let nativeOtpTimeSent = 0;
 
 function isHrefMagicLink(): boolean {
@@ -58,41 +57,39 @@ async function inferAuthLogout() {
   authState.setAuthId('');
 }
 
-function sendSms(phoneNum: string) {
-  nativeOtpNumber = phoneNum;
-  if (!nativeOtpTimeSent) {
-    nativeOtpTimeSent = Date.now();
-    return defaultClient.sendOTP(phoneNum);
-  } else {
-    const timeDiff = Date.now() - nativeOtpTimeSent;
-    if (timeDiff < 60000) {
-      const roundedSeconds = Math.round((60000 - timeDiff) / 1000);
-      throw new Error(
-        `Please wait ${roundedSeconds} seconds before sending another SMS.`
-      );
-    } else return defaultClient.sendOTP(phoneNum);
+function sendSms(phoneNum: string, featheryClient: any) {
+  if (authState.authType === 'stytch')
+    return stytchSendSms({ fieldVal: phoneNum });
+  else if (authState.authType === 'firebase')
+    return firebaseSendSms({ fieldVal: phoneNum, servar: null });
+  else {
+    if (!nativeOtpTimeSent) nativeOtpTimeSent = Date.now();
+    else {
+      const timeDiff = Date.now() - nativeOtpTimeSent;
+      if (timeDiff < 60000) {
+        const roundedSeconds = Math.round((60000 - timeDiff) / 1000);
+        throw new Error(
+          `Please wait ${roundedSeconds} seconds before sending another SMS.`
+        );
+      }
+    }
+    return featheryClient.sendSMSOTP(phoneNum);
   }
-  // return defaultClient.sendOTP(phoneNum);
-  // if (isAuthStytch()) return stytchSendSms({ fieldVal: phoneNum });
-  // else
-  //   return firebaseSendSms({
-  //     fieldVal: phoneNum,
-  //     servar: null
-  //   });
 }
 
 function verifySms(params: {
   fieldVal: string;
   featheryClient: any;
 }): Promise<any> {
-  // if no nativeOtpNumber then what?
-  return defaultClient.verifyOTP(nativeOtpNumber, params.fieldVal);
-  // return isAuthStytch() ? stytchVerifySms(params) : firebaseVerifySms(params);
+  if (authState.authType === 'stytch') return stytchVerifySms(params);
+  else if (authState.authType === 'firebase') return firebaseVerifySms(params);
+  else return params.featheryClient.verifySMSOTP(params.fieldVal);
 }
 
 function sendMagicLink(email: string) {
-  if (isAuthStytch()) return stytchSendMagicLink({ fieldVal: email });
-  else
+  if (authState.authType === 'stytch')
+    return stytchSendMagicLink({ fieldVal: email });
+  else if (authState.authType === 'firebase')
     return firebaseSendMagicLink({
       fieldVal: email,
       servar: null

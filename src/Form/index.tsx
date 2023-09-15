@@ -1348,7 +1348,7 @@ function Form({
         const phoneNum = fieldValues[action.auth_target_field_key] as string;
         if (validators.phone(phoneNum)) {
           try {
-            await Auth.sendSms(phoneNum);
+            await Auth.sendSms(phoneNum, client);
           } catch (e) {
             setElementError((e as Error).message);
             elementClicks[id] = false;
@@ -1363,7 +1363,6 @@ function Form({
       } else if (type === ACTION_VERIFY_SMS) {
         const pinKey = action.auth_target_field_key;
         const pin = fieldValues[pinKey] as string;
-        // TODO: should I pass in the phone number here or should I pass the feathery client to sendSms and then store the last phone number?
         const params = { fieldVal: pin, featheryClient: client };
         let hasErr = false;
         await Auth.verifySms(params).catch((e) => {

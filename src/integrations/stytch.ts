@@ -22,6 +22,7 @@ export function installStytch(stytchConfig: any) {
   else if (!stytchConfig || stytchConfig.metadata.token === '')
     return Promise.resolve();
   else {
+    authState.authType = 'stytch';
     config = stytchConfig;
     stytchPromise = new Promise((resolve) => {
       if (authState.client) resolve(authState.client);
