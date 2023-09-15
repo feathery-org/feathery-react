@@ -37,7 +37,8 @@ describe('formHelperFunctions', () => {
               name: 'Name 1',
               metadata: {}
             },
-            hide_ifs: []
+            hide_ifs: [],
+            show_logic: false
           },
           {
             servar: {
@@ -46,7 +47,8 @@ describe('formHelperFunctions', () => {
               name: 'Name 2',
               metadata: {}
             },
-            hide_ifs: []
+            hide_ifs: [],
+            show_logic: false
           }
         ]
       };
@@ -100,7 +102,8 @@ describe('formHelperFunctions', () => {
                 name: 'Name 1',
                 metadata: {}
               },
-              hide_ifs: []
+              hide_ifs: [],
+              show_logic: false
             }
           ]
         },
@@ -113,7 +116,8 @@ describe('formHelperFunctions', () => {
                 name: 'Name 2',
                 metadata: {}
               },
-              hide_ifs: []
+              hide_ifs: [],
+              show_logic: false
             }
           ]
         }

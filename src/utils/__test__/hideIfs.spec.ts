@@ -11,6 +11,7 @@ describe('shouldElementHide', () => {
     field_key: fieldKeyRight
   };
   const element = (...fieldValues: any[]) => ({
+    show_logic: false,
     hide_ifs: [
       {
         field_type: 'servar',
