@@ -35,7 +35,9 @@ function RadioButtonGroupField({
   const styles = useMemo(() => {
     applyCheckableInputStyles(element, responsiveStyles);
     applyRadioGroupStyles(element, responsiveStyles);
-
+    responsiveStyles.apply('row', 'row_separation', (a: number) => {
+      return { marginBottom: `${a}px` };
+    });
     return responsiveStyles;
   }, [responsiveStyles]);
 
@@ -57,7 +59,11 @@ function RadioButtonGroupField({
         return (
           <div
             key={`${servar.key}-${i}`}
-            css={{ display: 'flex', alignItems: 'center' }}
+            css={{
+              display: 'flex',
+              alignItems: 'center',
+              ...styles.getTarget('row')
+            }}
           >
             <input
               type='radio'

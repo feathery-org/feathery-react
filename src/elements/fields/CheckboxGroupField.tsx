@@ -6,6 +6,7 @@ import {
   applyHeightAndWidthByFontSize,
   composeCheckableInputStyle
 } from './CheckboxField';
+import { adjustColor } from '../../utils/styles';
 
 const applyCheckboxGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('checkboxGroup');
@@ -31,7 +32,10 @@ function CheckboxGroupField({
   const styles = useMemo(() => {
     applyCheckableInputStyles(element, responsiveStyles);
     applyCheckboxGroupStyles(element, responsiveStyles);
-
+    responsiveStyles.addTargets('row');
+    responsiveStyles.apply('row', 'row_separation', (a: number) => {
+      return { marginBottom: `${a}px` };
+    });
     return responsiveStyles;
   }, [responsiveStyles]);
 
@@ -59,7 +63,8 @@ function CheckboxGroupField({
             css={{
               display: 'flex',
               alignItems: 'center',
-              pointerEvents: disabled ? 'none' : 'auto'
+              pointerEvents: disabled ? 'none' : 'auto',
+              ...styles.getTarget('row')
             }}
           >
             <input
