@@ -16,6 +16,9 @@ function MatrixField({
   const { backgroundColor, borderRadius, height } =
     responsiveStyles.getTarget('sub-fc');
 
+  const options = servar.metadata.options;
+  const optionFraction = 100 / (options.length + 1);
+  const widthStyle = { minWidth: '100px', width: `${optionFraction}%` };
   return (
     <div
       css={{
@@ -32,12 +35,8 @@ function MatrixField({
       {children}
       {fieldLabel}
       <div style={{ display: 'flex', flexDirection: 'row', marginBottom: 6 }}>
-        <div
-          style={{
-            width: '100px'
-          }}
-        />
-        {servar.metadata.options.map((opt: any, i: number) => {
+        <div style={widthStyle} />
+        {options.map((opt: any, i: number) => {
           // headers
           return (
             <div
@@ -68,16 +67,10 @@ function MatrixField({
               marginBottom: 6
             }}
           >
-            <div
-              style={{
-                width: '100px',
-                fontWeight: 400,
-                padding: 8
-              }}
-            >
+            <div style={{ ...widthStyle, fontWeight: 400, padding: 8 }}>
               {question.label}
             </div>
-            {servar.metadata.options.map((opt: any, j: number) => {
+            {options.map((opt: any, j: number) => {
               const questionVal = fieldVal[question.id];
               const isChecked =
                 Array.isArray(questionVal) && questionVal.includes(opt);
