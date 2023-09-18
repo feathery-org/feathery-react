@@ -17,6 +17,7 @@ function getHideIfReferences(
   elements: [
     {
       hide_ifs: FlatHideRule[];
+      show_logic: boolean;
     },
     string
   ][]
@@ -52,12 +53,20 @@ function reshapeHideIfs(hideIfs: any): ResolvedComparisonRule[][] {
 /**
  * Determines if the provided element should be hidden based on its "hide-if" rules.
  */
-function shouldElementHide(element: any, repeat?: number) {
-  const reshapedHideIfs = reshapeHideIfs(element.hide_ifs ?? []);
+function shouldElementHide(
+  { show_logic: show, hide_ifs: hideIfs }: any,
+  repeat?: number
+) {
+  // The show behavior can be either show (true) or hide (false).
+  // If there are no hide_if rules, then the default is to show.
+  // Otherwise, the rules are evaluated and if true then the show behavior is followed.
+  if (!hideIfs || hideIfs.length === 0) return false;
+  const reshapedHideIfs = reshapeHideIfs(hideIfs ?? []);
 
-  return reshapedHideIfs.some((hideIfRules: ResolvedComparisonRule[]) =>
+  const result = reshapedHideIfs.some((hideIfRules: ResolvedComparisonRule[]) =>
     hideIfRules.every((rule) => evalComparisonRule(rule, repeat))
   );
+  return show ? !result : result;
 }
 
 const getTextVariables = (el: any) => {
