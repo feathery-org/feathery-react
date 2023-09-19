@@ -3,9 +3,13 @@ import { v4 as uuidv4 } from 'uuid';
 
 import Client, { updateRegionApiUrls } from './client';
 import * as errors from './error';
-import { dataURLToFile, isBase64Image } from './image';
 import { runningInClient, setCookie, getCookie } from './browser';
-import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
+import {
+  getAllFields,
+  remountAllForms,
+  rerenderAllForms
+} from './formHelperFunctions';
+import { parseUserVal } from './Field';
 
 export type FeatheryFieldTypes =
   | null
@@ -174,14 +178,6 @@ async function updateUserId(newUserId: string, merge = false): Promise<void> {
   }
 }
 
-function _parseUserVal(userVal: FeatheryFieldTypes, key: string) {
-  // TODO(ts): Should we make an internal vs external FeatheryFieldTypes? or just | File like this?
-  let val: FeatheryFieldTypes | File = userVal;
-  if (isBase64Image(val)) val = dataURLToFile(val, `${key}.png`);
-  // If the value is a file type, convert the file or files (if repeated) to Promises
-  return val instanceof File ? Promise.resolve(val) : val;
-}
-
 /**
  * If customers provide files through setFieldValues
  * we need to explicitly convert any files to file Promises
@@ -191,8 +187,8 @@ function setFieldValues(userVals: FieldValues, rerender = true): void {
   const result: FieldValues = {};
   Object.entries(userVals).forEach(([key, value]) => {
     if (Array.isArray(value))
-      result[key] = value.map((entry) => _parseUserVal(entry, key));
-    else result[key] = _parseUserVal(value, key);
+      result[key] = value.map((entry) => parseUserVal(entry, key));
+    else result[key] = parseUserVal(value, key);
   });
 
   Object.assign(fieldValues, result);
