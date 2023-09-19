@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Slider from 'rc-slider';
 
 import SliderStyles from './styles';
@@ -15,6 +15,10 @@ export default function SliderField({
 }: any) {
   const [internalValue, setInternalValue] = useState(fieldVal);
   const [showValue, setShowValue] = useState(false);
+
+  useEffect(() => {
+    if (fieldVal !== internalValue) setInternalValue(fieldVal);
+  }, [fieldVal]);
 
   const servar = element.servar;
   const minVal = servar.min_length ?? 0;
