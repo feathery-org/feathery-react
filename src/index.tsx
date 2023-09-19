@@ -31,6 +31,7 @@ function renderAt(elementId: any, props: FormProps) {
 
   const uuid = uuidv4();
 
+  // @ts-ignore
   ReactDOM.render(<JSForm {...props} _internalId={uuid} />, container);
 
   return {
