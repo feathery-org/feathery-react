@@ -22,6 +22,8 @@ import { defaultClient } from '../../utils/init';
 
 // All code that needs to do something different based on the auth integration should go in this file
 
+let nativeOtpTimeSent = 0;
+
 function isHrefMagicLink(): boolean {
   return (
     featheryWindow().location.search.includes('stytch_token_type') ||
@@ -55,25 +57,39 @@ async function inferAuthLogout() {
   authState.setAuthId('');
 }
 
-function sendSms(phoneNum: string) {
-  if (isAuthStytch()) return stytchSendSms({ fieldVal: phoneNum });
-  else
-    return firebaseSendSms({
-      fieldVal: phoneNum,
-      servar: null
-    });
+function sendSms(phoneNum: string, featheryClient: any) {
+  if (authState.authType === 'stytch')
+    return stytchSendSms({ fieldVal: phoneNum });
+  else if (authState.authType === 'firebase')
+    return firebaseSendSms({ fieldVal: phoneNum, servar: null });
+  else {
+    if (!nativeOtpTimeSent) nativeOtpTimeSent = Date.now();
+    else {
+      const timeDiff = Date.now() - nativeOtpTimeSent;
+      if (timeDiff < 60000) {
+        const roundedSeconds = Math.round((60000 - timeDiff) / 1000);
+        throw new Error(
+          `Please wait ${roundedSeconds} seconds before sending another SMS.`
+        );
+      }
+    }
+    return featheryClient.sendSMSOTP(phoneNum);
+  }
 }
 
 function verifySms(params: {
   fieldVal: string;
   featheryClient: any;
 }): Promise<any> {
-  return isAuthStytch() ? stytchVerifySms(params) : firebaseVerifySms(params);
+  if (authState.authType === 'stytch') return stytchVerifySms(params);
+  else if (authState.authType === 'firebase') return firebaseVerifySms(params);
+  else return params.featheryClient.verifySMSOTP(params.fieldVal);
 }
 
 function sendMagicLink(email: string) {
-  if (isAuthStytch()) return stytchSendMagicLink({ fieldVal: email });
-  else
+  if (authState.authType === 'stytch')
+    return stytchSendMagicLink({ fieldVal: email });
+  else if (authState.authType === 'firebase')
     return firebaseSendMagicLink({
       fieldVal: email,
       servar: null

@@ -1348,7 +1348,7 @@ function Form({
         const phoneNum = fieldValues[action.auth_target_field_key] as string;
         if (validators.phone(phoneNum)) {
           try {
-            await Auth.sendSms(phoneNum);
+            await Auth.sendSms(phoneNum, client);
           } catch (e) {
             setElementError((e as Error).message);
             elementClicks[id] = false;
