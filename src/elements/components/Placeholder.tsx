@@ -19,7 +19,7 @@ export default function Placeholder({
         pointerEvents: 'none',
         [rightToLeft ? 'right' : 'left']: '0.75rem',
         transition: '0.2s ease all',
-        top: type === 'input' ? '50%' : '0.5rem',
+        top: type === 'input' ? '50%' : '0.6rem',
         ...responsiveStyles.getTarget('placeholder'),
         ...(value ? responsiveStyles.getTarget('placeholderFocus') : {}),
         ...(inputFocused ? focusedStyles : {}),
