@@ -44,7 +44,7 @@ function useTextEdit({
       display: 'inline-block',
       cursor: 'inherit',
       position: 'relative',
-      // Make text in button appear more vertically centered
+      // Make text appear more vertically centered
       paddingBottom: '3px'
     };
 
