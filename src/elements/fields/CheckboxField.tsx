@@ -28,21 +28,28 @@ const checkbox = (size: any, color: any) => {
 };
 
 const scaleCheckboxSize = (fontSize: any) => {
-  return Math.max(Math.floor(fontSize * 0.5), MIN_CHECKBOX_PX);
+  return Math.max(fontSize, MIN_CHECKBOX_PX);
 };
 
-export const applyHeightAndWidthByFontSize = (
+export const applyHeightWidthMarginByFontSize = (
   responsiveStyles: any,
-  target: any
+  target: any,
+  single = false
 ) => {
   responsiveStyles.apply(target, ['font_size'], (fontSize: any) => {
-    const scaledSize = `${scaleCheckboxSize(fontSize)}px`;
-    return {
+    const scaled = scaleCheckboxSize(fontSize);
+    const scaledSize = `${scaled}px`;
+    const styles: Record<string, string> = {
       minHeight: scaledSize,
       height: scaledSize,
       minWidth: scaledSize,
       width: scaledSize
     };
+
+    const margin = Math.max(scaled / 2, 10);
+    if (!single) styles.marginRight = `${margin}px`;
+
+    return styles;
   });
 };
 
@@ -99,9 +106,17 @@ export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
 
   // width/height styles
   if (scaleWithFontSize) {
-    applyHeightAndWidthByFontSize(responsiveStyles, 'checkbox');
-    applyHeightAndWidthByFontSize(responsiveStyles, 'checkboxCheckmark');
-    applyHeightAndWidthByFontSize(responsiveStyles, 'checkboxCheckmarkHover');
+    applyHeightWidthMarginByFontSize(responsiveStyles, 'checkbox', true);
+    applyHeightWidthMarginByFontSize(
+      responsiveStyles,
+      'checkboxCheckmark',
+      true
+    );
+    applyHeightWidthMarginByFontSize(
+      responsiveStyles,
+      'checkboxCheckmarkHover',
+      true
+    );
     applyCheckmarkByFontSize(
       responsiveStyles,
       'checkboxCheckmark',
@@ -157,13 +172,12 @@ export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
 export const composeCheckableInputStyle = (
   styles: any,
   noHover = false,
-  group = false,
   isRadio = false
 ) => {
   return {
     position: 'static',
     marginLeft: 5,
-    marginRight: group ? 10 : 5,
+    marginRight: 5,
     marginTop: 0,
     marginBottom: 0,
     appearance: 'none',
@@ -223,7 +237,7 @@ function CheckboxField({
         checked={fieldVal}
         disabled={disabled}
         onChange={onChange}
-        style={{ marginTop: '5px', marginRight: '5px' }}
+        style={{ marginTop: '5px' }}
         css={composeCheckableInputStyle(styles, disabled)}
       />
       {fieldLabel}

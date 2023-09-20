@@ -3,14 +3,14 @@ import ReactForm from 'react-bootstrap/Form';
 import { bootstrapStyles } from '../styles';
 import {
   applyCheckableInputStyles,
-  applyHeightAndWidthByFontSize,
+  applyHeightWidthMarginByFontSize,
   composeCheckableInputStyle
 } from './CheckboxField';
 import { adjustColor } from '../../utils/styles';
 
 const applyCheckboxGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('checkboxGroup');
-  applyHeightAndWidthByFontSize(responsiveStyles, 'checkboxGroup');
+  applyHeightWidthMarginByFontSize(responsiveStyles, 'checkboxGroup');
   return responsiveStyles;
 };
 
@@ -79,11 +79,7 @@ function CheckboxGroupField({
                 filter: disabled ? 'brightness(85%)' : 'none'
               }}
               css={{
-                ...composeCheckableInputStyle(
-                  styles,
-                  allDisabled || disabled,
-                  true
-                ),
+                ...composeCheckableInputStyle(styles, allDisabled || disabled),
                 ...styles.getTarget('checkboxGroup')
               }}
               disabled={allDisabled || disabled}
@@ -103,7 +99,7 @@ function CheckboxGroupField({
             disabled={allDisabled}
             onChange={onChange}
             style={{ padding: 0, lineHeight: 'normal' }}
-            css={composeCheckableInputStyle(styles, allDisabled, true)}
+            css={composeCheckableInputStyle(styles, allDisabled)}
           />
           <label htmlFor={`${servar.key}-`}>Other</label>
           <ReactForm.Control
