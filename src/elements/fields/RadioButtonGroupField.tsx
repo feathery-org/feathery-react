@@ -3,13 +3,13 @@ import ReactForm from 'react-bootstrap/Form';
 import { bootstrapStyles } from '../styles';
 import {
   applyCheckableInputStyles,
-  applyHeightAndWidthByFontSize,
+  applyHeightWidthMarginByFontSize,
   composeCheckableInputStyle
 } from './CheckboxField';
 
 const applyRadioGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('radioGroup');
-  applyHeightAndWidthByFontSize(responsiveStyles, 'radioGroup');
+  applyHeightWidthMarginByFontSize(responsiveStyles, 'radioGroup');
   return responsiveStyles;
 };
 
@@ -81,7 +81,7 @@ function RadioButtonGroupField({
                 lineHeight: 'normal'
               }}
               css={{
-                ...composeCheckableInputStyle(styles, allDisabled, true, true),
+                ...composeCheckableInputStyle(styles, allDisabled, true),
                 ...styles.getTarget('radioGroup')
               }}
             />
@@ -107,7 +107,7 @@ function RadioButtonGroupField({
             }}
             value={otherVal || ''}
             style={{ padding: 0, lineHeight: 'normal' }}
-            css={composeCheckableInputStyle(styles, allDisabled, true, true)}
+            css={composeCheckableInputStyle(styles, allDisabled, true)}
           />
           <label htmlFor={`${servar.key}-`}>Other</label>
           <ReactForm.Control
