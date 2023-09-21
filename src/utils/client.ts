@@ -424,31 +424,40 @@ export default class Client {
   }
 
   async submitCustom(customKeyValues: any, override = true) {
-    if (this.draft) return Promise.resolve();
-    const promiseResults = await Promise.all(
-      Object.entries(customKeyValues).map(([key, val]) => {
-        return Promise.all([key, val]);
-      })
-    );
-    if (promiseResults.length === 0) return;
+    if (this.draft) return;
+    if (Object.keys(customKeyValues).length === 0) return;
 
     const { userId } = initInfo();
     const url = `${API_URL}panel/custom/submit/v3/`;
 
-    const jsonKeyVals = {};
+    const jsonKeyVals: Record<string, any> = {};
     const formData = new FormData();
-    promiseResults.forEach(([key, val]) => {
-      if (val instanceof Blob) {
-        // If you use val from customKeyValues instead of value from
-        // promiseResults, the files don't actually save to the BE. Need to
-        // resolve the promises for successful file upload.
-        formData.append('files', val);
-        formData.append('file_keys', key);
-      } else {
-        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-        jsonKeyVals[key] = val;
-      }
-    });
+
+    await Promise.all(
+      Object.entries(customKeyValues).map(async ([key, entry]) => {
+        if (Array.isArray(entry)) {
+          // Need to resolve the promises for successful file upload.
+          const vals = await Promise.all(entry);
+          if (vals.some((val) => val instanceof Blob)) {
+            vals.forEach((val) => {
+              formData.append('files', val);
+              formData.append('file_keys', key);
+            });
+            return;
+          }
+        }
+
+        entry = await entry;
+        if (entry instanceof Blob) {
+          formData.append('files', entry);
+          formData.append('file_keys', key);
+          return;
+        }
+
+        jsonKeyVals[key] = entry;
+      })
+    );
+
     formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
     // @ts-expect-error TS(2345): Argument of type 'boolean' is not assignable to pa... Remove this comment to see the full error message
     formData.set('override', override);
