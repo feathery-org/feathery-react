@@ -141,8 +141,17 @@ function validateElement(
   },
   repeat: any
 ): string {
-  // First priority is standard validations for servar fields
   const { servar, validations } = element;
+
+  // First priority is custom validations for servar fields
+  if (validations) {
+    const firstMatchingValidation = validations.find((validation) =>
+      validation.rules.every((rule) => evalComparisonRule(rule, repeat))
+    );
+    if (firstMatchingValidation) return firstMatchingValidation.message;
+  }
+
+  // Now apply any standard validations
   if (servar) {
     let fieldVal: any = fieldValues[servar.key];
     if (servar.repeated) fieldVal = fieldVal[repeat];
@@ -150,13 +159,6 @@ function validateElement(
     if (errorMsg) return errorMsg;
   }
 
-  // Now apply any custom validations
-  if (validations) {
-    const firstMatchingValidation = validations.find((validation) =>
-      validation.rules.every((rule) => evalComparisonRule(rule, repeat))
-    );
-    if (firstMatchingValidation) return firstMatchingValidation.message;
-  }
   return '';
 }
 
