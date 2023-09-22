@@ -736,7 +736,6 @@ function Form({
           if (res.save_url_params) saveUrlParamsFormSetting = true;
           setFormSettings(mapFormSettingsResponse(res));
           setLogicRules(res.logic_rules);
-          installRecaptcha(steps);
 
           // Add any logic_rule.elements to viewElements so that onView called for then too.
           // Make sure there are no duplicate entries.
@@ -755,6 +754,7 @@ function Form({
           }
 
           setProductionEnv(res.production);
+          if (res.production) installRecaptcha(steps);
           return steps;
         });
       // fetch values separately because this request
@@ -1190,7 +1190,7 @@ function Form({
         setInlineErrors,
         triggerErrors: true
       });
-    if (button.properties.captcha_verification) {
+    if (button.properties.captcha_verification && productionEnv) {
       const invalid = await verifyRecaptcha(client);
       if (invalid) {
         setButtonError('Submission failed');
