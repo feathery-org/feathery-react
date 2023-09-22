@@ -8,6 +8,7 @@ function SingleOtpInput({
   focus,
   value,
   onChange,
+  onEnter,
   onInput,
   paste,
   onPaste,
@@ -49,6 +50,7 @@ function SingleOtpInput({
       switch (handler.key) {
         case 'enter':
           e.preventDefault();
+          if (focus) onEnter(e);
           break;
         case 'backspace':
           e.preventDefault();
@@ -137,6 +139,7 @@ function OtpInput({
   responsiveStyles,
   shouldFocus,
   onChange,
+  onEnter,
   value,
   inlineError
 }: any) {
@@ -234,6 +237,7 @@ function OtpInput({
     const inputs = [];
 
     for (let i = 0; i < numInputs; i++) {
+      const lastInput = i === numInputs - 1;
       inputs.push(
         <SingleOtpInput
           key={`${element.servar.key}-${i}`}
@@ -241,6 +245,7 @@ function OtpInput({
           focus={activeInput === i}
           value={rawValue[i]}
           onChange={handleOnChange}
+          onEnter={lastInput ? onEnter : () => {}}
           onInput={handleOnInput}
           paste={pasted}
           onPaste={handleOnPaste}
@@ -286,6 +291,7 @@ function PinInputField({
   fieldVal = '',
   editMode,
   onChange = () => {},
+  onEnter = () => {},
   elementProps = {},
   children
 }: any) {
@@ -306,6 +312,7 @@ function PinInputField({
         responsiveStyles={responsiveStyles}
         element={element}
         onChange={onChange}
+        onEnter={onEnter}
         inlineError={inlineError}
       />
     </div>

@@ -374,6 +374,7 @@ const Element = ({ node: el, form, flags }: any) => {
                   submitData: autosubmit && val.length === el.servar.max_length
                 });
             }}
+            onEnter={onEnter}
             shouldFocus
           />
         );

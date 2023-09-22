@@ -1355,9 +1355,7 @@ function Form({
             break;
           }
         } else {
-          setElementError(
-            'A valid phone number is needed to send your login code.'
-          );
+          setElementError('Your phone number is invalid or requested too much');
           break;
         }
       } else if (type === ACTION_VERIFY_SMS) {

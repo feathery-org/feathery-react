@@ -20,6 +20,7 @@ import { initializeIntegrations } from '../integrations/utils';
 import { loadLottieLight } from '../elements/components/Lottie';
 import { featheryDoc } from './browser';
 import { authState } from '../auth/LoginForm';
+import { parseError } from './error';
 
 // Convenience boolean for urls - manually change for testing
 export const API_URL_OPTIONS = {
@@ -96,7 +97,7 @@ export default class Client {
     }
   }
 
-  _fetch(url: any, options: any) {
+  _fetch(url: any, options: any, parseResponse = true) {
     const { sdkKey } = initInfo();
     const { headers, ...otherOptions } = options;
     options = {
@@ -111,7 +112,7 @@ export default class Client {
     };
     return fetch(url, options)
       .then(async (response) => {
-        await this._checkResponseSuccess(response);
+        if (parseResponse) await this._checkResponseSuccess(response);
         return response;
       })
       .catch((e) => {
@@ -710,8 +711,11 @@ export default class Client {
       method: 'POST',
       body: JSON.stringify({ otp, fuser_key: userId, form_key: this.formKey })
     };
-    return this._fetch(url, options).then((response) =>
-      response ? response.json() : Promise.resolve()
-    );
+    return this._fetch(url, options, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseError(await response.json()));
+      }
+    });
   }
 }
