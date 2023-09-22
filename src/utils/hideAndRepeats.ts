@@ -245,6 +245,7 @@ function getVisibleElements(
         if (flag && (repeat || !elements.length)) {
           elements.push({
             element: el,
+            type,
             repeat:
               repeatKey && getPositionKey(el).startsWith(repeatKey)
                 ? index

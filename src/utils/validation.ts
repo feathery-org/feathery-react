@@ -51,9 +51,9 @@ function validateElements({
     visiblePositions,
     ['servar_fields', 'buttons'],
     true
-  ).reduce((errors: any, { element, repeat, last }) => {
+  ).reduce((errors: any, { element, repeat, last, type: elementType }) => {
     let key, type;
-    if (element.servar) {
+    if (elementType === 'servar_fields') {
       if (element.servar.repeat_trigger === 'set_value' && last && repeat) {
         // Skip validation on last repeat since it might be default value
         return errors;

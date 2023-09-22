@@ -113,25 +113,28 @@ const Element = ({ node: el, form, flags }: any) => {
         }
         return false;
       });
-      const elementsHaveValues = ['buttons', 'subgrids'].every((elType) => {
-        const storeElements = activeStep[elType].filter(({ properties }: any) =>
+      const storeElements = getVisibleElements(
+        activeStep,
+        visiblePositions,
+        ['buttons', 'subgrids'],
+        true
+      )
+        .map(({ element }) => element)
+        .filter(({ properties }) =>
           (properties.actions ?? []).some(
             (action: any) => action.type === ACTION_STORE_FIELD
           )
         );
-        return (
-          storeElements.length === 0 ||
-          // Loose check via "some" since "requiredness" of click action
-          // elements can depend on use case
-          storeElements.some(({ properties }: any) =>
-            (properties.actions ?? []).some(
-              (action: any) =>
-                action.type === ACTION_STORE_FIELD &&
-                fieldValues[action.custom_store_field_key]
-            )
+      const elementsHaveValues =
+        storeElements.length === 0 || // Loose check via "some" since "requiredness" of click action
+        // elements can depend on use case
+        storeElements.some(({ properties }: any) =>
+          (properties.actions ?? []).some(
+            (action: any) =>
+              action.type === ACTION_STORE_FIELD &&
+              fieldValues[action.custom_store_field_key]
           )
         );
-      });
       disabled = fieldsMissingValue || !elementsHaveValues;
     }
     return (
