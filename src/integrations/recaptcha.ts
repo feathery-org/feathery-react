@@ -26,7 +26,9 @@ export async function installRecaptcha(steps: Record<string, any>) {
     await dynamicImport(
       'https://www.google.com/recaptcha/api.js?render=6Lcx9vAmAAAAAKnC1kO1nIdr125hCRfukaMb_R_-'
     ).then(() =>
-      featheryWindow().grecaptcha.ready(() => (recaptchaReady = true))
+      // Sometimes recaptcha fails to install, so use ?.
+      // https://feathery-forms.sentry.io/issues/4378968555
+      featheryWindow().grecaptcha?.ready(() => (recaptchaReady = true))
     );
   }
 }
