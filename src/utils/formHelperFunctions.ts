@@ -93,11 +93,16 @@ export const formatAllFormFields = (steps: any, forUser = false) => {
 
 export const getAllFields = (
   fieldKeys: string[],
+  hiddenFieldKeys: string[],
   formUuid: string
 ): Record<string, Field> => {
   const fields: Record<string, Field> = {};
   fieldKeys.forEach((key) => {
     fields[key] = new Field(key, formUuid);
+  });
+  hiddenFieldKeys.forEach((key) => {
+    const newField = new Field(key, formUuid, true);
+    fields[key] = newField;
   });
   return fields;
 };

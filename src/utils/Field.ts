@@ -32,12 +32,14 @@ import internalState from './internalState';
 export default class Field {
   _fieldKey = '';
   _formUuid = '';
+  _hiddenField = false;
   _repeatingFields = new Array<Field>();
   _sourceField: any = null;
 
-  constructor(fieldKey: string, formUuid: string) {
+  constructor(fieldKey: string, formUuid: string, hiddenField = false) {
     this._fieldKey = fieldKey;
     this._formUuid = formUuid;
+    this._hiddenField = hiddenField;
   }
 
   get id(): string {
@@ -136,6 +138,15 @@ export default class Field {
 
   set onThisForm(val: boolean) {
     console.warn('The onThisForm property is read-only');
+  }
+
+  // Indicates that this field is a hidden field (not that it is hidden)
+  get isHiddenField(): boolean {
+    return this._hiddenField;
+  }
+
+  set isHiddenField(val: boolean) {
+    console.warn('The isHiddenField property is read-only');
   }
 
   // options for the field
