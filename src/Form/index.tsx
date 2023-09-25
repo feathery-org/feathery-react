@@ -1199,9 +1199,7 @@ function Form({
         if (action.custom_store_value_type === 'field') {
           val = fieldValues[action.custom_store_value_field_key];
         } else val = action.custom_store_value;
-        // Treat the string 0 as the number 0, which is a bottom value
-        const turnOn = val && val !== '0';
-        if (turnOn && fieldValues[action.custom_store_field_key] === val)
+        if (!!val && fieldValues[action.custom_store_field_key] === val)
           state = true;
       } else if (action.type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
         if (state === null) state = false;
