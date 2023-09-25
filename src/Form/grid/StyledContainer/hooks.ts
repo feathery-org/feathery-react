@@ -16,6 +16,7 @@ import {
   getInnerContainerStyles
 } from './styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
+import { featheryDoc } from '../../../utils/browser';
 
 /**
  * useFormattedNode
@@ -168,6 +169,7 @@ export const useContainerEngine = (node: any, rawNode: any, ref: any) => {
 
     const div = ref.current;
     const children = getImmediateDivs(div);
+    const document = featheryDoc();
     let observer: any = null;
 
     // If the element is fit, we must observe if the content changes to resize parent fit containers
@@ -200,6 +202,20 @@ export const useContainerEngine = (node: any, rawNode: any, ref: any) => {
       if (parentFitContainers) {
         parentFitContainers.collapse();
       }
+    }
+
+    if (document && isFitElement(div) && !node.uuid) {
+      document.fonts.ready.then(() => {
+        if (ref.current) {
+          const parentFitContainers = getParentFitContainers(ref.current);
+
+          if (parentFitContainers) {
+            for (const parent of parentFitContainers.parents) {
+              resizeFitContainer(parent);
+            }
+          }
+        }
+      });
     }
 
     return () => {
