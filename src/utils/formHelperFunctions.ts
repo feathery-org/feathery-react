@@ -97,8 +97,7 @@ export const getAllFields = (
 ): Record<string, Field> => {
   const fields: Record<string, Field> = {};
   fieldKeys.forEach((key) => {
-    const newField = new Field(key, formUuid);
-    fields[key] = newField;
+    fields[key] = new Field(key, formUuid);
   });
   return fields;
 };
