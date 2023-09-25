@@ -509,15 +509,18 @@ function Form({
   };
 
   const handleFormComplete = async () => {
-    // If embedded in webview/webkit, send message on form complete
+    // Send form completion message for webkit
     if (featheryWindow().webkit?.messageHandlers?.feathery) {
       featheryWindow().webkit.messageHandlers.feathery.postMessage(
         'Form completed'
       );
     }
+    // Send form completion message for React Native Webview
     if (featheryWindow().ReactNativeWebView) {
       featheryWindow().ReactNativeWebView.postMessage('Form completed');
     }
+    // Send form completion message for Android Webview
+    if (global.FeatheryInterface) global.FeatheryInterface.onComplete();
     await runUserLogic('form_complete');
   };
 

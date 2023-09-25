@@ -9,6 +9,7 @@ declare global {
   var Argyle: any;
   var Plaid: any;
   var Stytch: any;
+  var FeatheryInterface: any;
 
   interface Window {
     firebaseRecaptchaVerifier: any;
