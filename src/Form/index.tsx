@@ -666,7 +666,7 @@ function Form({
       previousStepName: activeStep?.key ?? '',
       visiblePositions: getVisiblePositions(newStep),
       client,
-      fields: getAllFields([...fieldKeys, ...hiddenFieldKeys], _internalId),
+      fields: getAllFields(fieldKeys, hiddenFieldKeys, _internalId),
       formName,
       formRef,
       formSettings,
