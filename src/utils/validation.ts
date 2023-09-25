@@ -2,7 +2,7 @@ import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { ARRAY_FIELD_TYPES, setFormElementError } from './formHelperFunctions';
 import { dynamicImport } from '../integrations/utils';
 import React from 'react';
-import { fieldValues, getFieldValues, initInfo } from './init';
+import { fieldValues, initInfo } from './init';
 import { getVisibleElements } from './hideAndRepeats';
 import { Trigger } from '../types/Form';
 
@@ -82,7 +82,7 @@ function validateElements({
 
     if (type === 'matrix' && message) {
       // Get question index where error is
-      const fieldValue: any = getFieldValues()[key];
+      const fieldValue: any = fieldValues[key];
       const { questions } = element.servar.metadata;
       const questionIds = questions.map((q: { id: string }) => q.id);
 

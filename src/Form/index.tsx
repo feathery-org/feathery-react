@@ -18,6 +18,7 @@ import {
   FieldOptions,
   formatStepFields,
   getAllElements,
+  getAllFields,
   getDefaultFieldValue,
   getFieldValue,
   getInitialStep,
@@ -26,6 +27,7 @@ import {
   getPrevStepUrl,
   getUrlHash,
   isStepTerminal,
+  isValidFieldIdentifier,
   lookUpTrigger,
   nextStepKey,
   recurseProgressDepth,
@@ -113,6 +115,7 @@ import {
   getAuthIntegrationMetadata,
   isTerminalStepAuth
 } from '../auth/internal/utils';
+import Field from '../utils/Field';
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
@@ -233,6 +236,9 @@ function Form({
     saveUrlParams: false,
     completionBehavior: ''
   });
+
+  const [fieldKeys, setFieldKeys] = useState<string[]>([]);
+  const [hiddenFieldKeys, setHiddenFieldKeys] = useState<string[]>([]);
 
   const [logicRules, setLogicRules] = useState<LogicRule[]>([]);
   const [inlineErrors, setInlineErrors] = useState<
@@ -577,10 +583,33 @@ function Form({
           // lib which was just invalid. So, now wrapping the rule code
           // in an async function and calling it immediately from within an AsyncFunction.
           const asyncWrappedCode = `return (async () => { ${logicRule.code}\n })()`;
+
+          // Do not inject field globals that are invalid js identifiers or that collide
+          // with a javascript or browser reserved word. This avoids validation errors
+          // should they try to use it in a rule. However, even if they do not use it
+          // in a rule, the runtime injects that field and this causes an exception
+          // at runtime due to the reserved word being used or invalid identifier.
+
+          const injectableFields = Object.entries(
+            internalState[_internalId]?.fields ?? {}
+          )
+            .filter(([key]) => isValidFieldIdentifier(key))
+            .reduce((acc, [key, field]) => {
+              acc[key] = field;
+              return acc;
+            }, {} as Record<string, Field>);
           // @ts-ignore
-          const fn = new AsyncFunction('feathery', asyncWrappedCode);
+          const fn = new AsyncFunction(
+            'feathery',
+            // pass in all the fields as arguments so they are globals in the rule code
+            ...Object.keys(injectableFields),
+            asyncWrappedCode
+          );
           try {
-            await fn({ ...props, http: httpHelpers(client) });
+            await fn(
+              { ...props, http: httpHelpers(client) },
+              ...Object.values(injectableFields)
+            );
           } catch (e) {
             // rule had an error, log it to console for now
             console.warn(
@@ -637,6 +666,7 @@ function Form({
       previousStepName: activeStep?.key ?? '',
       visiblePositions: getVisiblePositions(newStep),
       client,
+      fields: getAllFields([...fieldKeys, ...hiddenFieldKeys], _internalId),
       formName,
       formRef,
       formSettings,
@@ -770,6 +800,9 @@ function Form({
           }
           updateBackNavMap(session.back_nav_map);
           setIntegrations(session.integrations);
+
+          setFieldKeys(session.servars);
+          setHiddenFieldKeys(session.hidden_fields);
 
           saveInitialValuesAndUrlParams({
             updateFieldValues,

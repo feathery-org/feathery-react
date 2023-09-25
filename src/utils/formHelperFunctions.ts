@@ -8,6 +8,7 @@ import { ACTION_NEXT, ACTION_URL } from './elementActions';
 import { featheryWindow } from './browser';
 import Client from '../utils/client';
 import { isObjectEmpty } from './primitives';
+import Field from './Field';
 
 export const ARRAY_FIELD_TYPES = [
   'button_group',
@@ -90,6 +91,137 @@ export const formatAllFormFields = (steps: any, forUser = false) => {
   return formattedFields;
 };
 
+export const getAllFields = (
+  fieldKeys: string[],
+  formUuid: string
+): Record<string, Field> => {
+  const fields: Record<string, Field> = {};
+  fieldKeys.forEach((key) => {
+    const newField = new Field(key, formUuid);
+    fields[key] = newField;
+  });
+  return fields;
+};
+
+export function isValidFieldIdentifier(str: string) {
+  // Regular expression to match (approximately) all valid Unicode identifiers
+  // The most complete regex is here: https://stackoverflow.com/a/2008444 but seems
+  // impractical to use in this case
+  const identifierRegex = /^[_$a-zA-Z\xA0-\uFFFF][_$a-zA-Z0-9\xA0-\uFFFF]*$/u;
+
+  // Check if the string matches the regex and is not a reserved word
+  return (
+    identifierRegex.test(str) &&
+    !isRuntimeReservedWord(str) &&
+    !isJsReservedWord(str)
+  );
+}
+
+//
+// The issue is that the form designer could assign a field id that collides with a
+// javascript reserved word. They will get a validation error should they try to use
+// it in a rule. However, even if they do not use it in a rule, the runtime injects
+// that field and this causes an exception at runtime due to the reserved word being
+// used. So to keep things robust we need to avoid injecting fields with reserved word
+// ids/keys.
+//
+function isRuntimeReservedWord(str: string) {
+  // these are allowed
+  const browserGlobals = [
+    'atob',
+    'Blob',
+    'btoa',
+    'clearInterval',
+    'clearTimeout',
+    'document',
+    'fetch',
+    'File',
+    'FileList',
+    'FileReader',
+    'Intl',
+    'location',
+    'Navigator',
+    'setInterval',
+    'setTimeout',
+    'TextDecoder',
+    'TextEncoder',
+    'URL',
+    'URLSearchParams',
+    'window'
+  ];
+  const otherGlobals = ['feathery', 'console'];
+  return browserGlobals.includes(str) || otherGlobals.includes(str);
+}
+// Helper function to check if a string is a Javascript reserved word
+function isJsReservedWord(str: string) {
+  const reservedWords = [
+    'abstract',
+    'await',
+    'boolean',
+    'break',
+    'byte',
+    'case',
+    'catch',
+    'char',
+    'class',
+    'const',
+    'continue',
+    'debugger',
+    'default',
+    'delete',
+    'do',
+    'double',
+    'else',
+    'enum',
+    'export',
+    'extends',
+    'false',
+    'final',
+    'finally',
+    'float',
+    'for',
+    'function',
+    'goto',
+    'if',
+    'implements',
+    'import',
+    'in',
+    'instanceof',
+    'int',
+    'interface',
+    'let',
+    'long',
+    'native',
+    'new',
+    'null',
+    'package',
+    'private',
+    'protected',
+    'public',
+    'return',
+    'short',
+    'static',
+    'super',
+    'switch',
+    'synchronized',
+    'this',
+    'throw',
+    'throws',
+    'transient',
+    'true',
+    'try',
+    'typeof',
+    'var',
+    'void',
+    'volatile',
+    'while',
+    'with',
+    'yield'
+  ];
+
+  return reservedWords.includes(str);
+}
+
 export const getABVariant = (stepRes: any) => {
   if (!stepRes.variant) return stepRes.data;
   const { sdkKey, userId } = initInfo();
@@ -134,11 +266,11 @@ export function getDefaultFieldValue(field: any) {
   }
 }
 
+export type OptionType =
+  | string
+  | { value: string; label?: string; image?: string };
 // TODO: remove string[] for backcompat
-export type FieldOptions = Record<
-  string,
-  (string | { value: string; label?: string; image?: string })[]
->;
+export type FieldOptions = Record<string, OptionType[]>;
 
 export function updateStepFieldOptions(step: any, newOptions: FieldOptions) {
   step.servar_fields.forEach((field: any) => {

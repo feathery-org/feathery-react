@@ -1,4 +1,5 @@
 import { FieldOptions } from './formHelperFunctions';
+import Field from './Field';
 
 type InternalState = {
   [formUuid: string]: {
@@ -6,6 +7,7 @@ type InternalState = {
     previousStepName: string;
     visiblePositions: any;
     client: any;
+    fields: Record<string, Field>;
     formName: string;
     formRef: React.MutableRefObject<any>;
     formSettings: any;
