@@ -172,21 +172,27 @@ export const useContainerEngine = (node: any, rawNode: any, ref: any) => {
     const document = featheryDoc();
     let observer: any = null;
 
-    // If the element is fit, we must observe if the content changes to resize parent fit containers
-    if (isFitElement(div) && node.uuid) {
-      observer = new ResizeObserver(() => {
-        if (ref.current) {
-          const parentFitContainers = getParentFitContainers(ref.current);
+    const resizeParentFitContainers = () => {
+      if (ref.current) {
+        const parentFitContainers = getParentFitContainers(ref.current);
 
-          if (parentFitContainers) {
-            for (const parent of parentFitContainers.parents) {
-              resizeFitContainer(parent);
-            }
+        if (parentFitContainers) {
+          for (const parent of parentFitContainers.parents) {
+            resizeFitContainer(parent);
           }
         }
-      });
+      }
+    };
 
+    // If the element is fit, we must observe if the content changes to resize parent fit containers
+    if (isFitElement(div) && node.uuid) {
+      observer = new ResizeObserver(() => resizeParentFitContainers());
       observer.observe(div);
+    }
+
+    // If the element is fit, we will resize it's parent containers once all fonts are loaded to ensure correct sizing
+    if (isFitElement(div) && !node.uuid && document) {
+      document.fonts.ready.then(() => resizeParentFitContainers());
     }
 
     // If the container is a fit container, we need to alter it's max-width to allow children to expand accordingly
@@ -202,20 +208,6 @@ export const useContainerEngine = (node: any, rawNode: any, ref: any) => {
       if (parentFitContainers) {
         parentFitContainers.collapse();
       }
-    }
-
-    if (document && isFitElement(div) && !node.uuid) {
-      document.fonts.ready.then(() => {
-        if (ref.current) {
-          const parentFitContainers = getParentFitContainers(ref.current);
-
-          if (parentFitContainers) {
-            for (const parent of parentFitContainers.parents) {
-              resizeFitContainer(parent);
-            }
-          }
-        }
-      });
     }
 
     return () => {
