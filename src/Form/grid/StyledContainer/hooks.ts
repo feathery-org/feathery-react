@@ -16,6 +16,7 @@ import {
   getInnerContainerStyles
 } from './styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
+import { featheryDoc } from '../../../utils/browser';
 
 /**
  * useFormattedNode
@@ -168,23 +169,30 @@ export const useContainerEngine = (node: any, rawNode: any, ref: any) => {
 
     const div = ref.current;
     const children = getImmediateDivs(div);
+    const document = featheryDoc();
     let observer: any = null;
+
+    const resizeParentFitContainers = () => {
+      if (ref.current) {
+        const parentFitContainers = getParentFitContainers(ref.current);
+
+        if (parentFitContainers) {
+          for (const parent of parentFitContainers.parents) {
+            resizeFitContainer(parent);
+          }
+        }
+      }
+    };
 
     // If the element is fit, we must observe if the content changes to resize parent fit containers
     if (isFitElement(div) && node.uuid) {
-      observer = new ResizeObserver(() => {
-        if (ref.current) {
-          const parentFitContainers = getParentFitContainers(ref.current);
-
-          if (parentFitContainers) {
-            for (const parent of parentFitContainers.parents) {
-              resizeFitContainer(parent);
-            }
-          }
-        }
-      });
-
+      observer = new ResizeObserver(() => resizeParentFitContainers());
       observer.observe(div);
+    }
+
+    // If the element is fit, we will resize it's parent containers once all fonts are loaded to ensure correct sizing
+    if (isFitElement(div) && !node.uuid && document) {
+      document.fonts.ready.then(() => resizeParentFitContainers());
     }
 
     // If the container is a fit container, we need to alter it's max-width to allow children to expand accordingly
