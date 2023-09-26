@@ -30,7 +30,7 @@ export const getFormContext = (formUuid: string) => ({
     );
     return getFieldValues();
   },
-  fields: { ...internalState[formUuid].fields },
+  fields: { ...internalState[formUuid]?.fields },
   setFormCompletion: (flag: boolean) => {
     const { client, currentStep } = internalState[formUuid];
     return client.registerEvent({
