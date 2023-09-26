@@ -212,9 +212,16 @@ export function addToCart(
     delete cartSelections[productId];
   } else {
     // toggle on
-    const newQty = quantityField
+    let newQty = quantityField
       ? (fieldValues[quantityField] as number) ?? 0
       : fixedQuantity ?? 0;
+    // deal with array fields and other possibilities
+    if (Array.isArray(newQty)) {
+      if (newQty.length > 0) newQty = newQty[0];
+      else newQty = 0;
+    }
+    newQty = newQty > 0 ? newQty : 0;
+
     // if newQty is 0, remove from cart, otherwise add to cart
     if (newQty) cartSelections[productId] = newQty;
     else delete cartSelections[productId];
