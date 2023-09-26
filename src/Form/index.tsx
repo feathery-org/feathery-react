@@ -509,15 +509,18 @@ function Form({
   };
 
   const handleFormComplete = async () => {
-    // If embedded in webview/webkit, send message on form complete
+    // Send form completion message for webkit
     if (featheryWindow().webkit?.messageHandlers?.feathery) {
       featheryWindow().webkit.messageHandlers.feathery.postMessage(
         'Form completed'
       );
     }
+    // Send form completion message for React Native Webview
     if (featheryWindow().ReactNativeWebView) {
       featheryWindow().ReactNativeWebView.postMessage('Form completed');
     }
+    // Send form completion message for Android Webview
+    if (global.FeatheryInterface) global.FeatheryInterface.onComplete();
     await runUserLogic('form_complete');
   };
 
@@ -666,7 +669,7 @@ function Form({
       previousStepName: activeStep?.key ?? '',
       visiblePositions: getVisiblePositions(newStep),
       client,
-      fields: getAllFields([...fieldKeys, ...hiddenFieldKeys], _internalId),
+      fields: getAllFields(fieldKeys, hiddenFieldKeys, _internalId),
       formName,
       formRef,
       formSettings,
@@ -1199,9 +1202,7 @@ function Form({
         if (action.custom_store_value_type === 'field') {
           val = fieldValues[action.custom_store_value_field_key];
         } else val = action.custom_store_value;
-        // Treat the string 0 as the number 0, which is a bottom value
-        const turnOn = val && val !== '0';
-        if (turnOn && fieldValues[action.custom_store_field_key] === val)
+        if (!!val && fieldValues[action.custom_store_field_key] === val)
           state = true;
       } else if (action.type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
         if (state === null) state = false;

@@ -4,11 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Client, { updateRegionApiUrls } from './client';
 import * as errors from './error';
 import { runningInClient, setCookie, getCookie } from './browser';
-import {
-  getAllFields,
-  remountAllForms,
-  rerenderAllForms
-} from './formHelperFunctions';
+import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
 import { parseUserVal } from './Field';
 
 export type FeatheryFieldTypes =

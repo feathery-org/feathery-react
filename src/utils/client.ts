@@ -698,9 +698,12 @@ export default class Client {
         fuser_key: userId
       })
     };
-    return this._fetch(url, options).then((response) =>
-      response ? response.json() : Promise.resolve()
-    );
+    return this._fetch(url, options, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseError(await response.json()));
+      }
+    });
   }
 
   async verifySMSOTP(otp: string) {
