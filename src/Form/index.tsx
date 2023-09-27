@@ -87,7 +87,7 @@ import ReactPortal from './components/ReactPortal';
 import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
 import { v4 as uuidv4 } from 'uuid';
-import internalState from '../utils/internalState';
+import internalState, { setFormInternalState } from '../utils/internalState';
 import useFormAuth from '../auth/internal/useFormAuth';
 import {
   ACTION_ADD_REPEATED_ROW,
@@ -664,12 +664,19 @@ function Form({
       integrations?.stripe
     );
 
-    internalState[_internalId] = {
+    // create fields only once and seal it
+    let fields = internalState[_internalId]?.fields;
+    if (!fields || !Object.isSealed(fields))
+      fields = Object.seal(
+        getAllFields(fieldKeys, hiddenFieldKeys, _internalId)
+      );
+
+    setFormInternalState(_internalId, {
       currentStep: newStep,
       previousStepName: activeStep?.key ?? '',
       visiblePositions: getVisiblePositions(newStep),
       client,
-      fields: getAllFields(fieldKeys, hiddenFieldKeys, _internalId),
+      fields: fields,
       formName,
       formRef,
       formSettings,
@@ -680,7 +687,9 @@ function Form({
       setUserProgress,
       steps,
       updateFieldOptions,
-      setFieldErrors: (errors) => {
+      setFieldErrors: (
+        errors: Record<string, string | { index: number; message: string }>
+      ) => {
         Object.entries(errors).forEach(([fieldKey, error]) => {
           const { inlineErrors, setInlineErrors } = internalState[_internalId];
           let index = null;
@@ -703,7 +712,7 @@ function Form({
           });
         });
       }
-    };
+    });
 
     // This could be a redirect from Stripe following a successful payment checkout
     checkForPaymentCheckoutCompletion(
