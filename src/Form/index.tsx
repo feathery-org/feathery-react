@@ -716,6 +716,9 @@ function Form({
           });
         }
       },
+      // Avoid all these other obj props going through Object.assign which is not necessary.
+      // It turns out that not doing so caused breakage on steps after the first step.
+      // But for only fields it is fine and necessary.
       ['fields']
     );
 
