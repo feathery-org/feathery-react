@@ -547,12 +547,13 @@ export function getNewStepUrl(stepKey: any) {
   return location.pathname + location.search + `#${stepKey}`;
 }
 
-export function getPrevStepUrl(curStep: any, stepMap: Record<string, string>) {
+export function getPrevStepKey(curStep: any, stepMap: Record<string, string>) {
   let newStepKey = stepMap[curStep.key];
   if (!newStepKey) {
     const prevCondition = curStep.previous_conditions[0];
     if (prevCondition) newStepKey = prevCondition.previous_step_key;
   }
+  return newStepKey;
   return newStepKey ? getNewStepUrl(newStepKey) : '';
 }
 
@@ -613,16 +614,18 @@ export function getUrlHash() {
 export function getInitialStep({
   initialStepId,
   steps,
-  sessionCurrentStep
+  sessionCurrentStep,
+  trackHashes
 }: {
   initialStepId: string;
   steps: any;
   sessionCurrentStep?: string;
+  trackHashes: boolean;
 }) {
   const hashKey = getUrlHash();
   return (
     initialStepId ||
-    (hashKey && hashKey in steps && hashKey) ||
+    (trackHashes && hashKey && hashKey in steps && hashKey) ||
     sessionCurrentStep ||
     (getOrigin as any)(steps).key
   );
