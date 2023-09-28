@@ -516,16 +516,21 @@ function Form({
   const handleFormComplete = async () => {
     // Send form completion message for webkit
     if (featheryWindow().webkit?.messageHandlers?.feathery) {
+      if (!productionEnv) console.log('Webkit event sent');
       featheryWindow().webkit.messageHandlers.feathery.postMessage(
         'Form completed'
       );
     }
     // Send form completion message for React Native Webview
     if (featheryWindow().ReactNativeWebView) {
+      if (!productionEnv) console.log('React Native Webview event sent');
       featheryWindow().ReactNativeWebView.postMessage('Form completed');
     }
     // Send form completion message for Android Webview
-    if (global.FeatheryInterface) global.FeatheryInterface.onComplete();
+    if (global.FeatheryInterface) {
+      if (!productionEnv) console.log('Android Webview event sent');
+      global.FeatheryInterface.onComplete();
+    }
     await runUserLogic('form_complete');
   };
 
