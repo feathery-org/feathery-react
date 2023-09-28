@@ -688,7 +688,7 @@ function Form({
         previousStepName: activeStep?.key ?? '',
         visiblePositions: getVisiblePositions(newStep),
         client,
-        fields: fields,
+        fields,
         formName,
         formRef,
         formSettings,

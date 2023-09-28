@@ -101,8 +101,7 @@ export const getAllFields = (
     fields[key] = new Field(key, formUuid);
   });
   hiddenFieldKeys.forEach((key) => {
-    const newField = new Field(key, formUuid, true);
-    fields[key] = newField;
+    fields[key] = new Field(key, formUuid, true);
   });
   return fields;
 };
@@ -268,6 +267,15 @@ export function getDefaultFieldValue(field: any) {
     default:
       return '';
   }
+}
+
+export function getDefaultFormFieldValue(field: any) {
+  // Default value is null for file_upload, but value should always be an
+  // array regardless if repeated or not
+  if (field.servar.type === 'file_upload') return [];
+
+  const val = getDefaultFieldValue(field);
+  return field.servar.repeated ? [val] : val;
 }
 
 export type OptionType =

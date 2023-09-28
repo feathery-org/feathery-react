@@ -13,6 +13,7 @@ import { encodeGetParams } from './primitives';
 import {
   getABVariant,
   getDefaultFieldValue,
+  getDefaultFormFieldValue,
   updateSessionValues
 } from './formHelperFunctions';
 import { loadPhoneValidator } from './validation';
@@ -221,24 +222,19 @@ export default class Client {
   }
 
   setDefaultFormValues({ steps, additionalValues }: any) {
-    const values = {};
+    const values: Record<string, any> = {};
     steps.forEach((step: any) => {
       step.servar_fields.forEach((field: any) => {
-        const { key, repeated, type } = field.servar;
-        const val = getDefaultFieldValue(field);
-        if (isBase64Image(additionalValues[key])) {
+        const servar = field.servar;
+        if (isBase64Image(additionalValues[servar.key])) {
           // All base64 strings need to be wrapped in a File
-          additionalValues[key] = dataURLToFile(
-            additionalValues[key],
-            `${key}.png`
+          additionalValues[servar.key] = dataURLToFile(
+            additionalValues[servar.key],
+            `${servar.key}.png`
           );
         }
-        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-        values[key] = repeated ? [val] : val;
-        // Default value is null for file_upload, but value should always be an
-        // array regardless if repeated or not
-        // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-        if (type === 'file_upload') values[key] = [];
+
+        values[servar.key] = getDefaultFormFieldValue(field);
       });
     });
     Object.assign(fieldValues, {
