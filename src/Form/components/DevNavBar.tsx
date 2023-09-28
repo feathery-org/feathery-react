@@ -19,7 +19,7 @@ function handleBoth(prevData: any, nextData: any, func: any) {
 export default function DevNavBar({
   allSteps,
   curStep,
-  history,
+  changeStep,
   formName,
   draft
 }: any) {
@@ -81,7 +81,7 @@ export default function DevNavBar({
 
   const navigate = (stepKey: any) => {
     setActiveNav('');
-    history.push(getNewStepUrl(stepKey));
+    changeStep(stepKey);
   };
 
   const stepSelector = useMemo(() => {

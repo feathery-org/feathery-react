@@ -24,7 +24,7 @@ import {
   getInitialStep,
   getNewStepUrl,
   getOrigin,
-  getPrevStepUrl,
+  getPrevStepKey,
   getUrlHash,
   isStepTerminal,
   isValidFieldIdentifier,
@@ -236,6 +236,7 @@ function Form({
     saveUrlParams: false,
     completionBehavior: ''
   });
+  const trackHashes = useRef(false);
 
   const [fieldKeys, setFieldKeys] = useState<string[]>([]);
   const [hiddenFieldKeys, setHiddenFieldKeys] = useState<string[]>([]);
@@ -268,7 +269,11 @@ function Form({
 
   useFirebaseRecaptcha(activeStep);
   const getNextAuthStep = useFormAuth({
-    initialStep: getInitialStep({ initialStepId, steps }),
+    initialStep: getInitialStep({
+      initialStepId,
+      steps,
+      trackHashes: trackHashes.current
+    }),
     integrations,
     setStepKey,
     steps,
@@ -731,10 +736,13 @@ function Form({
     );
 
     await runUserLogic('load');
-    const newHash = getUrlHash();
-    // This indicates user programmatically changed the step via the onLoad function
-    // So loading of the old step must short circuit
-    if (newHash && newStep.key !== newHash) return;
+
+    if (trackHashes.current) {
+      const newHash = getUrlHash();
+      // This indicates user programmatically changed the step via the onLoad function
+      // So loading of the old step must short circuit
+      if (newHash && newStep.key !== newHash) return;
+    }
 
     clearLoaders();
     const [curDepth, maxDepth] = recurseProgressDepth(steps, newKey);
@@ -786,6 +794,7 @@ function Form({
           if (res.save_url_params) saveUrlParamsFormSetting = true;
           setFormSettings(mapFormSettingsResponse(res));
           setLogicRules(res.logic_rules);
+          trackHashes.current = res.track_hashes;
 
           // Add any logic_rule.elements to viewElements so that onView called for then too.
           // Make sure there are no duplicate entries.
@@ -814,7 +823,7 @@ function Form({
         // @ts-expect-error TS(2345): Argument of type 'Promise<any[]>' is not assignabl... Remove this comment to see the full error message
         .fetchSession(formPromise, true)
         .then(([session, steps]) => {
-          if (!session.track_location) {
+          if (!session.track_location && trackHashes.current) {
             // Clear URL hash on new session if not tracking location
             history.replace(location.pathname + location.search);
           }
@@ -838,9 +847,10 @@ function Form({
           const newKey = getInitialStep({
             initialStepId,
             steps,
-            sessionCurrentStep: session.current_step_key
+            sessionCurrentStep: session.current_step_key,
+            trackHashes: trackHashes.current
           });
-          setUrlStepHash(history, steps, newKey);
+          if (trackHashes.current) setUrlStepHash(history, steps, newKey);
           setStepKey(newKey);
         })
         .catch(async (error) => {
@@ -848,13 +858,15 @@ function Form({
           // Go to first step if origin fails
           const [data] = await formPromise;
           const newKey = (getOrigin as any)(data).key;
-          history.replace(location.pathname + location.search + `#${newKey}`);
+          if (trackHashes.current) setUrlStepHash(history, steps, newKey);
+          else setStepKey(newKey);
         });
     }
   }, [client, activeStep, setClient, setSteps, updateFieldValues]);
 
   useEffect(() => {
     return history.listen(async () => {
+      if (!trackHashes.current) return;
       const hashKey = getUrlHash();
       if (hashKey in steps) setStepKey(hashKey);
     });
@@ -1171,17 +1183,23 @@ function Form({
       }
       client.registerEvent(eventData, submitPromise);
       updateBackNavMap({ [redirectKey]: activeStep.key });
-      const newURL = getNewStepUrl(redirectKey);
       setShouldScrollToTop(explicitNav);
-      if (explicitNav) history.push(newURL);
-      else history.replace(newURL);
+
+      if (trackHashes.current) {
+        const newURL = getNewStepUrl(redirectKey);
+        if (explicitNav) history.push(newURL);
+        else history.replace(newURL);
+      } else setStepKey(redirectKey);
     }
   }
 
   const goToPreviousStep = async () => {
     await callbackRef.current.all();
-    const prevStepUrl = getPrevStepUrl(activeStep, backNavMap);
-    if (prevStepUrl) history.push(prevStepUrl);
+    const prevStepKey = getPrevStepKey(activeStep, backNavMap);
+    if (prevStepKey) {
+      if (trackHashes.current) history.push(getNewStepUrl(prevStepKey));
+      else setStepKey(prevStepKey);
+    }
   };
 
   const setButtonLoader = async (button: any) => {
@@ -1602,7 +1620,8 @@ function Form({
   useEffect(() => {
     if (!anyFinished) return;
     const redirectForm = () => {
-      history.replace(location.pathname + location.search);
+      if (trackHashes.current)
+        history.replace(location.pathname + location.search);
       if (initState.redirectCallbacks[_internalId]) {
         hasRedirected.current = true;
         initState.redirectCallbacks[_internalId]();
@@ -1653,7 +1672,10 @@ function Form({
           <DevNavBar
             allSteps={steps}
             curStep={activeStep}
-            history={history}
+            changeStep={(stepKey: string) => {
+              if (trackHashes.current) history.push(getNewStepUrl(stepKey));
+              else setStepKey(stepKey);
+            }}
             formName={formName}
             draft={_draft}
           />
