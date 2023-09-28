@@ -671,48 +671,53 @@ function Form({
         getAllFields(fieldKeys, hiddenFieldKeys, _internalId)
       );
 
-    setFormInternalState(_internalId, {
-      currentStep: newStep,
-      previousStepName: activeStep?.key ?? '',
-      visiblePositions: getVisiblePositions(newStep),
-      client,
-      fields: fields,
-      formName,
-      formRef,
-      formSettings,
-      getErrorCallback,
-      history,
-      inlineErrors,
-      setInlineErrors,
-      setUserProgress,
-      steps,
-      updateFieldOptions,
-      setFieldErrors: (
-        errors: Record<string, string | { index: number; message: string }>
-      ) => {
-        Object.entries(errors).forEach(([fieldKey, error]) => {
-          const { inlineErrors, setInlineErrors } = internalState[_internalId];
-          let index = null;
-          let message = error;
-          // If the user provided an object for an error then use the specified index and message
-          // This allows users to specify an error on an element in a repeated row
-          if (typeof error === 'object') {
-            index = error.index;
-            message = error.message;
-          }
-          setFormElementError({
-            formRef,
-            fieldKey,
-            message,
-            index,
-            errorType: formSettings.errorType,
-            inlineErrors,
-            setInlineErrors,
-            triggerErrors: true
+    setFormInternalState(
+      _internalId,
+      {
+        currentStep: newStep,
+        previousStepName: activeStep?.key ?? '',
+        visiblePositions: getVisiblePositions(newStep),
+        client,
+        fields: fields,
+        formName,
+        formRef,
+        formSettings,
+        getErrorCallback,
+        history,
+        inlineErrors,
+        setInlineErrors,
+        setUserProgress,
+        steps,
+        updateFieldOptions,
+        setFieldErrors: (
+          errors: Record<string, string | { index: number; message: string }>
+        ) => {
+          Object.entries(errors).forEach(([fieldKey, error]) => {
+            const { inlineErrors, setInlineErrors } =
+              internalState[_internalId];
+            let index = null;
+            let message = error;
+            // If the user provided an object for an error then use the specified index and message
+            // This allows users to specify an error on an element in a repeated row
+            if (typeof error === 'object') {
+              index = error.index;
+              message = error.message;
+            }
+            setFormElementError({
+              formRef,
+              fieldKey,
+              message,
+              index,
+              errorType: formSettings.errorType,
+              inlineErrors,
+              setInlineErrors,
+              triggerErrors: true
+            });
           });
-        });
-      }
-    });
+        }
+      },
+      ['fields']
+    );
 
     // This could be a redirect from Stripe following a successful payment checkout
     checkForPaymentCheckoutCompletion(
