@@ -39,7 +39,8 @@ const internalState: InternalState = {};
 // It also takes an object of stateValues to set on the internalState object for the form
 export const setFormInternalState = (
   formUuid: string,
-  stateValues: Record<string, any>
+  stateValues: Record<string, any>,
+  keysToKeepStable: string[] = []
 ) => {
   // if the formUuid is already in the internalState object, use it
   const state = internalState[formUuid] ?? {};
@@ -53,7 +54,8 @@ export const setFormInternalState = (
     if (
       state[stateKey] === undefined ||
       state[stateKey] === null ||
-      typeof state[stateKey] !== 'object'
+      typeof state[stateKey] !== 'object' ||
+      !keysToKeepStable.includes(stateKey as string)
     )
       state[stateKey] = value;
     else {
