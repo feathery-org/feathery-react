@@ -1095,7 +1095,7 @@ function Form({
     // and would require a custom submit prior to payment (which is also disabled for draft).
     if (!_draft) {
       const trigger = {
-        ...lookUpTrigger(activeStep, triggerElement.id, 'container'),
+        ...lookUpTrigger(activeStep, triggerElement.key, 'container'),
         repeatIndex: 0
       } as Trigger;
       const errorCallback = getErrorCallback({
@@ -1324,7 +1324,11 @@ function Form({
       end: textSpanEnd
     };
     const trigger = {
-      ...lookUpTrigger(activeStep, element.id, elementType),
+      ...lookUpTrigger(
+        activeStep,
+        elementType === 'container' ? element.key : element.id,
+        elementType
+      ),
       repeatIndex: element.repeat
     } as Trigger;
     let submitPromise: Promise<any> = Promise.resolve();

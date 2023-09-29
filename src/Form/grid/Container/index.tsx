@@ -42,7 +42,7 @@ export const Container = ({
     handleClick = () => {
       runElementActions({
         actions: actions,
-        element: { id: node.id, properties, repeat: node.repeat },
+        element: node,
         elementType: 'container'
       });
     };
