@@ -536,7 +536,8 @@ function Form({
 
   const runUserLogic = async (
     event: string,
-    getProps: () => Record<string, any> = () => ({})
+    getProps: () => Record<string, any> = () => ({}),
+    containerId?: string | undefined
   ) => {
     const props = {
       ...getFormContext(_internalId),
@@ -582,9 +583,10 @@ function Form({
                 ''
             )) ||
           (logicRule.trigger_event === 'action' &&
-            logicRule.elements.includes(
+            (logicRule.elements.includes(
               (props as ContextOnChange | ContextOnAction).trigger.id
-            ))
+            ) ||
+              logicRule.elements.includes(containerId ?? '')))
         ) {
           logicRan = true;
 
@@ -1389,10 +1391,14 @@ function Form({
       const action = actions[i];
       const type = action.type;
 
-      await runUserLogic('action', () => ({
-        trigger,
-        action: type
-      }));
+      await runUserLogic(
+        'action',
+        () => ({
+          trigger,
+          action: type
+        }),
+        elementType === 'container' ? element.id : undefined
+      );
 
       if (type === ACTION_ADD_REPEATED_ROW) addRepeatedRow();
       else if (type === ACTION_REMOVE_REPEATED_ROW)
