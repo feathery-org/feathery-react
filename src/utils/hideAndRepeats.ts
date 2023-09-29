@@ -55,7 +55,8 @@ function reshapeHideIfs(hideIfs: any): ResolvedComparisonRule[][] {
  */
 function shouldElementHide(
   { show_logic: show, hide_ifs: hideIfs }: any,
-  repeat?: number
+  repeat?: number,
+  internalId?: string
 ) {
   // The show behavior can be either show (true) or hide (false).
   // If there are no hide_if rules, then the default is to show.
@@ -64,7 +65,7 @@ function shouldElementHide(
   const reshapedHideIfs = reshapeHideIfs(hideIfs ?? []);
 
   const result = reshapedHideIfs.some((hideIfRules: ResolvedComparisonRule[]) =>
-    hideIfRules.every((rule) => evalComparisonRule(rule, repeat))
+    hideIfRules.every((rule) => evalComparisonRule(rule, repeat, internalId))
   );
   return show ? !result : result;
 }
@@ -146,7 +147,8 @@ function _collectHideFlags(
   visiblePositions: VisiblePositions,
   hiddenPositions: Record<string, number[]>,
   repeatKey: string,
-  numRepeats: number
+  numRepeats: number,
+  internalId: string
 ) {
   const elKey = getPositionKey(element);
   const insideRepeat = repeatKey && (elKey + ',').startsWith(repeatKey + ',');
@@ -154,7 +156,11 @@ function _collectHideFlags(
 
   const visible: boolean[] = [];
   for (let i = 0; i < curRepeats; i++) {
-    let shouldHide = shouldElementHide(element, insideRepeat ? i : undefined);
+    let shouldHide = shouldElementHide(
+      element,
+      insideRepeat ? i : undefined,
+      internalId
+    );
     if (shouldHide) {
       if (!(elKey in hiddenPositions)) hiddenPositions[elKey] = [];
       hiddenPositions[elKey].push(i);
@@ -179,7 +185,7 @@ function _collectHideFlags(
   visiblePositions[elKey] = visible;
 }
 
-function getVisiblePositions(step: any) {
+function getVisiblePositions(step: any, internalId: string) {
   let numRepeats = 1;
   const repeatGrid = step.subgrids.filter((grid: any) => grid.repeated)[0];
   let repeatKey = '';
@@ -205,7 +211,8 @@ function getVisiblePositions(step: any) {
         visiblePositions,
         hiddenPositions,
         repeatKey,
-        numRepeats
+        numRepeats,
+        internalId
       );
     });
 
@@ -219,7 +226,8 @@ function getVisiblePositions(step: any) {
         visiblePositions,
         hiddenPositions,
         repeatKey,
-        numRepeats
+        numRepeats,
+        internalId
       );
     });
   });

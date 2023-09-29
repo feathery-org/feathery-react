@@ -1,4 +1,5 @@
 import { fieldValues } from './init';
+import internalState from './internalState';
 
 type OPERATOR_CODE =
   | 'equal'
@@ -57,6 +58,7 @@ const valueTypeIsField = (v: ValueType): v is FieldValueType =>
  * @param repeatIndex If evaluating for a specific index of a repeat, use the index to
  * only compare repeating fields (left and right) at THAT index, i.e. only use that indexed
  * value in the comparison.
+ * @param internalId Needed to get field data and verify if a field is repeating
  *
  * Note: The right side field values can be multi-values (array) as well
  * as the left-side field value (repeating field).
@@ -79,33 +81,51 @@ const valueTypeIsField = (v: ValueType): v is FieldValueType =>
 
 const evalComparisonRule = (
   rule: ResolvedComparisonRule,
-  repeatIndex?: number | undefined
+  repeatIndex?: number | undefined,
+  internalId?: string
 ): boolean => {
   // flatten the right side values/fields into flat list of values
   const flatValues = rule.values.flatMap((value) => {
     if (value !== null && valueTypeIsField(value))
-      return getValuesAsArray(
-        fieldValues[value.field_key],
-        repeatIndex
-      ).flatMap((v: any) => {
-        if (Array.isArray(v) && !v.length) return [undefined];
-        return v;
-      });
+      return getValuesAsArray(value.field_key, repeatIndex, internalId).flatMap(
+        (v: any) => {
+          if (Array.isArray(v) && !v.length) return [undefined];
+          return v;
+        }
+      );
     return value;
   });
 
   const leftFieldValues = getValuesAsArray(
-    fieldValues[rule.field_key],
-    repeatIndex
+    rule.field_key,
+    repeatIndex,
+    internalId
   ).flatMap((v: any) => {
     if (Array.isArray(v) && !v.length) return [undefined];
     return v;
   });
   return COMPARISON_FUNCTIONS[rule.comparison](leftFieldValues, flatValues);
 };
-const getValuesAsArray = (values: unknown, repeatIndex?: number) => {
-  // Array.isArray(values) ? (values.length ? values : [undefined]) : [values];
-  if (Array.isArray(values)) {
+const getValuesAsArray = (
+  key: string,
+  repeatIndex?: number,
+  internalId?: string
+) => {
+  const values: any = fieldValues[key];
+
+  let isRepeat = Array.isArray(values);
+  if (internalId) {
+    const fieldType =
+      internalState[internalId]?.fields?.[key]?._getFormSpecificProps().type;
+    if (['button_group', 'multiselect', 'dropdown_multi'].includes(fieldType)) {
+      // TODO: this only gets the types for fields on the current form. We need
+      //  a solution that will robustly get either the repeatability or type of
+      //  ALL fields.
+      isRepeat = Array.isArray(values[0]);
+    }
+  }
+
+  if (isRepeat) {
     if (values.length) {
       if (repeatIndex !== undefined) return [values[repeatIndex]];
       return values;
