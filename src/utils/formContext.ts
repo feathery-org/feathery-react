@@ -26,21 +26,7 @@ export const getFormContext = (formUuid: string) => {
 
   return {
     userId: initInfo().userId,
-    // deprecated
-    setFieldValues: (userVals: FieldValues): void => {
-      console.warn(
-        'setFieldValues is deprecated.  Please use the fields object and set the value directly in individual fields instead.'
-      );
-      return setFieldValues(userVals);
-    },
     fields: internalState[formUuid]?.fields,
-    // deprecated
-    getFieldValues: () => {
-      console.warn(
-        'getFieldValues is deprecated.  Please use the fields object instead.'
-      );
-      return getFieldValues();
-    },
     setFormCompletion: (flag: boolean) => {
       const { client, currentStep } = internalState[formUuid];
       return client.registerEvent({
@@ -48,16 +34,6 @@ export const getFormContext = (formUuid: string) => {
         event: 'load',
         completed: flag
       });
-    },
-    // @deprecated
-    // TODO: remove when support setFieldOptions is dropped
-    setFieldOptions: (newOptions: FieldOptions) => {
-      console.warn(
-        'setFieldOptions is deprecated.  Please use the fields object instead and set the options directly on individual fields.'
-      );
-      const { steps, updateFieldOptions, currentStep } =
-        internalState[formUuid];
-      return updateFieldOptions(steps, currentStep)(newOptions);
     },
     setProgress: (val: any) => {
       return internalState[formUuid].setUserProgress(val);
@@ -83,24 +59,6 @@ export const getFormContext = (formUuid: string) => {
         backgroundColor: rootStyles?.background_color ?? 'FFFFFF'
       };
     },
-    // @deprecated
-    // TODO: remove when support setFieldOptions is dropped
-    getFormFields: () => {
-      console.warn(
-        'getFormFields is deprecated.  Please use the fields object instead.'
-      );
-      return formatAllFormFields(internalState[formUuid].steps, true);
-    },
-    // @deprecated
-    // TODO: remove when support setFieldOptions is dropped
-    setFieldErrors: (
-      errors: Record<string, string | { index: number; message: string }>
-    ) => {
-      console.warn(
-        'setFieldErrors is deprecated.  Please use the fields object instead and set the error directly on a field.'
-      );
-      return internalState[formUuid].setFieldErrors(errors);
-    },
     validateStep: (showErrors = true) => {
       const {
         currentStep,
@@ -121,6 +79,48 @@ export const getFormContext = (formUuid: string) => {
         setInlineErrors
       });
       return errors;
+    },
+    // deprecated
+    setFieldValues: (userVals: FieldValues): void => {
+      console.warn(
+        'setFieldValues is deprecated.  Please use the fields object and set the value directly in individual fields instead.'
+      );
+      return setFieldValues(userVals);
+    },
+    // deprecated
+    getFieldValues: () => {
+      console.warn(
+        'getFieldValues is deprecated.  Please use the fields object instead.'
+      );
+      return getFieldValues();
+    },
+    // @deprecated
+    // TODO: remove when support setFieldOptions is dropped
+    setFieldOptions: (newOptions: FieldOptions) => {
+      console.warn(
+        'setFieldOptions is deprecated.  Please use the fields object instead and set the options directly on individual fields.'
+      );
+      const { steps, updateFieldOptions, currentStep } =
+        internalState[formUuid];
+      return updateFieldOptions(steps, currentStep)(newOptions);
+    },
+    // @deprecated
+    // TODO: remove when support setFieldOptions is dropped
+    getFormFields: () => {
+      console.warn(
+        'getFormFields is deprecated.  Please use the fields object instead.'
+      );
+      return formatAllFormFields(internalState[formUuid].steps, true);
+    },
+    // @deprecated
+    // TODO: remove when support setFieldOptions is dropped
+    setFieldErrors: (
+      errors: Record<string, string | { index: number; message: string }>
+    ) => {
+      console.warn(
+        'setFieldErrors is deprecated.  Please use the fields object instead and set the error directly on a field.'
+      );
+      return internalState[formUuid].setFieldErrors(errors);
     }
   };
 };

@@ -1,6 +1,11 @@
 import { defaultClient, FeatheryFieldTypes, fieldValues } from './init';
 import debounce from 'lodash.debounce';
-import { rerenderAllForms, OptionType } from './formHelperFunctions';
+import {
+  rerenderAllForms,
+  OptionType,
+  getDefaultFieldValue,
+  getDefaultFormFieldValue
+} from './formHelperFunctions';
 import {
   evalComparisonRule,
   OPERATOR_CODE,
@@ -44,6 +49,19 @@ export default class Field {
 
   get id(): string {
     return this._fieldKey;
+  }
+
+  clear() {
+    let newVal = null;
+    if (!this._hiddenField) {
+      const field = this._getSourceField();
+      newVal = getDefaultFormFieldValue(field);
+    }
+    fieldValues[this._fieldKey] = newVal;
+
+    // update
+    updateFieldKeys.push(this._fieldKey);
+    notifyFieldsChanged();
   }
 
   // raw field value
