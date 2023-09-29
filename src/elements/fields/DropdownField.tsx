@@ -70,6 +70,8 @@ export default function DropdownField({
     });
   }
   const disabled = element.properties.disabled ?? false;
+  const brightness = disabled ? 0.9 : 1;
+
   const hasTooltip = !!element.properties.tooltipText;
   const chevronPosition = hasTooltip ? 30 : 10;
 
@@ -92,6 +94,7 @@ export default function DropdownField({
           position: 'relative',
           width: '100%',
           whiteSpace: 'nowrap',
+          filter: `brightness(${brightness})`,
           ...responsiveStyles.getTarget('sub-fc'),
           '&:hover': disabled
             ? {}

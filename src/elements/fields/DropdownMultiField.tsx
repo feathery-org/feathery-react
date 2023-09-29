@@ -31,6 +31,8 @@ export default function DropdownMultiField({
   });
 
   const disabled = element.properties.disabled ?? false;
+  const brightness = disabled ? 0.9 : 1;
+
   const hasTooltip = !!element.properties.tooltipText;
   const chevronPosition = hasTooltip ? 30 : 10;
   const create = servar.metadata.creatable_options;
@@ -55,6 +57,7 @@ export default function DropdownMultiField({
           position: 'relative',
           width: '100%',
           whiteSpace: 'nowrap',
+          filter: `brightness(${brightness})`,
           ...responsiveStyles.getTarget('sub-fc'),
           '&:hover': disabled
             ? {}

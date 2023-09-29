@@ -80,6 +80,8 @@ function SingleOtpInput({
   );
 
   const disabled = element.properties.disabled ?? false;
+  const brightness = disabled ? 0.9 : 1;
+
   return (
     <div
       css={{
@@ -87,6 +89,7 @@ function SingleOtpInput({
         display: 'flex',
         alignItems: 'center',
         marginLeft: '8px',
+        filter: `brightness(${brightness})`,
         ...responsiveStyles.getTarget('sub-fc'),
         '&:hover': disabled
           ? {}

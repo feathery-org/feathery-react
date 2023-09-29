@@ -42,6 +42,8 @@ function RadioButtonGroupField({
   }, [responsiveStyles]);
 
   const allDisabled = element.properties.disabled ?? false;
+  const brightness = allDisabled ? 0.9 : 1;
+
   const labels = servar.metadata.option_labels;
   return (
     <div
@@ -78,7 +80,8 @@ function RadioButtonGroupField({
               value={opt}
               style={{
                 padding: 0,
-                lineHeight: 'normal'
+                lineHeight: 'normal',
+                filter: `brightness(${brightness})`
               }}
               css={{
                 ...composeCheckableInputStyle(styles, allDisabled, true),
@@ -106,7 +109,11 @@ function RadioButtonGroupField({
               onChange(e);
             }}
             value={otherVal || ''}
-            style={{ padding: 0, lineHeight: 'normal' }}
+            style={{
+              padding: 0,
+              lineHeight: 'normal',
+              filter: `brightness(${brightness})`
+            }}
             css={composeCheckableInputStyle(styles, allDisabled, true)}
           />
           <label htmlFor={`${servar.key}-`}>Other</label>
@@ -116,6 +123,7 @@ function RadioButtonGroupField({
               marginLeft: '5px',
               ...bootstrapStyles,
               paddingLeft: '0.4rem',
+              filter: `brightness(${brightness})`,
               ...responsiveStyles.getTarget('field')
             }}
             id={servar.key}

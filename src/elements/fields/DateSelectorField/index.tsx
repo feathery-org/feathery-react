@@ -94,6 +94,8 @@ function DateSelectorField({
   const [focused, setFocused] = useState(false);
 
   const disabled = element.properties.disabled ?? false;
+  const brightness = disabled ? 0.9 : 1;
+
   let dateMask = servarMeta.display_format ? 'd/MM/yyyy' : 'MM/d/yyyy';
   const timeMask = servarMeta.time_format === '12hr' ? 'h:mm aa' : 'HH:mm';
   if (servarMeta.choose_time) dateMask = `${dateMask} ${timeMask}`;
@@ -114,6 +116,7 @@ function DateSelectorField({
         css={{
           position: 'relative',
           width: '100%',
+          filter: `brightness(${brightness})`,
           ...responsiveStyles.getTarget('sub-fc'),
           '&:hover': disabled
             ? {}

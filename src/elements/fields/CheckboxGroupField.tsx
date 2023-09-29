@@ -6,7 +6,6 @@ import {
   applyHeightWidthMarginByFontSize,
   composeCheckableInputStyle
 } from './CheckboxField';
-import { adjustColor } from '../../utils/styles';
 
 const applyCheckboxGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('checkboxGroup');
@@ -41,6 +40,12 @@ function CheckboxGroupField({
 
   const labels = servar.metadata.option_labels;
   const allDisabled = element.properties.disabled ?? false;
+  const otherDisabled =
+    allDisabled ||
+    (servar.max_length &&
+      servar.max_length <= fieldVal.length &&
+      !otherChecked);
+
   return (
     <div
       css={{
@@ -56,7 +61,10 @@ function CheckboxGroupField({
         const optionLabel = labels && labels[i] ? labels[i] : opt;
         const checked = fieldVal.includes(opt);
         const disabled =
-          servar.max_length && servar.max_length <= fieldVal.length && !checked;
+          allDisabled ||
+          (servar.max_length &&
+            servar.max_length <= fieldVal.length &&
+            !checked);
         return (
           <div
             key={`${servar.key}-${i}`}
@@ -98,7 +106,11 @@ function CheckboxGroupField({
             checked={otherChecked}
             disabled={allDisabled}
             onChange={onChange}
-            style={{ padding: 0, lineHeight: 'normal' }}
+            style={{
+              padding: 0,
+              lineHeight: 'normal',
+              filter: otherDisabled ? 'brightness(85%)' : 'none'
+            }}
             css={composeCheckableInputStyle(styles, allDisabled)}
           />
           <label htmlFor={`${servar.key}-`}>Other</label>
@@ -108,6 +120,7 @@ function CheckboxGroupField({
               marginLeft: '5px',
               ...bootstrapStyles,
               paddingLeft: '0.4rem',
+              filter: otherDisabled ? 'brightness(85%)' : 'none',
               ...responsiveStyles.getTarget('field')
             }}
             id={servar.key}
