@@ -358,12 +358,12 @@ class ResponsiveStyles {
         color: `#${a}`,
         '&:disabled': {
           color: `#${a}`,
-          '-webkit-text-fill-color': `#${a}`,
+          WebkitTextFillColor: `#${a}`,
           opacity: 1
         },
         '&:readOnly': {
           color: `#${a}`,
-          '-webkit-text-fill-color': `#${a}`,
+          WebkitTextFillColor: `#${a}`,
           opacity: 1
         }
       })

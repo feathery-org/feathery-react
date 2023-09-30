@@ -688,7 +688,7 @@ function Form({
       {
         currentStep: newStep,
         previousStepName: activeStep?.key ?? '',
-        visiblePositions: getVisiblePositions(newStep),
+        visiblePositions: getVisiblePositions(newStep, _internalId),
         client,
         fields,
         formName,
@@ -771,7 +771,7 @@ function Form({
   };
 
   const visiblePositions = useMemo(
-    () => (activeStep ? getVisiblePositions(activeStep) : null),
+    () => (activeStep ? getVisiblePositions(activeStep, _internalId) : null),
     [activeStep, render]
   );
 
