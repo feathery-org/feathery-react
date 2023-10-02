@@ -8,13 +8,13 @@ export function installAmplitude(amplitudeConfig: any) {
     amplitudeInstalled = true;
 
     (function (e, t) {
-      const n = e.amplitude || { _q: [], _iq: {} };
-      if (n.invoked)
+      const r = e.amplitude || { _q: [], _iq: {} };
+      if (r.invoked)
         e.console &&
           console.error &&
           console.error('Amplitude snippet has been loaded.');
       else {
-        const r = function (e: any, t: any) {
+        const n = function (e: any, t: any) {
           e.prototype[t] = function () {
             return (
               this._q.push({
@@ -26,53 +26,59 @@ export function installAmplitude(amplitudeConfig: any) {
             );
           };
         };
-        const s = function (e: any, t: any, n: any) {
-          return function (r: any) {
+        const s = function (e: any, t: any, r: any) {
+          return function (n: any) {
             e._q.push({
               name: t,
-              args: Array.prototype.slice.call(n, 0),
-              resolve: r
+              args: Array.prototype.slice.call(r, 0),
+              resolve: n
             });
           };
         };
-        const o = function (e: any, t: any, n: any) {
+        const o = function (e: any, t: any, r: any) {
+          e._q.push({ name: t, args: Array.prototype.slice.call(r, 0) });
+        };
+        const i = function (e: any, t: any, r: any) {
           e[t] = function () {
-            if (n)
+            if (r)
               return {
                 promise: new Promise(
                   // eslint-disable-next-line prefer-rest-params
                   s(e, t, Array.prototype.slice.call(arguments))
                 )
               };
+            // eslint-disable-next-line prefer-rest-params
+            o(e, t, Array.prototype.slice.call(arguments));
           };
         };
-        const i = function (e: any) {
-          for (let t = 0; t < y.length; t++) o(e, y[t], !1);
-          for (let n = 0; n < g.length; n++) o(e, g[n], !0);
+        const a = function (e: any) {
+          for (let t = 0; t < m.length; t++) i(e, m[t], !1);
+          for (let r = 0; r < g.length; r++) i(e, g[r], !0);
         };
-        n.invoked = !0;
-        const a = t.createElement('script');
-        a.type = 'text/javascript';
-        a.integrity =
-          'sha384-TPZhteUkZj8CAyBx+GZZytBdkuKnhKsSKcCoVCq0QSteWf/Kw5Kb9oVFUROLE1l3';
-        a.crossOrigin = 'anonymous';
-        a.async = !0;
-        a.src =
-          'https://cdn.amplitude.com/libs/analytics-browser-2.2.3-min.js.gz';
-        a.onload = function () {
-          e.amplitude.runQueuedFunctions ||
-            console.log('[Amplitude] Error: could not load SDK');
-        };
-        const c = t.getElementsByTagName('script')[0];
-        c.parentNode.insertBefore(a, c);
-        let u;
+        r.invoked = !0;
+        const c = t.createElement('script');
+        // eslint-disable-next-line no-sequences,no-unused-expressions
+        (c.type = 'text/javascript'),
+          (c.integrity =
+            'sha384-Chi7fRnlI3Vmej27YiXRbwAkES7Aor2707Qn/cpfhyw4lYue9vH/SOdlrPSFGPL/'),
+          (c.crossOrigin = 'anonymous'),
+          (c.async = !0),
+          (c.src =
+            'https://cdn.amplitude.com/libs/analytics-browser-2.3.2-min.js.gz'),
+          (c.onload = function () {
+            e.amplitude.runQueuedFunctions ||
+              console.log('[Amplitude] Error: could not load SDK');
+          });
+        const u = t.getElementsByTagName('script')[0];
+        u.parentNode.insertBefore(c, u);
+        let l;
         for (
-          let u = function () {
+          let l = function () {
               // @ts-ignore
               // eslint-disable-next-line no-sequences
               return (this._q = []), this;
             },
-            l = [
+            p = [
               'add',
               'append',
               'clearAll',
@@ -85,20 +91,20 @@ export function installAmplitude(amplitudeConfig: any) {
               'remove',
               'getUserProperties'
             ],
-            p = 0;
-          p < l.length;
-          p++
+            d = 0;
+          d < p.length;
+          d++
         )
-          r(u, l[p]);
-        n.Identify = u;
-        let d;
+          n(l, p[d]);
+        r.Identify = l;
+        let f;
         for (
-          let d = function () {
+          let f = function () {
               // @ts-ignore
               // eslint-disable-next-line no-sequences
               return (this._q = []), this;
             },
-            f = [
+            v = [
               'getEventProperties',
               'setProductId',
               'setQuantity',
@@ -107,13 +113,13 @@ export function installAmplitude(amplitudeConfig: any) {
               'setRevenueType',
               'setEventProperties'
             ],
-            v = 0;
-          v < f.length;
-          v++
+            y = 0;
+          y < v.length;
+          y++
         )
-          r(d, f[v]);
-        n.Revenue = d;
-        const y = [
+          n(f, v[y]);
+        r.Revenue = f;
+        const m = [
           'getDeviceId',
           'setDeviceId',
           'getSessionId',
@@ -122,7 +128,8 @@ export function installAmplitude(amplitudeConfig: any) {
           'setUserId',
           'setOptOut',
           'setTransport',
-          'reset'
+          'reset',
+          'extendSession'
         ];
         const g = [
           'init',
@@ -137,16 +144,18 @@ export function installAmplitude(amplitudeConfig: any) {
           'flush'
         ];
         // eslint-disable-next-line no-unused-expressions,no-sequences
-        i(n),
-          (n.createInstance = function (e: any) {
+        a(r),
+          (r.createInstance = function (e: any) {
             // eslint-disable-next-line no-sequences
-            return (n._iq[e] = { _q: [] }), i(n._iq[e]), n._iq[e];
+            return (r._iq[e] = { _q: [] }), a(r._iq[e]), r._iq[e];
           }),
-          (e.amplitude = n);
+          (e.amplitude = r);
       }
     })(featheryWindow(), featheryDoc());
 
-    featheryWindow().amplitude.init(amplitudeConfig.metadata.api_key);
+    featheryWindow().amplitude.init(amplitudeConfig.metadata.api_key, {
+      defaultTracking: true
+    });
     if (amplitudeConfig.metadata.identify_user)
       featheryWindow().amplitude.setUserId(initInfo().userId);
   }
