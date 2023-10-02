@@ -154,7 +154,8 @@ export function installAmplitude(amplitudeConfig: any) {
     })(featheryWindow(), featheryDoc());
 
     featheryWindow().amplitude.init(amplitudeConfig.metadata.api_key, {
-      defaultTracking: true
+      defaultTracking: true,
+      minIdLength: 1
     });
     if (amplitudeConfig.metadata.identify_user)
       featheryWindow().amplitude.setUserId(initInfo().userId);
