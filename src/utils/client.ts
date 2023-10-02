@@ -28,14 +28,16 @@ export const API_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
   staging: 'https://staging.feathery.io/api/',
   production: 'https://api.feathery.io/api/',
-  productionAU: 'https://api-au.feathery.io/api/'
+  productionAU: 'https://api-au.feathery.io/api/',
+  productionEU: 'https://api-eu.feathery.io/api/'
 };
 
 const CDN_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
   staging: 'https://staging.feathery.io/api/',
   production: 'https://cdn.feathery.io/api/',
-  productionAU: 'https://cdn-au.feathery.io/api/'
+  productionAU: 'https://cdn-au.feathery.io/api/',
+  productionEU: 'https://cdn-eu.feathery.io/api/'
 };
 
 const environment = 'production';
@@ -47,6 +49,9 @@ export const updateRegionApiUrls = (region: string) => {
   if (region === 'au') {
     CDN_URL = CDN_URL_OPTIONS.productionAU;
     API_URL = API_URL_OPTIONS.productionAU;
+  } else if (region === 'eu') {
+    CDN_URL = CDN_URL_OPTIONS.productionEU;
+    API_URL = API_URL_OPTIONS.productionEU;
   }
 };
 
