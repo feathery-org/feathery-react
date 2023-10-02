@@ -161,7 +161,7 @@ interface ClickActionElement {
   repeat?: any;
 }
 
-interface LogicRule {
+export interface LogicRule {
   id: string;
   name: string;
   trigger_event: string;
@@ -627,17 +627,15 @@ function Form({
             await fn(
               { ...props, http: httpHelpers(client) },
               ...Object.values(injectableFields)
-            );
-          } catch (e) {
-            // rule had an error, log it to console for now
-            console.warn(
-              'Exception while running rule: ',
-              logicRule.name,
-              ' On Event: ',
-              logicRule.trigger_event,
-              ' Exception: ',
-              e
-            );
+              // );
+            ).catch((e: any) => {
+              // catch unhandled rejections in async user code (if a promise is returned)
+              // handle any errors in async code that actually returns a promise
+              handleRuleError(e.message, logicRule);
+            });
+          } catch (e: any) {
+            const errorMessage = e.reason?.message ?? e.error?.message;
+            handleRuleError(errorMessage, logicRule);
           }
         }
       }
@@ -647,6 +645,16 @@ function Form({
     if (logicRan) flushFieldUpdates();
 
     return logicRan;
+  };
+
+  // Used to warn about logic rule errors
+  const handleRuleError = (errorMessage: string, logicRule: LogicRule) => {
+    // log that a specific rule had an error, log it to warning console
+    console.warn(
+      `Error while running logic rule: ${logicRule.name}`,
+      `  On Event: ${logicRule.trigger_event}`,
+      `  Error Message: ${errorMessage ?? ''}`
+    );
   };
 
   const getErrorCallback =
