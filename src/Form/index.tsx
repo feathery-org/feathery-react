@@ -720,6 +720,7 @@ function Form({
               fieldKey,
               message,
               index,
+              servarType: fields[fieldKey]?.type,
               errorType: formSettings.errorType,
               inlineErrors,
               setInlineErrors,
