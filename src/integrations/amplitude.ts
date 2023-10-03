@@ -156,10 +156,10 @@ export function installAmplitude(amplitudeConfig: any) {
       defaultTracking: true,
       minIdLength: 1
     });
-  }
 
-  if (amplitudeConfig.metadata.identify_user)
-    featheryWindow().amplitude.setUserId(initInfo().userId);
+    if (amplitudeConfig.metadata.identify_user)
+      featheryWindow().amplitude.setUserId(initInfo().userId);
+  }
 
   return Promise.resolve();
 }
