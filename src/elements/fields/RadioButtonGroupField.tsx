@@ -42,7 +42,6 @@ function RadioButtonGroupField({
   }, [responsiveStyles]);
 
   const allDisabled = element.properties.disabled ?? false;
-  const brightness = allDisabled ? 0.9 : 1;
 
   const labels = servar.metadata.option_labels;
   return (
@@ -80,12 +79,12 @@ function RadioButtonGroupField({
               value={opt}
               style={{
                 padding: 0,
-                lineHeight: 'normal',
-                filter: `brightness(${brightness})`
+                lineHeight: 'normal'
               }}
               css={{
                 ...composeCheckableInputStyle(styles, allDisabled, true),
-                ...styles.getTarget('radioGroup')
+                ...styles.getTarget('radioGroup'),
+                ...(allDisabled ? responsiveStyles.getTarget('disabled') : {})
               }}
             />
             <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
@@ -111,10 +110,12 @@ function RadioButtonGroupField({
             value={otherVal || ''}
             style={{
               padding: 0,
-              lineHeight: 'normal',
-              filter: `brightness(${brightness})`
+              lineHeight: 'normal'
             }}
-            css={composeCheckableInputStyle(styles, allDisabled, true)}
+            css={{
+              ...composeCheckableInputStyle(styles, allDisabled, true),
+              ...(allDisabled ? responsiveStyles.getTarget('disabled') : {})
+            }}
           />
           <label htmlFor={`${servar.key}-`}>Other</label>
           <ReactForm.Control
@@ -123,8 +124,8 @@ function RadioButtonGroupField({
               marginLeft: '5px',
               ...bootstrapStyles,
               paddingLeft: '0.4rem',
-              filter: `brightness(${brightness})`,
-              ...responsiveStyles.getTarget('field')
+              ...responsiveStyles.getTarget('field'),
+              ...(allDisabled ? responsiveStyles.getTarget('disabled') : {})
             }}
             id={servar.key}
             value={otherVal || ''}

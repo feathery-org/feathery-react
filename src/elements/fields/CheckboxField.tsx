@@ -221,7 +221,6 @@ function CheckboxField({
   const servar = element.servar;
 
   const disabled = element.properties.disabled ?? false;
-  const brightness = disabled ? 0.9 : 1;
 
   return (
     <div
@@ -239,8 +238,11 @@ function CheckboxField({
         checked={fieldVal}
         disabled={disabled}
         onChange={onChange}
-        style={{ marginTop: '5px', filter: `brightness(${brightness})` }}
-        css={composeCheckableInputStyle(styles, disabled)}
+        style={{ marginTop: '5px' }}
+        css={{
+          ...composeCheckableInputStyle(styles, disabled),
+          ...(disabled ? responsiveStyles.getTarget('disabled') : {})
+        }}
       />
       {fieldLabel}
     </div>

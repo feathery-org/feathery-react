@@ -153,7 +153,6 @@ function TextField({
   const servar = element.servar;
   const options = servar.metadata.options ?? [];
   const disabled = element.properties.disabled ?? false;
-  const brightness = disabled ? 0.9 : 1;
   return (
     <div
       css={{
@@ -172,8 +171,8 @@ function TextField({
           position: 'relative',
           width: '100%',
           whiteSpace: 'nowrap',
-          filter: `brightness(${brightness})`,
           ...responsiveStyles.getTarget('sub-fc'),
+          ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
           '&:hover': disabled
             ? {}
             : {

@@ -71,6 +71,7 @@ function applyFieldStyles(field: any, styles: any) {
     'error',
     'active',
     'hover',
+    'disabled',
     'tooltipIcon'
   );
 
@@ -97,6 +98,10 @@ function applyFieldStyles(field: any, styles: any) {
     !['button_group', 'payment_method'].includes(type),
     hasBorder
   );
+  styles.apply('disabled', 'disabled_background_color', (a: any) => {
+    if (a) return { backgroundColor: `#${a}` };
+    else return { filter: 'brightness(0.9)' };
+  });
   styles.apply('error', 'font_family', (a: any) => ({
     fontFamily: a
   }));

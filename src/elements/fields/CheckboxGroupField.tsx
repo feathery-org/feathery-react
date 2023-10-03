@@ -83,14 +83,14 @@ function CheckboxGroupField({
               onChange={onChange}
               style={{
                 padding: 0,
-                lineHeight: 'normal',
-                filter: disabled ? 'brightness(85%)' : 'none'
+                lineHeight: 'normal'
               }}
               css={{
-                ...composeCheckableInputStyle(styles, allDisabled || disabled),
-                ...styles.getTarget('checkboxGroup')
+                ...composeCheckableInputStyle(styles, disabled),
+                ...styles.getTarget('checkboxGroup'),
+                ...(disabled ? responsiveStyles.getTarget('disabled') : {})
               }}
-              disabled={allDisabled || disabled}
+              disabled={disabled}
             />
             <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
           </div>
@@ -104,14 +104,16 @@ function CheckboxGroupField({
             key={`${servar.key}-`}
             name={otherVal}
             checked={otherChecked}
-            disabled={allDisabled}
+            disabled={otherDisabled}
             onChange={onChange}
             style={{
               padding: 0,
-              lineHeight: 'normal',
-              filter: otherDisabled ? 'brightness(85%)' : 'none'
+              lineHeight: 'normal'
             }}
-            css={composeCheckableInputStyle(styles, allDisabled)}
+            css={{
+              ...composeCheckableInputStyle(styles, otherDisabled),
+              ...(otherDisabled ? responsiveStyles.getTarget('disabled') : {})
+            }}
           />
           <label htmlFor={`${servar.key}-`}>Other</label>
           <ReactForm.Control
@@ -120,8 +122,8 @@ function CheckboxGroupField({
               marginLeft: '5px',
               ...bootstrapStyles,
               paddingLeft: '0.4rem',
-              filter: otherDisabled ? 'brightness(85%)' : 'none',
-              ...responsiveStyles.getTarget('field')
+              ...responsiveStyles.getTarget('field'),
+              ...(otherDisabled ? responsiveStyles.getTarget('disabled') : {})
             }}
             id={servar.key}
             value={otherVal || ''}
@@ -132,7 +134,7 @@ function CheckboxGroupField({
             maxLength={servar.max_length}
             minLength={servar.min_length}
             required={otherChecked}
-            disabled={allDisabled || !otherChecked}
+            disabled={otherDisabled || !otherChecked}
           />
         </div>
       )}
