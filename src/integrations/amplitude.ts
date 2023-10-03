@@ -1,12 +1,9 @@
 import { featheryDoc, featheryWindow } from '../utils/browser';
 import { initInfo } from '../utils/init';
 
-export let amplitudeInstalled = false;
-
 export function installAmplitude(amplitudeConfig: any) {
-  if (amplitudeConfig && !amplitudeInstalled) {
-    amplitudeInstalled = true;
-
+  // Guard against an existing Amplitude installation
+  if (amplitudeConfig && !featheryWindow().amplitude?.invoked) {
     (function (e, t) {
       const r = e.amplitude || { _q: [], _iq: {} };
       if (r.invoked)
@@ -157,9 +154,10 @@ export function installAmplitude(amplitudeConfig: any) {
       defaultTracking: true,
       minIdLength: 1
     });
-    if (amplitudeConfig.metadata.identify_user)
-      featheryWindow().amplitude.setUserId(initInfo().userId);
   }
+
+  if (amplitudeConfig.metadata.identify_user)
+    featheryWindow().amplitude.setUserId(initInfo().userId);
 
   return Promise.resolve();
 }
