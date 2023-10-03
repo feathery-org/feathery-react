@@ -40,7 +40,6 @@ function AddressLine1({
   });
 
   const disabled = element.properties.disabled ?? false;
-  const brightness = disabled ? 0.9 : 1;
 
   return (
     <div
@@ -59,8 +58,8 @@ function AddressLine1({
         css={{
           position: 'relative',
           width: '100%',
-          filter: `brightness(${brightness})`,
           ...responsiveStyles.getTarget('sub-fc'),
+          ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
           '&:hover': disabled
             ? {}
             : {

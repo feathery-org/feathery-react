@@ -26,7 +26,6 @@ function TextArea({
   });
 
   const disabled = element.properties.disabled ?? false;
-  const brightness = disabled ? 0.9 : 1;
   const servar = element.servar;
   return (
     <div
@@ -45,8 +44,8 @@ function TextArea({
         css={{
           position: 'relative',
           width: '100%',
-          filter: `brightness(${brightness})`,
           ...responsiveStyles.getTarget('sub-fc'),
+          ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
           '&:hover': disabled
             ? {}
             : {

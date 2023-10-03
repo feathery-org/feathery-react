@@ -154,7 +154,6 @@ function PhoneField({
 
   const triggerChange = () => setTriggerOnChange((prev) => !prev);
   const disabled = element.properties.disabled ?? false;
-  const brightness = disabled ? 0.9 : 1;
 
   return (
     <div
@@ -173,8 +172,8 @@ function PhoneField({
         css={{
           display: 'flex',
           position: 'relative',
-          filter: `brightness(${brightness})`,
           ...responsiveStyles.getTarget('sub-fc'),
+          ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
           '&:hover': disabled
             ? {}
             : {

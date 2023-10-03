@@ -29,7 +29,6 @@ function PasswordField({
 
   const servar = element.servar;
   const disabled = element.properties.disabled ?? false;
-  const brightness = disabled ? 0.9 : 1;
 
   return (
     <div
@@ -49,8 +48,8 @@ function PasswordField({
           position: 'relative',
           width: '100%',
           whiteSpace: 'nowrap',
-          filter: `brightness(${brightness})`,
           ...responsiveStyles.getTarget('sub-fc'),
+          ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
           '&:hover': disabled
             ? {}
             : {
