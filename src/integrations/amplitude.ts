@@ -2,8 +2,10 @@ import { featheryDoc, featheryWindow } from '../utils/browser';
 import { initInfo } from '../utils/init';
 
 export function installAmplitude(amplitudeConfig: any) {
+  if (!amplitudeConfig) return Promise.resolve();
+
   // Guard against an existing Amplitude installation
-  if (amplitudeConfig && !featheryWindow().amplitude?.invoked) {
+  if (!featheryWindow().amplitude?.invoked) {
     (function (e, t) {
       const r = e.amplitude || { _q: [], _iq: {} };
       if (r.invoked)
