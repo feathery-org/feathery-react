@@ -288,13 +288,14 @@ export default class Client {
   }
 
   fetchCacheForm(formLanguage?: string) {
-    const { preloadForms, language: globalLanguage } = initInfo();
+    const { preloadForms, language: globalLanguage, theme } = initInfo();
     if (!formLanguage && this.formKey in preloadForms)
       return Promise.resolve(preloadForms[this.formKey]);
 
     const params = encodeGetParams({
       form_key: this.formKey,
-      draft: this.draft
+      draft: this.draft,
+      theme
     });
     const baseURL = this.bypassCDN ? API_URL : CDN_URL;
     const url = `${baseURL}panel/v19/?${params}`;

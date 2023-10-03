@@ -19,7 +19,8 @@ describe('client', () => {
         sdkKey: 'sdkKey',
         userId: 'userId',
         formSessions: {},
-        preloadForms: {}
+        preloadForms: {},
+        theme: ''
       });
       global.fetch = jest.fn().mockResolvedValue({
         status: 200,
@@ -33,7 +34,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${CDN_URL}panel/v19/?form_key=formKey&draft=false`,
+        `${CDN_URL}panel/v19/?form_key=formKey&draft=false&theme=`,
         {
           cache: 'no-store',
           keepalive: false,

@@ -35,6 +35,7 @@ type InitOptions = {
   preloadForms?: string[];
   userTracking?: 'cookie' | 'fingerprint';
   language?: string;
+  theme?: string;
   _enterpriseRegion?: string;
 } & DeprecatedOptions;
 
@@ -49,6 +50,7 @@ type InitState = {
   renderCallbacks: Record<string, Record<string, any>>;
   remountCallbacks: Record<string, any>;
   defaultErrors: Record<string, string>;
+  theme: string;
 } & Omit<InitOptions, keyof DeprecatedOptions>;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
@@ -68,7 +70,8 @@ const initState: InitState = {
   fieldValuesInitialized: false,
   redirectCallbacks: {},
   renderCallbacks: {},
-  remountCallbacks: {}
+  remountCallbacks: {},
+  theme: ''
 };
 let fieldValues: FieldValues = {};
 let filePathMap: Record<string, null | string | (string | null)[]> = {};
@@ -103,6 +106,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
     initState.overrideUserId = true;
   }
   if (options.userTracking) initState.userTracking = options.userTracking;
+  if (options.theme) initState.theme = options.theme;
   if (options.language) {
     const langPieces = options.language.split(',');
     initState.language = langPieces
