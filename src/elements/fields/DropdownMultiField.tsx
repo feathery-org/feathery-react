@@ -25,10 +25,16 @@ export default function DropdownMultiField({
 
   const servar = element.servar;
   const labels = servar.metadata.option_labels;
+  const labelMap: Record<string, string> = {};
   const options = servar.metadata.options.map((option: any, index: number) => {
     const label = labels && labels[index] ? labels[index] : option;
+    labelMap[option] = label;
     return { value: option, label };
   });
+  const selectVal = fieldVal.map((val: any) => ({
+    label: labelMap[val],
+    value: val
+  }));
 
   const disabled = element.properties.disabled ?? false;
 
@@ -98,7 +104,7 @@ export default function DropdownMultiField({
             indicatorsContainer: () => ({ display: 'none' })
           }}
           id={servar.key}
-          value={fieldVal.map((val: any) => ({ label: val, value: val }))}
+          value={selectVal}
           required={required}
           isDisabled={disabled}
           onChange={onChange}
