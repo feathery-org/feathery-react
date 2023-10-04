@@ -23,6 +23,7 @@ function CheckboxGroupField({
   onOtherChange = () => {},
   onEnter = () => {},
   elementProps = {},
+  disabled = false,
   children
 }: any) {
   const servar = element.servar;
@@ -39,9 +40,8 @@ function CheckboxGroupField({
   }, [responsiveStyles]);
 
   const labels = servar.metadata.option_labels;
-  const allDisabled = element.properties.disabled ?? false;
   const otherDisabled =
-    allDisabled ||
+    disabled ||
     (servar.max_length &&
       servar.max_length <= fieldVal.length &&
       !otherChecked);
@@ -60,8 +60,8 @@ function CheckboxGroupField({
       {servar.metadata.options.map((opt: any, i: number) => {
         const optionLabel = labels && labels[i] ? labels[i] : opt;
         const checked = fieldVal.includes(opt);
-        const disabled =
-          allDisabled ||
+        const optionDisabled =
+          disabled ||
           (servar.max_length &&
             servar.max_length <= fieldVal.length &&
             !checked);
@@ -71,7 +71,7 @@ function CheckboxGroupField({
             css={{
               display: 'flex',
               alignItems: 'center',
-              pointerEvents: disabled ? 'none' : 'auto',
+              pointerEvents: optionDisabled ? 'none' : 'auto',
               ...styles.getTarget('row')
             }}
           >
@@ -86,11 +86,13 @@ function CheckboxGroupField({
                 lineHeight: 'normal'
               }}
               css={{
-                ...composeCheckableInputStyle(styles, disabled),
+                ...composeCheckableInputStyle(styles, optionDisabled),
                 ...styles.getTarget('checkboxGroup'),
-                ...(disabled ? responsiveStyles.getTarget('disabled') : {})
+                ...(optionDisabled
+                  ? responsiveStyles.getTarget('disabled')
+                  : {})
               }}
-              disabled={disabled}
+              disabled={optionDisabled}
             />
             <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
           </div>

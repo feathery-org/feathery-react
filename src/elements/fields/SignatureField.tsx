@@ -10,6 +10,7 @@ function SignatureField({
   defaultValue = null,
   editMode,
   elementProps = {},
+  disabled = false,
   onEnd = () => {},
   onClear = () => {},
   children
@@ -59,7 +60,7 @@ function SignatureField({
         width: '100%',
         ...responsiveStyles.getTarget('fc'),
         position: 'relative',
-        pointerEvents: editMode ? 'none' : 'auto'
+        pointerEvents: editMode || disabled ? 'none' : 'auto'
       }}
       {...elementProps}
     >
@@ -81,6 +82,7 @@ function SignatureField({
               color: 'rgb(173, 173, 173)',
               fontSize: '14px',
               transition: '0.15s ease-in-out all',
+              ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
               '&:hover': { color: 'black' }
             }}
             onClick={() => {

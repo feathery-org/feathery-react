@@ -135,6 +135,7 @@ function TextField({
   fieldLabel,
   elementProps = {},
   required = false,
+  disabled = false,
   editMode,
   rightToLeft,
   onAccept = () => {},
@@ -152,7 +153,6 @@ function TextField({
 
   const servar = element.servar;
   const options = servar.metadata.options ?? [];
-  const disabled = element.properties.disabled ?? false;
   return (
     <div
       css={{

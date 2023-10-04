@@ -7,10 +7,10 @@ function MatrixField({
   fieldVal = {},
   onChange = () => {},
   elementProps = {},
+  disabled = false,
   children
 }: any) {
   const servar = element.servar;
-  const allDisabled = element.properties.disabled ?? false;
   const inputType = servar.metadata.multiple ? 'checkbox' : 'radio';
 
   const { backgroundColor, borderRadius, height } =
@@ -19,6 +19,7 @@ function MatrixField({
   const options = servar.metadata.options;
   const optionFraction = 100 / (options.length + 1);
   const widthStyle = { minWidth: '100px', width: `${optionFraction}%` };
+
   return (
     <div
       css={{
@@ -85,7 +86,7 @@ function MatrixField({
                     name={`${servar.key}-${i}`}
                     data-question-id={question.id}
                     value={opt}
-                    disabled={allDisabled}
+                    disabled={disabled}
                     checked={isChecked}
                     onChange={onChange}
                   />

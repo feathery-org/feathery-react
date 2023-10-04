@@ -10,6 +10,7 @@ export default function RatingField({
   editMode,
   onChange = () => {},
   elementProps = {},
+  disabled = false,
   children
 }: any) {
   const [hoverIndex, setHoverIndex] = useState<null | number>(null);
@@ -51,8 +52,8 @@ export default function RatingField({
                 onMouseEnter={() => setHoverIndex(index)}
                 onMouseLeave={() => setHoverIndex(null)}
                 css={{
-                  pointerEvents: editMode ? 'none' : 'auto',
-                  cursor: editMode ? 'default' : 'pointer',
+                  pointerEvents: editMode || disabled ? 'none' : 'auto',
+                  cursor: editMode || disabled ? 'default' : 'pointer',
                   width: `${100 / numRatings}%`,
                   paddingRight: '5px',
                   ...responsiveStyles.getTarget('field'),

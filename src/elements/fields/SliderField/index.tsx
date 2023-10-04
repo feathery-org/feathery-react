@@ -7,6 +7,7 @@ export default function SliderField({
   element,
   fieldLabel,
   responsiveStyles,
+  disabled = false,
   fieldVal = 0,
   editMode,
   onChange = () => {},
@@ -65,6 +66,7 @@ export default function SliderField({
           min={minVal}
           max={maxVal}
           step={stepSize}
+          disabled={disabled}
           onChange={(val) => {
             setInternalValue(val);
             onChange(val);

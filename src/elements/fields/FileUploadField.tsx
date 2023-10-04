@@ -13,6 +13,7 @@ function FileUploadField({
   element,
   responsiveStyles,
   required = false,
+  disabled = false,
   editMode,
   onChange: customOnChange = () => {},
   initialFiles = [],
@@ -112,7 +113,7 @@ function FileUploadField({
         display: 'flex',
         flexWrap: 'wrap',
         position: 'relative',
-        pointerEvents: editMode ? 'none' : 'auto',
+        pointerEvents: editMode || disabled ? 'none' : 'auto',
         width: '100%',
         ...responsiveStyles.getTarget('fc')
       }}

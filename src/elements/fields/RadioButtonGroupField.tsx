@@ -18,6 +18,7 @@ function RadioButtonGroupField({
   responsiveStyles,
   fieldLabel,
   required = false,
+  disabled = false,
   fieldVal = '',
   otherVal = '',
   onChange = () => {},
@@ -40,8 +41,6 @@ function RadioButtonGroupField({
     });
     return responsiveStyles;
   }, [responsiveStyles]);
-
-  const allDisabled = element.properties.disabled ?? false;
 
   const labels = servar.metadata.option_labels;
   return (
@@ -74,7 +73,7 @@ function RadioButtonGroupField({
               name={servar.key}
               checked={fieldVal === opt}
               required={required}
-              disabled={allDisabled}
+              disabled={disabled}
               onChange={onChange}
               value={opt}
               style={{
@@ -82,9 +81,9 @@ function RadioButtonGroupField({
                 lineHeight: 'normal'
               }}
               css={{
-                ...composeCheckableInputStyle(styles, allDisabled, true),
+                ...composeCheckableInputStyle(styles, disabled, true),
                 ...styles.getTarget('radioGroup'),
-                ...(allDisabled ? responsiveStyles.getTarget('disabled') : {})
+                ...(disabled ? responsiveStyles.getTarget('disabled') : {})
               }}
             />
             <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
@@ -99,7 +98,7 @@ function RadioButtonGroupField({
             key={`${servar.key}-`}
             name={servar.key}
             checked={otherChecked}
-            disabled={allDisabled}
+            disabled={disabled}
             onChange={(e) => {
               setOtherSelect({
                 ...otherSelect,
@@ -113,8 +112,8 @@ function RadioButtonGroupField({
               lineHeight: 'normal'
             }}
             css={{
-              ...composeCheckableInputStyle(styles, allDisabled, true),
-              ...(allDisabled ? responsiveStyles.getTarget('disabled') : {})
+              ...composeCheckableInputStyle(styles, disabled, true),
+              ...(disabled ? responsiveStyles.getTarget('disabled') : {})
             }}
           />
           <label htmlFor={`${servar.key}-`}>Other</label>
@@ -125,7 +124,7 @@ function RadioButtonGroupField({
               ...bootstrapStyles,
               paddingLeft: '0.4rem',
               ...responsiveStyles.getTarget('field'),
-              ...(allDisabled ? responsiveStyles.getTarget('disabled') : {})
+              ...(disabled ? responsiveStyles.getTarget('disabled') : {})
             }}
             id={servar.key}
             value={otherVal || ''}
@@ -136,7 +135,7 @@ function RadioButtonGroupField({
             maxLength={servar.max_length}
             minLength={servar.min_length}
             required={otherChecked}
-            disabled={allDisabled || !otherChecked}
+            disabled={disabled || !otherChecked}
           />
         </div>
       )}

@@ -15,6 +15,7 @@ import { justInsert, justRemove } from '../../../utils/array';
 import { fieldValues } from '../../../utils/init';
 import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 import {
+  fieldAllowedFromList,
   getInlineError,
   handleCheckboxGroupChange,
   handleOtherStateChange,
@@ -57,7 +58,8 @@ const Element = ({ node: el, form, flags }: any) => {
     formRef,
     focusRef,
     setCardElement,
-    visiblePositions
+    visiblePositions,
+    allowLists
   } = form;
 
   const basicProps: Record<string, any> = {
@@ -191,6 +193,7 @@ const Element = ({ node: el, form, flags }: any) => {
       elementProps: elementProps[servar.key],
       autoComplete: formSettings.autocomplete,
       rightToLeft: formSettings.rightToLeft,
+      disabled: el.properties.disabled || !fieldAllowedFromList(allowLists, el),
       required
     };
 
