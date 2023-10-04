@@ -32,7 +32,7 @@ export default function DropdownField({
 
   useEffect(() => {
     if (servar.type === 'gmap_state') {
-      const code = countryCode.toLowerCase() ?? servar.metadata.default_country;
+      const code = countryCode.toLowerCase() || servar.metadata.default_country;
       if (code && fieldVal && !hasState(code, fieldVal, short, true)) {
         fieldVal = '';
         onChange({ target: { value: fieldVal } });
