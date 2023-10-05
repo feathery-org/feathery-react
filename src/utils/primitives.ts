@@ -61,6 +61,14 @@ function formatMoneyUSD(number: number, locales = ['en-US']) {
   return formatNumeric(number, { style: 'currency', currency: 'USD' }, locales);
 }
 
+function numMatchingItems(arr1: number[], arr2: number[]) {
+  let i;
+  for (i = 0; i < arr1.length; i++) {
+    if (arr1[i] !== arr2[i]) return i;
+  }
+  return i;
+}
+
 export {
   encodeGetParams,
   isAlphaNumeric,
@@ -70,5 +78,6 @@ export {
   stringifyWithNull,
   filterKeys,
   formatNumeric,
-  formatMoneyUSD
+  formatMoneyUSD,
+  numMatchingItems
 };

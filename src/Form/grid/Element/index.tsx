@@ -5,7 +5,11 @@ import {
   setFormElementError,
   clearFilePathMapEntry
 } from '../../../utils/formHelperFunctions';
-import { isObjectEmpty, stringifyWithNull } from '../../../utils/primitives';
+import {
+  isObjectEmpty,
+  numMatchingItems,
+  stringifyWithNull
+} from '../../../utils/primitives';
 import { isFieldValueEmpty } from '../../../utils/validation';
 import { justInsert, justRemove } from '../../../utils/array';
 import { fieldValues } from '../../../utils/init';
@@ -330,9 +334,16 @@ const Element = ({ node: el, form, flags }: any) => {
       case 'gmap_state':
       case 'gmap_country':
         if (servar.type === 'gmap_state') {
-          const field = activeStep.servar_fields.find(
-            (field: any) => field.servar.type === 'gmap_country'
-          );
+          const field = activeStep.servar_fields
+            .filter((field: any) => field.servar.type === 'gmap_country')
+            .sort((a: any, b: any) => {
+              // Assume the closest country field to
+              // the state field is controlling it
+              return numMatchingItems(el.position, a.position) <
+                numMatchingItems(el.position, b.position)
+                ? 1
+                : -1;
+            })[0];
           if (field) {
             let value = fieldValues[field.servar.key] as string | string[];
             // Hacky patch for repeating country fields
