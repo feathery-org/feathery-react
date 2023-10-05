@@ -32,6 +32,7 @@ type DeprecatedOptions = {
 
 type InitOptions = {
   userId?: string;
+  cacheUserId?: boolean;
   collaboratorId?: string;
   preloadForms?: string[];
   userTracking?: 'cookie' | 'fingerprint';
@@ -130,7 +131,10 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
       if (!initState.userId) {
         initState.userId = cookieId;
         setCookie(cookieKey, cookieId);
-      } else if (initState.userId !== cookieId) {
+      } else if (
+        initState.userId !== cookieId &&
+        (options.cacheUserId ?? true)
+      ) {
         // If user ID is manually specified, override and save cookie
         setCookie(cookieKey, initState.userId);
       }
