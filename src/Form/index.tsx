@@ -115,7 +115,7 @@ import {
   getAuthIntegrationMetadata,
   isTerminalStepAuth
 } from '../auth/internal/utils';
-import Field from '../utils/Field';
+import Field, { flushFieldUpdates } from '../utils/Field';
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
@@ -642,6 +642,10 @@ function Form({
         }
       }
     }
+    // If any logic ran, then make sure any field updates are flushed to the BE
+    // at the end of the event handling.  Could be important on submit event for example.
+    if (logicRan) flushFieldUpdates();
+
     return logicRan;
   };
 
