@@ -514,7 +514,7 @@ export default class Client {
   runCustomRequest(
     method: string,
     url: string,
-    userData: Record<string, any>,
+    userData: Record<string, any> | any[],
     headers: Record<string, string>
   ) {
     const data = {

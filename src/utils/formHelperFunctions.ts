@@ -772,7 +772,7 @@ export function httpHelpers(client: any) {
     (method) =>
       (helpers[method] = (
         url: string,
-        data: Record<string, any>,
+        data: Record<string, any> | any[],
         headers: Record<string, string>
       ) => client.runCustomRequest(method, url, data, headers))
   );
