@@ -193,7 +193,8 @@ const Element = ({ node: el, form, flags }: any) => {
       elementProps: elementProps[servar.key],
       autoComplete: formSettings.autocomplete,
       rightToLeft: formSettings.rightToLeft,
-      disabled: el.properties.disabled || !fieldAllowedFromList(allowLists, el),
+      disabled:
+        el.properties.disabled || !fieldAllowedFromList(allowLists, servar.key),
       required
     };
 
