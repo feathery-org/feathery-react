@@ -31,10 +31,12 @@ export default function DropdownMultiField({
     labelMap[option] = label;
     return { value: option, label };
   });
-  const selectVal = fieldVal.map((val: any) => ({
-    label: labelMap[val],
-    value: val
-  }));
+  const selectVal = fieldVal
+    ? fieldVal.map((val: any) => ({
+        label: labelMap[val],
+        value: val
+      }))
+    : [];
 
   const disabled = element.properties.disabled ?? false;
 
