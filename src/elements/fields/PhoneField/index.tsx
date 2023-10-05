@@ -30,6 +30,7 @@ function PhoneField({
   fullNumber,
   elementProps = {},
   required = false,
+  disabled = false,
   editMode,
   onChange = () => {},
   onComplete = () => {},
@@ -153,7 +154,6 @@ function PhoneField({
   }, [triggerOnChange]);
 
   const triggerChange = () => setTriggerOnChange((prev) => !prev);
-  const disabled = element.properties.disabled ?? false;
 
   return (
     <div

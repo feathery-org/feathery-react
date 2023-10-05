@@ -12,6 +12,7 @@ function PasswordField({
   fieldLabel,
   elementProps = {},
   required = false,
+  disabled = false,
   editMode,
   rightToLeft,
   onChange = () => {},
@@ -28,8 +29,6 @@ function PasswordField({
   const [showPassword, setShowPassword] = useState(false);
 
   const servar = element.servar;
-  const disabled = element.properties.disabled ?? false;
-
   return (
     <div
       css={{

@@ -211,6 +211,7 @@ function CheckboxField({
   fieldVal = true,
   onChange = () => {},
   elementProps = {},
+  disabled = false,
   children
 }: any) {
   const styles = useMemo(
@@ -219,8 +220,6 @@ function CheckboxField({
   );
 
   const servar = element.servar;
-
-  const disabled = element.properties.disabled ?? false;
 
   return (
     <div

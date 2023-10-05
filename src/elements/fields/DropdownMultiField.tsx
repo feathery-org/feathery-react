@@ -11,6 +11,7 @@ export default function DropdownMultiField({
   fieldLabel,
   inlineError,
   required = false,
+  disabled = false,
   fieldVal = [],
   editMode,
   onChange = () => {},
@@ -37,8 +38,6 @@ export default function DropdownMultiField({
         value: val
       }))
     : [];
-
-  const disabled = element.properties.disabled ?? false;
 
   const hasTooltip = !!element.properties.tooltipText;
   const chevronPosition = hasTooltip ? 30 : 10;

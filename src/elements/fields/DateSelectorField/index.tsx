@@ -40,6 +40,7 @@ function DateSelectorField({
   fieldLabel,
   elementProps = {},
   required = false,
+  disabled = false,
   editMode,
   rightToLeft,
   onChange = () => {},
@@ -92,8 +93,6 @@ function DateSelectorField({
     error: inlineError
   });
   const [focused, setFocused] = useState(false);
-
-  const disabled = element.properties.disabled ?? false;
 
   let dateMask = servarMeta.display_format ? 'd/MM/yyyy' : 'MM/d/yyyy';
   const timeMask = servarMeta.time_format === '12hr' ? 'h:mm aa' : 'HH:mm';

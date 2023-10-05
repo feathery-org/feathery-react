@@ -11,6 +11,7 @@ function TextArea({
   fieldLabel,
   elementProps = {},
   required = false,
+  disabled = false,
   editMode,
   rightToLeft,
   onChange = () => {},
@@ -25,7 +26,6 @@ function TextArea({
     error: inlineError
   });
 
-  const disabled = element.properties.disabled ?? false;
   const servar = element.servar;
   return (
     <div

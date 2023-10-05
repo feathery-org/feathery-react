@@ -20,7 +20,8 @@ function SingleOtpInput({
   changeCodeAtFocus,
   focusPrevInput,
   focusNextInput,
-  shouldFocus
+  shouldFocus,
+  disabled
 }: any) {
   const input = useRef(null);
 
@@ -78,8 +79,6 @@ function SingleOtpInput({
       enableOnTags: ['INPUT']
     }
   );
-
-  const disabled = element.properties.disabled ?? false;
 
   return (
     <div
@@ -143,6 +142,7 @@ function OtpInput({
   onChange,
   onEnter,
   value,
+  disabled,
   inlineError
 }: any) {
   const [activeInput, setActiveInput] = useState(shouldFocus ? 0 : -1);
@@ -264,6 +264,7 @@ function OtpInput({
           focusPrevInput={focusPrevInput}
           focusNextInput={focusNextInput}
           shouldFocus={shouldFocus && activeInput > -1}
+          disabled={disabled}
         />
       );
     }
@@ -295,6 +296,7 @@ function PinInputField({
   onChange = () => {},
   onEnter = () => {},
   elementProps = {},
+  disabled = false,
   children
 }: any) {
   return (
@@ -316,6 +318,7 @@ function PinInputField({
         onChange={onChange}
         onEnter={onEnter}
         inlineError={inlineError}
+        disabled={disabled}
       />
     </div>
   );

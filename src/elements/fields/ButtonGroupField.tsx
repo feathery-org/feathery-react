@@ -11,6 +11,7 @@ function ButtonGroupField({
   editMode,
   onClick = () => {},
   elementProps = {},
+  disabled = false,
   children
 }: any) {
   const selectedOptMap = useMemo(
@@ -35,6 +36,7 @@ function ButtonGroupField({
       css={{
         position: 'relative',
         width: '100%',
+        pointerEvents: editMode || disabled ? 'none' : 'auto',
         ...responsiveStyles.getTarget('fc')
       }}
     >
@@ -61,15 +63,15 @@ function ButtonGroupField({
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
-                cursor: editMode ? 'default' : 'pointer',
                 boxSizing: 'border-box',
                 ...responsiveStyles.getTarget('field'),
-                '&:hover': editMode
-                  ? {}
-                  : {
-                      ...responsiveStyles.getTarget('hover'),
-                      ...borderStyles.hover
-                    },
+                '&:hover':
+                  editMode || disabled
+                    ? {}
+                    : {
+                        ...responsiveStyles.getTarget('hover'),
+                        ...borderStyles.hover
+                      },
                 '&&': selectedOptMap[opt]
                   ? {
                       ...responsiveStyles.getTarget('active'),

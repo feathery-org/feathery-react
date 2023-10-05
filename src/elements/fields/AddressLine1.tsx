@@ -19,6 +19,7 @@ function AddressLine1({
   responsiveStyles,
   fieldLabel,
   elementProps = {},
+  disabled = false,
   editMode,
   rightToLeft,
   onSelect = () => {},
@@ -38,8 +39,6 @@ function AddressLine1({
     element,
     error: inlineError
   });
-
-  const disabled = element.properties.disabled ?? false;
 
   return (
     <div

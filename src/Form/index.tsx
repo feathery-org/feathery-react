@@ -241,6 +241,9 @@ function Form({
   const [fieldKeys, setFieldKeys] = useState<string[]>([]);
   const [hiddenFieldKeys, setHiddenFieldKeys] = useState<string[]>([]);
 
+  // Array of 2 elements. First is field whitelist, second is field blacklist
+  const [allowLists, setAllowLists] = useState<any[]>([null, null]);
+
   const [logicRules, setLogicRules] = useState<LogicRule[]>([]);
   const [inlineErrors, setInlineErrors] = useState<
     Record<string, { message: string; index: number }>
@@ -831,6 +834,11 @@ function Form({
         // @ts-expect-error TS(2345): Argument of type 'Promise<any[]>' is not assignabl... Remove this comment to see the full error message
         .fetchSession(formPromise, true)
         .then(([session, steps]) => {
+          if (!session) {
+            setFormSettings({ ...formSettings, formOff: true });
+            return;
+          }
+
           if (!session.track_location && trackHashes.current) {
             // Clear URL hash on new session if not tracking location
             history.replace(location.pathname + location.search);
@@ -840,6 +848,10 @@ function Form({
 
           setFieldKeys(session.servars);
           setHiddenFieldKeys(session.hidden_fields);
+          setAllowLists([
+            session.collaborator?.whitelist,
+            session.collaborator?.blacklist
+          ]);
 
           saveInitialValuesAndUrlParams({
             updateFieldValues,
@@ -1620,6 +1632,7 @@ function Form({
     formRef,
     setCardElement,
     visiblePositions,
+    allowLists,
     calendlyUrl: integrations?.calendly?.metadata.api_key
   };
 

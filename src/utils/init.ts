@@ -32,6 +32,7 @@ type DeprecatedOptions = {
 
 type InitOptions = {
   userId?: string;
+  collaboratorId?: string;
   preloadForms?: string[];
   userTracking?: 'cookie' | 'fingerprint';
   language?: string;
@@ -60,6 +61,7 @@ const initState: InitState = {
   userTracking: 'cookie',
   sdkKey: '',
   userId: '',
+  collaboratorId: '',
   overrideUserId: false,
   language: '',
   preloadForms: [],
@@ -107,6 +109,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   }
   if (options.userTracking) initState.userTracking = options.userTracking;
   if (options.theme) initState.theme = options.theme;
+  if (options.collaboratorId) initState.collaboratorId = options.collaboratorId;
   if (options.language) {
     const langPieces = options.language.split(',');
     initState.language = langPieces

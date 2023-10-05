@@ -102,3 +102,10 @@ export function handleCheckboxGroupChange(
     updateFieldValues({ [servar.key]: newValue });
   }
 }
+
+export function fieldAllowedFromList(allowLists: any[], fieldKey: string) {
+  const [whitelist, blacklist] = allowLists;
+  if (whitelist && !(fieldKey in whitelist)) return false;
+  if (blacklist && fieldKey in blacklist) return false;
+  return true;
+}

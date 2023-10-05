@@ -12,6 +12,7 @@ export default function DropdownField({
   fieldLabel,
   inlineError,
   required = false,
+  disabled = false,
   fieldVal = '',
   countryCode = '',
   editMode,
@@ -69,7 +70,6 @@ export default function DropdownField({
       );
     });
   }
-  const disabled = element.properties.disabled ?? false;
 
   const hasTooltip = !!element.properties.tooltipText;
   const chevronPosition = hasTooltip ? 30 : 10;

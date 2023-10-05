@@ -113,6 +113,7 @@ function ColorPickerField({
   editMode,
   onChange = () => {},
   elementProps = {},
+  disabled = false,
   children
 }: any) {
   const [showPicker, setShowPicker] = useState(false);
@@ -122,7 +123,7 @@ function ColorPickerField({
         maxWidth: '100%',
         width: '100%',
         position: 'relative',
-        pointerEvents: editMode ? 'none' : 'auto',
+        pointerEvents: editMode || disabled ? 'none' : 'auto',
         ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
@@ -137,7 +138,8 @@ function ColorPickerField({
           ...responsiveStyles.getTarget('field')
         }}
         onClick={() => {
-          if (!editMode) setShowPicker((showPicker) => !showPicker);
+          if (!editMode && !disabled)
+            setShowPicker((showPicker) => !showPicker);
         }}
       />
       {showPicker ? (

@@ -333,6 +333,7 @@ export default class Client {
     await (block ? initFormsPromise : Promise.resolve());
     const {
       userId,
+      collaboratorId,
       overrideUserId,
       formSessions,
       fieldValuesInitialized: noData
@@ -350,6 +351,7 @@ export default class Client {
       override: overrideUserId
     };
     if (userId) params.fuser_key = userId;
+    if (collaboratorId) params.collaborator = collaboratorId;
     if (authState.authId) params.auth_id = authState.authId;
     if (noData) params.no_data = 'true';
     // @ts-expect-error TS(2322): Type 'string' is not assignable to type '{ form_ke... Remove this comment to see the full error message
@@ -365,6 +367,10 @@ export default class Client {
         reason + ' ' + userId + ' ' + this.formKey + response.status
       );
     });
+
+    // Turn form off if invalid collaborator for submission
+    if (session.collaborator?.invalid) return [];
+
     // Auth session only contains new field data
     const authSession = await initializeIntegrations(
       session.integrations,
