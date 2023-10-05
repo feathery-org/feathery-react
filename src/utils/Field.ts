@@ -321,15 +321,25 @@ export function parseUserVal(userVal: FeatheryFieldTypes, key: string) {
 // Debouncing the update of field values to avoid unnecessary rerenders and BE updates
 const updateFieldKeys: string[] = [];
 
-const notifyFieldsChanged = debounce(() => {
-  const fieldValuesToUpdate = updateFieldKeys.reduce(
-    (newObj, key) =>
-      key in fieldValues ? { ...newObj, [key]: fieldValues[key] } : newObj,
-    {}
-  );
-  // update BE
-  defaultClient.submitCustom(fieldValuesToUpdate);
-  updateFieldKeys.length = 0;
+export function flushFieldUpdates() {
+  if (updateFieldKeys.length) {
+    const fieldValuesToUpdate = updateFieldKeys.reduce(
+      (newObj, key) =>
+        key in fieldValues ? { ...newObj, [key]: fieldValues[key] } : newObj,
+      {}
+    );
+    // update BE
+    defaultClient.submitCustom(fieldValuesToUpdate);
+    updateFieldKeys.length = 0;
 
-  rerenderAllForms();
+    rerenderAllForms();
+  }
+}
+
+// Debounce the field updates to avoid unnecessary rerenders and BE updates.
+// Note: Even though we flushFieldUpdates at the end of event handling, this
+// debounce is still needed for long running async logic rules that could
+// complete after the event handling is done.
+const notifyFieldsChanged = debounce(() => {
+  flushFieldUpdates();
 }, 100);
