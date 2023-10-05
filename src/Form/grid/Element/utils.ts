@@ -105,7 +105,7 @@ export function handleCheckboxGroupChange(
 
 export function fieldAllowedFromList(allowLists: any[], fieldKey: string) {
   const [whitelist, blacklist] = allowLists;
-  if (whitelist && !(fieldKey in whitelist)) return false;
-  if (blacklist && fieldKey in blacklist) return false;
+  if (whitelist && !whitelist.includes(fieldKey)) return false;
+  if (blacklist && blacklist.includes(fieldKey)) return false;
   return true;
 }
