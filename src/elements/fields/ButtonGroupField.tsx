@@ -106,9 +106,12 @@ function ButtonGroupField({
             </div>
           );
         })}
-        {/* This input must always be rendered even so we can set field errors */}
+        {/* This input must always be rendered so we can set field errors */}
         <input
           id={servar.key}
+          // Set to button type so keyboard doesn't pop up on mobile
+          // when field error appears
+          type='button'
           style={{
             position: 'absolute',
             bottom: 0,
