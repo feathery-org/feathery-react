@@ -58,8 +58,7 @@ const Element = ({ node: el, form, flags }: any) => {
     formRef,
     focusRef,
     setCardElement,
-    visiblePositions,
-    allowLists
+    visiblePositions
   } = form;
 
   const basicProps: Record<string, any> = {
@@ -193,8 +192,7 @@ const Element = ({ node: el, form, flags }: any) => {
       elementProps: elementProps[servar.key],
       autoComplete: formSettings.autocomplete,
       rightToLeft: formSettings.rightToLeft,
-      disabled:
-        el.properties.disabled || !fieldAllowedFromList(allowLists, servar.key),
+      disabled: el.properties.disabled,
       required
     };
 

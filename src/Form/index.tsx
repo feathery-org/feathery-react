@@ -120,6 +120,7 @@ import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
 import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
+import { fieldAllowedFromList } from './grid/Element/utils';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -777,7 +778,12 @@ function Form({
     callbackRef.current = new CallbackQueue(newStep, setLoaders);
     // Hydrate field descriptions
     newStep.servar_fields.forEach((field: any) => {
-      field.servar.name = replaceTextVariables(field.servar.name, field.repeat);
+      const servar = field.servar;
+      servar.name = replaceTextVariables(servar.name, field.repeat);
+      const disabled = !fieldAllowedFromList(allowLists, servar.key);
+      const props = field.properties;
+      props.disabled = props.disabled || disabled;
+      if (servar.required && props.disabled) servar.required = false;
     });
     // setActiveStep, apparently, must go after setting the callbackRef
     // because it triggers a new render, before this fn finishes execution,
@@ -1644,7 +1650,6 @@ function Form({
     formRef,
     setCardElement,
     visiblePositions,
-    allowLists,
     calendlyUrl: integrations?.calendly?.metadata.api_key
   };
 
