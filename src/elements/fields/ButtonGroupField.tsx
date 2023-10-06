@@ -109,9 +109,9 @@ function ButtonGroupField({
         {/* This input must always be rendered so we can set field errors */}
         <input
           id={servar.key}
-          // Set to button type so keyboard doesn't pop up on mobile
+          // Set to file type so keyboard doesn't pop up on mobile
           // when field error appears
-          type='button'
+          type='file'
           style={{
             position: 'absolute',
             bottom: 0,
