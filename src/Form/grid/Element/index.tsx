@@ -15,7 +15,6 @@ import { justInsert, justRemove } from '../../../utils/array';
 import { fieldValues } from '../../../utils/init';
 import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 import {
-  fieldAllowedFromList,
   getInlineError,
   handleCheckboxGroupChange,
   handleOtherStateChange,
@@ -58,14 +57,16 @@ const Element = ({ node: el, form, flags }: any) => {
     formRef,
     focusRef,
     setCardElement,
-    visiblePositions
+    visiblePositions,
+    featheryContext
   } = form;
 
   const basicProps: Record<string, any> = {
     componentOnly: false,
     element: el,
     elementProps: elementProps[el.id],
-    inlineError: getInlineError(el, inlineErrors)
+    inlineError: getInlineError(el, inlineErrors),
+    featheryContext
   };
   const fieldId = el.servar?.key ?? el.id;
   if (elementOnView && onViewElements.includes(fieldId))

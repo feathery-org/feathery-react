@@ -5,6 +5,7 @@ import useTextEdit from './useTextEdit';
 import { openTab } from '../../utils/browser';
 import { fieldValues, initInfo } from '../../utils/init';
 import { ACTION_NEXT } from '../../utils/elementActions';
+import jsonpath from 'jsonpath';
 
 export const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 
@@ -46,6 +47,29 @@ const applyNewDelta = (
     );
 };
 
+function TextNode({
+  index,
+  cursor,
+  onClick = () => {},
+  fontStyles,
+  text
+}: any) {
+  return (
+    <span
+      data-index={index}
+      css={{
+        whiteSpace: 'pre-wrap',
+        overflowWrap: 'break-word',
+        cursor,
+        ...fontStyles
+      }}
+      onClick={onClick}
+    >
+      {text}
+    </span>
+  );
+}
+
 function TextNodes({
   element,
   responsiveStyles,
@@ -55,7 +79,8 @@ function TextNodes({
   disabled = false,
   focused = false,
   textSpanOnClick = () => {},
-  textCallbacks = {}
+  textCallbacks = {},
+  featheryContext = {}
 }: any) {
   const { spanRef, editableProps } = useTextEdit({
     editable: editMode === 'editable',
@@ -82,6 +107,24 @@ function TextNodes({
       });
     } else if (actions.length > 0) delta = applyNewDelta(delta);
 
+    // If text_mode property is set to 'data', then we don't want to render the text_formatted
+    // property, instead we the text from the data element specified in the text_source property
+    let textFromData = null;
+
+    if (element.properties.text_mode === 'data') {
+      let textSource = element.properties.text_source ?? '';
+      // convert to valid jsonpath
+      if (textSource.startsWith('feathery'))
+        textSource = textSource.replace('feathery', '$');
+      try {
+        textFromData = jsonpath.value(featheryContext, textSource);
+      } catch (e) {
+        // Ignoring errors due to things like unset text_source, deleted products etc.
+      }
+    }
+    const textIsFromData =
+      element.properties.text_mode === 'data' && textFromData !== null;
+
     return (
       <span
         id={`span-${element.id}`}
@@ -89,49 +132,55 @@ function TextNodes({
         {...editableProps}
         key={text}
       >
-        {delta
-          .filter((op) => !!op.insert)
-          .map((op, i) => {
-            const attrs = op.attributes || {};
-            let onClick = () => {};
-            let cursor = 'inherit';
-            if (!editMode && !disabled) {
-              if (attrs.font_link) {
-                const link = replaceTextVariables(
-                  attrs.font_link,
-                  element.repeat
-                );
-                onClick = () => openTab(link);
-                cursor = 'pointer';
-              } else if (
-                attrs.fullSpan ||
-                (isNum(attrs.start) && isNum(attrs.end))
-              ) {
-                onClick = () => textSpanOnClick(attrs.start, attrs.end);
-                cursor = 'pointer';
+        {textIsFromData ? (
+          <TextNode
+            index={0}
+            cursor='inherit'
+            fontStyles={responsiveStyles.getRichFontStyles(
+              element.properties?.text_formatted[0]?.attributes ?? {}
+            )}
+            text={textFromData}
+          />
+        ) : (
+          delta
+            .filter((op) => !!op.insert)
+            .map((op, i) => {
+              const attrs = op.attributes || {};
+              let onClick = () => {};
+              let cursor = 'inherit';
+              if (!editMode && !disabled) {
+                if (attrs.font_link) {
+                  const link = replaceTextVariables(
+                    attrs.font_link,
+                    element.repeat
+                  );
+                  onClick = () => openTab(link);
+                  cursor = 'pointer';
+                } else if (
+                  attrs.fullSpan ||
+                  (isNum(attrs.start) && isNum(attrs.end))
+                ) {
+                  onClick = () => textSpanOnClick(attrs.start, attrs.end);
+                  cursor = 'pointer';
+                }
               }
-            }
 
-            const text = editMode
-              ? (op.insert as string)
-              : replaceTextVariables(op.insert as string, element.repeat);
+              const text = editMode
+                ? (op.insert as string)
+                : replaceTextVariables(op.insert as string, element.repeat);
 
-            return (
-              <span
-                key={i}
-                data-index={i}
-                css={{
-                  whiteSpace: 'pre-wrap',
-                  overflowWrap: 'break-word',
-                  cursor,
-                  ...responsiveStyles.getRichFontStyles(attrs)
-                }}
-                onClick={onClick}
-              >
-                {text}
-              </span>
-            );
-          })}
+              return (
+                <TextNode
+                  key={i}
+                  index={i}
+                  cursor={cursor}
+                  fontStyles={responsiveStyles.getRichFontStyles(attrs)}
+                  onClick={onClick}
+                  text={text}
+                />
+              );
+            })
+        )}
       </span>
     );
   }, [element, responsiveStyles, editableProps]);

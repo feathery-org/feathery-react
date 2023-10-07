@@ -107,6 +107,7 @@ export const getAllFields = (
   hiddenFieldKeys.forEach((key) => {
     fields[key] = new Field(key, formUuid, true);
   });
+
   return fields;
 };
 
