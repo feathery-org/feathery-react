@@ -120,8 +120,8 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     'loader',
     ['height', 'height_unit'],
     (a: any, b: any) => {
-      const thirdHeight = Math.round(a / 3);
-      const dimension = `${thirdHeight}${b}`;
+      const halfHeight = Math.round(a / 2);
+      const dimension = `${halfHeight}${b}`;
       return { width: dimension, height: dimension };
     }
   );

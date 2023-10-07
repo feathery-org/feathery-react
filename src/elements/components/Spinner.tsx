@@ -47,6 +47,8 @@ function FeatherySpinner() {
         fontSize: `calc(${spinnerSize} * 1em)`,
         width: '1em',
         height: '1em',
+        maxWidth: '100%',
+        maxHeight: '100%',
         borderRadius: '50%'
       }}
     >
