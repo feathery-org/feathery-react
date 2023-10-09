@@ -8,8 +8,7 @@ import {
 import DangerouslySetHTMLContent from '../../utils/DangerouslySetHTMLContent';
 import { Container } from './Container';
 import { dynamicImport } from '../../integrations/utils';
-import { encodeGetParams } from '../../utils/primitives';
-import { fieldValues } from '../../utils/init';
+import { transformCalendlyParams } from '../../integrations/calendly';
 
 const Grid = ({ step, form, viewport }: any) => {
   if (!step || !form.visiblePositions) return null;
@@ -69,14 +68,18 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
     });
 
     if (props.embed_calendly && form.calendly?.api_key) {
-      const params = Object.entries(form.calendly.prefill_info)
-        .map(([cKey, { key }]: any[]) => [cKey, fieldValues[key]])
-        .reduce((cur, [cKey, val]) => {
-          return { ...cur, [cKey]: val };
-        }, {});
       let url = form.calendly.api_key;
       if (!url.endsWith('/')) url += '/';
-      url += '?' + encodeGetParams(params);
+      const prefillParams = transformCalendlyParams(form.calendly.prefill_info);
+      if (prefillParams) url += '?' + prefillParams;
+      const customParams = transformCalendlyParams(
+        form.calendly.custom_questions
+      );
+      if (customParams) {
+        if (prefillParams) url += '&' + customParams;
+        else url += '?' + customParams;
+      }
+
       children.push(
         <div
           key='calendly-component'
