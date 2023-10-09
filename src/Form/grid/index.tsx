@@ -8,6 +8,8 @@ import {
 import DangerouslySetHTMLContent from '../../utils/DangerouslySetHTMLContent';
 import { Container } from './Container';
 import { dynamicImport } from '../../integrations/utils';
+import { encodeGetParams } from '../../utils/primitives';
+import { fieldValues } from '../../utils/init';
 
 const Grid = ({ step, form, viewport }: any) => {
   if (!step || !form.visiblePositions) return null;
@@ -33,7 +35,7 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
 
   useEffect(() => {
     // Script must be installed *after* Calendly div is rendered
-    if (props.embed_calendly && form.calendlyUrl) {
+    if (props.embed_calendly && form.calendly) {
       dynamicImport('https://assets.calendly.com/assets/external/widget.js');
     }
   }, []);
@@ -66,12 +68,20 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
       );
     });
 
-    if (props.embed_calendly && form.calendlyUrl) {
+    if (props.embed_calendly && form.calendly?.api_key) {
+      const params = Object.entries(form.calendly.prefill_info)
+        .map(([cKey, { key }]: any[]) => [cKey, fieldValues[key]])
+        .reduce((cur, [cKey, val]) => {
+          return { ...cur, [cKey]: val };
+        }, {});
+      let url = form.calendly.api_key;
+      if (!url.endsWith('/')) url += '/';
+      url += '?' + encodeGetParams(params);
       children.push(
         <div
           key='calendly-component'
           className='calendly-inline-widget'
-          data-url={form.calendlyUrl}
+          data-url={url}
           style={{
             width: '100%',
             height: '100%'
