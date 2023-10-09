@@ -818,7 +818,8 @@ function Form({
           setSteps(steps);
           if (res.completion_behavior === 'redirect' && res.redirect_url)
             initState.redirectCallbacks[_internalId] = () => {
-              featheryWindow().location.href = res.redirect_url;
+              const url = replaceTextVariables(res.redirect_url, 0);
+              featheryWindow().location.href = url;
             };
           if (res.save_url_params) saveUrlParamsFormSetting = true;
           setFormSettings(mapFormSettingsResponse(res));
