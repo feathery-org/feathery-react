@@ -3,7 +3,7 @@ import { isNum, stringifyWithNull } from '../../utils/primitives';
 import Delta from 'quill-delta';
 import useTextEdit from './useTextEdit';
 import { openTab } from '../../utils/browser';
-import { fieldValues } from '../../utils/init';
+import { fieldValues, initInfo } from '../../utils/init';
 import { ACTION_NEXT } from '../../utils/elementActions';
 
 export const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
@@ -13,6 +13,7 @@ export function replaceTextVariables(text: string, repeat: any) {
 
   return text.replace(TEXT_VARIABLE_PATTERN, (pattern: any) => {
     const pStr = pattern.slice(2, -2);
+    if (pStr === 'feathery_user_id') return initInfo().userId;
     if (pStr in fieldValues) {
       const pVal = fieldValues[pStr];
       if (Array.isArray(pVal)) {
