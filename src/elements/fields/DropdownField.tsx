@@ -18,6 +18,7 @@ export default function DropdownField({
   editMode,
   rightToLeft,
   onChange = () => {},
+  setRef = () => {},
   elementProps = {},
   children
 }: any) {
@@ -136,6 +137,7 @@ export default function DropdownField({
           onChange={onChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
+          ref={setRef}
         >
           <option key='' value='' />
           {options}

@@ -364,6 +364,9 @@ const Element = ({ node: el, form, flags }: any) => {
               onChange({ submitData: autosubmit && val });
             }}
             countryCode={countryCode}
+            setRef={(ref: any) => {
+              if (firstField) focusRef.current = ref;
+            }}
           />
         );
       case 'dropdown_multi':
