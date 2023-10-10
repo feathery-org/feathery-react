@@ -379,8 +379,8 @@ export default class Client {
 
     const trueSession = { ...session, ...authSession };
     if (!noData) {
-      // Randomize user id if tracking disabled
-      if (!trueSession.track_users) initState.userId = uuidv4();
+      // If tracking disabled, update user id (randomly generated on backend)
+      if (trueSession.new_user_id) initState.userId = trueSession.new_user_id;
       updateSessionValues(trueSession);
     }
     // submitAuthInfo can set formCompleted before the session is set, so we don't want to override completed flags
