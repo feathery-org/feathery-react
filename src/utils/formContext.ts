@@ -108,9 +108,7 @@ export const getFormContext = (formUuid: string) => {
       console.warn(
         'setFieldOptions is deprecated.  Please use the fields object instead and set the options directly on individual fields.'
       );
-      const { steps, updateFieldOptions, currentStep } =
-        internalState[formUuid];
-      return updateFieldOptions(steps, currentStep)(newOptions);
+      return internalState[formUuid].updateFieldOptions(newOptions);
     },
     // @deprecated
     // TODO: remove when support setFieldOptions is dropped

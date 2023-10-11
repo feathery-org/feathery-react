@@ -1,4 +1,4 @@
-import { FieldOptions } from './formHelperFunctions';
+import { FieldOptions, FieldStyles } from './formHelperFunctions';
 import Field from './Field';
 
 interface FormInternalState {
@@ -20,10 +20,8 @@ interface FormInternalState {
   >;
   setUserProgress: React.Dispatch<React.SetStateAction<null>>;
   steps: any;
-  updateFieldOptions: (
-    stepData: any,
-    loadStep?: null
-  ) => (newOptions: FieldOptions) => void;
+  updateFieldOptions: (newOptions: FieldOptions) => void;
+  updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => void;
   setFieldErrors: (
     errors: Record<string, string | { index: number; message: string }>
   ) => void;

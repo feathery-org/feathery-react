@@ -302,6 +302,19 @@ export function updateStepFieldOptions(step: any, newOptions: FieldOptions) {
   });
 }
 
+export type FieldStyles = Record<string, any>;
+
+export function updateStepFieldStyles(
+  step: any,
+  fieldKey: string,
+  newStyles: FieldStyles
+) {
+  step.servar_fields.forEach((field: any) => {
+    const servar = field.servar;
+    if (servar.key === fieldKey) Object.assign(field.styles, newStyles);
+  });
+}
+
 export const getAllElements = (step: any) => {
   return [
     ...step.progress_bars.map((e: any) => [e, 'progress_bar']),
