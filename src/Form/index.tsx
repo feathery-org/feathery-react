@@ -38,7 +38,9 @@ import {
   updateStepFieldOptions,
   mapFormSettingsResponse,
   saveInitialValuesAndUrlParams,
-  httpHelpers
+  httpHelpers,
+  FieldStyles,
+  updateStepFieldStyles
 } from '../utils/formHelperFunctions';
 import {
   getHideIfReferences,
@@ -485,17 +487,6 @@ function Form({
     return true;
   };
 
-  const updateFieldOptions =
-    (stepData: any, curStep: any) => (newOptions: FieldOptions) => {
-      Object.values(stepData).forEach((step) =>
-        updateStepFieldOptions(step, newOptions)
-      );
-      setSteps(JSON.parse(JSON.stringify(stepData)));
-
-      updateStepFieldOptions(curStep, newOptions);
-      setActiveStep(JSON.parse(JSON.stringify(curStep)));
-    };
-
   const eventCallbackMap: Record<string, any> = {
     change: onChange,
     load: onLoad,
@@ -715,7 +706,24 @@ function Form({
         setInlineErrors,
         setUserProgress,
         steps,
-        updateFieldOptions,
+        updateFieldOptions: (newOptions: FieldOptions) => {
+          Object.values(steps).forEach((step) =>
+            updateStepFieldOptions(step, newOptions)
+          );
+          setSteps(JSON.parse(JSON.stringify(steps)));
+
+          updateStepFieldOptions(newStep, newOptions);
+          setActiveStep(JSON.parse(JSON.stringify(newStep)));
+        },
+        updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => {
+          Object.values(steps).forEach((step) =>
+            updateStepFieldStyles(step, fieldKey, newStyles)
+          );
+          setSteps(JSON.parse(JSON.stringify(steps)));
+
+          updateStepFieldStyles(newStep, fieldKey, newStyles);
+          setActiveStep(JSON.parse(JSON.stringify(newStep)));
+        },
         setFieldErrors: (
           errors: Record<string, string | { index: number; message: string }>
         ) => {

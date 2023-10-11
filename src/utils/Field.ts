@@ -4,7 +4,8 @@ import {
   rerenderAllForms,
   OptionType,
   getDefaultFieldValue,
-  getDefaultFormFieldValue
+  getDefaultFormFieldValue,
+  FieldStyles
 } from './formHelperFunctions';
 import {
   evalComparisonRule,
@@ -182,9 +183,13 @@ export default class Field {
   // you cannot modify the options directly in-place.
   // You need to explicitly set options to change.
   set options(newOptions: OptionType[]) {
-    const { steps, updateFieldOptions, currentStep } =
-      internalState[this._formUuid];
-    updateFieldOptions(steps, currentStep)({ [this._fieldKey]: newOptions });
+    const context = internalState[this._formUuid];
+    context.updateFieldOptions({ [this._fieldKey]: newOptions });
+  }
+
+  setStyles(newStyles: FieldStyles) {
+    const context = internalState[this._formUuid];
+    context.updateFieldStyles(this._fieldKey, newStyles);
   }
 
   // errors for a field - write only
