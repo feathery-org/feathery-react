@@ -1,6 +1,5 @@
 import { FieldOptions } from './formHelperFunctions';
 import Field from './Field';
-import co from '../elements/components/data/states/co';
 
 interface FormInternalState {
   currentStep: any;

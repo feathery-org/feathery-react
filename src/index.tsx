@@ -48,8 +48,6 @@ const Feathery = {
   updateUserId,
   setFieldValues,
   getFieldValues,
-  // TODO: deprecate
-  getAllValues: getFieldValues,
   renderAt
 };
 

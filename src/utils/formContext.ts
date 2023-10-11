@@ -3,7 +3,13 @@ import {
   FieldOptions,
   formatAllFormFields
 } from './formHelperFunctions';
-import { setFieldValues, getFieldValues, initInfo, FieldValues } from './init';
+import {
+  setFieldValues,
+  getFieldValues,
+  initInfo,
+  FieldValues,
+  updateUserId
+} from './init';
 import internalState, { setFormInternalState } from './internalState';
 import { validateElements } from './validation';
 
@@ -38,6 +44,7 @@ export const getFormContext = (formUuid: string) => {
     setProgress: (val: any) => {
       return internalState[formUuid].setUserProgress(val);
     },
+    updateUserId,
     goToStep: (stepKey: any) => {
       const { currentStep, history, steps } = internalState[formUuid];
       changeStep(stepKey, currentStep.key, steps, history);
