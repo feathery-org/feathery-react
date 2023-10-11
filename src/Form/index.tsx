@@ -215,7 +215,6 @@ function Form({
 
   const [autoValidate, setAutoValidate] = useState(false);
 
-  const [productionEnv, setProductionEnv] = useState(true);
   const [steps, setSteps] = useState<Record<string, any>>({});
   const [activeStep, setActiveStep] = useState<any>(null);
   const [stepKey, setStepKey] = useState('');
@@ -520,19 +519,19 @@ function Form({
   const handleFormComplete = async () => {
     // Send form completion message for webkit
     if (featheryWindow().webkit?.messageHandlers?.feathery) {
-      if (!productionEnv) console.log('Webkit event sent');
+      if (initState.isTestEnv) console.log('Webkit event sent');
       featheryWindow().webkit.messageHandlers.feathery.postMessage(
         'Form completed'
       );
     }
     // Send form completion message for React Native Webview
     if (featheryWindow().ReactNativeWebView) {
-      if (!productionEnv) console.log('React Native Webview event sent');
+      if (initState.isTestEnv) console.log('React Native Webview event sent');
       featheryWindow().ReactNativeWebView.postMessage('Form completed');
     }
     // Send form completion message for Android Webview
     if (global.FeatheryInterface) {
-      if (!productionEnv) console.log('Android Webview event sent');
+      if (initState.isTestEnv) console.log('Android Webview event sent');
       global.FeatheryInterface.onComplete();
     }
     await runUserLogic('form_complete');
@@ -678,7 +677,7 @@ function Form({
     const nextStep = getNextAuthStep(newStep);
     if (
       nextStep !== '' &&
-      productionEnv &&
+      !initState.isTestEnv &&
       changeStep(nextStep, newKey, steps, history)
     )
       return;
@@ -844,7 +843,6 @@ function Form({
             setViewElements(newViewElements);
           }
 
-          setProductionEnv(res.production);
           if (res.production) installRecaptcha(steps);
           return steps;
         });
@@ -1300,7 +1298,7 @@ function Form({
         setInlineErrors,
         triggerErrors: true
       });
-    if (button.properties.captcha_verification && productionEnv) {
+    if (button.properties.captcha_verification && !initState.isTestEnv) {
       const invalid = await verifyRecaptcha(client);
       if (invalid) {
         setButtonError('Submission failed');
@@ -1682,7 +1680,8 @@ function Form({
   // Form is turned off
   if (formSettings.formOff) return <FormOff showCTA={formSettings.showBrand} />;
   else if (anyFinished) {
-    if (!completeState && !productionEnv) console.log('Form has been hidden');
+    if (!completeState && initState.isTestEnv)
+      console.log('Form has been hidden');
     return completeState;
   } else if (!activeStep) return stepLoader;
 
@@ -1717,7 +1716,7 @@ function Form({
             onClick={() => popupOptions.onHide && popupOptions.onHide()}
           />
         )}
-        {!productionEnv && (
+        {initState.isTestEnv && (
           <DevNavBar
             allSteps={steps}
             curStep={activeStep}

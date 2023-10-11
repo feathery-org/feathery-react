@@ -6,9 +6,9 @@ import {
 import {
   setFieldValues,
   getFieldValues,
-  initInfo,
   FieldValues,
-  updateUserId
+  updateUserId,
+  initState
 } from './init';
 import internalState, { setFormInternalState } from './internalState';
 import { validateElements } from './validation';
@@ -31,7 +31,7 @@ export const getFormContext = (formUuid: string) => {
   }
 
   return {
-    userId: initInfo().userId,
+    userId: initState.userId,
     fields: internalState[formUuid]?.fields,
     setFormCompletion: (flag: boolean) => {
       const { client, currentStep } = internalState[formUuid];
@@ -49,6 +49,7 @@ export const getFormContext = (formUuid: string) => {
       const { currentStep, history, steps } = internalState[formUuid];
       changeStep(stepKey, currentStep.key, steps, history);
     },
+    isTestForm: () => initState.isTestEnv,
     isLastStep: () => {
       const step = internalState[formUuid].currentStep;
       return step.next_conditions.length === 0;

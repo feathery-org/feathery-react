@@ -52,6 +52,7 @@ type InitState = {
   renderCallbacks: Record<string, Record<string, any>>;
   remountCallbacks: Record<string, any>;
   defaultErrors: Record<string, string>;
+  isTestEnv: boolean;
   theme: string;
 } & Omit<InitOptions, keyof DeprecatedOptions>;
 
@@ -74,6 +75,7 @@ const initState: InitState = {
   redirectCallbacks: {},
   renderCallbacks: {},
   remountCallbacks: {},
+  isTestEnv: false,
   theme: ''
 };
 let fieldValues: FieldValues = {};

@@ -314,6 +314,8 @@ export default class Client {
         delete res.data;
         this._loadFormPackages(res);
       }
+      initState.defaultErrors = res.default_errors;
+      initState.isTestEnv = !res.production;
       return res;
     });
   }
@@ -323,7 +325,6 @@ export default class Client {
     // If form is disabled, data will equal `null`
     if (!res.steps) return { steps: [], formOff: true };
     this.version = res.version;
-    initState.defaultErrors = res.default_errors;
     this.setDefaultFormValues({ steps: res.steps, additionalValues: initVals });
     return res;
   }
