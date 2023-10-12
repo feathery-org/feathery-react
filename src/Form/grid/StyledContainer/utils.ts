@@ -1,3 +1,4 @@
+import { featheryDoc } from '../../../utils/browser';
 import { getPxValue, isPx } from '../../../utils/hydration';
 
 /**
@@ -221,4 +222,21 @@ export const resizeFitContainer = (div: any) => {
   // Set the maxWidth to the calculated width of it's children and the width to 100% - total margin
   div.style.maxWidth = `${childrenWidth}px`;
   div.style.width = `calc(100% - ${totalMargin}px)`;
+};
+
+export const whichTransitionEvent = () => {
+  let t;
+  const el = featheryDoc().createElement('fakeelement');
+  const transitions: any = {
+    transition: 'transitionend',
+    OTransition: 'oTransitionEnd',
+    MozTransition: 'transitionend',
+    WebkitTransition: 'webkitTransitionEnd'
+  };
+
+  for (t in transitions) {
+    if (el.style[t] !== undefined) {
+      return transitions[t];
+    }
+  }
 };
