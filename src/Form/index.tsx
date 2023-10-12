@@ -525,6 +525,9 @@ function Form({
       if (initState.isTestEnv) console.log('Android Webview event sent');
       global.FeatheryInterface.onComplete();
     }
+
+    trackEvent(integrations, 'FeatheryFormComplete', '', formName);
+
     await runUserLogic('form_complete');
   };
 
@@ -780,7 +783,7 @@ function Form({
     setCurDepth(curDepth);
     setMaxDepth(maxDepth);
 
-    trackEvent('FeatheryStepLoad', newKey, formName);
+    trackEvent(integrations, 'FeatheryStepLoad', newKey, formName);
 
     callbackRef.current = new CallbackQueue(newStep, setLoaders);
     // Hydrate field descriptions
@@ -1071,7 +1074,13 @@ function Form({
         },
         {} as Record<string, any>
       );
-    trackEvent('FeatheryStepSubmit', activeStep.key, formName, fieldData);
+    trackEvent(
+      integrations,
+      'FeatheryStepSubmit',
+      activeStep.key,
+      formName,
+      fieldData
+    );
 
     return [hiddenPromise, stepPromise];
   };

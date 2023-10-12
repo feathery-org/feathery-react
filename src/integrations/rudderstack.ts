@@ -52,7 +52,10 @@ export async function installRudderStack(rudderStackConfig: any) {
 
 export function trackRudderEvent(
   title: string,
-  properties: Record<string, any>
+  properties: Record<string, any>,
+  integ: any
 ) {
-  featheryWindow().rudderanalytics.track(title, properties);
+  const allowedEvents = integ?.allowed_events;
+  if (!allowedEvents || allowedEvents.includes(title))
+    featheryWindow().rudderanalytics.track(title, properties);
 }
