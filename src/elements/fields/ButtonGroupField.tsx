@@ -64,6 +64,7 @@ function ButtonGroupField({
                 justifyContent: 'center',
                 alignItems: 'center',
                 boxSizing: 'border-box',
+                cursor: 'pointer',
                 ...responsiveStyles.getTarget('field'),
                 '&:hover':
                   editMode || disabled
