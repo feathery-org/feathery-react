@@ -157,12 +157,16 @@ const Element = ({ node: el, form, flags }: any) => {
       />
     );
   } else if (type === 'field') {
-    const firstField = !flags.fieldSeen;
-    flags.fieldSeen = true;
-
     const index = el.repeat ?? null;
     const servar = el.servar;
     const { value: fieldVal } = getFieldValue(el);
+
+    let firstField = false;
+    if (!fieldVal) {
+      firstField = !flags.fieldSeen;
+      flags.fieldSeen = true;
+    }
+
     const autosubmit = el.properties.submit_trigger === 'auto';
 
     let otherVal = '';
