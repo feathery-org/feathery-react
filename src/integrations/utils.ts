@@ -91,12 +91,14 @@ export interface ActionData {
 }
 
 export function trackEvent(
+  integrations: any,
   title: string,
   stepId: string,
   formId: string,
   fieldData?: any
 ) {
-  const metadata = { stepId, formId };
+  const metadata: Record<string, string> = { formId };
+  if (stepId) metadata.stepId = stepId;
 
   // Google Tag Manager
   // @ts-expect-error TS(2551): Property 'initialized' does not exist on type '{ d... Remove this comment to see the full error message
@@ -107,7 +109,8 @@ export function trackEvent(
     TagManager.dataLayer({ dataLayer: { ...gtmData, event: title } });
   }
   // RudderStack
-  if (rudderStackInstalled) trackRudderEvent(title, { formId, stepId });
+  if (rudderStackInstalled)
+    trackRudderEvent(title, metadata, integrations?.rudderstack);
   // Google Analytics
   if (gaInstalled) trackGAEvent(formId, title, stepId);
   // Segment
