@@ -178,7 +178,8 @@ export default function DevNavBar({
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            backgroundColor: 'white'
           }}
           onClick={() => setIsVisible(false)}
         >
