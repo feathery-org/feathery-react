@@ -55,7 +55,7 @@ export function trackRudderEvent(
   properties: Record<string, any>,
   integ: any
 ) {
-  const trackEvents = integ?.track_events;
+  const trackEvents = integ?.metadata.track_events;
   if (!trackEvents || trackEvents.includes(title))
     featheryWindow().rudderanalytics.track(title, properties);
 }
