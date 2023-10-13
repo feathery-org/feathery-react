@@ -108,7 +108,8 @@ import {
   ACTION_VERIFY_SMS,
   ACTION_TRIGGER_ARGYLE,
   REQUIRED_FLOW_ACTIONS,
-  hasFlowActions
+  hasFlowActions,
+  canRunAction
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -539,8 +540,6 @@ function Form({
       ...getFormContext(_internalId),
       ...getProps()
     };
-    const stepEvents = ['submit', 'load'];
-    const elementEvents = ['view', 'change', 'action'];
 
     let logicRan = false;
     if (typeof eventCallbackMap[event] === 'function') {
@@ -556,34 +555,7 @@ function Form({
       for (const logicRule of logicRulesForEvent) {
         // all disabled, invalid or empty rules are filtered out by the BE
 
-        const currentStepId = (internalState[_internalId]?.currentStep ?? {})
-          .id;
-        // Apply steps and elements filters to the applicable event types
-        // to determine if the rule should be run.  Some event types support
-        // neither filter and will always run.
-        if (
-          ![...stepEvents, ...elementEvents].includes(
-            logicRule.trigger_event
-          ) ||
-          (stepEvents.includes(logicRule.trigger_event) &&
-            (logicRule.steps.length === 0 ||
-              (logicRule.steps.length > 0 &&
-                logicRule.steps.includes(currentStepId)))) ||
-          (logicRule.trigger_event === 'view' &&
-            logicRule.elements.includes(
-              (props as ContextOnView).visibilityStatus.elementId
-            )) ||
-          (logicRule.trigger_event === 'change' &&
-            logicRule.elements.includes(
-              (props as ContextOnChange | ContextOnAction).trigger._servarId ??
-                ''
-            )) ||
-          (logicRule.trigger_event === 'action' &&
-            (logicRule.elements.includes(
-              (props as ContextOnChange | ContextOnAction).trigger.id
-            ) ||
-              logicRule.elements.includes(containerId ?? '')))
-        ) {
+        if (canRunAction(logicRule, _internalId, props, containerId)) {
           logicRan = true;
 
           // Note:
@@ -1423,19 +1395,21 @@ function Form({
         textSpanEnd
       });
     };
+    const runAction = (beforeClickActions: boolean) =>
+      runUserLogic(
+        'action',
+        () => ({
+          trigger,
+          beforeClickActions
+        }),
+        elementType === 'container' ? element.id : undefined
+      );
+
+    await runAction(true);
 
     for (let i = 0; i < actions.length; i++) {
       const action = actions[i];
       const type = action.type;
-
-      await runUserLogic(
-        'action',
-        () => ({
-          trigger,
-          action: type
-        }),
-        elementType === 'container' ? element.id : undefined
-      );
 
       if (type === ACTION_ADD_REPEATED_ROW) addRepeatedRow();
       else if (type === ACTION_REMOVE_REPEATED_ROW)
@@ -1559,6 +1533,8 @@ function Form({
         client.submitCustom(newValues);
       }
     }
+
+    await runAction(false);
 
     elementClicks[id] = false;
   };

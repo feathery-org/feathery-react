@@ -1,3 +1,6 @@
+import { ContextOnAction, ContextOnChange, ContextOnView } from '../types/Form';
+import internalState from './internalState';
+
 export const ACTION_ADD_REPEATED_ROW = 'add_repeated_row';
 export const ACTION_BACK = 'back';
 export const ACTION_PURCHASE_PRODUCTS = 'purchase_products';
@@ -23,6 +26,60 @@ export const REQUIRED_FLOW_ACTIONS = {
 
 export function hasFlowActions(actions: any[]) {
   return actions.find((action) => action.type in REQUIRED_FLOW_ACTIONS);
+}
+
+export const stepEvents = ['submit', 'load'];
+export const elementEvents = ['view', 'change', 'action'];
+
+// Apply steps and elements filters to the applicable event types
+// to determine if the rule should be run.  Some event types support
+// neither filter and will always run.
+export function canRunAction(
+  logicRule: any,
+  internalId: string,
+  props: any,
+  containerId: string | undefined
+) {
+  const currentStepId = (internalState[internalId]?.currentStep ?? {}).id;
+
+  if (![...stepEvents, ...elementEvents].includes(logicRule.trigger_event))
+    return true;
+  if (
+    stepEvents.includes(logicRule.trigger_event) &&
+    (logicRule.steps.length === 0 ||
+      (logicRule.steps.length > 0 && logicRule.steps.includes(currentStepId)))
+  )
+    return true;
+  if (
+    logicRule.trigger_event === 'view' &&
+    logicRule.elements.includes(
+      (props as ContextOnView).visibilityStatus.elementId
+    )
+  )
+    return true;
+  if (
+    logicRule.trigger_event === 'change' &&
+    logicRule.elements.includes(
+      (props as ContextOnChange | ContextOnAction).trigger._servarId ?? ''
+    )
+  )
+    return true;
+
+  const runAfterClick = logicRule.metadata?.after_click;
+  const isRightSequence =
+    (props.beforeClickActions && !runAfterClick) ||
+    (!props.beforeClickActions && runAfterClick);
+  if (
+    logicRule.trigger_event === 'action' &&
+    isRightSequence &&
+    (logicRule.elements.includes(
+      (props as ContextOnChange | ContextOnAction).trigger.id
+    ) ||
+      logicRule.elements.includes(containerId ?? ''))
+  )
+    return true;
+
+  return false;
 }
 
 // Lower execution order actions are executed before higher execution order actions.
