@@ -32,6 +32,7 @@ function RadioButtonGroupField({
   const otherChecked =
     // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     (otherSelect[servar.key] || fieldVal) && fieldVal === otherVal;
+  const otherLabel = servar.metadata.other_label ?? 'Other';
 
   const styles = useMemo(() => {
     applyCheckableInputStyles(element, responsiveStyles);
@@ -116,7 +117,7 @@ function RadioButtonGroupField({
               ...(disabled ? responsiveStyles.getTarget('disabled') : {})
             }}
           />
-          <label htmlFor={`${servar.key}-`}>Other</label>
+          <label htmlFor={`${servar.key}-`}>{otherLabel}</label>
           <ReactForm.Control
             type='text'
             css={{
