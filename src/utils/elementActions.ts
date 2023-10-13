@@ -24,3 +24,16 @@ export const REQUIRED_FLOW_ACTIONS = {
 export function hasFlowActions(actions: any[]) {
   return actions.find((action) => action.type in REQUIRED_FLOW_ACTIONS);
 }
+
+// Lower execution order actions are executed before higher execution order actions.
+// Actions within a execution level are executed in the order they are defined by the designer
+// relative to other actions in the same execution level.
+// Actions with no execution order are executed FIRST (before those with specific execution orders)
+// and in the order they are defined by the designer relative to other actions with
+// no execution order.
+export const ACTION_EXECUTION_ORDER = {
+  [ACTION_URL]: 1,
+  [ACTION_BACK]: 2,
+  [ACTION_NEXT]: 2,
+  [ACTION_OAUTH_LOGIN]: 2
+};

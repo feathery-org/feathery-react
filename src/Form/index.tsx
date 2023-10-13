@@ -30,6 +30,7 @@ import {
   isValidFieldIdentifier,
   lookUpTrigger,
   nextStepKey,
+  prioritizeActions,
   recurseProgressDepth,
   registerRenderCallback,
   rerenderAllForms,
@@ -59,9 +60,7 @@ import {
   usePayments,
   removeFromCart,
   setupPaymentMethod,
-  purchaseCart,
-  FEATHERY_PAYMENTS_SELECTIONS,
-  FEATHERY_PAYMENTS_TOTAL
+  purchaseCart
 } from '../integrations/stripe';
 import { ActionData, trackEvent } from '../integrations/utils';
 import DevNavBar from './components/DevNavBar';
@@ -679,7 +678,7 @@ function Form({
 
     // This could be a redirect from Stripe following a successful payment checkout
     checkForPaymentCheckoutCompletion(
-      newStep,
+      steps,
       client,
       updateFieldValues,
       integrations?.stripe
@@ -759,14 +758,6 @@ function Form({
       // It turns out that not doing so caused breakage on steps after the first step.
       // But for only fields it is fine and necessary.
       ['fields']
-    );
-
-    // This could be a redirect from Stripe following a successful payment checkout
-    checkForPaymentCheckoutCompletion(
-      newStep,
-      client,
-      updateFieldValues,
-      integrations?.stripe
     );
 
     await runUserLogic('load');
@@ -1102,13 +1093,6 @@ function Form({
       // need to include value === '' so that we can clear out hidden fields
       if (value !== undefined) hiddenFields[fieldKey] = value;
     });
-    // submit feathery reserved hidden fields
-    if (fieldValues[FEATHERY_PAYMENTS_SELECTIONS] !== undefined)
-      hiddenFields[FEATHERY_PAYMENTS_SELECTIONS] =
-        fieldValues[FEATHERY_PAYMENTS_SELECTIONS];
-    if (fieldValues[FEATHERY_PAYMENTS_TOTAL] !== undefined)
-      hiddenFields[FEATHERY_PAYMENTS_TOTAL] =
-        fieldValues[FEATHERY_PAYMENTS_TOTAL];
     return client.submitCustom(hiddenFields);
   };
 
@@ -1421,6 +1405,10 @@ function Form({
       }
       submitPromise = Promise.all(newPromise);
     }
+
+    // Adjust action order to prioritize certain actions and
+    // to ensure all actions are run as expected
+    actions = prioritizeActions(actions);
 
     const flowOnSuccess = (index: number) => async () => {
       flowCompleted.current = true;

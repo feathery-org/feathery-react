@@ -353,7 +353,7 @@ export async function purchaseCart(
 }
 
 export async function checkForPaymentCheckoutCompletion(
-  step: any,
+  steps: any,
   client: any,
   updateFieldValues: (fieldValues: any) => void,
   integrationData: any
@@ -368,10 +368,18 @@ export async function checkForPaymentCheckoutCompletion(
     featheryWindow().history.replaceState({}, '', newUrl);
 
     // search all step buttons and subgrids for the purchase action and complete the payment
-    const paymentElement = [...step.buttons, ...step.subgrids].find((element) =>
-      element.properties.actions?.find(
-        (action: any) => action.type === ACTION_PURCHASE_PRODUCTS
-      )
+    const paymentElement: any = Object.values(steps).reduce(
+      (result: any, step: any) => {
+        if (result) return result;
+        return (
+          [...step.buttons, ...step.subgrids].find((element) =>
+            element.properties.actions?.find(
+              (action: any) => action.type === ACTION_PURCHASE_PRODUCTS
+            )
+          ) ?? null
+        );
+      },
+      null
     );
     if (paymentElement) {
       // auto clear the cart on successful payment
