@@ -44,7 +44,6 @@ export async function installRudderStack(rudderStackConfig: any) {
       rudderStackConfig.metadata.write_key,
       rudderStackConfig.metadata.data_plane_url
     );
-    rudderanalytics.page();
   }
 
   return Promise.resolve();
