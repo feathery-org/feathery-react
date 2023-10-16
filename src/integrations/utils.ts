@@ -23,6 +23,7 @@ import {
   rudderStackInstalled,
   trackRudderEvent
 } from './rudderstack';
+import { fieldValues } from '../utils/init';
 
 const IMPORTED_URLS = new Set();
 
@@ -109,8 +110,11 @@ export function trackEvent(
     TagManager.dataLayer({ dataLayer: { ...gtmData, event: title } });
   }
   // RudderStack
-  if (rudderStackInstalled)
-    trackRudderEvent(title, metadata, integrations?.rudderstack);
+  if (rudderStackInstalled) {
+    const rudderData: Record<string, any> = { ...metadata };
+    if (title === 'FeatheryFormComplete') rudderData.fieldData = fieldValues;
+    trackRudderEvent(title, rudderData, integrations?.rudderstack);
+  }
   // Google Analytics
   if (gaInstalled) trackGAEvent(formId, title, stepId);
   // Segment
