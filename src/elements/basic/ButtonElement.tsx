@@ -141,7 +141,8 @@ function ButtonElement({
   onClick = () => {},
   elementProps = {},
   inlineError,
-  children
+  children,
+  featheryContext
 }: any) {
   const styles = useMemo(
     () => applyButtonStyles(element, responsiveStyles),
@@ -227,6 +228,7 @@ function ButtonElement({
               disabled={disabled}
               focused={focused}
               textCallbacks={textCallbacks}
+              featheryContext={featheryContext}
             />
           )}
         </>

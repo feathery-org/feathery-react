@@ -56,6 +56,8 @@ import { openPlaidLink } from '../integrations/plaid';
 import {
   addToCart,
   checkForPaymentCheckoutCompletion,
+  getCart,
+  getSimplifiedProducts,
   isProductInPurchaseSelections,
   usePayments,
   removeFromCart,
@@ -671,6 +673,8 @@ function Form({
         visiblePositions: getVisiblePositions(newStep, _internalId),
         client,
         fields,
+        products: Object.seal(getSimplifiedProducts(integrations?.stripe)),
+        cart: Object.seal(getCart(integrations?.stripe)),
         formName,
         formRef,
         formSettings,
@@ -1632,7 +1636,8 @@ function Form({
     formRef,
     setCardElement,
     visiblePositions,
-    calendly: integrations?.calendly?.metadata
+    calendly: integrations?.calendly?.metadata,
+    featheryContext: getFormContext(_internalId)
   };
 
   const completeState =

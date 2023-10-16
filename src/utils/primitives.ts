@@ -57,8 +57,17 @@ function filterKeys(obj: any, allowedKeys: any) {
 function formatNumeric(number: number, intlOptions = {}, locales = ['en-US']) {
   return new Intl.NumberFormat(locales, intlOptions).format(number);
 }
+function formatDecimal(number: number, decimalDigits = 2, locales = ['en-US']) {
+  return new Intl.NumberFormat(locales, {
+    minimumFractionDigits: decimalDigits,
+    maximumFractionDigits: decimalDigits
+  }).format(number);
+}
 function formatMoneyUSD(number: number, locales = ['en-US']) {
   return formatNumeric(number, { style: 'currency', currency: 'USD' }, locales);
+}
+function formatMoney(number: number, currency = 'USD', locales?: any) {
+  return formatNumeric(number, { style: 'currency', currency }, locales);
 }
 
 function numMatchingItems(arr1: number[], arr2: number[]) {
@@ -78,6 +87,8 @@ export {
   stringifyWithNull,
   filterKeys,
   formatNumeric,
+  formatDecimal,
   formatMoneyUSD,
+  formatMoney,
   numMatchingItems
 };

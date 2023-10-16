@@ -1,5 +1,7 @@
 import { FieldOptions, FieldStyles } from './formHelperFunctions';
 import Field from './Field';
+import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
+import Cart from '../integrations/stripe/Cart';
 
 interface FormInternalState {
   currentStep: any;
@@ -7,6 +9,8 @@ interface FormInternalState {
   visiblePositions: any;
   client: any;
   fields: Record<string, Field>;
+  products: Record<string, SimplifiedProduct>;
+  cart: Cart;
   formName: string;
   formRef: React.MutableRefObject<any>;
   formSettings: any;

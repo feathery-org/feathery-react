@@ -73,7 +73,7 @@ jest.mock('../../utils/init', () => ({
     payment_product_1_quantity: 1,
     payment_product_2_quantity: 2,
     'payment-method-1': { complete: true },
-    'feathery.payments.selections': {
+    'feathery.cart': {
       'stripe-prod-1': 1,
       'stripe-prod-2': 2
     }
@@ -147,10 +147,10 @@ describe('Stripe integration helper', () => {
     });
   });
   describe('getPaymentsReservedFieldValues', () => {
-    it('retrieves feathery.payments.selections', () => {
+    it('retrieves feathery.cart', () => {
       const result = getPaymentsReservedFieldValues();
       expect(result).toStrictEqual({
-        'feathery.payments.selections': mockCartSelections
+        'feathery.cart': mockCartSelections
       });
     });
   });
@@ -227,7 +227,7 @@ describe('Stripe integration helper', () => {
     });
 
     beforeEach(() => {
-      fieldValues['feathery.payments.selections'] = {
+      fieldValues['feathery.cart'] = {
         'stripe-prod-1': 1,
         'stripe-prod-2': 2
       };
@@ -429,6 +429,9 @@ describe('Stripe integration helper', () => {
     const products: { [key: string]: Product } = {
       [prodId1]: {
         id: prodId1,
+        name: 'Product 1',
+        description: 'Product 1 description',
+        active: true,
         default_price: 'price_1MTSHfI26OLuOvXi5e1fCOx4',
         prices: [
           {
@@ -445,6 +448,9 @@ describe('Stripe integration helper', () => {
       },
       [prodId2]: {
         id: prodId2,
+        name: 'Product 2',
+        description: 'Product 2 description',
+        active: true,
         default_price: 'price_1LdEMPI26OLuOvXiizpd23RP',
         prices: [
           {
@@ -461,6 +467,9 @@ describe('Stripe integration helper', () => {
       },
       [mockProdId]: {
         id: mockProdId,
+        name: 'Mock Product 1',
+        description: 'Mock Product 1 description',
+        active: true,
         default_price: 'price_1LdH0QI26OLuOvXiVE7PCOKa',
         prices: [
           {
@@ -475,6 +484,9 @@ describe('Stripe integration helper', () => {
       },
       [mockProdId2]: {
         id: mockProdId2,
+        name: 'Mock Product 2',
+        description: 'Mock Product 2 description',
+        active: true,
         default_price: 'price_2LdH0QI26dfkklfdgdflkdfj',
         prices: [
           {
@@ -489,6 +501,9 @@ describe('Stripe integration helper', () => {
       },
       [prodIdPackage]: {
         id: prodIdPackage,
+        name: 'Package 1',
+        description: 'Package 1 description',
+        active: true,
         default_price: 'price_package',
         prices: [
           {
@@ -503,6 +518,9 @@ describe('Stripe integration helper', () => {
       },
       [prodIdPackage2]: {
         id: prodIdPackage2,
+        name: 'Package 2',
+        description: 'Package 2 description',
+        active: true,
         default_price: 'price_package2',
         prices: [
           {
@@ -517,6 +535,9 @@ describe('Stripe integration helper', () => {
       },
       [prodIdTieredGraduated]: {
         id: prodIdTieredGraduated,
+        name: 'Tier 1',
+        description: 'Tier 1 description',
+        active: true,
         default_price: 'price_graduated',
         prices: [
           {
@@ -545,6 +566,9 @@ describe('Stripe integration helper', () => {
       },
       [prodIdTieredVolume]: {
         id: prodIdTieredVolume,
+        name: 'Tier 2',
+        description: 'Tier 2 description',
+        active: true,
         default_price: 'price_volume',
         prices: [
           {
@@ -577,36 +601,36 @@ describe('Stripe integration helper', () => {
       it('ignore invalid product id', () => {
         expect(
           calculateLineItemCost(
-            'invalid',
-            1,
-            mockStripeConfig('stripe', products)
+            mockStripeConfig('stripe', products).metadata.test
+              .product_price_cache.invalid,
+            1
           )
         ).toStrictEqual(new BigDecimal(0));
       });
       it('per-unit, non-packaged - testing round up', () => {
         expect(
           calculateLineItemCost(
-            prodIdPackage,
-            10,
-            mockStripeConfig('stripe', products)
+            mockStripeConfig('stripe', products).metadata.test
+              .product_price_cache[prodIdPackage],
+            10
           )
         ).toStrictEqual(new BigDecimal(382 * 10));
       });
       it('per-unit, non-packaged - testing round down', () => {
         expect(
           calculateLineItemCost(
-            prodIdPackage2,
-            10,
-            mockStripeConfig('stripe', products)
+            mockStripeConfig('stripe', products).metadata.test
+              .product_price_cache[prodIdPackage2],
+            10
           )
         ).toStrictEqual(new BigDecimal(381 * 10));
       });
       it('tiered, graduated, with tier flat pricing', () => {
         expect(
           calculateLineItemCost(
-            prodIdTieredGraduated,
-            32,
-            mockStripeConfig('stripe', products)
+            mockStripeConfig('stripe', products).metadata.test
+              .product_price_cache[prodIdTieredGraduated],
+            32
           )
         ).toStrictEqual(
           new BigDecimal(1000 * 10 + 10000 + (500 * 10 + 5000) + 100 * 12)
@@ -615,25 +639,25 @@ describe('Stripe integration helper', () => {
       it('tiered, graduated, with tier flat pricing, falls into second tier only', () => {
         expect(
           calculateLineItemCost(
-            prodIdTieredGraduated,
-            12,
-            mockStripeConfig('stripe', products)
+            mockStripeConfig('stripe', products).metadata.test
+              .product_price_cache[prodIdTieredGraduated],
+            12
           )
         ).toStrictEqual(new BigDecimal(1000 * 10 + 10000 + (500 * 2 + 5000)));
       });
       it('tiered, VOLUME, with flat pricing', () => {
         expect(
           calculateLineItemCost(
-            prodIdTieredVolume,
-            18,
-            mockStripeConfig('stripe', products)
+            mockStripeConfig('stripe', products).metadata.test
+              .product_price_cache[prodIdTieredVolume],
+            18
           )
         ).toStrictEqual(new BigDecimal(500 * 18 + 5000));
       });
     });
     describe('calculateSelectedProductsTotal', () => {
       beforeEach(() => {
-        fieldValues['feathery.payments.selections'] = {
+        fieldValues['feathery.cart'] = {
           'stripe-prod-1': 1,
           'stripe-prod-2': 2
         };
