@@ -115,6 +115,7 @@ function CheckboxGroupField({
             }}
             css={{
               ...composeCheckableInputStyle(styles, otherDisabled),
+              ...styles.getTarget('checkboxGroup'),
               ...(otherDisabled ? responsiveStyles.getTarget('disabled') : {})
             }}
           />

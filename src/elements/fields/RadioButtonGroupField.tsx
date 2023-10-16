@@ -114,6 +114,7 @@ function RadioButtonGroupField({
             }}
             css={{
               ...composeCheckableInputStyle(styles, disabled, true),
+              ...styles.getTarget('radioGroup'),
               ...(disabled ? responsiveStyles.getTarget('disabled') : {})
             }}
           />
