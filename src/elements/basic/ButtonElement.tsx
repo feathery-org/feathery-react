@@ -49,7 +49,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   } else {
     // default hover effect
     responsiveStyles.apply('buttonHover', 'background_color', (a: any) => {
-      const newColor = `${adjustColor(a, -45)} !important`;
+      const newColor = `${adjustColor(a, -30)} !important`;
       return { backgroundColor: newColor };
     });
   }
@@ -88,7 +88,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   );
 
   responsiveStyles.apply('buttonDisabled', 'background_color', (a: any) => {
-    const color = `${adjustColor(a, 45)} !important`;
+    const color = `${adjustColor(a, 30)} !important`;
     return {
       backgroundColor: color,
       borderColor: color
