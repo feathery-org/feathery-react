@@ -215,7 +215,9 @@ export default function DevNavBar({
         >
           <LeftChevronIcon />
         </div>
-        <span css={{ marginBottom: '4px', ...noTextSelectStyles }}>
+        <span
+          css={{ marginBottom: '4px', color: 'black', ...noTextSelectStyles }}
+        >
           {curStep.key}
         </span>
         <div
