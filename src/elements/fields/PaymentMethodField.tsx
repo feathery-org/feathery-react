@@ -54,6 +54,7 @@ const CardField = ({
   setCardElement = () => {},
   setFieldError = () => {},
   onChange = () => {},
+  autoFocus = false,
   editMode,
   inlineError,
   children
@@ -73,7 +74,11 @@ const CardField = ({
       // Stripe.js has not yet loaded.
       return;
     }
-    setCardElement(element.servar.key, stripeElements.getElement(CardElement));
+    const cardEl = stripeElements.getElement(CardElement);
+    if (autoFocus) {
+      cardEl?.on('ready', () => cardEl.focus());
+    }
+    setCardElement(element.servar.key, cardEl);
   }, [stripe, element.servar.key, stripeElements]);
 
   // In general, mobile styles are supported for the payment method field.  However, we do this using
