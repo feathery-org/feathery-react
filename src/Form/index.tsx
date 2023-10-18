@@ -1021,7 +1021,7 @@ function Form({
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       let newVal = (val as any).value;
       newVal = Array.isArray(newVal)
-        ? newVal.filter((v) => v || [0, ''].includes(v))
+        ? newVal.filter((v) => ![null, undefined].includes(v))
         : newVal;
       return { key, [(val as any).type]: newVal };
     });
