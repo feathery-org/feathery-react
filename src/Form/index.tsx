@@ -344,13 +344,15 @@ function Form({
       focusRef.current = null;
     }
 
+    let requiredStepAction: any = '';
     activeStep.buttons.forEach((b: any) =>
       (b.properties.actions ?? []).forEach((action: any) => {
         if (action.type in REQUIRED_FLOW_ACTIONS) {
-          setRequiredStepAction(action.type);
+          requiredStepAction = action.type;
         }
       })
     );
+    setRequiredStepAction(requiredStepAction);
   }, [activeStep?.id]);
 
   // viewElements state
@@ -1317,17 +1319,6 @@ function Form({
     if (id && elementClicks[id]) return;
     elementClicks[id] = true;
 
-    // Do not proceed until user has gone through required flows
-    if (
-      !hasFlowActions(actions) &&
-      requiredStepAction &&
-      !flowCompleted.current
-    ) {
-      setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
-      elementClicks[id] = false;
-      return;
-    }
-
     const metadata = {
       elementType,
       elementIDs: [element.id],
@@ -1343,7 +1334,19 @@ function Form({
       repeatIndex: element.repeat
     } as Trigger;
     let submitPromise: Promise<any> = Promise.resolve();
+
     if (submit) {
+      // Do not proceed until user has gone through required flows
+      if (
+        !hasFlowActions(actions) &&
+        requiredStepAction &&
+        !flowCompleted.current
+      ) {
+        setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
+        elementClicks[id] = false;
+        return;
+      }
+
       setAutoValidate(true);
 
       // run default form validation
