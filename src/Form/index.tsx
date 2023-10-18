@@ -48,7 +48,12 @@ import {
   getVisiblePositions
 } from '../utils/hideAndRepeats';
 import { validators, validateElements } from '../utils/validation';
-import { initState, fieldValues, FieldValues } from '../utils/init';
+import {
+  initState,
+  fieldValues,
+  FieldValues,
+  updateUserId
+} from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
@@ -111,7 +116,8 @@ import {
   ACTION_TRIGGER_ARGYLE,
   REQUIRED_FLOW_ACTIONS,
   hasFlowActions,
-  canRunAction
+  canRunAction,
+  ACTION_NEW_SUBMISSION
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -1494,6 +1500,7 @@ function Form({
       } else if (type === ACTION_OAUTH_LOGIN)
         Auth.oauthRedirect(action.oauth_type);
       else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
+      else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {
         await goToNewStep({
           metadata,
