@@ -28,6 +28,7 @@ function CheckboxGroupField({
 }: any) {
   const servar = element.servar;
   const otherChecked = fieldVal.includes(otherVal);
+  const otherLabel = servar.metadata.other_label ?? 'Other';
 
   const styles = useMemo(() => {
     applyCheckableInputStyles(element, responsiveStyles);
@@ -114,10 +115,11 @@ function CheckboxGroupField({
             }}
             css={{
               ...composeCheckableInputStyle(styles, otherDisabled),
+              ...styles.getTarget('checkboxGroup'),
               ...(otherDisabled ? responsiveStyles.getTarget('disabled') : {})
             }}
           />
-          <label htmlFor={`${servar.key}-`}>Other</label>
+          <label htmlFor={`${servar.key}-`}>{otherLabel}</label>
           <ReactForm.Control
             type='text'
             css={{

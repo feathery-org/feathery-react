@@ -44,7 +44,6 @@ export async function installRudderStack(rudderStackConfig: any) {
       rudderStackConfig.metadata.write_key,
       rudderStackConfig.metadata.data_plane_url
     );
-    rudderanalytics.page();
   }
 
   return Promise.resolve();
@@ -52,7 +51,10 @@ export async function installRudderStack(rudderStackConfig: any) {
 
 export function trackRudderEvent(
   title: string,
-  properties: Record<string, any>
+  properties: Record<string, any>,
+  integ: any
 ) {
-  featheryWindow().rudderanalytics.track(title, properties);
+  const trackEvents = integ?.metadata.track_events;
+  if (!trackEvents || trackEvents.includes(title))
+    featheryWindow().rudderanalytics.track(title, properties);
 }

@@ -3,7 +3,6 @@ import debounce from 'lodash.debounce';
 import {
   rerenderAllForms,
   OptionType,
-  getDefaultFieldValue,
   getDefaultFormFieldValue,
   FieldStyles
 } from './formHelperFunctions';

@@ -182,7 +182,7 @@ const COMPARISON_FUNCTIONS: {
       if (l && detectType(l) === 'object')
         // Special behavior for left side objects.  Their keys will be compared to the right side
         // values.  While generally useful, this is specifically for the case where the left side
-        // is the feathery.payments.selections field which is an object with keys that are the
+        // is the feathery.cart field which is an object with keys that are the
         // product ids selected for purchase.
         return Object.keys(l).some((key) => compareRight(key, r));
       return compareRight(l, r);
@@ -203,7 +203,7 @@ const COMPARISON_FUNCTIONS: {
       if (l && detectType(l) === 'object')
         // Special behavior for left side objects.  Their keys will be compared to the right side
         // values.  While generally useful, this is specifically for the case where the left side
-        // is the feathery.payments.selections field which is an object with keys that are the
+        // is the feathery.cart field which is an object with keys that are the
         // product ids selected for purchase.
         return Object.keys(l).every((key) => compareRight(key, r));
       return compareRight(l, r);
