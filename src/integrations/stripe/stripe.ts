@@ -1,10 +1,17 @@
 import { loadStripe } from '@stripe/stripe-js/pure';
 import { useState } from 'react';
-import { runningInClient, featheryDoc, featheryWindow } from '../utils/browser';
-import { ActionData } from './utils';
-import { fieldValues } from '../utils/init';
-import { ACTION_PURCHASE_PRODUCTS } from '../utils/elementActions';
+import {
+  runningInClient,
+  featheryDoc,
+  featheryWindow
+} from '../../utils/browser';
+import { ActionData } from '../utils';
+import SimplifiedProduct from './SimplifiedProduct';
+import Cart from './Cart';
+import { fieldValues, initState } from '../../utils/init';
+import { ACTION_PURCHASE_PRODUCTS } from '../../utils/elementActions';
 import BigDecimal from 'js-big-decimal';
+
 const stripePromise = new Promise((resolve) => {
   if (runningInClient())
     featheryDoc().addEventListener('stripe_key_loaded', (e: any) => {
@@ -56,12 +63,12 @@ function getObjectMappingValues(mappingObj: any) {
   }, {} as { [key: string]: any });
 }
 
-export const FEATHERY_PAYMENTS_SELECTIONS = 'feathery.payments.selections';
-export const FEATHERY_PAYMENTS_TOTAL = 'feathery.payments.total';
+export const FEATHERY_CART = 'feathery.cart';
+export const FEATHERY_CART_TOTAL = 'feathery.cart.total';
 
 export function getPaymentsReservedFieldValues() {
   return Object.entries(fieldValues).reduce((result, [key, value]) => {
-    if (key.startsWith('feathery.payments.')) {
+    if (key.startsWith('feathery.cart')) {
       result[key] = value;
     }
     return result;
@@ -165,19 +172,19 @@ interface PaymentAction {
   cancel_url?: string;
 }
 
-// get the cart selections from fields values object key feathery.payments.selections
+// get the cart selections from fields values object key feathery.cart
 function getCartSelections(): Record<string, number> {
   return (
-    (fieldValues[FEATHERY_PAYMENTS_SELECTIONS] as Record<string, number>) ??
+    (fieldValues[FEATHERY_CART] as Record<string, number>) ??
     ({} as Record<string, number>)
   );
 }
-// save the cart selections into fields values object key feathery.payments.selections
+// save the cart selections into fields values object key feathery.cart
 function saveCartSelections(
   cartSelections: Record<string, number> | null,
   updateFieldValues: any
 ) {
-  updateFieldValues({ [FEATHERY_PAYMENTS_SELECTIONS]: cartSelections });
+  updateFieldValues({ [FEATHERY_CART]: cartSelections });
 }
 
 /**
@@ -190,6 +197,111 @@ export function isProductInPurchaseSelections(productId: string) {
   return cartSelections[productId] && cartSelections[productId] > 0;
 }
 
+interface PricingTier {
+  up_to: number | null;
+  unit_amount?: number;
+  flat_amount?: number;
+}
+type PRICE_TYPE = 'one_time' | 'recurring';
+export interface Price {
+  id: string;
+  currency?: string;
+  type: PRICE_TYPE;
+  recurring_interval?: 'month' | 'year' | 'week' | 'day' | null | '';
+  recurring_usage_type?: 'licensed' | 'metered';
+  billing_scheme: 'per_unit' | 'tiered';
+  unit_amount?: number;
+  per_unit_units?: number;
+  per_unit_rounding?: 'up' | 'down';
+  tiers_mode?: 'graduated' | 'volume';
+  tiers?: PricingTier[];
+}
+export interface Product {
+  id: string;
+  name: string;
+  description: string;
+  active: boolean;
+  default_price: string;
+  prices: Price[];
+}
+
+export interface ProductPriceCacheConfig {
+  product_price_cache: { [key: string]: Product };
+}
+
+interface StripeConfig {
+  metadata: {
+    test?: ProductPriceCacheConfig;
+    live?: ProductPriceCacheConfig;
+  };
+}
+
+export function getCart(stripeConfig: StripeConfig) {
+  const allProductsPriceCache = {
+    ...(stripeConfig?.metadata.live?.product_price_cache ?? {}),
+    ...(stripeConfig?.metadata.test?.product_price_cache ?? {})
+  };
+
+  return new Cart(allProductsPriceCache);
+}
+export function getSimplifiedProducts(
+  stripeConfig: StripeConfig
+): Record<string, any> {
+  const liveProductsPriceCache =
+    stripeConfig?.metadata.live?.product_price_cache ?? {};
+  const testProductsPriceCache =
+    stripeConfig?.metadata.test?.product_price_cache ?? {};
+
+  const products: Record<string, SimplifiedProduct> = {};
+  Object.values(testProductsPriceCache).forEach((product: any) => {
+    products[product.id] = new SimplifiedProduct(product.id, product, 'test');
+  });
+  Object.values(liveProductsPriceCache).forEach((product: any) => {
+    products[product.id] = new SimplifiedProduct(product.id, product, 'live');
+  });
+
+  return products;
+}
+
+// Dynamically use the live or test product id based on the environment
+// (test or live).  If live/test products have the same name
+// then use the apropriate one based on the initState.isTestEnv.
+function getLiveOrTestProduct(
+  productId: string,
+  stripeConfig: StripeConfig
+): string {
+  // Find the productId in the live or test product price cache and
+  // if a product with the same name is found in the test/live cache as indicated
+  // by initState.isTestEnv, then return that product id instead.
+  // Otherwise, return the original productId.
+  const liveProductsPriceCache =
+    stripeConfig.metadata.live?.product_price_cache ?? {};
+  const testProductsPriceCache =
+    stripeConfig.metadata.test?.product_price_cache ?? {};
+  const allProductsPriceCache = {
+    ...liveProductsPriceCache,
+    ...testProductsPriceCache
+  };
+  const targetCache = !initState?.isTestEnv // initState is undefined in unit test env
+    ? liveProductsPriceCache
+    : testProductsPriceCache;
+  const product = allProductsPriceCache[productId];
+  if (product) {
+    const { name } = product;
+    // find products with the same name in the target cache
+    // If find more than one, stick with the one you have the id for because there
+    // are naming collisions.  Too many products named the same and
+    // we cannot know the user's intent.
+    const products = Object.values(targetCache).filter(
+      (p) => p.name === name
+    ) as Product[];
+    if (products.length === 1) {
+      return products[0].id;
+    }
+  }
+  return productId;
+}
+
 /**
  * Add to cart function
  */
@@ -199,12 +311,13 @@ export function addToCart(
   stripeConfig: any
 ) {
   const {
-    product_id: productId,
+    product_id: configuredProductId,
     quantity_field: quantityField,
     fixed_quantity: fixedQuantity,
     toggle
   } = paymentAction;
 
+  const productId = getLiveOrTestProduct(configuredProductId, stripeConfig);
   const cartSelections = getCartSelections();
   const currentQuantity = cartSelections[productId] ?? 0;
   if (toggle && currentQuantity > 0) {
@@ -243,7 +356,10 @@ export function removeFromCart(
   updateFieldValues: any,
   stripeConfig: any
 ) {
-  const { product_id: productId, clear_cart: clearCart } = paymentAction;
+  const { product_id: configuredProductId, clear_cart: clearCart } =
+    paymentAction;
+  const productId = getLiveOrTestProduct(configuredProductId, stripeConfig);
+
   const cartSelections = getCartSelections();
   if (clearCart) {
     // clear cart
@@ -353,7 +469,7 @@ export async function purchaseCart(
 }
 
 export async function checkForPaymentCheckoutCompletion(
-  step: any,
+  steps: any,
   client: any,
   updateFieldValues: (fieldValues: any) => void,
   integrationData: any
@@ -368,10 +484,18 @@ export async function checkForPaymentCheckoutCompletion(
     featheryWindow().history.replaceState({}, '', newUrl);
 
     // search all step buttons and subgrids for the purchase action and complete the payment
-    const paymentElement = [...step.buttons, ...step.subgrids].find((element) =>
-      element.properties.actions?.find(
-        (action: any) => action.type === ACTION_PURCHASE_PRODUCTS
-      )
+    const paymentElement: any = Object.values(steps).reduce(
+      (result: any, step: any) => {
+        if (result) return result;
+        return (
+          [...step.buttons, ...step.subgrids].find((element) =>
+            element.properties.actions?.find(
+              (action: any) => action.type === ACTION_PURCHASE_PRODUCTS
+            )
+          ) ?? null
+        );
+      },
+      null
     );
     if (paymentElement) {
       // auto clear the cart on successful payment
@@ -380,8 +504,8 @@ export async function checkForPaymentCheckoutCompletion(
 
       // clearing after successful payment
       const fieldValuesToSubmit: Record<string, any> = {
-        [FEATHERY_PAYMENTS_SELECTIONS]: {},
-        [FEATHERY_PAYMENTS_TOTAL]: 0
+        [FEATHERY_CART]: {},
+        [FEATHERY_CART_TOTAL]: 0
       };
 
       // Only get here if the stripe checkout payment was successful - set the has_paid mapped field.
@@ -430,46 +554,18 @@ export function usePayments(): [
   return [getCardElement, setCardElement];
 }
 
-interface PricingTier {
-  up_to: number | null;
-  unit_amount?: number;
-  flat_amount?: number;
-}
-type PRICE_TYPE = 'one_time' | 'recurring';
-interface Price {
-  id: string;
-  currency?: string;
-  type: PRICE_TYPE;
-  recurring_interval?: 'month' | 'year' | 'week' | 'day' | null | '';
-  recurring_usage_type?: 'licensed' | 'metered';
-  billing_scheme: 'per_unit' | 'tiered';
-  unit_amount?: number;
-  per_unit_units?: number;
-  per_unit_rounding?: 'up' | 'down';
-  tiers_mode?: 'graduated' | 'volume';
-  tiers?: PricingTier[];
-}
-export interface Product {
-  id: string;
-  default_price: string;
-  prices: Price[];
-}
-
-interface ProductPriceCacheConfig {
-  product_price_cache: { [key: string]: Product };
-}
 export function calculateSelectedProductsTotal(
-  stripeConfig: {
-    metadata: {
-      test?: ProductPriceCacheConfig;
-      live?: ProductPriceCacheConfig;
-    };
-  },
+  stripeConfig: StripeConfig,
   updateFieldValues: (fv: { [key: string]: any }) => void
 ): string {
-  // Each key in feathery.payments.cartSelections is a product id.
+  // Each key in feathery.cart is a product id.
   // Each value is the quantity of that product.
   // Calculate each product's cost and sum them up.
+
+  const allProductsPriceCache = {
+    ...(stripeConfig.metadata.test?.product_price_cache ?? {}),
+    ...(stripeConfig.metadata.live?.product_price_cache ?? {})
+  };
 
   let cost = new BigDecimal(0);
   const cartSelections = getCartSelections();
@@ -477,9 +573,8 @@ export function calculateSelectedProductsTotal(
     const quantity = cartSelections[productId];
     // call calculateLineItemCost to get the cost of this product
     const lineItemCost = calculateLineItemCost(
-      productId,
-      quantity,
-      stripeConfig
+      allProductsPriceCache[productId],
+      quantity
     );
     cost = cost.add(lineItemCost);
   }
@@ -491,20 +586,15 @@ export function calculateSelectedProductsTotal(
     // .getPrettyValue(3, ',');
     .getValue();
   updateFieldValues({
-    [FEATHERY_PAYMENTS_TOTAL]: totalCost
+    [FEATHERY_CART_TOTAL]: totalCost
   });
   return totalCost;
 }
 
 export function calculateLineItemCost(
-  productId: string,
+  product: Product | undefined,
   quantity: number,
-  stripeConfig: {
-    metadata: {
-      test?: ProductPriceCacheConfig;
-      live?: ProductPriceCacheConfig;
-    };
-  }
+  inMajorUnits = false
 ): BigDecimal {
   // Pricing model (either one-time or recurring) is one of:
   //
@@ -516,11 +606,6 @@ export function calculateLineItemCost(
   // Any metered pricing is not supported and skipped if encountered.
 
   let cost = new BigDecimal(0);
-  const allProductsPriceCache = {
-    ...(stripeConfig.metadata.test?.product_price_cache ?? {}),
-    ...(stripeConfig.metadata.live?.product_price_cache ?? {})
-  };
-  const product = allProductsPriceCache[productId];
   if (product && product.default_price) {
     // only supporting default price right now and no metered pricing
     const price = product.prices.find(
@@ -581,5 +666,9 @@ export function calculateLineItemCost(
     }
   }
 
-  return cost;
+  return inMajorUnits
+    ? cost
+        .divide(new BigDecimal(100), 12)
+        .round(2, BigDecimal.RoundingModes.HALF_UP)
+    : cost;
 }

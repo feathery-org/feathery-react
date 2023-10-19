@@ -30,6 +30,7 @@ import {
   isValidFieldIdentifier,
   lookUpTrigger,
   nextStepKey,
+  prioritizeActions,
   recurseProgressDepth,
   registerRenderCallback,
   rerenderAllForms,
@@ -47,7 +48,12 @@ import {
   getVisiblePositions
 } from '../utils/hideAndRepeats';
 import { validators, validateElements } from '../utils/validation';
-import { initState, fieldValues, FieldValues } from '../utils/init';
+import {
+  initState,
+  fieldValues,
+  FieldValues,
+  updateUserId
+} from '../utils/init';
 import { isEmptyArray, justInsert, justRemove } from '../utils/array';
 import Client from '../utils/client';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
@@ -55,13 +61,13 @@ import { openPlaidLink } from '../integrations/plaid';
 import {
   addToCart,
   checkForPaymentCheckoutCompletion,
+  getCart,
+  getSimplifiedProducts,
   isProductInPurchaseSelections,
   usePayments,
   removeFromCart,
   setupPaymentMethod,
-  purchaseCart,
-  FEATHERY_PAYMENTS_SELECTIONS,
-  FEATHERY_PAYMENTS_TOTAL
+  purchaseCart
 } from '../integrations/stripe';
 import { ActionData, trackEvent } from '../integrations/utils';
 import DevNavBar from './components/DevNavBar';
@@ -109,7 +115,9 @@ import {
   ACTION_VERIFY_SMS,
   ACTION_TRIGGER_ARGYLE,
   REQUIRED_FLOW_ACTIONS,
-  hasFlowActions
+  hasFlowActions,
+  canRunAction,
+  ACTION_NEW_SUBMISSION
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -342,13 +350,15 @@ function Form({
       focusRef.current = null;
     }
 
+    let requiredStepAction: any = '';
     activeStep.buttons.forEach((b: any) =>
       (b.properties.actions ?? []).forEach((action: any) => {
         if (action.type in REQUIRED_FLOW_ACTIONS) {
-          setRequiredStepAction(action.type);
+          requiredStepAction = action.type;
         }
       })
     );
+    setRequiredStepAction(requiredStepAction);
   }, [activeStep?.id]);
 
   // viewElements state
@@ -540,8 +550,6 @@ function Form({
       ...getFormContext(_internalId),
       ...getProps()
     };
-    const stepEvents = ['submit', 'load'];
-    const elementEvents = ['view', 'change', 'action'];
 
     let logicRan = false;
     if (typeof eventCallbackMap[event] === 'function') {
@@ -557,34 +565,7 @@ function Form({
       for (const logicRule of logicRulesForEvent) {
         // all disabled, invalid or empty rules are filtered out by the BE
 
-        const currentStepId = (internalState[_internalId]?.currentStep ?? {})
-          .id;
-        // Apply steps and elements filters to the applicable event types
-        // to determine if the rule should be run.  Some event types support
-        // neither filter and will always run.
-        if (
-          ![...stepEvents, ...elementEvents].includes(
-            logicRule.trigger_event
-          ) ||
-          (stepEvents.includes(logicRule.trigger_event) &&
-            (logicRule.steps.length === 0 ||
-              (logicRule.steps.length > 0 &&
-                logicRule.steps.includes(currentStepId)))) ||
-          (logicRule.trigger_event === 'view' &&
-            logicRule.elements.includes(
-              (props as ContextOnView).visibilityStatus.elementId
-            )) ||
-          (logicRule.trigger_event === 'change' &&
-            logicRule.elements.includes(
-              (props as ContextOnChange | ContextOnAction).trigger._servarId ??
-                ''
-            )) ||
-          (logicRule.trigger_event === 'action' &&
-            (logicRule.elements.includes(
-              (props as ContextOnChange | ContextOnAction).trigger.id
-            ) ||
-              logicRule.elements.includes(containerId ?? '')))
-        ) {
+        if (canRunAction(logicRule, _internalId, props, containerId)) {
           logicRan = true;
 
           // Note:
@@ -679,7 +660,7 @@ function Form({
 
     // This could be a redirect from Stripe following a successful payment checkout
     checkForPaymentCheckoutCompletion(
-      newStep,
+      steps,
       client,
       updateFieldValues,
       integrations?.stripe
@@ -700,6 +681,8 @@ function Form({
         visiblePositions: getVisiblePositions(newStep, _internalId),
         client,
         fields,
+        products: Object.seal(getSimplifiedProducts(integrations?.stripe)),
+        cart: Object.seal(getCart(integrations?.stripe)),
         formName,
         formRef,
         formSettings,
@@ -759,14 +742,6 @@ function Form({
       // It turns out that not doing so caused breakage on steps after the first step.
       // But for only fields it is fine and necessary.
       ['fields']
-    );
-
-    // This could be a redirect from Stripe following a successful payment checkout
-    checkForPaymentCheckoutCompletion(
-      newStep,
-      client,
-      updateFieldValues,
-      integrations?.stripe
     );
 
     await runUserLogic('load');
@@ -1052,7 +1027,7 @@ function Form({
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       let newVal = (val as any).value;
       newVal = Array.isArray(newVal)
-        ? newVal.filter((v) => v || [0, ''].includes(v))
+        ? newVal.filter((v) => ![null, undefined].includes(v))
         : newVal;
       return { key, [(val as any).type]: newVal };
     });
@@ -1102,13 +1077,6 @@ function Form({
       // need to include value === '' so that we can clear out hidden fields
       if (value !== undefined) hiddenFields[fieldKey] = value;
     });
-    // submit feathery reserved hidden fields
-    if (fieldValues[FEATHERY_PAYMENTS_SELECTIONS] !== undefined)
-      hiddenFields[FEATHERY_PAYMENTS_SELECTIONS] =
-        fieldValues[FEATHERY_PAYMENTS_SELECTIONS];
-    if (fieldValues[FEATHERY_PAYMENTS_TOTAL] !== undefined)
-      hiddenFields[FEATHERY_PAYMENTS_TOTAL] =
-        fieldValues[FEATHERY_PAYMENTS_TOTAL];
     return client.submitCustom(hiddenFields);
   };
 
@@ -1357,17 +1325,6 @@ function Form({
     if (id && elementClicks[id]) return;
     elementClicks[id] = true;
 
-    // Do not proceed until user has gone through required flows
-    if (
-      !hasFlowActions(actions) &&
-      requiredStepAction &&
-      !flowCompleted.current
-    ) {
-      setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
-      elementClicks[id] = false;
-      return;
-    }
-
     const metadata = {
       elementType,
       elementIDs: [element.id],
@@ -1383,7 +1340,19 @@ function Form({
       repeatIndex: element.repeat
     } as Trigger;
     let submitPromise: Promise<any> = Promise.resolve();
+
     if (submit) {
+      // Do not proceed until user has gone through required flows
+      if (
+        !hasFlowActions(actions) &&
+        requiredStepAction &&
+        !flowCompleted.current
+      ) {
+        setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
+        elementClicks[id] = false;
+        return;
+      }
+
       setAutoValidate(true);
 
       // run default form validation
@@ -1422,6 +1391,10 @@ function Form({
       submitPromise = Promise.all(newPromise);
     }
 
+    // Adjust action order to prioritize certain actions and
+    // to ensure all actions are run as expected
+    actions = prioritizeActions(actions);
+
     const flowOnSuccess = (index: number) => async () => {
       flowCompleted.current = true;
       elementClicks[id] = false;
@@ -1435,19 +1408,21 @@ function Form({
         textSpanEnd
       });
     };
+    const runAction = (beforeClickActions: boolean) =>
+      runUserLogic(
+        'action',
+        () => ({
+          trigger,
+          beforeClickActions
+        }),
+        elementType === 'container' ? element.id : undefined
+      );
+
+    await runAction(true);
 
     for (let i = 0; i < actions.length; i++) {
       const action = actions[i];
       const type = action.type;
-
-      await runUserLogic(
-        'action',
-        () => ({
-          trigger,
-          action: type
-        }),
-        elementType === 'container' ? element.id : undefined
-      );
 
       if (type === ACTION_ADD_REPEATED_ROW) addRepeatedRow();
       else if (type === ACTION_REMOVE_REPEATED_ROW)
@@ -1525,6 +1500,7 @@ function Form({
       } else if (type === ACTION_OAUTH_LOGIN)
         Auth.oauthRedirect(action.oauth_type);
       else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
+      else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {
         await goToNewStep({
           metadata,
@@ -1571,6 +1547,8 @@ function Form({
         client.submitCustom(newValues);
       }
     }
+
+    await runAction(false);
 
     elementClicks[id] = false;
   };
@@ -1668,7 +1646,8 @@ function Form({
     formRef,
     setCardElement,
     visiblePositions,
-    calendly: integrations?.calendly?.metadata
+    calendly: integrations?.calendly?.metadata,
+    featheryContext: getFormContext(_internalId)
   };
 
   const completeState =

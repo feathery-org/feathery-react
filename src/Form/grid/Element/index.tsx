@@ -15,7 +15,6 @@ import { justInsert, justRemove } from '../../../utils/array';
 import { fieldValues } from '../../../utils/init';
 import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 import {
-  fieldAllowedFromList,
   getInlineError,
   handleCheckboxGroupChange,
   handleOtherStateChange,
@@ -58,14 +57,16 @@ const Element = ({ node: el, form, flags }: any) => {
     formRef,
     focusRef,
     setCardElement,
-    visiblePositions
+    visiblePositions,
+    featheryContext
   } = form;
 
   const basicProps: Record<string, any> = {
     componentOnly: false,
     element: el,
     elementProps: elementProps[el.id],
-    inlineError: getInlineError(el, inlineErrors)
+    inlineError: getInlineError(el, inlineErrors),
+    featheryContext
   };
   const fieldId = el.servar?.key ?? el.id;
   if (elementOnView && onViewElements.includes(fieldId))
@@ -191,14 +192,6 @@ const Element = ({ node: el, form, flags }: any) => {
     });
 
     const required = isFieldActuallyRequired(el, activeStep);
-    const fieldProps = {
-      ...basicProps,
-      elementProps: elementProps[servar.key],
-      autoComplete: formSettings.autocomplete,
-      rightToLeft: formSettings.rightToLeft,
-      disabled: el.properties.disabled,
-      required
-    };
 
     const onEnter = (e: any) => {
       e.preventDefault();
@@ -213,6 +206,16 @@ const Element = ({ node: el, form, flags }: any) => {
         // Simulate button click if available
         buttonOnClick(enterButton);
       }
+    };
+
+    const fieldProps = {
+      ...basicProps,
+      elementProps: elementProps[servar.key],
+      autoComplete: formSettings.autocomplete,
+      rightToLeft: formSettings.rightToLeft,
+      disabled: el.properties.disabled,
+      onEnter,
+      required
     };
 
     let countryCode = '';
@@ -397,7 +400,6 @@ const Element = ({ node: el, form, flags }: any) => {
                   submitData: autosubmit && val.length === el.servar.max_length
                 });
             }}
-            onEnter={onEnter}
             shouldFocus
           />
         );
@@ -415,7 +417,6 @@ const Element = ({ node: el, form, flags }: any) => {
               handleOtherStateChange(otherVal, e, updateFieldValues);
               onChange();
             }}
-            onEnter={onEnter}
           />
         );
       case 'select':
@@ -433,7 +434,6 @@ const Element = ({ node: el, form, flags }: any) => {
               handleOtherStateChange(otherVal, e, updateFieldValues);
               onChange({ submitData: autosubmit && e.target.value });
             }}
-            onEnter={onEnter}
           />
         );
       case 'hex_color':
@@ -569,7 +569,6 @@ const Element = ({ node: el, form, flags }: any) => {
                 });
               }
             }}
-            onEnter={onEnter}
             setRef={(ref: any) => {
               if (firstField) focusRef.current = ref;
             }}
@@ -579,6 +578,7 @@ const Element = ({ node: el, form, flags }: any) => {
         return (
           <Elements.PaymentMethodField
             {...fieldProps}
+            autoFocus={firstField && formSettings.autofocus}
             setCardElement={setCardElement}
             setFieldError={(message: any) =>
               setFormElementError({
@@ -620,7 +620,6 @@ const Element = ({ node: el, form, flags }: any) => {
             setRef={(ref: any) => {
               if (firstField) focusRef.current = ref;
             }}
-            onEnter={onEnter}
           />
         );
     }

@@ -183,6 +183,8 @@ export const composeCheckableInputStyle = (
     appearance: 'none',
     display: 'grid',
     placeContent: 'center',
+    // On error in Safari, checkboxes can have a misshapen outline so disable
+    outline: 'none',
     borderRadius: isRadio ? '50%' : null, // Force radio buttons to be round
     ...styles.getTarget('checkbox'),
     '&:hover': noHover ? {} : styles.getTarget('checkboxHover'),

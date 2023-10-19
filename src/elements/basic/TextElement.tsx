@@ -55,7 +55,8 @@ function TextElement({
   textSpanOnClick = () => {},
   conditions = [],
   elementProps = {},
-  children
+  children,
+  featheryContext
 }: any) {
   const styles = useMemo(
     () => applyTextStyles(element, responsiveStyles),
@@ -88,6 +89,7 @@ function TextElement({
         editMode={editMode}
         focused={focused}
         textCallbacks={textCallbacks}
+        featheryContext={featheryContext}
       />
     </div>
   );
