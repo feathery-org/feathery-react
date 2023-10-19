@@ -23,6 +23,7 @@ import {
   rudderStackInstalled,
   trackRudderEvent
 } from './rudderstack';
+import { fieldValues } from '../utils/init';
 
 const IMPORTED_URLS = new Set();
 
@@ -91,12 +92,14 @@ export interface ActionData {
 }
 
 export function trackEvent(
+  integrations: any,
   title: string,
   stepId: string,
   formId: string,
   fieldData?: any
 ) {
-  const metadata = { stepId, formId };
+  const metadata: Record<string, string> = { formId };
+  if (stepId) metadata.stepId = stepId;
 
   // Google Tag Manager
   // @ts-expect-error TS(2551): Property 'initialized' does not exist on type '{ d... Remove this comment to see the full error message
@@ -107,7 +110,11 @@ export function trackEvent(
     TagManager.dataLayer({ dataLayer: { ...gtmData, event: title } });
   }
   // RudderStack
-  if (rudderStackInstalled) trackRudderEvent(title, { formId, stepId });
+  if (rudderStackInstalled) {
+    const rudderData: Record<string, any> = { ...metadata };
+    if (title === 'FeatheryFormComplete') rudderData.fieldData = fieldValues;
+    trackRudderEvent(title, rudderData, integrations?.rudderstack);
+  }
   // Google Analytics
   if (gaInstalled) trackGAEvent(formId, title, stepId);
   // Segment

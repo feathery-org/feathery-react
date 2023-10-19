@@ -1,6 +1,6 @@
 {
   "name": "@feathery/react",
-  "version": "2.0.158",
+  "version": "2.0.174",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
@@ -34,6 +34,7 @@
     "@testing-library/react": "^12.1.2",
     "@testing-library/user-event": "^13.2.1",
     "@types/jest": "^28.1.6",
+    "@types/jsonpath": "^0.2.1",
     "@types/lodash.debounce": "^4.0.7",
     "@types/lodash.throttle": "^4.1.7",
     "@types/react": "18.0",
@@ -90,6 +91,7 @@
     "@stytch/vanilla-js": "0.14.4",
     "flat-map-polyfill": "^0.3.8",
     "js-big-decimal": "^1.4.1",
+    "jsonpath": "^1.1.1",
     "lodash.debounce": "^4.0.8",
     "lodash.throttle": "^4.1.1",
     "quill-delta": "^4.2.2",

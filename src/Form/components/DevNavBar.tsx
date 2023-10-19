@@ -178,7 +178,8 @@ export default function DevNavBar({
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            backgroundColor: 'white'
           }}
           onClick={() => setIsVisible(false)}
         >
@@ -214,7 +215,9 @@ export default function DevNavBar({
         >
           <LeftChevronIcon />
         </div>
-        <span css={{ marginBottom: '4px', ...noTextSelectStyles }}>
+        <span
+          css={{ marginBottom: '4px', color: 'black', ...noTextSelectStyles }}
+        >
           {curStep.key}
         </span>
         <div

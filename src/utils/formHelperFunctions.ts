@@ -4,7 +4,11 @@ import { toBase64 } from './image';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { getVisibleElements } from './hideAndRepeats';
 import throttle from 'lodash.throttle';
-import { ACTION_NEXT, ACTION_URL } from './elementActions';
+import {
+  ACTION_NEXT,
+  ACTION_URL,
+  ACTION_EXECUTION_ORDER
+} from './elementActions';
 import { featheryWindow } from './browser';
 import Client from '../utils/client';
 import { isObjectEmpty } from './primitives';
@@ -103,6 +107,7 @@ export const getAllFields = (
   hiddenFieldKeys.forEach((key) => {
     fields[key] = new Field(key, formUuid, true);
   });
+
   return fields;
 };
 
@@ -691,6 +696,21 @@ export function getServarTypeMap(steps: any) {
     });
   }
   return servarKeyToTypeMap;
+}
+// Reorders by leaving non-execution order actions in place and moving actons with specific
+// exceution orders to the end.  Non-priority order actions are
+// essenially order 0 (before others).
+export function prioritizeActions(actions: any[]) {
+  const newActions = [...actions];
+  Object.entries(ACTION_EXECUTION_ORDER)
+    .sort((a, b) => a[1] - b[1])
+    .forEach(([action]) => {
+      const index = newActions.findIndex((a) => a.type === action);
+      if (index > -1) {
+        newActions.push(newActions.splice(index, 1)[0]);
+      }
+    });
+  return newActions;
 }
 
 export function isStepTerminal(step: any) {

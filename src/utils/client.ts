@@ -380,7 +380,7 @@ export default class Client {
 
     const trueSession = { ...session, ...authSession };
     if (!noData) {
-      // If tracking disabled, update user id (randomly generated on backend)
+      // If tracking disabled, update user id from backend
       if (trueSession.new_user_id) initState.userId = trueSession.new_user_id;
       updateSessionValues(trueSession);
     }
