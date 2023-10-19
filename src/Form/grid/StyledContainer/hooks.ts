@@ -6,7 +6,8 @@ import {
   getStyle,
   isFitContainer,
   isFitElement,
-  resizeFitContainer
+  resizeFitContainer,
+  whichTransitionEvent
 } from './utils';
 import { formatContainerStyles } from './transform';
 import {
@@ -170,7 +171,23 @@ export const useContainerEngine = (node: any, rawNode: any, ref: any) => {
     const div = ref.current;
     const children = getImmediateDivs(div);
     const document = featheryDoc();
+    const transitionEvent = whichTransitionEvent();
     let observer: any = null;
+    let canvas: any = null;
+
+    const resizeCurrentFitContainer = () => {
+      const parentFitContainers = getParentFitContainers(div);
+
+      if (parentFitContainers) {
+        parentFitContainers.expand();
+      }
+
+      resizeFitContainer(div);
+
+      if (parentFitContainers) {
+        parentFitContainers.collapse();
+      }
+    };
 
     const resizeParentFitContainers = () => {
       if (ref.current) {
@@ -197,16 +214,19 @@ export const useContainerEngine = (node: any, rawNode: any, ref: any) => {
 
     // If the container is a fit container, we need to alter it's max-width to allow children to expand accordingly
     if (isFitContainer(div) && children.length > 0) {
-      const parentFitContainers = getParentFitContainers(div);
+      resizeCurrentFitContainer();
 
-      if (parentFitContainers) {
-        parentFitContainers.expand();
-      }
+      // For the editor, we need to also resize after transitions finish (between viewport changes)
+      if (node.uuid) {
+        canvas = document.querySelector('div[data-testid="editor-canvas"]');
 
-      resizeFitContainer(div);
-
-      if (parentFitContainers) {
-        parentFitContainers.collapse();
+        if (canvas) {
+          canvas.addEventListener(
+            transitionEvent,
+            resizeCurrentFitContainer,
+            false
+          );
+        }
       }
     }
 
@@ -224,6 +244,10 @@ export const useContainerEngine = (node: any, rawNode: any, ref: any) => {
       if (observer) {
         observer.disconnect();
         observer = null; // For garbage collection
+      }
+
+      if (canvas) {
+        canvas.removeEventListener(transitionEvent, resizeCurrentFitContainer);
       }
     };
   }, [node, rawNode, ref]);
