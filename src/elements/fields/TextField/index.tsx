@@ -7,7 +7,6 @@ import { bootstrapStyles } from '../../styles';
 import { emailPatternStr } from '../../../utils/validation';
 import useBorder from '../../components/useBorder';
 import TextAutocomplete from './TextAutocomplete';
-import { isAlphaNumeric } from '../../../utils/primitives';
 
 const MAX_TEXT_FIELD_LENGTH = 512;
 
@@ -40,10 +39,14 @@ function getTextFieldMask(servar: any) {
   let mask = '';
   if (data.mask) mask = data.mask;
   else {
-    const definitionChar = constraintChar(data.allowed_characters);
+    let allowed = data.allowed_characters;
+    if (servar.type === 'gmap_zip' && !allowed) allowed = 'alphanumeric';
+    const definitionChar = constraintChar(allowed);
+
     let numOptional = MAX_TEXT_FIELD_LENGTH - prefix.length - suffix.length;
     if (servar.max_length)
       numOptional = Math.min(servar.max_length, numOptional);
+
     mask = `[${definitionChar.repeat(numOptional)}]`;
   }
 
@@ -114,6 +117,10 @@ function getInputProps(servar: any) {
         type: 'email',
         pattern: emailPatternStr,
         ...maxConstraints
+      };
+    case 'gmap_zip':
+      return {
+        type: servar.metadata.allowed_characters === 'digits' ? 'tel' : 'text'
       };
     case 'ssn':
       return { type: 'tel', ...maxConstraints };
@@ -220,14 +227,8 @@ function TextField({
             // keep triggering dropdown after blur
             onKeyDown={(e) => {
               if (e.key === 'Enter') onEnter(e);
-              else {
-                if (options.length) {
-                  setShowAutocomplete(e.key !== 'Escape');
-                }
-                if (servar.type === 'gmap_zip' && !isAlphaNumeric(e.key)) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }
+              else if (options.length) {
+                setShowAutocomplete(e.key !== 'Escape');
               }
             }}
             onBlur={() => {
