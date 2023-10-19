@@ -172,7 +172,8 @@ export const getContainerStyles = (
       'external_padding_top',
       'external_padding_bottom',
       'padding_top',
-      'padding_bottom'
+      'padding_bottom',
+      'overflow'
     ],
     (
       height: any,
@@ -181,7 +182,8 @@ export const getContainerStyles = (
       marginTop: any,
       marginBottom: any,
       paddingTop: any,
-      paddingBottom: any
+      paddingBottom: any,
+      overflow: any
     ) => {
       const s: any = {};
       const yTotalMargin = node.isElement
@@ -228,6 +230,12 @@ export const getContainerStyles = (
       if (heightUnit === 'px') {
         s.minHeight = `${height}${heightUnit}`;
         s.maxHeight = `max-content`;
+
+        if (!node.uuid && overflow) {
+          s.height = `${height}${heightUnit}`;
+          s.maxHeight = `${height}${heightUnit}`;
+          s.overflowY = overflow;
+        }
       }
 
       // Fit containers
@@ -503,6 +511,24 @@ export const getInnerContainerStyles = (
       } else {
         s.alignItems = horizontalAlign ?? 'flex-start';
         s.justifyContent = verticalAlign ?? 'left';
+      }
+
+      return s;
+    }
+  );
+
+  /**
+   * Apply overflow styles
+   */
+  styles.apply(
+    'inner-container',
+    ['height_unit', 'overflow'],
+    (heightUnit: any, overflow: any) => {
+      const s: any = {};
+
+      if (!node.uuid && overflow && heightUnit === 'px') {
+        s.minHeight = 'fit-content';
+        s.height = 'max-content';
       }
 
       return s;
