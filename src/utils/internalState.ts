@@ -29,6 +29,7 @@ interface FormInternalState {
   setFieldErrors: (
     errors: Record<string, string | { index: number; message: string }>
   ) => void;
+  setCalendlyUrl: (url: string) => void;
 }
 type InternalState = {
   [formUuid: string]: FormInternalState;
