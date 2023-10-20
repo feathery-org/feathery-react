@@ -736,6 +736,10 @@ function Form({
               triggerErrors: true
             });
           });
+        },
+        setCalendlyUrl: (url: string) => {
+          if (integrations?.calendly)
+            integrations.calendly.metadata.api_key = url;
         }
       },
       // Avoid all these other obj props going through Object.assign which is not necessary.
@@ -1646,7 +1650,7 @@ function Form({
     formRef,
     setCardElement,
     visiblePositions,
-    calendly: integrations?.calendly?.metadata,
+    calendly: integrations?.calendly.metadata,
     featheryContext: getFormContext(_internalId)
   };
 

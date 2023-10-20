@@ -90,6 +90,8 @@ export const getFormContext = (formUuid: string) => {
       });
       return errors;
     },
+    setCalendlyUrl: (url: string) =>
+      internalState[formUuid].setCalendlyUrl(url),
     // deprecated
     setFieldValues: (userVals: FieldValues): void => {
       console.warn(
