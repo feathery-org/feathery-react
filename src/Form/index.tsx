@@ -738,7 +738,7 @@ function Form({
           });
         },
         setCalendlyUrl: (url: string) => {
-          if (integrations?.calendly)
+          if (integrations?.calendly?.metadata)
             integrations.calendly.metadata.api_key = url;
         }
       },
@@ -1650,7 +1650,7 @@ function Form({
     formRef,
     setCardElement,
     visiblePositions,
-    calendly: integrations?.calendly.metadata,
+    calendly: integrations?.calendly?.metadata,
     featheryContext: getFormContext(_internalId)
   };
 
