@@ -295,13 +295,13 @@ export function updateStepFieldOptions(step: any, newOptions: FieldOptions) {
     if (servar.key in newOptions) {
       const options = newOptions[servar.key];
       servar.metadata.options = options.map((option) =>
-        typeof option === 'string' ? option : option.value
+        typeof option === 'object' ? option.value : option
       );
       servar.metadata.option_labels = options.map((option) =>
-        typeof option === 'string' ? option : option.label ?? option.value
+        typeof option === 'object' ? option.label ?? option.value : option
       );
       servar.metadata.option_images = options.map((option) =>
-        typeof option === 'string' ? '' : option.image ?? ''
+        typeof option === 'object' ? option.image ?? '' : ''
       );
     }
   });
