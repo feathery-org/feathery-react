@@ -210,6 +210,10 @@ function TextField({
               backgroundColor: 'transparent',
               ...bootstrapStyles,
               ...responsiveStyles.getTarget('field'),
+              '&:focus': {
+                ...responsiveStyles.getTarget('active'),
+                ...borderStyles.active
+              },
               [`&:focus ~ #${borderId}`]: Object.values(borderStyles.active)[0],
               '&:not(:focus)':
                 rawValue || !element.properties.placeholder
