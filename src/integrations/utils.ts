@@ -30,26 +30,43 @@ const IMPORTED_URLS = new Set();
 export function dynamicImport(
   dependencies: any,
   parallel = true,
-  index = 0
+  force = false
 ): any {
   if (typeof dependencies === 'string') dependencies = [dependencies];
-  dependencies = dependencies.filter((d: any) => {
-    const dup = IMPORTED_URLS.has(d);
-    IMPORTED_URLS.add(d);
-    return !dup;
+
+  const newDependencies: string[] = [];
+  dependencies.forEach((d: any) => {
+    let dup = IMPORTED_URLS.has(d);
+
+    if (dup && force) {
+      const base = d;
+      let counter = 1;
+      while (dup) {
+        d = `${base}?version=${counter}`;
+        dup = IMPORTED_URLS.has(d);
+        counter++;
+      }
+    }
+
+    if (!dup) {
+      IMPORTED_URLS.add(d);
+      newDependencies.push(d);
+    }
   });
-  if (dependencies.length === 0) return Promise.resolve();
+  if (newDependencies.length === 0) return Promise.resolve();
 
   if (parallel) {
     return new Promise((resolve) => {
       global.scriptjsLoadPromise.then(($script: any) => {
-        $script.default(dependencies, resolve);
+        $script.default(newDependencies, (lib: any) => {
+          resolve(lib);
+        });
       });
     });
-  } else if (index < dependencies.length) {
+  } else {
     return new Promise((resolve) => {
       global.scriptjsLoadPromise.then(($script: any) => {
-        $script.default.order(dependencies, resolve);
+        $script.default.order(newDependencies, resolve);
       });
     });
   }

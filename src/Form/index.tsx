@@ -738,8 +738,18 @@ function Form({
           });
         },
         setCalendlyUrl: (url: string) => {
-          if (integrations?.calendly?.metadata)
-            integrations.calendly.metadata.api_key = url;
+          if (integrations?.calendly?.metadata) {
+            setIntegrations((integrations) => ({
+              ...integrations,
+              calendly: {
+                ...integrations?.calendly,
+                metadata: {
+                  ...integrations?.calendly.metadata,
+                  api_key: url
+                }
+              }
+            }));
+          }
         }
       },
       // Avoid all these other obj props going through Object.assign which is not necessary.
