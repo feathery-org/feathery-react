@@ -3,7 +3,12 @@ import { v4 as uuidv4 } from 'uuid';
 
 import Client, { updateRegionApiUrls } from './client';
 import * as errors from './error';
-import { runningInClient, setCookie, getCookie } from './browser';
+import {
+  runningInClient,
+  setCookie,
+  getCookie,
+  featheryWindow
+} from './browser';
 import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
 import { parseUserVal } from './Field';
 
@@ -183,6 +188,12 @@ async function updateUserId(newUserId: string, merge = false): Promise<void> {
     filePathMap = {};
     initState.formSessions = {};
     initState.fieldValuesInitialized = false;
+    // Clear URL hash on new session if not tracking location
+    featheryWindow().history.replaceState(
+      {},
+      '',
+      location.pathname + location.search
+    );
     remountAllForms();
   }
 }
