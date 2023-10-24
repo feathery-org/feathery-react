@@ -1,5 +1,6 @@
 import { featheryWindow } from '../utils/browser';
 import { dynamicImport } from './utils';
+import { initInfo } from '../utils/init';
 
 export let rudderStackInstalled = false;
 
@@ -44,6 +45,8 @@ export async function installRudderStack(rudderStackConfig: any) {
       rudderStackConfig.metadata.write_key,
       rudderStackConfig.metadata.data_plane_url
     );
+
+    rudderanalytics.identify(initInfo().userId);
   }
 
   return Promise.resolve();
