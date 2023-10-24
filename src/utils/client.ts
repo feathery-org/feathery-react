@@ -532,6 +532,34 @@ export default class Client {
     }).then((response) => (response ? response.json() : Promise.resolve()));
   }
 
+  // Collaboration
+  async verifyCollaborator(email: string) {
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      fuser_key: userId,
+      email
+    });
+    const url = `${API_URL}collaborator/verify/?${params}`;
+    return this._fetch(url, {}).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
+  }
+
+  async inviteCollaborator(email: string) {
+    const { userId } = initInfo();
+    const data = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      email
+    };
+    const url = `${API_URL}collaborator/invite/`;
+    return this._fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data)
+    }).then((response) => (response ? response.json() : Promise.resolve()));
+  }
+
   // THIRD-PARTY INTEGRATIONS
   async fetchPlaidLinkToken(includeLiabilities: boolean) {
     await initFormsPromise;
