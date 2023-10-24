@@ -2,7 +2,7 @@ import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 
 import timeZoneCountries from './timeZoneCountries';
 import Placeholder from '../../components/Placeholder';
-import InlineTooltip from '../../components/Tooltip';
+import InlineTooltip from '../../components/InlineTooltip';
 import { bootstrapStyles } from '../../styles';
 import countryData from '../../components/data/countries';
 import exampleNumbers from './exampleNumbers';

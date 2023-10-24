@@ -6,6 +6,7 @@ import {
   applyHeightWidthMarginByFontSize,
   composeCheckableInputStyle
 } from './CheckboxField';
+import HoverTooltip from '../components/HoverTooltip';
 
 const applyCheckboxGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('checkboxGroup');
@@ -41,6 +42,7 @@ function CheckboxGroupField({
   }, [responsiveStyles]);
 
   const labels = servar.metadata.option_labels;
+  const tooltips = servar.metadata.option_tooltips ?? [];
   const otherDisabled =
     disabled ||
     (servar.max_length &&
@@ -95,7 +97,9 @@ function CheckboxGroupField({
               }}
               disabled={optionDisabled}
             />
-            <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
+            <HoverTooltip text={tooltips[i]}>
+              <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
+            </HoverTooltip>
           </div>
         );
       })}

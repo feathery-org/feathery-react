@@ -1,7 +1,7 @@
 import { bootstrapStyles } from '../styles';
 
 import React, { useEffect, useState } from 'react';
-import InlineTooltip from '../components/Tooltip';
+import InlineTooltip from '../components/InlineTooltip';
 import useBorder from '../components/useBorder';
 import countryData from '../components/data/countries';
 import { getStateOptions, hasState } from '../components/data/states';

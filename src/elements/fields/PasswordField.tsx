@@ -1,7 +1,7 @@
 import React, { memo, useState } from 'react';
 
 import Placeholder from '../components/Placeholder';
-import InlineTooltip from '../components/Tooltip';
+import InlineTooltip from '../components/InlineTooltip';
 import { bootstrapStyles } from '../styles';
 import useBorder from '../components/useBorder';
 import BorderlessEyeIcon from '../components/icons/BorderlessEyeIcon';
