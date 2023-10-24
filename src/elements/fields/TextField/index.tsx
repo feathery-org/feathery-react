@@ -2,7 +2,7 @@ import { IMaskInput } from 'react-imask';
 import React, { memo, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
-import InlineTooltip from '../../components/Tooltip';
+import InlineTooltip from '../../components/InlineTooltip';
 import { bootstrapStyles } from '../../styles';
 import { emailPatternStr } from '../../../utils/validation';
 import useBorder from '../../components/useBorder';
