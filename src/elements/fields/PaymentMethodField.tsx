@@ -9,7 +9,7 @@ import {
 import { getStripe } from '../../integrations/stripe';
 import { filterKeys } from '../../utils/primitives';
 
-import InlineTooltip from '../components/Tooltip';
+import InlineTooltip from '../components/InlineTooltip';
 import { ERROR_COLOR } from '../styles';
 import useBorder from '../components/useBorder';
 import { featheryDoc } from '../../utils/browser';

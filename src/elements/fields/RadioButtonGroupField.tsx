@@ -6,6 +6,7 @@ import {
   applyHeightWidthMarginByFontSize,
   composeCheckableInputStyle
 } from './CheckboxField';
+import HoverTooltip from '../components/HoverTooltip';
 
 const applyRadioGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('radioGroup');
@@ -44,6 +45,8 @@ function RadioButtonGroupField({
   }, [responsiveStyles]);
 
   const labels = servar.metadata.option_labels;
+  const tooltips = servar.metadata.option_tooltips ?? [];
+
   return (
     <div
       css={{
@@ -87,7 +90,9 @@ function RadioButtonGroupField({
                 ...(disabled ? responsiveStyles.getTarget('disabled') : {})
               }}
             />
-            <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
+            <HoverTooltip text={tooltips[i]}>
+              <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
+            </HoverTooltip>
           </div>
         );
       })}
