@@ -1427,7 +1427,8 @@ function Form({
         'action',
         () => ({
           trigger,
-          beforeClickActions
+          beforeClickActions,
+          actions
         }),
         elementType === 'container' ? element.id : undefined
       );
