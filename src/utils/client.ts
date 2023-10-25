@@ -372,6 +372,9 @@ export default class Client {
     // Turn form off if invalid collaborator for submission
     if (session.collaborator?.invalid) return [];
 
+    // If tracking disabled or ID overridden, update user id from backend
+    if (!noData && session.new_user_id) initState.userId = session.new_user_id;
+
     // Auth session only contains new field data
     const authSession = await initializeIntegrations(
       session.integrations,
@@ -379,11 +382,8 @@ export default class Client {
     );
 
     const trueSession = { ...session, ...authSession };
-    if (!noData) {
-      // If tracking disabled, update user id from backend
-      if (trueSession.new_user_id) initState.userId = trueSession.new_user_id;
-      updateSessionValues(trueSession);
-    }
+    if (!noData) updateSessionValues(trueSession);
+
     // submitAuthInfo can set formCompleted before the session is set, so we don't want to override completed flags
     if (initState.formSessions[this.formKey]?.form_completed)
       trueSession.form_completed = true;
