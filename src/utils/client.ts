@@ -518,7 +518,9 @@ export default class Client {
     userData: Record<string, any> | any[],
     headers: Record<string, string>
   ) {
+    const { userId } = initInfo();
     const data = {
+      fuser_key: userId,
       form_key: this.formKey,
       method,
       url,
