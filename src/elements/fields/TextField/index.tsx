@@ -109,6 +109,8 @@ function getInputProps(servar: any) {
     minLength: servar.min_length
   };
 
+  const meta = servar.metadata;
+
   switch (servar.type) {
     case 'integer_field':
       return { type: 'tel' };
@@ -120,14 +122,14 @@ function getInputProps(servar: any) {
       };
     case 'gmap_zip':
       return {
-        type: servar.metadata.allowed_characters === 'digits' ? 'tel' : 'text'
+        type: meta.allowed_characters === 'digits' ? 'tel' : 'text'
       };
     case 'ssn':
       return { type: 'tel', ...maxConstraints };
     case 'url':
       return { type: 'url', ...maxConstraints };
     default:
-      if (servar.metadata.allowed_characters === 'digits') {
+      if (meta.number_keypad || meta.allowed_characters === 'digits') {
         return { type: 'tel', ...maxConstraints };
       }
       return maxConstraints;
