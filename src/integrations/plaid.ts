@@ -16,11 +16,13 @@ export function installPlaid(isPlaidActive: any) {
 export async function openPlaidLink(
   client: any,
   onSuccess: any,
-  updateFieldValues: any
+  updateFieldValues: any,
+  includeLiabilities = false
 ) {
   await plaidPromise;
 
-  const linkToken = (await client.fetchPlaidLinkToken()).link_token;
+  const linkToken = (await client.fetchPlaidLinkToken(includeLiabilities))
+    .link_token;
   const handler = global.Plaid.create({
     token: linkToken,
     onSuccess: async (publicToken: any) => {

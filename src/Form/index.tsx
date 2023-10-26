@@ -1444,7 +1444,12 @@ function Form({
         removeRepeatedRow(element.repeat);
       else if (type === ACTION_TRIGGER_PLAID) {
         await submitPromise;
-        await openPlaidLink(client, flowOnSuccess(i), updateFieldValues);
+        await openPlaidLink(
+          client,
+          flowOnSuccess(i),
+          updateFieldValues,
+          action.include_liabilities
+        );
         break;
       } else if (type === ACTION_TRIGGER_ARGYLE) {
         await submitPromise;
