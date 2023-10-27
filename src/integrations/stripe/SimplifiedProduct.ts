@@ -58,7 +58,7 @@ export default class SimplifiedProduct {
 
   get subscription_interval(): string {
     const intervals: any = {
-      day: 'Dayly',
+      day: 'Daily',
       week: 'Weekly',
       month: 'Monthly',
       year: 'Yearly'
@@ -106,10 +106,6 @@ export default class SimplifiedProduct {
 
   get cart_quantity() {
     return formatDecimal(this.getCartQuantity(), 2);
-  }
-
-  get cart_quantity_formatted() {
-    return formatMoney(this.getCartQuantity(), this._defaultPrice?.currency);
   }
 
   get cart_subtotal() {
