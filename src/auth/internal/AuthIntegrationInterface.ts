@@ -35,9 +35,10 @@ function inferLoginOnLoad(featheryClient: Client) {
   const queryParams = new URLSearchParams(featheryWindow().location.search);
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
-  if (isAuthStytch() || (type && token))
+  if (authState.authType === 'stytch' || (type && token))
     return stytchLoginOnLoad(featheryClient);
-  else return firebaseLoginOnLoad(featheryClient);
+  else if (authState.authType === 'firebase')
+    return firebaseLoginOnLoad(featheryClient);
 }
 
 function isThereAnExistingSession(): boolean {

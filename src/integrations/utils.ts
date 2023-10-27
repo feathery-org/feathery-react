@@ -93,8 +93,9 @@ export async function initializeIntegrations(
 
   const gtm = integs['google-tag-manager'];
   if (gtm) initializeTagManager(gtm);
-  if (integs.firebase || integs.stytch)
+  if (integs.firebase || integs.stytch) {
     return Auth.inferLoginOnLoad(featheryClient);
+  }
 }
 
 export interface ActionData {
