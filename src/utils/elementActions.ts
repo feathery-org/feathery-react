@@ -19,6 +19,8 @@ export const ACTION_TRIGGER_ARGYLE = 'trigger_argyle';
 export const ACTION_TRIGGER_PLAID = 'trigger_plaid';
 export const ACTION_URL = 'url';
 export const ACTION_VERIFY_SMS = 'verify_sms';
+export const ACTION_VERIFY_COLLABORATOR = 'verify_collaborator';
+export const ACTION_INVITE_COLLABORATOR = 'invite_collaborator';
 
 export const REQUIRED_FLOW_ACTIONS = {
   [ACTION_TRIGGER_ARGYLE]: 'You must authorize Argyle before proceeding',

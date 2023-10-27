@@ -77,12 +77,14 @@ export function firebaseLoginOnLoad(featheryClient: any): Promise<any> {
           return featheryClient
             .submitAuthInfo({
               authId: result.user.uid,
-              authEmail: result.user.email
+              authData: { email: result.user.email }
             })
             .then((session: any) => session);
         });
     }
   }
+
+  authState.setAuthId('');
   return Promise.resolve();
 }
 

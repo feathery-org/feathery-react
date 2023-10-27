@@ -3,7 +3,7 @@ import useBorder from '../components/useBorder';
 import Select from 'react-select';
 import CreatableSelect from 'react-select/creatable';
 import { featheryDoc } from '../../utils/browser';
-import InlineTooltip from '../components/Tooltip';
+import InlineTooltip from '../components/InlineTooltip';
 
 export default function DropdownMultiField({
   element,

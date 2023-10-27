@@ -35,7 +35,11 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
   useEffect(() => {
     // Script must be installed *after* Calendly div is rendered
     if (props.embed_calendly && form.calendly) {
-      dynamicImport('https://assets.calendly.com/assets/external/widget.js');
+      dynamicImport(
+        'https://assets.calendly.com/assets/external/widget.js',
+        true,
+        true
+      );
     }
   }, []);
 

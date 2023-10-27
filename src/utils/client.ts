@@ -372,6 +372,9 @@ export default class Client {
     // Turn form off if invalid collaborator for submission
     if (session.collaborator?.invalid) return [];
 
+    // If tracking disabled or ID overridden, update user id from backend
+    if (!noData && session.new_user_id) initState.userId = session.new_user_id;
+
     // Auth session only contains new field data
     const authSession = await initializeIntegrations(
       session.integrations,
@@ -379,11 +382,8 @@ export default class Client {
     );
 
     const trueSession = { ...session, ...authSession };
-    if (!noData) {
-      // If tracking disabled, update user id from backend
-      if (trueSession.new_user_id) initState.userId = trueSession.new_user_id;
-      updateSessionValues(trueSession);
-    }
+    if (!noData) updateSessionValues(trueSession);
+
     // submitAuthInfo can set formCompleted before the session is set, so we don't want to override completed flags
     if (initState.formSessions[this.formKey]?.form_completed)
       trueSession.form_completed = true;
@@ -518,7 +518,9 @@ export default class Client {
     userData: Record<string, any> | any[],
     headers: Record<string, string>
   ) {
+    const { userId } = initInfo();
     const data = {
+      fuser_key: userId,
       form_key: this.formKey,
       method,
       url,
@@ -532,17 +534,45 @@ export default class Client {
     }).then((response) => (response ? response.json() : Promise.resolve()));
   }
 
+  // Collaboration
+  async verifyCollaborator(email: string) {
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      fuser_key: userId,
+      email
+    });
+    const url = `${API_URL}collaborator/verify/?${params}`;
+    return this._fetch(url, {}).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
+  }
+
+  async inviteCollaborator(email: string) {
+    const { userId } = initInfo();
+    const data = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      email
+    };
+    const url = `${API_URL}collaborator/invite/`;
+    return this._fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data)
+    }).then((response) => (response ? response.json() : Promise.resolve()));
+  }
+
   // THIRD-PARTY INTEGRATIONS
-  async fetchPlaidLinkToken() {
+  async fetchPlaidLinkToken(includeLiabilities: boolean) {
     await initFormsPromise;
     const { userId } = initInfo();
     const params = encodeGetParams({
       form_key: this.formKey,
-      fuser_key: userId
+      fuser_key: userId,
+      liabilities: includeLiabilities ? 'true' : 'false'
     });
     const url = `${API_URL}plaid/link_token/?${params}`;
-    const options = { headers: { 'Content-Type': 'application/json' } };
-    return this._fetch(url, options).then((response) =>
+    return this._fetch(url, {}).then((response) =>
       response ? response.json() : Promise.resolve()
     );
   }

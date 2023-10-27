@@ -94,6 +94,8 @@ export const getFormContext = (formUuid: string) => {
     openUrl: (url: string, target = '_blank') => {
       featheryWindow()?.open(url, target, 'noopener');
     },
+    setCalendlyUrl: (url: string) =>
+      internalState[formUuid].setCalendlyUrl(url),
     // deprecated
     setFieldValues: (userVals: FieldValues): void => {
       console.warn(

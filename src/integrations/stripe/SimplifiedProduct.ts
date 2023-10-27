@@ -20,7 +20,7 @@ export default class SimplifiedProduct {
   ) {
     this._id = id;
     this._productPriceCacheItem = productPriceCacheItem;
-    this._defaultPrice = this.getDefaultPrice();
+    this._defaultPrice = getDefaultPrice(productPriceCacheItem);
     this._mode = mode;
   }
 
@@ -71,6 +71,31 @@ export default class SimplifiedProduct {
     return subscriptionInterval;
   }
 
+  get pricing_type(): string {
+    const tieredTypes: any = {
+      graduated: 'tiered - graduated',
+      volume: 'tiered - volume'
+    };
+    let pricingType = 'flat-rate';
+    if (this._defaultPrice?.billing_scheme === 'per_unit') {
+      if ((this._defaultPrice?.per_unit_units ?? 1) > 1)
+        pricingType = `per ${this._defaultPrice?.per_unit_units} units`;
+    } else
+      pricingType = tieredTypes[this._defaultPrice?.tiers_mode ?? ''] ?? '';
+
+    return pricingType;
+  }
+
+  get recurring_billing_type(): string {
+    const recurringUsageTypes: any = {
+      licensed: 'licensed (in advance)',
+      metered: 'metered (in arrears)'
+    };
+    return (
+      recurringUsageTypes[this._defaultPrice?.recurring_usage_type ?? ''] ?? ''
+    );
+  }
+
   get mode(): string {
     return this._mode;
   }
@@ -105,17 +130,19 @@ export default class SimplifiedProduct {
       this._defaultPrice?.currency
     );
   }
+}
 
-  getDefaultPrice(): Price | undefined {
-    let priceObj: Price | undefined;
-    if (this._productPriceCacheItem?.default_price) {
-      // find the price with the default price id
-      priceObj = this._productPriceCacheItem.prices.find(
-        (price) => price.id === this._productPriceCacheItem.default_price
-      );
-    }
-    if (!priceObj && this._productPriceCacheItem.prices.length > 0)
-      priceObj = this._productPriceCacheItem.prices[0];
-    return priceObj;
+export function getDefaultPrice(
+  productPriceCacheItem: StripeProductProductCacheItem
+): Price | undefined {
+  let priceObj: Price | undefined;
+  if (productPriceCacheItem?.default_price) {
+    // find the price with the default price id
+    priceObj = productPriceCacheItem.prices.find(
+      (price) => price.id === productPriceCacheItem.default_price
+    );
   }
+  if (!priceObj && productPriceCacheItem?.prices.length > 0)
+    priceObj = productPriceCacheItem.prices[0];
+  return priceObj;
 }

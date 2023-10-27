@@ -1,14 +1,97 @@
 import { fieldValues } from '../../utils/init';
-import { FEATHERY_CART, FEATHERY_CART_TOTAL, Price, Product } from './';
+import {
+  calculateLineItemCost,
+  FEATHERY_CART,
+  FEATHERY_CART_TOTAL,
+  Price,
+  StripeConfig
+} from './';
 import { formatDecimal, formatMoney } from '../../utils/primitives';
+import { getDefaultPrice } from './SimplifiedProduct';
 
-export default class Cart {
-  _productPriceCacheConfig;
-  constructor(productPriceCacheConfig: { [key: string]: Product }) {
+class CartItem {
+  _id: string;
+  _quantity: number;
+  _productPriceCacheConfig: any;
+  constructor(id: string, quantity: number, productPriceCacheConfig: any) {
+    this._id = id;
+    this._quantity = quantity;
     this._productPriceCacheConfig = productPriceCacheConfig;
   }
 
-  // more properties and methods will be here in future releases
+  get id() {
+    return this._id;
+  }
+
+  get name() {
+    return this._productPriceCacheConfig[this._id].name;
+  }
+
+  _getPrice() {
+    return (
+      (getDefaultPrice(this._productPriceCacheConfig[this._id])?.unit_amount ??
+        0) / 100
+    );
+  }
+
+  get price() {
+    return formatDecimal(this._getPrice(), 2);
+  }
+
+  get price_formatted() {
+    return formatMoney(
+      this._getPrice(),
+      getDefaultPrice(this._productPriceCacheConfig[this._id])?.currency
+    );
+  }
+
+  get quantity() {
+    return this._quantity;
+  }
+
+  _getSubtotal() {
+    return calculateLineItemCost(
+      this._productPriceCacheConfig[this._id],
+      this._quantity,
+      true
+    ).getValue();
+  }
+
+  get subtotal() {
+    return calculateLineItemCost(
+      this._productPriceCacheConfig[this._id],
+      this._quantity,
+      true
+    ).getValue();
+  }
+
+  get subtotal_formatted() {
+    return formatMoney(
+      this.subtotal as unknown as number,
+      getDefaultPrice(this._productPriceCacheConfig[this._id])?.currency
+    );
+  }
+}
+
+export default class Cart {
+  _productPriceCacheConfig;
+  constructor(stripeConfig: StripeConfig) {
+    const allProductsPriceCache = {
+      ...(stripeConfig?.metadata.live?.product_price_cache ?? {}),
+      ...(stripeConfig?.metadata.test?.product_price_cache ?? {})
+    };
+    this._productPriceCacheConfig = allProductsPriceCache;
+  }
+
+  get items() {
+    return Object.entries(fieldValues[FEATHERY_CART] ?? {}).reduce(
+      (items: any, [id, quantity]) => {
+        items[id] = new CartItem(id, quantity, this._productPriceCacheConfig);
+        return items;
+      },
+      {}
+    );
+  }
 
   get total() {
     return formatDecimal((fieldValues[FEATHERY_CART_TOTAL] as number) ?? 0, 2);

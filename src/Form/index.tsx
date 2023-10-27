@@ -117,7 +117,9 @@ import {
   REQUIRED_FLOW_ACTIONS,
   hasFlowActions,
   canRunAction,
-  ACTION_NEW_SUBMISSION
+  ACTION_NEW_SUBMISSION,
+  ACTION_VERIFY_COLLABORATOR,
+  ACTION_INVITE_COLLABORATOR
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -736,6 +738,20 @@ function Form({
               triggerErrors: true
             });
           });
+        },
+        setCalendlyUrl: (url: string) => {
+          if (integrations?.calendly?.metadata) {
+            setIntegrations((integrations) => ({
+              ...integrations,
+              calendly: {
+                ...integrations?.calendly,
+                metadata: {
+                  ...integrations?.calendly.metadata,
+                  api_key: url
+                }
+              }
+            }));
+          }
         }
       },
       // Avoid all these other obj props going through Object.assign which is not necessary.
@@ -1274,20 +1290,29 @@ function Form({
   const buttonOnClick = async (button: ClickActionElement) => {
     await setButtonLoader(button);
 
-    const setButtonError = (message: string) =>
-      setFormElementError({
-        formRef,
-        fieldKey: button.id,
-        message,
-        errorType: formSettings.errorType,
-        setInlineErrors,
-        triggerErrors: true
-      });
+    const setButtonError = (message: string) => {
+      // Clear loaders before setting errors since buttons are disabled
+      // when loaders are showing
+      clearLoaders();
+      // Set asynchronously since loaders need to unrender first
+      setTimeout(
+        () =>
+          setFormElementError({
+            formRef,
+            fieldKey: button.id,
+            message,
+            errorType: formSettings.errorType,
+            setInlineErrors,
+            triggerErrors: true
+          }),
+        10
+      );
+    };
+
     if (button.properties.captcha_verification && !initState.isTestEnv) {
       const invalid = await verifyRecaptcha(client);
       if (invalid) {
         setButtonError('Submission failed');
-        clearLoaders();
         return;
       }
     }
@@ -1413,7 +1438,8 @@ function Form({
         'action',
         () => ({
           trigger,
-          beforeClickActions
+          beforeClickActions,
+          actions
         }),
         elementType === 'container' ? element.id : undefined
       );
@@ -1429,7 +1455,12 @@ function Form({
         removeRepeatedRow(element.repeat);
       else if (type === ACTION_TRIGGER_PLAID) {
         await submitPromise;
-        await openPlaidLink(client, flowOnSuccess(i), updateFieldValues);
+        await openPlaidLink(
+          client,
+          flowOnSuccess(i),
+          updateFieldValues,
+          action.include_liabilities
+        );
         break;
       } else if (type === ACTION_TRIGGER_ARGYLE) {
         await submitPromise;
@@ -1459,7 +1490,6 @@ function Form({
             await Auth.sendSms(phoneNum, client);
           } catch (e) {
             setElementError((e as Error).message);
-            elementClicks[id] = false;
             break;
           }
         } else {
@@ -1490,7 +1520,6 @@ function Form({
             await Auth.sendMagicLink(email);
           } catch (e) {
             setElementError((e as Error).message);
-            elementClicks[id] = false;
             break;
           }
         } else {
@@ -1515,6 +1544,29 @@ function Form({
         addToCart(action, updateFieldValues, integrations?.stripe);
       } else if (type === ACTION_REMOVE_PRODUCT_FROM_PURCHASE) {
         removeFromCart(action, updateFieldValues, integrations?.stripe);
+      } else if (type === ACTION_VERIFY_COLLABORATOR) {
+        const val = fieldValues[action.email_field_key] as string;
+        if (!validators.email(val)) {
+          setElementError(`${val} is an invalid email`);
+          break;
+        }
+        const { valid } = await client.verifyCollaborator(val);
+        if (!valid) {
+          setElementError('Invalid form collaborator');
+          break;
+        }
+      } else if (type === ACTION_INVITE_COLLABORATOR) {
+        const val = fieldValues[action.email_field_key] as string;
+        if (!validators.email(val)) {
+          setElementError(`${val} is an invalid email`);
+          break;
+        }
+        try {
+          await client.inviteCollaborator(val);
+        } catch (e: any) {
+          setElementError((e as Error).message);
+          break;
+        }
       } else if (type === ACTION_STORE_FIELD) {
         let val;
         if (action.custom_store_value_type === 'field') {

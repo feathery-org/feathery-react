@@ -2,7 +2,7 @@ import { IMaskInput } from 'react-imask';
 import React, { memo, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
-import InlineTooltip from '../../components/Tooltip';
+import InlineTooltip from '../../components/InlineTooltip';
 import { bootstrapStyles } from '../../styles';
 import { emailPatternStr } from '../../../utils/validation';
 import useBorder from '../../components/useBorder';
@@ -109,6 +109,8 @@ function getInputProps(servar: any) {
     minLength: servar.min_length
   };
 
+  const meta = servar.metadata;
+
   switch (servar.type) {
     case 'integer_field':
       return { type: 'tel' };
@@ -120,14 +122,14 @@ function getInputProps(servar: any) {
       };
     case 'gmap_zip':
       return {
-        type: servar.metadata.allowed_characters === 'digits' ? 'tel' : 'text'
+        type: meta.allowed_characters === 'digits' ? 'tel' : 'text'
       };
     case 'ssn':
       return { type: 'tel', ...maxConstraints };
     case 'url':
       return { type: 'url', ...maxConstraints };
     default:
-      if (servar.metadata.allowed_characters === 'digits') {
+      if (meta.number_keypad || meta.allowed_characters === 'digits') {
         return { type: 'tel', ...maxConstraints };
       }
       return maxConstraints;
@@ -210,6 +212,10 @@ function TextField({
               backgroundColor: 'transparent',
               ...bootstrapStyles,
               ...responsiveStyles.getTarget('field'),
+              '&:focus': {
+                ...responsiveStyles.getTarget('active'),
+                ...borderStyles.active
+              },
               [`&:focus ~ #${borderId}`]: Object.values(borderStyles.active)[0],
               '&:not(:focus)':
                 rawValue || !element.properties.placeholder

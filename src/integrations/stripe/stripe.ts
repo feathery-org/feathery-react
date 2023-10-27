@@ -229,7 +229,7 @@ export interface ProductPriceCacheConfig {
   product_price_cache: { [key: string]: Product };
 }
 
-interface StripeConfig {
+export interface StripeConfig {
   metadata: {
     test?: ProductPriceCacheConfig;
     live?: ProductPriceCacheConfig;
@@ -237,12 +237,7 @@ interface StripeConfig {
 }
 
 export function getCart(stripeConfig: StripeConfig) {
-  const allProductsPriceCache = {
-    ...(stripeConfig?.metadata.live?.product_price_cache ?? {}),
-    ...(stripeConfig?.metadata.test?.product_price_cache ?? {})
-  };
-
-  return new Cart(allProductsPriceCache);
+  return new Cart(stripeConfig);
 }
 export function getSimplifiedProducts(
   stripeConfig: StripeConfig
@@ -308,7 +303,7 @@ function getLiveOrTestProduct(
 export function addToCart(
   paymentAction: PaymentAction,
   updateFieldValues: any,
-  stripeConfig: any
+  stripeConfig: StripeConfig
 ) {
   const {
     product_id: configuredProductId,
