@@ -474,8 +474,12 @@ function Form({
     };
   }, [debouncedRerender]);
 
-  const updateFieldValues = (newFieldValues: any, rerender = true) => {
-    clearBrowserErrors(formRef);
+  const updateFieldValues = (
+    newFieldValues: any,
+    rerender = true,
+    clearErrors = true
+  ) => {
+    if (clearErrors) clearBrowserErrors(formRef);
     const entries = Object.entries(newFieldValues);
     if (entries.every(([key, val]) => fieldValues[key] === val)) return false;
 
@@ -1595,7 +1599,7 @@ function Form({
         const newValues = {
           [key]: setToDefaultValue ? defaultValue : castValue
         };
-        updateFieldValues(newValues);
+        updateFieldValues(newValues, true, false);
         client.submitCustom(newValues);
       }
     }
