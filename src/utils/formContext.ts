@@ -1,3 +1,4 @@
+import { featheryWindow } from './browser';
 import {
   changeStep,
   FieldOptions,
@@ -89,6 +90,9 @@ export const getFormContext = (formUuid: string) => {
         setInlineErrors
       });
       return errors;
+    },
+    openUrl: (url: string, target = '_blank') => {
+      featheryWindow()?.open(url, target, 'noopener');
     },
     setCalendlyUrl: (url: string) =>
       internalState[formUuid].setCalendlyUrl(url),
