@@ -1,4 +1,5 @@
 import React from 'react';
+import HoverTooltip from '../components/HoverTooltip';
 
 function MatrixField({
   element,
@@ -68,9 +69,11 @@ function MatrixField({
               marginBottom: 6
             }}
           >
-            <div style={{ ...widthStyle, fontWeight: 400, padding: 8 }}>
-              {question.label}
-            </div>
+            <HoverTooltip text={question.tooltip}>
+              <div style={{ ...widthStyle, fontWeight: 400, padding: 8 }}>
+                {question.label}
+              </div>
+            </HoverTooltip>
             {options.map((opt: any, j: number) => {
               const questionVal = fieldVal[question.id];
               const isChecked =
@@ -86,7 +89,7 @@ function MatrixField({
                     name={`${servar.key}-${i}`}
                     data-question-id={question.id}
                     value={opt}
-                    disabled={disabled}
+                    disabled={disabled || question.read_only}
                     checked={isChecked}
                     onChange={onChange}
                   />

@@ -245,6 +245,7 @@ export function getDefaultFieldValue(field: any) {
   const meta = servar.metadata;
   if (meta.default_value) return meta.default_value;
 
+  const val: Record<string, any> = {};
   switch (servar.type) {
     case 'checkbox':
       // eslint-disable-next-line camelcase
@@ -268,7 +269,12 @@ export function getDefaultFieldValue(field: any) {
     case 'gmap_country':
       return meta.default_country ?? '';
     case 'matrix':
-      return {};
+      (meta.questions as any[])
+        .filter((question) => question.default_value)
+        .forEach((question) => {
+          val[question.id] = [question.default_value];
+        });
+      return val;
     default:
       return '';
   }
