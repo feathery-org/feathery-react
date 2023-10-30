@@ -119,7 +119,7 @@ function SingleOtpInput({
           width: '100%',
           ...responsiveStyles.getTarget('field')
         }}
-        type='tel'
+        inputMode='numeric'
         disabled={disabled}
         ref={input}
         value={value || ''}

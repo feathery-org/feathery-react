@@ -122,15 +122,15 @@ function getInputProps(servar: any) {
       };
     case 'gmap_zip':
       return {
-        inputmode: meta.allowed_characters === 'digits' ? 'tel' : 'text'
+        inputmode: meta.allowed_characters === 'digits' ? 'numeric' : 'text'
       };
     case 'ssn':
-      return { inputmode: 'tel', ...maxConstraints };
+      return { inputmode: 'numeric', ...maxConstraints };
     case 'url':
       return { type: 'url', ...maxConstraints };
     default:
       if (meta.number_keypad || meta.allowed_characters === 'digits') {
-        return { inputmode: 'tel', ...maxConstraints };
+        return { inputmode: 'numeric', ...maxConstraints };
       }
       return maxConstraints;
   }
