@@ -17,6 +17,7 @@ export const ACTION_SEND_SMS = 'send_sms_code';
 export const ACTION_STORE_FIELD = 'store_field_value';
 export const ACTION_TRIGGER_ARGYLE = 'trigger_argyle';
 export const ACTION_TRIGGER_PLAID = 'trigger_plaid';
+export const ACTION_TRIGGER_PERSONA = 'trigger_persona';
 export const ACTION_URL = 'url';
 export const ACTION_VERIFY_SMS = 'verify_sms';
 export const ACTION_VERIFY_COLLABORATOR = 'verify_collaborator';
@@ -24,7 +25,8 @@ export const ACTION_INVITE_COLLABORATOR = 'invite_collaborator';
 
 export const REQUIRED_FLOW_ACTIONS = {
   [ACTION_TRIGGER_ARGYLE]: 'You must authorize Argyle before proceeding',
-  [ACTION_TRIGGER_PLAID]: 'You must authorize Plaid before proceeding'
+  [ACTION_TRIGGER_PLAID]: 'You must authorize Plaid before proceeding',
+  [ACTION_TRIGGER_PERSONA]: 'You must verify your identity before proceeding'
 };
 
 export function hasFlowActions(actions: any[]) {

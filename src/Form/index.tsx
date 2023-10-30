@@ -119,7 +119,8 @@ import {
   canRunAction,
   ACTION_NEW_SUBMISSION,
   ACTION_VERIFY_COLLABORATOR,
-  ACTION_INVITE_COLLABORATOR
+  ACTION_INVITE_COLLABORATOR,
+  ACTION_TRIGGER_PERSONA
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -133,6 +134,7 @@ import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
 import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
 import { fieldAllowedFromList } from './grid/Element/utils';
+import { triggerPersona } from '../integrations/persona';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -1457,7 +1459,17 @@ function Form({
       if (type === ACTION_ADD_REPEATED_ROW) addRepeatedRow();
       else if (type === ACTION_REMOVE_REPEATED_ROW)
         removeRepeatedRow(element.repeat);
-      else if (type === ACTION_TRIGGER_PLAID) {
+      else if (type === ACTION_TRIGGER_PERSONA) {
+        const persona = integrations?.persona.metadata ?? {};
+        await submitPromise;
+        triggerPersona(
+          persona.template_id,
+          persona.environment_id,
+          flowOnSuccess(i),
+          setElementError
+        );
+        break;
+      } else if (type === ACTION_TRIGGER_PLAID) {
         await submitPromise;
         await openPlaidLink(
           client,

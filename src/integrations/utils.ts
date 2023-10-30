@@ -24,6 +24,7 @@ import {
   trackRudderEvent
 } from './rudderstack';
 import { fieldValues } from '../utils/init';
+import { installPersona } from './persona';
 
 const IMPORTED_URLS = new Set();
 
@@ -88,7 +89,8 @@ export async function initializeIntegrations(
     installAmplitude(integs.amplitude),
     installMixpanel(integs.mixpanel),
     installIntercom(integs['intercom-embedded']),
-    installRudderStack(integs.rudderstack)
+    installRudderStack(integs.rudderstack),
+    installPersona(integs.persona)
   ]);
 
   const gtm = integs['google-tag-manager'];

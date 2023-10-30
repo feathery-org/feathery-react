@@ -3,6 +3,7 @@
 declare global {
   var scriptjsLoadPromise: any;
   var webfontloaderPromise: any;
+  var Persona: any;
   var firebase: any;
   var lottie: any;
   var libphonenumber: any;
