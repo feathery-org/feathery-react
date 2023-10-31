@@ -245,7 +245,7 @@ export function getDefaultFieldValue(field: any) {
   const meta = servar.metadata;
   if (meta.default_value) return meta.default_value;
 
-  const val: Record<string, any> = {};
+  const matrixVal: Record<string, any> = {};
   switch (servar.type) {
     case 'checkbox':
       // eslint-disable-next-line camelcase
@@ -272,9 +272,12 @@ export function getDefaultFieldValue(field: any) {
       (meta.questions as any[])
         .filter((question) => question.default_value)
         .forEach((question) => {
-          val[question.id] = [question.default_value];
+          const val = question.default_value;
+          matrixVal[question.id] = meta.multiple
+            ? val.split(',').map((v: string) => v.trim())
+            : [val];
         });
-      return val;
+      return matrixVal;
     default:
       return '';
   }
