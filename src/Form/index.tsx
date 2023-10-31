@@ -1475,7 +1475,7 @@ function Form({
           client,
           flowOnSuccess(i),
           updateFieldValues,
-          action.include_liabilities
+          action
         );
         break;
       } else if (type === ACTION_TRIGGER_ARGYLE) {
