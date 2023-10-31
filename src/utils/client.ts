@@ -547,12 +547,13 @@ export default class Client {
     );
   }
 
-  async inviteCollaborator(email: string) {
+  async inviteCollaborator(email: string, templateId: string) {
     const { userId } = initInfo();
     const data = {
       form_key: this.formKey,
       fuser_key: userId,
-      email
+      email,
+      template_id: templateId
     };
     const url = `${API_URL}collaborator/invite/`;
     return this._fetch(url, {
