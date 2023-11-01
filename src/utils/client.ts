@@ -553,13 +553,13 @@ export default class Client {
 
   async inviteCollaborator(email: string, templateId: string) {
     const { userId, collaboratorId } = initInfo();
-    const data = {
+    const data: Record<string, any> = {
       form_key: this.formKey,
       fuser_key: userId,
       email,
-      collaborator: collaboratorId,
       template_id: templateId
     };
+    if (collaboratorId) data.collaborator = collaboratorId;
     const url = `${API_URL}collaborator/invite/`;
     return this._fetch(url, {
       headers: { 'Content-Type': 'application/json' },
