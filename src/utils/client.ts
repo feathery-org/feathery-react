@@ -539,9 +539,10 @@ export default class Client {
 
   // Collaboration
   async verifyCollaborator(email: string) {
-    const { userId } = initInfo();
+    const { userId, collaboratorId } = initInfo();
     const params = encodeGetParams({
       fuser_key: userId,
+      collaborator: collaboratorId,
       email
     });
     const url = `${API_URL}collaborator/verify/?${params}`;
