@@ -552,11 +552,12 @@ export default class Client {
   }
 
   async inviteCollaborator(email: string, templateId: string) {
-    const { userId } = initInfo();
+    const { userId, collaboratorId } = initInfo();
     const data = {
       form_key: this.formKey,
       fuser_key: userId,
       email,
+      collaborator: collaboratorId,
       template_id: templateId
     };
     const url = `${API_URL}collaborator/invite/`;
