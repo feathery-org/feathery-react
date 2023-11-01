@@ -134,10 +134,11 @@ export default class Client {
   }
 
   _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
-    const { userId } = initInfo();
+    const { userId, collaboratorId } = initInfo();
     const url = `${API_URL}panel/step/submit/v3/`;
     const data = {
       fuser_key: userId,
+      collaborator: collaboratorId,
       step_key: stepKey,
       servars,
       panel_key: this.formKey,
@@ -494,10 +495,12 @@ export default class Client {
 
   async registerEvent(eventData: any, promise: any = null) {
     await initFormsPromise;
-    const { userId } = initInfo();
+    const { userId, collaboratorId } = initInfo();
+
     const url = `${API_URL}event/`;
     const data = {
       form_key: this.formKey,
+      collaborator: collaboratorId,
       ...eventData,
       ...(userId ? { fuser_key: userId } : {})
     };
