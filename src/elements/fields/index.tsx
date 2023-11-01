@@ -80,7 +80,7 @@ function applyFieldStyles(field: any, styles: any) {
   const ignoreSelectorColors = ['select', 'multiselect', 'checkbox'].includes(
     type
   );
-  styles.applyFontStyles('fc', false, ignoreSelectorColors);
+  styles.applyFontStyles('fc', false, true);
   styles.applyFontStyles('field', false, ignoreSelectorColors);
 
   // These are fields that don't have content inside, which won't be shifted by
