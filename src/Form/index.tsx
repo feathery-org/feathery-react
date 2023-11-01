@@ -1578,7 +1578,7 @@ function Form({
           break;
         }
         try {
-          await client.inviteCollaborator(val);
+          await client.inviteCollaborator(val, action.template_id);
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
