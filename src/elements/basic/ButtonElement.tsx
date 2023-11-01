@@ -179,6 +179,7 @@ function ButtonElement({
         flex: 1
       }}
       css={{
+        borderWidth: 0, // Prevent global CSS override if embedded
         justifyContent: 'center',
         alignItems: 'center',
         border: 'none',
