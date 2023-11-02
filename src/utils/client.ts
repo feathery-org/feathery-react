@@ -561,11 +561,20 @@ export default class Client {
     };
     if (collaboratorId) data.collaborator = collaboratorId;
     const url = `${API_URL}collaborator/invite/`;
-    return this._fetch(url, {
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-      body: JSON.stringify(data)
-    }).then((response) => (response ? response.json() : Promise.resolve()));
+    return this._fetch(
+      url,
+      {
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        body: JSON.stringify(data)
+      },
+      false
+    ).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseError(await response.json()));
+      }
+    });
   }
 
   // THIRD-PARTY INTEGRATIONS
