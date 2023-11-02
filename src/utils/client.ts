@@ -569,14 +569,13 @@ export default class Client {
   }
 
   // THIRD-PARTY INTEGRATIONS
-  async fetchPlaidLinkToken(includeLiabilities: boolean, update: boolean) {
+  async fetchPlaidLinkToken(includeLiabilities: boolean) {
     await initFormsPromise;
     const { userId } = initInfo();
     const params = encodeGetParams({
       form_key: this.formKey,
       fuser_key: userId,
-      liabilities: includeLiabilities ? 'true' : 'false',
-      update: update ? 'true' : 'false'
+      liabilities: includeLiabilities ? 'true' : 'false'
     });
     const url = `${API_URL}plaid/link_token/?${params}`;
     return this._fetch(url, {}).then((response) =>
