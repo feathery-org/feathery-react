@@ -136,9 +136,8 @@ export default class Client {
   _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
     const { userId, collaboratorId } = initInfo();
     const url = `${API_URL}panel/step/submit/v3/`;
-    const data = {
+    const data: Record<string, any> = {
       fuser_key: userId,
-      collaborator: collaboratorId,
       step_key: stepKey,
       servars,
       panel_key: this.formKey,
@@ -146,6 +145,7 @@ export default class Client {
       draft: this.draft,
       no_complete: noComplete
     };
+    if (collaboratorId) data.collaborator = collaboratorId;
 
     const options = {
       headers: {
@@ -498,12 +498,12 @@ export default class Client {
     const { userId, collaboratorId } = initInfo();
 
     const url = `${API_URL}event/`;
-    const data = {
+    const data: Record<string, string> = {
       form_key: this.formKey,
-      collaborator: collaboratorId,
       ...eventData,
       ...(userId ? { fuser_key: userId } : {})
     };
+    if (collaboratorId) data.collaborator = collaboratorId;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
@@ -540,12 +540,9 @@ export default class Client {
   // Collaboration
   async verifyCollaborator(email: string) {
     const { userId, collaboratorId } = initInfo();
-    const params = encodeGetParams({
-      fuser_key: userId,
-      collaborator: collaboratorId,
-      email
-    });
-    const url = `${API_URL}collaborator/verify/?${params}`;
+    const params: Record<string, any> = { fuser_key: userId, email };
+    if (collaboratorId) params.collaborator = collaboratorId;
+    const url = `${API_URL}collaborator/verify/?${encodeGetParams(params)}`;
     return this._fetch(url, {}).then((response) =>
       response ? response.json() : Promise.resolve()
     );
