@@ -292,8 +292,7 @@ function SignatureModal(props: SignatureModalProps) {
                   padding: 0
                 }}
               >
-                Use your cursor or trackpad to draw your signature in the box
-                below.
+                Draw your signature in the box below.
               </p>
               <div
                 css={{ position: 'relative', width: '100%', height: '200px' }}
