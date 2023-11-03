@@ -84,7 +84,8 @@ function SignatureModal(props: SignatureModalProps) {
         background: 'rgba(0, 0, 0, 0.2)',
         zIndex: 1000,
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
+        fontSize: '16px'
       }}
     >
       <div
