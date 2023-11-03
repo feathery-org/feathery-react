@@ -86,7 +86,9 @@ function SignatureModal(props: SignatureModalProps) {
         zIndex: 1000,
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: '16px'
+        fontSize: '16px',
+        fontFamily:
+          responsiveStyles?.getTarget('fc')?.fontFamily ?? 'sans-serif'
       }}
     >
       <div
