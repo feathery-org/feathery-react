@@ -1475,7 +1475,8 @@ function Form({
           client,
           flowOnSuccess(i),
           updateFieldValues,
-          action.include_liabilities
+          action.include_liabilities,
+          () => setElementError('Plaid was unable to fetch your data')
         );
         break;
       } else if (type === ACTION_TRIGGER_ARGYLE) {

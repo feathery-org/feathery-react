@@ -17,7 +17,8 @@ export async function openPlaidLink(
   client: any,
   onSuccess: any,
   updateFieldValues: any,
-  includeLiabilities = false
+  includeLiabilities = false,
+  handleError: any
 ) {
   await plaidPromise;
 
@@ -26,8 +27,15 @@ export async function openPlaidLink(
   const handler = global.Plaid.create({
     token: linkToken,
     onSuccess: async (publicToken: any) => {
-      const fieldVals = await client.submitPlaidUserData(publicToken);
-      updateFieldValues(fieldVals);
+      try {
+        const fieldVals = await client.submitPlaidUserData(publicToken);
+        updateFieldValues(fieldVals);
+      } catch (e) {
+        handleError();
+        handler.exit();
+        handler.destroy();
+        return;
+      }
       await onSuccess();
       handler.exit();
       handler.destroy();
