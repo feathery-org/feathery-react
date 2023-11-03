@@ -17,21 +17,25 @@ export async function openPlaidLink(
   client: any,
   onSuccess: any,
   updateFieldValues: any,
-  action: any
+  includeLiabilities = false,
+  handleError: any
 ) {
   await plaidPromise;
 
-  const linkToken = (
-    await client.fetchPlaidLinkToken(
-      action.include_liabilities,
-      action.update_flow
-    )
-  ).link_token;
+  const linkToken = (await client.fetchPlaidLinkToken(includeLiabilities))
+    .link_token;
   const handler = global.Plaid.create({
     token: linkToken,
     onSuccess: async (publicToken: any) => {
-      const fieldVals = await client.submitPlaidUserData(publicToken);
-      updateFieldValues(fieldVals);
+      try {
+        const fieldVals = await client.submitPlaidUserData(publicToken);
+        updateFieldValues(fieldVals);
+      } catch (e) {
+        handleError();
+        handler.exit();
+        handler.destroy();
+        return;
+      }
       await onSuccess();
       handler.exit();
       handler.destroy();

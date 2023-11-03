@@ -123,7 +123,9 @@ function CheckboxGroupField({
               ...(otherDisabled ? responsiveStyles.getTarget('disabled') : {})
             }}
           />
-          <label htmlFor={`${servar.key}-`}>{otherLabel}</label>
+          <HoverTooltip text={servar.metadata.other_tooltip}>
+            <label htmlFor={`${servar.key}-`}>{otherLabel}</label>
+          </HoverTooltip>
           <ReactForm.Control
             type='text'
             css={{

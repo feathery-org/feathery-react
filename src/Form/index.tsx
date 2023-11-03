@@ -1475,7 +1475,8 @@ function Form({
           client,
           flowOnSuccess(i),
           updateFieldValues,
-          action
+          action.include_liabilities,
+          () => setElementError('Plaid was unable to fetch your data')
         );
         break;
       } else if (type === ACTION_TRIGGER_ARGYLE) {
@@ -1578,7 +1579,7 @@ function Form({
           break;
         }
         try {
-          await client.inviteCollaborator(val);
+          await client.inviteCollaborator(val, action.template_id);
         } catch (e: any) {
           setElementError((e as Error).message);
           break;

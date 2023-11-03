@@ -134,9 +134,9 @@ export default class Client {
   }
 
   _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
-    const { userId } = initInfo();
+    const { userId, collaboratorId } = initInfo();
     const url = `${API_URL}panel/step/submit/v3/`;
-    const data = {
+    const data: Record<string, any> = {
       fuser_key: userId,
       step_key: stepKey,
       servars,
@@ -145,6 +145,7 @@ export default class Client {
       draft: this.draft,
       no_complete: noComplete
     };
+    if (collaboratorId) data.collaborator = collaboratorId;
 
     const options = {
       headers: {
@@ -494,13 +495,15 @@ export default class Client {
 
   async registerEvent(eventData: any, promise: any = null) {
     await initFormsPromise;
-    const { userId } = initInfo();
+    const { userId, collaboratorId } = initInfo();
+
     const url = `${API_URL}event/`;
-    const data = {
+    const data: Record<string, string> = {
       form_key: this.formKey,
       ...eventData,
       ...(userId ? { fuser_key: userId } : {})
     };
+    if (collaboratorId) data.collaborator = collaboratorId;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
@@ -536,41 +539,49 @@ export default class Client {
 
   // Collaboration
   async verifyCollaborator(email: string) {
-    const { userId } = initInfo();
-    const params = encodeGetParams({
-      fuser_key: userId,
-      email
-    });
-    const url = `${API_URL}collaborator/verify/?${params}`;
+    const { userId, collaboratorId } = initInfo();
+    const params: Record<string, any> = { fuser_key: userId, email };
+    if (collaboratorId) params.collaborator = collaboratorId;
+    const url = `${API_URL}collaborator/verify/?${encodeGetParams(params)}`;
     return this._fetch(url, {}).then((response) =>
       response ? response.json() : Promise.resolve()
     );
   }
 
-  async inviteCollaborator(email: string) {
-    const { userId } = initInfo();
-    const data = {
+  async inviteCollaborator(email: string, templateId: string) {
+    const { userId, collaboratorId } = initInfo();
+    const data: Record<string, any> = {
       form_key: this.formKey,
       fuser_key: userId,
-      email
+      email,
+      template_id: templateId
     };
+    if (collaboratorId) data.collaborator = collaboratorId;
     const url = `${API_URL}collaborator/invite/`;
-    return this._fetch(url, {
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-      body: JSON.stringify(data)
-    }).then((response) => (response ? response.json() : Promise.resolve()));
+    return this._fetch(
+      url,
+      {
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        body: JSON.stringify(data)
+      },
+      false
+    ).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseError(await response.json()));
+      }
+    });
   }
 
   // THIRD-PARTY INTEGRATIONS
-  async fetchPlaidLinkToken(includeLiabilities: boolean, update: boolean) {
+  async fetchPlaidLinkToken(includeLiabilities: boolean) {
     await initFormsPromise;
     const { userId } = initInfo();
     const params = encodeGetParams({
       form_key: this.formKey,
       fuser_key: userId,
-      liabilities: includeLiabilities ? 'true' : 'false',
-      update: update ? 'true' : 'false'
+      liabilities: includeLiabilities ? 'true' : 'false'
     });
     const url = `${API_URL}plaid/link_token/?${params}`;
     return this._fetch(url, {}).then((response) =>

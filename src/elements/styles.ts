@@ -133,11 +133,13 @@ class ResponsiveStyles {
   // text align behaves as expected when the flex direction is vertical (a
   // column)
   applyContentAlign(target: string, prefix = '') {
-    this.apply(target, `${prefix}text_align`, (a: any) => ({
-      [isDirectionColumn(this.styles[`${prefix}flex_direction`])
-        ? 'alignItems'
-        : 'justifyContent']: a
-    }));
+    this.apply(
+      target,
+      [`${prefix}text_align`, `${prefix}flex_direction`],
+      (a: any, b: any) => ({
+        [isDirectionColumn(b) ? 'alignItems' : 'justifyContent']: a
+      })
+    );
   }
 
   applyTextAlign(target: string, prefix = '') {

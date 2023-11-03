@@ -63,7 +63,7 @@ const defaultBorderFields = [
 ];
 
 function applyFieldStyles(field: any, styles: any) {
-  const type = field.servar.type;
+  const type = field?.servar?.type || field.type;
   styles.addTargets(
     'fc',
     'sub-fc',
@@ -80,7 +80,7 @@ function applyFieldStyles(field: any, styles: any) {
   const ignoreSelectorColors = ['select', 'multiselect', 'checkbox'].includes(
     type
   );
-  styles.applyFontStyles('fc', false, ignoreSelectorColors);
+  styles.applyFontStyles('fc', false, true);
   styles.applyFontStyles('field', false, ignoreSelectorColors);
 
   // These are fields that don't have content inside, which won't be shifted by
@@ -420,11 +420,11 @@ function applyFieldStyles(field: any, styles: any) {
   return styles;
 }
 
-Object.entries(Fields).map(([key, Field]) => {
+Object.entries(Fields).map(([key, Field]: any) => {
   // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
   Fields[key] = memo(({ element, responsiveStyles, ...props }) => {
     const servar = element.servar;
-    const fieldLabel = servar.name ? (
+    const fieldLabel = servar?.name ? (
       <label
         htmlFor={servar.key}
         style={{

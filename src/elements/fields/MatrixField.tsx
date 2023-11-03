@@ -57,25 +57,28 @@ function MatrixField({
           );
         })}
       </div>
-      {servar.metadata.questions.map((question: any, i: number) => {
+      {servar.metadata.questions.map((q: any, i: number) => {
+        const highlight = q.highlight_color
+          ? `#${q.highlight_color}`
+          : backgroundColor;
         return (
           <div
             key={i}
             style={{
               display: 'flex',
               flexDirection: 'row',
-              backgroundColor: backgroundColor,
-              borderRadius: borderRadius,
+              backgroundColor: highlight,
+              borderRadius,
               marginBottom: 6
             }}
           >
-            <HoverTooltip text={question.tooltip}>
+            <HoverTooltip text={q.tooltip}>
               <div style={{ ...widthStyle, fontWeight: 400, padding: 8 }}>
-                {question.label}
+                {q.label}
               </div>
             </HoverTooltip>
             {options.map((opt: any, j: number) => {
-              const questionVal = fieldVal[question.id];
+              const questionVal = fieldVal[q.id];
               const isChecked =
                 Array.isArray(questionVal) && questionVal.includes(opt);
 
@@ -87,9 +90,9 @@ function MatrixField({
                   <input
                     type={inputType}
                     name={`${servar.key}-${i}`}
-                    data-question-id={question.id}
+                    data-question-id={q.id}
                     value={opt}
-                    disabled={disabled || question.read_only}
+                    disabled={disabled || q.read_only}
                     checked={isChecked}
                     onChange={onChange}
                   />
