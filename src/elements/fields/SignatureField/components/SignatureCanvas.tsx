@@ -30,13 +30,18 @@ function SignatureCanvas(props: SignatureCanvasProps) {
 
   useEffect(() => {
     async function setSignatureCanvas() {
-      if (defaultValue === null) return;
+      const sig = signatureRef.current?.getCanvas();
+
+      if (defaultValue === null) {
+        sig.getContext('2d').clearRect(0, 0, sig.width, sig.height);
+        return;
+      }
+
       const signatureFile = await defaultValue;
       const base64 = await toBase64(signatureFile);
 
       const img = new Image();
       img.onload = () => {
-        const sig = signatureRef.current?.getCanvas();
         if (!sig) return;
 
         const hRatio = sig.offsetWidth / img.width;

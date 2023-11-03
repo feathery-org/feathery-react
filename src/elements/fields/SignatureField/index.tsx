@@ -25,6 +25,7 @@ function SignatureField({
         <SignatureModal
           show={showSignatureModal}
           setShow={setShowSignatureModal}
+          defaultValue={defaultValue}
           fieldKey={fieldKey}
           responsiveStyles={responsiveStyles}
           onClear={onClear}

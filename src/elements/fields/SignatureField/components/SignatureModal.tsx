@@ -16,6 +16,7 @@ function SignatureModal(props: SignatureModalProps) {
     show = false,
     setShow = () => {},
     fieldKey,
+    defaultValue,
     responsiveStyles,
     onClear = () => {},
     onEnd = () => {}
@@ -89,7 +90,7 @@ function SignatureModal(props: SignatureModalProps) {
       }}
     >
       <div
-        onClick={() => setShow(false)}
+        onClick={() => handleCancel()}
         css={{
           position: 'fixed',
           top: 0,
@@ -118,7 +119,7 @@ function SignatureModal(props: SignatureModalProps) {
         >
           <h3 css={{ padding: 0, margin: 0, flex: '1' }}>Add your signature</h3>
           <CloseIcon
-            onClick={() => setShow(false)}
+            onClick={() => handleCancel()}
             css={{ '&:hover': { cursor: 'pointer' } }}
           />
         </div>
@@ -219,7 +220,7 @@ function SignatureModal(props: SignatureModalProps) {
                     <img
                       src={signatureImgData}
                       alt='Signature Image'
-                      css={{ maxHeight: '100%' }}
+                      css={{ maxHeight: '100%', maxWidth: '100%' }}
                     />
                   )}
                 </div>
@@ -300,6 +301,7 @@ function SignatureModal(props: SignatureModalProps) {
                   responsiveStyles={responsiveStyles}
                   onClear={onClear}
                   onEnd={(file) => setSignatureFile(file)}
+                  showClear={false}
                 />
               </div>
             </div>
@@ -344,28 +346,44 @@ function SignatureModal(props: SignatureModalProps) {
               Back
             </button>
           )}
-          <button
-            onClick={() => {
-              if (!isLoading) {
-                handleSubmit();
-              }
-            }}
-            disabled={isLoading}
-            css={{
-              backgroundColor: '#E2626E',
-              color: '#fff',
-              '&:hover': {
-                backgroundColor: '#CB4E5A'
-              },
-              '&:disabled': {
-                '&:hover': {
-                  cursor: 'not-allowed'
+          <div>
+            {defaultValue && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  onClear();
+                }}
+                css={{
+                  marginRight: '10px',
+                  '&:hover': { backgroundColor: '#e1e1e1' }
+                }}
+              >
+                Clear
+              </button>
+            )}
+            <button
+              onClick={() => {
+                if (!isLoading) {
+                  handleSubmit();
                 }
-              }
-            }}
-          >
-            Sign
-          </button>
+              }}
+              disabled={isLoading}
+              css={{
+                backgroundColor: '#535353',
+                color: '#fff',
+                '&:hover': {
+                  backgroundColor: '#3a3a3a'
+                },
+                '&:disabled': {
+                  '&:hover': {
+                    cursor: 'not-allowed'
+                  }
+                }
+              }}
+            >
+              Sign
+            </button>
+          </div>
         </div>
       </div>
     </div>
