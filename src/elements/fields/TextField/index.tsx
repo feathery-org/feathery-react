@@ -214,6 +214,7 @@ function TextField({
               ...responsiveStyles.getTarget('field'),
               '&:focus': {
                 ...responsiveStyles.getTarget('active'),
+                ...responsiveStyles.getTarget('field')['&:focus'],
                 ...borderStyles.active
               },
               [`&:focus ~ #${borderId}`]: Object.values(borderStyles.active)[0],
