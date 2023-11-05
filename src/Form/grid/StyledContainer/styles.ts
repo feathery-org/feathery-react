@@ -2,7 +2,6 @@ import ResponsiveStyles from '../../../elements/styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
 import { getElementType } from './utils';
 
-export const DEFAULT_MIN_FILL_SIZE = 10;
 export const DEFAULT_MIN_SIZE = 50;
 
 export const getCellStyle = (cell: any, viewport?: 'desktop' | 'mobile') => {
@@ -58,7 +57,8 @@ export const getContainerStyles = (
       'external_padding_right',
       'padding_left',
       'padding_right',
-      'content_responsive'
+      'content_responsive',
+      'layout'
     ],
     (
       width: any,
@@ -68,7 +68,8 @@ export const getContainerStyles = (
       marginRight: any,
       paddingLeft: any,
       paddingRight: any,
-      contentResponsive: any
+      contentResponsive: any,
+      horizontalLayout: any
     ) => {
       const s: any = {};
       const xTotalMargin = node.isElement
@@ -146,6 +147,13 @@ export const getContainerStyles = (
         if (!hasChildren) {
           s.minWidth = `${DEFAULT_MIN_SIZE}px`;
         }
+      } else if (horizontalLayout) {
+        let targetStyle = horizontalLayout;
+        if (targetStyle === 'left') targetStyle = 'flex-start';
+        else if (targetStyle === 'right') targetStyle = 'flex-end';
+        const alignDirection =
+          parentAxis === 'row' ? 'alignSelf' : 'justifySelf';
+        s[alignDirection] = targetStyle;
       }
 
       if (xTotalMargin && s.width) {
@@ -173,7 +181,8 @@ export const getContainerStyles = (
       'external_padding_bottom',
       'padding_top',
       'padding_bottom',
-      'overflow'
+      'overflow',
+      'vertical_layout'
     ],
     (
       height: any,
@@ -183,7 +192,8 @@ export const getContainerStyles = (
       marginBottom: any,
       paddingTop: any,
       paddingBottom: any,
-      overflow: any
+      overflow: any,
+      verticalLayout: any
     ) => {
       const s: any = {};
       const yTotalMargin = node.isElement
@@ -265,51 +275,15 @@ export const getContainerStyles = (
         if (!hasChildren) {
           s.minHeight = `${DEFAULT_MIN_SIZE}px`;
         }
+      } else if (verticalLayout) {
+        // Apply vertical self-alignment
+        const alignDirection =
+          parentAxis === 'row' ? 'justifySelf' : 'alignSelf';
+        s[alignDirection] = verticalLayout;
       }
 
       if (yTotalMargin && s.height === '100%' && heightUnit !== 'px') {
         s.height = `calc(100% - ${yTotalMargin}px)`;
-      }
-
-      return s;
-    }
-  );
-
-  /**
-   * Apply vertical self alignment
-   */
-  styles.apply(
-    'container',
-    ['vertical_layout', 'parent_axis'],
-    (verticalLayout: any, parentAxis: any) => {
-      const s: any = {};
-      const alignDirection = parentAxis === 'row' ? 'justifySelf' : 'alignSelf';
-
-      if (verticalLayout) {
-        s[alignDirection] = verticalLayout;
-      }
-
-      return s;
-    }
-  );
-
-  /**
-   * Apply horizontal self alignment
-   */
-  styles.apply(
-    'container',
-    ['layout', 'parent_axis'],
-    (layout: any, parentAxis: any) => {
-      const s: any = {};
-      const alignDirection = parentAxis === 'row' ? 'alignSelf' : 'justifySelf';
-
-      if (layout) {
-        let targetStyle = layout;
-
-        if (targetStyle === 'left') targetStyle = 'flex-start';
-        else if (targetStyle === 'right') targetStyle = 'flex-end';
-
-        s[alignDirection] = targetStyle;
       }
 
       return s;
