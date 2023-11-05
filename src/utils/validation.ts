@@ -231,6 +231,7 @@ function isFieldValueEmpty(value: any, servar: any) {
       noVal = !value?.complete;
       break;
     default:
+      if (typeof value === 'string') value = value.trim();
       noVal = ['', null, undefined].includes(value);
       break;
   }
