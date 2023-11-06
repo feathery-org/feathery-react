@@ -1202,7 +1202,8 @@ function Form({
 
     await callbackRef.current.all();
     const explicitNav =
-      submitData || ['button', 'text'].includes(metadata.elementType);
+      submitData ||
+      ['button', 'text', 'container'].includes(metadata.elementType);
     if (!redirectKey) {
       if (explicitNav) {
         eventData.completed = true;
