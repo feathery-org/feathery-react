@@ -63,7 +63,7 @@ function SignatureField({
               left: 0,
               width: '100%',
               height: '100%',
-              zIndex: 500,
+              zIndex: 1,
               alignItems: 'center',
               justifyContent: 'center',
               '&:hover': {
