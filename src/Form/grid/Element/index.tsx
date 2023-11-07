@@ -526,20 +526,20 @@ const Element = ({ node: el, form, flags }: any) => {
               if (change) onChange();
             }}
             onSelect={(address: any, addressId: string) => {
-              const addrFields: Record<string, any> = {};
-              activeStep.servar_fields.forEach((field: any) => {
-                const servar = field.servar;
-                if (MAP_FIELD_TYPES.has(servar.type))
-                  addrFields[servar.type] = pickCloserElement(
-                    el,
-                    addrFields[servar.type],
-                    field
-                  );
-              });
-
-              if (!isObjectEmpty(addrFields)) {
-                const keyIDMap: Record<string, string> = {};
-                const addrValues: Record<string, any> = {};
+              const addrValues: Record<string, any> = {};
+              if (el.servar.metadata.save_address === 'all_line_1') {
+                addrValues[el.servar.key] = address.formatted_address;
+              } else {
+                const addrFields: Record<string, any> = {};
+                activeStep.servar_fields.forEach((field: any) => {
+                  const servar = field.servar;
+                  if (MAP_FIELD_TYPES.has(servar.type))
+                    addrFields[servar.type] = pickCloserElement(
+                      el,
+                      addrFields[servar.type],
+                      field
+                    );
+                });
                 Object.entries(addrFields).forEach(([, field]) => {
                   const servar = field.servar;
                   let val;
@@ -555,9 +555,10 @@ const Element = ({ node: el, form, flags }: any) => {
                     index === null
                       ? val
                       : justInsert(fieldValues[servar.key] || [], val, index);
-                  keyIDMap[servar.key] = field.id;
                 });
+              }
 
+              if (!isObjectEmpty(addrValues)) {
                 updateFieldValues(addrValues);
                 onChange({
                   triggerType: 'addressSelect',
