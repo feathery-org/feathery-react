@@ -113,7 +113,7 @@ function getInputProps(servar: any) {
 
   switch (servar.type) {
     case 'integer_field':
-      return { inputmode: 'decimal' };
+      return { inputMode: 'decimal' as any };
     case 'email':
       return {
         type: 'email',
@@ -122,15 +122,17 @@ function getInputProps(servar: any) {
       };
     case 'gmap_zip':
       return {
-        inputmode: meta.allowed_characters === 'digits' ? 'numeric' : 'text'
+        inputMode: (meta.allowed_characters === 'digits'
+          ? 'numeric'
+          : 'text') as any
       };
     case 'ssn':
-      return { inputmode: 'numeric', ...maxConstraints };
+      return { inputMode: 'numeric' as any, ...maxConstraints };
     case 'url':
       return { type: 'url', ...maxConstraints };
     default:
       if (meta.number_keypad || meta.allowed_characters === 'digits') {
-        return { inputmode: 'numeric', ...maxConstraints };
+        return { inputMode: 'numeric' as any, ...maxConstraints };
       }
       return maxConstraints;
   }
