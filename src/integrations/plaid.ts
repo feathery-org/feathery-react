@@ -16,6 +16,7 @@ export function installPlaid(isPlaidActive: any) {
 export async function openPlaidLink(
   client: any,
   onSuccess: any,
+  onExit: any,
   updateFieldValues: any,
   includeLiabilities = false,
   handleError: any
@@ -26,6 +27,7 @@ export async function openPlaidLink(
     .link_token;
   const handler = global.Plaid.create({
     token: linkToken,
+    onExit,
     onSuccess: async (publicToken: any) => {
       try {
         const fieldVals = await client.submitPlaidUserData(publicToken);
