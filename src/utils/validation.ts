@@ -155,7 +155,7 @@ function validateElement(
   if (servar) {
     let fieldVal: any = fieldValues[servar.key];
     if (servar.repeated) fieldVal = fieldVal[repeat];
-    const errorMsg = getStandardFieldError(fieldVal, servar);
+    const errorMsg = getStandardFieldError(fieldVal, servar, repeat);
     if (errorMsg) return errorMsg;
   }
 
@@ -243,7 +243,7 @@ function isFieldValueEmpty(value: any, servar: any) {
  * Returns the error message for a field value if it's invalid.
  * Returns an empty string if it's valid.
  */
-function getStandardFieldError(value: any, servar: any) {
+function getStandardFieldError(value: any, servar: any, repeat: any) {
   const defaultErrors = initInfo().defaultErrors;
 
   if (isFieldValueEmpty(value, servar)) {
@@ -262,6 +262,15 @@ function getStandardFieldError(value: any, servar: any) {
   } else if (servar.type === 'email' && !validators.email(value)) {
     return defaultErr;
   } else if (servar.type === 'url' && !validators.url(value)) {
+    // Try appending https since user may have just omitted the protocol
+    const newVal = 'https://' + value;
+    if (validators.url(newVal)) {
+      if (servar.repeated) {
+        // @ts-ignore
+        fieldValues[servar?.key][repeat] = newVal;
+      } else fieldValues[servar.key] = newVal;
+      return '';
+    }
     return defaultErr;
   } else if (servar.type === 'ssn' && value.length !== 9) {
     return defaultErr;
