@@ -589,7 +589,6 @@ export function getPrevStepKey(curStep: any, stepMap: Record<string, string>) {
     if (prevCondition) newStepKey = prevCondition.previous_step_key;
   }
   return newStepKey;
-  return newStepKey ? getNewStepUrl(newStepKey) : '';
 }
 
 // Update the map we maintain to track files that have already been uploaded to S3
