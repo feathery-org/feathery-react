@@ -128,8 +128,6 @@ function getInputProps(servar: any) {
       };
     case 'ssn':
       return { inputMode: 'numeric' as any, ...maxConstraints };
-    case 'url':
-      return { type: 'url', ...maxConstraints };
     default:
       if (meta.number_keypad || meta.allowed_characters === 'digits') {
         return { inputMode: 'numeric' as any, ...maxConstraints };
