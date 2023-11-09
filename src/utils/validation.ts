@@ -230,6 +230,9 @@ function isFieldValueEmpty(value: any, servar: any) {
     case 'payment_method':
       noVal = !value?.complete;
       break;
+    case 'rating':
+      noVal = !value;
+      break;
     default:
       if (typeof value === 'string') value = value.trim();
       noVal = ['', null, undefined].includes(value);
