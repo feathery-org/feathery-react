@@ -79,6 +79,17 @@ export const getContainerStyles = (
       s.minWidth = 'min-content';
       s.width = '100%';
 
+      const isFillWidth = isFill(width) || isFill(widthUnit);
+
+      if (!isFillWidth && horizontalLayout) {
+        let targetStyle = horizontalLayout;
+        if (targetStyle === 'left') targetStyle = 'flex-start';
+        else if (targetStyle === 'right') targetStyle = 'flex-end';
+        const alignDirection =
+          parentAxis === 'row' ? 'alignSelf' : 'justifySelf';
+        s[alignDirection] = targetStyle;
+      }
+
       if (node.isElement) {
         s.flex = '0 1 auto';
 
@@ -134,7 +145,7 @@ export const getContainerStyles = (
         }
       }
 
-      if (isFill(width) || isFill(widthUnit)) {
+      if (isFillWidth) {
         s.maxWidth = '100%';
 
         if (parentAxis === 'column') {
@@ -147,13 +158,6 @@ export const getContainerStyles = (
         if (!hasChildren) {
           s.minWidth = `${DEFAULT_MIN_SIZE}px`;
         }
-      } else if (horizontalLayout) {
-        let targetStyle = horizontalLayout;
-        if (targetStyle === 'left') targetStyle = 'flex-start';
-        else if (targetStyle === 'right') targetStyle = 'flex-end';
-        const alignDirection =
-          parentAxis === 'row' ? 'alignSelf' : 'justifySelf';
-        s[alignDirection] = targetStyle;
       }
 
       if (xTotalMargin && s.width) {
@@ -202,6 +206,15 @@ export const getContainerStyles = (
 
       s.minHeight = 'fit-content';
       s.height = 'auto';
+
+      const isFillHeight = isFill(height) || isFill(heightUnit);
+
+      if (!isFillHeight && verticalLayout) {
+        // Apply vertical self-alignment
+        const alignDirection =
+          parentAxis === 'row' ? 'justifySelf' : 'alignSelf';
+        s[alignDirection] = verticalLayout;
+      }
 
       if (node.isElement) {
         s.flex = '0 1 auto';
@@ -263,7 +276,7 @@ export const getContainerStyles = (
       }
 
       // Fill containers
-      if (isFill(height) || isFill(heightUnit)) {
+      if (isFillHeight) {
         s.maxHeight = '100%';
 
         if (parentAxis === 'row') {
@@ -275,11 +288,6 @@ export const getContainerStyles = (
         if (!hasChildren) {
           s.minHeight = `${DEFAULT_MIN_SIZE}px`;
         }
-      } else if (verticalLayout) {
-        // Apply vertical self-alignment
-        const alignDirection =
-          parentAxis === 'row' ? 'justifySelf' : 'alignSelf';
-        s[alignDirection] = verticalLayout;
       }
 
       if (yTotalMargin && s.height === '100%' && heightUnit !== 'px') {
