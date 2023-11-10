@@ -664,6 +664,14 @@ function Form({
       changeStep(nextStep, newKey, steps, history)
     )
       return;
+    const nextKey = nextStepKey(newStep.next_conditions, {
+      elementType: 'step',
+      elementIDs: [newStep.id]
+    });
+    if (nextKey && changeStep(nextKey, newKey, steps, history)) {
+      return;
+    }
+
     newStep = JSON.parse(JSON.stringify(newStep));
 
     // This could be a redirect from Stripe following a successful payment checkout
