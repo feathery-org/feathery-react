@@ -7,7 +7,7 @@ export default function InlineTooltip({ element, responsiveStyles }: any) {
   return text ? (
     <OverlayTrigger
       placement='top-end'
-      trigger='click'
+      trigger={['hover', 'click']}
       rootClose
       overlay={
         <Tooltip
@@ -31,8 +31,8 @@ export default function InlineTooltip({ element, responsiveStyles }: any) {
         </Tooltip>
       }
     >
-      <HelpIcon
-        cssStyles={{
+      <div
+        css={{
           position: 'absolute',
           right: '10px',
           top: 0,
@@ -40,10 +40,15 @@ export default function InlineTooltip({ element, responsiveStyles }: any) {
           zIndex: 1,
           margin: 'auto',
           cursor: 'pointer',
-          height: '100%',
-          ...responsiveStyles.getTarget('tooltipIcon')
+          height: '100%'
         }}
-      />
+      >
+        <HelpIcon
+          cssStyles={{
+            ...responsiveStyles.getTarget('tooltipIcon')
+          }}
+        />
+      </div>
     </OverlayTrigger>
   ) : null;
 }

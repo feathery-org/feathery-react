@@ -1,5 +1,5 @@
 import React from 'react';
-import HoverTooltip from '../components/HoverTooltip';
+import TextHoverTooltip from '../components/TextHoverTooltip';
 
 function MatrixField({
   element,
@@ -72,11 +72,11 @@ function MatrixField({
               marginBottom: 6
             }}
           >
-            <HoverTooltip text={q.tooltip}>
+            <TextHoverTooltip text={q.tooltip}>
               <div style={{ ...widthStyle, fontWeight: 400, padding: 8 }}>
                 {q.label}
               </div>
-            </HoverTooltip>
+            </TextHoverTooltip>
             {options.map((opt: any, j: number) => {
               const questionVal = fieldVal[q.id];
               const isChecked =

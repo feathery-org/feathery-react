@@ -1,7 +1,7 @@
 import React from 'react';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 
-export default function HoverTooltip({ text, children }: any) {
+export default function TextHoverTooltip({ text, children }: any) {
   return text ? (
     <OverlayTrigger
       overlay={
