@@ -20,6 +20,7 @@ function AddressLine1({
   fieldLabel,
   elementProps = {},
   disabled = false,
+  autoComplete,
   editMode,
   rightToLeft,
   onSelect = () => {},
@@ -132,6 +133,7 @@ function AddressLine1({
             minLength={servar.min_length}
             placeholder=''
             disabled={disabled}
+            autoComplete={autoComplete ? 'street-address' : 'off'}
             value={value}
             ref={setRef}
             // Not on focus because if error is showing, it will

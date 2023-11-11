@@ -86,7 +86,6 @@ function PasswordField({
           onKeyDown={(e) => {
             if (e.key === 'Enter') onEnter(e);
           }}
-          autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
           disabled={disabled}
           value={rawValue}
