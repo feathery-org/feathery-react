@@ -103,36 +103,47 @@ function getMaskProps(servar: any, value: any) {
   };
 }
 
-function getInputProps(servar: any) {
-  const maxConstraints = {
+function getInputProps(servar: any, options: any[], autoComplete: boolean) {
+  const constraints: Record<string, any> = {
     maxLength: servar.max_length,
     minLength: servar.min_length
   };
+  if (options.length > 0) constraints.autoComplete = 'off';
 
   const meta = servar.metadata;
-
   switch (servar.type) {
     case 'integer_field':
       return { inputMode: 'decimal' as any };
     case 'email':
+      if (autoComplete && !constraints.autoComplete) {
+        constraints.autoComplete = 'email';
+      }
       return {
         type: 'email',
         pattern: emailPatternStr,
-        ...maxConstraints
+        ...constraints
       };
     case 'gmap_zip':
+      if (autoComplete && !constraints.autoComplete) {
+        constraints.autoComplete = 'postal-code';
+      }
       return {
         inputMode: (meta.allowed_characters === 'digits'
           ? 'numeric'
           : 'text') as any
       };
+    case 'url':
+      if (autoComplete && !constraints.autoComplete) {
+        constraints.autoComplete = 'url';
+      }
+      return constraints;
     case 'ssn':
-      return { inputMode: 'numeric' as any, ...maxConstraints };
+      return { inputMode: 'numeric' as any, ...constraints };
     default:
       if (meta.number_keypad || meta.allowed_characters === 'digits') {
-        return { inputMode: 'numeric' as any, ...maxConstraints };
+        return { inputMode: 'numeric' as any, ...constraints };
       }
-      return maxConstraints;
+      return constraints;
   }
 }
 
@@ -145,6 +156,7 @@ function TextField({
   elementProps = {},
   required = false,
   disabled = false,
+  autoComplete,
   editMode,
   rightToLeft,
   onAccept = () => {},
@@ -225,9 +237,6 @@ function TextField({
             }}
             required={required}
             disabled={disabled}
-            autoComplete={
-              options.length > 0 ? 'off' : servar.metadata.autocomplete || 'on'
-            }
             placeholder=''
             value={rawValue}
             // Not on focus because if error is showing, it will
@@ -246,7 +255,7 @@ function TextField({
               }
             }}
             inputRef={setRef}
-            {...getInputProps(servar)}
+            {...getInputProps(servar, options, autoComplete)}
             {...getMaskProps(servar, rawValue)}
             onAccept={onAccept}
           />

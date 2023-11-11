@@ -85,7 +85,6 @@ function TextArea({
           onChange={onChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          autoComplete={servar.metadata.autocomplete || 'on'}
           placeholder=''
           disabled={disabled}
           value={rawValue}

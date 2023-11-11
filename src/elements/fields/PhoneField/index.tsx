@@ -31,6 +31,7 @@ function PhoneField({
   elementProps = {},
   required = false,
   disabled = false,
+  autoComplete,
   editMode,
   onChange = () => {},
   onComplete = () => {},
@@ -261,7 +262,6 @@ function PhoneField({
             }}
             required={required}
             disabled={disabled}
-            autoComplete={servar.metadata.autocomplete || 'on'}
             placeholder=''
             value={formattedNumber}
             ref={(ref) => {
@@ -269,6 +269,7 @@ function PhoneField({
               setRef(ref);
             }}
             type='tel'
+            autoComplete={autoComplete ? 'tel' : 'off'}
             dir='ltr' // always left-to-right numbers but will be right justified in RTL
             onFocus={() => {
               setRawNumber((prevNum) => {
