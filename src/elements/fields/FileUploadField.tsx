@@ -133,6 +133,9 @@ function FileUploadField({
               justifyContent: 'center',
               alignItems: 'center',
               boxSizing: 'border-box',
+              ...(thumbnail
+                ? {}
+                : { paddingLeft: '20px', paddingRight: '20px' }),
               ...responsiveStyles.getTarget('field')
             }}
           >
