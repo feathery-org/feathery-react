@@ -19,6 +19,7 @@ export async function openPlaidLink(
   onExit: any,
   updateFieldValues: any,
   includeLiabilities = false,
+  waitForCompletion = true,
   handleError: any
 ) {
   await plaidPromise;
@@ -30,8 +31,11 @@ export async function openPlaidLink(
     onExit,
     onSuccess: async (publicToken: any) => {
       try {
-        const fieldVals = await client.submitPlaidUserData(publicToken);
-        updateFieldValues(fieldVals);
+        const res = client.submitPlaidUserData(publicToken);
+        if (waitForCompletion) {
+          const fieldVals = await res;
+          updateFieldValues(fieldVals);
+        }
       } catch (e) {
         handleError();
         handler.exit();
