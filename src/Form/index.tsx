@@ -656,6 +656,7 @@ function Form({
 
   const getNewStep = async (newKey: any) => {
     let newStep = steps[newKey];
+    if (!newStep) return;
 
     const nextStep = getNextAuthStep(newStep);
     if (
