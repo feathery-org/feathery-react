@@ -470,7 +470,7 @@ export const getInnerContainerStyles = (
 
     // Apply gap
     styles.apply('inner-container', ['gap'], (gap: any) => {
-      if (gap) {
+      if (gap !== null && gap !== undefined) {
         return {
           gap: `${gap}px`
         };
