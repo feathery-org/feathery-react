@@ -23,6 +23,7 @@ import {
   textFieldShouldSubmit
 } from './utils';
 import { getVisibleElements } from '../../../utils/hideAndRepeats';
+import RecordButton from '../../../voice/RecordButton';
 
 const MAP_FIELD_TYPES = new Set([
   'gmap_line_1',
@@ -58,7 +59,8 @@ const Element = ({ node: el, form, flags }: any) => {
     focusRef,
     setCardElement,
     visiblePositions,
-    featheryContext
+    featheryContext,
+    client
   } = form;
 
   const basicProps: Record<string, any> = {
@@ -144,18 +146,7 @@ const Element = ({ node: el, form, flags }: any) => {
       disabled = fieldsMissingValue || !elementsHaveValues;
     }
     return (
-      <Elements.ButtonElement
-        active={customClickSelectionState(el)}
-        loader={buttonLoaders[el.id]}
-        onClick={(e: MouseEvent) => {
-          // prevent auto submission!
-          e.preventDefault();
-          e.stopPropagation();
-          buttonOnClick(el);
-        }}
-        disabled={disabled}
-        {...basicProps}
-      />
+      <RecordButton updateFieldValues={updateFieldValues} client={client} />
     );
   } else if (type === 'field') {
     const index = el.repeat ?? null;

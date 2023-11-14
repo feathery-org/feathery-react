@@ -536,7 +536,7 @@ export default class Client {
   }
 
   // Collaboration
-  async verifyCollaborator(email: string) {
+  verifyCollaborator(email: string) {
     const { userId, collaboratorId } = initInfo();
     const params: Record<string, any> = { fuser_key: userId, email };
     if (collaboratorId) params.collaborator = collaboratorId;
@@ -546,7 +546,7 @@ export default class Client {
     );
   }
 
-  async inviteCollaborator(email: string, templateId: string) {
+  inviteCollaborator(email: string, templateId: string) {
     const { userId, collaboratorId } = initInfo();
     const data: Record<string, any> = {
       form_key: this.formKey,
@@ -573,6 +573,32 @@ export default class Client {
   }
 
   // THIRD-PARTY INTEGRATIONS
+  extractVoiceData(voiceData: any) {
+    const url = `${API_URL}ai/voice/`;
+
+    const formData = new FormData();
+    formData.append('file', voiceData, 'audio.wav');
+    formData.append('panel_key', this.formKey);
+
+    return this._fetch(url, {
+      method: 'POST',
+      body: formData,
+      // In Safari, request fails with keepalive = true if over 64kb payload.
+      keepalive: false
+    }).then(async (response) => {
+      if (response) {
+        const res: Record<string, string> = await response.json();
+        const filteredData: Record<string, any> = {};
+        Object.entries(res).forEach(([fieldKey, fieldVal]) => {
+          if (!fieldVal.includes('NOT FOUND'))
+            filteredData[fieldKey] = fieldVal;
+        });
+        return filteredData;
+      }
+      return {};
+    });
+  }
+
   async fetchPlaidLinkToken(includeLiabilities: boolean) {
     await initFormsPromise;
     const { userId } = initInfo();

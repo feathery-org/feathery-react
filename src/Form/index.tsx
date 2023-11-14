@@ -1715,6 +1715,7 @@ function Form({
       : undefined;
 
   const form = {
+    client,
     userProgress,
     curDepth,
     maxDepth,
