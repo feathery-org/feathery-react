@@ -173,7 +173,8 @@ export default class Field {
     return field
       ? field.servar.metadata.options.map((option: string, index: number) => ({
           value: option,
-          label: (field.servar.metadata.option_labels ?? [])[index]
+          label: (field.servar.metadata.option_labels ?? [])[index],
+          image: (field.servar.metadata.option_images ?? [])[index]
         }))
       : [];
   }
