@@ -33,7 +33,12 @@ function AddressLine1({
   ...props
 }: any) {
   const servar = element.servar;
-  const options = useAddressSearch(value, servar.metadata.address_autocomplete);
+  const meta = servar.metadata;
+  const options = useAddressSearch(
+    value,
+    meta.address_autocomplete,
+    meta.autocomplete_country
+  );
   const [showOptions, setShowOptions] = useState(false);
   const [focused, setFocused] = useState(false);
   const { borderStyles, customBorder } = useBorder({
@@ -165,7 +170,7 @@ function AddressLine1({
   );
 }
 
-function useAddressSearch(searchTerm: any, active: any) {
+function useAddressSearch(searchTerm: any, active: any, country: any) {
   const mounted = useMounted();
   const [term, setTerm] = useState(searchTerm);
   const [results, setResults] = React.useState([]);
@@ -173,12 +178,14 @@ function useAddressSearch(searchTerm: any, active: any) {
   const fetchAddresses = useCallback(
     debounce(
       (newTerm: any) =>
-        new Client().addressSearchResults(newTerm).then((addresses) => {
-          if (mounted.current) {
-            setResults(addresses);
-            setTerm(newTerm);
-          }
-        }),
+        new Client()
+          .addressSearchResults(newTerm, country ?? '')
+          .then((addresses) => {
+            if (mounted.current) {
+              setResults(addresses);
+              setTerm(newTerm);
+            }
+          }),
       SEARCH_DELAY_TIME
     ),
     [setResults, setTerm]
