@@ -87,6 +87,7 @@ function VideoElement({
         ...styles.getTarget('video'),
         position: 'relative',
         maxHeight: '100%',
+        height: '100%',
         width: '100%'
       }}
     >
