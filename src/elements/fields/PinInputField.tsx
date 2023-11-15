@@ -21,7 +21,8 @@ function SingleOtpInput({
   focusPrevInput,
   focusNextInput,
   shouldFocus,
-  disabled
+  disabled,
+  autoComplete
 }: any) {
   const input = useRef(null);
 
@@ -119,6 +120,7 @@ function SingleOtpInput({
           width: '100%',
           ...responsiveStyles.getTarget('field')
         }}
+        autoComplete={autoComplete ? 'one-time-code' : 'off'}
         inputMode='numeric'
         disabled={disabled}
         ref={input}
@@ -143,6 +145,7 @@ function OtpInput({
   onEnter,
   value,
   disabled,
+  autoComplete,
   inlineError
 }: any) {
   const [activeInput, setActiveInput] = useState(shouldFocus ? 0 : -1);
@@ -265,6 +268,7 @@ function OtpInput({
           focusNextInput={focusNextInput}
           shouldFocus={shouldFocus && activeInput > -1}
           disabled={disabled}
+          autoComplete={autoComplete}
         />
       );
     }
@@ -297,6 +301,7 @@ function PinInputField({
   onEnter = () => {},
   elementProps = {},
   disabled = false,
+  autoComplete,
   children
 }: any) {
   return (
@@ -319,6 +324,7 @@ function PinInputField({
         onEnter={onEnter}
         inlineError={inlineError}
         disabled={disabled}
+        autoComplete={autoComplete}
       />
     </div>
   );

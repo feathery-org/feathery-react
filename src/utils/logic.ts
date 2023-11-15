@@ -275,7 +275,8 @@ const COMPARISON_FUNCTIONS: {
   contains_ignore_case: (l, r) =>
     l.some((l: any) =>
       someRight(
-        (l, r) => String(l.toLowerCase()).includes(r.toLowerCase()),
+        (l, r) =>
+          String((l ?? '').toLowerCase()).includes((r ?? '').toLowerCase()),
         l,
         r
       )
@@ -283,7 +284,8 @@ const COMPARISON_FUNCTIONS: {
   not_contains_ignore_case: (l, r) =>
     l.some((l: any) =>
       everyRight(
-        (l, r) => !String(l.toLowerCase()).includes(r.toLowerCase()),
+        (l, r) =>
+          !String((l ?? '').toLowerCase()).includes((r ?? '').toLowerCase()),
         l,
         r
       )

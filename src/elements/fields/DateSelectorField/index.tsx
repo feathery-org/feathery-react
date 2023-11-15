@@ -149,6 +149,7 @@ function DateSelectorField({
           dateFormat={dateMask}
           timeFormat={timeMask}
           maxDate={servarMeta.no_future ? new Date() : undefined}
+          showYearDropdown
           css={{
             height: '100%',
             width: '100%',

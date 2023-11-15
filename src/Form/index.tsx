@@ -656,6 +656,7 @@ function Form({
 
   const getNewStep = async (newKey: any) => {
     let newStep = steps[newKey];
+    if (!newStep) return;
 
     const nextStep = getNextAuthStep(newStep);
     if (
@@ -664,6 +665,14 @@ function Form({
       changeStep(nextStep, newKey, steps, history)
     )
       return;
+    const nextKey = nextStepKey(newStep.next_conditions, {
+      elementType: 'step',
+      elementIDs: [newStep.id]
+    });
+    if (nextKey && changeStep(nextKey, newKey, steps, history)) {
+      return;
+    }
+
     newStep = JSON.parse(JSON.stringify(newStep));
 
     // This could be a redirect from Stripe following a successful payment checkout
@@ -1202,7 +1211,8 @@ function Form({
 
     await callbackRef.current.all();
     const explicitNav =
-      submitData || ['button', 'text'].includes(metadata.elementType);
+      submitData ||
+      ['button', 'text', 'container'].includes(metadata.elementType);
     if (!redirectKey) {
       if (explicitNav) {
         eventData.completed = true;
@@ -1323,15 +1333,16 @@ function Form({
       }
     }
 
-    await runElementActions({
+    const running = await runElementActions({
       actions: button.properties.actions ?? [],
       element: button,
       elementType: 'button',
       submit: button.properties.submit,
-      setElementError: setButtonError
+      setElementError: setButtonError,
+      onAsyncEnd: () => clearLoaders()
     });
 
-    clearLoaders();
+    if (!running) clearLoaders();
   };
 
   const runElementActions = async ({
@@ -1340,6 +1351,7 @@ function Form({
     elementType,
     submit = false,
     setElementError = () => {},
+    onAsyncEnd = () => {},
     textSpanStart,
     textSpanEnd
   }: {
@@ -1348,6 +1360,7 @@ function Form({
     elementType: string;
     submit?: boolean;
     setElementError?: any;
+    onAsyncEnd?: any;
     textSpanStart?: number | undefined;
     textSpanEnd?: number | undefined;
   }) => {
@@ -1429,15 +1442,17 @@ function Form({
     const flowOnSuccess = (index: number) => async () => {
       flowCompleted.current = true;
       elementClicks[id] = false;
-      await runElementActions({
+      const running = await runElementActions({
         actions: actions.slice(index + 1),
         element,
         elementType,
         submit,
         setElementError,
+        onAsyncEnd,
         textSpanStart,
         textSpanEnd
       });
+      if (!running) onAsyncEnd();
     };
     const runAction = (beforeClickActions: boolean) =>
       runUserLogic(
@@ -1452,7 +1467,8 @@ function Form({
 
     await runAction(true);
 
-    for (let i = 0; i < actions.length; i++) {
+    let i;
+    for (i = 0; i < actions.length; i++) {
       const action = actions[i];
       const type = action.type;
 
@@ -1474,8 +1490,10 @@ function Form({
         await openPlaidLink(
           client,
           flowOnSuccess(i),
+          () => onAsyncEnd(),
           updateFieldValues,
           action.include_liabilities,
+          action.wait_for_completion ?? true,
           () => setElementError('Plaid was unable to fetch your data')
         );
         break;
@@ -1617,8 +1635,12 @@ function Form({
       }
     }
 
-    await runAction(false);
+    if (i < actions.length) {
+      elementClicks[id] = false;
+      return true;
+    }
 
+    await runAction(false);
     elementClicks[id] = false;
   };
 

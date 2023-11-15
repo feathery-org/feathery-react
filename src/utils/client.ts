@@ -1,5 +1,3 @@
-import { v4 as uuidv4 } from 'uuid';
-
 import * as errors from './error';
 import {
   fieldValues,
@@ -622,8 +620,8 @@ export default class Client {
     );
   }
 
-  addressSearchResults(searchTerm: any) {
-    const params = encodeGetParams({ search_term: searchTerm });
+  addressSearchResults(searchTerm: any, country: any) {
+    const params = encodeGetParams({ search_term: searchTerm, country });
     const url = `${API_URL}integration/address/search/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
     return this._fetch(url, options).then((response) =>

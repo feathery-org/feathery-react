@@ -6,7 +6,7 @@ import {
   applyHeightWidthMarginByFontSize,
   composeCheckableInputStyle
 } from './CheckboxField';
-import HoverTooltip from '../components/HoverTooltip';
+import TextHoverTooltip from '../components/TextHoverTooltip';
 
 const applyRadioGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('radioGroup');
@@ -90,9 +90,9 @@ function RadioButtonGroupField({
                 ...(disabled ? responsiveStyles.getTarget('disabled') : {})
               }}
             />
-            <HoverTooltip text={tooltips[i]}>
+            <TextHoverTooltip text={tooltips[i]}>
               <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
-            </HoverTooltip>
+            </TextHoverTooltip>
           </div>
         );
       })}
@@ -123,9 +123,9 @@ function RadioButtonGroupField({
               ...(disabled ? responsiveStyles.getTarget('disabled') : {})
             }}
           />
-          <HoverTooltip text={servar.metadata.other_tooltip}>
+          <TextHoverTooltip text={servar.metadata.other_tooltip}>
             <label htmlFor={`${servar.key}-`}>{otherLabel}</label>
-          </HoverTooltip>
+          </TextHoverTooltip>
           <ReactForm.Control
             type='text'
             css={{

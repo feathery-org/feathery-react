@@ -62,6 +62,19 @@ export default function RatingField({
               />
             );
           })}
+        {/* This input must always be rendered so we can set field errors */}
+        <input
+          id={servar.key}
+          // Set to file type so keyboard doesn't pop up on mobile
+          // when field error appears
+          type='file'
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            opacity: 0,
+            zIndex: -1
+          }}
+        />
       </div>
     </div>
   );

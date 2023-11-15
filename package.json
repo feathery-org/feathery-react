@@ -1,6 +1,6 @@
 {
   "name": "@feathery/react",
-  "version": "2.0.208",
+  "version": "2.0.232",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
@@ -89,7 +89,7 @@
     "@fingerprintjs/fingerprintjs": "^3.1.0",
     "@stripe/react-stripe-js": "^1.10.0",
     "@stripe/stripe-js": "^1.35.0",
-    "@stytch/vanilla-js": "0.14.4",
+    "@stytch/vanilla-js": "3.1.1",
     "flat-map-polyfill": "^0.3.8",
     "html2canvas": "^1.4.1",
     "js-big-decimal": "^1.4.1",

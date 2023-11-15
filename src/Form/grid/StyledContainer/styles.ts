@@ -2,7 +2,6 @@ import ResponsiveStyles from '../../../elements/styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
 import { getElementType } from './utils';
 
-export const DEFAULT_MIN_FILL_SIZE = 10;
 export const DEFAULT_MIN_SIZE = 50;
 
 export const getCellStyle = (cell: any, viewport?: 'desktop' | 'mobile') => {
@@ -58,7 +57,8 @@ export const getContainerStyles = (
       'external_padding_right',
       'padding_left',
       'padding_right',
-      'content_responsive'
+      'content_responsive',
+      'layout'
     ],
     (
       width: any,
@@ -68,7 +68,8 @@ export const getContainerStyles = (
       marginRight: any,
       paddingLeft: any,
       paddingRight: any,
-      contentResponsive: any
+      contentResponsive: any,
+      horizontalLayout: any
     ) => {
       const s: any = {};
       const xTotalMargin = node.isElement
@@ -77,6 +78,17 @@ export const getContainerStyles = (
 
       s.minWidth = 'min-content';
       s.width = '100%';
+
+      const isFillWidth = isFill(width) || isFill(widthUnit);
+
+      if (!isFillWidth && horizontalLayout) {
+        let targetStyle = horizontalLayout;
+        if (targetStyle === 'left') targetStyle = 'flex-start';
+        else if (targetStyle === 'right') targetStyle = 'flex-end';
+        const alignDirection =
+          parentAxis === 'row' ? 'alignSelf' : 'justifySelf';
+        s[alignDirection] = targetStyle;
+      }
 
       if (node.isElement) {
         s.flex = '0 1 auto';
@@ -133,7 +145,7 @@ export const getContainerStyles = (
         }
       }
 
-      if (isFill(width) || isFill(widthUnit)) {
+      if (isFillWidth) {
         s.maxWidth = '100%';
 
         if (parentAxis === 'column') {
@@ -173,7 +185,8 @@ export const getContainerStyles = (
       'external_padding_bottom',
       'padding_top',
       'padding_bottom',
-      'overflow'
+      'overflow',
+      'vertical_layout'
     ],
     (
       height: any,
@@ -183,7 +196,8 @@ export const getContainerStyles = (
       marginBottom: any,
       paddingTop: any,
       paddingBottom: any,
-      overflow: any
+      overflow: any,
+      verticalLayout: any
     ) => {
       const s: any = {};
       const yTotalMargin = node.isElement
@@ -192,6 +206,15 @@ export const getContainerStyles = (
 
       s.minHeight = 'fit-content';
       s.height = 'auto';
+
+      const isFillHeight = isFill(height) || isFill(heightUnit);
+
+      if (!isFillHeight && verticalLayout) {
+        // Apply vertical self-alignment
+        const alignDirection =
+          parentAxis === 'row' ? 'justifySelf' : 'alignSelf';
+        s[alignDirection] = verticalLayout;
+      }
 
       if (node.isElement) {
         s.flex = '0 1 auto';
@@ -253,7 +276,7 @@ export const getContainerStyles = (
       }
 
       // Fill containers
-      if (isFill(height) || isFill(heightUnit)) {
+      if (isFillHeight) {
         s.maxHeight = '100%';
 
         if (parentAxis === 'row') {
@@ -269,47 +292,6 @@ export const getContainerStyles = (
 
       if (yTotalMargin && s.height === '100%' && heightUnit !== 'px') {
         s.height = `calc(100% - ${yTotalMargin}px)`;
-      }
-
-      return s;
-    }
-  );
-
-  /**
-   * Apply vertical self alignment
-   */
-  styles.apply(
-    'container',
-    ['vertical_layout', 'parent_axis'],
-    (verticalLayout: any, parentAxis: any) => {
-      const s: any = {};
-      const alignDirection = parentAxis === 'row' ? 'justifySelf' : 'alignSelf';
-
-      if (verticalLayout) {
-        s[alignDirection] = verticalLayout;
-      }
-
-      return s;
-    }
-  );
-
-  /**
-   * Apply horizontal self alignment
-   */
-  styles.apply(
-    'container',
-    ['layout', 'parent_axis'],
-    (layout: any, parentAxis: any) => {
-      const s: any = {};
-      const alignDirection = parentAxis === 'row' ? 'alignSelf' : 'justifySelf';
-
-      if (layout) {
-        let targetStyle = layout;
-
-        if (targetStyle === 'left') targetStyle = 'flex-start';
-        else if (targetStyle === 'right') targetStyle = 'flex-end';
-
-        s[alignDirection] = targetStyle;
       }
 
       return s;
@@ -486,7 +468,7 @@ export const getInnerContainerStyles = (
 
     // Apply gap
     styles.apply('inner-container', ['gap'], (gap: any) => {
-      if (gap) {
+      if (gap !== null && gap !== undefined) {
         return {
           gap: `${gap}px`
         };

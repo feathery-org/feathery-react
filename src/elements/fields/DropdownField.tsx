@@ -5,6 +5,7 @@ import InlineTooltip from '../components/InlineTooltip';
 import useBorder from '../components/useBorder';
 import countryData from '../components/data/countries';
 import { getStateOptions, hasState } from '../components/data/states';
+import { Global, css } from '@emotion/react';
 
 export default function DropdownField({
   element,
@@ -110,6 +111,13 @@ export default function DropdownField({
             : {}
         }}
       >
+        <Global
+          styles={css`
+            option {
+              color: black;
+            }
+          `}
+        />
         {customBorder}
         <select
           css={{

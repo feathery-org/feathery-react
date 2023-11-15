@@ -426,7 +426,8 @@ Object.entries(Fields).map(([key, Field]: any) => {
     const servar = element.servar;
     const fieldLabel = servar?.name ? (
       <label
-        htmlFor={servar.key}
+        // Doesn't work for repeats currently since repeating field IDs aren't unique
+        htmlFor={element.repeat ? undefined : servar.key}
         style={{
           marginBottom: '10px',
           display: 'inline-block'
