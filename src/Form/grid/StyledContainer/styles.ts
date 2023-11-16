@@ -23,8 +23,15 @@ export const getCellStyle = (cell: any, viewport?: 'desktop' | 'mobile') => {
       else return { backgroundColor: `#${b}` };
     }
   );
-  styles.applySelectorStyles('cellActive', 'selected_', true);
-  styles.applySelectorStyles('cellHover', 'hover_');
+  styles.applySelectorStyles('cellActive', {
+    prefix: 'selected_',
+    important: true,
+    background: true
+  });
+  styles.applySelectorStyles('cellHover', {
+    prefix: 'hover_',
+    background: true
+  });
 
   return [
     styles.getTarget('cell', undefined, viewport === 'mobile'),

@@ -86,18 +86,16 @@ function applyFieldStyles(field: any, styles: any) {
   // These are fields that don't have content inside, which won't be shifted by
   // a default border
   const hasBorder = defaultBorderFields.includes(type);
-  styles.applySelectorStyles(
-    'active',
-    'selected_',
-    type !== 'payment_method',
-    hasBorder
-  );
-  styles.applySelectorStyles(
-    'hover',
-    'hover_',
-    !['button_group', 'payment_method'].includes(type),
-    hasBorder
-  );
+  styles.applySelectorStyles('active', {
+    prefix: 'selected_',
+    important: type !== 'payment_method',
+    addBorder: hasBorder
+  });
+  styles.applySelectorStyles('hover', {
+    prefix: 'hover_',
+    important: !['button_group', 'payment_method'].includes(type),
+    addBorder: hasBorder
+  });
   styles.apply('disabled', 'disabled_background_color', (a: any) => {
     if (a) return { backgroundColor: `#${a}` };
     else return { filter: 'brightness(0.9)' };
