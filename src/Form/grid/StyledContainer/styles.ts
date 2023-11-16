@@ -14,9 +14,15 @@ export const getCellStyle = (cell: any, viewport?: 'desktop' | 'mobile') => {
   styles.applyCorners('cell');
   styles.applyBoxShadow('cell');
   styles.applyBackgroundImageStyles('cell');
-  styles.apply('cell', 'background_color', (c: any) => ({
-    backgroundColor: c ? `#${c}` : null
-  }));
+  styles.apply(
+    'cell',
+    ['background_color', 'gradient_color'],
+    (b: any, g: any) => {
+      if (!b) b = 'FFFFFF00';
+      if (g) return { background: `linear-gradient(#${b}, #${g})` };
+      else return { backgroundColor: `#${b}` };
+    }
+  );
   styles.applySelectorStyles('cellActive', 'selected_', true);
   styles.applySelectorStyles('cellHover', 'hover_');
 
@@ -37,7 +43,7 @@ export const getContainerStyles = (
 
   // Apply flex basis rule
   if (node.parent) {
-    styles.apply('container', ['parent_height'], (parentHeight: any) => {
+    styles.apply('container', 'parent_height', (parentHeight: any) => {
       return {
         flexBasis: isFit(parentHeight) || !node.isElement ? 0 : 'fit-content'
       };
@@ -462,14 +468,14 @@ export const getInnerContainerStyles = (
    */
   if (hasChildren) {
     // Apply flex direction
-    styles.apply('inner-container', ['axis'], (axis: any) => {
+    styles.apply('inner-container', 'axis', (axis: any) => {
       return {
         flexDirection: axis === 'column' ? 'row' : 'column'
       };
     });
 
     // Apply gap
-    styles.apply('inner-container', ['gap'], (gap: any) => {
+    styles.apply('inner-container', 'gap', (gap: any) => {
       if (gap !== null && gap !== undefined) {
         return {
           gap: `${gap}px`
