@@ -239,10 +239,10 @@ function CheckboxField({
         checked={fieldVal}
         disabled={disabled}
         onChange={onChange}
-        style={{ marginTop: '4px' }}
         css={{
           ...composeCheckableInputStyle(styles, disabled),
-          ...(disabled ? responsiveStyles.getTarget('disabled') : {})
+          ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
+          marginTop: '1px'
         }}
       />
       {fieldLabel}
