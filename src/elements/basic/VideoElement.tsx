@@ -9,14 +9,17 @@ const VIMEO_URL_REGEX =
   /(?:http?s?:\/\/)?(?:www\.)?vimeo\.com(?:\/video)?\/?(.+)/;
 
 function getEmbedUrl(url: any) {
+  let querystring = url.split('?')[1];
+  if (querystring) querystring = '?' + querystring;
+
   let match = url.match(YOUTUBE_URL_REGEX);
   if (match && match[2].length === 11) {
-    return `https://www.youtube.com/embed/${match[2]}`;
+    return `https://www.youtube.com/embed/${match[2]}${querystring}`;
   }
 
   match = url.match(VIMEO_URL_REGEX);
   if (match && match[1]) {
-    return `https://player.vimeo.com/video/${match[1]}`;
+    return `https://player.vimeo.com/video/${match[1]}${querystring}`;
   }
 
   return url;
