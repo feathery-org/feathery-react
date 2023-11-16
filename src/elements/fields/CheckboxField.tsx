@@ -163,8 +163,14 @@ export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
     true
   );
 
-  responsiveStyles.applySelectorStyles('checkboxHover', 'hover_', true);
-  responsiveStyles.applySelectorStyles('checkboxSelected', 'selected_', true);
+  responsiveStyles.applySelectorStyles('checkboxHover', {
+    prefix: 'hover_',
+    important: true
+  });
+  responsiveStyles.applySelectorStyles('checkboxSelected', {
+    prefix: 'selected_',
+    important: true
+  });
 
   return responsiveStyles;
 }

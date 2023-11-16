@@ -21,11 +21,10 @@ describe('responsiveStyles', () => {
       );
 
       // Act
-      objectUnderTest.applySelectorStyles(
-        TEST_STYLES_TARGET,
-        TEST_PREFIX,
-        true
-      );
+      objectUnderTest.applySelectorStyles(TEST_STYLES_TARGET, {
+        prefix: TEST_PREFIX,
+        important: true
+      });
       const actual = objectUnderTest.getTarget(TEST_STYLES_TARGET);
 
       // Assert
@@ -47,7 +46,9 @@ describe('responsiveStyles', () => {
       );
 
       // Act
-      objectUnderTest.applySelectorStyles(TEST_STYLES_TARGET, TEST_PREFIX);
+      objectUnderTest.applySelectorStyles(TEST_STYLES_TARGET, {
+        prefix: TEST_PREFIX
+      });
       const actual = objectUnderTest.getTarget(TEST_STYLES_TARGET);
 
       // Assert
