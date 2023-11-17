@@ -203,6 +203,7 @@ function ButtonElement({
       }}
       disabled={!editMode && (noActions || loader || disabled)}
       onClick={onClick}
+      aria-label={element.properties.aria_label}
       {...elementProps}
     >
       {customBorder}

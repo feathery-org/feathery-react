@@ -142,6 +142,7 @@ export default function DropdownField({
           value={fieldVal}
           required={required}
           disabled={disabled}
+          aria-label={element.properties.aria_label}
           onChange={onChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}

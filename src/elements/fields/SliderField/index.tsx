@@ -72,6 +72,7 @@ export default function SliderField({
             onChange(val);
             setShowValue(true);
           }}
+          aria-label={element.properties.aria_label}
           // onAfterChange is marked for deprecation, but there is no suitable
           // alternative... I tried using a debounced timer but it has issues.
           // see https://github.com/react-component/slider/issues/849 for

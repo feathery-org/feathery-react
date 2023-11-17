@@ -65,6 +65,7 @@ function VideoElement({
           controls={props.controls}
           muted={props.muted}
           loop={props.loop}
+          aria-label={props.aria_label}
         >
           <source src={props.source_url} type={props.video_extension} />
         </video>
