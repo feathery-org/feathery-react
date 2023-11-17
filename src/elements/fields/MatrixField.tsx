@@ -90,6 +90,7 @@ function MatrixField({
                   <input
                     type={inputType}
                     name={`${servar.key}-${i}`}
+                    aria-label={element.properties.aria_label}
                     data-question-id={q.id}
                     value={opt}
                     disabled={disabled || q.read_only}

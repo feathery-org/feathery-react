@@ -113,6 +113,7 @@ function ButtonGroupField({
           // Set to file type so keyboard doesn't pop up on mobile
           // when field error appears
           type='file'
+          aria-label={element.properties.aria_label}
           style={{
             position: 'absolute',
             bottom: 0,

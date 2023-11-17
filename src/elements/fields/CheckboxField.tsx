@@ -245,6 +245,7 @@ function CheckboxField({
         checked={fieldVal}
         disabled={disabled}
         onChange={onChange}
+        aria-label={element.properties.aria_label}
         css={{
           ...composeCheckableInputStyle(styles, disabled),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),

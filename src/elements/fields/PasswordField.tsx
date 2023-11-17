@@ -75,6 +75,7 @@ function PasswordField({
                 ? {}
                 : { color: 'transparent !important' }
           }}
+          aria-label={element.properties.aria_label}
           maxLength={servar.max_length}
           minLength={servar.min_length}
           required={required}

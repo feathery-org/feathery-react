@@ -239,6 +239,7 @@ function TextField({
             disabled={disabled}
             placeholder=''
             value={rawValue}
+            aria-label={element.properties.aria_label}
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
             onKeyDown={(e) => {

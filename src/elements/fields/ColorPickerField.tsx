@@ -107,6 +107,7 @@ const transparencyMap = {
 };
 
 function ColorPickerField({
+  element,
   fieldLabel,
   responsiveStyles,
   fieldVal = 'FFFFFFFF',
@@ -160,6 +161,7 @@ function ColorPickerField({
             onClick={() => setShowPicker(false)}
           />
           <SketchPicker
+            aria-label={element.properties.aria_label}
             color={`#${fieldVal}`}
             onChange={(color: any) => {
               // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message

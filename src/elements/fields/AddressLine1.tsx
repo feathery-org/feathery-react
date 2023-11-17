@@ -138,6 +138,7 @@ function AddressLine1({
             minLength={servar.min_length}
             placeholder=''
             disabled={disabled}
+            aria-label={element.properties.aria_label}
             autoComplete={autoComplete ? 'street-address' : 'off'}
             value={value}
             ref={setRef}
