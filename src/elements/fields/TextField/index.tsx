@@ -24,6 +24,8 @@ function constraintChar(allowed: any) {
       return 'a';
     case 'alphanumeric':
       return 'b';
+    case 'alphaspace':
+      return 'c';
     case 'digits':
       return '0';
     default:
@@ -40,7 +42,7 @@ function getTextFieldMask(servar: any) {
   if (data.mask) mask = data.mask;
   else {
     let allowed = data.allowed_characters;
-    if (servar.type === 'gmap_zip' && !allowed) allowed = 'alphanumeric';
+    if (servar.type === 'gmap_zip' && !allowed) allowed = 'alphaspace';
     const definitionChar = constraintChar(allowed);
 
     let numOptional = MAX_TEXT_FIELD_LENGTH - prefix.length - suffix.length;
@@ -90,7 +92,8 @@ function getMaskProps(servar: any, value: any) {
       maskProps = {
         mask: getTextFieldMask(servar),
         definitions: {
-          b: /[a-zA-Z0-9]/
+          b: /[a-zA-Z0-9]/,
+          c: /[a-zA-Z0-9 ]/
         },
         maxLength: MAX_TEXT_FIELD_LENGTH
       };
