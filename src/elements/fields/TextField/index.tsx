@@ -184,7 +184,7 @@ function TextField({
   children
 }: any) {
   const [showAutocomplete, setShowAutocomplete] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPassword, setShowPassword] = useState(true);
   const { borderStyles, customBorder, borderId } = useBorder({
     element,
     error: inlineError
