@@ -605,6 +605,7 @@ const Element = ({ node: el, form, flags }: any) => {
             {...fieldProps}
             onAccept={(val: any, mask: any) => {
               const newVal = mask._unmaskedValue === '' ? '' : val;
+              if (newVal === stringifyWithNull(fieldVal)) return;
               // Rerender only necessary if autocomplete dropdown needs
               // to be updated, first char is set, or last char is removed
               const rerender =
