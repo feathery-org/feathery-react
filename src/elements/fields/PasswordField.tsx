@@ -105,8 +105,7 @@ function PasswordField({
             }}
           >
             <BorderlessEyeIcon
-              width={24}
-              height={24}
+              open={showPassword}
               onClick={() => setShowPassword((prev) => !prev)}
               aria-label='Toggle password visibility'
             />
