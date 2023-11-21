@@ -603,7 +603,6 @@ const Element = ({ node: el, form, flags }: any) => {
         return (
           <Elements.TextField
             {...fieldProps}
-            rawValue={stringifyWithNull(fieldVal)}
             onAccept={(val: any, mask: any) => {
               const newVal = mask._unmaskedValue === '' ? '' : val;
               // Rerender only necessary if autocomplete dropdown needs
