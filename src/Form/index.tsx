@@ -108,7 +108,7 @@ import {
   ACTION_SELECT_PRODUCT_TO_PURCHASE,
   ACTION_REMOVE_PRODUCT_FROM_PURCHASE,
   ACTION_SEND_MAGIC_LINK,
-  ACTION_SEND_SMS,
+  ACTION_SEND_SMS_CODE,
   ACTION_STORE_FIELD,
   ACTION_TRIGGER_PLAID,
   ACTION_URL,
@@ -120,7 +120,8 @@ import {
   ACTION_NEW_SUBMISSION,
   ACTION_VERIFY_COLLABORATOR,
   ACTION_INVITE_COLLABORATOR,
-  ACTION_TRIGGER_PERSONA
+  ACTION_TRIGGER_PERSONA,
+  ACTION_SEND_SMS_MESSAGE
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -1518,7 +1519,20 @@ function Form({
             });
           }
         }
-      } else if (type === ACTION_SEND_SMS) {
+      } else if (type === ACTION_SEND_SMS_MESSAGE) {
+        const phoneNum = fieldValues[action.phone_target_field_key] as string;
+        if (validators.phone(phoneNum)) {
+          try {
+            await client.sendSMSMessage(phoneNum, action.sms_message);
+          } catch (e) {
+            setElementError((e as Error).message);
+            break;
+          }
+        } else {
+          setElementError('Your phone number is invalid or requested too much');
+          break;
+        }
+      } else if (type === ACTION_SEND_SMS_CODE) {
         const phoneNum = fieldValues[action.auth_target_field_key] as string;
         if (validators.phone(phoneNum)) {
           try {

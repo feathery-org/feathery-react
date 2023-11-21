@@ -74,7 +74,7 @@ function sendSms(phoneNum: string, featheryClient: any) {
         );
       }
     }
-    return featheryClient.sendSMSOTP(phoneNum);
+    return featheryClient.sendSMSMessage(phoneNum);
   }
 }
 
