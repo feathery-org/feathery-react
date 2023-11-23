@@ -75,6 +75,7 @@ function PasswordField({
                 ? {}
                 : { color: 'transparent !important' }
           }}
+          aria-label={element.properties.aria_label}
           maxLength={servar.max_length}
           minLength={servar.min_length}
           required={required}
@@ -104,8 +105,7 @@ function PasswordField({
             }}
           >
             <BorderlessEyeIcon
-              width={24}
-              height={24}
+              open={showPassword}
               onClick={() => setShowPassword((prev) => !prev)}
               aria-label='Toggle password visibility'
             />

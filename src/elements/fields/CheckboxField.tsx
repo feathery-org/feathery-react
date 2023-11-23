@@ -163,8 +163,14 @@ export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
     true
   );
 
-  responsiveStyles.applySelectorStyles('checkboxHover', 'hover_', true);
-  responsiveStyles.applySelectorStyles('checkboxSelected', 'selected_', true);
+  responsiveStyles.applySelectorStyles('checkboxHover', {
+    prefix: 'hover_',
+    important: true
+  });
+  responsiveStyles.applySelectorStyles('checkboxSelected', {
+    prefix: 'selected_',
+    important: true
+  });
 
   return responsiveStyles;
 }
@@ -239,10 +245,13 @@ function CheckboxField({
         checked={fieldVal}
         disabled={disabled}
         onChange={onChange}
-        style={{ marginTop: '4px' }}
+        // Do not conflict with container clicks
+        onClick={(e) => e.stopPropagation()}
+        aria-label={element.properties.aria_label}
         css={{
           ...composeCheckableInputStyle(styles, disabled),
-          ...(disabled ? responsiveStyles.getTarget('disabled') : {})
+          ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
+          marginTop: '4px'
         }}
       />
       {fieldLabel}

@@ -263,6 +263,7 @@ function PhoneField({
             required={required}
             disabled={disabled}
             placeholder=''
+            aria-label={element.properties.aria_label}
             value={formattedNumber}
             ref={(ref) => {
               inputRef.current = ref;

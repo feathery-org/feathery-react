@@ -734,7 +734,7 @@ export default class Client {
     );
   }
 
-  async sendSMSOTP(phoneNumber: string) {
+  async sendSMSMessage(phoneNumber: string, message: any) {
     const { userId } = initInfo();
     const url = `${API_URL}otp/send/`;
     const options = {
@@ -743,7 +743,9 @@ export default class Client {
       body: JSON.stringify({
         phone_number: phoneNumber,
         form_key: this.formKey,
-        fuser_key: userId
+        fuser_key: userId,
+        message,
+        type: message ? 'sms-message' : 'sms-otp'
       })
     };
     return this._fetch(url, options, false).then(async (response) => {

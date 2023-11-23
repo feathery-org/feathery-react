@@ -7,6 +7,9 @@ import { bootstrapStyles } from '../../styles';
 import { emailPatternStr } from '../../../utils/validation';
 import useBorder from '../../components/useBorder';
 import TextAutocomplete from './TextAutocomplete';
+import BorderlessEyeIcon from '../../components/icons/BorderlessEyeIcon';
+import { getFieldValue } from '../../../utils/formHelperFunctions';
+import { stringifyWithNull } from '../../../utils/primitives';
 
 const MAX_TEXT_FIELD_LENGTH = 512;
 
@@ -24,6 +27,8 @@ function constraintChar(allowed: any) {
       return 'a';
     case 'alphanumeric':
       return 'b';
+    case 'alphaspace':
+      return 'c';
     case 'digits':
       return '0';
     default:
@@ -40,7 +45,7 @@ function getTextFieldMask(servar: any) {
   if (data.mask) mask = data.mask;
   else {
     let allowed = data.allowed_characters;
-    if (servar.type === 'gmap_zip' && !allowed) allowed = 'alphanumeric';
+    if (servar.type === 'gmap_zip' && !allowed) allowed = 'alphaspace';
     const definitionChar = constraintChar(allowed);
 
     let numOptional = MAX_TEXT_FIELD_LENGTH - prefix.length - suffix.length;
@@ -54,7 +59,7 @@ function getTextFieldMask(servar: any) {
   return `${prefix}${mask}${suffix}`;
 }
 
-function getMaskProps(servar: any, value: any) {
+function getMaskProps(servar: any, value: any, showPassword: boolean) {
   let maskProps;
   switch (servar.type) {
     case 'integer_field':
@@ -79,7 +84,10 @@ function getMaskProps(servar: any, value: any) {
       }
       break;
     case 'ssn':
-      maskProps = { mask: '000 - 00 - 0000' };
+      maskProps = {
+        mask: showPassword ? '000 - 00 - 0000' : '000000000',
+        lazy: true
+      };
       break;
     case 'email':
     case 'text_area':
@@ -90,20 +98,26 @@ function getMaskProps(servar: any, value: any) {
       maskProps = {
         mask: getTextFieldMask(servar),
         definitions: {
-          b: /[a-zA-Z0-9]/
+          b: /[a-zA-Z0-9]/,
+          c: /[a-zA-Z0-9 ]/
         },
         maxLength: MAX_TEXT_FIELD_LENGTH
       };
       break;
   }
   return {
-    ...maskProps,
     lazy: false,
-    unmask: !servar.metadata.save_mask
+    unmask: !servar.metadata.save_mask,
+    ...maskProps
   };
 }
 
-function getInputProps(servar: any, options: any[], autoComplete: boolean) {
+function getInputProps(
+  servar: any,
+  options: any[],
+  autoComplete: boolean,
+  showPassword: boolean
+) {
   const constraints: Record<string, any> = {
     maxLength: servar.max_length,
     minLength: servar.min_length
@@ -138,7 +152,11 @@ function getInputProps(servar: any, options: any[], autoComplete: boolean) {
       }
       return constraints;
     case 'ssn':
-      return { inputMode: 'numeric' as any, ...constraints };
+      return {
+        inputMode: 'numeric' as any,
+        type: showPassword ? 'text' : 'password',
+        ...constraints
+      };
     default:
       if (meta.number_keypad || meta.allowed_characters === 'digits') {
         return { inputMode: 'numeric' as any, ...constraints };
@@ -162,15 +180,18 @@ function TextField({
   onAccept = () => {},
   onEnter = () => {},
   setRef = () => {},
-  rawValue = '',
   inlineError,
   children
 }: any) {
   const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [showPassword, setShowPassword] = useState(true);
   const { borderStyles, customBorder, borderId } = useBorder({
     element,
     error: inlineError
   });
+
+  const { value: fieldVal } = getFieldValue(element);
+  const rawValue = stringifyWithNull(fieldVal);
 
   const servar = element.servar;
   const options = servar.metadata.options ?? [];
@@ -239,6 +260,7 @@ function TextField({
             disabled={disabled}
             placeholder=''
             value={rawValue}
+            aria-label={element.properties.aria_label}
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
             onKeyDown={(e) => {
@@ -255,11 +277,29 @@ function TextField({
               }
             }}
             inputRef={setRef}
-            {...getInputProps(servar, options, autoComplete)}
-            {...getMaskProps(servar, rawValue)}
+            {...getInputProps(servar, options, autoComplete, showPassword)}
+            {...getMaskProps(servar, rawValue, showPassword)}
             onAccept={onAccept}
           />
         </TextAutocomplete>
+        {servar.type === 'ssn' && rawValue && (
+          <div
+            css={{
+              position: 'absolute',
+              cursor: 'pointer',
+              right: '8px',
+              // We need to subtract half the height of the icon to center it
+              top: 'calc(50% - 12px)',
+              zIndex: 1
+            }}
+          >
+            <BorderlessEyeIcon
+              open={showPassword}
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label='Toggle password visibility'
+            />
+          </div>
+        )}
         {customBorder}
         <Placeholder
           rightToLeft={rightToLeft}

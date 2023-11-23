@@ -176,7 +176,8 @@ function ButtonElement({
         width: '100%',
         height: '100%',
         position: 'relative',
-        flex: 1
+        flex: 1,
+        lineHeight: 'normal'
       }}
       css={{
         borderWidth: 0, // Prevent global CSS override if embedded
@@ -203,6 +204,7 @@ function ButtonElement({
       }}
       disabled={!editMode && (noActions || loader || disabled)}
       onClick={onClick}
+      aria-label={element.properties.aria_label}
       {...elementProps}
     >
       {customBorder}

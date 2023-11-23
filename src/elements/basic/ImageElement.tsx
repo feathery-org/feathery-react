@@ -56,6 +56,7 @@ function ImageElement({
         <img
           src={imageUrl || PLACEHOLDER_IMAGE}
           alt=''
+          aria-label={element.properties.aria_label}
           css={{
             objectFit: 'contain',
             width: '100%',

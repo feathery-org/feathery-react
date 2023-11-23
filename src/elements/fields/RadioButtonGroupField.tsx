@@ -79,6 +79,7 @@ function RadioButtonGroupField({
               required={required}
               disabled={disabled}
               onChange={onChange}
+              aria-label={element.properties.aria_label}
               value={opt}
               style={{
                 padding: 0,

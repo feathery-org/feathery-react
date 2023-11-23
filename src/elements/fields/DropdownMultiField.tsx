@@ -116,6 +116,7 @@ export default function DropdownMultiField({
           isMulti
           menuPortalTarget={featheryDoc().body}
           placeholder=''
+          aria-label={element.properties.aria_label}
         />
         <span
           css={{

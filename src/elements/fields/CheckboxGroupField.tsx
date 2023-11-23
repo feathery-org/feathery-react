@@ -96,6 +96,7 @@ function CheckboxGroupField({
                   : {})
               }}
               disabled={optionDisabled}
+              aria-label={element.properties.aria_label}
             />
             <TextHoverTooltip text={tooltips[i]}>
               <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>

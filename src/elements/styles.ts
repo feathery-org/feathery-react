@@ -189,16 +189,14 @@ class ResponsiveStyles {
 
   applySelectorStyles(
     target: string,
-    prefix: string,
-    important = false,
-    addBorder = true
+    { prefix = '', important = false, addBorder = true, background = false }
   ) {
     const backgroundApplied = this.styles[`${prefix}background_color`];
     if (backgroundApplied) {
       this.applyColor(
         target,
         `${prefix}background_color`,
-        'backgroundColor',
+        background ? 'background' : 'backgroundColor',
         important
       );
     }
