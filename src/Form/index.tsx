@@ -1735,6 +1735,7 @@ function Form({
     elementProps,
     customComponents,
     activeStep,
+    steps,
     customClickSelectionState,
     runElementActions,
     buttonOnClick,
@@ -1743,6 +1744,8 @@ function Form({
     inlineErrors,
     setInlineErrors,
     changeValue,
+    changeStep: (nextStepKey: string) =>
+      changeStep(nextStepKey, activeStep.key, steps, history),
     updateFieldValues,
     elementOnView,
     onViewElements: viewElements,

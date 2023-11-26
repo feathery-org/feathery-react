@@ -8,7 +8,11 @@ import {
 import DangerouslySetHTMLContent from '../../utils/DangerouslySetHTMLContent';
 import { Container } from './Container';
 import { dynamicImport } from '../../integrations/utils';
-import { transformCalendlyParams } from '../../integrations/calendly';
+import {
+  isCalendlyWindowEvent,
+  transformCalendlyParams
+} from '../../integrations/calendly';
+import { featheryWindow } from '../../utils/browser';
 
 const Grid = ({ step, form, viewport }: any) => {
   if (!step || !form.visiblePositions) return null;
@@ -40,6 +44,24 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
         true,
         true
       );
+
+      const calendlyRedirect = (e: any) => {
+        if (
+          isCalendlyWindowEvent(e) &&
+          e.data.event === 'calendly.event_scheduled'
+        ) {
+          if (props.calendly_success_step) {
+            const nextStep: any = Object.values(form.steps).find(
+              (step: any) => step.id === props.calendly_success_step
+            );
+            if (nextStep) form.changeStep(nextStep.key);
+          }
+        }
+      };
+
+      featheryWindow().addEventListener('message', calendlyRedirect);
+      return () =>
+        featheryWindow().removeEventListener('message', calendlyRedirect);
     }
   }, []);
 
