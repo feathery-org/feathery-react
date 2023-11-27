@@ -1204,7 +1204,8 @@ function Form({
   }: any) {
     let eventData: Record<string, any> = {
       step_key: activeStep.key,
-      event: submitData ? 'complete' : 'skip'
+      event: submitData ? 'complete' : 'skip',
+      debug: 'go to step'
     };
 
     const redirectKey = getNextStepKey(metadata);
@@ -1512,7 +1513,8 @@ function Form({
               step_key: activeStep.key,
               next_step_key: '',
               event: submit ? 'complete' : 'skip',
-              completed: true
+              completed: true,
+              debug: 'open url'
             };
             client.registerEvent(eventData, submitPromise).then(() => {
               location.href = url;
