@@ -17,7 +17,8 @@ function SignatureField({
 }: any) {
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const Portal = ReactPortal ?? (({ children }: any) => <>{children}</>);
-  const fieldKey = element.servar?.key ?? element.key;
+  const servar = element.servar ?? {};
+  const fieldKey = servar.key ?? element.key;
 
   return (
     <>
@@ -30,6 +31,7 @@ function SignatureField({
           responsiveStyles={responsiveStyles}
           onClear={onClear}
           onEnd={onEnd}
+          signMethods={servar.metadata?.sign_methods ?? ''}
         />
       </Portal>
       <div
