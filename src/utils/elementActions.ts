@@ -23,6 +23,7 @@ export const ACTION_URL = 'url';
 export const ACTION_VERIFY_SMS = 'verify_sms';
 export const ACTION_VERIFY_COLLABORATOR = 'verify_collaborator';
 export const ACTION_INVITE_COLLABORATOR = 'invite_collaborator';
+export const ACTION_REWIND_COLLABORATION = 'rewind_collaboration';
 
 export const REQUIRED_FLOW_ACTIONS = {
   [ACTION_TRIGGER_ARGYLE]: 'You must authorize Argyle before proceeding',

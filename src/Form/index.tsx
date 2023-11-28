@@ -121,7 +121,8 @@ import {
   ACTION_VERIFY_COLLABORATOR,
   ACTION_INVITE_COLLABORATOR,
   ACTION_TRIGGER_PERSONA,
-  ACTION_SEND_SMS_MESSAGE
+  ACTION_SEND_SMS_MESSAGE,
+  ACTION_REWIND_COLLABORATION
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -1614,6 +1615,13 @@ function Form({
         }
         try {
           await client.inviteCollaborator(val, action.template_id);
+        } catch (e: any) {
+          setElementError((e as Error).message);
+          break;
+        }
+      } else if (type === ACTION_REWIND_COLLABORATION) {
+        try {
+          await client.rewindCollaboration(action.template_id);
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
