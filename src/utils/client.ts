@@ -535,6 +535,22 @@ export default class Client {
     }).then((response) => (response ? response.json() : Promise.resolve()));
   }
 
+  async runCustomRequestByName(name: string) {
+    const { userId } = initInfo();
+    const data = {
+      fuser_key: userId,
+      form_key: this.formKey,
+      name,
+      new_service: true
+    };
+
+    return this._fetch(`${API_URL}custom_request/`, {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data)
+    }).then((response) => (response ? response.json() : Promise.resolve()));
+  }
+
   // Collaboration
   async verifyCollaborator(email: string) {
     const { userId, collaboratorId } = initInfo();

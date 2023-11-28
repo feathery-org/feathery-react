@@ -1,5 +1,11 @@
 import getRandomBoolean from './random';
-import { fieldValues, filePathMap, initInfo, initState } from './init';
+import {
+  fieldValues,
+  filePathMap,
+  initInfo,
+  initState,
+  setFieldValues
+} from './init';
 import { toBase64 } from './image';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { getVisibleElements } from './hideAndRepeats';
@@ -831,5 +837,14 @@ export function httpHelpers(client: any) {
         headers: Record<string, string>
       ) => client.runCustomRequest(method, url, data, headers))
   );
+
+  helpers.connectToAPI = async (name: string) => {
+    const response = await client.runCustomRequestByName(name);
+
+    if (response && response.mapping) {
+      setFieldValues(response.mapping);
+    }
+  };
+
   return helpers;
 }
