@@ -700,8 +700,10 @@ function Form({
         visiblePositions: getVisiblePositions(newStep, _internalId),
         client,
         fields,
-        products: Object.seal(getSimplifiedProducts(integrations?.stripe)),
-        cart: Object.seal(getCart(integrations?.stripe)),
+        products: Object.seal(
+          getSimplifiedProducts(integrations?.stripe, updateFieldValues)
+        ),
+        cart: Object.seal(getCart(integrations?.stripe, updateFieldValues)),
         formName,
         formRef,
         formSettings,

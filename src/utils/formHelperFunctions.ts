@@ -665,7 +665,11 @@ export function getInitialStep({
   );
 }
 
-export function castVal(servarType: string | undefined, val: any): any {
+export function castVal(
+  servarType: string | undefined,
+  val: any,
+  repeated = false
+): any {
   if (Array.isArray(val)) {
     if (ARRAY_FIELD_TYPES.includes(servarType ?? '')) return val;
     else return val.map((entry) => castVal(servarType, entry));
@@ -673,7 +677,7 @@ export function castVal(servarType: string | undefined, val: any): any {
 
   // If there is no type, it is a hidden field and we will treat it as a string
   if (servarType === undefined) return String(val);
-  else if (ARRAY_FIELD_TYPES.includes(servarType)) return [val];
+  else if (ARRAY_FIELD_TYPES.includes(servarType) || repeated) return [val];
 
   let newVal;
   switch (servarType) {
@@ -695,11 +699,17 @@ export function castVal(servarType: string | undefined, val: any): any {
 }
 
 export function getServarTypeMap(steps: any) {
-  const servarKeyToTypeMap: Record<string, string> = {};
+  const servarKeyToTypeMap: Record<
+    string,
+    { type: string; repeated: boolean }
+  > = {};
   if (steps) {
     Object.values(steps).forEach((step: any) => {
       step.servar_fields.forEach(({ servar }: any) => {
-        servarKeyToTypeMap[servar.key] = servar.type;
+        servarKeyToTypeMap[servar.key] = {
+          type: servar.type,
+          repeated: servar.repeated
+        };
       });
     });
   }
@@ -774,7 +784,11 @@ export function saveInitialValuesAndUrlParams({
     const servarKeyToTypeMap = getServarTypeMap(steps);
     valuesToSubmit = { ...initialValues };
     Object.entries(valuesToSubmit).map(([key, val]) => {
-      valuesToSubmit[key] = castVal(servarKeyToTypeMap[key], val);
+      valuesToSubmit[key] = castVal(
+        servarKeyToTypeMap[key].type,
+        val,
+        servarKeyToTypeMap[key].repeated
+      );
     });
   }
   const params = new URLSearchParams(featheryWindow().location.search);
