@@ -288,11 +288,7 @@ function Form({
 
   useFirebaseRecaptcha(activeStep);
   const getNextAuthStep = useFormAuth({
-    initialStep: getInitialStep({
-      initialStepId,
-      steps,
-      trackHashes: trackHashes.current
-    }),
+    initialStep: getInitialStep({ initialStepId, steps }),
     integrations,
     setStepKey,
     steps,
@@ -907,8 +903,7 @@ function Form({
           const newKey = getInitialStep({
             initialStepId,
             steps,
-            sessionCurrentStep: session.current_step_key,
-            trackHashes: trackHashes.current
+            sessionCurrentStep: session.current_step_key
           });
           if (trackHashes.current) setUrlStepHash(history, steps, newKey);
           setStepKey(newKey);

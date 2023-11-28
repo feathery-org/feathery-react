@@ -648,21 +648,13 @@ export function getUrlHash() {
 export function getInitialStep({
   initialStepId,
   steps,
-  sessionCurrentStep,
-  trackHashes
+  sessionCurrentStep
 }: {
   initialStepId: string;
   steps: any;
   sessionCurrentStep?: string;
-  trackHashes: boolean;
 }) {
-  const hashKey = getUrlHash();
-  return (
-    initialStepId ||
-    (trackHashes && hashKey && hashKey in steps && hashKey) ||
-    sessionCurrentStep ||
-    (getOrigin as any)(steps).key
-  );
+  return initialStepId || sessionCurrentStep || (getOrigin as any)(steps).key;
 }
 
 export function castVal(
