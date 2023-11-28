@@ -1,9 +1,11 @@
 import { fieldValues } from '../../utils/init';
 import {
+  addToCart,
   calculateLineItemCost,
   FEATHERY_CART,
   FEATHERY_CART_TOTAL,
   Price,
+  removeFromCart,
   StripeConfig
 } from './';
 import { formatDecimal, formatMoney } from '../../utils/primitives';
@@ -75,12 +77,17 @@ class CartItem {
 
 export default class Cart {
   _productPriceCacheConfig;
-  constructor(stripeConfig: StripeConfig) {
+  _updateFieldValues: any;
+  _stripeConfig: StripeConfig;
+
+  constructor(updateFieldValues: any, stripeConfig: StripeConfig) {
     const allProductsPriceCache = {
       ...(stripeConfig?.metadata.live?.product_price_cache ?? {}),
       ...(stripeConfig?.metadata.test?.product_price_cache ?? {})
     };
     this._productPriceCacheConfig = allProductsPriceCache;
+    this._updateFieldValues = updateFieldValues;
+    this._stripeConfig = stripeConfig;
   }
 
   get items() {
@@ -120,5 +127,32 @@ export default class Cart {
 
     const total = (fieldValues[FEATHERY_CART_TOTAL] as number) ?? 0;
     return currency ? formatMoney(total, currency) : formatDecimal(total, 2);
+  }
+
+  addProductToCart(productId: string, quantity: number, replace = true) {
+    const newCartSelections = addToCart(
+      {
+        product_id: productId,
+        fixed_quantity: quantity,
+        toggle: false,
+        clear_cart: false,
+        add_to_quantity: !replace
+      },
+      this._updateFieldValues,
+      this._stripeConfig
+    );
+    return { ...newCartSelections };
+  }
+
+  removeProductFromCart(productId: string) {
+    const newCartSelections = removeFromCart(
+      {
+        product_id: productId,
+        clear_cart: false
+      },
+      this._updateFieldValues,
+      this._stripeConfig
+    );
+    return { ...newCartSelections };
   }
 }

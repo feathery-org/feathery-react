@@ -167,6 +167,7 @@ interface PaymentAction {
   quantity_field?: string; // resolved servar key or hidden field key
   fixed_quantity?: number;
   toggle?: boolean;
+  add_to_quantity?: boolean; // add to quantity already in cart
   clear_cart: boolean;
   success_url?: string;
   cancel_url?: string;
@@ -236,11 +237,12 @@ export interface StripeConfig {
   };
 }
 
-export function getCart(stripeConfig: StripeConfig) {
-  return new Cart(stripeConfig);
+export function getCart(stripeConfig: StripeConfig, updateFieldValues: any) {
+  return new Cart(updateFieldValues, stripeConfig);
 }
 export function getSimplifiedProducts(
-  stripeConfig: StripeConfig
+  stripeConfig: StripeConfig,
+  updateFieldValues: any
 ): Record<string, any> {
   const liveProductsPriceCache =
     stripeConfig?.metadata.live?.product_price_cache ?? {};
@@ -249,10 +251,22 @@ export function getSimplifiedProducts(
 
   const products: Record<string, SimplifiedProduct> = {};
   Object.values(testProductsPriceCache).forEach((product: any) => {
-    products[product.id] = new SimplifiedProduct(product.id, product, 'test');
+    products[product.id] = new SimplifiedProduct(
+      product.id,
+      product,
+      'test',
+      updateFieldValues,
+      stripeConfig
+    );
   });
   Object.values(liveProductsPriceCache).forEach((product: any) => {
-    products[product.id] = new SimplifiedProduct(product.id, product, 'live');
+    products[product.id] = new SimplifiedProduct(
+      product.id,
+      product,
+      'live',
+      updateFieldValues,
+      stripeConfig
+    );
   });
 
   return products;
@@ -299,6 +313,8 @@ function getLiveOrTestProduct(
 
 /**
  * Add to cart function
+ * If add_to_quantity is false, then the quantity is replaced with the new quantity,
+ * otherwise the new quantity is added to the existing quantity.
  */
 export function addToCart(
   paymentAction: PaymentAction,
@@ -309,6 +325,7 @@ export function addToCart(
     product_id: configuredProductId,
     quantity_field: quantityField,
     fixed_quantity: fixedQuantity,
+    add_to_quantity: addToQuantity,
     toggle
   } = paymentAction;
 
@@ -327,6 +344,10 @@ export function addToCart(
     if (Array.isArray(newQty)) {
       if (newQty.length > 0) newQty = newQty[0];
       else newQty = 0;
+    }
+    if (addToQuantity) {
+      // add to existing quantity
+      newQty = currentQuantity + newQty;
     }
     newQty = newQty > 0 ? newQty : 0;
 
