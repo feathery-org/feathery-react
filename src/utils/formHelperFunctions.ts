@@ -654,21 +654,13 @@ export function getUrlHash() {
 export function getInitialStep({
   initialStepId,
   steps,
-  sessionCurrentStep,
-  trackHashes
+  sessionCurrentStep
 }: {
   initialStepId: string;
   steps: any;
   sessionCurrentStep?: string;
-  trackHashes: boolean;
 }) {
-  const hashKey = getUrlHash();
-  return (
-    initialStepId ||
-    (trackHashes && hashKey && hashKey in steps && hashKey) ||
-    sessionCurrentStep ||
-    (getOrigin as any)(steps).key
-  );
+  return initialStepId || sessionCurrentStep || (getOrigin as any)(steps).key;
 }
 
 export function castVal(
@@ -704,7 +696,7 @@ export function castVal(
   return newVal;
 }
 
-export function getServarTypeMap(steps: any) {
+export function getServarAttrMap(steps: any) {
   const servarKeyToTypeMap: Record<
     string,
     { type: string; repeated: boolean }
@@ -787,14 +779,11 @@ export function saveInitialValuesAndUrlParams({
   let valuesToSubmit: Record<string, any> = {};
   if (!isObjectEmpty(initialValues)) {
     rerenderRequired = true;
-    const servarKeyToTypeMap = getServarTypeMap(steps);
+    const servarAttrMap = getServarAttrMap(steps);
     valuesToSubmit = { ...initialValues };
     Object.entries(valuesToSubmit).map(([key, val]) => {
-      valuesToSubmit[key] = castVal(
-        servarKeyToTypeMap[key].type,
-        val,
-        servarKeyToTypeMap[key].repeated
-      );
+      const attrs = servarAttrMap[key] ?? {};
+      valuesToSubmit[key] = castVal(attrs.type, val, attrs.repeated);
     });
   }
   const params = new URLSearchParams(featheryWindow().location.search);
