@@ -1626,6 +1626,7 @@ function Form({
         }
       } else if (type === ACTION_AI_DOCUMENT_EXTRACT) {
         try {
+          await submitPromise;
           const data = await client.extractAIDocument(action.document_field);
           updateFieldValues(data);
         } catch (e: any) {
