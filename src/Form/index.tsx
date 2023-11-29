@@ -122,7 +122,8 @@ import {
   ACTION_INVITE_COLLABORATOR,
   ACTION_TRIGGER_PERSONA,
   ACTION_SEND_SMS_MESSAGE,
-  ACTION_REWIND_COLLABORATION
+  ACTION_REWIND_COLLABORATION,
+  ACTION_AI_DOCUMENT_EXTRACT
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -1619,6 +1620,14 @@ function Form({
       } else if (type === ACTION_REWIND_COLLABORATION) {
         try {
           await client.rewindCollaboration(action.template_id);
+        } catch (e: any) {
+          setElementError((e as Error).message);
+          break;
+        }
+      } else if (type === ACTION_AI_DOCUMENT_EXTRACT) {
+        try {
+          const data = await client.extractAIDocument(action.document_field);
+          updateFieldValues(data);
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
