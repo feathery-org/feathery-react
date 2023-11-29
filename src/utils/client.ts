@@ -535,6 +535,21 @@ export default class Client {
     }).then((response) => (response ? response.json() : Promise.resolve()));
   }
 
+  // AI
+  extractAIDocument(fieldId: string) {
+    const { userId } = initInfo();
+    const data = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      field_id: fieldId
+    };
+    return this._fetch(`${API_URL}ai/document/`, {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data)
+    }).then((res) => (res ? res.json() : Promise.resolve({})));
+  }
+
   // Collaboration
   async verifyCollaborator(email: string) {
     const { userId, collaboratorId } = initInfo();
