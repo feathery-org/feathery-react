@@ -1,5 +1,5 @@
 import { dynamicImport } from './utils';
-import { initInfo } from '../utils/init';
+import { fieldValues, initInfo } from '../utils/init';
 
 export async function installPersona(personaConfig: any) {
   if (personaConfig)
@@ -19,7 +19,10 @@ export function triggerPersona(
     referenceId: userId,
     onCancel: () => setErr('The verification was cancelled'),
     onError: (error: string) => setErr(`Verification error: ${error}`),
-    onComplete
+    onComplete,
+    fields: {
+      selectedCountryCode: fieldValues.BusinessCountry === 'UK' ? 'GB' : 'CA'
+    }
   });
   client.open();
 }
