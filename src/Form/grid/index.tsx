@@ -13,6 +13,7 @@ import {
   transformCalendlyParams
 } from '../../integrations/calendly';
 import { featheryWindow } from '../../utils/browser';
+import { getRepeatedContainers } from '../../utils/repeat';
 
 const Grid = ({ step, form, viewport }: any) => {
   if (!step || !form.visiblePositions) return null;
@@ -165,13 +166,15 @@ const buildStepGrid = (step: any, viewport: string, visiblePositions: any) => {
   step = convertStepToViewport(JSON.parse(JSON.stringify(step)), viewport);
 
   const map = buildGridMap(step);
-  const repeatGrid = step.subgrids.filter((grid: any) => grid.repeated)[0];
-  const repeatKey = repeatGrid ? getPositionKey(repeatGrid) : '';
+  const repeatGrids = getRepeatedContainers(step);
+  const repeatKeys = repeatGrids.map((repeatGrid: any) =>
+    getPositionKey(repeatGrid)
+  );
   const tree = buildGridTree(
     map,
     [],
     visiblePositions,
-    repeatKey,
+    repeatKeys,
     undefined,
     false
   );
@@ -263,7 +266,7 @@ const buildGridTree = (
   gridMap: any,
   position: any[],
   visiblePositions: VisiblePositions,
-  repeatKey: string,
+  repeatKeys: string[],
   repeatIndex: number | undefined,
   lastRepeat: boolean
 ) => {
@@ -283,7 +286,7 @@ const buildGridTree = (
 
   while (hasNextChild) {
     const repeats = visiblePositions[nextPosKey];
-    if (repeatKey === nextPosKey) {
+    if (repeatKeys.includes(nextPosKey)) {
       repeats.forEach((flag, index) => {
         _recurseTree(
           flag,
@@ -291,7 +294,7 @@ const buildGridTree = (
           gridMap,
           nextPos,
           visiblePositions,
-          repeatKey,
+          repeatKeys,
           index,
           index === repeats.length - 1
         );
@@ -303,7 +306,7 @@ const buildGridTree = (
         gridMap,
         nextPos,
         visiblePositions,
-        repeatKey,
+        repeatKeys,
         repeatIndex,
         lastRepeat
       );

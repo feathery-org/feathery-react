@@ -44,6 +44,11 @@ import {
   updateStepFieldStyles
 } from '../utils/formHelperFunctions';
 import {
+  getContainerById,
+  getFieldsInRepeat,
+  getRepeatedContainer
+} from '../utils/repeat';
+import {
   getHideIfReferences,
   getVisiblePositions
 } from '../utils/hideAndRepeats';
@@ -88,7 +93,8 @@ import {
   ElementProps,
   PopupOptions,
   ContextOnAction,
-  Trigger
+  Trigger,
+  Subgrid
 } from '../types/Form';
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
@@ -395,11 +401,13 @@ function Form({
     }
   }, [stepKey]);
 
-  function addRepeatedRow() {
-    // Collect a list of all repeated elements
-    const repeatedServarFields = activeStep.servar_fields.filter(
-      (field: any) => field.servar.repeated
-    );
+  function addRepeatedRow(repeatContainer: Subgrid | undefined) {
+    // Collect a list of all relevant repeated elements.
+    // Legacy: if no repeatContainer is provided, then all repeated elements are relevant
+    // as there is only a single repeat on the step.
+    const repeatedServarFields = repeatContainer
+      ? getFieldsInRepeat(activeStep, repeatContainer)
+      : activeStep.servar_fields.filter((field: any) => field.servar.repeated);
 
     // Update the values by appending a default value for each field
     const updatedValues = {};
@@ -417,13 +425,15 @@ function Form({
     updateFieldValues(updatedValues);
   }
 
-  function removeRepeatedRow(index: number) {
+  function removeRepeatedRow(element: any) {
+    const index = element.repeat;
     if (isNaN(index)) return;
 
+    const repeatContainer = getRepeatedContainer(activeStep, element);
     // Collect a list of all repeated elements
-    const repeatedServarFields = activeStep.servar_fields.filter(
-      (field: any) => field.servar.repeated
-    );
+    const repeatedServarFields = repeatContainer
+      ? getFieldsInRepeat(activeStep, repeatContainer)
+      : activeStep.servar_fields.filter((field: any) => field.servar.repeated);
 
     // Update the values by removing the specified index from each field
     const updatedValues = {};
@@ -946,6 +956,7 @@ function Form({
     let repeatRowOperation;
 
     const servar = field.servar;
+    let repeatContainer: Subgrid | undefined;
     if (servar.repeat_trigger === 'set_value') {
       const defaultValue = getDefaultFieldValue(field);
       const { value: previousValue, valueList } = getFieldValue(field);
@@ -957,6 +968,7 @@ function Form({
       // And this is the last field in a set of repeated fields
       const isLastRepeatedField = valueList && index === valueList.length - 1;
 
+      repeatContainer = getRepeatedContainer(activeStep, field);
       if (
         isLastRepeatedField &&
         (previousValue === defaultValue || isPreviousValueDefaultArray) &&
@@ -986,7 +998,8 @@ function Form({
         : justInsert(fieldValues[servar.key] || [], value, index);
 
     const change = updateFieldValues(updateValues, rerender);
-    if (repeatRowOperation === 'add') addRepeatedRow();
+    if (repeatRowOperation === 'add' && repeatContainer)
+      addRepeatedRow(repeatContainer);
     return change;
   };
 
@@ -1473,9 +1486,9 @@ function Form({
       const action = actions[i];
       const type = action.type;
 
-      if (type === ACTION_ADD_REPEATED_ROW) addRepeatedRow();
-      else if (type === ACTION_REMOVE_REPEATED_ROW)
-        removeRepeatedRow(element.repeat);
+      if (type === ACTION_ADD_REPEATED_ROW)
+        addRepeatedRow(getContainerById(activeStep, action.repeat_container));
+      else if (type === ACTION_REMOVE_REPEATED_ROW) removeRepeatedRow(element);
       else if (type === ACTION_TRIGGER_PERSONA) {
         const persona = integrations?.persona.metadata ?? {};
         await submitPromise;
