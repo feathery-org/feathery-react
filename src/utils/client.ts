@@ -552,7 +552,7 @@ export default class Client {
       fuser_key: userId,
       field_id: fieldId
     };
-    return this._fetch(`${AI_URL}ai/document/`, {
+    return this._fetch(`${AI_URL}ai/vision/`, {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
