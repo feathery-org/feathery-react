@@ -37,10 +37,19 @@ const CDN_URL_OPTIONS = {
   productionEU: 'https://cdn-eu.feathery.io/api/'
 };
 
+const AI_URL_OPTIONS = {
+  local: 'http://localhost:8006/api/',
+  staging: 'https://staging.feathery.io/api/',
+  production: 'https://api-onboarding.feathery.io/api/',
+  productionAU: 'https://api-onboarding.feathery.io/api/',
+  productionEU: 'https://api-onboarding.feathery.io/api/'
+};
+
 const environment = 'production';
 
 export let API_URL = API_URL_OPTIONS[environment];
 export let CDN_URL = CDN_URL_OPTIONS[environment];
+export const AI_URL = AI_URL_OPTIONS[environment];
 
 export const updateRegionApiUrls = (region: string) => {
   if (region === 'au') {
@@ -543,7 +552,7 @@ export default class Client {
       fuser_key: userId,
       field_id: fieldId
     };
-    return this._fetch(`${API_URL}ai/document/`, {
+    return this._fetch(`${AI_URL}ai/document/`, {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
