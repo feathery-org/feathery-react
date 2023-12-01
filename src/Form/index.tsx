@@ -401,28 +401,34 @@ function Form({
     }
   }, [stepKey]);
 
-  function addRepeatedRow(repeatContainer: Subgrid | undefined) {
+  function updateRepeatValues(
+    repeatContainer: Subgrid | undefined,
+    getNewVal: any
+  ) {
+    if (!repeatContainer) return;
+
     // Collect a list of all relevant repeated elements.
-    // Legacy: if no repeatContainer is provided, then all repeated elements are relevant
-    // as there is only a single repeat on the step.
-    const repeatedServarFields = repeatContainer
-      ? getFieldsInRepeat(activeStep, repeatContainer)
-      : activeStep.servar_fields.filter((field: any) => field.servar.repeated);
+    const repeatedServarFields = getFieldsInRepeat(activeStep, repeatContainer);
 
     // Update the values by appending a default value for each field
-    const updatedValues = {};
+    const updatedValues: Record<string, any> = {};
     repeatedServarFields.forEach((field: any) => {
-      const { servar } = field;
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-      updatedValues[servar.key] = [
-        // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
-        ...fieldValues[servar.key],
-        getDefaultFieldValue(field)
-      ];
+      updatedValues[field.servar.key] = getNewVal(field);
     });
 
     setRepeatChanged((repeatChanged) => !repeatChanged);
     updateFieldValues(updatedValues);
+  }
+
+  function addRepeatedRow(repeatContainer: Subgrid) {
+    const getNewVal = (field: any) => {
+      return [
+        // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
+        ...fieldValues[servar.key],
+        getDefaultFieldValue(field)
+      ];
+    };
+    updateRepeatValues(repeatContainer, getNewVal);
   }
 
   function removeRepeatedRow(element: any) {
@@ -430,24 +436,15 @@ function Form({
     if (isNaN(index)) return;
 
     const repeatContainer = getRepeatedContainer(activeStep, element);
-    // Collect a list of all repeated elements
-    const repeatedServarFields = repeatContainer
-      ? getFieldsInRepeat(activeStep, repeatContainer)
-      : activeStep.servar_fields.filter((field: any) => field.servar.repeated);
-
-    // Update the values by removing the specified index from each field
-    const updatedValues = {};
-    repeatedServarFields.forEach((field: any) => {
-      const { servar } = field;
-      const newRepeatedValues = justRemove(fieldValues[servar.key], index);
+    const getNewVal = (field: any) => {
+      const newRepeatedValues = justRemove(
+        fieldValues[field.servar.key],
+        index
+      );
       const defaultValue = [getDefaultFieldValue(field)];
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-      updatedValues[servar.key] =
-        newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
-    });
-
-    setRepeatChanged((repeatChanged) => !repeatChanged);
-    updateFieldValues(updatedValues);
+      return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
+    };
+    updateRepeatValues(repeatContainer, getNewVal);
   }
 
   // Debouncing the validateElements call to rate limit calls
