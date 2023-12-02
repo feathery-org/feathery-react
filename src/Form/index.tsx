@@ -420,11 +420,11 @@ function Form({
     updateFieldValues(updatedValues);
   }
 
-  function addRepeatedRow(repeatContainer: Subgrid) {
+  function addRepeatedRow(repeatContainer: Subgrid | undefined) {
     const getNewVal = (field: any) => {
       return [
         // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
-        ...fieldValues[servar.key],
+        ...fieldValues[field.servar.key],
         getDefaultFieldValue(field)
       ];
     };
