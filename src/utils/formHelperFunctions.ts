@@ -824,11 +824,11 @@ export function httpHelpers(client: any) {
         url: string,
         data: Record<string, any> | any[],
         headers: Record<string, string>
-      ) => client.runCustomRequest(method, url, data, headers))
+      ) => client.runCustomRequest({ method, url, data, headers }))
   );
 
   helpers.connectToAPI = async (name: string) => {
-    const response = await client.runCustomRequestByName(name);
+    const response = await client.runCustomRequest(name);
 
     if (response && response.mapping) {
       setFieldValues(response.mapping);

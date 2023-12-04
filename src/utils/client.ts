@@ -514,35 +514,34 @@ export default class Client {
 
   // Logic custom APIs
   runCustomRequest(
-    method: string,
-    url: string,
-    userData: Record<string, any> | any[],
-    headers: Record<string, string>
+    payload:
+      | string
+      | {
+          method: string;
+          url: string;
+          userData: Record<string, any> | any[];
+          headers: Record<string, string>;
+        }
   ) {
     const { userId } = initInfo();
     const data = {
       fuser_key: userId,
-      form_key: this.formKey,
-      method,
-      url,
-      user_data: userData,
-      headers
+      form_key: this.formKey
     };
-    return this._fetch(`${API_URL}custom_request/`, {
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-      body: JSON.stringify(data)
-    }).then((response) => (response ? response.json() : Promise.resolve()));
-  }
 
-  async runCustomRequestByName(name: string) {
-    const { userId } = initInfo();
-    const data = {
-      fuser_key: userId,
-      form_key: this.formKey,
-      name,
-      new_service: true
-    };
+    if (typeof payload === 'string') {
+      Object.assign(data, {
+        name: payload,
+        new_service: true
+      });
+    } else {
+      Object.assign(data, {
+        method: payload.method,
+        url: payload.url,
+        user_data: payload.userData,
+        headers: payload.headers
+      });
+    }
 
     return this._fetch(`${API_URL}custom_request/`, {
       headers: { 'Content-Type': 'application/json' },
