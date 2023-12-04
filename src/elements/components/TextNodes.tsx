@@ -59,7 +59,7 @@ function TextNode({
       data-index={index}
       css={{
         whiteSpace: 'pre-wrap',
-        overflowWrap: 'break-word',
+        overflowWrap: 'anywhere',
         cursor,
         ...fontStyles
       }}

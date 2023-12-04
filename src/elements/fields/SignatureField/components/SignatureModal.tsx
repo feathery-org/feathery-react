@@ -9,6 +9,7 @@ type SignatureModalProps = SignatureCanvasProps & {
   show: boolean;
   setShow: (val: boolean) => void;
   returnFile?: boolean;
+  signMethods: '' | 'draw' | 'type';
 };
 
 function SignatureModal(props: SignatureModalProps) {
@@ -19,10 +20,13 @@ function SignatureModal(props: SignatureModalProps) {
     defaultValue,
     responsiveStyles,
     onClear = () => {},
-    onEnd = () => {}
+    onEnd = () => {},
+    signMethods = ''
   } = props;
 
-  const [drawSignature, setDrawSignature] = useState(false);
+  const typeOnly = signMethods === 'type';
+  const drawOnly = signMethods === 'draw';
+  const [drawSignature, setDrawSignature] = useState(drawOnly);
   const [fullName, setFullName] = useState('');
   const [isLoading, setLoading] = useState(false);
   const [signatureFile, setSignatureFile] = useState<File>();
@@ -115,7 +119,7 @@ function SignatureModal(props: SignatureModalProps) {
           css={{
             position: 'relative',
             display: 'flex',
-            padding: '20px 20px',
+            padding: '20px',
             borderBottom: '1px solid #e9e9e9'
           }}
         >
@@ -128,7 +132,7 @@ function SignatureModal(props: SignatureModalProps) {
         <div
           css={{
             position: 'relative',
-            padding: '30px 20px',
+            padding: '20px 20px 30px 20px',
             '& h3': {
               fontSize: '1em',
               margin: 0,
@@ -227,55 +231,61 @@ function SignatureModal(props: SignatureModalProps) {
                   )}
                 </div>
               </div>
-              <div
-                css={{
-                  height: '1px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderBottom: '1px solid #e9e9e9'
-                }}
-              >
-                <div
-                  css={{
-                    backgroundColor: '#fff',
-                    padding: '10px',
-                    color: '#5e5e5e'
-                  }}
-                >
-                  or
-                </div>
-              </div>
-              <div
-                css={{
-                  paddingTop: '30px'
-                }}
-              >
-                <div
-                  onClick={() => setDrawSignature(true)}
-                  css={{
-                    padding: '20px',
-                    borderRadius: '4px',
-                    border: '1px solid #e9e9e9',
-                    '& h3': {
-                      padding: 0,
-                      margin: 0,
-                      marginBottom: '10px'
-                    },
-                    '& p': {
-                      margin: 0,
-                      padding: 0
-                    },
-                    '&:hover': {
-                      border: '1px solid #5e5e5e',
-                      cursor: 'pointer'
-                    }
-                  }}
-                >
-                  <h3>Draw your signature</h3>
-                  <p>Draw your signature here using your mouse or trackpad.</p>
-                </div>
-              </div>
+              {!typeOnly && (
+                <>
+                  <div
+                    css={{
+                      height: '1px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderBottom: '1px solid #e9e9e9'
+                    }}
+                  >
+                    <div
+                      css={{
+                        backgroundColor: '#fff',
+                        padding: '10px',
+                        color: '#5e5e5e'
+                      }}
+                    >
+                      or
+                    </div>
+                  </div>
+                  <div
+                    css={{
+                      paddingTop: '30px'
+                    }}
+                  >
+                    <div
+                      onClick={() => setDrawSignature(true)}
+                      css={{
+                        padding: '20px',
+                        borderRadius: '4px',
+                        border: '1px solid #e9e9e9',
+                        '& h3': {
+                          padding: 0,
+                          margin: 0,
+                          marginBottom: '10px'
+                        },
+                        '& p': {
+                          margin: 0,
+                          padding: 0
+                        },
+                        '&:hover': {
+                          border: '1px solid #5e5e5e',
+                          cursor: 'pointer'
+                        }
+                      }}
+                    >
+                      <h3>Draw your signature</h3>
+                      <p>
+                        Draw your signature here using your mouse or trackpad.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
           {drawSignature && (
@@ -329,7 +339,7 @@ function SignatureModal(props: SignatureModalProps) {
             }
           }}
         >
-          {!drawSignature ? (
+          {drawOnly || !drawSignature ? (
             <button
               onClick={() => handleCancel()}
               css={{ '&:hover': { backgroundColor: '#e1e1e1' } }}

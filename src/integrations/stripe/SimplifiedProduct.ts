@@ -1,7 +1,10 @@
 import {
+  addToCart,
   calculateLineItemCost,
   Price,
-  Product as StripeProductProductCacheItem
+  Product as StripeProductProductCacheItem,
+  removeFromCart,
+  StripeConfig
 } from './stripe';
 import { fieldValues } from '../../utils/init';
 import { FEATHERY_CART } from './';
@@ -12,16 +15,22 @@ export default class SimplifiedProduct {
   _productPriceCacheItem: StripeProductProductCacheItem;
   _defaultPrice: Price | undefined;
   _mode: 'live' | 'test';
+  _updateFieldValues: any;
+  _stripeConfig: StripeConfig;
 
   constructor(
     id: string,
     productPriceCacheItem: StripeProductProductCacheItem,
-    mode: 'live' | 'test'
+    mode: 'live' | 'test',
+    updateFieldValues: any,
+    stripeConfig: StripeConfig
   ) {
     this._id = id;
     this._productPriceCacheItem = productPriceCacheItem;
     this._defaultPrice = getDefaultPrice(productPriceCacheItem);
     this._mode = mode;
+    this._updateFieldValues = updateFieldValues;
+    this._stripeConfig = stripeConfig;
   }
 
   get id(): string {
@@ -125,6 +134,39 @@ export default class SimplifiedProduct {
       ).getValue() as unknown as number,
       this._defaultPrice?.currency
     );
+  }
+
+  /**
+   * Add this product to the cart
+   * @param quantity
+   * @param replace
+   * @returns
+   */
+  addToCart(quantity: number, replace = true) {
+    const newCartSelections = addToCart(
+      {
+        product_id: this._id,
+        fixed_quantity: quantity,
+        toggle: false,
+        clear_cart: false,
+        add_to_quantity: !replace
+      },
+      this._updateFieldValues,
+      this._stripeConfig
+    );
+    return { ...newCartSelections };
+  }
+
+  removeFromCart() {
+    const newCartSelections = removeFromCart(
+      {
+        product_id: this._id,
+        clear_cart: false
+      },
+      this._updateFieldValues,
+      this._stripeConfig
+    );
+    return { ...newCartSelections };
   }
 }
 

@@ -57,3 +57,12 @@ export interface ContextOnError extends FormContext {
 export interface ContextOnView extends FormContext {
   visibilityStatus: { elementId: string; isVisible: boolean };
 }
+
+export interface PositionedElement {
+  position: number[];
+}
+
+export interface Subgrid extends PositionedElement {
+  id: string;
+  repeated: boolean;
+}

@@ -222,6 +222,8 @@ describe('Stripe integration helper', () => {
       type: 'add_to_cart',
       product_id: mockProdId,
       quantity_field: 'payment_product_1_quantity',
+      fixed_quantity: 0,
+      add_to_quantity: false,
       toggle: true,
       clear_cart: true
     });
@@ -274,6 +276,37 @@ describe('Stripe integration helper', () => {
           // expect cartSelections[mockProdId] to be undefined
           expect(cartSelections[mockProdId]).toBeUndefined();
           expect(cartSelections[mockProdId2]).toEqual(2);
+        }
+      });
+      it('increments quantity in cart', () => {
+        // arrange
+        const _mockAction = mockAction();
+        _mockAction.product_id = mockProdIdNew;
+        _mockAction.toggle = false;
+        const _mockFixedQuantityAction = mockAction();
+        _mockFixedQuantityAction.product_id = mockProdIdNew;
+        _mockFixedQuantityAction.fixed_quantity = 2;
+        _mockFixedQuantityAction.quantity_field = '';
+        _mockFixedQuantityAction.add_to_quantity = true;
+        _mockFixedQuantityAction.toggle = false;
+        const mockUpdateFieldValues = jest.fn();
+
+        // act
+        addToCart(_mockAction, mockUpdateFieldValues, mockStripeConfig());
+        // now increment it by 2
+        const cartSelections = addToCart(
+          _mockFixedQuantityAction,
+          mockUpdateFieldValues,
+          mockStripeConfig()
+        );
+
+        // Assert
+        // expect cartSelections to not be null
+        expect(cartSelections).not.toBeNull();
+        if (cartSelections) {
+          expect(cartSelections[mockProdId]).toEqual(1);
+          expect(cartSelections[mockProdId2]).toEqual(2);
+          expect(cartSelections[mockProdIdNew]).toEqual(3);
         }
       });
     });

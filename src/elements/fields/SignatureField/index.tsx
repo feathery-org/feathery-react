@@ -17,7 +17,8 @@ function SignatureField({
 }: any) {
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const Portal = ReactPortal ?? (({ children }: any) => <>{children}</>);
-  const fieldKey = element.servar?.key ?? element.key;
+  const servar = element.servar ?? {};
+  const fieldKey = servar.key ?? element.key;
 
   return (
     <>
@@ -30,6 +31,7 @@ function SignatureField({
           responsiveStyles={responsiveStyles}
           onClear={onClear}
           onEnd={onEnd}
+          signMethods={servar.metadata?.sign_methods ?? ''}
         />
       </Portal>
       <div
@@ -79,6 +81,20 @@ function SignatureField({
             defaultValue={defaultValue}
             disabled={disabled}
             showClear={false}
+          />
+          {/* This input must always be rendered so we can set field errors */}
+          <input
+            id={servar.key}
+            aria-label={element.properties.aria_label}
+            // Set to file type so keyboard doesn't pop up on mobile
+            // when field error appears
+            type='file'
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              opacity: 0,
+              zIndex: -1
+            }}
           />
         </div>
       </div>

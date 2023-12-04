@@ -648,24 +648,20 @@ export function getUrlHash() {
 export function getInitialStep({
   initialStepId,
   steps,
-  sessionCurrentStep,
-  trackHashes
+  sessionCurrentStep
 }: {
   initialStepId: string;
   steps: any;
   sessionCurrentStep?: string;
-  trackHashes: boolean;
 }) {
-  const hashKey = getUrlHash();
-  return (
-    initialStepId ||
-    (trackHashes && hashKey && hashKey in steps && hashKey) ||
-    sessionCurrentStep ||
-    (getOrigin as any)(steps).key
-  );
+  return initialStepId || sessionCurrentStep || (getOrigin as any)(steps).key;
 }
 
-export function castVal(servarType: string | undefined, val: any): any {
+export function castVal(
+  servarType: string | undefined,
+  val: any,
+  repeated = false
+): any {
   if (Array.isArray(val)) {
     if (ARRAY_FIELD_TYPES.includes(servarType ?? '')) return val;
     else return val.map((entry) => castVal(servarType, entry));
@@ -673,7 +669,7 @@ export function castVal(servarType: string | undefined, val: any): any {
 
   // If there is no type, it is a hidden field and we will treat it as a string
   if (servarType === undefined) return String(val);
-  else if (ARRAY_FIELD_TYPES.includes(servarType)) return [val];
+  else if (ARRAY_FIELD_TYPES.includes(servarType) || repeated) return [val];
 
   let newVal;
   switch (servarType) {
@@ -694,12 +690,18 @@ export function castVal(servarType: string | undefined, val: any): any {
   return newVal;
 }
 
-export function getServarTypeMap(steps: any) {
-  const servarKeyToTypeMap: Record<string, string> = {};
+export function getServarAttrMap(steps: any) {
+  const servarKeyToTypeMap: Record<
+    string,
+    { type: string; repeated: boolean }
+  > = {};
   if (steps) {
     Object.values(steps).forEach((step: any) => {
       step.servar_fields.forEach(({ servar }: any) => {
-        servarKeyToTypeMap[servar.key] = servar.type;
+        servarKeyToTypeMap[servar.key] = {
+          type: servar.type,
+          repeated: servar.repeated
+        };
       });
     });
   }
@@ -771,10 +773,11 @@ export function saveInitialValuesAndUrlParams({
   let valuesToSubmit: Record<string, any> = {};
   if (!isObjectEmpty(initialValues)) {
     rerenderRequired = true;
-    const servarKeyToTypeMap = getServarTypeMap(steps);
+    const servarAttrMap = getServarAttrMap(steps);
     valuesToSubmit = { ...initialValues };
     Object.entries(valuesToSubmit).map(([key, val]) => {
-      valuesToSubmit[key] = castVal(servarKeyToTypeMap[key], val);
+      const attrs = servarAttrMap[key] ?? {};
+      valuesToSubmit[key] = castVal(attrs.type, val, attrs.repeated);
     });
   }
   const params = new URLSearchParams(featheryWindow().location.search);

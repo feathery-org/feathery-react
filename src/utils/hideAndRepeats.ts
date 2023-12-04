@@ -2,6 +2,7 @@ import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { TEXT_VARIABLE_PATTERN } from '../elements/components/TextNodes';
 import { fieldValues } from './init';
 import { getDefaultFieldValue } from './formHelperFunctions';
+import { getRepeatedContainer, getRepeatedContainers } from './repeat';
 
 interface FlatHideRule extends ResolvedComparisonRule {
   index: number;
@@ -82,7 +83,10 @@ const getTextVariables = (el: any) => {
   return textVariables.map((variable: any) => variable.slice(2, -2));
 };
 
-const repeatCountByTextVariables = (step: any, repeatKey: string) => {
+const repeatCountByTextVariables = (
+  step: any,
+  repeatKey: string | undefined
+) => {
   let textVariables: string[] = [];
   [...step.buttons, ...step.texts]
     .filter((el: any) => getPositionKey(el).startsWith(repeatKey))
@@ -99,7 +103,7 @@ const repeatCountByTextVariables = (step: any, repeatKey: string) => {
   return count;
 };
 
-const repeatCountByFields = (step: any, repeatKey: string) => {
+const repeatCountByFields = (step: any, repeatKey: string | undefined) => {
   const repeatableServars: Array<any> = step.servar_fields.filter(
     (field: any) =>
       field.servar.repeated && getPositionKey(field).startsWith(repeatKey)
@@ -143,22 +147,30 @@ const getPositionKey = (node: any) => {
 export type VisiblePositions = Record<string, boolean[]>;
 
 function _collectHideFlags(
+  step: any,
   element: any,
   visiblePositions: VisiblePositions,
   hiddenPositions: Record<string, number[]>,
-  repeatKey: string,
-  numRepeats: number,
+  repeatKeys: string[],
   internalId: string
 ) {
   const elKey = getPositionKey(element);
-  const insideRepeat = repeatKey && (elKey + ',').startsWith(repeatKey + ',');
-  const curRepeats = insideRepeat ? numRepeats : 1;
+  const repeatKey = repeatKeys.find((key) =>
+    (elKey + ',').startsWith(key + ',')
+  );
+  const numRepeats = Math.max(
+    repeatCountByFields(step, repeatKey),
+    repeatCountByTextVariables(step, repeatKey),
+    1
+  );
+
+  const curRepeats = repeatKey ? numRepeats : 1;
 
   const visible: boolean[] = [];
   for (let i = 0; i < curRepeats; i++) {
     let shouldHide = shouldElementHide(
       element,
-      insideRepeat ? i : undefined,
+      repeatKey ? i : undefined,
       internalId
     );
     if (shouldHide) {
@@ -186,32 +198,24 @@ function _collectHideFlags(
 }
 
 function getVisiblePositions(step: any, internalId: string) {
-  let numRepeats = 1;
-  const repeatGrid = step.subgrids.filter((grid: any) => grid.repeated)[0];
-  let repeatKey = '';
-  if (repeatGrid) {
-    repeatKey = getPositionKey(repeatGrid);
-    numRepeats = Math.max(
-      repeatCountByFields(step, repeatKey),
-      repeatCountByTextVariables(step, repeatKey),
-      1
-    );
-  }
+  const repeatGrids = getRepeatedContainers(step);
+  const repeatKeys = repeatGrids.map(getPositionKey);
+  const visiblePositions: VisiblePositions = {};
 
   // Efficient data structure for tracking hidden elements
   const hiddenPositions: Record<string, number[]> = {};
-  const visiblePositions: VisiblePositions = {};
+
   step.subgrids
     .sort((grid1: any, grid2: any) =>
       grid1.position.length > grid2.position.length ? 1 : -1
     )
     .forEach((grid: any) => {
       _collectHideFlags(
+        step,
         grid,
         visiblePositions,
         hiddenPositions,
-        repeatKey,
-        numRepeats,
+        repeatKeys,
         internalId
       );
     });
@@ -222,11 +226,11 @@ function getVisiblePositions(step: any, internalId: string) {
   elementTypes.forEach((elementType) => {
     step[elementType].forEach((el: any) => {
       _collectHideFlags(
+        step,
         el,
         visiblePositions,
         hiddenPositions,
-        repeatKey,
-        numRepeats,
+        repeatKeys,
         internalId
       );
     });
@@ -241,11 +245,9 @@ function getVisibleElements(
   elementTypes: string[] = [],
   repeat = false
 ) {
-  const repeatGrid = step.subgrids.filter((grid: any) => grid.repeated)[0];
-  const repeatKey = repeatGrid ? getPositionKey(repeatGrid) : '';
-
   return elementTypes.flatMap((type) =>
     step[type].flatMap((el: any) => {
+      const repeatGrid = getRepeatedContainer(step, el);
       const elKey = getPositionKey(el);
       const elements: any[] = [];
       const flags = visiblePositions[elKey];
@@ -254,10 +256,7 @@ function getVisibleElements(
           elements.push({
             element: el,
             type,
-            repeat:
-              repeatKey && getPositionKey(el).startsWith(repeatKey)
-                ? index
-                : undefined,
+            repeat: repeatGrid ? index : undefined,
             last: index === flags.length - 1
           });
         }

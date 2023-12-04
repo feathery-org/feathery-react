@@ -528,7 +528,11 @@ const Element = ({ node: el, form, flags }: any) => {
             onSelect={(address: any, addressId: string) => {
               const addrValues: Record<string, any> = {};
               if (el.servar.metadata.save_address === 'all_line_1') {
-                addrValues[el.servar.key] = address.formatted_address;
+                const val = address.formatted_address;
+                addrValues[el.servar.key] =
+                  index === null
+                    ? val
+                    : justInsert(fieldValues[servar.key] || [], val, index);
               } else {
                 const addrFields: Record<string, any> = {};
                 activeStep.servar_fields.forEach((field: any) => {

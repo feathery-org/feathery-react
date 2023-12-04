@@ -38,6 +38,7 @@ function PhoneField({
   setRef = () => {},
   inlineError,
   rightToLeft,
+  onEnter,
   children
 }: any) {
   const triggerRef = useRef(null);
@@ -297,8 +298,10 @@ function PhoneField({
               setFocused(false);
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') triggerChange();
-              else if (e.key === '+') setShow(true);
+              if (e.key === 'Enter') {
+                triggerChange();
+                onEnter(e);
+              } else if (e.key === '+') setShow(true);
             }}
             onChange={(e) => {
               let start = e.target.selectionStart;

@@ -44,6 +44,11 @@ import {
   updateStepFieldStyles
 } from '../utils/formHelperFunctions';
 import {
+  getContainerById,
+  getFieldsInRepeat,
+  getRepeatedContainer
+} from '../utils/repeat';
+import {
   getHideIfReferences,
   getVisiblePositions
 } from '../utils/hideAndRepeats';
@@ -88,7 +93,8 @@ import {
   ElementProps,
   PopupOptions,
   ContextOnAction,
-  Trigger
+  Trigger,
+  Subgrid
 } from '../types/Form';
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
@@ -121,7 +127,9 @@ import {
   ACTION_VERIFY_COLLABORATOR,
   ACTION_INVITE_COLLABORATOR,
   ACTION_TRIGGER_PERSONA,
-  ACTION_SEND_SMS_MESSAGE
+  ACTION_SEND_SMS_MESSAGE,
+  ACTION_REWIND_COLLABORATION,
+  ACTION_AI_DOCUMENT_EXTRACT
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -287,11 +295,7 @@ function Form({
 
   useFirebaseRecaptcha(activeStep);
   const getNextAuthStep = useFormAuth({
-    initialStep: getInitialStep({
-      initialStepId,
-      steps,
-      trackHashes: trackHashes.current
-    }),
+    initialStep: getInitialStep({ initialStepId, steps }),
     integrations,
     setStepKey,
     steps,
@@ -397,49 +401,50 @@ function Form({
     }
   }, [stepKey]);
 
-  function addRepeatedRow() {
-    // Collect a list of all repeated elements
-    const repeatedServarFields = activeStep.servar_fields.filter(
-      (field: any) => field.servar.repeated
-    );
+  function updateRepeatValues(
+    repeatContainer: Subgrid | undefined,
+    getNewVal: any
+  ) {
+    if (!repeatContainer) return;
+
+    // Collect a list of all relevant repeated elements.
+    const repeatedServarFields = getFieldsInRepeat(activeStep, repeatContainer);
 
     // Update the values by appending a default value for each field
-    const updatedValues = {};
+    const updatedValues: Record<string, any> = {};
     repeatedServarFields.forEach((field: any) => {
-      const { servar } = field;
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-      updatedValues[servar.key] = [
-        // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
-        ...fieldValues[servar.key],
-        getDefaultFieldValue(field)
-      ];
+      updatedValues[field.servar.key] = getNewVal(field);
     });
 
     setRepeatChanged((repeatChanged) => !repeatChanged);
     updateFieldValues(updatedValues);
   }
 
-  function removeRepeatedRow(index: number) {
+  function addRepeatedRow(repeatContainer: Subgrid | undefined) {
+    const getNewVal = (field: any) => {
+      return [
+        // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
+        ...fieldValues[field.servar.key],
+        getDefaultFieldValue(field)
+      ];
+    };
+    updateRepeatValues(repeatContainer, getNewVal);
+  }
+
+  function removeRepeatedRow(element: any) {
+    const index = element.repeat;
     if (isNaN(index)) return;
 
-    // Collect a list of all repeated elements
-    const repeatedServarFields = activeStep.servar_fields.filter(
-      (field: any) => field.servar.repeated
-    );
-
-    // Update the values by removing the specified index from each field
-    const updatedValues = {};
-    repeatedServarFields.forEach((field: any) => {
-      const { servar } = field;
-      const newRepeatedValues = justRemove(fieldValues[servar.key], index);
+    const repeatContainer = getRepeatedContainer(activeStep, element);
+    const getNewVal = (field: any) => {
+      const newRepeatedValues = justRemove(
+        fieldValues[field.servar.key],
+        index
+      );
       const defaultValue = [getDefaultFieldValue(field)];
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-      updatedValues[servar.key] =
-        newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
-    });
-
-    setRepeatChanged((repeatChanged) => !repeatChanged);
-    updateFieldValues(updatedValues);
+      return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
+    };
+    updateRepeatValues(repeatContainer, getNewVal);
   }
 
   // Debouncing the validateElements call to rate limit calls
@@ -699,8 +704,10 @@ function Form({
         visiblePositions: getVisiblePositions(newStep, _internalId),
         client,
         fields,
-        products: Object.seal(getSimplifiedProducts(integrations?.stripe)),
-        cart: Object.seal(getCart(integrations?.stripe)),
+        products: Object.seal(
+          getSimplifiedProducts(integrations?.stripe, updateFieldValues)
+        ),
+        cart: Object.seal(getCart(integrations?.stripe, updateFieldValues)),
         formName,
         formRef,
         formSettings,
@@ -904,8 +911,7 @@ function Form({
           const newKey = getInitialStep({
             initialStepId,
             steps,
-            sessionCurrentStep: session.current_step_key,
-            trackHashes: trackHashes.current
+            sessionCurrentStep: session.current_step_key
           });
           if (trackHashes.current) setUrlStepHash(history, steps, newKey);
           setStepKey(newKey);
@@ -947,6 +953,7 @@ function Form({
     let repeatRowOperation;
 
     const servar = field.servar;
+    let repeatContainer: Subgrid | undefined;
     if (servar.repeat_trigger === 'set_value') {
       const defaultValue = getDefaultFieldValue(field);
       const { value: previousValue, valueList } = getFieldValue(field);
@@ -958,6 +965,7 @@ function Form({
       // And this is the last field in a set of repeated fields
       const isLastRepeatedField = valueList && index === valueList.length - 1;
 
+      repeatContainer = getRepeatedContainer(activeStep, field);
       if (
         isLastRepeatedField &&
         (previousValue === defaultValue || isPreviousValueDefaultArray) &&
@@ -987,7 +995,8 @@ function Form({
         : justInsert(fieldValues[servar.key] || [], value, index);
 
     const change = updateFieldValues(updateValues, rerender);
-    if (repeatRowOperation === 'add') addRepeatedRow();
+    if (repeatRowOperation === 'add' && repeatContainer)
+      addRepeatedRow(repeatContainer);
     return change;
   };
 
@@ -1204,7 +1213,8 @@ function Form({
   }: any) {
     let eventData: Record<string, any> = {
       step_key: activeStep.key,
-      event: submitData ? 'complete' : 'skip'
+      event: submitData ? 'complete' : 'skip',
+      debug: 'go to step'
     };
 
     const redirectKey = getNextStepKey(metadata);
@@ -1473,9 +1483,9 @@ function Form({
       const action = actions[i];
       const type = action.type;
 
-      if (type === ACTION_ADD_REPEATED_ROW) addRepeatedRow();
-      else if (type === ACTION_REMOVE_REPEATED_ROW)
-        removeRepeatedRow(element.repeat);
+      if (type === ACTION_ADD_REPEATED_ROW)
+        addRepeatedRow(getContainerById(activeStep, action.repeat_container));
+      else if (type === ACTION_REMOVE_REPEATED_ROW) removeRepeatedRow(element);
       else if (type === ACTION_TRIGGER_PERSONA) {
         const persona = integrations?.persona.metadata ?? {};
         await submitPromise;
@@ -1512,7 +1522,8 @@ function Form({
               step_key: activeStep.key,
               next_step_key: '',
               event: submit ? 'complete' : 'skip',
-              completed: true
+              completed: true,
+              debug: 'open url'
             };
             client.registerEvent(eventData, submitPromise).then(() => {
               location.href = url;
@@ -1612,6 +1623,25 @@ function Form({
         }
         try {
           await client.inviteCollaborator(val, action.template_id);
+        } catch (e: any) {
+          setElementError((e as Error).message);
+          break;
+        }
+      } else if (type === ACTION_REWIND_COLLABORATION) {
+        try {
+          await client.rewindCollaboration(action.template_id);
+        } catch (e: any) {
+          setElementError((e as Error).message);
+          break;
+        }
+      } else if (type === ACTION_AI_DOCUMENT_EXTRACT) {
+        try {
+          await submitPromise;
+          const data = await client.extractAIDocument(
+            action.document_field,
+            action.correct_rotation ?? false
+          );
+          updateFieldValues(data);
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
@@ -1735,6 +1765,7 @@ function Form({
     elementProps,
     customComponents,
     activeStep,
+    steps,
     customClickSelectionState,
     runElementActions,
     buttonOnClick,
@@ -1743,6 +1774,8 @@ function Form({
     inlineErrors,
     setInlineErrors,
     changeValue,
+    changeStep: (nextStepKey: string) =>
+      changeStep(nextStepKey, activeStep.key, steps, history),
     updateFieldValues,
     elementOnView,
     onViewElements: viewElements,
