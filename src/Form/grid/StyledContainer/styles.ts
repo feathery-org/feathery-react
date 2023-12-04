@@ -463,6 +463,10 @@ export const getInnerContainerStyles = (
       if (node.isElement) {
         if (heightUnit === 'px') {
           s.minHeight = `${height}${heightUnit}`;
+
+          if (node._type === 'image_element') {
+            s.height = `${height}${heightUnit}`;
+          }
         }
       }
 
