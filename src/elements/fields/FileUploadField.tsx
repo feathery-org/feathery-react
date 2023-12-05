@@ -5,6 +5,7 @@ import { justRemove } from '../../utils/array';
 import { Image } from 'react-bootstrap';
 import { CloseIcon, FileUploadIcon } from '../components/icons';
 import { imgMaxSizeStyles } from '../styles';
+import { fieldValues } from '../../utils/init';
 
 const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 const NUM_FILES_LIMIT = 20;
@@ -162,7 +163,7 @@ function FileUploadField({
                   textAlign: 'center'
                 }}
               >
-                {filename}
+                {filename || 'File'}
               </span>
             )}
             <div

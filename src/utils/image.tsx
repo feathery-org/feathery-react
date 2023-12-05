@@ -77,11 +77,9 @@ export function useThumbnailData(files: any) {
 
   useEffect(() => {
     const thumbnailPromises = files.map(getThumbnailData);
-    Promise.all(thumbnailPromises)
-      .then((data) => data.filter((item) => item.thumbnail || item.filename))
-      .then((data) => {
-        setThumbnailData(data);
-      });
+    Promise.all(thumbnailPromises).then((data) => {
+      setThumbnailData(data);
+    });
   }, [files]);
 
   return thumbnailData;
