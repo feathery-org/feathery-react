@@ -460,10 +460,8 @@ export const getInnerContainerStyles = (
     (height: any, heightUnit: any) => {
       const s: any = {};
 
-      if (node.isElement) {
-        if (heightUnit === 'px') {
-          s.minHeight = `${height}${heightUnit}`;
-        }
+      if (heightUnit === 'px') {
+        s.minHeight = `${height}${heightUnit}`;
       }
 
       return s;

@@ -38,7 +38,6 @@ export default class Field {
   _fieldKey = '';
   _formUuid = '';
   _hiddenField = false;
-  _repeatingFields = new Array<Field>();
   _sourceField: any = null;
 
   constructor(fieldKey: string, formUuid: string, hiddenField = false) {

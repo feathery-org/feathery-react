@@ -37,10 +37,19 @@ const CDN_URL_OPTIONS = {
   productionEU: 'https://cdn-eu.feathery.io/api/'
 };
 
+const AI_URL_OPTIONS = {
+  local: 'http://localhost:8006/api/',
+  staging: 'https://staging.feathery.io/api/',
+  production: 'https://api-onboarding.feathery.io/api/',
+  productionAU: 'https://api-onboarding.feathery.io/api/',
+  productionEU: 'https://api-onboarding.feathery.io/api/'
+};
+
 const environment = 'production';
 
 export let API_URL = API_URL_OPTIONS[environment];
 export let CDN_URL = CDN_URL_OPTIONS[environment];
+export const AI_URL = AI_URL_OPTIONS[environment];
 
 export const updateRegionApiUrls = (region: string) => {
   if (region === 'au') {
@@ -548,6 +557,22 @@ export default class Client {
       method: 'POST',
       body: JSON.stringify(data)
     }).then((response) => (response ? response.json() : Promise.resolve()));
+  }
+
+  // AI
+  extractAIDocument(fieldId: string, correctRotation: boolean) {
+    const { userId } = initInfo();
+    const data = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      field_id: fieldId,
+      correct_rotation: correctRotation
+    };
+    return this._fetch(`${AI_URL}ai/vision/`, {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data)
+    }).then((res) => (res ? res.json() : Promise.resolve({})));
   }
 
   // Collaboration
