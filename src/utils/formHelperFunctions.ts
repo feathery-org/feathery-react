@@ -816,7 +816,7 @@ export function mapFormSettingsResponse(res: any) {
   };
 }
 
-export function httpHelpers(client: any) {
+export function httpHelpers(client: any, connectorFields: string[] = []) {
   const helpers: Record<string, any> = {};
   ['GET', 'PATCH', 'POST', 'PUT', 'DELETE'].forEach(
     (method) =>
@@ -824,11 +824,32 @@ export function httpHelpers(client: any) {
         url: string,
         data: Record<string, any> | any[],
         headers: Record<string, string>
-      ) => client.runCustomRequest({ method, url, data, headers }))
+      ) => {
+        const _fieldValues: { [key: string]: any } = connectorFields.reduce(
+          (acc, fieldKey) => ({
+            ...acc,
+            [fieldKey]: fieldValues[fieldKey]
+          }),
+          {}
+        );
+
+        return client.runCustomRequest(
+          { method, url, data, headers },
+          _fieldValues
+        );
+      })
   );
 
   helpers.connectToAPI = async (name: string) => {
-    const response = await client.runCustomRequest(name);
+    const _fieldValues: { [key: string]: any } = connectorFields.reduce(
+      (acc, fieldKey) => ({
+        ...acc,
+        [fieldKey]: fieldValues[fieldKey]
+      }),
+      {}
+    );
+
+    const response = await client.runCustomRequest(name, _fieldValues);
 
     if (response && response.mapping) {
       setFieldValues(response.mapping);

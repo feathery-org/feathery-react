@@ -530,18 +530,18 @@ export default class Client {
           url: string;
           userData: Record<string, any> | any[];
           headers: Record<string, string>;
-        }
+        },
+    fieldValues: { [key: string]: any } | null = null
   ) {
     const { userId } = initInfo();
-    const data = {
+    const data: any = {
       fuser_key: userId,
       form_key: this.formKey
     };
 
     if (typeof payload === 'string') {
       Object.assign(data, {
-        name: payload,
-        new_service: true
+        name: payload
       });
     } else {
       Object.assign(data, {
@@ -550,6 +550,10 @@ export default class Client {
         user_data: payload.userData,
         headers: payload.headers
       });
+    }
+
+    if (fieldValues) {
+      data.field_values = fieldValues;
     }
 
     return this._fetch(`${API_URL}custom_request/`, {
