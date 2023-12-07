@@ -429,7 +429,7 @@ export default class Client {
         if (!data) return Promise.resolve();
 
         let toReturn;
-        if (data?.merge) {
+        if (!data?.no_merge) {
           data.completed_forms.forEach((formKey: string) => {
             if (!initState.formSessions[formKey])
               initState.formSessions[formKey] = {};
