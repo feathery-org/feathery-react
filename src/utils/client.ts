@@ -426,17 +426,24 @@ export default class Client {
         return response ? response.json() : Promise.resolve();
       })
       .then((data: any) => {
-        if (data === undefined) return Promise.resolve();
-        data.completed_forms.forEach((formKey: string) => {
-          if (!initState.formSessions[formKey])
-            initState.formSessions[formKey] = {};
-          initState.formSessions[formKey].form_completed = true;
-        });
+        if (!data) return Promise.resolve();
+
+        let toReturn;
+        if (data?.merge) {
+          data.completed_forms.forEach((formKey: string) => {
+            if (!initState.formSessions[formKey])
+              initState.formSessions[formKey] = {};
+            initState.formSessions[formKey].form_completed = true;
+          });
+          toReturn = data;
+        }
+
         // Need to wait until form_completed has been fetched before setting
         // authId, otherwise we would flash the onboarding questions before
         // LoginForm renders its children
         authState.setAuthId(authId);
-        return Promise.resolve(data);
+
+        return Promise.resolve(toReturn);
       });
   }
 
