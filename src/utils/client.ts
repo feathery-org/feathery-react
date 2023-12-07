@@ -535,7 +535,7 @@ export default class Client {
       | {
           method: string;
           url: string;
-          userData: Record<string, any> | any[];
+          data: Record<string, any> | any[];
           headers: Record<string, string>;
         },
     fieldValues: { [key: string]: any } | null = null
@@ -554,7 +554,7 @@ export default class Client {
       Object.assign(data, {
         method: payload.method,
         url: payload.url,
-        user_data: payload.userData,
+        user_data: payload.data,
         headers: payload.headers
       });
     }
