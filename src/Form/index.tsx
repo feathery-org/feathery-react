@@ -10,7 +10,7 @@ import React, {
 import BootstrapForm from 'react-bootstrap/Form';
 import debounce from 'lodash.debounce';
 
-import { calculateStepCSS } from '../utils/hydration';
+import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
 import {
   castVal,
   changeStep,
@@ -257,7 +257,8 @@ function Form({
     rightToLeft: false,
     allowEdits: true,
     saveUrlParams: false,
-    completionBehavior: ''
+    completionBehavior: '',
+    globalStyles: {}
   });
   const trackHashes = useRef(false);
 
@@ -293,6 +294,10 @@ function Form({
 
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
+  const globalCSS = useMemo(
+    () => calculateGlobalCSS(formSettings.globalStyles),
+    [formSettings.globalStyles]
+  );
 
   useFirebaseRecaptcha(activeStep);
   const getNextAuthStep = useFormAuth({
@@ -1832,6 +1837,7 @@ function Form({
         className={className}
         ref={formRef}
         css={{
+          ...globalCSS.getTarget('form'),
           ...stepCSS,
           ...style,
           position: 'relative',

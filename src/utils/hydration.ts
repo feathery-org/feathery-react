@@ -1,4 +1,5 @@
 import { isNum } from './primitives';
+import ResponsiveStyles from '../elements/styles';
 
 export const MIN_AXIS_SIZE = 15;
 
@@ -48,7 +49,7 @@ const calculateDimensionsHelper = (root: any, p = '') => {
  * Calculates the dimensions of the provided step.
  * Note: The provided step should be fully-hydrated (i.e. rows injected, etc.) to calculate dimensions accurately.
  */
-function calculateStepCSS(step: any): Record<string, any> {
+export function calculateStepCSS(step: any): Record<string, any> {
   if (!step) return {};
 
   const root = step.subgrids.find((grid: any) => grid.position.length === 0);
@@ -68,4 +69,10 @@ function calculateStepCSS(step: any): Record<string, any> {
   return stepCSS;
 }
 
-export { calculateStepCSS };
+export function calculateGlobalCSS(globalStyles: any) {
+  const styles = new ResponsiveStyles({ styles: globalStyles }, ['form']);
+  if (globalStyles) {
+    styles.applyFontStyles('form');
+  }
+  return styles;
+}
