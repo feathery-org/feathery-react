@@ -547,16 +547,12 @@ export default class Client {
     };
 
     if (typeof payload === 'string') {
-      Object.assign(data, {
-        name: payload
-      });
+      data.name = payload;
     } else {
-      Object.assign(data, {
-        method: payload.method,
-        url: payload.url,
-        user_data: payload.data,
-        headers: payload.headers
-      });
+      data.method = payload.method;
+      data.url = payload.url;
+      data.user_data = payload.data;
+      data.headers = payload.headers;
     }
 
     if (fieldValues) {
