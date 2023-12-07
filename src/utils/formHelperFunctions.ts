@@ -841,7 +841,7 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
       })
   );
 
-  helpers.connectToAPI = async (name: string) => {
+  helpers.connect = async (name: string) => {
     const _fieldValues: { [key: string]: any } = connectorFields.reduce(
       (acc, fieldKey) => ({
         ...acc,
