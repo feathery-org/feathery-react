@@ -806,7 +806,8 @@ export function mapFormSettingsResponse(res: any) {
     autoscroll: res.autoscroll,
     rightToLeft: res.right_to_left,
     saveUrlParams: res.save_url_params,
-    enterToSubmit: res.enter_submit
+    enterToSubmit: res.enter_submit,
+    globalStyles: res.global_styles
   };
 }
 
