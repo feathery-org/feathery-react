@@ -268,6 +268,7 @@ function Form({
   // Array of 2 elements. First is field whitelist, second is field blacklist
   const [allowLists, setAllowLists] = useState<any[]>([null, null]);
 
+  const [connectorFields, setConnectorFields] = useState<any>();
   const [logicRules, setLogicRules] = useState<LogicRule[]>([]);
   const [inlineErrors, setInlineErrors] = useState<
     Record<string, { message: string; index: number }>
@@ -619,7 +620,7 @@ function Form({
           );
           try {
             await fn(
-              { ...props, http: httpHelpers(client) },
+              { ...props, http: httpHelpers(client, connectorFields) },
               ...Object.values(injectableFields)
               // );
             ).catch((e: any) => {
@@ -871,6 +872,10 @@ function Form({
               }
             });
             setViewElements(newViewElements);
+          }
+
+          if (res.connector_fields) {
+            setConnectorFields(res.connector_fields);
           }
 
           if (res.production) installRecaptcha(steps);
