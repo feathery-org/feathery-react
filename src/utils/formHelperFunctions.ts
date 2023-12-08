@@ -852,9 +852,14 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
 
     const response = await client.runCustomRequest(name, _fieldValues);
 
-    if (response && response.mapping) {
-      setFieldValues(response.mapping);
+    if (response.field_values) {
+      setFieldValues(response.field_values);
     }
+
+    return {
+      data: response.data,
+      statusCode: response.status_code
+    };
   };
 
   return helpers;
