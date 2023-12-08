@@ -397,7 +397,6 @@ class ResponsiveStyles {
   getRichFontStyles(attrs: any) {
     const fontStyles = this._getRichFontScreenStyles(attrs);
     if (this.handleMobile) {
-      // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
       fontStyles[mobileBreakpointKey] = this._getRichFontScreenStyles(
         attrs,
         'mobile_'
@@ -412,26 +411,26 @@ class ResponsiveStyles {
   }
 
   _getRichFontScreenStyles(attrs: any, p = '') {
-    const styles = {};
+    const styles: Record<string, any> = {};
 
     let attr = attrs[`${p}font_size`];
-    if (attr) (styles as any).fontSize = `${attr}px`;
+    if (attr) styles.fontSize = `${attr}px`;
     attr = attrs[`${p}font_family`];
-    if (attr) (styles as any).fontFamily = attr.replace(/"/g, "'");
+    if (attr) styles.fontFamily = attr.replace(/"/g, "'");
     attr = attrs[`${p}font_color`];
-    if (attr) (styles as any).color = `#${attr}`;
+    if (attr) styles.color = `#${attr}`;
     attr = attrs[`${p}font_weight`];
-    if (attr) (styles as any).fontWeight = attr;
-    if (attrs[`${p}font_italic`]) (styles as any).fontStyle = 'italic';
+    if (attr) styles.fontWeight = attr;
+    if (attrs[`${p}font_italic`]) styles.fontStyle = 'italic';
     attr = attrs[`${p}text_transform`];
-    if (attr) (styles as any).textTransform = attr;
+    if (attr) styles.textTransform = attr;
     attr = attrs[`${p}letter_spacing`];
-    if (isNum(attr)) (styles as any).letterSpacing = `${attr}px`;
+    if (isNum(attr)) styles.letterSpacing = `${attr}px`;
 
     const lines = [];
     if (attrs[`${p}font_strike`]) lines.push('line-through');
     if (attrs[`${p}font_underline`]) lines.push('underline');
-    if (lines.length > 0) (styles as any).textDecoration = lines.join(' ');
+    if (lines.length > 0) styles.textDecoration = lines.join(' ');
 
     return styles;
   }
