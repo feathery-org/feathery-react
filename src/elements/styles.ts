@@ -396,18 +396,25 @@ class ResponsiveStyles {
     });
   }
 
-  transformFontFamily(family: string) {
-    family = family.replace(/"/g, "'");
-    if (family.indexOf(' ') >= 0 && !startsEndsWithQuotes(family)) {
-      family = `'${family}'`;
-    }
-    return family;
+  transformFontFamilies(families: string) {
+    families = families.replace(/"/g, "'");
+    families = families
+      .split(',')
+      .map((family) => {
+        family = family.trim();
+        if (family.indexOf(' ') >= 0 && !startsEndsWithQuotes(family)) {
+          return `'${families}'`;
+        }
+        return family;
+      })
+      .join(', ');
+    return families;
   }
 
   applyFontFamily(target: string) {
     this.apply(target, 'font_family', (a: string) => {
       if (!a) return {};
-      return { fontFamily: this.transformFontFamily(a) };
+      return { fontFamily: this.transformFontFamilies(a) };
     });
   }
 
@@ -433,7 +440,7 @@ class ResponsiveStyles {
     let attr = attrs[`${p}font_size`];
     if (attr) styles.fontSize = `${attr}px`;
     attr = attrs[`${p}font_family`];
-    if (attr) styles.fontFamily = this.transformFontFamily(attr);
+    if (attr) styles.fontFamily = this.transformFontFamilies(attr);
     attr = attrs[`${p}font_color`];
     if (attr) styles.color = `#${attr}`;
     attr = attrs[`${p}font_weight`];
