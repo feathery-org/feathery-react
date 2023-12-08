@@ -89,6 +89,11 @@ export const getContainerStyles = (
         ? paddingLeft + paddingRight
         : marginLeft + marginRight;
 
+      // Button group individual buttons are responsive but not
+      // the overall container
+      if (contentResponsive)
+        contentResponsive = getElementType(node) !== 'button_group';
+
       s.minWidth = 'min-content';
       s.width = '100%';
 
