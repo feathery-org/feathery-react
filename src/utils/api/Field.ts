@@ -1,18 +1,18 @@
-import { defaultClient, FeatheryFieldTypes, fieldValues } from './init';
+import { defaultClient, FeatheryFieldTypes, fieldValues } from '../init';
 import debounce from 'lodash.debounce';
 import {
   rerenderAllForms,
   OptionType,
   getDefaultFormFieldValue,
   FieldStyles
-} from './formHelperFunctions';
+} from '../formHelperFunctions';
 import {
   evalComparisonRule,
   OPERATOR_CODE,
   ResolvedComparisonRule
-} from './logic';
-import { dataURLToFile, isBase64Image } from './image';
-import internalState from './internalState';
+} from '../logic';
+import { dataURLToFile, isBase64Image } from '../image';
+import internalState from '../internalState';
 
 /**
  * Represents a field in a form.  Part of the SDK coding model.
