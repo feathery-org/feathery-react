@@ -575,7 +575,12 @@ export async function fetchS3File(url: any) {
   });
 }
 
-export function changeStep(newKey: any, oldKey: any, steps: any, history: any) {
+export function changeStep(
+  newKey: string,
+  oldKey: string,
+  steps: any,
+  history: any
+) {
   const sameKey = oldKey === newKey;
   if (!sameKey && newKey in steps) {
     history.replace(location.pathname + location.search + `#${newKey}`);

@@ -309,7 +309,7 @@ function Form({
     _internalId
   });
 
-  const [backNavMap, setBackNavMap] = useState({});
+  const [backNavMap, setBackNavMap] = useState<Record<string, string>>({});
   const updateBackNavMap = (newNavs: Record<string, string>) =>
     newNavs && setBackNavMap({ ...backNavMap, ...newNavs });
 
@@ -666,6 +666,15 @@ function Form({
     internalState[_internalId].inlineErrors = inlineErrors;
   }
 
+  const changeFormStep = (newKey: string, oldKey: string, load: boolean) => {
+    const changed = changeStep(newKey, oldKey, steps, history);
+    if (changed) {
+      const backKey = load ? backNavMap[oldKey] : oldKey;
+      updateBackNavMap({ [newKey]: backKey });
+    }
+    return changed;
+  };
+
   const getNewStep = async (newKey: any) => {
     let newStep = steps[newKey];
     if (!newStep) return;
@@ -674,14 +683,14 @@ function Form({
     if (
       nextStep !== '' &&
       !initState.isTestEnv &&
-      changeStep(nextStep, newKey, steps, history)
+      changeFormStep(nextStep, newKey, true)
     )
       return;
     const nextKey = nextStepKey(newStep.next_conditions, {
       elementType: 'step',
       elementIDs: [newStep.id]
     });
-    if (nextKey && changeStep(nextKey, newKey, steps, history)) {
+    if (nextKey && changeFormStep(nextKey, newKey, true)) {
       return;
     }
 
@@ -1785,7 +1794,7 @@ function Form({
     setInlineErrors,
     changeValue,
     changeStep: (nextStepKey: string) =>
-      changeStep(nextStepKey, activeStep.key, steps, history),
+      changeFormStep(nextStepKey, activeStep.key, false),
     updateFieldValues,
     elementOnView,
     onViewElements: viewElements,
