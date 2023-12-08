@@ -28,6 +28,12 @@ function stringifyWithNull(value: any) {
   return value === null || value === undefined ? '' : value.toString();
 }
 
+function startsEndsWithQuotes(str: string) {
+  return ["'", '"'].some(
+    (delimiter) => str.startsWith(delimiter) && str.endsWith(delimiter)
+  );
+}
+
 function isAlphaNumeric(val: any) {
   if (!isNaN(val)) return true;
 
@@ -90,5 +96,6 @@ export {
   formatDecimal,
   formatMoneyUSD,
   formatMoney,
-  numMatchingItems
+  numMatchingItems,
+  startsEndsWithQuotes
 };

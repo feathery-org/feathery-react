@@ -1,5 +1,9 @@
 import { DEFAULT_MIN_SIZE } from '../Form/grid/StyledContainer/styles';
-import { isNum, objectFromEntries } from '../utils/primitives';
+import {
+  isNum,
+  objectFromEntries,
+  startsEndsWithQuotes
+} from '../utils/primitives';
 import { isDirectionColumn } from '../utils/styles';
 import { CSSProperties } from 'react';
 
@@ -329,9 +333,7 @@ class ResponsiveStyles {
     this.apply(target, 'font_weight', (a: any) => ({
       fontWeight: a
     }));
-    this.apply(target, 'font_family', (a: any) => ({
-      fontFamily: a
-    }));
+    this.applyFontFamily(target);
     this.apply(target, 'font_size', (a: any) => ({
       fontSize: `${a}px`
     }));
@@ -394,6 +396,21 @@ class ResponsiveStyles {
     });
   }
 
+  transformFontFamily(family: string) {
+    family = family.replace(/"/g, "'");
+    if (family.indexOf(' ') >= 0 && !startsEndsWithQuotes(family)) {
+      family = `'${family}'`;
+    }
+    return family;
+  }
+
+  applyFontFamily(target: string) {
+    this.apply(target, 'font_family', (a: string) => {
+      if (!a) return {};
+      return { fontFamily: this.transformFontFamily(a) };
+    });
+  }
+
   getRichFontStyles(attrs: any) {
     const fontStyles = this._getRichFontScreenStyles(attrs);
     if (this.handleMobile) {
@@ -416,7 +433,7 @@ class ResponsiveStyles {
     let attr = attrs[`${p}font_size`];
     if (attr) styles.fontSize = `${attr}px`;
     attr = attrs[`${p}font_family`];
-    if (attr) styles.fontFamily = attr.replace(/"/g, "'");
+    if (attr) styles.fontFamily = this.transformFontFamily(attr);
     attr = attrs[`${p}font_color`];
     if (attr) styles.color = `#${attr}`;
     attr = attrs[`${p}font_weight`];

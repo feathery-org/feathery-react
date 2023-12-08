@@ -100,9 +100,7 @@ function applyFieldStyles(field: any, styles: any) {
     if (a) return { backgroundColor: `#${a}` };
     else return { filter: 'brightness(0.9)' };
   });
-  styles.apply('error', 'font_family', (a: any) => ({
-    fontFamily: a
-  }));
+  styles.applyFontFamily('error');
   styles.apply('error', 'font_size', (a: any) => ({
     fontSize: `${a}px`
   }));
