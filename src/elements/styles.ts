@@ -403,6 +403,7 @@ class ResponsiveStyles {
       .map((family) => {
         family = family.trim();
         if (family.indexOf(' ') >= 0 && !startsEndsWithQuotes(family)) {
+          // Font families with spaces must be quoted
           return `'${families}'`;
         }
         return family;
