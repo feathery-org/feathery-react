@@ -1,5 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import TextHoverTooltip from '../components/TextHoverTooltip';
+import {
+  applyCheckableInputStyles,
+  composeCheckableInputStyle
+} from './CheckboxField';
 
 function MatrixField({
   element,
@@ -12,14 +16,22 @@ function MatrixField({
   children
 }: any) {
   const servar = element.servar;
-  const inputType = servar.metadata.multiple ? 'checkbox' : 'radio';
+  const allowMultiple = servar.metadata.multiple;
+  const inputType = allowMultiple ? 'checkbox' : 'radio';
 
   const { backgroundColor, borderRadius, height } =
     responsiveStyles.getTarget('sub-fc');
 
+  const styles = useMemo(() => {
+    applyCheckableInputStyles(element, responsiveStyles);
+    return responsiveStyles;
+  }, [responsiveStyles]);
+
   const options = servar.metadata.options;
   const optionFraction = 100 / (options.length + 1);
   const widthStyle = { minWidth: '100px', width: `${optionFraction}%` };
+
+  const firstColStyle = { ...widthStyle, fontWeight: 400, padding: 8 };
 
   return (
     <div
@@ -37,7 +49,7 @@ function MatrixField({
       {children}
       {fieldLabel}
       <div style={{ display: 'flex', flexDirection: 'row', marginBottom: 6 }}>
-        <div style={widthStyle} />
+        <div css={firstColStyle} />
         {options.map((opt: any, i: number) => {
           // headers
           return (
@@ -73,9 +85,7 @@ function MatrixField({
             }}
           >
             <TextHoverTooltip text={q.tooltip}>
-              <div style={{ ...widthStyle, fontWeight: 400, padding: 8 }}>
-                {q.label}
-              </div>
+              <div css={firstColStyle}>{q.label}</div>
             </TextHoverTooltip>
             {options.map((opt: any, j: number) => {
               const questionVal = fieldVal[q.id];
@@ -85,7 +95,12 @@ function MatrixField({
               return (
                 <div
                   key={j}
-                  style={{ flex: 1, justifyContent: 'center', display: 'flex' }}
+                  css={{
+                    flex: 1,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    display: 'flex'
+                  }}
                 >
                   <input
                     type={inputType}
@@ -96,6 +111,11 @@ function MatrixField({
                     disabled={disabled || q.read_only}
                     checked={isChecked}
                     onChange={onChange}
+                    css={composeCheckableInputStyle(
+                      styles,
+                      disabled,
+                      !allowMultiple
+                    )}
                   />
                 </div>
               );

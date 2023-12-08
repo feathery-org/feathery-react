@@ -96,11 +96,17 @@ export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
   );
 
   const {
-    servar: { type }
+    servar: {
+      type,
+      metadata: { multiple }
+    }
   } = element;
 
-  const isRadioGroup = type === 'select';
-  const isCheckboxGroup = type === 'multiselect' || type === 'checkbox_group';
+  const isRadioGroup = type === 'select' || (type === 'matrix' && !multiple);
+  const isCheckboxGroup =
+    type === 'multiselect' ||
+    type === 'checkbox_group' ||
+    (type === 'matrix' && multiple);
 
   const scaleWithFontSize = isCheckboxGroup || isRadioGroup;
 
