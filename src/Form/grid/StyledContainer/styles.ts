@@ -4,7 +4,7 @@ import { getElementType } from './utils';
 
 export const DEFAULT_MIN_SIZE = 50;
 
-const canFitHeightCollapse = (node: any, isChild = false) => {
+const canFitHeightCollapse = (node: any) => {
   if (node.isElement) return true;
 
   const hasChildren = node.children && node.children.length > 0;
@@ -17,15 +17,12 @@ const canFitHeightCollapse = (node: any, isChild = false) => {
         (n: any) => n.uuid !== node.uuid
       );
 
-      canCollapse = filteredSiblings.every((n: any) =>
-        canFitHeightCollapse(n, true)
-      );
+      canCollapse = filteredSiblings.every((n: any) => canFitHeightCollapse(n));
     } else {
       canCollapse = false;
     }
   }
 
-  if (!isChild) console.log(`canFitHeightCollapse: ${canCollapse}`, node);
   return canCollapse;
 };
 
