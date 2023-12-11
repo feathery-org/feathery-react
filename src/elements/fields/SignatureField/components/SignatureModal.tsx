@@ -178,7 +178,7 @@ function SignatureModal(props: SignatureModalProps) {
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontSize: '2em',
-                    fontFamily: 'cursive'
+                    fontFamily: 'Great Vibes'
                   }}
                 >
                   {isLoading && (
@@ -212,7 +212,7 @@ function SignatureModal(props: SignatureModalProps) {
                       ref={previewRef}
                       css={{
                         fontSize: '1.5em',
-                        fontFamily: 'cursive',
+                        fontFamily: 'Great Vibes',
                         color: '#000'
                       }}
                       className='previewText'
