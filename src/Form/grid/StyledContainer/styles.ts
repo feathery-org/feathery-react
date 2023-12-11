@@ -4,6 +4,31 @@ import { getElementType } from './utils';
 
 export const DEFAULT_MIN_SIZE = 50;
 
+const canFitHeightCollapse = (node: any, isChild = false) => {
+  if (node.isElement) return true;
+
+  const hasChildren = node.children && node.children.length > 0;
+  const hasSiblings = node.parent && node.parent.children.length > 1;
+  let canCollapse = true;
+
+  if (!hasChildren) {
+    if (hasSiblings) {
+      const filteredSiblings = node.parent.children.filter(
+        (n: any) => n.uuid !== node.uuid
+      );
+
+      canCollapse = filteredSiblings.every((n: any) =>
+        canFitHeightCollapse(n, true)
+      );
+    } else {
+      canCollapse = false;
+    }
+  }
+
+  if (!isChild) console.log(`canFitHeightCollapse: ${canCollapse}`, node);
+  return canCollapse;
+};
+
 export const getCellStyle = (cell: any, viewport?: 'desktop' | 'mobile') => {
   const styles = new ResponsiveStyles(cell, [
     'cell',
@@ -284,11 +309,19 @@ export const getContainerStyles = (
         s.maxHeight = 'fit-content';
 
         // Only on the editor, apply a min height if there are no children to the fit container (node.uuid indicates that the node is from the editor)
-        if (!hasChildren && node.uuid) {
-          if (parentAxis === 'row') {
-            s.minHeight = `${DEFAULT_MIN_SIZE}px`;
-          } else {
-            s.height = `${DEFAULT_MIN_SIZE}px`;
+        if (node.uuid) {
+          if (!canFitHeightCollapse(node)) {
+            if (parentAxis === 'row') {
+              s.minHeight = `${DEFAULT_MIN_SIZE}px`;
+            } else {
+              s.height = `${DEFAULT_MIN_SIZE}px`;
+            }
+          } else if (!hasChildren) {
+            // This is to account for siblings being under 50px.
+            // Allow empty fit containers to shrink in height to their siblings height
+            // but cap the height at 50px if the siblings are larger.
+            s.maxHeight = `${DEFAULT_MIN_SIZE}px`;
+            s.height = '100%';
           }
         }
       }
