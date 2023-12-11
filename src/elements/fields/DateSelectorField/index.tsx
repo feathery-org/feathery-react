@@ -10,7 +10,7 @@ import { bootstrapStyles } from '../../styles';
 import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';
 
-function formatDateString(date: any, chooseTime: boolean) {
+export function formatDateString(date: any, chooseTime: boolean) {
   if (!date) return '';
 
   // If simply a date, then not in UTC.

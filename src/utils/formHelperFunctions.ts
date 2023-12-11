@@ -19,6 +19,7 @@ import { featheryWindow } from './browser';
 import Client from '../utils/client';
 import { isObjectEmpty } from './primitives';
 import Field from './Field';
+import { formatDateString } from '../elements/fields/DateSelectorField';
 
 export const ARRAY_FIELD_TYPES = [
   'button_group',
@@ -250,6 +251,8 @@ export function getDefaultFieldValue(field: any) {
   const servar = field.servar;
   const meta = servar.metadata;
   if (meta.default_value) return meta.default_value;
+  if (servar.type === 'date_selector' && meta.default_date_today)
+    return formatDateString(new Date(), meta.choose_time);
 
   const matrixVal: Record<string, any> = {};
   switch (servar.type) {
