@@ -17,7 +17,7 @@ const canFitHeightCollapse = (node: any) => {
         (n: any) => n.uuid !== node.uuid
       );
 
-      canCollapse = filteredSiblings.every((n: any) => canFitHeightCollapse(n));
+      canCollapse = filteredSiblings.some((n: any) => canFitHeightCollapse(n));
     } else {
       canCollapse = false;
     }
