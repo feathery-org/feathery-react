@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import SignatureCanvas from './components/SignatureCanvas';
 import SignatureModal from './components/SignatureModal';
 
@@ -19,6 +19,14 @@ function SignatureField({
   const Portal = ReactPortal ?? (({ children }: any) => <>{children}</>);
   const servar = element.servar ?? {};
   const fieldKey = servar.key ?? element.key;
+
+  useEffect(() => {
+    if (global.webfontloaderPromise) {
+      global.webfontloaderPromise.then((WebFont: any) => {
+        WebFont.load({ google: { families: ['Great Vibes'] } });
+      });
+    }
+  }, []);
 
   return (
     <>
