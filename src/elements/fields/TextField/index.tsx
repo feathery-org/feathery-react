@@ -1,5 +1,5 @@
 import { IMaskInput } from 'react-imask';
-import React, { memo, useState } from 'react';
+import React, { memo, useCallback, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
@@ -10,6 +10,7 @@ import TextAutocomplete from './TextAutocomplete';
 import BorderlessEyeIcon from '../../components/icons/BorderlessEyeIcon';
 import { getFieldValue } from '../../../utils/formHelperFunctions';
 import { stringifyWithNull } from '../../../utils/primitives';
+import debounce from 'lodash.debounce';
 
 const MAX_TEXT_FIELD_LENGTH = 512;
 
@@ -193,6 +194,13 @@ function TextField({
   const { value: fieldVal } = getFieldValue(element);
   const rawValue = stringifyWithNull(fieldVal);
 
+  const handleAccept = (...args: any[]) => {
+    console.log('Handle accept');
+    onAccept(...args);
+  };
+
+  const debouncedAccept = useCallback(debounce(handleAccept, 500), [onAccept]);
+
   const servar = element.servar;
   const options = servar.metadata.options ?? [];
   return (
@@ -228,7 +236,7 @@ function TextField({
           value={rawValue}
           showOptions={showAutocomplete}
           onSelect={(option) => {
-            onAccept(option, {});
+            debouncedAccept(option, {});
             setShowAutocomplete(false);
           }}
           responsiveStyles={responsiveStyles}
@@ -279,7 +287,7 @@ function TextField({
             inputRef={setRef}
             {...getInputProps(servar, options, autoComplete, showPassword)}
             {...getMaskProps(servar, rawValue, showPassword)}
-            onAccept={onAccept}
+            onAccept={debouncedAccept}
           />
         </TextAutocomplete>
         {servar.type === 'ssn' && rawValue && (
