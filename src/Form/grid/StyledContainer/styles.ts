@@ -1,6 +1,7 @@
 import ResponsiveStyles from '../../../elements/styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
 import { getElementType } from './utils';
+import { isNum } from '../../../utils/primitives';
 
 export const DEFAULT_MIN_SIZE = 50;
 
@@ -370,10 +371,10 @@ export const getContainerStyles = (
       const s: any = {};
       const style = node.isElement ? 'margin' : 'padding';
 
-      if (paddingTop) s[`${style}Top`] = `${paddingTop}px`;
-      if (paddingRight) s[`${style}Right`] = `${paddingRight}px`;
-      if (paddingBottom) s[`${style}Bottom`] = `${paddingBottom}px`;
-      if (paddingLeft) s[`${style}Left`] = `${paddingLeft}px`;
+      if (isNum(paddingTop)) s[`${style}Top`] = `${paddingTop}px`;
+      if (isNum(paddingRight)) s[`${style}Right`] = `${paddingRight}px`;
+      if (isNum(paddingBottom)) s[`${style}Bottom`] = `${paddingBottom}px`;
+      if (isNum(paddingLeft)) s[`${style}Left`] = `${paddingLeft}px`;
 
       return s;
     }
