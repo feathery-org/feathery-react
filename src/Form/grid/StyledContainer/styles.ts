@@ -4,7 +4,9 @@ import { getElementType } from './utils';
 
 export const DEFAULT_MIN_SIZE = 50;
 
-const canFitHeightCollapse = (node: any) => {
+const canFitHeightCollapse = (node: any, siblingCheck = false) => {
+  if (siblingCheck && (!node.children || node.children.length === 0))
+    return false;
   if (node.isElement) return true;
 
   const hasChildren = node.children && node.children.length > 0;
@@ -17,7 +19,9 @@ const canFitHeightCollapse = (node: any) => {
         (n: any) => n.uuid !== node.uuid
       );
 
-      canCollapse = filteredSiblings.some((n: any) => canFitHeightCollapse(n));
+      canCollapse = filteredSiblings.some((n: any) =>
+        canFitHeightCollapse(n, true)
+      );
     } else {
       canCollapse = false;
     }
@@ -318,7 +322,12 @@ export const getContainerStyles = (
             // Allow empty fit containers to shrink in height to their siblings height
             // but cap the height at 50px if the siblings are larger.
             s.maxHeight = `${DEFAULT_MIN_SIZE}px`;
-            s.height = '100%';
+
+            if (parentAxis === 'row') {
+              s.height = `${DEFAULT_MIN_SIZE}px`; // When the parent is rows, it's acceptable to set the height of an empty fit-height container to the mininum size
+            } else {
+              s.alignSelf = 'stretch !important';
+            }
           }
         }
       }
