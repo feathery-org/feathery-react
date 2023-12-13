@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import Elements from '../../../elements';
 import {
   getFieldValue,
@@ -23,6 +23,7 @@ import {
   textFieldShouldSubmit
 } from './utils';
 import { getVisibleElements } from '../../../utils/hideAndRepeats';
+import debounce from 'lodash.debounce';
 
 const MAP_FIELD_TYPES = new Set([
   'gmap_line_1',
@@ -190,6 +191,8 @@ const Element = ({ node: el, form, flags }: any) => {
       servarId: servar.id,
       elementRepeatIndex: el.repeat || 0
     });
+
+    const debouncedOnChange = useCallback(debounce(onChange, 500), []);
 
     const required = isFieldActuallyRequired(el, activeStep);
 
@@ -396,7 +399,7 @@ const Element = ({ node: el, form, flags }: any) => {
             onChange={(val: any) => {
               const change = changeValue(val, el, index, false);
               if (change)
-                onChange({
+                debouncedOnChange({
                   submitData: autosubmit && val.length === el.servar.max_length
                 });
             }}
@@ -454,7 +457,7 @@ const Element = ({ node: el, form, flags }: any) => {
             fieldVal={fieldVal}
             onChange={(val: number) => {
               const change = changeValue(val, el, index);
-              if (change) onChange();
+              if (change) debouncedOnChange();
             }}
           />
         );
@@ -477,7 +480,7 @@ const Element = ({ node: el, form, flags }: any) => {
             onChange={(e: any) => {
               const val = e.target.value;
               const change = changeValue(val, el, index);
-              if (change) onChange();
+              if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
               if (firstField) focusRef.current = ref;
@@ -492,7 +495,7 @@ const Element = ({ node: el, form, flags }: any) => {
             onChange={(e: any) => {
               const val = e.target.value;
               const change = changeValue(val, el, index);
-              if (change) onChange();
+              if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
               if (firstField) focusRef.current = ref;
@@ -508,7 +511,7 @@ const Element = ({ node: el, form, flags }: any) => {
             onChange={(val: string) => changeValue(val, el, index, false)}
             onComplete={(val: string) => {
               const change = changeValue(val, el, index);
-              if (change) onChange();
+              if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
               if (firstField) focusRef.current = ref;
@@ -523,7 +526,7 @@ const Element = ({ node: el, form, flags }: any) => {
             onChange={(e: any) => {
               const val = e.target.value;
               const change = changeValue(val, el, index);
-              if (change) onChange();
+              if (change) debouncedOnChange();
             }}
             onSelect={(address: any, addressId: string) => {
               const addrValues: Record<string, any> = {};
@@ -564,7 +567,7 @@ const Element = ({ node: el, form, flags }: any) => {
 
               if (!isObjectEmpty(addrValues)) {
                 updateFieldValues(addrValues);
-                onChange({
+                debouncedOnChange({
                   triggerType: 'addressSelect',
                   integrationData: {
                     id: addressId,
@@ -619,7 +622,7 @@ const Element = ({ node: el, form, flags }: any) => {
               if (change) {
                 const submitData =
                   autosubmit && textFieldShouldSubmit(servar, newVal);
-                onChange({ submitData });
+                debouncedOnChange({ submitData });
               }
             }}
             setRef={(ref: any) => {
