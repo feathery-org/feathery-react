@@ -22,6 +22,18 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyBoxShadow('button');
   responsiveStyles.applyFlexDirection('button');
   responsiveStyles.applyContentAlign('button');
+  responsiveStyles.apply('button', 'entry_transition', (a: any) => {
+    if (a === 'fade_in') {
+      return {
+        animation: 'fadeIn 1s',
+        '@keyframes fadeIn': {
+          from: { opacity: 0 },
+          to: { opacity: 1 }
+        }
+      };
+    }
+    return {};
+  });
   responsiveStyles.applyTextAlign('buttonLabel');
   responsiveStyles.apply(
     'button',
