@@ -36,6 +36,7 @@ export const getFormContext = (formUuid: string) => {
     fields: internalState[formUuid]?.fields,
     products: internalState[formUuid]?.products,
     cart: internalState[formUuid]?.cart,
+    collaborator: internalState[formUuid]?.collaborator,
     setFormCompletion: (flag: boolean) => {
       const { client, currentStep } = internalState[formUuid];
       return client.registerEvent({

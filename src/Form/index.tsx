@@ -137,13 +137,14 @@ import {
   getAuthIntegrationMetadata,
   isTerminalStepAuth
 } from '../auth/internal/utils';
-import Field, { flushFieldUpdates } from '../utils/Field';
+import Field, { flushFieldUpdates } from '../utils/api/Field';
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
 import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
 import { fieldAllowedFromList } from './grid/Element/utils';
 import { triggerPersona } from '../integrations/persona';
+import Collaborator from '../utils/api/Collaborator';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -723,6 +724,14 @@ function Form({
           getSimplifiedProducts(integrations?.stripe, updateFieldValues)
         ),
         cart: Object.seal(getCart(integrations?.stripe, updateFieldValues)),
+        collaborator: Object.seal(
+          new Collaborator(
+            session.collaborator?.template_label ?? '',
+            session.collaborator?.template_index ?? 0,
+            session.collaborator?.allowed ?? '',
+            session.collaborator?.whitelist ?? []
+          )
+        ),
         formName,
         formRef,
         formSettings,

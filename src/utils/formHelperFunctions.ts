@@ -18,7 +18,7 @@ import {
 import { featheryWindow } from './browser';
 import Client from '../utils/client';
 import { isObjectEmpty } from './primitives';
-import Field from './Field';
+import Field from './api/Field';
 import { formatDateString } from '../elements/fields/DateSelectorField';
 
 export const ARRAY_FIELD_TYPES = [
