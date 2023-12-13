@@ -359,7 +359,13 @@ function Form({
 
     setAutoValidate(false); // Each step to initially not auto validate
 
-    if (formSettings.autofocus && focusRef.current?.focus) {
+    // Don't autofocus on first step since it might be embedded and cause
+    // undesired focus
+    if (
+      formSettings.autofocus &&
+      focusRef.current?.focus &&
+      !activeStep.origin
+    ) {
       focusRef.current.focus({
         preventScroll: true
       });
