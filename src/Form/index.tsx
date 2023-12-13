@@ -732,10 +732,10 @@ function Form({
         cart: Object.seal(getCart(integrations?.stripe, updateFieldValues)),
         collaborator: Object.seal(
           new Collaborator(
-            session.collaborator?.template_label ?? '',
-            session.collaborator?.template_index ?? 0,
-            session.collaborator?.allowed ?? '',
-            session.collaborator?.whitelist ?? []
+            session?.collaborator?.template_label ?? '',
+            session?.collaborator?.template_index ?? 0,
+            session?.collaborator?.allowed ?? '',
+            session?.collaborator?.whitelist ?? []
           )
         ),
         formName,
