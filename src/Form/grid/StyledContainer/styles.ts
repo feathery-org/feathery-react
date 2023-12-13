@@ -278,6 +278,10 @@ export const getContainerStyles = (
           s.maxHeight = `${height}${heightUnit}`;
           s.overflowY = overflow;
         }
+
+        if (!hasChildren) {
+          s.maxHeight = `${height}${heightUnit}`; // This is to enforce pixel heights on empty containers by not allowing them to expand past it
+        }
       }
 
       // Fit containers
