@@ -50,8 +50,9 @@ export const getFormContext = (formUuid: string) => {
     },
     updateUserId,
     goToStep: (stepKey: any) => {
-      const { currentStep, history, steps } = internalState[formUuid];
-      changeStep(stepKey, currentStep.key, steps, history);
+      const { currentStep, history, steps, setStepKey } =
+        internalState[formUuid];
+      changeStep(stepKey, currentStep.key, steps, setStepKey, history);
     },
     isTestForm: () => initState.isTestEnv,
     isLastStep: () => {

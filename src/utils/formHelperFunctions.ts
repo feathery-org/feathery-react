@@ -582,11 +582,13 @@ export function changeStep(
   newKey: string,
   oldKey: string,
   steps: any,
+  setStepKey: any,
   history: any
 ) {
   const sameKey = oldKey === newKey;
   if (!sameKey && newKey in steps) {
     history.replace(location.pathname + location.search + `#${newKey}`);
+    setStepKey(newKey);
     return true;
   }
   return false;

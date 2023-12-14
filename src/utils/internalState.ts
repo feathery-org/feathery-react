@@ -26,6 +26,7 @@ interface FormInternalState {
   >;
   setUserProgress: React.Dispatch<React.SetStateAction<null>>;
   steps: any;
+  setStepKey: (key: string) => void;
   updateFieldOptions: (newOptions: FieldOptions) => void;
   updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => void;
   setFieldErrors: (

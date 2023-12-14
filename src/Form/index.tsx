@@ -674,7 +674,7 @@ function Form({
   }
 
   const changeFormStep = (newKey: string, oldKey: string, load: boolean) => {
-    const changed = changeStep(newKey, oldKey, steps, history);
+    const changed = changeStep(newKey, oldKey, steps, setStepKey, history);
     if (changed) {
       const backKey = load ? backNavMap[oldKey] : oldKey;
       updateBackNavMap({ [newKey]: backKey });
@@ -747,6 +747,7 @@ function Form({
         setInlineErrors,
         setUserProgress,
         steps,
+        setStepKey,
         updateFieldOptions: (newOptions: FieldOptions) => {
           Object.values(steps).forEach((step) =>
             updateStepFieldOptions(step, newOptions)
