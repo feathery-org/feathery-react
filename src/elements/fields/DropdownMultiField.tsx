@@ -4,6 +4,7 @@ import Select from 'react-select';
 import CreatableSelect from 'react-select/creatable';
 import { featheryDoc } from '../../utils/browser';
 import InlineTooltip from '../components/InlineTooltip';
+import { DROPDOWN_Z_INDEX } from './index';
 
 export default function DropdownMultiField({
   element,
@@ -102,7 +103,11 @@ export default function DropdownMultiField({
               minHeight: 'inherit'
             }),
             indicatorSeparator: () => ({ display: 'none' }),
-            indicatorsContainer: () => ({ display: 'none' })
+            indicatorsContainer: () => ({ display: 'none' }),
+            menuPortal: (baseStyles) => ({
+              ...baseStyles,
+              zIndex: DROPDOWN_Z_INDEX
+            })
           }}
           id={servar.key}
           value={selectVal}

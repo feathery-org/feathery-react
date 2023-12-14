@@ -62,6 +62,8 @@ const defaultBorderFields = [
   'file_upload'
 ];
 
+export const DROPDOWN_Z_INDEX = 10;
+
 function applyFieldStyles(field: any, styles: any) {
   const type = field?.servar?.type || field.type;
   styles.addTargets(
