@@ -17,7 +17,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     'img'
   );
 
-  responsiveStyles.applyColor('button', 'background_color', 'backgroundColor');
+  responsiveStyles.applyBackgroundColorGradient('button');
   responsiveStyles.applyCorners('button');
   responsiveStyles.applyBoxShadow('button');
   responsiveStyles.applyFlexDirection('button');
@@ -55,14 +55,14 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     responsiveStyles.applyColor(
       'buttonHover',
       `hover_background_color`,
-      'backgroundColor',
+      'background',
       true
     );
   } else {
     // default hover effect
     responsiveStyles.apply('buttonHover', 'background_color', (a: any) => {
       const newColor = `${adjustColor(a, -30)} !important`;
-      return { backgroundColor: newColor };
+      return { background: newColor };
     });
   }
   responsiveStyles.applySpanSelectorStyles('buttonHover', 'hover_');
@@ -80,7 +80,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyColor(
     'buttonActive',
     `selected_background_color`,
-    'backgroundColor',
+    'background',
     true
   );
   responsiveStyles.applySpanSelectorStyles('buttonActive', 'selected_');
@@ -102,7 +102,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.apply('buttonDisabled', 'background_color', (a: any) => {
     const color = `${adjustColor(a, 30)} !important`;
     return {
-      backgroundColor: color,
+      background: color,
       borderColor: color
     };
   });
@@ -124,7 +124,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyColor(
     'buttonDisabled',
     `disabled_background_color`,
-    'backgroundColor',
+    'background',
     true
   );
 

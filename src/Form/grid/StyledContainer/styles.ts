@@ -15,15 +15,7 @@ export const getCellStyle = (cell: any, viewport?: 'desktop' | 'mobile') => {
   styles.applyCorners('cell');
   styles.applyBoxShadow('cell');
   styles.applyBackgroundImageStyles('cell');
-  styles.apply(
-    'cell',
-    ['background_color', 'gradient_color'],
-    (b: any, g: any) => {
-      if (!b) b = 'FFFFFF00';
-      if (g) return { background: `linear-gradient(#${b}, #${g})` };
-      else return { backgroundColor: `#${b}` };
-    }
-  );
+  styles.applyBackgroundColorGradient('cell');
   styles.applySelectorStyles('cellActive', {
     prefix: 'selected_',
     important: true,

@@ -505,6 +505,18 @@ class ResponsiveStyles {
     }
   }
 
+  applyBackgroundColorGradient(target: string) {
+    this.apply(
+      target,
+      ['background_color', 'gradient_color'],
+      (b: any, g: any) => {
+        if (!b) b = 'FFFFFF00';
+        if (g) return { background: `linear-gradient(#${b}, #${g})` };
+        else return { backgroundColor: `#${b}` };
+      }
+    );
+  }
+
   applyBackgroundImageStyles(target: string) {
     const targetStyles = [
       'background_image_url',
@@ -533,7 +545,7 @@ class ResponsiveStyles {
         return {};
       }
 
-      const formattedStyles = {
+      const formattedStyles: Record<string, string> = {
         backgroundImage: `url(${imageUrl})`,
         backgroundRepeat: imageRepeat,
         backgroundPositionX: imageLayout,
@@ -543,19 +555,13 @@ class ResponsiveStyles {
       switch (imageDisplay) {
         case 'fill':
         case 'fit':
-          Object.assign(formattedStyles, {
-            backgroundSize: imageSize
-          });
+          formattedStyles.backgroundSize = imageSize;
           break;
         case 'tile':
-          Object.assign(formattedStyles, {
-            backgroundSize: `${imageSize}%`
-          });
+          formattedStyles.backgroundSize = `${imageSize}%`;
           break;
         case 'set_scale':
-          Object.assign(formattedStyles, {
-            backgroundSize: `${imageSizeX}px ${imageSizeY}px`
-          });
+          formattedStyles.backgroundSize = `${imageSizeX}px ${imageSizeY}px`;
           break;
       }
 

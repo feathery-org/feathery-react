@@ -91,15 +91,20 @@ function applyFieldStyles(field: any, styles: any) {
   styles.applySelectorStyles('active', {
     prefix: 'selected_',
     important: type !== 'payment_method',
-    addBorder: hasBorder
+    addBorder: hasBorder,
+    background: type === 'button_group'
   });
   styles.applySelectorStyles('hover', {
     prefix: 'hover_',
     important: !['button_group', 'payment_method'].includes(type),
-    addBorder: hasBorder
+    addBorder: hasBorder,
+    background: type === 'button_group'
   });
   styles.apply('disabled', 'disabled_background_color', (a: any) => {
-    if (a) return { backgroundColor: `#${a}` };
+    if (a)
+      return {
+        [type === 'button_group' ? 'background' : 'backgroundColor']: `#${a}`
+      };
     else return { filter: 'brightness(0.9)' };
   });
   styles.applyFontFamily('error');
@@ -198,7 +203,7 @@ function applyFieldStyles(field: any, styles: any) {
           [c ? 'minHeight' : 'height']: `${a}${b}`
         })
       );
-      styles.applyColor('field', 'background_color', 'backgroundColor');
+      styles.applyBackgroundColorGradient('field');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
       styles.applyFlexDirection('field');
