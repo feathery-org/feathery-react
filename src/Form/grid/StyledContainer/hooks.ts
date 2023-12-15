@@ -18,6 +18,7 @@ import {
 } from './styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
 import { featheryDoc } from '../../../utils/browser';
+import { mergeMobileStyles } from '../../../elements/styles';
 
 /**
  * useFormattedNode
@@ -58,6 +59,8 @@ export const useContainerStyles = (
     const [cellStyle = {}] = node.isElement
       ? [{}]
       : getCellStyle(rawNode ?? node, viewport);
+    const containerStyles = getContainerStyles(node, rawNode, viewport);
+    const mobileStyles = mergeMobileStyles(cellStyle, containerStyles);
 
     const _styles = {
       position: 'relative',
@@ -65,8 +68,9 @@ export const useContainerStyles = (
       minHeight: !node.isElement ? `${DEFAULT_MIN_SIZE}px` : 'min-content',
       boxSizing: 'border-box',
       ...css,
-      ...getContainerStyles(node, rawNode, viewport),
-      ...cellStyle
+      ...containerStyles,
+      ...cellStyle,
+      ...mobileStyles
     };
 
     if (node.isElement) {
