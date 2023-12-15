@@ -29,7 +29,7 @@ export const borderColorProps = [
  * Handles the translation of server-side properties into responsive CSS
  * attributes
  */
-class ResponsiveStyles {
+export default class ResponsiveStyles {
   element: any;
   handleMobile: boolean;
   mobileStyles: any;
@@ -253,7 +253,7 @@ class ResponsiveStyles {
       ],
       // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
       (a, b, c, d) => ({
-        borderRadius: `${a}px ${b}px ${c}px ${d}px`
+        borderRadius: `${a ?? 0}px ${b ?? 0}px ${c ?? 0}px ${d ?? 0}px`
       })
     );
   }
@@ -570,7 +570,7 @@ class ResponsiveStyles {
   }
 }
 
-const noTextSelectStyles: CSSProperties = {
+export const noTextSelectStyles: CSSProperties = {
   WebkitTouchCallout: 'none' /* iOS Safari */,
   WebkitUserSelect: 'none' /* Safari */,
   MozUserSelect: 'none' /* Old versions of Firefox */,
@@ -578,14 +578,14 @@ const noTextSelectStyles: CSSProperties = {
   userSelect: 'none' /* Chrome, Firefox, etc. */
 };
 
-const bootstrapStyles: CSSProperties = {
+export const bootstrapStyles: CSSProperties = {
   padding: '0.375rem 0.75rem',
   boxSizing: 'border-box',
   transition: 'border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out',
   outline: 'none'
 };
 
-const imgMaxSizeStyles: CSSProperties = {
+export const imgMaxSizeStyles: CSSProperties = {
   // Setting min-height to 0 prevents vertical image overflow
   minHeight: 0,
   objectFit: 'contain',
@@ -593,7 +593,11 @@ const imgMaxSizeStyles: CSSProperties = {
   maxHeight: '100%'
 };
 
-const ERROR_COLOR = '#F42525';
+export const ERROR_COLOR = '#F42525';
 
-export default ResponsiveStyles;
-export { bootstrapStyles, imgMaxSizeStyles, noTextSelectStyles, ERROR_COLOR };
+export function mergeMobileStyles(style1: any, style2: any) {
+  const newMobile = {};
+  Object.assign(newMobile, style1[mobileBreakpointKey]);
+  Object.assign(newMobile, style2[mobileBreakpointKey]);
+  return { [mobileBreakpointKey]: newMobile };
+}

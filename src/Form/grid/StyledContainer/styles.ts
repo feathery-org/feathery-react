@@ -6,11 +6,11 @@ import { isNum } from '../../../utils/primitives';
 export const DEFAULT_MIN_SIZE = 50;
 
 export const getCellStyle = (cell: any, viewport?: 'desktop' | 'mobile') => {
-  const styles = new ResponsiveStyles(cell, [
-    'cell',
-    'cellHover',
-    'cellActive'
-  ]);
+  const styles = new ResponsiveStyles(
+    cell,
+    ['cell', 'cellHover', 'cellActive'],
+    true
+  );
   styles.applyBorders({ target: 'cell' });
   styles.applyCorners('cell');
   styles.applyBoxShadow('cell');
@@ -27,9 +27,9 @@ export const getCellStyle = (cell: any, viewport?: 'desktop' | 'mobile') => {
   });
 
   return [
-    styles.getTarget('cell', undefined, viewport === 'mobile'),
-    styles.getTarget('cellHover', undefined, viewport === 'mobile'),
-    styles.getTarget('cellActive', undefined, viewport === 'mobile')
+    styles.getTarget('cell', false, viewport === 'mobile'),
+    styles.getTarget('cellHover', false, viewport === 'mobile'),
+    styles.getTarget('cellActive', false, viewport === 'mobile')
   ];
 };
 
