@@ -139,12 +139,12 @@ export function trackEvent(
   if (gaInstalled) trackGAEvent(formId, title, stepId);
   // Segment
   const segmentData: any = { ...metadata };
-  if (fieldData?.segment) segmentData.submittedData = fieldData;
+  if (fieldData?.segment) segmentData.submittedData = fieldData.segment;
   if (featheryWindow().analytics)
     featheryWindow().analytics.track(title, segmentData);
 
   const amplitudeData: any = { ...metadata };
-  if (fieldData?.amplitude) amplitudeData.submittedData = fieldData;
+  if (fieldData?.amplitude) amplitudeData.submittedData = fieldData.amplitude;
   if (featheryWindow().amplitude)
     featheryWindow().amplitude.track(title, metadata);
 
