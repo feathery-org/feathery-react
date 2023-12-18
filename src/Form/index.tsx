@@ -433,11 +433,13 @@ function Form({
     updateFieldValues(updatedValues);
   }
 
-  function addRepeatedRow(repeatContainer: Subgrid | undefined) {
+  function addRepeatedRow(repeatContainer: Subgrid | undefined, limit = null) {
     const getNewVal = (field: any) => {
+      const val = fieldValues[field.servar.key];
+      if (limit && val && Array.isArray(val) && val.length >= limit) return val;
       return [
         // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
-        ...fieldValues[field.servar.key],
+        ...val,
         getDefaultFieldValue(field)
       ];
     };
@@ -1518,9 +1520,14 @@ function Form({
       const action = actions[i];
       const type = action.type;
 
-      if (type === ACTION_ADD_REPEATED_ROW)
-        addRepeatedRow(getContainerById(activeStep, action.repeat_container));
-      else if (type === ACTION_REMOVE_REPEATED_ROW) removeRepeatedRow(element);
+      if (type === ACTION_ADD_REPEATED_ROW) {
+        const containerId = getContainerById(
+          activeStep,
+          action.repeat_container
+        );
+        addRepeatedRow(containerId, action.max_repeats);
+      } else if (type === ACTION_REMOVE_REPEATED_ROW)
+        removeRepeatedRow(element);
       else if (type === ACTION_TRIGGER_PERSONA) {
         const persona = integrations?.persona.metadata ?? {};
         await submitPromise;
