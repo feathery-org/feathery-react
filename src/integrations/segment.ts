@@ -1,4 +1,5 @@
 import { featheryDoc, featheryWindow } from '../utils/browser';
+import { initInfo } from '../utils/init';
 
 export function installSegment(segmentConfig: any) {
   if (segmentConfig) {
@@ -79,6 +80,9 @@ export function installSegment(segmentConfig: any) {
     // you'd like to manually name or tag the page, edit or
     // move this call however you'd like.
     analytics.page();
+
+    if (segmentConfig.metadata.identify_user)
+      analytics.identify(initInfo().userId);
   }
 
   return Promise.resolve();
