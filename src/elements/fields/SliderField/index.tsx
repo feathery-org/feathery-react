@@ -88,12 +88,7 @@ export default function SliderField({
         }}
       >
         <span>{minLabel}</span>
-        {showValue && (
-          // 49 not 50 because we want this value centered, not starting at the center
-          <span css={{ position: 'absolute', left: '49%' }}>
-            {internalValue}
-          </span>
-        )}
+        {showValue && <span>{internalValue}</span>}
         <span>{maxLabel}</span>
       </div>
     </div>
