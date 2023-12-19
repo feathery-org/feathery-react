@@ -149,6 +149,7 @@ function DateSelectorField({
           dateFormat={dateMask}
           timeFormat={timeMask}
           maxDate={servarMeta.no_future ? new Date() : undefined}
+          minDate={servarMeta.no_past ? new Date() : undefined}
           showYearDropdown
           aria-label={element.properties.aria_label}
           css={{
