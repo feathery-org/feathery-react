@@ -1502,13 +1502,14 @@ function Form({
       });
       if (!running) onAsyncEnd();
     };
+    const actionTypes = actions.map((action) => action.type);
     const runAction = (beforeClickActions: boolean) =>
       runUserLogic(
         'action',
         () => ({
           trigger,
           beforeClickActions,
-          actions
+          actions: actionTypes
         }),
         elementType === 'container' ? element.id : undefined
       );
