@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { featheryDoc } from '../../../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../../../utils/browser';
 import { getViewport } from '../../../../elements/styles';
 
 export const isFixedContainer = (node: any, rawNode?: any) => {
@@ -36,6 +36,8 @@ export const useFixedContainer = (
 
       if (container) {
         const setPositionAndDimensions = () => {
+          const _window = featheryWindow();
+
           if (!fixedContainerRef.current || !container) {
             return;
           }
@@ -57,12 +59,16 @@ export const useFixedContainer = (
             fixedContainerRef.current.style.bottom = '0';
           } else if (!isParentRoot || (!isFirstChild && !isLastChild)) {
             // Set the top of the fixed container to the top of the original container
-            fixedContainerRef.current.style.top = `${top}px`;
+            fixedContainerRef.current.style.top = `${
+              top + _window?.pageYOffset
+            }px`;
           }
 
           fixedContainerRef.current.style.height = `${container.offsetHeight}px`; // Height will be taken from the original container
           fixedContainerRef.current.style.width = `${container.offsetWidth}px`; // Width will be taken from the original container
-          fixedContainerRef.current.style.left = `${left}px`; // Left will be taken from the original container
+          fixedContainerRef.current.style.left = `${
+            left + _window?.pageXOffset
+          }px`; // Left will be taken from the original container
         };
 
         setPositionAndDimensions();
