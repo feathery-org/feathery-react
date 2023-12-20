@@ -8,17 +8,17 @@ import {
   isFitElement,
   resizeFitContainer,
   whichTransitionEvent
-} from './utils';
-import { formatContainerStyles } from './transform';
+} from '../utils';
+import { formatContainerStyles } from '../transform';
 import {
   DEFAULT_MIN_SIZE,
   getCellStyle,
   getContainerStyles,
   getInnerContainerStyles
-} from './styles';
-import { isFill, isFit, isPx } from '../../../utils/hydration';
-import { featheryDoc } from '../../../utils/browser';
-import { mergeMobileStyles } from '../../../elements/styles';
+} from '../styles';
+import { isFill, isFit, isPx } from '../../../../utils/hydration';
+import { featheryDoc } from '../../../../utils/browser';
+import { mergeMobileStyles } from '../../../../elements/styles';
 
 /**
  * useFormattedNode

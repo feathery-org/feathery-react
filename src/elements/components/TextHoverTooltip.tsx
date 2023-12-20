@@ -1,5 +1,6 @@
 import React from 'react';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { FORM_Z_INDEX } from '../../utils/styles';
 
 export default function TextHoverTooltip({ text, children }: any) {
   return text ? (
@@ -8,7 +9,7 @@ export default function TextHoverTooltip({ text, children }: any) {
         <Tooltip
           id={`tooltip-${text}`}
           css={{
-            zIndex: 2,
+            zIndex: FORM_Z_INDEX + 1,
             padding: '.4rem 0',
             transition: 'opacity .10s linear',
             '.tooltip-inner': {

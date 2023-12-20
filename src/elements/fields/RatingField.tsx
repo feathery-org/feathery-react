@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import RatingStar from '../components/icons/RatingStar';
 import Heart from '../components/icons/Heart';
+import { FORM_Z_INDEX } from '../../utils/styles';
 
 export default function RatingField({
   element,
@@ -73,7 +74,7 @@ export default function RatingField({
             position: 'absolute',
             bottom: 0,
             opacity: 0,
-            zIndex: -1
+            zIndex: FORM_Z_INDEX - 2
           }}
         />
       </div>

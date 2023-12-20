@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
 import { SketchPicker } from 'react-color';
+import { FORM_Z_INDEX } from '../../utils/styles';
 
 const transparencyMap = {
   100: 'FF',
@@ -147,7 +148,7 @@ function ColorPickerField({
         <div
           css={{
             position: 'absolute',
-            zIndex: 2
+            zIndex: FORM_Z_INDEX + 1
           }}
         >
           <div

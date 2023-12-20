@@ -9,6 +9,7 @@ import {
   DiagonalArrowIcon
 } from '../../elements/components/icons';
 import { noTextSelectStyles } from '../../elements/styles';
+import { DEV_NAV_BAR_Z_INDEX } from '../../utils/styles';
 
 const lightGrey = 'rgb(235, 239, 242)';
 
@@ -129,7 +130,7 @@ export default function DevNavBar({
     <>
       <div
         css={{
-          zIndex: 2,
+          zIndex: DEV_NAV_BAR_Z_INDEX,
           position: 'fixed',
           left: '0',
           top: '0',
@@ -188,7 +189,7 @@ export default function DevNavBar({
       </div>
       <div
         css={{
-          zIndex: 2,
+          zIndex: DEV_NAV_BAR_Z_INDEX,
           position: 'fixed',
           bottom: '30px',
           left: '50%',
@@ -238,7 +239,7 @@ export default function DevNavBar({
   ) : (
     <div
       css={{
-        zIndex: 2,
+        zIndex: DEV_NAV_BAR_Z_INDEX,
         position: 'fixed',
         top: '0',
         backgroundColor: 'white',
