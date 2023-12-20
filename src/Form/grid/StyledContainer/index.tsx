@@ -45,16 +45,20 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
     const { node, rawNode } = useFormattedNode(_node, raw);
     const type = useNodeType(node, rawNode, viewport);
 
-    const { styles, innerStyles, isFixed } = useContainerStyles(
+    const { styles, innerStyles } = useContainerStyles(
       node,
       rawNode,
       css,
       viewportOnly ? viewport : undefined
     );
 
-    useContainerEngine(node, rawNode, ref);
+    const [isFixed, fixedContainerRef] = useFixedContainer(
+      node,
+      rawNode,
+      viewport
+    );
 
-    const fixedContainerRef = useFixedContainer(node, rawNode, isFixed);
+    useContainerEngine(node, rawNode, ref);
 
     if (component) {
       const Component = component;

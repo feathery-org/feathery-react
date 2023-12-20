@@ -19,7 +19,6 @@ import {
 import { isFill, isFit, isPx } from '../../../../utils/hydration';
 import { featheryDoc } from '../../../../utils/browser';
 import { mergeMobileStyles } from '../../../../elements/styles';
-import { isFixedContainer } from './useFixedContainer';
 
 /**
  * useFormattedNode
@@ -99,11 +98,7 @@ export const useContainerStyles = (
     return _innerStyles;
   }, [node, rawNode, css, viewport]);
 
-  const isFixed = useMemo(() => {
-    return isFixedContainer(node, rawNode);
-  }, [node, rawNode, css, viewport]);
-
-  return { styles, innerStyles, isFixed };
+  return { styles, innerStyles };
 };
 
 /**
