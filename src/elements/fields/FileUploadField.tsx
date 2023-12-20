@@ -5,6 +5,7 @@ import { justRemove } from '../../utils/array';
 import { Image } from 'react-bootstrap';
 import { CloseIcon, FileUploadIcon } from '../components/icons';
 import { imgMaxSizeStyles } from '../styles';
+import { FORM_Z_INDEX } from '../../utils/styles';
 
 const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 const NUM_FILES_LIMIT = 20;
@@ -231,7 +232,7 @@ function FileUploadField({
           position: 'absolute',
           bottom: 0,
           opacity: 0,
-          zIndex: -1
+          zIndex: FORM_Z_INDEX - 2
         }}
       />
     </div>

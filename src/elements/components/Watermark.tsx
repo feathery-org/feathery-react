@@ -1,4 +1,5 @@
 import React from 'react';
+import { MODAL_Z_INDEX } from '../../utils/styles';
 
 export default function Watermark({
   show,
@@ -31,7 +32,7 @@ export default function Watermark({
     <div
       style={{
         position: 'fixed',
-        zIndex: 1000,
+        zIndex: MODAL_Z_INDEX + 1,
         ...horizontalAlignment,
         ...verticalAlignment
       }}

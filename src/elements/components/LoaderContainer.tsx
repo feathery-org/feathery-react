@@ -1,4 +1,5 @@
 import React from 'react';
+import { MODAL_Z_INDEX } from '../../utils/styles';
 
 const LoaderContainer = ({
   isStepLoaderForButton,
@@ -22,7 +23,7 @@ const LoaderContainer = ({
     padding: '30px 0',
     height,
     width,
-    zIndex: 50,
+    zIndex: MODAL_Z_INDEX - 1,
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center'
