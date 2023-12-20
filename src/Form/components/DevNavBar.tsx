@@ -129,7 +129,7 @@ export default function DevNavBar({
     <>
       <div
         css={{
-          zIndex: 2,
+          zIndex: 1000,
           position: 'fixed',
           left: '0',
           top: '0',
@@ -188,7 +188,7 @@ export default function DevNavBar({
       </div>
       <div
         css={{
-          zIndex: 2,
+          zIndex: 1000,
           position: 'fixed',
           bottom: '30px',
           left: '50%',
@@ -238,7 +238,7 @@ export default function DevNavBar({
   ) : (
     <div
       css={{
-        zIndex: 2,
+        zIndex: 1000,
         position: 'fixed',
         top: '0',
         backgroundColor: 'white',

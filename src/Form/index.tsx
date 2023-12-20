@@ -83,7 +83,7 @@ import FormOff from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
 import Grid from './grid';
-import { mobileBreakpointValue } from '../elements/styles';
+import { getViewport } from '../elements/styles';
 import {
   ContextOnChange,
   FormContext,
@@ -198,12 +198,6 @@ export interface LogicRule {
 }
 
 const AsyncFunction = async function () {}.constructor;
-
-const getViewport = () => {
-  return featheryWindow().innerWidth > mobileBreakpointValue
-    ? 'desktop'
-    : 'mobile';
-};
 
 function Form({
   _internalId,

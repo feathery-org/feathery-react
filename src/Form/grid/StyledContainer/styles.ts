@@ -1,4 +1,4 @@
-import ResponsiveStyles from '../../../elements/styles';
+import ResponsiveStyles, { getViewport } from '../../../elements/styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
 import { getElementType } from './utils';
 import { isNum } from '../../../utils/primitives';
@@ -531,4 +531,12 @@ export const getInnerContainerStyles = (
   );
 
   return styles.getTarget('inner-container', undefined, viewport === 'mobile');
+};
+
+export const isFixedContainer = (node: any, rawNode?: any) => {
+  const _node = rawNode ?? node;
+  const styles =
+    getViewport() === 'mobile' ? _node.mobile_styles : _node.styles;
+
+  return !!styles?.fixed;
 };

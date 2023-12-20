@@ -1,4 +1,5 @@
 import { DEFAULT_MIN_SIZE } from '../Form/grid/StyledContainer/styles';
+import { featheryWindow } from '../utils/browser';
 import {
   isNum,
   objectFromEntries,
@@ -10,6 +11,12 @@ import { CSSProperties } from 'react';
 export const mobileBreakpointValue = 478;
 
 export const mobileBreakpointKey = `@media (max-width: ${mobileBreakpointValue}px)`;
+
+export const getViewport = () => {
+  return featheryWindow().innerWidth > mobileBreakpointValue
+    ? 'desktop'
+    : 'mobile';
+};
 
 export const borderWidthProps = [
   'border_top_width',

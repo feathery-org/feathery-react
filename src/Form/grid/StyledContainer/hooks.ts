@@ -14,7 +14,8 @@ import {
   DEFAULT_MIN_SIZE,
   getCellStyle,
   getContainerStyles,
-  getInnerContainerStyles
+  getInnerContainerStyles,
+  isFixedContainer
 } from './styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
 import { featheryDoc } from '../../../utils/browser';
@@ -98,7 +99,11 @@ export const useContainerStyles = (
     return _innerStyles;
   }, [node, rawNode, css, viewport]);
 
-  return { styles, innerStyles };
+  const isFixed = useMemo(() => {
+    return isFixedContainer(node, rawNode);
+  }, [node, rawNode, css, viewport]);
+
+  return { styles, innerStyles, isFixed };
 };
 
 /**
