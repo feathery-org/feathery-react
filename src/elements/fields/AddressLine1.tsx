@@ -123,6 +123,7 @@ function AddressLine1({
         >
           <input
             id={servar.key}
+            name={servar.key}
             css={{
               position: 'relative',
               height: '100%',

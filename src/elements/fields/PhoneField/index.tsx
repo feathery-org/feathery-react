@@ -249,6 +249,7 @@ function PhoneField({
         >
           <input
             id={servar.key}
+            name={servar.key}
             css={{
               backgroundColor: 'transparent',
               height: '100%',

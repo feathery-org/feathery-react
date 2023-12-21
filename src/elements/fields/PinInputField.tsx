@@ -107,6 +107,7 @@ function SingleOtpInput({
       {customBorder}
       <input
         id={`${element.servar.key}-${index}`}
+        name={element.servar.key}
         aria-label={`${
           index === 0 ? 'Please enter verification code. ' : ''
         }Digit ${index + 1}`}

@@ -220,6 +220,7 @@ function FileUploadField({
       {/* This input must always be rendered even if no files can be added so we can set field errors */}
       <input
         id={servar.key}
+        name={servar.key}
         ref={fileInput}
         type='file'
         onChange={onChange}

@@ -247,6 +247,7 @@ function CheckboxField({
       {children}
       <input
         id={servar.key}
+        name={servar.key}
         type='checkbox'
         checked={fieldVal}
         disabled={disabled}
