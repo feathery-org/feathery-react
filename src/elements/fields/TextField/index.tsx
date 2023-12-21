@@ -236,6 +236,7 @@ function TextField({
         >
           <IMaskInput
             id={servar.key}
+            name={servar.key}
             css={{
               position: 'relative',
               // Position input above the border div
