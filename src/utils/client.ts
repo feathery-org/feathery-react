@@ -71,6 +71,7 @@ const TYPE_MESSAGES_TO_IGNORE = [
 export default class Client {
   formKey: string;
   version?: string;
+  noSave?: boolean;
   ignoreNetworkErrors: any; // this should be a ref
   draft: boolean;
   bypassCDN: boolean;
@@ -150,7 +151,6 @@ export default class Client {
       servars,
       panel_key: this.formKey,
       __feathery_version: this.version,
-      draft: this.draft,
       no_complete: noComplete
     };
     if (collaboratorId) data.collaborator = collaboratorId;
@@ -173,9 +173,7 @@ export default class Client {
       fileValue = servar.signature;
     }
 
-    if (!fileValue) {
-      return null;
-    }
+    if (!fileValue) return null;
 
     // If we've already stored the file from a previous session
     // There will be an entry in filePathMap for it
@@ -334,6 +332,7 @@ export default class Client {
     // If form is disabled, data will equal `null`
     if (!res.steps) return { steps: [], formOff: true };
     this.version = res.version;
+    this.noSave = res.no_save_data;
     this.setDefaultFormValues({ steps: res.steps, additionalValues: initVals });
     return res;
   }
@@ -449,7 +448,7 @@ export default class Client {
   }
 
   async submitCustom(customKeyValues: any, override = true) {
-    if (this.draft) return;
+    if (this.draft || this.noSave) return;
     if (Object.keys(customKeyValues).length === 0) return;
 
     const { userId } = initInfo();
@@ -497,7 +496,7 @@ export default class Client {
 
   // servars = [{key: <servarKey>, <type>: <value>}]
   submitStep(servars: any, stepKey: string, hasNext: boolean) {
-    if (this.draft) return Promise.resolve();
+    if (this.draft || this.noSave) return Promise.resolve();
     const isFileServar = (servar: any) =>
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
