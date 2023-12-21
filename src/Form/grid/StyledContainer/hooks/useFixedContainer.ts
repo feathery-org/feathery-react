@@ -20,7 +20,7 @@ export const useFixedContainer = (
   const getNode = () => (nodeRef.current ? nodeRef.current : node || rawNode);
 
   const isFixed = useMemo(() => {
-    return isFixedContainer(node, rawNode);
+    return !node.uuid && isFixedContainer(node, rawNode);
   }, [node, rawNode, viewport]);
 
   useEffect(() => {
