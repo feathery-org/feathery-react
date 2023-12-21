@@ -1,7 +1,8 @@
 import { FieldOptions, FieldStyles } from './formHelperFunctions';
-import Field from './Field';
+import Field from './api/Field';
 import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
+import Collaborator from './api/Collaborator';
 
 interface FormInternalState {
   currentStep: any;
@@ -11,6 +12,7 @@ interface FormInternalState {
   fields: Record<string, Field>;
   products: Record<string, SimplifiedProduct>;
   cart: Cart;
+  collaborator: Collaborator;
   formName: string;
   formRef: React.MutableRefObject<any>;
   formSettings: any;
@@ -24,6 +26,7 @@ interface FormInternalState {
   >;
   setUserProgress: React.Dispatch<React.SetStateAction<null>>;
   steps: any;
+  setStepKey: (key: string) => void;
   updateFieldOptions: (newOptions: FieldOptions) => void;
   updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => void;
   setFieldErrors: (

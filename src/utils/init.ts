@@ -10,7 +10,7 @@ import {
   featheryWindow
 } from './browser';
 import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
-import { parseUserVal } from './Field';
+import { parseUserVal } from './api/Field';
 
 export type FeatheryFieldTypes =
   | null

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import SignatureCanvas from './components/SignatureCanvas';
 import SignatureModal from './components/SignatureModal';
+import { FORM_Z_INDEX } from '../../../utils/styles';
 
 function SignatureField({
   element,
@@ -19,6 +20,14 @@ function SignatureField({
   const Portal = ReactPortal ?? (({ children }: any) => <>{children}</>);
   const servar = element.servar ?? {};
   const fieldKey = servar.key ?? element.key;
+
+  useEffect(() => {
+    if (global.webfontloaderPromise) {
+      global.webfontloaderPromise.then((WebFont: any) => {
+        WebFont.load({ google: { families: ['Great Vibes'] } });
+      });
+    }
+  }, []);
 
   return (
     <>
@@ -65,7 +74,7 @@ function SignatureField({
               left: 0,
               width: '100%',
               height: '100%',
-              zIndex: 1,
+              zIndex: FORM_Z_INDEX,
               alignItems: 'center',
               justifyContent: 'center',
               '&:hover': {
@@ -93,7 +102,7 @@ function SignatureField({
               position: 'absolute',
               bottom: 0,
               opacity: 0,
-              zIndex: -1
+              zIndex: FORM_Z_INDEX - 2
             }}
           />
         </div>

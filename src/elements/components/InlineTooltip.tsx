@@ -1,6 +1,7 @@
 import React from 'react';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { HelpIcon } from './icons';
+import { FORM_Z_INDEX } from '../../utils/styles';
 
 export default function InlineTooltip({ element, responsiveStyles }: any) {
   const text = element.properties.tooltipText;
@@ -13,7 +14,7 @@ export default function InlineTooltip({ element, responsiveStyles }: any) {
         <Tooltip
           id={`tooltip-${element.id}`}
           css={{
-            zIndex: 2,
+            zIndex: FORM_Z_INDEX + 1,
             padding: '.4rem 0',
             transition: 'opacity .10s linear',
             '.tooltip-inner': {
@@ -37,7 +38,7 @@ export default function InlineTooltip({ element, responsiveStyles }: any) {
           right: '10px',
           top: 0,
           bottom: 0,
-          zIndex: 1,
+          zIndex: FORM_Z_INDEX,
           margin: 'auto',
           cursor: 'pointer',
           height: '100%'

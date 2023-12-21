@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { imgMaxSizeStyles, noTextSelectStyles } from '../styles';
 import useBorder from '../components/useBorder';
+import { FORM_Z_INDEX } from '../../utils/styles';
 
 function ButtonGroupField({
   element,
@@ -110,6 +111,7 @@ function ButtonGroupField({
         {/* This input must always be rendered so we can set field errors */}
         <input
           id={servar.key}
+          name={servar.key}
           // Set to file type so keyboard doesn't pop up on mobile
           // when field error appears
           type='file'
@@ -118,7 +120,7 @@ function ButtonGroupField({
             position: 'absolute',
             bottom: 0,
             opacity: 0,
-            zIndex: -1
+            zIndex: FORM_Z_INDEX - 2
           }}
         />
       </div>

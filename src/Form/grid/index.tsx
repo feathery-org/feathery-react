@@ -141,7 +141,7 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
         <DangerouslySetHTMLContent
           key='custom-html-component'
           html={props.custom_html}
-          css={{ height: '100%', width: '100%' }}
+          css={children.length === 0 ? { height: '100%', width: '100%' } : {}}
         />
       );
     }

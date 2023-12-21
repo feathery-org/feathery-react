@@ -10,7 +10,7 @@ import { bootstrapStyles } from '../../styles';
 import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';
 
-function formatDateString(date: any, chooseTime: boolean) {
+export function formatDateString(date: any, chooseTime: boolean) {
   if (!date) return '';
 
   // If simply a date, then not in UTC.
@@ -149,6 +149,7 @@ function DateSelectorField({
           dateFormat={dateMask}
           timeFormat={timeMask}
           maxDate={servarMeta.no_future ? new Date() : undefined}
+          minDate={servarMeta.no_past ? new Date() : undefined}
           showYearDropdown
           aria-label={element.properties.aria_label}
           css={{

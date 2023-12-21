@@ -83,7 +83,7 @@ import FormOff from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
 import Grid from './grid';
-import { mobileBreakpointValue } from '../elements/styles';
+import { getViewport } from '../elements/styles';
 import {
   ContextOnChange,
   FormContext,
@@ -137,13 +137,14 @@ import {
   getAuthIntegrationMetadata,
   isTerminalStepAuth
 } from '../auth/internal/utils';
-import Field, { flushFieldUpdates } from '../utils/Field';
+import Field, { flushFieldUpdates } from '../utils/api/Field';
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
 import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
 import { fieldAllowedFromList } from './grid/Element/utils';
 import { triggerPersona } from '../integrations/persona';
+import Collaborator from '../utils/api/Collaborator';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -197,12 +198,6 @@ export interface LogicRule {
 }
 
 const AsyncFunction = async function () {}.constructor;
-
-const getViewport = () => {
-  return featheryWindow().innerWidth > mobileBreakpointValue
-    ? 'desktop'
-    : 'mobile';
-};
 
 function Form({
   _internalId,
@@ -358,7 +353,13 @@ function Form({
 
     setAutoValidate(false); // Each step to initially not auto validate
 
-    if (formSettings.autofocus && focusRef.current?.focus) {
+    // Don't autofocus on first step since it might be embedded and cause
+    // undesired focus
+    if (
+      formSettings.autofocus &&
+      focusRef.current?.focus &&
+      !activeStep.origin
+    ) {
       focusRef.current.focus({
         preventScroll: true
       });
@@ -426,11 +427,13 @@ function Form({
     updateFieldValues(updatedValues);
   }
 
-  function addRepeatedRow(repeatContainer: Subgrid | undefined) {
+  function addRepeatedRow(repeatContainer: Subgrid | undefined, limit = null) {
     const getNewVal = (field: any) => {
+      const val = fieldValues[field.servar.key];
+      if (limit && val && Array.isArray(val) && val.length >= limit) return val;
       return [
         // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
-        ...fieldValues[field.servar.key],
+        ...val,
         getDefaultFieldValue(field)
       ];
     };
@@ -667,7 +670,7 @@ function Form({
   }
 
   const changeFormStep = (newKey: string, oldKey: string, load: boolean) => {
-    const changed = changeStep(newKey, oldKey, steps, history);
+    const changed = changeStep(newKey, oldKey, steps, setStepKey, history);
     if (changed) {
       const backKey = load ? backNavMap[oldKey] : oldKey;
       updateBackNavMap({ [newKey]: backKey });
@@ -723,6 +726,14 @@ function Form({
           getSimplifiedProducts(integrations?.stripe, updateFieldValues)
         ),
         cart: Object.seal(getCart(integrations?.stripe, updateFieldValues)),
+        collaborator: Object.seal(
+          new Collaborator(
+            session?.collaborator?.template_label ?? '',
+            session?.collaborator?.template_index ?? 0,
+            session?.collaborator?.allowed ?? '',
+            session?.collaborator?.whitelist ?? []
+          )
+        ),
         formName,
         formRef,
         formSettings,
@@ -732,6 +743,7 @@ function Form({
         setInlineErrors,
         setUserProgress,
         steps,
+        setStepKey,
         updateFieldOptions: (newOptions: FieldOptions) => {
           Object.values(steps).forEach((step) =>
             updateStepFieldOptions(step, newOptions)
@@ -1484,13 +1496,14 @@ function Form({
       });
       if (!running) onAsyncEnd();
     };
+    const actionTypes = actions.map((action) => action.type);
     const runAction = (beforeClickActions: boolean) =>
       runUserLogic(
         'action',
         () => ({
           trigger,
           beforeClickActions,
-          actions
+          actions: actionTypes
         }),
         elementType === 'container' ? element.id : undefined
       );
@@ -1502,9 +1515,14 @@ function Form({
       const action = actions[i];
       const type = action.type;
 
-      if (type === ACTION_ADD_REPEATED_ROW)
-        addRepeatedRow(getContainerById(activeStep, action.repeat_container));
-      else if (type === ACTION_REMOVE_REPEATED_ROW) removeRepeatedRow(element);
+      if (type === ACTION_ADD_REPEATED_ROW) {
+        const containerId = getContainerById(
+          activeStep,
+          action.repeat_container
+        );
+        addRepeatedRow(containerId, action.max_repeats);
+      } else if (type === ACTION_REMOVE_REPEATED_ROW)
+        removeRepeatedRow(element);
       else if (type === ACTION_TRIGGER_PERSONA) {
         const persona = integrations?.persona.metadata ?? {};
         await submitPromise;

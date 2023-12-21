@@ -17,7 +17,9 @@ function justRemove(list: any, index: any) {
 }
 
 function toList(itemOrList: any) {
-  return Array.isArray(itemOrList) ? itemOrList : [itemOrList];
+  if (Array.isArray(itemOrList)) return itemOrList;
+  else if ([null, undefined].includes(itemOrList)) return [];
+  return [itemOrList];
 }
 
 function isEmptyArray(arr: any) {

@@ -10,6 +10,7 @@ import TextAutocomplete from './TextAutocomplete';
 import BorderlessEyeIcon from '../../components/icons/BorderlessEyeIcon';
 import { getFieldValue } from '../../../utils/formHelperFunctions';
 import { stringifyWithNull } from '../../../utils/primitives';
+import { FORM_Z_INDEX } from '../../../utils/styles';
 
 const MAX_TEXT_FIELD_LENGTH = 512;
 
@@ -235,10 +236,11 @@ function TextField({
         >
           <IMaskInput
             id={servar.key}
+            name={servar.key}
             css={{
               position: 'relative',
               // Position input above the border div
-              zIndex: 1,
+              zIndex: FORM_Z_INDEX,
               height: '100%',
               width: '100%',
               border: 'none',
@@ -290,7 +292,7 @@ function TextField({
               right: '8px',
               // We need to subtract half the height of the icon to center it
               top: 'calc(50% - 12px)',
-              zIndex: 1
+              zIndex: FORM_Z_INDEX
             }}
           >
             <BorderlessEyeIcon

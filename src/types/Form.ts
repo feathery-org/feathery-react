@@ -38,7 +38,7 @@ export interface ContextOnChange extends FormContext {
 
 export interface ContextOnAction extends FormContext {
   trigger: Trigger;
-  action: string;
+  actions: string[];
 }
 
 export interface ContextOnSubmit extends FormContext {

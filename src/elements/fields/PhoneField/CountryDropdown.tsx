@@ -4,6 +4,7 @@ import countryData, {
   firebaseSMSCountries
 } from '../../components/data/countries';
 import { authState } from '../../../auth/LoginForm';
+import { DROPDOWN_Z_INDEX } from '../index';
 
 function CountryDropdown(
   { show, hide, itemOnClick, responsiveStyles, ...props }: any,
@@ -117,7 +118,7 @@ function CountryDropdown(
       css={{
         // This is needed for the CountryDropdown to display on top of the
         // overlay when the form is displayed as a popup/modal
-        zIndex: 10,
+        zIndex: DROPDOWN_Z_INDEX,
         listStyleType: 'none',
         padding: 0,
         margin: 0,

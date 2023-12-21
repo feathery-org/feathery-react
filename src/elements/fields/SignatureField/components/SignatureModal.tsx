@@ -1,7 +1,8 @@
 import React, { useCallback, useRef, useState } from 'react';
-import SignatureCanvas, { SignatureCanvasProps } from './SignatureCanvas';
 import { CloseIcon } from '../../../components/icons';
 import { dataURLToFile } from '../../../../utils/image';
+import { MODAL_Z_INDEX } from '../../../../utils/styles';
+import SignatureCanvas, { SignatureCanvasProps } from './SignatureCanvas';
 import html2canvas from 'html2canvas';
 import debounce from 'lodash.debounce';
 
@@ -87,7 +88,7 @@ function SignatureModal(props: SignatureModalProps) {
         width: '100vw',
         height: '100vh',
         background: 'rgba(0, 0, 0, 0.2)',
-        zIndex: 1000,
+        zIndex: MODAL_Z_INDEX,
         alignItems: 'center',
         justifyContent: 'center',
         fontSize: '16px',
@@ -178,7 +179,7 @@ function SignatureModal(props: SignatureModalProps) {
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontSize: '2em',
-                    fontFamily: 'cursive'
+                    fontFamily: 'Great Vibes'
                   }}
                 >
                   {isLoading && (
@@ -212,7 +213,7 @@ function SignatureModal(props: SignatureModalProps) {
                       ref={previewRef}
                       css={{
                         fontSize: '1.5em',
-                        fontFamily: 'cursive',
+                        fontFamily: 'Great Vibes',
                         color: '#000'
                       }}
                       className='previewText'

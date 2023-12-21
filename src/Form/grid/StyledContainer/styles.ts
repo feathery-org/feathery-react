@@ -1,6 +1,7 @@
 import ResponsiveStyles from '../../../elements/styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
 import { getElementType } from './utils';
+import { isNum } from '../../../utils/primitives';
 
 export const DEFAULT_MIN_SIZE = 50;
 
@@ -31,24 +32,16 @@ const canFitHeightCollapse = (node: any, siblingCheck = false) => {
 };
 
 export const getCellStyle = (cell: any, viewport?: 'desktop' | 'mobile') => {
-  const styles = new ResponsiveStyles(cell, [
-    'cell',
-    'cellHover',
-    'cellActive'
-  ]);
+  const styles = new ResponsiveStyles(
+    cell,
+    ['cell', 'cellHover', 'cellActive'],
+    true
+  );
   styles.applyBorders({ target: 'cell' });
   styles.applyCorners('cell');
   styles.applyBoxShadow('cell');
   styles.applyBackgroundImageStyles('cell');
-  styles.apply(
-    'cell',
-    ['background_color', 'gradient_color'],
-    (b: any, g: any) => {
-      if (!b) b = 'FFFFFF00';
-      if (g) return { background: `linear-gradient(#${b}, #${g})` };
-      else return { backgroundColor: `#${b}` };
-    }
-  );
+  styles.applyBackgroundColorGradient('cell');
   styles.applySelectorStyles('cellActive', {
     prefix: 'selected_',
     important: true,
@@ -60,9 +53,9 @@ export const getCellStyle = (cell: any, viewport?: 'desktop' | 'mobile') => {
   });
 
   return [
-    styles.getTarget('cell', undefined, viewport === 'mobile'),
-    styles.getTarget('cellHover', undefined, viewport === 'mobile'),
-    styles.getTarget('cellActive', undefined, viewport === 'mobile')
+    styles.getTarget('cell', false, viewport === 'mobile'),
+    styles.getTarget('cellHover', false, viewport === 'mobile'),
+    styles.getTarget('cellActive', false, viewport === 'mobile')
   ];
 };
 
@@ -303,6 +296,10 @@ export const getContainerStyles = (
           s.maxHeight = `${height}${heightUnit}`;
           s.overflowY = overflow;
         }
+
+        if (!hasChildren) {
+          s.maxHeight = `${height}${heightUnit}`; // This is to enforce pixel heights on empty containers by not allowing them to expand past it
+        }
       }
 
       // Fit containers
@@ -409,10 +406,10 @@ export const getContainerStyles = (
       const s: any = {};
       const style = node.isElement ? 'margin' : 'padding';
 
-      if (paddingTop) s[`${style}Top`] = `${paddingTop}px`;
-      if (paddingRight) s[`${style}Right`] = `${paddingRight}px`;
-      if (paddingBottom) s[`${style}Bottom`] = `${paddingBottom}px`;
-      if (paddingLeft) s[`${style}Left`] = `${paddingLeft}px`;
+      if (isNum(paddingTop)) s[`${style}Top`] = `${paddingTop}px`;
+      if (isNum(paddingRight)) s[`${style}Right`] = `${paddingRight}px`;
+      if (isNum(paddingBottom)) s[`${style}Bottom`] = `${paddingBottom}px`;
+      if (isNum(paddingLeft)) s[`${style}Left`] = `${paddingLeft}px`;
 
       return s;
     }

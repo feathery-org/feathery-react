@@ -5,7 +5,9 @@ import {
   useFormattedNode,
   useNodeType
 } from './hooks';
+import { FORM_Z_INDEX } from '../../../utils/styles';
 import { getCellStyle } from './styles';
+import { useFixedContainer } from './hooks/useFixedContainer';
 import classNames from 'classnames';
 
 export type StyledContainerProps = PropsWithChildren & {
@@ -50,6 +52,12 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       viewportOnly ? viewport : undefined
     );
 
+    const [isFixed, fixedContainerRef] = useFixedContainer(
+      node,
+      rawNode,
+      viewport
+    );
+
     useContainerEngine(node, rawNode, ref);
 
     if (component) {
@@ -74,19 +82,39 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
     }
 
     return (
-      <div
-        key={node.id}
-        ref={ref}
-        css={styles}
-        className={classNames('styled-container', type, className)}
-        {...props}
-      >
-        {/* An inner container is required to properly size px-height
+      <>
+        {isFixed && (
+          <div
+            key={`${node.id}-fixed`}
+            className={classNames('styled-container', type, className)}
+            {...props}
+            css={{
+              ...styles,
+              position: 'fixed',
+              zIndex: FORM_Z_INDEX + 1
+            }}
+            ref={fixedContainerRef}
+          >
+            <div className='inner-container' css={innerStyles}>
+              {children}
+            </div>
+          </div>
+        )}
+        <div
+          key={node.id}
+          ref={ref}
+          css={isFixed ? { ...styles, visibility: 'hidden' } : styles}
+          className={classNames('styled-container', type, className)}
+          data-id={node.id}
+          {...props}
+        >
+          {/* An inner container is required to properly size px-height
             elements as the outer container is dependent on content size. */}
-        <div className='inner-container' css={innerStyles}>
-          {children}
+          <div className='inner-container' css={innerStyles}>
+            {isFixed ? null : children}
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 );

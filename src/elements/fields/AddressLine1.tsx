@@ -9,6 +9,7 @@ import useMounted from '../../hooks/useMounted';
 import debounce from 'lodash.debounce';
 import { OverlayTrigger } from 'react-bootstrap';
 import useBorder from '../components/useBorder';
+import { DROPDOWN_Z_INDEX } from './index';
 
 // Milliseconds
 const SEARCH_DELAY_TIME = 300;
@@ -87,7 +88,7 @@ function AddressLine1({
           overlay={
             <ul
               css={{
-                zIndex: 1,
+                zIndex: DROPDOWN_Z_INDEX,
                 listStyleType: 'none',
                 padding: 0,
                 margin: 0,
@@ -122,6 +123,7 @@ function AddressLine1({
         >
           <input
             id={servar.key}
+            name={servar.key}
             css={{
               position: 'relative',
               height: '100%',

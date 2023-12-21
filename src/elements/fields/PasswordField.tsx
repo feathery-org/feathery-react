@@ -5,6 +5,7 @@ import InlineTooltip from '../components/InlineTooltip';
 import { bootstrapStyles } from '../styles';
 import useBorder from '../components/useBorder';
 import BorderlessEyeIcon from '../components/icons/BorderlessEyeIcon';
+import { FORM_Z_INDEX } from '../../utils/styles';
 
 function PasswordField({
   element,
@@ -59,10 +60,11 @@ function PasswordField({
       >
         <input
           id={servar.key}
+          name={servar.key}
           css={{
             position: 'relative',
             // Position input above the border div
-            zIndex: 1,
+            zIndex: FORM_Z_INDEX,
             height: '100%',
             width: '100%',
             border: 'none',
@@ -101,7 +103,7 @@ function PasswordField({
               right: '8px',
               // We need to subtract half the height of the icon to center it
               top: 'calc(50% - 12px)',
-              zIndex: 1
+              zIndex: FORM_Z_INDEX
             }}
           >
             <BorderlessEyeIcon

@@ -177,6 +177,7 @@ const CardField = ({
           {/* position an input field under the card element to support html5 errors */}
           <input
             id={element.servar.key}
+            name={element.servar.key}
             css={{
               width: '100%',
               height: 0,

@@ -36,6 +36,7 @@ export const getFormContext = (formUuid: string) => {
     fields: internalState[formUuid]?.fields,
     products: internalState[formUuid]?.products,
     cart: internalState[formUuid]?.cart,
+    collaborator: internalState[formUuid]?.collaborator,
     setFormCompletion: (flag: boolean) => {
       const { client, currentStep } = internalState[formUuid];
       return client.registerEvent({
@@ -49,8 +50,9 @@ export const getFormContext = (formUuid: string) => {
     },
     updateUserId,
     goToStep: (stepKey: any) => {
-      const { currentStep, history, steps } = internalState[formUuid];
-      changeStep(stepKey, currentStep.key, steps, history);
+      const { currentStep, history, steps, setStepKey } =
+        internalState[formUuid];
+      changeStep(stepKey, currentStep.key, steps, setStepKey, history);
     },
     isTestForm: () => initState.isTestEnv,
     isLastStep: () => {

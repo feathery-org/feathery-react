@@ -1,3 +1,7 @@
+export const FORM_Z_INDEX = 1;
+export const DEV_NAV_BAR_Z_INDEX = FORM_Z_INDEX + 9;
+export const MODAL_Z_INDEX = DEV_NAV_BAR_Z_INDEX + 9;
+
 export function isDirectionColumn(flexDirection: any) {
   return flexDirection.includes('column');
 }

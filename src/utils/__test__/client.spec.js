@@ -140,8 +140,7 @@ describe('client', () => {
       const body = {
         fuser_key: 'userId',
         servars,
-        panel_key: formKey,
-        draft: false
+        panel_key: formKey
       };
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
