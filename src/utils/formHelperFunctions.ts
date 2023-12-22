@@ -856,7 +856,7 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
         );
 
         return client.runCustomRequest(
-          { method, url, data, headers },
+          { method: method.toUpperCase(), url, data, headers },
           _fieldValues
         );
       })
