@@ -310,7 +310,7 @@ export default class Client {
       theme
     });
     const baseURL = this.bypassCDN ? API_URL : CDN_URL;
-    const url = `${baseURL}panel/v19/?${params}`;
+    const url = `${baseURL}panel/v20/?${params}`;
     const options: Record<string, any> = {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
