@@ -829,7 +829,18 @@ export function mapFormSettingsResponse(res: any) {
 
 export function httpHelpers(client: any, connectorFields: string[] = []) {
   const helpers: Record<string, any> = {};
-  ['GET', 'PATCH', 'POST', 'PUT', 'DELETE'].forEach(
+  [
+    'GET',
+    'get',
+    'PATCH',
+    'patch',
+    'POST',
+    'post',
+    'PUT',
+    'put',
+    'DELETE',
+    'delete'
+  ].forEach(
     (method) =>
       (helpers[method] = (
         url: string,
@@ -845,7 +856,7 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
         );
 
         return client.runCustomRequest(
-          { method, url, data, headers },
+          { method: method.toUpperCase(), url, data, headers },
           _fieldValues
         );
       })

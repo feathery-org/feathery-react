@@ -26,7 +26,8 @@ export const API_URL_OPTIONS = {
   staging: 'https://staging.feathery.io/api/',
   production: 'https://api.feathery.io/api/',
   productionAU: 'https://api-au.feathery.io/api/',
-  productionEU: 'https://api-eu.feathery.io/api/'
+  productionEU: 'https://api-eu.feathery.io/api/',
+  productionCA: 'https://api-ca.feathery.io/api/'
 };
 
 const CDN_URL_OPTIONS = {
@@ -34,7 +35,8 @@ const CDN_URL_OPTIONS = {
   staging: 'https://staging.feathery.io/api/',
   production: 'https://cdn.feathery.io/api/',
   productionAU: 'https://cdn-au.feathery.io/api/',
-  productionEU: 'https://cdn-eu.feathery.io/api/'
+  productionEU: 'https://cdn-eu.feathery.io/api/',
+  productionCA: 'https://cdn-ca.feathery.io/api/'
 };
 
 const AI_URL_OPTIONS = {
@@ -42,7 +44,8 @@ const AI_URL_OPTIONS = {
   staging: 'https://staging.feathery.io/api/',
   production: 'https://api-onboarding.feathery.io/api/',
   productionAU: 'https://api-onboarding.feathery.io/api/',
-  productionEU: 'https://api-onboarding.feathery.io/api/'
+  productionEU: 'https://api-onboarding.feathery.io/api/',
+  productionCA: 'https://api-onboarding.feathery.io/api/'
 };
 
 const environment = 'production';
@@ -58,6 +61,9 @@ export const updateRegionApiUrls = (region: string) => {
   } else if (region === 'eu') {
     CDN_URL = CDN_URL_OPTIONS.productionEU;
     API_URL = API_URL_OPTIONS.productionEU;
+  } else if (region === 'ca') {
+    CDN_URL = CDN_URL_OPTIONS.productionCA;
+    API_URL = API_URL_OPTIONS.productionCA;
   }
 };
 
@@ -304,7 +310,7 @@ export default class Client {
       theme
     });
     const baseURL = this.bypassCDN ? API_URL : CDN_URL;
-    const url = `${baseURL}panel/v19/?${params}`;
+    const url = `${baseURL}panel/v20/?${params}`;
     const options: Record<string, any> = {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }

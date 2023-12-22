@@ -34,7 +34,7 @@ describe('client', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${CDN_URL}panel/v19/?form_key=formKey&draft=false&theme=`,
+        `${CDN_URL}panel/v20/?form_key=formKey&draft=false&theme=`,
         {
           cache: 'no-store',
           keepalive: false,
