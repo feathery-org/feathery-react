@@ -102,7 +102,9 @@ function SignatureCanvas(props: SignatureCanvasProps) {
           style: {
             ...signatureCanvasStyles,
             width: '100%',
-            height: '100%'
+            height: '100%',
+            boxSizing: 'border-box',
+            paddingLeft: '5px'
           }
         }}
         ref={signatureRef}
