@@ -63,10 +63,12 @@ export default function DropdownField({
     ));
   } else {
     const labels = servar.metadata.option_labels;
+    const tooltips = servar.metadata.option_tooltips;
     options = servar.metadata.options.map((option: any, index: number) => {
       const label = labels && labels[index] ? labels[index] : option;
+      const tooltip = tooltips?.[index] ?? '';
       return (
-        <option key={option} value={option}>
+        <option key={option} value={option} title={tooltip}>
           {label}
         </option>
       );
