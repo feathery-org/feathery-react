@@ -250,7 +250,12 @@ export const getABVariant = (stepRes: any) => {
 export function getDefaultFieldValue(field: any) {
   const servar = field.servar;
   const meta = servar.metadata;
-  if (meta.default_value) return meta.default_value;
+  if (meta.default_value) {
+    if (['multiselect', 'dropdown_multi'].includes(servar.type)) {
+      return meta.default_value.split(',').map((val: string) => val.trim());
+    }
+    return meta.default_value;
+  }
   if (servar.type === 'date_selector' && meta.default_date_today)
     return formatDateString(new Date(), meta.choose_time);
 
