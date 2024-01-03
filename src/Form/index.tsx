@@ -129,7 +129,8 @@ import {
   ACTION_TRIGGER_PERSONA,
   ACTION_SEND_SMS_MESSAGE,
   ACTION_REWIND_COLLABORATION,
-  ACTION_AI_DOCUMENT_EXTRACT
+  ACTION_AI_DOCUMENT_EXTRACT,
+  ACTION_OPEN_FUSER_ENVELOPES
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -1683,6 +1684,9 @@ function Form({
           setElementError((e as Error).message);
           break;
         }
+      } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
+        const internalId = session.internal_id;
+        openTab(`https://document.feathery.io/to/${internalId}`);
       } else if (type === ACTION_STORE_FIELD) {
         let val;
         if (action.custom_store_value_type === 'field') {
