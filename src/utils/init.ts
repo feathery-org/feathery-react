@@ -59,6 +59,7 @@ type InitState = {
   defaultErrors: Record<string, string>;
   isTestEnv: boolean;
   theme: string;
+  _internalUserId: string;
 } & Omit<InitOptions, keyof DeprecatedOptions>;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
@@ -66,6 +67,7 @@ export const defaultClient = new Client();
 const initState: InitState = {
   initialized: false,
   userTracking: 'cookie',
+  _internalUserId: '',
   sdkKey: '',
   userId: '',
   collaboratorId: '',

@@ -402,6 +402,7 @@ export default class Client {
     if (initState.formSessions[this.formKey]?.form_completed)
       trueSession.form_completed = true;
     initState.formSessions[this.formKey] = trueSession;
+    initState._internalUserId = trueSession.internal_id;
 
     const formData = await (formPromise ?? Promise.resolve());
     return [trueSession, formData];

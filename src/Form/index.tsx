@@ -1685,8 +1685,7 @@ function Form({
           break;
         }
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
-        const internalId = session.internal_id;
-        openTab(`https://document.feathery.io/to/${internalId}`);
+        openTab(`https://document.feathery.io/to/${initState._internalUserId}`);
       } else if (type === ACTION_STORE_FIELD) {
         let val;
         if (action.custom_store_value_type === 'field') {
