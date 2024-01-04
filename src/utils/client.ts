@@ -849,36 +849,4 @@ export default class Client {
       }
     });
   }
-
-  qwikDocuments() {
-    const { _internalUserId } = initInfo();
-    const url = `${API_URL}qwik/document/`;
-    const options = {
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-      body: JSON.stringify({
-        FormFields: [
-          {
-            FieldName: '1own.FName',
-            FieldValue: fieldValues.FullName
-          },
-          {
-            FieldName: '1own.H.Addr123',
-            FieldValue: fieldValues.ClientAddress
-          },
-          { FieldName: '1own.SSN', FieldValue: fieldValues.SSN },
-          { FieldName: '1own.H.Email', FieldValue: fieldValues.ClientEmail }
-        ],
-        QuikFormIDs: ['87154'],
-        fuserId: _internalUserId,
-        tags: [[fieldValues.Brokerage]]
-      })
-    };
-    return fetch(url, options).then(async (response) => {
-      if (response) {
-        if (response.ok) return await response.json();
-        else throw Error(parseError(await response.json()));
-      }
-    });
-  }
 }

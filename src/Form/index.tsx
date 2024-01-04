@@ -1685,7 +1685,6 @@ function Form({
           break;
         }
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
-        await client.qwikDocuments();
         openTab(`https://document.feathery.io/to/${initState._internalUserId}`);
       } else if (type === ACTION_STORE_FIELD) {
         let val;
