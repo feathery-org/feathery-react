@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CloseIcon } from '../../../components/icons';
 import { dataURLToFile } from '../../../../utils/image';
 import { MODAL_Z_INDEX } from '../../../../utils/styles';
@@ -33,6 +33,12 @@ function SignatureModal(props: SignatureModalProps) {
   const [signatureFile, setSignatureFile] = useState<File>();
   const [signatureImgData, setSignatureImgData] = useState('');
   const previewRef = useRef<HTMLDivElement>(null);
+  const fullNameRef = useRef<string>(fullName);
+
+  useEffect(() => {
+    fullNameRef.current = fullName;
+  }, [fullName]);
+  const getFullName = () => fullNameRef.current;
 
   const resetState = () => {
     setSignatureFile(undefined);
@@ -42,6 +48,15 @@ function SignatureModal(props: SignatureModalProps) {
   };
 
   const generateSignature = () => {
+    const _fullName = getFullName();
+
+    if (!_fullName) {
+      setSignatureImgData('');
+      setSignatureFile(undefined);
+      setLoading(false);
+      return;
+    }
+
     if (previewRef.current) {
       html2canvas(previewRef.current, { backgroundColor: null }).then(
         (canvas) => {
@@ -352,6 +367,7 @@ function SignatureModal(props: SignatureModalProps) {
               onClick={(e) => {
                 e.preventDefault();
                 setDrawSignature(false);
+                setSignatureFile(undefined);
               }}
               css={{ '&:hover': { backgroundColor: '#e1e1e1' } }}
             >
