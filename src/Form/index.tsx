@@ -585,11 +585,12 @@ function Form({
       const logicRulesForEvent = logicRules.filter(
         (logicRule: any) => logicRule.trigger_event === event
       );
+      const currentStepId = (internalState[_internalId]?.currentStep ?? {}).id;
       // Run the logic rules in sequence!
       for (const logicRule of logicRulesForEvent) {
         // all disabled, invalid or empty rules are filtered out by the BE
 
-        if (canRunAction(logicRule, _internalId, props, containerId)) {
+        if (canRunAction(logicRule, currentStepId, props, containerId)) {
           logicRan = true;
 
           // Note:

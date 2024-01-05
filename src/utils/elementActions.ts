@@ -45,12 +45,10 @@ export const elementEvents = ['view', 'change', 'action'];
 // neither filter and will always run.
 export function canRunAction(
   logicRule: any,
-  internalId: string,
+  currentStepId: string,
   props: any,
   containerId: string | undefined
 ) {
-  const currentStepId = (internalState[internalId]?.currentStep ?? {}).id;
-
   if (![...stepEvents, ...elementEvents].includes(logicRule.trigger_event))
     return true;
   if (
