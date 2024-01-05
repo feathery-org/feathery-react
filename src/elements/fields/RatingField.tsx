@@ -73,8 +73,11 @@ export default function RatingField({
           type='file'
           style={{
             position: 'absolute',
-            bottom: 0,
             opacity: 0,
+            bottom: 0,
+            left: 0,
+            width: '1px',
+            height: '1px',
             zIndex: FORM_Z_INDEX - 2
           }}
         />
