@@ -375,11 +375,9 @@ function SignatureModal(props: SignatureModalProps) {
             )}
             <button
               onClick={() => {
-                if (!isLoading) {
-                  handleSubmit();
-                }
+                if (!isLoading) handleSubmit();
               }}
-              disabled={isLoading}
+              disabled={isLoading || !signatureFile}
               css={{
                 backgroundColor: '#535353',
                 color: '#fff',
