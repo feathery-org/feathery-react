@@ -367,6 +367,7 @@ function SignatureModal(props: SignatureModalProps) {
               onClick={(e) => {
                 e.preventDefault();
                 setDrawSignature(false);
+                setSignatureFile(undefined);
               }}
               css={{ '&:hover': { backgroundColor: '#e1e1e1' } }}
             >
