@@ -34,6 +34,14 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     }
     return {};
   });
+  responsiveStyles.apply(
+    'button',
+    ['height', 'height_unit'],
+    (a: any, b: any) => {
+      if (b === 'px') return { minHeight: `${a}px` };
+      return {};
+    }
+  );
   responsiveStyles.applyTextAlign('buttonLabel');
   responsiveStyles.apply(
     'button',
