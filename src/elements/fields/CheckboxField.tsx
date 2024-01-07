@@ -252,8 +252,6 @@ function CheckboxField({
         checked={fieldVal}
         disabled={disabled}
         onChange={onChange}
-        // Do not conflict with container clicks
-        onClick={(e) => e.stopPropagation()}
         aria-label={element.properties.aria_label}
         css={{
           ...composeCheckableInputStyle(styles, disabled),

@@ -1,5 +1,6 @@
 import React, { PropsWithChildren, useRef } from 'react';
 import { StyledContainer, getCellStyle } from '../StyledContainer';
+import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 
 type ContainerProps = PropsWithChildren & {
   node: any;
@@ -22,7 +23,7 @@ export const Container = ({
 }: ContainerProps) => {
   const ref = useRef<HTMLDivElement>(null);
   const additionalCss: any = {};
-  let handleClick = () => {};
+  let handleClick: any;
 
   if (!node.isElement) {
     const properties = node.properties ?? {};
@@ -39,9 +40,18 @@ export const Container = ({
           }
         : {};
 
-    handleClick = () => {
+    handleClick = (e: any) => {
+      // Don't run value changes for fields that were clicked and already had
+      // their values changed
+      const filtered = actions.filter(
+        (action: any) =>
+          !(
+            action.type === ACTION_STORE_FIELD &&
+            action.custom_store_field_key === e.target.id
+          )
+      );
       runElementActions({
-        actions: actions,
+        actions: filtered,
         element: node,
         elementType: 'container'
       });
