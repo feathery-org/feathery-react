@@ -11,6 +11,7 @@ import {
 } from './browser';
 import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
 import { parseUserVal } from './api/Field';
+import { authState } from '../auth/LoginForm';
 
 export type FeatheryFieldTypes =
   | null
@@ -196,7 +197,10 @@ async function updateUserId(newUserId: string, merge = false): Promise<void> {
       '',
       location.pathname + location.search
     );
-    remountAllForms();
+    // Need to fully reload page if auth since LoginForm isn't yet accounted
+    // for by rerenderAllForms
+    if (authState.authId) location.reload();
+    else remountAllForms();
   }
 }
 
