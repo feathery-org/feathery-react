@@ -34,7 +34,7 @@ export function isTerminalStepAuth(
   );
 }
 
-export function hasOnboardingSteps(integrations: any): boolean {
+export function hasAuthGatedSteps(integrations: any): boolean {
   const authIntegration = getAuthIntegrationMetadata(integrations);
   if (!authIntegration) return false;
   // Form should be considered complete if there is no login step or

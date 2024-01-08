@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
 import { authState } from '../LoginForm';
 import { getUrlHash, setUrlStepHash } from '../../utils/formHelperFunctions';
-import { hasOnboardingSteps, getAuthIntegrationMetadata } from './utils';
+import { hasAuthGatedSteps, getAuthIntegrationMetadata } from './utils';
 import { initState } from '../../utils/init';
 
 const useFormAuth = ({
@@ -31,7 +31,7 @@ const useFormAuth = ({
       integrations &&
       Object.keys(integrations).length
     ) {
-      if (hasOnboardingSteps(integrations)) {
+      if (hasAuthGatedSteps(integrations)) {
         const stepName = getNextAuthStep();
         setStepKey(stepName);
         setUrlStepHash(history, steps, stepName);
