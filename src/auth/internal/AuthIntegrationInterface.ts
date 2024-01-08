@@ -18,7 +18,7 @@ import {
 import Client from '../../utils/client';
 import { isAuthStytch } from './utils';
 import { featheryWindow, getCookie, getStytchJwt } from '../../utils/browser';
-import { defaultClient } from '../../utils/init';
+import { defaultClient, initState } from '../../utils/init';
 
 // All code that needs to do something different based on the auth integration should go in this file
 
@@ -69,9 +69,11 @@ function sendSms(phoneNum: string, featheryClient: any) {
       const timeDiff = Date.now() - nativeOtpTimeSent;
       if (timeDiff < 60000) {
         const roundedSeconds = Math.round((60000 - timeDiff) / 1000);
-        throw new Error(
-          `Please wait ${roundedSeconds} seconds before sending another SMS.`
+        const err = initState.defaultErrors.sms_wait.replace(
+          '{time}',
+          roundedSeconds.toString()
         );
+        throw new Error(err);
       }
     }
     return featheryClient.sendSMSMessage(phoneNum);
