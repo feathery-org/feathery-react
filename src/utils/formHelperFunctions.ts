@@ -859,6 +859,7 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
           }),
           {}
         );
+        _fieldValues.feathery_user_id = initState.userId;
 
         return client.runCustomRequest(
           { method: method.toUpperCase(), url, data, headers },
@@ -875,6 +876,7 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
       }),
       {}
     );
+    _fieldValues.feathery_user_id = initState.userId;
 
     const response = await client.runCustomRequest(name, _fieldValues);
 
