@@ -19,6 +19,7 @@ import { loadLottieLight } from '../elements/components/Lottie';
 import { featheryDoc } from './browser';
 import { authState } from '../auth/LoginForm';
 import { parseError } from './error';
+import { loadQRScanner } from '../elements/fields/QRScanner';
 
 // Convenience boolean for urls - manually change for testing
 export const API_URL_OPTIONS = {
@@ -281,6 +282,7 @@ export default class Client {
     let needLottie = false;
     // Load phone number validator for phone and login fields
     let needPhoneVal = false;
+    let needQRScanner = false;
 
     res.steps.some((step: any) => {
       // If we've loaded everything available, we don't need to keep looking
@@ -292,9 +294,15 @@ export default class Client {
         if (needLottie) loadLottieLight();
       });
       step.servar_fields.some((field: any) => {
-        if (needPhoneVal) return true; // Already loaded
-        needPhoneVal = ['phone', 'phone_number'].includes(field.servar.type);
-        if (needPhoneVal) loadPhoneValidator();
+        const fieldType = field.servar.type;
+        if (!needPhoneVal) {
+          needPhoneVal = ['phone', 'phone_number'].includes(fieldType);
+          if (needPhoneVal) loadPhoneValidator();
+        }
+        if (!needQRScanner) {
+          needQRScanner = fieldType === 'qr_scanner';
+          if (needQRScanner) loadQRScanner();
+        }
       });
     });
   }

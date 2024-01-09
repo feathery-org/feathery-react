@@ -286,6 +286,17 @@ const Element = ({ node: el, form, flags }: any) => {
             }}
           />
         );
+      case 'qr_scanner':
+        return (
+          <Elements.QRScanner
+            {...fieldProps}
+            fieldVal={fieldVal}
+            onChange={(val: string) => {
+              const change = changeValue(val, el, index);
+              if (change) onChange({ submitData: autosubmit && val });
+            }}
+          />
+        );
       case 'file_upload':
         return (
           <Elements.FileUploadField
