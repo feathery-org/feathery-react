@@ -849,4 +849,20 @@ export default class Client {
       }
     });
   }
+
+  quikDocuments(jsonKey: string) {
+    const formPayload = fieldValues[jsonKey] as string;
+    const url = `${API_URL}quik/document/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: formPayload
+    };
+    return fetch(url, options).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseError(await response.json()));
+      }
+    });
+  }
 }

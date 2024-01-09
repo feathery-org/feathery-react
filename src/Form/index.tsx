@@ -1688,6 +1688,8 @@ function Form({
           break;
         }
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
+        if (action.quik_documents)
+          await client.quikDocuments(action.quik_json_field_key);
         openTab(`https://document.feathery.io/to/${initState._internalUserId}`);
       } else if (type === ACTION_STORE_FIELD) {
         let val;
