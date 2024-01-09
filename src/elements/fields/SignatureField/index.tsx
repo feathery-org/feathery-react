@@ -63,9 +63,7 @@ function SignatureField({
         >
           <div
             onClick={() => {
-              if (!disabled) {
-                setShowSignatureModal(true);
-              }
+              if (!disabled) setShowSignatureModal(true);
             }}
             css={{
               position: 'absolute',
@@ -77,6 +75,7 @@ function SignatureField({
               zIndex: FORM_Z_INDEX,
               alignItems: 'center',
               justifyContent: 'center',
+              ...(disabled ? { backgroundColor: 'rgb(229, 229, 229)' } : {}),
               '&:hover': {
                 cursor: 'pointer'
               }
