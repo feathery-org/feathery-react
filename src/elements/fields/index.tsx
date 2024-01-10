@@ -22,6 +22,7 @@ import PaymentMethodField from './PaymentMethodField';
 import MatrixField from './MatrixField';
 import { borderWidthProps } from '../styles';
 import { DEFAULT_MIN_SIZE } from '../../Form/grid/StyledContainer/styles';
+import QRScanner from './QRScanner';
 
 const Fields = {
   AddressLine1,
@@ -38,6 +39,7 @@ const Fields = {
   PaymentMethodField,
   PhoneField,
   PinInputField,
+  QRScanner,
   RadioButtonGroupField,
   RatingField,
   SignatureField,
@@ -411,7 +413,7 @@ function applyFieldStyles(field: any, styles: any) {
         return { backgroundColor: `#${color}` };
       });
 
-      styles.applyHeight('sub-fc');
+      if (type !== 'qr_scanner') styles.applyHeight('sub-fc');
       styles.applyCorners('sub-fc');
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('field');
