@@ -150,7 +150,7 @@ export default function DropdownField({
           onBlur={() => setFocused(false)}
           ref={setRef}
         >
-          <option key='' value='' />
+          <option key='' value='' disabled={required} />
           {options}
         </select>
         <span
