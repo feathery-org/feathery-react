@@ -32,8 +32,7 @@ function QRScanner({
       if (!scanner) {
         const window = featheryWindow();
         scanner = new window.Html5QrcodeScanner('qr-reader', {
-          fps: 10,
-          qrbox: { width: 250, height: 250 }
+          fps: 10
         });
       }
 
@@ -65,7 +64,7 @@ function QRScanner({
             ...responsiveStyles.getTarget('sub-fc')
           }}
         >
-          <div id='qr-reader' css={{ width: '600px' }} />
+          <div id='qr-reader' css={{ width: '100%' }} />
           {/* This input must always be rendered so we can set field errors */}
           <input
             id={servar.key}
