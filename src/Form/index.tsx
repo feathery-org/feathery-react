@@ -253,6 +253,7 @@ function Form({
     rightToLeft: false,
     allowEdits: true,
     saveUrlParams: false,
+    saveHideIfFields: false,
     completionBehavior: '',
     globalStyles: {}
   });
@@ -1043,7 +1044,7 @@ function Form({
   ) => {
     const formattedFields = formatStepFields(
       activeStep,
-      visiblePositions,
+      formSettings.saveHideIfFields ? null : visiblePositions,
       false
     );
     const trigger = lookUpTrigger(
