@@ -362,8 +362,14 @@ const Element = ({ node: el, form, flags }: any) => {
             .sort((a: any, b: any) => {
               // Assume the closest country field to
               // the state field is controlling it
-              return numMatchingItems(el.position, a.position) <
-                numMatchingItems(el.position, b.position)
+              const aMatching = numMatchingItems(el.position, a.position);
+              const bMatching = numMatchingItems(el.position, b.position);
+              if (aMatching < bMatching) return 1;
+              if (aMatching > bMatching) return -1;
+              const aNext = a.position[aMatching];
+              const bNext = b.position[bMatching];
+              const elNext = el.position[aMatching];
+              return Math.abs(elNext - aNext) > Math.abs(elNext - bNext)
                 ? 1
                 : -1;
             })[0];
