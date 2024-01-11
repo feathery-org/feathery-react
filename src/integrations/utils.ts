@@ -25,6 +25,7 @@ import {
 } from './rudderstack';
 import { fieldValues } from '../utils/init';
 import { installPersona } from './persona';
+import { authState } from '../auth/LoginForm';
 
 const IMPORTED_URLS = new Set();
 
@@ -96,6 +97,7 @@ export async function initializeIntegrations(
   const gtm = integs['google-tag-manager'];
   if (gtm) initializeTagManager(gtm);
   if (integs.firebase || integs.stytch) {
+    authState.authFormKey = featheryClient.formKey;
     return Auth.inferLoginOnLoad(featheryClient);
   }
 }

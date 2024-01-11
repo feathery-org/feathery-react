@@ -428,6 +428,7 @@ export default class Client {
     const data = {
       auth_id: authId,
       auth_data: authData,
+      auth_form_key: authState.authFormKey,
       is_stytch_template_key: isStytchTemplateKey,
       ...(userId ? { fuser_key: userId } : {})
     };
