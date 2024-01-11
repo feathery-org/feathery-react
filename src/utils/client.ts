@@ -584,13 +584,12 @@ export default class Client {
   }
 
   // AI
-  extractAIDocument(fieldId: string, correctRotation: boolean) {
+  extractAIDocument(extractionId: string, runAsync: boolean) {
     const { userId } = initInfo();
     const data = {
-      form_key: this.formKey,
       fuser_key: userId,
-      field_id: fieldId,
-      correct_rotation: correctRotation
+      extraction_id: extractionId,
+      run_async: runAsync
     };
     return this._fetch(`${AI_URL}ai/vision/`, {
       headers: { 'Content-Type': 'application/json' },
