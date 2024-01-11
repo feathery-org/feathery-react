@@ -146,7 +146,7 @@ export function trackEvent(
   const amplitudeData: any = { ...metadata };
   if (fieldData?.amplitude) amplitudeData.submittedData = fieldData.amplitude;
   if (featheryWindow().amplitude)
-    featheryWindow().amplitude.track(title, metadata);
+    featheryWindow().amplitude.track(title, amplitudeData);
 
   if (featheryWindow().mixpanel)
     featheryWindow().mixpanel.track(title, metadata);
