@@ -196,7 +196,7 @@ export default class Client {
       : resolveFile(fileValue);
   }
 
-  async _submitFileData(servar: any) {
+  async _submitFileData(servar: any, stepKey: string) {
     const { userId } = initInfo();
     const url = `${API_URL}panel/step/submit/file/${userId}/`;
 
@@ -214,6 +214,7 @@ export default class Client {
     }
 
     formData.set('__feathery_form_key', this.formKey);
+    formData.set('__feathery_step_key', stepKey);
     if (this.version) formData.set('__feathery_version', this.version);
     await this._fetch(url, {
       method: 'POST',
@@ -518,7 +519,7 @@ export default class Client {
     const fileServars = servars.filter(isFileServar);
     return Promise.all([
       this._submitJSONData(jsonServars, stepKey, hasNext),
-      ...fileServars.map((servar: any) => this._submitFileData(servar))
+      ...fileServars.map((servar: any) => this._submitFileData(servar, stepKey))
     ]);
   }
 
