@@ -1679,8 +1679,8 @@ function Form({
         try {
           await submitPromise;
           const data = await client.extractAIDocument(
-            action.document_field,
-            action.correct_rotation ?? false
+            action.extraction_id,
+            action.run_async
           );
           updateFieldValues(data);
         } catch (e: any) {
