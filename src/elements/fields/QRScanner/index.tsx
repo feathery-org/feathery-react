@@ -28,8 +28,10 @@ function QRScanner({
     if (disabled) return;
 
     loadQRScanner();
-    qrPromise.then(() => {
+    qrPromise.then(async () => {
       if (!scanner) {
+        // Half second delay to make sure is loaded
+        await new Promise((resolve) => setTimeout(resolve, 500));
         const window = featheryWindow();
         scanner = new window.Html5QrcodeScanner('qr-reader', {
           fps: 10
