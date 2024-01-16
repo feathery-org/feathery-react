@@ -118,6 +118,9 @@ export default function DropdownMultiField({
           onBlur={() => setFocused(false)}
           noOptionsMessage={create ? () => null : undefined}
           options={options}
+          isOptionDisabled={() =>
+            servar.max_length && selectVal.length >= servar.max_length
+          }
           isMulti
           menuPortalTarget={featheryDoc().body}
           placeholder=''
