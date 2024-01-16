@@ -99,7 +99,15 @@ function CheckboxGroupField({
               aria-label={element.properties.aria_label}
             />
             <TextHoverTooltip text={tooltips[i]}>
-              <label htmlFor={`${servar.key}-${i}`}>{optionLabel}</label>
+              <label
+                htmlFor={`${servar.key}-${i}`}
+                css={{
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere'
+                }}
+              >
+                {optionLabel}
+              </label>
             </TextHoverTooltip>
           </div>
         );
@@ -129,10 +137,13 @@ function CheckboxGroupField({
           </TextHoverTooltip>
           <ReactForm.Control
             type='text'
+            // Paired with flex grow, will not expand parent width
+            htmlSize={1}
             css={{
               marginLeft: '5px',
               ...bootstrapStyles,
               paddingLeft: '0.4rem',
+              flexGrow: 1,
               ...responsiveStyles.getTarget('field'),
               ...(otherDisabled ? responsiveStyles.getTarget('disabled') : {})
             }}
