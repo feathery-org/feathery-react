@@ -4,7 +4,8 @@ import {
   filePathMap,
   initFormsPromise,
   initInfo,
-  initState
+  initState,
+  setFieldValues
 } from './init';
 import { dataURLToFile, isBase64Image } from './image';
 import { encodeGetParams } from './primitives';
@@ -446,7 +447,9 @@ export default class Client {
         if (!data) return Promise.resolve();
 
         let toReturn;
-        if (!data?.no_merge) {
+        if (data?.no_merge) {
+          setFieldValues(data.field_values);
+        } else {
           data.completed_forms.forEach((formKey: string) => {
             if (!initState.formSessions[formKey])
               initState.formSessions[formKey] = {};
