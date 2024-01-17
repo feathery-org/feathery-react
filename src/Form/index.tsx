@@ -561,7 +561,14 @@ function Form({
       global.FeatheryInterface.onComplete();
     }
 
-    trackEvent(integrations, 'FeatheryFormComplete', '', formName);
+    const data = { ...fieldValues };
+    const fieldData: Record<string, any> = {};
+    if (integrations?.segment?.metadata.track_fields) fieldData.segment = data;
+    if (integrations?.amplitude?.metadata.track_fields)
+      fieldData.amplitude = data;
+    if (integrations?.['google-tag-manager']?.metadata.track_fields)
+      fieldData['google-tag-manager'] = data;
+    trackEvent(integrations, 'FeatheryFormComplete', '', formName, fieldData);
 
     await runUserLogic('form_complete');
   };
