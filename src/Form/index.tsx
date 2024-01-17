@@ -1113,10 +1113,13 @@ function Form({
         : newVal;
       return { key, [(val as any).type]: newVal };
     });
-    const stepPromise =
-      featheryFields.length > 0
-        ? client.submitStep(featheryFields, activeStep.key, hasNext)
-        : Promise.resolve();
+
+    const [stepPromise, hasFiles] = client.submitStep(
+      featheryFields,
+      activeStep.key,
+      hasNext
+    );
+    if (hasFiles) await stepPromise;
 
     const fieldData: Record<string, any> = {};
     if (integrations?.segment?.metadata.track_fields)

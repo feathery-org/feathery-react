@@ -516,15 +516,23 @@ export default class Client {
 
   // servars = [{key: <servarKey>, <type>: <value>}]
   submitStep(servars: any, stepKey: string, hasNext: boolean) {
-    if (this.draft || this.noSave) return Promise.resolve();
+    if (this.draft || this.noSave || servars.length === 0)
+      return [Promise.resolve(), false];
+
     const isFileServar = (servar: any) =>
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    return Promise.all([
-      this._submitJSONData(jsonServars, stepKey, hasNext),
-      ...fileServars.map((servar: any) => this._submitFileData(servar, stepKey))
-    ]);
+    const hasFiles = fileServars.length > 0;
+    return [
+      Promise.all([
+        this._submitJSONData(jsonServars, stepKey, hasNext),
+        ...fileServars.map((servar: any) =>
+          this._submitFileData(servar, stepKey)
+        )
+      ]),
+      hasFiles
+    ];
   }
 
   async registerEvent(eventData: any, promise: any = null) {
