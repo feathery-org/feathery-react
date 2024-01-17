@@ -1119,6 +1119,7 @@ function Form({
       activeStep.key,
       hasNext
     );
+    // Block on file upload to ensure successful upload and integration trigger
     if (hasFiles) await stepPromise;
 
     const fieldData: Record<string, any> = {};
