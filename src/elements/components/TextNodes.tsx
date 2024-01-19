@@ -5,7 +5,6 @@ import useTextEdit from './useTextEdit';
 import { openTab } from '../../utils/browser';
 import { fieldValues, initInfo } from '../../utils/init';
 import { ACTION_NEXT } from '../../utils/elementActions';
-import jsonpath from 'jsonpath';
 
 export const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 
@@ -93,6 +92,14 @@ function TextNodes({
     ...responsiveStyles.getTarget(cssTarget)
   };
 
+  // Not using jsonpath because of issues with NextJS
+  const extractProperty = (obj: any, path: string[]): any => {
+    if (path.length === 0) return obj;
+    const [key, ...rest] = path;
+    if (obj[key] === undefined) return null;
+    return extractProperty(obj[key], rest);
+  };
+
   return useMemo(() => {
     const text = element.properties.text;
     let delta = new Delta(element.properties.text_formatted);
@@ -113,14 +120,10 @@ function TextNodes({
 
     if (element.properties.text_mode === 'data') {
       let textSource = element.properties.text_source ?? '';
-      // convert to valid jsonpath
-      if (textSource.startsWith('feathery'))
-        textSource = textSource.replace('feathery', '$');
-      try {
-        textFromData = jsonpath.value(featheryContext, textSource);
-      } catch (e) {
-        // Ignoring errors due to things like unset text_source, deleted products etc.
-      }
+      // convert to path relative to featheryContext
+      if (textSource.startsWith('feathery.'))
+        textSource = textSource.replace('feathery.', '');
+      textFromData = extractProperty(featheryContext, textSource.split('.'));
     }
     const textIsFromData =
       element.properties.text_mode === 'data' && textFromData !== null;
