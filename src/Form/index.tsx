@@ -258,6 +258,7 @@ function Form({
     globalStyles: {}
   });
   const trackHashes = useRef(false);
+  const curLanguage = useRef<undefined | string>();
 
   const [fieldKeys, setFieldKeys] = useState<string[]>([]);
   const [hiddenFieldKeys, setHiddenFieldKeys] = useState<string[]>([]);
@@ -348,6 +349,16 @@ function Form({
     featheryWindow().addEventListener('resize', handleResize);
     return () => featheryWindow().removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    const oldLanguage = curLanguage.current;
+    curLanguage.current = language;
+
+    if (language && oldLanguage && oldLanguage !== language) {
+      // if language changes, need to remount form to refetch data
+      initState.remountCallbacks[_internalId]();
+    }
+  }, [language]);
 
   // Logic to run every time step changes
   useEffect(() => {
@@ -1940,7 +1951,6 @@ function Form({
 // renderAt without exposing InternalProps to SDK users
 export function JSForm({
   formName,
-  language,
   _internalId,
   _isAuthLoading = false,
   ...props
@@ -1965,9 +1975,7 @@ export function JSForm({
           <Form
             {...props}
             formName={formName}
-            // Changing the language changes the key and fetches the new form data
-            key={`${formName}_${language}_${remount}`}
-            language={language}
+            key={`${formName}_${remount}`}
             _internalId={_internalId}
             _isAuthLoading={_isAuthLoading}
           />
