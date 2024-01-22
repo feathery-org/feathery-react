@@ -198,6 +198,8 @@ const validators = {
     try {
       const urlObj = new URL(a);
       if (!urlObj) return false;
+      // Catch whitespace in hostname
+      if (urlObj.hostname.includes('%20')) return false;
       const parts = urlObj.hostname.split('.');
       if (parts.some((part) => !part)) return false;
       return parts.length > 1;
