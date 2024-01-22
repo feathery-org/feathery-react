@@ -146,7 +146,7 @@ describe('client', () => {
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
-      const response = await client.submitStep(servars);
+      const [response, hasFiles] = client.submitStep(servars);
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
@@ -162,7 +162,8 @@ describe('client', () => {
           body: JSON.stringify(body)
         }
       );
-      expect(response).toEqual([{ status: 200 }]);
+      expect(await response).toEqual([{ status: 200 }]);
+      expect(hasFiles).toEqual(false);
     });
   });
 

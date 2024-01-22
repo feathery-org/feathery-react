@@ -164,7 +164,7 @@ const Element = ({ node: el, form, flags }: any) => {
     const { value: fieldVal } = getFieldValue(el);
 
     let firstField = false;
-    if (!fieldVal) {
+    if (!fieldVal || fieldVal === servar.metadata.default_value) {
       firstField = !flags.fieldSeen;
       flags.fieldSeen = true;
     }

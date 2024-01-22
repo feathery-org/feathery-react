@@ -253,10 +253,12 @@ function Form({
     rightToLeft: false,
     allowEdits: true,
     saveUrlParams: false,
+    saveHideIfFields: false,
     completionBehavior: '',
     globalStyles: {}
   });
   const trackHashes = useRef(false);
+  const curLanguage = useRef<undefined | string>();
 
   const [fieldKeys, setFieldKeys] = useState<string[]>([]);
   const [hiddenFieldKeys, setHiddenFieldKeys] = useState<string[]>([]);
@@ -347,6 +349,16 @@ function Form({
     featheryWindow().addEventListener('resize', handleResize);
     return () => featheryWindow().removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    const oldLanguage = curLanguage.current;
+    curLanguage.current = language;
+
+    if (language && oldLanguage && oldLanguage !== language) {
+      // if language changes, need to remount form to refetch data
+      initState.remountCallbacks[_internalId]();
+    }
+  }, [language]);
 
   // Logic to run every time step changes
   useEffect(() => {
@@ -560,7 +572,14 @@ function Form({
       global.FeatheryInterface.onComplete();
     }
 
-    trackEvent(integrations, 'FeatheryFormComplete', '', formName);
+    const data = { ...fieldValues };
+    const fieldData: Record<string, any> = {};
+    if (integrations?.segment?.metadata.track_fields) fieldData.segment = data;
+    if (integrations?.amplitude?.metadata.track_fields)
+      fieldData.amplitude = data;
+    if (integrations?.['google-tag-manager']?.metadata.track_fields)
+      fieldData['google-tag-manager'] = data;
+    trackEvent(integrations, 'FeatheryFormComplete', '', formName, fieldData);
 
     await runUserLogic('form_complete');
   };
@@ -1043,7 +1062,7 @@ function Form({
   ) => {
     const formattedFields = formatStepFields(
       activeStep,
-      visiblePositions,
+      formSettings.saveHideIfFields ? null : visiblePositions,
       false
     );
     const trigger = lookUpTrigger(
@@ -1105,10 +1124,14 @@ function Form({
         : newVal;
       return { key, [(val as any).type]: newVal };
     });
-    const stepPromise =
-      featheryFields.length > 0
-        ? client.submitStep(featheryFields, activeStep.key, hasNext)
-        : Promise.resolve();
+
+    const [stepPromise, hasFiles] = client.submitStep(
+      featheryFields,
+      activeStep.key,
+      hasNext
+    );
+    // Block on file upload to ensure successful upload and integration trigger
+    if (hasFiles) await stepPromise;
 
     const fieldData: Record<string, any> = {};
     if (integrations?.segment?.metadata.track_fields)
@@ -1928,7 +1951,6 @@ function Form({
 // renderAt without exposing InternalProps to SDK users
 export function JSForm({
   formName,
-  language,
   _internalId,
   _isAuthLoading = false,
   ...props
@@ -1953,9 +1975,7 @@ export function JSForm({
           <Form
             {...props}
             formName={formName}
-            // Changing the language changes the key and fetches the new form data
-            key={`${formName}_${language}_${remount}`}
-            language={language}
+            key={`${formName}_${remount}`}
             _internalId={_internalId}
             _isAuthLoading={_isAuthLoading}
           />

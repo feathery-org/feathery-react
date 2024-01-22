@@ -1,10 +1,51 @@
 import React, { useState } from 'react';
 import useBorder from '../components/useBorder';
-import Select from 'react-select';
+import Select, { components } from 'react-select';
 import CreatableSelect from 'react-select/creatable';
 import { featheryDoc } from '../../utils/browser';
 import InlineTooltip from '../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from './index';
+import { OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { FORM_Z_INDEX } from '../../utils/styles';
+
+const TooltipOption = ({ children, ...props }: any) => {
+  let optComponent = (
+    <components.Option {...props}>{children}</components.Option>
+  );
+
+  if (props.data.tooltip) {
+    optComponent = (
+      <OverlayTrigger
+        placement='right'
+        overlay={
+          <Tooltip
+            id={`tooltip-${props.data.value}`}
+            css={{
+              zIndex: FORM_Z_INDEX + 1,
+              padding: '.4rem 0',
+              transition: 'opacity .10s linear',
+              '.tooltip-inner': {
+                maxWidth: '200px',
+                padding: '.25rem .5rem',
+                color: '#fff',
+                textAlign: 'center',
+                backgroundColor: '#000',
+                borderRadius: '.25rem',
+                fontSize: 'smaller'
+              }
+            }}
+          >
+            {props.data.tooltip}
+          </Tooltip>
+        }
+      >
+        <div>{optComponent}</div>
+      </OverlayTrigger>
+    );
+  }
+
+  return optComponent;
+};
 
 export default function DropdownMultiField({
   element,
@@ -31,7 +72,8 @@ export default function DropdownMultiField({
   const options = servar.metadata.options.map((option: any, index: number) => {
     const label = labels && labels[index] ? labels[index] : option;
     labelMap[option] = label;
-    return { value: option, label };
+    const tooltip = servar.metadata.option_tooltips?.[index];
+    return { value: option, label, tooltip };
   });
   const selectVal = fieldVal
     ? fieldVal.map((val: any) => ({
@@ -109,6 +151,7 @@ export default function DropdownMultiField({
               zIndex: DROPDOWN_Z_INDEX
             })
           }}
+          components={{ Option: TooltipOption }}
           id={servar.key}
           value={selectVal}
           required={required}
@@ -118,6 +161,9 @@ export default function DropdownMultiField({
           onBlur={() => setFocused(false)}
           noOptionsMessage={create ? () => null : undefined}
           options={options}
+          isOptionDisabled={() =>
+            servar.max_length && selectVal.length >= servar.max_length
+          }
           isMulti
           menuPortalTarget={featheryDoc().body}
           placeholder=''

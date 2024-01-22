@@ -159,6 +159,8 @@ function getInputProps(
         ...constraints
       };
     default:
+      if (meta.custom_autocomplete && !constraints.autoComplete)
+        constraints.autoComplete = meta.custom_autocomplete;
       if (meta.number_keypad || meta.allowed_characters === 'digits') {
         return { inputMode: 'numeric' as any, ...constraints };
       }
