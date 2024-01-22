@@ -5,12 +5,15 @@ import { FORM_Z_INDEX } from '../../utils/styles';
 export default function TextHoverTooltip({ text, children }: any) {
   return text ? (
     <OverlayTrigger
+      placement='auto'
+      flip
       overlay={
         <Tooltip
           id={`tooltip-${text}`}
           css={{
             zIndex: FORM_Z_INDEX + 1,
             padding: '.4rem 0',
+            margin: '0 1rem',
             transition: 'opacity .10s linear',
             '.tooltip-inner': {
               maxWidth: '200px',
