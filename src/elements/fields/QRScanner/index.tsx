@@ -30,12 +30,23 @@ function QRScanner({
     loadQRScanner();
     qrPromise.then(async () => {
       if (!scanner) {
-        // Half second delay to make sure is loaded
-        await new Promise((resolve) => setTimeout(resolve, 500));
         const window = featheryWindow();
-        scanner = new window.Html5QrcodeScanner('qr-reader', {
-          fps: 10
-        });
+        for (let i = 0; i < 3; i++) {
+          try {
+            scanner = new window.Html5QrcodeScanner('qr-reader', {
+              fps: 10
+            });
+            break;
+          } catch (e) {
+            // TypeError because HTMLScanner object not initialized yet
+            // https://feathery-forms.sentry.io/issues/4870682565/
+            if (!(e instanceof TypeError)) {
+              throw e;
+            }
+          }
+          // Half second delay to make sure it is loaded
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
       }
 
       const onSuccess = (decodedText: string) => {
