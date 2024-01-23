@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
@@ -51,7 +51,14 @@ function DateSelectorField({
 }: any) {
   const servarMeta = element.servar.metadata;
 
+  const pickerRef = useRef<any>();
   const [internalDate, setInternalDate] = useState('');
+
+  useEffect(() => {
+    if (pickerRef.current !== null) {
+      pickerRef.current.input.inputMode = 'none';
+    }
+  }, [pickerRef]);
 
   useEffect(() => {
     let internalVal: any = '';
@@ -163,7 +170,10 @@ function DateSelectorField({
               ? {}
               : { color: 'transparent !important' })
           }}
-          ref={setRef}
+          ref={(ref: any) => {
+            pickerRef.current = ref;
+            setRef(ref);
+          }}
         />
         <Placeholder
           value={value}
