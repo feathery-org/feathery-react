@@ -435,7 +435,9 @@ Object.entries(Fields).map(([key, Field]: any) => {
         htmlFor={servar.repeated ? undefined : servar.key}
         style={{
           marginBottom: '10px',
-          display: 'inline-block'
+          display: 'inline-block',
+          whiteSpace: 'pre-wrap',
+          overflowWrap: 'anywhere'
         }}
       >
         {servar.name}
