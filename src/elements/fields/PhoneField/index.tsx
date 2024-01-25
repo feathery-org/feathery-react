@@ -312,6 +312,8 @@ function PhoneField({
                 if (!LPN) return;
                 // Don't let user delete the country code
                 else if (!newNum.startsWith(`+${phoneCode}`)) return;
+                // Prevent US phone numbers from starting with a 1
+                else if (newNum.startsWith('+11')) return;
 
                 const onlyDigits = LPN.parseDigits(newNum, curCountryCode);
                 const validate = LPN.validatePhoneNumberLength;
