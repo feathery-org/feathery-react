@@ -185,7 +185,11 @@ export default function DropdownMultiField({
         >
           {element.properties.placeholder || ''}
         </span>
-        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
+        <InlineTooltip
+          id={element.id}
+          text={element.properties.tooltipText}
+          responsiveStyles={responsiveStyles}
+        />
       </div>
     </div>
   );

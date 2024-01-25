@@ -167,7 +167,11 @@ function AddressLine1({
           responsiveStyles={responsiveStyles}
           rightToLeft={rightToLeft}
         />
-        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
+        <InlineTooltip
+          id={element.id}
+          text={element.properties.tooltipText}
+          responsiveStyles={responsiveStyles}
+        />
       </div>
     </div>
   );

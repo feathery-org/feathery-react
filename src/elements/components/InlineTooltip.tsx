@@ -3,16 +3,21 @@ import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { HelpIcon } from './icons';
 import { FORM_Z_INDEX } from '../../utils/styles';
 
-export default function InlineTooltip({ element, responsiveStyles }: any) {
-  const text = element.properties.tooltipText;
+export default function InlineTooltip({
+  id,
+  text,
+  responsiveStyles,
+  absolute = true
+}: any) {
   return text ? (
     <OverlayTrigger
-      placement='top-end'
+      placement='auto'
+      flip
       trigger={['hover', 'click']}
       rootClose
       overlay={
         <Tooltip
-          id={`tooltip-${element.id}`}
+          id={`tooltip-${id}`}
           css={{
             zIndex: FORM_Z_INDEX + 1,
             padding: '.4rem 0',
@@ -33,22 +38,22 @@ export default function InlineTooltip({ element, responsiveStyles }: any) {
       }
     >
       <div
-        css={{
-          position: 'absolute',
-          right: '10px',
-          top: 0,
-          bottom: 0,
-          zIndex: FORM_Z_INDEX,
-          margin: 'auto',
-          cursor: 'pointer',
-          height: '100%'
-        }}
+        css={
+          absolute
+            ? {
+                position: 'absolute',
+                right: '10px',
+                top: 0,
+                bottom: 0,
+                zIndex: FORM_Z_INDEX,
+                margin: 'auto',
+                cursor: 'pointer',
+                height: '100%'
+              }
+            : { marginLeft: '8px', marginTop: '3px' }
+        }
       >
-        <HelpIcon
-          cssStyles={{
-            ...responsiveStyles.getTarget('tooltipIcon')
-          }}
-        />
+        <HelpIcon cssStyles={responsiveStyles.getTarget('tooltipIcon')} />
       </div>
     </OverlayTrigger>
   ) : null;

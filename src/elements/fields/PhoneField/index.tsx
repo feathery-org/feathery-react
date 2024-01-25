@@ -354,7 +354,8 @@ function PhoneField({
             responsiveStyles={responsiveStyles}
           />
           <InlineTooltip
-            element={element}
+            id={element.id}
+            text={element.properties.tooltipText}
             responsiveStyles={responsiveStyles}
           />
         </div>

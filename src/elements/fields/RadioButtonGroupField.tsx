@@ -7,6 +7,7 @@ import {
   composeCheckableInputStyle
 } from './CheckboxField';
 import TextHoverTooltip from '../components/TextHoverTooltip';
+import InlineTooltip from '../components/InlineTooltip';
 
 const applyRadioGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('radioGroup');
@@ -91,17 +92,23 @@ function RadioButtonGroupField({
                 ...(disabled ? responsiveStyles.getTarget('disabled') : {})
               }}
             />
-            <TextHoverTooltip text={tooltips[i]}>
-              <label
-                htmlFor={`${servar.key}-${i}`}
-                css={{
-                  whiteSpace: 'pre-wrap',
-                  overflowWrap: 'anywhere'
-                }}
-              >
-                {optionLabel}
-              </label>
-            </TextHoverTooltip>
+            <label
+              htmlFor={`${servar.key}-${i}`}
+              css={{
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere'
+              }}
+            >
+              {optionLabel}
+            </label>
+            {tooltips[i] && (
+              <InlineTooltip
+                id={`${element.id}-${opt}`}
+                text={tooltips[i]}
+                responsiveStyles={responsiveStyles}
+                absolute={false}
+              />
+            )}
           </div>
         );
       })}
