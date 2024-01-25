@@ -6,7 +6,6 @@ import {
   applyHeightWidthMarginByFontSize,
   composeCheckableInputStyle
 } from './CheckboxField';
-import TextHoverTooltip from '../components/TextHoverTooltip';
 import InlineTooltip from '../components/InlineTooltip';
 
 const applyCheckboxGroupStyles = (element: any, responsiveStyles: any) => {
@@ -37,7 +36,7 @@ function CheckboxGroupField({
     applyCheckboxGroupStyles(element, responsiveStyles);
     responsiveStyles.addTargets('row');
     responsiveStyles.apply('row', 'row_separation', (a: number) => {
-      return { marginBottom: `${a}px` };
+      return { marginBottom: `${a || 5}px` };
     });
     return responsiveStyles;
   }, [responsiveStyles]);
@@ -74,7 +73,6 @@ function CheckboxGroupField({
             key={`${servar.key}-${i}`}
             css={{
               display: 'flex',
-              alignItems: 'center',
               pointerEvents: optionDisabled ? 'none' : 'auto',
               ...styles.getTarget('row')
             }}
@@ -103,19 +101,18 @@ function CheckboxGroupField({
               htmlFor={`${servar.key}-${i}`}
               css={{
                 whiteSpace: 'pre-wrap',
-                overflowWrap: 'anywhere'
+                overflowWrap: 'anywhere',
+                ...styles.getTarget('checkboxLabel')
               }}
             >
               {optionLabel}
             </label>
-            {tooltips[i] && (
-              <InlineTooltip
-                id={`${element.id}-${opt}`}
-                text={tooltips[i]}
-                responsiveStyles={responsiveStyles}
-                absolute={false}
-              />
-            )}
+            <InlineTooltip
+              id={`${element.id}-${opt}`}
+              text={tooltips[i]}
+              responsiveStyles={responsiveStyles}
+              absolute={false}
+            />
           </div>
         );
       })}
@@ -139,9 +136,12 @@ function CheckboxGroupField({
               ...(otherDisabled ? responsiveStyles.getTarget('disabled') : {})
             }}
           />
-          <TextHoverTooltip text={servar.metadata.other_tooltip}>
-            <label htmlFor={`${servar.key}-`}>{otherLabel}</label>
-          </TextHoverTooltip>
+          <label
+            htmlFor={`${servar.key}-`}
+            css={styles.getTarget('checkboxLabel')}
+          >
+            {otherLabel}
+          </label>
           <ReactForm.Control
             type='text'
             // Paired with flex grow, will not expand parent width
@@ -164,6 +164,12 @@ function CheckboxGroupField({
             minLength={servar.min_length}
             required={otherChecked}
             disabled={otherDisabled || !otherChecked}
+          />
+          <InlineTooltip
+            id={`${element.id}-`}
+            text={servar.metadata.other_tooltip}
+            responsiveStyles={responsiveStyles}
+            absolute={false}
           />
         </div>
       )}

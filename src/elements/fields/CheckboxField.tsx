@@ -69,6 +69,13 @@ const applyCheckmarkByFontSize = (
   );
 };
 
+const applyLabelHeightByFontSize = (responsiveStyles: any, target: any) => {
+  responsiveStyles.apply(target, ['font_size'], (fontSize: any) => {
+    const scaledSize = scaleCheckboxSize(fontSize);
+    return { lineHeight: `${scaledSize}px` };
+  });
+};
+
 const applyCheckmark = (
   responsiveStyles: any,
   target: any,
@@ -92,7 +99,8 @@ export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
     'checkboxCheckmark',
     'checkboxSelected',
     'checkboxHover',
-    'checkboxCheckmarkHover'
+    'checkboxCheckmarkHover',
+    'checkboxLabel'
   );
 
   const {
@@ -112,6 +120,7 @@ export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
 
   // width/height styles
   if (scaleWithFontSize) {
+    applyLabelHeightByFontSize(responsiveStyles, 'checkboxLabel');
     applyHeightWidthMarginByFontSize(responsiveStyles, 'checkbox', true);
     applyHeightWidthMarginByFontSize(
       responsiveStyles,
