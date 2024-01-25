@@ -453,20 +453,23 @@ function Form({
     updateRepeatValues(repeatContainer, getNewVal);
   }
 
-  function removeRepeatedRow(element: any) {
+  function removeRepeatedRow(
+    element: any,
+    repeatContainer: Subgrid | undefined
+  ) {
     const index = element.repeat;
-    if (isNaN(index)) return;
+    if (isNaN(index) && !repeatContainer) return;
 
-    const repeatContainer = getRepeatedContainer(activeStep, element);
+    const curRepeatContainer =
+      repeatContainer || getRepeatedContainer(activeStep, element);
     const getNewVal = (field: any) => {
-      const newRepeatedValues = justRemove(
-        fieldValues[field.servar.key],
-        index
-      );
+      const vals = fieldValues[field.servar.key] as any[];
+      const curIndex = repeatContainer ? vals.length - 1 : index;
+      const newRepeatedValues = justRemove(vals, curIndex);
       const defaultValue = [getDefaultFieldValue(field)];
       return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
     };
-    updateRepeatValues(repeatContainer, getNewVal);
+    updateRepeatValues(curRepeatContainer, getNewVal);
   }
 
   // Debouncing the validateElements call to rate limit calls
@@ -1541,14 +1544,12 @@ function Form({
       const type = action.type;
 
       if (type === ACTION_ADD_REPEATED_ROW) {
-        const containerId = getContainerById(
-          activeStep,
-          action.repeat_container
-        );
-        addRepeatedRow(containerId, action.max_repeats);
-      } else if (type === ACTION_REMOVE_REPEATED_ROW)
-        removeRepeatedRow(element);
-      else if (type === ACTION_TRIGGER_PERSONA) {
+        const container = getContainerById(activeStep, action.repeat_container);
+        addRepeatedRow(container, action.max_repeats);
+      } else if (type === ACTION_REMOVE_REPEATED_ROW) {
+        const container = getContainerById(activeStep, action.repeat_container);
+        removeRepeatedRow(element, container);
+      } else if (type === ACTION_TRIGGER_PERSONA) {
         const persona = integrations?.persona.metadata ?? {};
         await submitPromise;
         triggerPersona(
