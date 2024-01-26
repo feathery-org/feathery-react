@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import TextNodes from '../components/TextNodes';
 import { isNum } from '../../utils/primitives';
 import useBorder from '../components/useBorder';
+import { hoverStylesGuard } from '../../utils/browser';
 
 // TODO(peter): deprecate once customers have upgraded and backend migrated
 function legacyAlignment(alignment: any) {
@@ -70,12 +71,14 @@ function TextElement({
         maxWidth: '100%',
         width: '100%',
         ...styles.getTarget('text'),
-        '&:hover': editMode
-          ? {}
-          : {
-              ...styles.getTarget('textHover'),
-              ...borderStyles.hover
-            }
+        '&:hover': hoverStylesGuard(
+          editMode
+            ? {}
+            : {
+                ...styles.getTarget('textHover'),
+                ...borderStyles.hover
+              }
+        )
       }}
       {...elementProps}
     >

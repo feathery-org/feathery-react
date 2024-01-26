@@ -9,6 +9,7 @@ import DateSelectorStyles from './styles';
 import { bootstrapStyles } from '../../styles';
 import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';
+import { hoverStylesGuard } from '../../../utils/browser';
 
 export function formatDateString(date: any, chooseTime: boolean) {
   if (!date) return '';
@@ -123,12 +124,14 @@ function DateSelectorField({
           width: '100%',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          '&:hover': disabled
-            ? {}
-            : {
-                ...responsiveStyles.getTarget('hover'),
-                ...borderStyles.hover
-              },
+          '&:hover': hoverStylesGuard(
+            disabled
+              ? {}
+              : {
+                  ...responsiveStyles.getTarget('hover'),
+                  ...borderStyles.hover
+                }
+          ),
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { isNum } from '../../utils/primitives';
 import { useHotkeys } from 'react-hotkeys-hook';
 import useBorder from '../components/useBorder';
+import { hoverStylesGuard } from '../../utils/browser';
 
 function SingleOtpInput({
   index,
@@ -90,12 +91,14 @@ function SingleOtpInput({
         marginLeft: '8px',
         ...responsiveStyles.getTarget('sub-fc'),
         ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-        '&:hover': disabled
-          ? {}
-          : {
-              ...responsiveStyles.getTarget('hover'),
-              ...borderStyles.hover
-            },
+        '&:hover': hoverStylesGuard(
+          disabled
+            ? {}
+            : {
+                ...responsiveStyles.getTarget('hover'),
+                ...borderStyles.hover
+              }
+        ),
         '&&': focus
           ? {
               ...responsiveStyles.getTarget('active'),
