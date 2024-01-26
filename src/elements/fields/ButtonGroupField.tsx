@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { imgMaxSizeStyles, noTextSelectStyles } from '../styles';
 import useBorder from '../components/useBorder';
 import { FORM_Z_INDEX } from '../../utils/styles';
+import { hoverStylesGuard } from '../../utils/browser';
 
 function ButtonGroupField({
   element,
@@ -67,13 +68,14 @@ function ButtonGroupField({
                 boxSizing: 'border-box',
                 cursor: 'pointer',
                 ...responsiveStyles.getTarget('field'),
-                '&:hover':
+                '&:hover': hoverStylesGuard(
                   editMode || disabled
                     ? {}
                     : {
                         ...responsiveStyles.getTarget('hover'),
                         ...borderStyles.hover
-                      },
+                      }
+                ),
                 '&&': selectedOptMap[opt]
                   ? {
                       ...responsiveStyles.getTarget('active'),

@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { hoverStylesGuard } from '../../utils/browser';
 
 // Draws a checkmark, similar in dimensions to the default Chrome checkbox, in CSS
 const checkmarkClipPath =
@@ -208,16 +209,18 @@ export const composeCheckableInputStyle = (
     outline: 'none',
     borderRadius: isRadio ? '50%' : null, // Force radio buttons to be round
     ...styles.getTarget('checkbox'),
-    '&:hover': noHover ? {} : styles.getTarget('checkboxHover'),
+    '&:hover': hoverStylesGuard(
+      noHover ? {} : styles.getTarget('checkboxHover')
+    ),
     '&::before': {
       content: "''",
       transform: 'scale(0)',
       ...styles.getTarget('checkboxCheckmark')
     },
-    '&:hover::before': {
+    '&:hover::before': hoverStylesGuard({
       ...styles.getTarget('checkboxCheckmark'),
       ...styles.getTarget('checkboxCheckmarkHover')
-    },
+    }),
     '&:checked': {
       ...styles.getTarget('checkboxSelected')
     },

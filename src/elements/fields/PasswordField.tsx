@@ -6,6 +6,7 @@ import { bootstrapStyles } from '../styles';
 import useBorder from '../components/useBorder';
 import BorderlessEyeIcon from '../components/icons/BorderlessEyeIcon';
 import { FORM_Z_INDEX } from '../../utils/styles';
+import { hoverStylesGuard } from '../../utils/browser';
 
 function PasswordField({
   element,
@@ -50,12 +51,14 @@ function PasswordField({
           whiteSpace: 'nowrap',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          '&:hover': disabled
-            ? {}
-            : {
-                ...responsiveStyles.getTarget('hover'),
-                ...borderStyles.hover
-              }
+          '&:hover': hoverStylesGuard(
+            disabled
+              ? {}
+              : {
+                  ...responsiveStyles.getTarget('hover'),
+                  ...borderStyles.hover
+                }
+          )
         }}
       >
         <input

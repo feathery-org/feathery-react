@@ -14,6 +14,11 @@ export function featheryWindow() {
   return runningInClient() ? window : ({} as any);
 }
 
+export const isHoverDevice = () =>
+  featheryWindow().matchMedia('(hover: hover)').matches;
+export const hoverStylesGuard = (styles: any) =>
+  isHoverDevice() ? styles : {};
+
 /**
  * @param key string corresponding to cookie name
  * @returns cookie value, or undefined if not found

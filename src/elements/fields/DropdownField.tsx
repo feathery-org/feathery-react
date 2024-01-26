@@ -6,6 +6,7 @@ import useBorder from '../components/useBorder';
 import countryData from '../components/data/countries';
 import { getStateOptions, hasState } from '../components/data/states';
 import { Global, css } from '@emotion/react';
+import { hoverStylesGuard } from '../../utils/browser';
 
 export default function DropdownField({
   element,
@@ -99,12 +100,14 @@ export default function DropdownField({
           whiteSpace: 'nowrap',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          '&:hover': disabled
-            ? {}
-            : {
-                ...responsiveStyles.getTarget('hover'),
-                ...borderStyles.hover
-              },
+          '&:hover': hoverStylesGuard(
+            disabled
+              ? {}
+              : {
+                  ...responsiveStyles.getTarget('hover'),
+                  ...borderStyles.hover
+                }
+          ),
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),

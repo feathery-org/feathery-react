@@ -11,7 +11,7 @@ import { isNum } from '../../../utils/primitives';
 import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
-import { featheryDoc } from '../../../utils/browser';
+import { featheryDoc, hoverStylesGuard } from '../../../utils/browser';
 
 const DEFAULT_COUNTRY = 'US';
 
@@ -176,12 +176,14 @@ function PhoneField({
           position: 'relative',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          '&:hover': disabled
-            ? {}
-            : {
-                ...responsiveStyles.getTarget('hover'),
-                ...borderStyles.hover
-              },
+          '&:hover': hoverStylesGuard(
+            disabled
+              ? {}
+              : {
+                  ...responsiveStyles.getTarget('hover'),
+                  ...borderStyles.hover
+                }
+          ),
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),
@@ -201,7 +203,7 @@ function PhoneField({
             padding: '0 6px',
             position: 'relative',
             ...responsiveStyles.getTarget('fieldToggle'),
-            '&:hover': { backgroundColor: '#e6e6e633' }
+            '&:hover': hoverStylesGuard({ backgroundColor: '#e6e6e633' })
           }}
           ref={triggerRef}
           onClick={() => setShow(!show)}
