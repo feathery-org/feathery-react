@@ -553,11 +553,12 @@ export default class Client {
       method: 'POST',
       body: JSON.stringify(data)
     };
+
+    if (promise) this.eventQueue = this.eventQueue.then(() => promise);
     // no events for draft
-    promise = promise || Promise.resolve();
     if (!this.draft)
       this.eventQueue = this.eventQueue.then(() => this._fetch(url, options));
-    return promise.then(() => this.eventQueue);
+    return this.eventQueue;
   }
 
   // Logic custom APIs

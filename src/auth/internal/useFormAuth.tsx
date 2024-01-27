@@ -41,8 +41,7 @@ const useFormAuth = ({
         // This is only guaranteed to happen for OAuth - both magic link & SMS have potential to set completed via goToNewStep
         client.registerEvent({
           step_key: initialStep,
-          event: 'complete',
-          debug: 'auth complete'
+          event: 'complete'
         });
         const redirect = initState.redirectCallbacks[_internalId];
         if (redirect) redirect();
