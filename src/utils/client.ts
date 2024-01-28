@@ -83,6 +83,7 @@ export default class Client {
   ignoreNetworkErrors: any; // this should be a ref
   draft: boolean;
   bypassCDN: boolean;
+  eventQueue: Promise<any>;
   constructor(
     formKey = '',
     ignoreNetworkErrors?: any,
@@ -93,6 +94,7 @@ export default class Client {
     this.ignoreNetworkErrors = ignoreNetworkErrors;
     this.draft = draft;
     this.bypassCDN = bypassCDN;
+    this.eventQueue = Promise.resolve();
   }
 
   async _checkResponseSuccess(response: any) {
@@ -551,9 +553,12 @@ export default class Client {
       method: 'POST',
       body: JSON.stringify(data)
     };
+
+    if (promise) this.eventQueue = this.eventQueue.then(() => promise);
     // no events for draft
-    promise = promise || Promise.resolve();
-    return promise.then(() => !this.draft && this._fetch(url, options));
+    if (!this.draft)
+      this.eventQueue = this.eventQueue.then(() => this._fetch(url, options));
+    return this.eventQueue;
   }
 
   // Logic custom APIs
