@@ -50,7 +50,7 @@ function QRScanner({
       }
 
       const onSuccess = (decodedText: string) => {
-        if (editMode) return;
+        if (editMode || !decodedText) return;
         if (decodedText !== fieldVal) onChange(decodedText);
       };
       scanner.render(onSuccess);
