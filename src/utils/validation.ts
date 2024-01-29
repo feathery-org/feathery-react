@@ -210,8 +210,11 @@ const validators = {
 };
 
 function isFieldValueEmpty(value: any, servar: any) {
-  if (ARRAY_FIELD_TYPES.includes(servar.type))
-    return !value || value.length === 0;
+  if (ARRAY_FIELD_TYPES.includes(servar.type)) {
+    if (!value || value.length === 0) return true;
+    // If 'other' is selected for checkbox group, make sure it has a value
+    return servar.type === 'multiselect' && value.some((val: any) => !val);
+  }
 
   let noVal;
   switch (servar.type) {

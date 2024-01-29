@@ -43,11 +43,15 @@ function CheckboxGroupField({
 
   const labels = servar.metadata.option_labels;
   const tooltips = servar.metadata.option_tooltips ?? [];
-  const otherDisabled =
-    disabled ||
-    (servar.max_length &&
-      servar.max_length <= fieldVal.length &&
-      !otherChecked);
+
+  const isOptionDisabled = (checked: boolean) => {
+    return (
+      disabled ||
+      (servar.max_length && servar.max_length <= fieldVal.length && !checked)
+    );
+  };
+  const otherDisabled = isOptionDisabled(otherChecked);
+  const otherTextDisabled = !otherChecked || otherDisabled;
 
   return (
     <div
@@ -63,11 +67,7 @@ function CheckboxGroupField({
       {servar.metadata.options.map((opt: any, i: number) => {
         const optionLabel = labels && labels[i] ? labels[i] : opt;
         const checked = fieldVal.includes(opt);
-        const optionDisabled =
-          disabled ||
-          (servar.max_length &&
-            servar.max_length <= fieldVal.length &&
-            !checked);
+        const optionDisabled = isOptionDisabled(checked);
         return (
           <div
             key={`${servar.key}-${i}`}
@@ -152,7 +152,9 @@ function CheckboxGroupField({
               paddingLeft: '0.4rem',
               flexGrow: 1,
               ...responsiveStyles.getTarget('field'),
-              ...(otherDisabled ? responsiveStyles.getTarget('disabled') : {})
+              ...(otherTextDisabled
+                ? responsiveStyles.getTarget('disabled')
+                : {})
             }}
             id={servar.key}
             value={otherVal || ''}
@@ -160,10 +162,8 @@ function CheckboxGroupField({
             onKeyDown={(e: any) => {
               if (e.key === 'Enter') onEnter(e);
             }}
-            maxLength={servar.max_length}
-            minLength={servar.min_length}
             required={otherChecked}
-            disabled={otherDisabled || !otherChecked}
+            disabled={otherTextDisabled}
           />
           <InlineTooltip
             id={`${element.id}-`}
