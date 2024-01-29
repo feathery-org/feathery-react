@@ -1712,7 +1712,12 @@ function Form({
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
         if (action.quik_documents)
           await client.quikDocuments(action.quik_json_field_key);
-        openTab(`https://document.feathery.io/to/${initState._internalUserId}`);
+        // waiting 2 seconds for documents to generate before redirect
+        setTimeout(() => {
+          openTab(
+            `https://document.feathery.io/to/${initState._internalUserId}`
+          );
+        }, 2000);
       } else if (type === ACTION_STORE_FIELD) {
         let val;
         if (action.custom_store_value_type === 'field') {
