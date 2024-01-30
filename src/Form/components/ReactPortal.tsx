@@ -15,7 +15,7 @@ export default function ReactPortal({
     if (!root) {
       root = featheryDoc().createElement('div');
       root.style.cssText =
-        'position:fixed;z-index:10;height:100vh;width:100vw;border-radius:10px;top:0;left:0;overflow-y:auto;display:flex;background-color:rgba(0, 0, 0, 0.4);backdrop-filter:blur(2px);';
+        'position:fixed;z-index:10;height:100vh;width:100vw;top:0;left:0;overflow-y:auto;display:flex;background-color:rgba(0, 0, 0, 0.4);backdrop-filter:blur(2px);';
       root.classList.add('feathery-modal-root');
       root.addEventListener('click', (e: any) => {
         if (e.target === root && options.onHide) options.onHide();
