@@ -17,7 +17,7 @@ import {
 import { loadPhoneValidator } from './validation';
 import { initializeIntegrations } from '../integrations/utils';
 import { loadLottieLight } from '../elements/components/Lottie';
-import { featheryDoc } from './browser';
+import { featheryDoc, featheryWindow } from './browser';
 import { authState } from '../auth/LoginForm';
 import { parseError } from './error';
 import { loadQRScanner } from '../elements/fields/QRScanner';
@@ -554,10 +554,29 @@ export default class Client {
       body: JSON.stringify(data)
     };
 
+    // Ensure events complete before user exits page
+    const handleUnload = promise || !this.draft;
+    if (handleUnload)
+      this.eventQueue = this.eventQueue.then(() =>
+        featheryWindow().addEventListener(
+          'beforeunload',
+          beforeUnloadEventHandler
+        )
+      );
+
     if (promise) this.eventQueue = this.eventQueue.then(() => promise);
     // no events for draft
     if (!this.draft)
       this.eventQueue = this.eventQueue.then(() => this._fetch(url, options));
+
+    if (handleUnload)
+      this.eventQueue = this.eventQueue.then(() =>
+        featheryWindow().removeEventListener(
+          'beforeunload',
+          beforeUnloadEventHandler
+        )
+      );
+
     return this.eventQueue;
   }
 
@@ -892,3 +911,11 @@ export default class Client {
     });
   }
 }
+
+const beforeUnloadEventHandler = (event: any) => {
+  // Recommended
+  event.preventDefault();
+
+  // Included for legacy support, e.g. Chrome/Edge < 119
+  event.returnValue = true;
+};
