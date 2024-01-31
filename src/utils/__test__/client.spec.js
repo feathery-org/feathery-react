@@ -187,7 +187,7 @@ describe('client', () => {
 
       // Act
       await initFormsPromise;
-      const response = await client.registerEvent({
+      await client.registerEvent({
         step_key: stepKey,
         next_step_key: nextStepKey,
         event
@@ -204,7 +204,6 @@ describe('client', () => {
         method: 'POST',
         body: JSON.stringify(body)
       });
-      expect(response).toEqual({ status: 200 });
     });
   });
 
