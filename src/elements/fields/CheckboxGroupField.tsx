@@ -92,7 +92,8 @@ function CheckboxGroupField({
                 ...styles.getTarget('checkboxGroup'),
                 ...(optionDisabled
                   ? responsiveStyles.getTarget('disabled')
-                  : {})
+                  : {}),
+                '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
               }}
               disabled={optionDisabled}
               aria-label={element.properties.aria_label}
@@ -133,7 +134,8 @@ function CheckboxGroupField({
             css={{
               ...composeCheckableInputStyle(styles, otherDisabled),
               ...styles.getTarget('checkboxGroup'),
-              ...(otherDisabled ? responsiveStyles.getTarget('disabled') : {})
+              ...(otherDisabled ? responsiveStyles.getTarget('disabled') : {}),
+              '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
             }}
           />
           <label

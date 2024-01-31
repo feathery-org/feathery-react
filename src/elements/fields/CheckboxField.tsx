@@ -268,7 +268,8 @@ function CheckboxField({
         css={{
           ...composeCheckableInputStyle(styles, disabled),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          marginTop: '4px'
+          marginTop: '4px',
+          '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
         }}
       />
       {fieldLabel}

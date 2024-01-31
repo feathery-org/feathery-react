@@ -88,7 +88,8 @@ function RadioButtonGroupField({
               css={{
                 ...composeCheckableInputStyle(styles, disabled, true),
                 ...styles.getTarget('radioGroup'),
-                ...(disabled ? responsiveStyles.getTarget('disabled') : {})
+                ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
+                '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
               }}
             />
             <label
