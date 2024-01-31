@@ -51,19 +51,28 @@ function TextNode({
   cursor,
   onClick = () => {},
   fontStyles,
-  text
+  text,
+  link,
+  editMode
 }: any) {
-  return (
-    <span
+  const styles = {
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'anywhere',
+    cursor,
+    ...fontStyles
+  };
+  return link && !editMode ? (
+    <a
       data-index={index}
-      css={{
-        whiteSpace: 'pre-wrap',
-        overflowWrap: 'anywhere',
-        cursor,
-        ...fontStyles
-      }}
-      onClick={onClick}
+      css={styles}
+      href={link}
+      target='_blank'
+      rel='noreferrer'
     >
+      {text}
+    </a>
+  ) : (
+    <span data-index={index} css={styles} onClick={onClick}>
       {text}
     </span>
   );
@@ -143,6 +152,7 @@ function TextNodes({
               element.properties?.text_formatted[0]?.attributes ?? {}
             )}
             text={textFromData}
+            editMode={editMode}
           />
         ) : (
           delta
@@ -151,13 +161,10 @@ function TextNodes({
               const attrs = op.attributes || {};
               let onClick = () => {};
               let cursor = 'inherit';
+              let link = '';
               if (!editMode && !disabled) {
                 if (attrs.font_link) {
-                  const link = replaceTextVariables(
-                    attrs.font_link,
-                    element.repeat
-                  );
-                  onClick = () => openTab(link);
+                  link = replaceTextVariables(attrs.font_link, element.repeat);
                   cursor = 'pointer';
                 } else if (
                   attrs.fullSpan ||
@@ -180,6 +187,8 @@ function TextNodes({
                   fontStyles={responsiveStyles.getRichFontStyles(attrs)}
                   onClick={onClick}
                   text={text}
+                  link={link}
+                  editMode={editMode}
                 />
               );
             })
