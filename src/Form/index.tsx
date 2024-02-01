@@ -1128,13 +1128,11 @@ function Form({
       return { key, [(val as any).type]: newVal };
     });
 
-    const [stepPromise, hasFiles] = client.submitStep(
+    const stepPromise = client.submitStep(
       featheryFields,
       activeStep.key,
       hasNext
     );
-    // Block on file upload to ensure successful upload and integration trigger
-    if (hasFiles) await stepPromise;
 
     const fieldData: Record<string, any> = {};
     if (integrations?.segment?.metadata.track_fields)
