@@ -41,7 +41,8 @@ import {
   saveInitialValuesAndUrlParams,
   httpHelpers,
   FieldStyles,
-  updateStepFieldStyles
+  updateStepFieldStyles,
+  isStoreFieldValueAction
 } from '../utils/formHelperFunctions';
 import {
   getContainerById,
@@ -1119,7 +1120,6 @@ function Form({
       if (invalid) return;
     }
 
-    const hiddenPromise = submitStepHiddenFields();
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       let newVal = (val as any).value;
       newVal = Array.isArray(newVal)
@@ -1128,11 +1128,7 @@ function Form({
       return { key, [(val as any).type]: newVal };
     });
 
-    const stepPromise = client.submitStep(
-      featheryFields,
-      activeStep.key,
-      hasNext
-    );
+    const stepPromise = client.submitStep(featheryFields, activeStep, hasNext);
 
     const fieldData: Record<string, any> = {};
     if (integrations?.segment?.metadata.track_fields)
@@ -1155,27 +1151,7 @@ function Form({
       fieldData
     );
 
-    return [hiddenPromise, stepPromise];
-  };
-
-  const isStoreFieldValueAction = (el: any) =>
-    (el.properties?.actions ?? []).some(
-      (action: any) => action.type === ACTION_STORE_FIELD
-    );
-
-  const submitStepHiddenFields = () => {
-    const items = [
-      ...activeStep.buttons.filter(isStoreFieldValueAction),
-      ...activeStep.subgrids.filter(isStoreFieldValueAction)
-    ];
-    const hiddenFields: Record<string, any> = {};
-    items.forEach(({ properties }: any) => {
-      const fieldKey = properties.custom_store_field_key;
-      const value = fieldValues[fieldKey];
-      // need to include value === '' so that we can clear out hidden fields
-      if (value !== undefined) hiddenFields[fieldKey] = value;
-    });
-    return client.submitCustom(hiddenFields);
+    return [stepPromise];
   };
 
   // usePayments (Stripe)
@@ -1263,11 +1239,7 @@ function Form({
     return true;
   }
 
-  async function goToNewStep({
-    metadata,
-    submitPromise = null,
-    submitData = false
-  }: any) {
+  async function goToNewStep({ metadata, submitData = false }: any) {
     let eventData: Record<string, any> = {
       step_key: activeStep.key,
       event: submitData ? 'complete' : 'skip'
@@ -1283,7 +1255,7 @@ function Form({
     if (!redirectKey) {
       if (explicitNav) {
         eventData.completed = true;
-        await client.registerEvent(eventData, submitPromise).then(() => {
+        await client.registerEvent(eventData).then(() => {
           setFinished(true);
           // Need to rerender when the session is marked complete so
           // LoginForm can render children
@@ -1304,7 +1276,7 @@ function Form({
           await handleFormComplete();
         }
       }
-      client.registerEvent(eventData, submitPromise);
+      client.registerEvent(eventData);
       updateBackNavMap({ [redirectKey]: activeStep.key });
       setShouldScrollToTop(explicitNav);
 
@@ -1499,7 +1471,7 @@ function Form({
         elementClicks[id] = false;
         return;
       }
-      submitPromise = Promise.all(newPromise);
+      submitPromise = newPromise[0];
     }
 
     // Adjust action order to prioritize certain actions and
@@ -1584,7 +1556,7 @@ function Form({
               event: submit ? 'complete' : 'skip',
               completed: true
             };
-            client.registerEvent(eventData, submitPromise).then(() => {
+            client.registerEvent(eventData).then(() => {
               location.href = url;
             });
           }
@@ -1654,7 +1626,6 @@ function Form({
       else if (type === ACTION_NEXT) {
         await goToNewStep({
           metadata,
-          submitPromise,
           submitData: submit
         });
       } else if (type === ACTION_BACK) await goToPreviousStep();

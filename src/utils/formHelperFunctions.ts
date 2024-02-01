@@ -13,7 +13,8 @@ import throttle from 'lodash.throttle';
 import {
   ACTION_NEXT,
   ACTION_URL,
-  ACTION_EXECUTION_ORDER
+  ACTION_EXECUTION_ORDER,
+  ACTION_STORE_FIELD
 } from './elementActions';
 import { featheryWindow } from './browser';
 import Client from '../utils/client';
@@ -129,6 +130,12 @@ export function isValidFieldIdentifier(str: string) {
     identifierRegex.test(str) &&
     !isRuntimeReservedWord(str) &&
     !isJsReservedWord(str)
+  );
+}
+
+export function isStoreFieldValueAction(el: any) {
+  (el.properties?.actions ?? []).some(
+    (action: any) => action.type === ACTION_STORE_FIELD
   );
 }
 

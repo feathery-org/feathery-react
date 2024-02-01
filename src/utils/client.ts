@@ -12,6 +12,7 @@ import { encodeGetParams } from './primitives';
 import {
   getABVariant,
   getDefaultFormFieldValue,
+  isStoreFieldValueAction,
   updateSessionValues
 } from './formHelperFunctions';
 import { loadPhoneValidator } from './validation';
@@ -153,6 +154,8 @@ export default class Client {
   }
 
   _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
+    if (servars.length === 0) return Promise.resolve();
+
     const { userId, collaboratorId } = initInfo();
     const url = `${API_URL}panel/step/submit/v3/`;
     const data: Record<string, any> = {
@@ -517,21 +520,40 @@ export default class Client {
   }
 
   // servars = [{key: <servarKey>, <type>: <value>}]
-  submitStep(servars: any, stepKey: string, hasNext: boolean) {
-    if (this.draft || this.noSave || servars.length === 0)
-      return Promise.resolve();
+  submitStep(servars: any, step: any, hasNext: boolean) {
+    if (this.draft || this.noSave) return Promise.resolve();
+
+    const items = [
+      ...step.buttons.filter(isStoreFieldValueAction),
+      ...step.subgrids.filter(isStoreFieldValueAction)
+    ];
+    const hiddenFields: Record<string, any> = {};
+    items.forEach(({ properties }: any) => {
+      const fieldKey = properties.custom_store_field_key;
+      const value = fieldValues[fieldKey];
+      // need to include value === '' so that we can clear out hidden fields
+      if (value !== undefined) hiddenFields[fieldKey] = value;
+    });
 
     const isFileServar = (servar: any) =>
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    return Promise.all([
-      this._submitJSONData(jsonServars, stepKey, hasNext),
-      ...fileServars.map((servar: any) => this._submitFileData(servar, stepKey))
-    ]);
+    this.eventQueue = this.eventQueue.then(() =>
+      wrapUnload(() =>
+        Promise.all([
+          this.submitCustom(hiddenFields),
+          this._submitJSONData(jsonServars, step.key, hasNext),
+          ...fileServars.map((servar: any) =>
+            this._submitFileData(servar, step.key)
+          )
+        ])
+      )
+    );
+    return this.eventQueue;
   }
 
-  async registerEvent(eventData: any, promise: any = null) {
+  async registerEvent(eventData: any) {
     await initFormsPromise;
     const { userId, collaboratorId } = initInfo();
 
@@ -549,27 +571,12 @@ export default class Client {
     };
 
     // Ensure events complete before user exits page
-    const handleUnload = promise || !this.draft;
-    if (handleUnload)
-      this.eventQueue = this.eventQueue.then(() =>
-        featheryWindow().addEventListener(
-          'beforeunload',
-          beforeUnloadEventHandler
-        )
-      );
-
-    if (promise) this.eventQueue = this.eventQueue.then(() => promise);
-    // no events for draft
-    if (!this.draft)
-      this.eventQueue = this.eventQueue.then(() => this._fetch(url, options));
-
-    if (handleUnload)
-      this.eventQueue = this.eventQueue.then(() =>
-        featheryWindow().removeEventListener(
-          'beforeunload',
-          beforeUnloadEventHandler
-        )
-      );
+    this.eventQueue = this.eventQueue.then(() =>
+      wrapUnload(async () => {
+        // no events for draft
+        return this.draft ? null : await this._fetch(url, options);
+      })
+    );
 
     return this.eventQueue;
   }
@@ -904,6 +911,19 @@ export default class Client {
       }
     });
   }
+}
+
+async function wrapUnload(func: () => any) {
+  featheryWindow().addEventListener('beforeunload', beforeUnloadEventHandler);
+
+  const res = await func();
+
+  featheryWindow().removeEventListener(
+    'beforeunload',
+    beforeUnloadEventHandler
+  );
+
+  return res;
 }
 
 const beforeUnloadEventHandler = (event: any) => {
