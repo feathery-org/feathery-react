@@ -311,6 +311,11 @@ export default class Client {
           if (needQRScanner) loadQRScanner();
         }
       });
+      step.images.forEach((image: any) => {
+        // Preload images for better performance
+        const url = image.properties.source_image;
+        if (url) new Image().src = url;
+      });
     });
   }
 
