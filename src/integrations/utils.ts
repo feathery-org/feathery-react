@@ -26,6 +26,7 @@ import {
 import { fieldValues } from '../utils/init';
 import { installPersona } from './persona';
 import { authState } from '../auth/LoginForm';
+import { installTrustedForm } from './trustedform';
 
 const IMPORTED_URLS = new Set();
 
@@ -91,7 +92,8 @@ export async function initializeIntegrations(
     installMixpanel(integs.mixpanel),
     installIntercom(integs['intercom-embedded']),
     installRudderStack(integs.rudderstack),
-    installPersona(integs.persona)
+    installPersona(integs.persona),
+    installTrustedForm(integs.trustedform, featheryClient.formKey)
   ]);
 
   const gtm = integs['google-tag-manager'];
