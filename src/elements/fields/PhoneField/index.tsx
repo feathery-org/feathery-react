@@ -86,7 +86,7 @@ function PhoneField({
 
   useEffect(() => {
     const input = inputRef.current;
-    if (input) input.setSelectionRange(cursor, cursor);
+    if (input && cursor !== null) input.setSelectionRange(cursor, cursor);
   }, [cursorChange]);
 
   useEffect(() => {
