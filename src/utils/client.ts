@@ -544,7 +544,7 @@ export default class Client {
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    return this.addToEventQueue(
+    return this.addToEventQueue(() =>
       Promise.all([
         this.submitCustom(hiddenFields),
         this._submitJSONData(jsonServars, step.key, hasNext),
@@ -573,8 +573,8 @@ export default class Client {
     };
 
     // Ensure events complete before user exits page
-    const promise = this.draft ? null : this._fetch(url, options);
-    return await this.addToEventQueue(promise, sequential);
+    const promiseFunc = this.draft ? null : () => this._fetch(url, options);
+    return await this.addToEventQueue(promiseFunc, sequential);
   }
 
   // Logic custom APIs
@@ -908,23 +908,23 @@ export default class Client {
     });
   }
 
-  addToEventQueue(promise: any, sequential = false) {
-    if (promise) {
-      const wrapped = wrapUnload(promise);
-      if (sequential) this.eventQueue = this.eventQueue.then(() => wrapped);
-      else this.eventQueue = Promise.all([this.eventQueue, wrapped]);
+  addToEventQueue(promiseFunc: any, sequential = false) {
+    if (promiseFunc) {
+      const wrapped = () => wrapUnload(promiseFunc);
+      if (sequential) this.eventQueue = this.eventQueue.then(() => wrapped());
+      else this.eventQueue = Promise.all([this.eventQueue, wrapped()]);
     }
     return this.eventQueue;
   }
 }
 
 let unloadCounter = 0;
-async function wrapUnload(promise: any) {
+async function wrapUnload(promiseFunc: any) {
   if (unloadCounter === 0)
     featheryWindow().addEventListener('beforeunload', beforeUnloadEventHandler);
   unloadCounter++;
 
-  const res = await promise;
+  const res = await promiseFunc();
 
   unloadCounter--;
   if (unloadCounter === 0)
