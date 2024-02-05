@@ -24,6 +24,7 @@ import {
 } from './utils';
 import { getVisibleElements } from '../../../utils/hideAndRepeats';
 import debounce from 'lodash.debounce';
+import { findCountryByID } from '../../../elements/components/data/countries';
 
 const MAP_FIELD_TYPES = new Set([
   'gmap_line_1',
@@ -378,7 +379,11 @@ const Element = ({ node: el, form, flags }: any) => {
             // Hacky patch for repeating country fields
             // TODO: fix
             if (Array.isArray(value)) value = value[0];
-            countryCode = value ?? '';
+            if (value) {
+              if (servar.metadata.store_abbreviation) countryCode = value;
+              else
+                countryCode = findCountryByID(value, 'name')?.countryCode ?? '';
+            } else countryCode = '';
           }
         }
         return (

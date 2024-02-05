@@ -1,4 +1,4 @@
-export default [
+const countryData = [
   {
     phoneCode: '1',
     flag: '\ud83c\uddfa\ud83c\uddf8',
@@ -1471,6 +1471,8 @@ export default [
   }
 ];
 
+export default countryData;
+
 // https://firebase.google.com/support/faq/#phone-auth-countries
 export const firebaseSMSCountries = new Set([
   'AD',
@@ -1667,3 +1669,8 @@ export const firebaseSMSCountries = new Set([
   'ZM',
   'ZW'
 ]);
+
+export function findCountryByID(id: string, idType = 'code') {
+  const key = idType === 'code' ? 'countryCode' : 'countryName';
+  return countryData.find((country) => country[key] === id);
+}

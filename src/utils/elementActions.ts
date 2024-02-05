@@ -1,5 +1,4 @@
 import { ContextOnAction, ContextOnChange, ContextOnView } from '../types/Form';
-import internalState from './internalState';
 
 export const ACTION_ADD_REPEATED_ROW = 'add_repeated_row';
 export const ACTION_BACK = 'back';

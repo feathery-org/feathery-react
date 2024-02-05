@@ -21,6 +21,9 @@ import Client from '../utils/client';
 import { isObjectEmpty } from './primitives';
 import Field from './api/Field';
 import { formatDateString } from '../elements/fields/DateSelectorField';
+import countryData, {
+  findCountryByID
+} from '../elements/components/data/countries';
 
 export const ARRAY_FIELD_TYPES = [
   'button_group',
@@ -267,6 +270,7 @@ export function getDefaultFieldValue(field: any) {
     return formatDateString(new Date(), meta.choose_time);
 
   const matrixVal: Record<string, any> = {};
+  let country: string;
   switch (servar.type) {
     case 'checkbox':
       // eslint-disable-next-line camelcase
@@ -288,7 +292,10 @@ export function getDefaultFieldValue(field: any) {
     case 'gmap_state':
       return meta.default_state ?? '';
     case 'gmap_country':
-      return meta.default_country ?? '';
+      country = meta.default_country;
+      if (!country) return '';
+      if (meta.store_abbreviation) return country;
+      else return findCountryByID(country)?.countryName ?? '';
     case 'matrix':
       (meta.questions as any[])
         .filter((question) => question.default_value)
