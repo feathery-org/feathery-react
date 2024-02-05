@@ -13,7 +13,13 @@ import { stringifyWithNull } from '../../../utils/primitives';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { hoverStylesGuard } from '../../../utils/browser';
 
-const MAX_TEXT_FIELD_LENGTH = 512;
+const MAX_FIELD_LENGTHS = {
+  text_field: 1024, // Max storage limit on backend column
+  text_area: 16384, // Max storage limit on backend column
+  email: 1024, // Max storage limit on backend column
+  url: 1024,
+  gmap_zip: 10
+};
 
 function escapeDefinitionChars(str: string | undefined) {
   return (str ?? '')
@@ -50,7 +56,10 @@ function getTextFieldMask(servar: any) {
     if (servar.type === 'gmap_zip' && !allowed) allowed = 'alphaspace';
     const definitionChar = constraintChar(allowed);
 
-    let numOptional = MAX_TEXT_FIELD_LENGTH - prefix.length - suffix.length;
+    let numOptional =
+      MAX_FIELD_LENGTHS[servar.type as keyof typeof MAX_FIELD_LENGTHS] -
+      prefix.length -
+      suffix.length;
     if (servar.max_length)
       numOptional = Math.min(servar.max_length, numOptional);
 
@@ -63,6 +72,9 @@ function getTextFieldMask(servar: any) {
 
 function getMaskProps(servar: any, value: any, showPassword: boolean) {
   let maskProps;
+  const maxLength =
+    servar.max_length ??
+    MAX_FIELD_LENGTHS[servar.type as keyof typeof MAX_FIELD_LENGTHS];
   switch (servar.type) {
     case 'integer_field':
       maskProps = {
@@ -94,7 +106,7 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
     case 'email':
     case 'text_area':
     case 'url':
-      maskProps = { mask: /.+/ };
+      maskProps = { mask: /.+/, maxLength };
       break;
     default:
       maskProps = {
@@ -103,7 +115,7 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
           b: /[a-zA-Z0-9]/,
           c: /[a-zA-Z0-9 ]/
         },
-        maxLength: MAX_TEXT_FIELD_LENGTH
+        maxLength
       };
       break;
   }
@@ -121,7 +133,6 @@ function getInputProps(
   showPassword: boolean
 ) {
   const constraints: Record<string, any> = {
-    maxLength: servar.max_length,
     minLength: servar.min_length
   };
   if (options.length > 0) constraints.autoComplete = 'off';
