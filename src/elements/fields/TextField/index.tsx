@@ -13,13 +13,15 @@ import { stringifyWithNull } from '../../../utils/primitives';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { hoverStylesGuard } from '../../../utils/browser';
 
-const MAX_FIELD_LENGTHS = {
+const MAX_FIELD_LENGTHS: Record<string, number> = {
   text_field: 1024, // Max storage limit on backend column
   text_area: 16384, // Max storage limit on backend column
   email: 1024, // Max storage limit on backend column
   url: 1024,
   gmap_zip: 10
 };
+
+const maxFieldLength = (type: string) => MAX_FIELD_LENGTHS[type] ?? 1024;
 
 function escapeDefinitionChars(str: string | undefined) {
   return (str ?? '')
@@ -57,9 +59,7 @@ function getTextFieldMask(servar: any) {
     const definitionChar = constraintChar(allowed);
 
     let numOptional =
-      MAX_FIELD_LENGTHS[servar.type as keyof typeof MAX_FIELD_LENGTHS] -
-      prefix.length -
-      suffix.length;
+      maxFieldLength(servar.type) - prefix.length - suffix.length;
     if (servar.max_length)
       numOptional = Math.min(servar.max_length, numOptional);
 
@@ -72,9 +72,7 @@ function getTextFieldMask(servar: any) {
 
 function getMaskProps(servar: any, value: any, showPassword: boolean) {
   let maskProps;
-  const maxLength =
-    servar.max_length ??
-    MAX_FIELD_LENGTHS[servar.type as keyof typeof MAX_FIELD_LENGTHS];
+  const maxLength = servar.max_length ?? maxFieldLength(servar.type);
   switch (servar.type) {
     case 'integer_field':
       maskProps = {
