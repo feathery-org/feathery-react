@@ -544,21 +544,18 @@ export default class Client {
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    this.eventQueue = this.eventQueue.then(() =>
-      wrapUnload(() =>
-        Promise.all([
-          this.submitCustom(hiddenFields),
-          this._submitJSONData(jsonServars, step.key, hasNext),
-          ...fileServars.map((servar: any) =>
-            this._submitFileData(servar, step.key)
-          )
-        ])
-      )
+    return this.addToEventQueue(
+      Promise.all([
+        this.submitCustom(hiddenFields),
+        this._submitJSONData(jsonServars, step.key, hasNext),
+        ...fileServars.map((servar: any) =>
+          this._submitFileData(servar, step.key)
+        )
+      ])
     );
-    return this.eventQueue;
   }
 
-  async registerEvent(eventData: any) {
+  async registerEvent(eventData: any, sequential = false) {
     await initFormsPromise;
     const { userId, collaboratorId } = initInfo();
 
@@ -576,14 +573,8 @@ export default class Client {
     };
 
     // Ensure events complete before user exits page
-    this.eventQueue = this.eventQueue.then(() =>
-      wrapUnload(async () => {
-        // no events for draft
-        return this.draft ? null : await this._fetch(url, options);
-      })
-    );
-
-    return this.eventQueue;
+    const promise = this.draft ? null : this._fetch(url, options);
+    return await this.addToEventQueue(promise, sequential);
   }
 
   // Logic custom APIs
@@ -916,17 +907,31 @@ export default class Client {
       }
     });
   }
+
+  addToEventQueue(promise: any, sequential = false) {
+    if (promise) {
+      const wrapped = wrapUnload(promise);
+      if (sequential) this.eventQueue = this.eventQueue.then(() => wrapped);
+      else this.eventQueue = Promise.all([this.eventQueue, wrapped]);
+    }
+    return this.eventQueue;
+  }
 }
 
-async function wrapUnload(func: () => any) {
-  featheryWindow().addEventListener('beforeunload', beforeUnloadEventHandler);
+let unloadCounter = 0;
+async function wrapUnload(promise: any) {
+  if (unloadCounter === 0)
+    featheryWindow().addEventListener('beforeunload', beforeUnloadEventHandler);
+  unloadCounter++;
 
-  const res = await func();
+  const res = await promise;
 
-  featheryWindow().removeEventListener(
-    'beforeunload',
-    beforeUnloadEventHandler
-  );
+  unloadCounter--;
+  if (unloadCounter === 0)
+    featheryWindow().removeEventListener(
+      'beforeunload',
+      beforeUnloadEventHandler
+    );
 
   return res;
 }

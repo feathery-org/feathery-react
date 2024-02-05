@@ -1255,7 +1255,7 @@ function Form({
     if (!redirectKey) {
       if (explicitNav) {
         eventData.completed = true;
-        await client.registerEvent(eventData).then(() => {
+        await client.registerEvent(eventData, true).then(() => {
           setFinished(true);
           // Need to rerender when the session is marked complete so
           // LoginForm can render children
@@ -1276,7 +1276,7 @@ function Form({
           await handleFormComplete();
         }
       }
-      client.registerEvent(eventData);
+      client.registerEvent(eventData, true);
       updateBackNavMap({ [redirectKey]: activeStep.key });
       setShouldScrollToTop(explicitNav);
 
