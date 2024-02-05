@@ -2,13 +2,12 @@ import React, { useMemo } from 'react';
 import { isNum, stringifyWithNull } from '../../utils/primitives';
 import Delta from 'quill-delta';
 import useTextEdit from './useTextEdit';
-import { openTab } from '../../utils/browser';
 import { fieldValues, initInfo } from '../../utils/init';
 import { ACTION_NEXT } from '../../utils/elementActions';
 
 export const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 
-export function replaceTextVariables(text: string, repeat: any) {
+export function replaceTextVariables(text: string, repeat?: any) {
   if (!text) return '';
 
   return text.replace(TEXT_VARIABLE_PATTERN, (pattern: any) => {
