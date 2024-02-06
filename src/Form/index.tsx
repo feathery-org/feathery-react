@@ -60,7 +60,7 @@ import {
   FieldValues,
   updateUserId
 } from '../utils/init';
-import { isEmptyArray, justInsert, justRemove } from '../utils/array';
+import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
 import Client from '../utils/client';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
@@ -80,7 +80,11 @@ import DevNavBar from './components/DevNavBar';
 import FeatherySpinner from '../elements/components/Spinner';
 import CallbackQueue from '../utils/callbackQueue';
 import { featheryWindow, openTab, runningInClient } from '../utils/browser';
-import FormOff from '../elements/components/FormOff';
+import FormOff, {
+  CLOSED,
+  COLLAB_COMPLETED,
+  FILLED_OUT
+} from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
 import Grid from './grid';
@@ -247,10 +251,10 @@ function Form({
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
-    formOff: undefined as undefined | boolean,
     showBrand: false,
     brandPosition: undefined,
     autoscroll: 'top_of_form',
+    formOffReason: '',
     rightToLeft: false,
     allowEdits: true,
     saveUrlParams: false,
@@ -900,7 +904,7 @@ function Form({
               );
             };
           if (res.save_url_params) saveUrlParamsFormSetting = true;
-          setFormSettings(mapFormSettingsResponse(res));
+          setFormSettings(mapFormSettingsResponse(res, formSettings));
           setLogicRules(res.logic_rules);
           trackHashes.current = res.track_hashes;
 
@@ -934,8 +938,14 @@ function Form({
         // @ts-expect-error TS(2345): Argument of type 'Promise<any[]>' is not assignabl... Remove this comment to see the full error message
         .fetchSession(formPromise, true)
         .then(([session, steps]) => {
-          if (!session) {
-            setFormSettings({ ...formSettings, formOff: true });
+          if (!session || session.collaborator?.invalid) {
+            setFormSettings({ ...formSettings, formOffReason: CLOSED });
+            return;
+          } else if (session.collaborator?.completed) {
+            setFormSettings({
+              ...formSettings,
+              formOffReason: COLLAB_COMPLETED
+            });
             return;
           }
 
@@ -1648,13 +1658,18 @@ function Form({
           break;
         }
       } else if (type === ACTION_INVITE_COLLABORATOR) {
-        const val = fieldValues[action.email_field_key] as string;
-        if (!validators.email(val)) {
+        const val = fieldValues[action.email_field_key];
+        const emails = toList(val, true);
+        const invalidEmail = emails.reduce((acc, email) => {
+          if (!validators.email(email)) return true;
+          return acc;
+        }, false);
+        if (invalidEmail) {
           setElementError(`${val} is an invalid email`);
           break;
         }
         try {
-          await client.inviteCollaborator(val, action.template_id);
+          await client.inviteCollaborator(emails, action.template_id);
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
@@ -1831,7 +1846,7 @@ function Form({
 
   const completeState =
     formSettings.completionBehavior === 'show_completed_screen' ? (
-      <FormOff noEdit showCTA={formSettings.showBrand} />
+      <FormOff reason={FILLED_OUT} showCTA={formSettings.showBrand} />
     ) : null;
 
   // If form was completed in a previous session and edits are disabled,
@@ -1853,7 +1868,10 @@ function Form({
   }, [anyFinished]);
 
   // Form is turned off
-  if (formSettings.formOff) return <FormOff showCTA={formSettings.showBrand} />;
+  if (formSettings.formOffReason === CLOSED)
+    return <FormOff showCTA={formSettings.showBrand} />;
+  else if (formSettings.formOffReason === COLLAB_COMPLETED)
+    return <FormOff reason={COLLAB_COMPLETED} showCTA={false} />;
   else if (anyFinished) {
     if (!completeState && initState.isTestEnv)
       console.log('Form has been hidden');

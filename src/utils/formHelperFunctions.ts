@@ -24,6 +24,7 @@ import { formatDateString } from '../elements/fields/DateSelectorField';
 import countryData, {
   findCountryByID
 } from '../elements/components/data/countries';
+import { CLOSED } from '../elements/components/FormOff';
 
 export const ARRAY_FIELD_TYPES = [
   'button_group',
@@ -828,12 +829,12 @@ export function saveInitialValuesAndUrlParams({
   }
 }
 
-export function mapFormSettingsResponse(res: any) {
+export function mapFormSettingsResponse(res: any, formSettings: any) {
   return {
     errorType: res.error_type,
     autocomplete: res.autocomplete ? 'on' : 'off',
     autofocus: res.autofocus,
-    formOff: Boolean(res.formOff),
+    formOffReason: res.formOff ? CLOSED : formSettings.formOffReason,
     allowEdits: res.allow_edits,
     completionBehavior: res.completion_behavior,
     showBrand: Boolean(res.show_brand),
