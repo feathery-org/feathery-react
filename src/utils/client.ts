@@ -386,7 +386,7 @@ export default class Client {
       override: overrideUserId
     };
     if (userId) params.fuser_key = userId;
-    if (collaboratorId) params.collaborator = collaboratorId;
+    if (collaboratorId) params.collaborator_user = collaboratorId;
     if (authState.authId) params.auth_id = authState.authId;
     if (noData) params.no_data = 'true';
     // @ts-expect-error TS(2322): Type 'string' is not assignable to type '{ form_ke... Remove this comment to see the full error message
@@ -642,7 +642,7 @@ export default class Client {
   async verifyCollaborator(email: string) {
     const { userId, collaboratorId } = initInfo();
     const params: Record<string, any> = { fuser_key: userId, email };
-    if (collaboratorId) params.collaborator = collaboratorId;
+    if (collaboratorId) params.collaborator_user = collaboratorId;
     const url = `${API_URL}collaborator/verify/?${encodeGetParams(params)}`;
     return this._fetch(url, {}).then((response) =>
       response ? response.json() : Promise.resolve()
