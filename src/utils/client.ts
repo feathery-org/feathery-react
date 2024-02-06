@@ -84,7 +84,7 @@ export default class Client {
   ignoreNetworkErrors: any; // this should be a ref
   draft: boolean;
   bypassCDN: boolean;
-  eventQueue: Promise<any>;
+  submitQueue: Promise<any>;
   constructor(
     formKey = '',
     ignoreNetworkErrors?: any,
@@ -95,7 +95,7 @@ export default class Client {
     this.ignoreNetworkErrors = ignoreNetworkErrors;
     this.draft = draft;
     this.bypassCDN = bypassCDN;
-    this.eventQueue = Promise.resolve();
+    this.submitQueue = Promise.resolve();
   }
 
   async _checkResponseSuccess(response: any) {
@@ -544,18 +544,19 @@ export default class Client {
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    return this.addToEventQueue(() =>
+    const promiseFunc = () =>
       Promise.all([
         this.submitCustom(hiddenFields),
         this._submitJSONData(jsonServars, step.key, hasNext),
         ...fileServars.map((servar: any) =>
           this._submitFileData(servar, step.key)
         )
-      ])
-    );
+      ]);
+    this.submitQueue = Promise.all([this.submitQueue, wrapUnload(promiseFunc)]);
+    return this.submitQueue;
   }
 
-  async registerEvent(eventData: any, sequential = false) {
+  async registerEvent(eventData: any) {
     await initFormsPromise;
     const { userId, collaboratorId } = initInfo();
 
@@ -572,9 +573,13 @@ export default class Client {
       body: JSON.stringify(data)
     };
 
-    // Ensure events complete before user exits page
-    const promiseFunc = this.draft ? null : () => this._fetch(url, options);
-    return await this.addToEventQueue(promiseFunc, sequential);
+    // Ensure events complete before user exits page. Submit and load event of
+    // next step must happen after the previous step is done submitting
+    return await this.submitQueue.then(() =>
+      wrapUnload(() =>
+        this.draft ? Promise.resolve() : this._fetch(url, options)
+      )
+    );
   }
 
   // Logic custom APIs
@@ -907,19 +912,12 @@ export default class Client {
       }
     });
   }
-
-  addToEventQueue(promiseFunc: any, sequential = false) {
-    if (promiseFunc) {
-      const wrapped = () => wrapUnload(promiseFunc);
-      if (sequential) this.eventQueue = this.eventQueue.then(() => wrapped());
-      else this.eventQueue = Promise.all([this.eventQueue, wrapped()]);
-    }
-    return this.eventQueue;
-  }
 }
 
 let unloadCounter = 0;
 async function wrapUnload(promiseFunc: any) {
+  if (!promiseFunc) return;
+
   if (unloadCounter === 0)
     featheryWindow().addEventListener('beforeunload', beforeUnloadEventHandler);
   unloadCounter++;
