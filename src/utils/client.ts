@@ -404,7 +404,9 @@ export default class Client {
     });
 
     // Turn form off if invalid collaborator for submission
-    if (session.collaborator?.invalid) return [];
+    if (session.collaborator?.invalid || session.collaborator?.completed)
+      // will cause form to be disabled
+      return [{ collaborator: session.collaborator }];
 
     // If tracking disabled or ID overridden, update user id from backend
     if (!noData && session.new_user_id) initState.userId = session.new_user_id;
