@@ -166,7 +166,7 @@ export default class Client {
       __feathery_version: this.version,
       no_complete: noComplete
     };
-    if (collaboratorId) data.collaborator = collaboratorId;
+    if (collaboratorId) data.collaborator_user = collaboratorId;
 
     const options = {
       headers: {
@@ -568,7 +568,7 @@ export default class Client {
       ...eventData,
       ...(userId ? { fuser_key: userId } : {})
     };
-    if (collaboratorId) data.collaborator = collaboratorId;
+    if (collaboratorId) data.collaborator_user = collaboratorId;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
@@ -657,7 +657,7 @@ export default class Client {
       email,
       template_id: templateId
     };
-    if (collaboratorId) data.collaborator = collaboratorId;
+    if (collaboratorId) data.collaborator_user = collaboratorId;
     const url = `${API_URL}collaborator/invite/`;
     return this._fetch(
       url,
