@@ -380,7 +380,7 @@ const Element = ({ node: el, form, flags }: any) => {
             // TODO: fix
             if (Array.isArray(value)) value = value[0];
             if (value) {
-              if (servar.metadata.store_abbreviation) countryCode = value;
+              if (field.servar.metadata.store_abbreviation) countryCode = value;
               else
                 countryCode = findCountryByID(value, 'name')?.countryCode ?? '';
             } else countryCode = '';
