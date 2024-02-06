@@ -97,10 +97,10 @@ function PhoneField({
 
       const ayt = new global.libphonenumber.AsYouType();
       ayt.input(`+${fullNumber}`);
-      const numberObj = ayt.getNumber();
+      const numberObj = ayt.getNumber() ?? '';
+      setCurFullNumber(fullNumber);
+      setRawNumber(fullNumber);
       if (numberObj) {
-        setCurFullNumber(fullNumber);
-        setRawNumber(fullNumber);
         setCurCountryCode(numberObj.country ?? curCountryCode);
       }
     });

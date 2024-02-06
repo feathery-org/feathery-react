@@ -353,7 +353,7 @@ function applyFieldStyles(field: any, styles: any) {
     case 'phone_number':
       styles.addTargets('fieldToggle', 'dropdown');
 
-      styles.applyFontStyles('dropdown');
+      styles.applyFontStyles('dropdown', false, true);
       styles.apply('dropdown', 'background_color', (color: any) => {
         if (color.substring(6).toLowerCase() !== 'ff')
           return { backgroundColor: 'white', color: 'black' };
