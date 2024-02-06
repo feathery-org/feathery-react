@@ -72,7 +72,7 @@ function getTextFieldMask(servar: any) {
 
 function getMaskProps(servar: any, value: any, showPassword: boolean) {
   let maskProps;
-  const maxLength = servar.max_length ?? maxFieldLength(servar.type);
+  let maxLength = servar.max_length ?? maxFieldLength(servar.type);
   switch (servar.type) {
     case 'integer_field':
       maskProps = {
@@ -107,6 +107,7 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
       maskProps = { mask: /.+/, maxLength };
       break;
     default:
+      if (servar.metadata.mask) maxLength = undefined;
       maskProps = {
         mask: getTextFieldMask(servar),
         definitions: {
