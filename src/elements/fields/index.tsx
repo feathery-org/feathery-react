@@ -194,9 +194,15 @@ function applyFieldStyles(field: any, styles: any) {
       styles.apply(
         'field',
         ['button_width', 'button_width_unit', 'content_responsive'],
-        (a: any, b: any, c: boolean) => ({
-          [c ? 'minWidth' : 'width']: `${a}${b}`
-        })
+        (a: any, b: any, c: boolean) => {
+          const metric = `${a}${b}`;
+          if (c) return { minWidth: metric };
+          else
+            return {
+              width: '100%',
+              maxWidth: metric
+            };
+        }
       );
       styles.apply(
         'field',
