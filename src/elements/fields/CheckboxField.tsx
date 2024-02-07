@@ -71,10 +71,19 @@ const applyCheckmarkByFontSize = (
 };
 
 const applyLabelHeightByFontSize = (responsiveStyles: any, target: any) => {
-  responsiveStyles.apply(target, ['font_size'], (fontSize: any) => {
-    const scaledSize = scaleCheckboxSize(fontSize);
-    return { lineHeight: `${scaledSize}px` };
-  });
+  responsiveStyles.apply(
+    target,
+    ['font_size', 'line_height'],
+    (fontSize: any, lineHeight: any) => {
+      if (!lineHeight) lineHeight = scaleCheckboxSize(fontSize);
+      const topOffset = (lineHeight - fontSize) / 2;
+      return {
+        position: 'relative',
+        top: `-${topOffset}px`,
+        lineHeight: `${lineHeight}px`
+      };
+    }
+  );
 };
 
 const applyCheckmark = (
