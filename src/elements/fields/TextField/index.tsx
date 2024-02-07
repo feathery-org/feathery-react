@@ -13,15 +13,15 @@ import { stringifyWithNull } from '../../../utils/primitives';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { hoverStylesGuard } from '../../../utils/browser';
 
+const DEFAULT_LENGTH = 1024; // Default limit on backend
 const MAX_FIELD_LENGTHS: Record<string, number> = {
-  text_field: 1024, // Max storage limit on backend column
   text_area: 16384, // Max storage limit on backend column
-  email: 1024, // Max storage limit on backend column
-  url: 1024,
+  url: 256,
   gmap_zip: 10
 };
 
-const maxFieldLength = (type: string) => MAX_FIELD_LENGTHS[type] ?? 1024;
+const maxFieldLength = (type: string) =>
+  MAX_FIELD_LENGTHS[type] ?? DEFAULT_LENGTH;
 
 function escapeDefinitionChars(str: string | undefined) {
   return (str ?? '')
