@@ -13,7 +13,7 @@ export default function InlineTooltip({
     <OverlayTrigger
       placement='auto'
       flip
-      trigger={['hover', 'click']}
+      trigger={['hover', 'click', 'focus']}
       rootClose
       overlay={
         <Tooltip
