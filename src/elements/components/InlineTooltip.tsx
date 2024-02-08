@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { HelpIcon } from './icons';
 import { FORM_Z_INDEX } from '../../utils/styles';
@@ -9,10 +9,16 @@ export default function InlineTooltip({
   responsiveStyles,
   absolute = true
 }: any) {
+  // Explicitly managing popover state prevents a bug on mobile where
+  // tooltip needs to be pressed twice to show
+  const [show, setShow] = useState(false);
+
   return text ? (
     <OverlayTrigger
       placement='auto'
       flip
+      show={show}
+      onToggle={() => setShow(!show)}
       trigger={['hover', 'click', 'focus']}
       rootClose
       overlay={
