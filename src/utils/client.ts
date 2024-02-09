@@ -910,6 +910,110 @@ export default class Client {
       }
     });
   }
+
+  // Telesign
+  async telesignSilentVerification(phoneNumber: string) {
+    const { userId } = initInfo();
+    const initial_url = `${API_URL}telesign/silent/initial/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        phone_number: phoneNumber,
+        form_key: this.formKey,
+        fuser_key: userId,
+      })
+    };
+    try {
+      const initialResponse = await this._fetch(initial_url, options, false);
+      if (initialResponse) {
+        const { verification, reference_id, status } = await initialResponse.json();
+        if (!status) return status;
+
+        // Kick off process to establish session with carrier fron client side
+        const { verification_url, method, expected_response_code, post_body, query_string_params } = verification;
+        let session_url = verification_url;
+        if (query_string_params) {
+            const queryParams = new URLSearchParams(query_string_params).toString();
+            session_url += `?${queryParams}`;
+        }
+        const session_options : { 
+          method: string; 
+          body?: string 
+        } = { method: method };
+        if (post_body) {
+          session_options.body = JSON.stringify(post_body);
+        }
+        const carrierResponse = await fetch(session_url, session_options);
+        const data = await carrierResponse.json();
+        console.log('carrierResponse data:', data)
+        if (carrierResponse.status !== expected_response_code) return false;
+
+        // If carrier session is successful, proceed with finalizing verification
+        const final_url = `${API_URL}telesign/silent/final/`;
+        const final_options = {
+          headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+          body: JSON.stringify({
+            verification: verification,
+            reference_id: reference_id,
+            form_key: this.formKey,
+            fuser_key: userId,
+          })
+        };
+        const finalResponse = await this._fetch(final_url, final_options, false);
+        if (finalResponse) {
+          const { final_status } = await finalResponse.json();
+          return final_status;
+        }
+        return false;
+      }
+    } catch (e) {
+      throw e;
+    }
+  }
+
+  async telesignVoiceOTP(phoneNumber: string) {
+    const { userId } = initInfo();
+    const url = `${API_URL}telesign/otp/voice/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        phone_number: phoneNumber,
+        form_key: this.formKey,
+        fuser_key: userId,
+      })
+    };
+    try {
+      await this._fetch(url, options, false);
+    } catch (e) {
+      throw e;
+    }
+  }
+
+  async telesignVerifyOTP(otp: string) {
+    const { userId } = initInfo();
+    const url = `${API_URL}telesign/otp/verify/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        otp: otp,
+        form_key: this.formKey,
+        fuser_key: userId,
+      })
+    };
+    try {
+      const response = await this._fetch(url, options, false);
+      if (response) {
+        const { otp_status } = await response.json();
+        return otp_status;
+      }
+    } catch (e) {
+      throw e;
+    }
+  }
 }
 
 const beforeUnloadEventHandler = (event: any) => {
