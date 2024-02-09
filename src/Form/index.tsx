@@ -1283,10 +1283,13 @@ function Form({
         );
         if (complete) {
           eventData.completed = true;
-          await handleFormComplete();
+          await Promise.all([
+            handleFormComplete(),
+            client.registerEvent(eventData)
+          ]);
         }
       }
-      client.registerEvent(eventData);
+      if (!eventData.completed) client.registerEvent(eventData);
       updateBackNavMap({ [redirectKey]: activeStep.key });
       setShouldScrollToTop(explicitNav);
 
