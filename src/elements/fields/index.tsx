@@ -190,6 +190,13 @@ function applyFieldStyles(field: any, styles: any) {
           textAlign: justifyContentTextAlignMap[a]
         })
       );
+      styles.apply(
+        'fc',
+        'horizontal_align',
+        (a: keyof typeof justifyContentTextAlignMap) => ({
+          textAlign: justifyContentTextAlignMap[a]
+        })
+      );
       styles.applyHeight('bc', '', true);
       styles.apply(
         'field',
