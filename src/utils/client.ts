@@ -914,44 +914,44 @@ export default class Client {
   // Telesign
   async telesignSilentVerification(phoneNumber: string) {
     const { userId } = initInfo();
-    const initial_url = `${API_URL}telesign/silent/initial/`;
+    const initialUrl = `${API_URL}telesign/silent/initial/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify({
         phone_number: phoneNumber,
         form_key: this.formKey,
-        fuser_key: userId,
+        fuser_key: userId
       })
     };
     try {
-      const initialResponse = await this._fetch(initial_url, options, false);
+      const initialResponse = await this._fetch(initialUrl, options, false);
       if (initialResponse) {
         const { verification, reference_id, status } = await initialResponse.json();
         if (!status) return status;
 
         // Kick off process to establish session with carrier fron client side
         const { verification_url, method, expected_response_code, post_body, query_string_params } = verification;
-        let session_url = verification_url;
+        let sessionUrl = verification_url;
         if (query_string_params) {
             const queryParams = new URLSearchParams(query_string_params).toString();
-            session_url += `?${queryParams}`;
+            sessionUrl += `?${queryParams}`;
         }
-        const session_options : { 
+        const sessionOptions : { 
           method: string; 
           body?: string 
         } = { method: method };
         if (post_body) {
-          session_options.body = JSON.stringify(post_body);
+          sessionOptions.body = JSON.stringify(post_body);
         }
-        const carrierResponse = await fetch(session_url, session_options);
+        const carrierResponse = await fetch(sessionUrl, sessionOptions);
         const data = await carrierResponse.json();
         console.log('carrierResponse data:', data)
         if (carrierResponse.status !== expected_response_code) return false;
 
         // If carrier session is successful, proceed with finalizing verification
-        const final_url = `${API_URL}telesign/silent/final/`;
-        const final_options = {
+        const finalUrl = `${API_URL}telesign/silent/final/`;
+        const finalOptions = {
           headers: { 'Content-Type': 'application/json' },
           method: 'POST',
           body: JSON.stringify({
@@ -961,7 +961,7 @@ export default class Client {
             fuser_key: userId,
           })
         };
-        const finalResponse = await this._fetch(final_url, final_options, false);
+        const finalResponse = await this._fetch(finalUrl, finalOptions, false);
         if (finalResponse) {
           const { final_status } = await finalResponse.json();
           return final_status;

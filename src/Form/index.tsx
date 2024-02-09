@@ -133,7 +133,7 @@ import {
   ACTION_OPEN_FUSER_ENVELOPES,
   ACTION_TELESIGN_SILENT_VERIFICATION,
   ACTION_TELESIGN_VOICE_OTP,
-  ACTION_TELESIGN_VERIFY_OTP,
+  ACTION_TELESIGN_VERIFY_OTP
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -1741,7 +1741,7 @@ function Form({
 
         const castValue = castVal(field?.servar.type, val);
         const setToDefaultValue =
-          action.toggle &&``
+          action.toggle && 
           JSON.stringify(fieldValues[key]) === JSON.stringify(castValue);
 
         // could be a hidden field
@@ -1752,7 +1752,9 @@ function Form({
         updateFieldValues(newValues, true, false);
         client.submitCustom(newValues);
       } else if (type === ACTION_TELESIGN_SILENT_VERIFICATION) {
-        const phoneNum = fieldValues[action.telesign_target_field_key] as string;
+        const phoneNum = fieldValues[
+          action.telesign_target_field_key
+        ] as string;
         if (validators.phone(phoneNum)) {
           try {
             const silentVeriResult: boolean = await client.telesignSilentVerification(phoneNum);
