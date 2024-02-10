@@ -13,13 +13,18 @@ import throttle from 'lodash.throttle';
 import {
   ACTION_NEXT,
   ACTION_URL,
-  ACTION_EXECUTION_ORDER
+  ACTION_EXECUTION_ORDER,
+  ACTION_STORE_FIELD
 } from './elementActions';
 import { featheryWindow } from './browser';
 import Client from '../utils/client';
 import { isObjectEmpty } from './primitives';
 import Field from './api/Field';
 import { formatDateString } from '../elements/fields/DateSelectorField';
+import countryData, {
+  findCountryByID
+} from '../elements/components/data/countries';
+import { CLOSED } from '../elements/components/FormOff';
 
 export const ARRAY_FIELD_TYPES = [
   'button_group',
@@ -129,6 +134,12 @@ export function isValidFieldIdentifier(str: string) {
     identifierRegex.test(str) &&
     !isRuntimeReservedWord(str) &&
     !isJsReservedWord(str)
+  );
+}
+
+export function isStoreFieldValueAction(el: any) {
+  (el.properties?.actions ?? []).some(
+    (action: any) => action.type === ACTION_STORE_FIELD
   );
 }
 
@@ -260,6 +271,7 @@ export function getDefaultFieldValue(field: any) {
     return formatDateString(new Date(), meta.choose_time);
 
   const matrixVal: Record<string, any> = {};
+  let country: string;
   switch (servar.type) {
     case 'checkbox':
       // eslint-disable-next-line camelcase
@@ -281,7 +293,10 @@ export function getDefaultFieldValue(field: any) {
     case 'gmap_state':
       return meta.default_state ?? '';
     case 'gmap_country':
-      return meta.default_country ?? '';
+      country = meta.default_country;
+      if (!country) return '';
+      if (meta.store_abbreviation) return country;
+      else return findCountryByID(country)?.countryName ?? '';
     case 'matrix':
       (meta.questions as any[])
         .filter((question) => question.default_value)
@@ -814,12 +829,12 @@ export function saveInitialValuesAndUrlParams({
   }
 }
 
-export function mapFormSettingsResponse(res: any) {
+export function mapFormSettingsResponse(res: any, formSettings: any) {
   return {
     errorType: res.error_type,
     autocomplete: res.autocomplete ? 'on' : 'off',
     autofocus: res.autofocus,
-    formOff: Boolean(res.formOff),
+    formOffReason: res.formOff ? CLOSED : formSettings.formOffReason,
     allowEdits: res.allow_edits,
     completionBehavior: res.completion_behavior,
     showBrand: Boolean(res.show_brand),

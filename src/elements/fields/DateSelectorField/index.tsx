@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
@@ -9,6 +9,7 @@ import DateSelectorStyles from './styles';
 import { bootstrapStyles } from '../../styles';
 import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';
+import { hoverStylesGuard } from '../../../utils/browser';
 
 export function formatDateString(date: any, chooseTime: boolean) {
   if (!date) return '';
@@ -51,7 +52,14 @@ function DateSelectorField({
 }: any) {
   const servarMeta = element.servar.metadata;
 
+  const pickerRef = useRef<any>();
   const [internalDate, setInternalDate] = useState('');
+
+  useEffect(() => {
+    if (pickerRef.current !== null) {
+      pickerRef.current.input.inputMode = 'none';
+    }
+  }, [pickerRef]);
 
   useEffect(() => {
     let internalVal: any = '';
@@ -116,12 +124,14 @@ function DateSelectorField({
           width: '100%',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          '&:hover': disabled
-            ? {}
-            : {
-                ...responsiveStyles.getTarget('hover'),
-                ...borderStyles.hover
-              },
+          '&:hover': hoverStylesGuard(
+            disabled
+              ? {}
+              : {
+                  ...responsiveStyles.getTarget('hover'),
+                  ...borderStyles.hover
+                }
+          ),
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),
@@ -163,7 +173,10 @@ function DateSelectorField({
               ? {}
               : { color: 'transparent !important' })
           }}
-          ref={setRef}
+          ref={(ref: any) => {
+            pickerRef.current = ref;
+            setRef(ref);
+          }}
         />
         <Placeholder
           value={value}
@@ -172,7 +185,11 @@ function DateSelectorField({
           inputFocused={focused}
           rightToLeft={rightToLeft}
         />
-        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
+        <InlineTooltip
+          id={element.id}
+          text={element.properties.tooltipText}
+          responsiveStyles={responsiveStyles}
+        />
       </div>
     </div>
   );

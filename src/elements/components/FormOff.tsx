@@ -2,14 +2,20 @@ import React from 'react';
 import { FormClosedIcon } from './icons';
 import { openTab } from '../../utils/browser';
 
+export const FILLED_OUT = 'filled_out';
+export const CLOSED = 'closed';
+export const COLLAB_COMPLETED = 'collab_completed';
+
 export default function FormOff({
   width = 400,
-  noEdit = false,
+  reason = CLOSED,
   showCTA = true
 }) {
-  const message = noEdit
-    ? 'You have successfully filled out the form.'
-    : "This form isn't currently collecting responses.";
+  const messages: any = {
+    [FILLED_OUT]: 'You have successfully filled out the form.',
+    [CLOSED]: "This form isn't currently collecting responses.",
+    [COLLAB_COMPLETED]: 'Your collaboration group has completed this form.'
+  };
   return (
     <div
       css={{
@@ -34,7 +40,7 @@ export default function FormOff({
           margin: '50px 0'
         }}
       >
-        {message}
+        {messages[reason]}
       </div>
       {showCTA && (
         <button

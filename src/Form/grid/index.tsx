@@ -14,6 +14,7 @@ import {
 } from '../../integrations/calendly';
 import { featheryWindow } from '../../utils/browser';
 import { getRepeatedContainers } from '../../utils/repeat';
+import { replaceTextVariables } from '../../elements/components/TextNodes';
 
 const Grid = ({ step, form, viewport }: any) => {
   if (!step || !form.visiblePositions) return null;
@@ -130,7 +131,7 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
           key='iframe-component'
           width='100%'
           height='100%'
-          src={props.iframe_url}
+          src={replaceTextVariables(props.iframe_url)}
           css={{ border: 'none' }}
         />
       );
@@ -140,7 +141,7 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
       children.push(
         <DangerouslySetHTMLContent
           key='custom-html-component'
-          html={props.custom_html}
+          html={replaceTextVariables(props.custom_html)}
           css={children.length === 0 ? { height: '100%', width: '100%' } : {}}
         />
       );

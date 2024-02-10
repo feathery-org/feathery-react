@@ -10,6 +10,7 @@ import debounce from 'lodash.debounce';
 import { OverlayTrigger } from 'react-bootstrap';
 import useBorder from '../components/useBorder';
 import { DROPDOWN_Z_INDEX } from './index';
+import { hoverStylesGuard } from '../../utils/browser';
 
 // Milliseconds
 const SEARCH_DELAY_TIME = 300;
@@ -66,12 +67,14 @@ function AddressLine1({
           width: '100%',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          '&:hover': disabled
-            ? {}
-            : {
-                ...responsiveStyles.getTarget('hover'),
-                ...borderStyles.hover
-              },
+          '&:hover': hoverStylesGuard(
+            disabled
+              ? {}
+              : {
+                  ...responsiveStyles.getTarget('hover'),
+                  ...borderStyles.hover
+                }
+          ),
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),
@@ -104,7 +107,9 @@ function AddressLine1({
                   css={{
                     padding: '8px 14px',
                     transition: '0.1s ease all',
-                    '&:hover': { backgroundColor: '#e6e6e633' }
+                    '&:hover': hoverStylesGuard({
+                      backgroundColor: '#e6e6e633'
+                    })
                   }}
                   onClick={async () => {
                     // @ts-expect-error TS(2532): Object is possibly 'undefined'.
@@ -167,7 +172,11 @@ function AddressLine1({
           responsiveStyles={responsiveStyles}
           rightToLeft={rightToLeft}
         />
-        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
+        <InlineTooltip
+          id={element.id}
+          text={element.properties.tooltipText}
+          responsiveStyles={responsiveStyles}
+        />
       </div>
     </div>
   );

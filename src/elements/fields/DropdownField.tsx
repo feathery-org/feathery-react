@@ -6,6 +6,7 @@ import useBorder from '../components/useBorder';
 import countryData from '../components/data/countries';
 import { getStateOptions, hasState } from '../components/data/states';
 import { Global, css } from '@emotion/react';
+import { hoverStylesGuard } from '../../utils/browser';
 
 export default function DropdownField({
   element,
@@ -56,11 +57,16 @@ export default function DropdownField({
       ];
     } else options = getStateOptions(curCountry, short);
   } else if (servar.type === 'gmap_country') {
-    options = countryData.map(({ countryCode, countryName }) => (
-      <option key={countryCode} value={countryCode}>
-        {countryName}
-      </option>
-    ));
+    options = countryData.map(({ countryCode, countryName }) => {
+      const val = servar.metadata.store_abbreviation
+        ? countryCode
+        : countryName;
+      return (
+        <option key={countryCode} value={val}>
+          {countryName}
+        </option>
+      );
+    });
   } else {
     const labels = servar.metadata.option_labels;
     const tooltips = servar.metadata.option_tooltips;
@@ -99,12 +105,14 @@ export default function DropdownField({
           whiteSpace: 'nowrap',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          '&:hover': disabled
-            ? {}
-            : {
-                ...responsiveStyles.getTarget('hover'),
-                ...borderStyles.hover
-              },
+          '&:hover': hoverStylesGuard(
+            disabled
+              ? {}
+              : {
+                  ...responsiveStyles.getTarget('hover'),
+                  ...borderStyles.hover
+                }
+          ),
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),
@@ -170,7 +178,11 @@ export default function DropdownField({
         >
           {element.properties.placeholder || ''}
         </span>
-        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
+        <InlineTooltip
+          id={element.id}
+          text={element.properties.tooltipText}
+          responsiveStyles={responsiveStyles}
+        />
       </div>
     </div>
   );

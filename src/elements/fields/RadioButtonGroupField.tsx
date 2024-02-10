@@ -6,7 +6,7 @@ import {
   applyHeightWidthMarginByFontSize,
   composeCheckableInputStyle
 } from './CheckboxField';
-import TextHoverTooltip from '../components/TextHoverTooltip';
+import InlineTooltip from '../components/InlineTooltip';
 
 const applyRadioGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('radioGroup');
@@ -33,13 +33,14 @@ function RadioButtonGroupField({
   const otherChecked =
     // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     (otherSelect[servar.key] || fieldVal) && fieldVal === otherVal;
+  const otherTextDisabled = !otherChecked || disabled;
   const otherLabel = servar.metadata.other_label ?? 'Other';
 
   const styles = useMemo(() => {
     applyCheckableInputStyles(element, responsiveStyles);
     applyRadioGroupStyles(element, responsiveStyles);
     responsiveStyles.apply('row', 'row_separation', (a: number) => {
-      return { marginBottom: `${a}px` };
+      return { marginBottom: `${a || 5}px` };
     });
     return responsiveStyles;
   }, [responsiveStyles]);
@@ -65,7 +66,6 @@ function RadioButtonGroupField({
             key={`${servar.key}-${i}`}
             css={{
               display: 'flex',
-              alignItems: 'center',
               ...styles.getTarget('row')
             }}
           >
@@ -88,20 +88,26 @@ function RadioButtonGroupField({
               css={{
                 ...composeCheckableInputStyle(styles, disabled, true),
                 ...styles.getTarget('radioGroup'),
-                ...(disabled ? responsiveStyles.getTarget('disabled') : {})
+                ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
+                '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
               }}
             />
-            <TextHoverTooltip text={tooltips[i]}>
-              <label
-                htmlFor={`${servar.key}-${i}`}
-                css={{
-                  whiteSpace: 'pre-wrap',
-                  overflowWrap: 'anywhere'
-                }}
-              >
-                {optionLabel}
-              </label>
-            </TextHoverTooltip>
+            <label
+              htmlFor={`${servar.key}-${i}`}
+              css={{
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+                ...styles.getTarget('checkboxLabel')
+              }}
+            >
+              {optionLabel}
+            </label>
+            <InlineTooltip
+              id={`${element.id}-${opt}`}
+              text={tooltips[i]}
+              responsiveStyles={responsiveStyles}
+              absolute={false}
+            />
           </div>
         );
       })}
@@ -132,9 +138,12 @@ function RadioButtonGroupField({
               ...(disabled ? responsiveStyles.getTarget('disabled') : {})
             }}
           />
-          <TextHoverTooltip text={servar.metadata.other_tooltip}>
-            <label htmlFor={`${servar.key}-`}>{otherLabel}</label>
-          </TextHoverTooltip>
+          <label
+            htmlFor={`${servar.key}-`}
+            css={styles.getTarget('checkboxLabel')}
+          >
+            {otherLabel}
+          </label>
           <ReactForm.Control
             type='text'
             // Paired with flex grow, will not expand parent width
@@ -145,7 +154,9 @@ function RadioButtonGroupField({
               paddingLeft: '0.4rem',
               flexGrow: 1,
               ...responsiveStyles.getTarget('field'),
-              ...(disabled ? responsiveStyles.getTarget('disabled') : {})
+              ...(otherTextDisabled
+                ? responsiveStyles.getTarget('disabled')
+                : {})
             }}
             id={servar.key}
             value={otherVal || ''}
@@ -156,7 +167,13 @@ function RadioButtonGroupField({
             maxLength={servar.max_length}
             minLength={servar.min_length}
             required={otherChecked}
-            disabled={disabled || !otherChecked}
+            disabled={otherTextDisabled}
+          />
+          <InlineTooltip
+            id={`${element.id}-`}
+            text={servar.metadata.other_tooltip}
+            responsiveStyles={responsiveStyles}
+            absolute={false}
           />
         </div>
       )}

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import useBorder from '../components/useBorder';
 import Select, { components } from 'react-select';
 import CreatableSelect from 'react-select/creatable';
-import { featheryDoc } from '../../utils/browser';
+import { featheryDoc, hoverStylesGuard } from '../../utils/browser';
 import InlineTooltip from '../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from './index';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
@@ -69,12 +69,14 @@ export default function DropdownMultiField({
   const servar = element.servar;
   const labels = servar.metadata.option_labels;
   const labelMap: Record<string, string> = {};
-  const options = servar.metadata.options.map((option: any, index: number) => {
-    const label = labels && labels[index] ? labels[index] : option;
-    labelMap[option] = label;
-    const tooltip = servar.metadata.option_tooltips?.[index];
-    return { value: option, label, tooltip };
-  });
+  const options = [...servar.metadata.options, ...fieldVal].map(
+    (option: any, index: number) => {
+      const label = labels && labels[index] ? labels[index] : option;
+      labelMap[option] = label;
+      const tooltip = servar.metadata.option_tooltips?.[index];
+      return { value: option, label, tooltip };
+    }
+  );
   const selectVal = fieldVal
     ? fieldVal.map((val: any) => ({
         label: labelMap[val],
@@ -108,12 +110,14 @@ export default function DropdownMultiField({
           whiteSpace: 'nowrap',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          '&:hover': disabled
-            ? {}
-            : {
-                ...responsiveStyles.getTarget('hover'),
-                ...borderStyles.hover
-              },
+          '&:hover': hoverStylesGuard(
+            disabled
+              ? {}
+              : {
+                  ...responsiveStyles.getTarget('hover'),
+                  ...borderStyles.hover
+                }
+          ),
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),
@@ -185,7 +189,11 @@ export default function DropdownMultiField({
         >
           {element.properties.placeholder || ''}
         </span>
-        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
+        <InlineTooltip
+          id={element.id}
+          text={element.properties.tooltipText}
+          responsiveStyles={responsiveStyles}
+        />
       </div>
     </div>
   );

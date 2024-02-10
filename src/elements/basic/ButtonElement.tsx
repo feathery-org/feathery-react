@@ -5,6 +5,7 @@ import TextNodes from '../components/TextNodes';
 import { imgMaxSizeStyles } from '../styles';
 import { adjustColor } from '../../utils/styles';
 import useBorder from '../components/useBorder';
+import { hoverStylesGuard } from '../../utils/browser';
 
 function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets(
@@ -180,6 +181,14 @@ function ButtonElement({
         ...styles.getTarget('buttonActive'),
         ...borderStyles.active
       };
+  const hoverStyles = hoverStylesGuard(
+    editMode
+      ? styles.getTarget('button')
+      : {
+          ...styles.getTarget('buttonHover'),
+          ...borderStyles.hover
+        }
+  );
 
   const actions = element.properties.actions ?? [];
   const noActions = actions.length === 0 && !element.properties.submit;
@@ -210,12 +219,7 @@ function ButtonElement({
           ...styles.getTarget('buttonDisabled'),
           ...borderStyles.disabled
         },
-        '&:hover:enabled': editMode
-          ? styles.getTarget('button')
-          : {
-              ...styles.getTarget('buttonHover'),
-              ...borderStyles.hover
-            },
+        '&:hover:enabled': hoverStyles,
         '&.active:enabled': activeStyles,
         // Fall back on default focus behavior if custom active state
         // is not set for button

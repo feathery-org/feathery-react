@@ -1,8 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import {
-  getNewStepUrl,
-  getStepDepthMap
-} from '../../utils/formHelperFunctions';
+import { getStepDepthMap } from '../../utils/formHelperFunctions';
 import {
   LeftChevronIcon,
   RightChevronIcon,

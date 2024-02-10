@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { hoverStylesGuard } from '../../utils/browser';
 
 // Draws a checkmark, similar in dimensions to the default Chrome checkbox, in CSS
 const checkmarkClipPath =
@@ -69,6 +70,22 @@ const applyCheckmarkByFontSize = (
   );
 };
 
+const applyLabelHeightByFontSize = (responsiveStyles: any, target: any) => {
+  responsiveStyles.apply(
+    target,
+    ['font_size', 'line_height'],
+    (fontSize: any, lineHeight: any) => {
+      if (!lineHeight) lineHeight = scaleCheckboxSize(fontSize);
+      const topOffset = (lineHeight - fontSize) / 2;
+      return {
+        position: 'relative',
+        top: `-${topOffset}px`,
+        lineHeight: `${lineHeight}px`
+      };
+    }
+  );
+};
+
 const applyCheckmark = (
   responsiveStyles: any,
   target: any,
@@ -92,7 +109,8 @@ export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
     'checkboxCheckmark',
     'checkboxSelected',
     'checkboxHover',
-    'checkboxCheckmarkHover'
+    'checkboxCheckmarkHover',
+    'checkboxLabel'
   );
 
   const {
@@ -112,6 +130,7 @@ export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
 
   // width/height styles
   if (scaleWithFontSize) {
+    applyLabelHeightByFontSize(responsiveStyles, 'checkboxLabel');
     applyHeightWidthMarginByFontSize(responsiveStyles, 'checkbox', true);
     applyHeightWidthMarginByFontSize(
       responsiveStyles,
@@ -199,16 +218,18 @@ export const composeCheckableInputStyle = (
     outline: 'none',
     borderRadius: isRadio ? '50%' : null, // Force radio buttons to be round
     ...styles.getTarget('checkbox'),
-    '&:hover': noHover ? {} : styles.getTarget('checkboxHover'),
+    '&:hover': hoverStylesGuard(
+      noHover ? {} : styles.getTarget('checkboxHover')
+    ),
     '&::before': {
       content: "''",
       transform: 'scale(0)',
       ...styles.getTarget('checkboxCheckmark')
     },
-    '&:hover::before': {
+    '&:hover::before': hoverStylesGuard({
       ...styles.getTarget('checkboxCheckmark'),
       ...styles.getTarget('checkboxCheckmarkHover')
-    },
+    }),
     '&:checked': {
       ...styles.getTarget('checkboxSelected')
     },
@@ -256,7 +277,8 @@ function CheckboxField({
         css={{
           ...composeCheckableInputStyle(styles, disabled),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          marginTop: '4px'
+          marginTop: '4px',
+          '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
         }}
       />
       {fieldLabel}

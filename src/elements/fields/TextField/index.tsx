@@ -11,8 +11,17 @@ import BorderlessEyeIcon from '../../components/icons/BorderlessEyeIcon';
 import { getFieldValue } from '../../../utils/formHelperFunctions';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { FORM_Z_INDEX } from '../../../utils/styles';
+import { hoverStylesGuard } from '../../../utils/browser';
 
-const MAX_TEXT_FIELD_LENGTH = 512;
+const DEFAULT_LENGTH = 1024; // Default limit on backend
+const MAX_FIELD_LENGTHS: Record<string, number> = {
+  text_area: 16384, // Max storage limit on backend column
+  url: 256,
+  gmap_zip: 10
+};
+
+const maxFieldLength = (type: string) =>
+  MAX_FIELD_LENGTHS[type] ?? DEFAULT_LENGTH;
 
 function escapeDefinitionChars(str: string | undefined) {
   return (str ?? '')
@@ -49,7 +58,8 @@ function getTextFieldMask(servar: any) {
     if (servar.type === 'gmap_zip' && !allowed) allowed = 'alphaspace';
     const definitionChar = constraintChar(allowed);
 
-    let numOptional = MAX_TEXT_FIELD_LENGTH - prefix.length - suffix.length;
+    let numOptional =
+      maxFieldLength(servar.type) - prefix.length - suffix.length;
     if (servar.max_length)
       numOptional = Math.min(servar.max_length, numOptional);
 
@@ -62,6 +72,7 @@ function getTextFieldMask(servar: any) {
 
 function getMaskProps(servar: any, value: any, showPassword: boolean) {
   let maskProps;
+  let maxLength = servar.max_length ?? maxFieldLength(servar.type);
   switch (servar.type) {
     case 'integer_field':
       maskProps = {
@@ -93,16 +104,17 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
     case 'email':
     case 'text_area':
     case 'url':
-      maskProps = { mask: /.+/ };
+      maskProps = { mask: /.+/, maxLength };
       break;
     default:
+      if (servar.metadata.mask) maxLength = undefined;
       maskProps = {
         mask: getTextFieldMask(servar),
         definitions: {
           b: /[a-zA-Z0-9]/,
           c: /[a-zA-Z0-9 ]/
         },
-        maxLength: MAX_TEXT_FIELD_LENGTH
+        maxLength
       };
       break;
   }
@@ -120,7 +132,6 @@ function getInputProps(
   showPassword: boolean
 ) {
   const constraints: Record<string, any> = {
-    maxLength: servar.max_length,
     minLength: servar.min_length
   };
   if (options.length > 0) constraints.autoComplete = 'off';
@@ -218,12 +229,14 @@ function TextField({
           whiteSpace: 'nowrap',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          '&:hover': disabled
-            ? {}
-            : {
-                ...responsiveStyles.getTarget('hover'),
-                ...borderStyles.hover
-              }
+          '&:hover': hoverStylesGuard(
+            disabled
+              ? {}
+              : {
+                  ...responsiveStyles.getTarget('hover'),
+                  ...borderStyles.hover
+                }
+          )
         }}
       >
         <TextAutocomplete
@@ -311,7 +324,11 @@ function TextField({
           element={element}
           responsiveStyles={responsiveStyles}
         />
-        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
+        <InlineTooltip
+          id={element.id}
+          text={element.properties.tooltipText}
+          responsiveStyles={responsiveStyles}
+        />
       </div>
     </div>
   );

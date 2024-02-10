@@ -1,17 +1,20 @@
 import { featheryDoc, featheryWindow } from '../utils/browser';
 import { initInfo } from '../utils/init';
 
-export function installSegment(segmentConfig: any) {
-  if (segmentConfig) {
-    // Script from https://segment.com/docs/connections/sources/catalog/libraries/website/javascript/quickstart/#step-2-add-the-segment-snippet
-    // Create a queue, but don't obliterate an existing one!
-    const analytics = (featheryWindow().analytics =
-      featheryWindow().analytics || []);
-    // If the real analytics.js is already on the page return.
-    if (analytics.initialize) return;
-    // If the snippet was invoked already show an error.
-    if (analytics.invoked) return;
+let segmentInstalled = false;
 
+export function installSegment(segmentConfig: any) {
+  if (!segmentConfig || segmentInstalled) return Promise.resolve();
+  segmentInstalled = true;
+
+  // Script from https://segment.com/docs/connections/sources/catalog/libraries/website/javascript/quickstart/#step-2-add-the-segment-snippet
+  // Create a queue, but don't obliterate an existing one!
+  const analytics = (featheryWindow().analytics =
+    featheryWindow().analytics || []);
+
+  // If the real analytics.js is already on the page return.
+  // If the snippet was invoked already show an error.
+  if (!analytics.initialize && !analytics.invoked) {
     // Invoked flag, to make sure the snippet
     // is never invoked twice.
     analytics.invoked = true;
@@ -80,10 +83,10 @@ export function installSegment(segmentConfig: any) {
     // you'd like to manually name or tag the page, edit or
     // move this call however you'd like.
     analytics.page();
-
-    if (segmentConfig.metadata.identify_user)
-      analytics.identify(initInfo().userId);
   }
+
+  if (segmentConfig.metadata.identify_user)
+    analytics.identify(initInfo().userId);
 
   return Promise.resolve();
 }

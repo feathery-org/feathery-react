@@ -41,7 +41,8 @@ import {
   saveInitialValuesAndUrlParams,
   httpHelpers,
   FieldStyles,
-  updateStepFieldStyles
+  updateStepFieldStyles,
+  isStoreFieldValueAction
 } from '../utils/formHelperFunctions';
 import {
   getContainerById,
@@ -59,7 +60,7 @@ import {
   FieldValues,
   updateUserId
 } from '../utils/init';
-import { isEmptyArray, justInsert, justRemove } from '../utils/array';
+import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
 import Client from '../utils/client';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
@@ -79,7 +80,11 @@ import DevNavBar from './components/DevNavBar';
 import FeatherySpinner from '../elements/components/Spinner';
 import CallbackQueue from '../utils/callbackQueue';
 import { featheryWindow, openTab, runningInClient } from '../utils/browser';
-import FormOff from '../elements/components/FormOff';
+import FormOff, {
+  CLOSED,
+  COLLAB_COMPLETED,
+  FILLED_OUT
+} from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
 import Grid from './grid';
@@ -246,10 +251,10 @@ function Form({
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
-    formOff: undefined as undefined | boolean,
     showBrand: false,
     brandPosition: undefined,
     autoscroll: 'top_of_form',
+    formOffReason: '',
     rightToLeft: false,
     allowEdits: true,
     saveUrlParams: false,
@@ -453,20 +458,23 @@ function Form({
     updateRepeatValues(repeatContainer, getNewVal);
   }
 
-  function removeRepeatedRow(element: any) {
+  function removeRepeatedRow(
+    element: any,
+    repeatContainer: Subgrid | undefined
+  ) {
     const index = element.repeat;
-    if (isNaN(index)) return;
+    if (isNaN(index) && !repeatContainer) return;
 
-    const repeatContainer = getRepeatedContainer(activeStep, element);
+    const curRepeatContainer =
+      repeatContainer || getRepeatedContainer(activeStep, element);
     const getNewVal = (field: any) => {
-      const newRepeatedValues = justRemove(
-        fieldValues[field.servar.key],
-        index
-      );
+      const vals = fieldValues[field.servar.key] as any[];
+      const curIndex = repeatContainer ? vals.length - 1 : index;
+      const newRepeatedValues = justRemove(vals, curIndex);
       const defaultValue = [getDefaultFieldValue(field)];
       return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
     };
-    updateRepeatValues(repeatContainer, getNewVal);
+    updateRepeatValues(curRepeatContainer, getNewVal);
   }
 
   // Debouncing the validateElements call to rate limit calls
@@ -896,7 +904,7 @@ function Form({
               );
             };
           if (res.save_url_params) saveUrlParamsFormSetting = true;
-          setFormSettings(mapFormSettingsResponse(res));
+          setFormSettings(mapFormSettingsResponse(res, formSettings));
           setLogicRules(res.logic_rules);
           trackHashes.current = res.track_hashes;
 
@@ -930,8 +938,14 @@ function Form({
         // @ts-expect-error TS(2345): Argument of type 'Promise<any[]>' is not assignabl... Remove this comment to see the full error message
         .fetchSession(formPromise, true)
         .then(([session, steps]) => {
-          if (!session) {
-            setFormSettings({ ...formSettings, formOff: true });
+          if (!session || session.collaborator?.invalid) {
+            setFormSettings({ ...formSettings, formOffReason: CLOSED });
+            return;
+          } else if (session.collaborator?.completed) {
+            setFormSettings({
+              ...formSettings,
+              formOffReason: COLLAB_COMPLETED
+            });
             return;
           }
 
@@ -1116,7 +1130,6 @@ function Form({
       if (invalid) return;
     }
 
-    const hiddenPromise = submitStepHiddenFields();
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       let newVal = (val as any).value;
       newVal = Array.isArray(newVal)
@@ -1125,13 +1138,7 @@ function Form({
       return { key, [(val as any).type]: newVal };
     });
 
-    const [stepPromise, hasFiles] = client.submitStep(
-      featheryFields,
-      activeStep.key,
-      hasNext
-    );
-    // Block on file upload to ensure successful upload and integration trigger
-    if (hasFiles) await stepPromise;
+    const stepPromise = client.submitStep(featheryFields, activeStep, hasNext);
 
     const fieldData: Record<string, any> = {};
     if (integrations?.segment?.metadata.track_fields)
@@ -1154,27 +1161,7 @@ function Form({
       fieldData
     );
 
-    return [hiddenPromise, stepPromise];
-  };
-
-  const isStoreFieldValueAction = (el: any) =>
-    (el.properties?.actions ?? []).some(
-      (action: any) => action.type === ACTION_STORE_FIELD
-    );
-
-  const submitStepHiddenFields = () => {
-    const items = [
-      ...activeStep.buttons.filter(isStoreFieldValueAction),
-      ...activeStep.subgrids.filter(isStoreFieldValueAction)
-    ];
-    const hiddenFields: Record<string, any> = {};
-    items.forEach(({ properties }: any) => {
-      const fieldKey = properties.custom_store_field_key;
-      const value = fieldValues[fieldKey];
-      // need to include value === '' so that we can clear out hidden fields
-      if (value !== undefined) hiddenFields[fieldKey] = value;
-    });
-    return client.submitCustom(hiddenFields);
+    return [stepPromise];
   };
 
   // usePayments (Stripe)
@@ -1262,15 +1249,10 @@ function Form({
     return true;
   }
 
-  async function goToNewStep({
-    metadata,
-    submitPromise = null,
-    submitData = false
-  }: any) {
+  async function goToNewStep({ metadata, submitData = false }: any) {
     let eventData: Record<string, any> = {
       step_key: activeStep.key,
-      event: submitData ? 'complete' : 'skip',
-      debug: 'go to step'
+      event: submitData ? 'complete' : 'skip'
     };
 
     const redirectKey = getNextStepKey(metadata);
@@ -1283,7 +1265,7 @@ function Form({
     if (!redirectKey) {
       if (explicitNav) {
         eventData.completed = true;
-        await client.registerEvent(eventData, submitPromise).then(() => {
+        await client.registerEvent(eventData).then(() => {
           setFinished(true);
           // Need to rerender when the session is marked complete so
           // LoginForm can render children
@@ -1301,10 +1283,13 @@ function Form({
         );
         if (complete) {
           eventData.completed = true;
-          await handleFormComplete();
+          await Promise.all([
+            handleFormComplete(),
+            client.registerEvent(eventData)
+          ]);
         }
       }
-      client.registerEvent(eventData, submitPromise);
+      if (!eventData.completed) client.registerEvent(eventData);
       updateBackNavMap({ [redirectKey]: activeStep.key });
       setShouldScrollToTop(explicitNav);
 
@@ -1499,7 +1484,7 @@ function Form({
         elementClicks[id] = false;
         return;
       }
-      submitPromise = Promise.all(newPromise);
+      submitPromise = newPromise[0];
     }
 
     // Adjust action order to prioritize certain actions and
@@ -1541,14 +1526,12 @@ function Form({
       const type = action.type;
 
       if (type === ACTION_ADD_REPEATED_ROW) {
-        const containerId = getContainerById(
-          activeStep,
-          action.repeat_container
-        );
-        addRepeatedRow(containerId, action.max_repeats);
-      } else if (type === ACTION_REMOVE_REPEATED_ROW)
-        removeRepeatedRow(element);
-      else if (type === ACTION_TRIGGER_PERSONA) {
+        const container = getContainerById(activeStep, action.repeat_container);
+        addRepeatedRow(container, action.max_repeats);
+      } else if (type === ACTION_REMOVE_REPEATED_ROW) {
+        const container = getContainerById(activeStep, action.repeat_container);
+        removeRepeatedRow(element, container);
+      } else if (type === ACTION_TRIGGER_PERSONA) {
         const persona = integrations?.persona.metadata ?? {};
         await submitPromise;
         triggerPersona(
@@ -1584,10 +1567,9 @@ function Form({
               step_key: activeStep.key,
               next_step_key: '',
               event: submit ? 'complete' : 'skip',
-              completed: true,
-              debug: 'open url'
+              completed: true
             };
-            client.registerEvent(eventData, submitPromise).then(() => {
+            client.registerEvent(eventData).then(() => {
               location.href = url;
             });
           }
@@ -1657,7 +1639,6 @@ function Form({
       else if (type === ACTION_NEXT) {
         await goToNewStep({
           metadata,
-          submitPromise,
           submitData: submit
         });
       } else if (type === ACTION_BACK) await goToPreviousStep();
@@ -1680,13 +1661,18 @@ function Form({
           break;
         }
       } else if (type === ACTION_INVITE_COLLABORATOR) {
-        const val = fieldValues[action.email_field_key] as string;
-        if (!validators.email(val)) {
+        const val = fieldValues[action.email_field_key];
+        const emails = toList(val, true);
+        const invalidEmail = emails.reduce((acc, email) => {
+          if (!validators.email(email)) return true;
+          return acc;
+        }, false);
+        if (invalidEmail) {
           setElementError(`${val} is an invalid email`);
           break;
         }
         try {
-          await client.inviteCollaborator(val, action.template_id);
+          await client.inviteCollaborator(emails, action.template_id);
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
@@ -1713,7 +1699,12 @@ function Form({
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
         if (action.quik_documents)
           await client.quikDocuments(action.quik_json_field_key);
-        openTab(`https://document.feathery.io/to/${initState._internalUserId}`);
+        // waiting 10 seconds for documents to generate before redirect
+        setTimeout(() => {
+          openTab(
+            `https://document.feathery.io/to/${initState._internalUserId}`
+          );
+        }, 10000);
       } else if (type === ACTION_STORE_FIELD) {
         let val;
         if (action.custom_store_value_type === 'field') {
@@ -1858,7 +1849,7 @@ function Form({
 
   const completeState =
     formSettings.completionBehavior === 'show_completed_screen' ? (
-      <FormOff noEdit showCTA={formSettings.showBrand} />
+      <FormOff reason={FILLED_OUT} showCTA={formSettings.showBrand} />
     ) : null;
 
   // If form was completed in a previous session and edits are disabled,
@@ -1880,7 +1871,10 @@ function Form({
   }, [anyFinished]);
 
   // Form is turned off
-  if (formSettings.formOff) return <FormOff showCTA={formSettings.showBrand} />;
+  if (formSettings.formOffReason === CLOSED)
+    return <FormOff showCTA={formSettings.showBrand} />;
+  else if (formSettings.formOffReason === COLLAB_COMPLETED)
+    return <FormOff reason={COLLAB_COMPLETED} showCTA={false} />;
   else if (anyFinished) {
     if (!completeState && initState.isTestEnv)
       console.log('Form has been hidden');

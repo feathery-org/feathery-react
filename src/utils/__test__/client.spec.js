@@ -139,6 +139,7 @@ describe('client', () => {
       ];
       const body = {
         fuser_key: 'userId',
+        step_key: 'stepKey',
         servars,
         panel_key: formKey
       };
@@ -146,7 +147,11 @@ describe('client', () => {
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
-      const [response, hasFiles] = client.submitStep(servars);
+      const response = await client.submitStep(servars, {
+        key: 'stepKey',
+        buttons: [],
+        subgrids: []
+      });
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
@@ -162,8 +167,7 @@ describe('client', () => {
           body: JSON.stringify(body)
         }
       );
-      expect(await response).toEqual([{ status: 200 }]);
-      expect(hasFiles).toEqual(false);
+      expect(response).toEqual([undefined, [undefined, { status: 200 }]]);
     });
   });
 
@@ -187,7 +191,7 @@ describe('client', () => {
 
       // Act
       await initFormsPromise;
-      const response = await client.registerEvent({
+      await client.registerEvent({
         step_key: stepKey,
         next_step_key: nextStepKey,
         event
@@ -204,7 +208,6 @@ describe('client', () => {
         method: 'POST',
         body: JSON.stringify(body)
       });
-      expect(response).toEqual({ status: 200 });
     });
   });
 

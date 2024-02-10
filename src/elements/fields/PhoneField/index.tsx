@@ -11,7 +11,7 @@ import { isNum } from '../../../utils/primitives';
 import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
-import { featheryDoc } from '../../../utils/browser';
+import { featheryDoc, hoverStylesGuard } from '../../../utils/browser';
 
 const DEFAULT_COUNTRY = 'US';
 
@@ -86,7 +86,7 @@ function PhoneField({
 
   useEffect(() => {
     const input = inputRef.current;
-    if (input) input.setSelectionRange(cursor, cursor);
+    if (input && cursor !== null) input.setSelectionRange(cursor, cursor);
   }, [cursorChange]);
 
   useEffect(() => {
@@ -97,10 +97,10 @@ function PhoneField({
 
       const ayt = new global.libphonenumber.AsYouType();
       ayt.input(`+${fullNumber}`);
-      const numberObj = ayt.getNumber();
+      const numberObj = ayt.getNumber() ?? '';
+      setCurFullNumber(fullNumber);
+      setRawNumber(fullNumber);
       if (numberObj) {
-        setCurFullNumber(fullNumber);
-        setRawNumber(fullNumber);
         setCurCountryCode(numberObj.country ?? curCountryCode);
       }
     });
@@ -176,12 +176,14 @@ function PhoneField({
           position: 'relative',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          '&:hover': disabled
-            ? {}
-            : {
-                ...responsiveStyles.getTarget('hover'),
-                ...borderStyles.hover
-              },
+          '&:hover': hoverStylesGuard(
+            disabled
+              ? {}
+              : {
+                  ...responsiveStyles.getTarget('hover'),
+                  ...borderStyles.hover
+                }
+          ),
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),
@@ -201,7 +203,7 @@ function PhoneField({
             padding: '0 6px',
             position: 'relative',
             ...responsiveStyles.getTarget('fieldToggle'),
-            '&:hover': { backgroundColor: '#e6e6e633' }
+            '&:hover': hoverStylesGuard({ backgroundColor: '#e6e6e633' })
           }}
           ref={triggerRef}
           onClick={() => setShow(!show)}
@@ -312,6 +314,8 @@ function PhoneField({
                 if (!LPN) return;
                 // Don't let user delete the country code
                 else if (!newNum.startsWith(`+${phoneCode}`)) return;
+                // Prevent US phone numbers from starting with a 1
+                else if (newNum.startsWith('+11')) return;
 
                 const onlyDigits = LPN.parseDigits(newNum, curCountryCode);
                 const validate = LPN.validatePhoneNumberLength;
@@ -354,7 +358,8 @@ function PhoneField({
             responsiveStyles={responsiveStyles}
           />
           <InlineTooltip
-            element={element}
+            id={element.id}
+            text={element.properties.tooltipText}
             responsiveStyles={responsiveStyles}
           />
         </div>

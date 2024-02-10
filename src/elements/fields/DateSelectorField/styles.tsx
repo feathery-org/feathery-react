@@ -722,6 +722,23 @@ export default function SelectorStyles() {
           margin-left: auto;
           margin-right: auto;
         }
+        .react-datepicker__year-option:first-child::before {
+          content: '\\2303';
+          position: absolute;
+          font-size: 30px;
+          top: 12px;
+          left: 40%;
+          margin: auto;
+        }
+        .react-datepicker__year-option:last-child::after {
+          content: '\\2303';
+          position: absolute;
+          font-size: 30px;
+          bottom: 12px;
+          left: 40%;
+          margin: auto;
+          transform: scaleY(-1);
+        }
         .react-datepicker__year-option:first-of-type,
         .react-datepicker__month-option:first-of-type,
         .react-datepicker__month-year-option:first-of-type {

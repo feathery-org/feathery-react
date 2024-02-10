@@ -190,13 +190,26 @@ function applyFieldStyles(field: any, styles: any) {
           textAlign: justifyContentTextAlignMap[a]
         })
       );
+      styles.apply(
+        'fc',
+        'horizontal_align',
+        (a: keyof typeof justifyContentTextAlignMap) => ({
+          textAlign: justifyContentTextAlignMap[a]
+        })
+      );
       styles.applyHeight('bc', '', true);
       styles.apply(
         'field',
         ['button_width', 'button_width_unit', 'content_responsive'],
-        (a: any, b: any, c: boolean) => ({
-          [c ? 'minWidth' : 'width']: `${a}${b}`
-        })
+        (a: any, b: any, c: boolean) => {
+          const metric = `${a}${b}`;
+          if (c) return { minWidth: metric };
+          else
+            return {
+              width: '100%',
+              maxWidth: metric
+            };
+        }
       );
       styles.apply(
         'field',
@@ -353,7 +366,7 @@ function applyFieldStyles(field: any, styles: any) {
     case 'phone_number':
       styles.addTargets('fieldToggle', 'dropdown');
 
-      styles.applyFontStyles('dropdown');
+      styles.applyFontStyles('dropdown', false, true);
       styles.apply('dropdown', 'background_color', (color: any) => {
         if (color.substring(6).toLowerCase() !== 'ff')
           return { backgroundColor: 'white', color: 'black' };
@@ -435,7 +448,9 @@ Object.entries(Fields).map(([key, Field]: any) => {
         htmlFor={servar.repeated ? undefined : servar.key}
         style={{
           marginBottom: '10px',
-          display: 'inline-block'
+          display: 'inline-block',
+          whiteSpace: 'pre-wrap',
+          overflowWrap: 'anywhere'
         }}
       >
         {servar.name}

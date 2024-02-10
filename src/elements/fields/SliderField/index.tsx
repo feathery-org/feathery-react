@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Slider from 'rc-slider';
+import { hoverStylesGuard } from '../../../utils/browser';
 
 import SliderStyles from './styles';
 
@@ -50,7 +51,7 @@ export default function SliderField({
           ['.rc-slider-handle'.repeat(2)]: {
             opacity: 1,
             ...responsiveStyles.getTarget('handle'),
-            '&:hover': responsiveStyles.getTarget('hover')
+            '&:hover': hoverStylesGuard(responsiveStyles.getTarget('hover'))
           },
           // Override default css that repeats 3 times
           ['.rc-slider-handle-dragging'.repeat(4)]: {

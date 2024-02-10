@@ -4,6 +4,7 @@ import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/InlineTooltip';
 import { bootstrapStyles } from '../styles';
 import useBorder from '../components/useBorder';
+import { hoverStylesGuard } from '../../utils/browser';
 
 function TextArea({
   element,
@@ -46,12 +47,14 @@ function TextArea({
           width: '100%',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          '&:hover': disabled
-            ? {}
-            : {
-                ...responsiveStyles.getTarget('hover'),
-                ...borderStyles.hover
-              },
+          '&:hover': hoverStylesGuard(
+            disabled
+              ? {}
+              : {
+                  ...responsiveStyles.getTarget('hover'),
+                  ...borderStyles.hover
+                }
+          ),
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),
@@ -99,7 +102,11 @@ function TextArea({
           type='textarea'
           rightToLeft={rightToLeft}
         />
-        <InlineTooltip element={element} responsiveStyles={responsiveStyles} />
+        <InlineTooltip
+          id={element.id}
+          text={element.properties.tooltipText}
+          responsiveStyles={responsiveStyles}
+        />
       </div>
     </div>
   );
