@@ -931,40 +931,41 @@ export default class Client {
         if (!status) return status;
 
         // Kick off process to establish session with carrier fron client side
-        const { verification_url, method, expected_response_code, post_body, query_string_params } = verification;
-        let sessionUrl = verification_url;
-        if (query_string_params) {
-            const queryParams = new URLSearchParams(query_string_params).toString();
+        const { 
+          verification_url: verificationUrl, 
+          method, 
+          expected_response_code: expectedResponseCode, 
+          post_body: postBody, 
+          query_string_params: queryStringParams 
+        } = verification;
+        let sessionUrl = verificationUrl;
+        if (queryStringParams) {
+            const queryParams = new URLSearchParams(queryStringParams).toString();
             sessionUrl += `?${queryParams}`;
         }
         const sessionOptions : { 
           method: string; 
           body?: string 
         } = { method: method };
-        if (post_body) {
-          sessionOptions.body = JSON.stringify(post_body);
+        if (postBody) {
+          sessionOptions.body = JSON.stringify(postBody);
         }
         const carrierResponse = await fetch(sessionUrl, sessionOptions);
         const data = await carrierResponse.json();
-        console.log('carrierResponse data:', data)
-        if (carrierResponse.status !== expected_response_code) return false;
+        if (carrierResponse.status !== expectedResponseCode) return false;
 
         // If carrier session is successful, proceed with finalizing verification
-        const finalUrl = `${API_URL}telesign/silent/final/`;
-        const finalOptions = {
-          headers: { 'Content-Type': 'application/json' },
-          method: 'POST',
-          body: JSON.stringify({
-            verification: verification,
-            reference_id: reference_id,
-            form_key: this.formKey,
-            fuser_key: userId,
-          })
+        const params: Record<string, any> = { 
+          verification: JSON.stringify(verification),
+          reference_id: reference_id,
+          form_key: this.formKey,
+          fuser_key: userId,
         };
-        const finalResponse = await this._fetch(finalUrl, finalOptions, false);
+        const finalUrl = `${API_URL}telesign/silent/final/?${encodeGetParams(params)}`;
+        const finalResponse = await this._fetch(finalUrl, {});
         if (finalResponse) {
-          const { final_status } = await finalResponse.json();
-          return final_status;
+          const { final_status: finalStatus } = await finalResponse.json();
+          return finalStatus;
         }
         return false;
       }
@@ -994,18 +995,14 @@ export default class Client {
 
   async telesignVerifyOTP(otp: string) {
     const { userId } = initInfo();
-    const url = `${API_URL}telesign/otp/verify/`;
-    const options = {
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-      body: JSON.stringify({
-        otp: otp,
-        form_key: this.formKey,
-        fuser_key: userId,
-      })
+    const params: Record<string, any> = { 
+      otp,
+      form_key: this.formKey,
+      fuser_key: userId
     };
+    const url = `${API_URL}telesign/otp/verify/?${encodeGetParams(params)}`;
     try {
-      const response = await this._fetch(url, options, false);
+      const response = await this._fetch(url, {});
       if (response) {
         const { otp_status } = await response.json();
         return otp_status;
