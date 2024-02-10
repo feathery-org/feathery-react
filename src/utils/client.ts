@@ -640,7 +640,11 @@ export default class Client {
   // Collaboration
   async verifyCollaborator(email: string) {
     const { userId, collaboratorId } = initInfo();
-    const params: Record<string, any> = { fuser_key: userId, email };
+    const params: Record<string, any> = {
+      fuser_key: userId,
+      email,
+      form_key: this.formKey
+    };
     if (collaboratorId) params.collaborator_user = collaboratorId;
     const url = `${API_URL}collaborator/verify/?${encodeGetParams(params)}`;
     return this._fetch(url, {}).then((response) =>
