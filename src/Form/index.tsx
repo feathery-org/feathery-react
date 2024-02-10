@@ -1741,7 +1741,7 @@ function Form({
 
         const castValue = castVal(field?.servar.type, val);
         const setToDefaultValue =
-          action.toggle && 
+          action.toggle &&
           JSON.stringify(fieldValues[key]) === JSON.stringify(castValue);
 
         // could be a hidden field
@@ -1757,11 +1757,11 @@ function Form({
         ] as string;
         if (validators.phone(phoneNum)) {
           try {
-            const silentVeriResult: boolean = await client.telesignSilentVerification(phoneNum);
-            
+            const silentVeriResult: boolean =
+              await client.telesignSilentVerification(phoneNum);
+
             // set specified field value to the result
             const key = action.telesign_status_field_key;
-            let field: any;
             const newValues = {
               [key]: silentVeriResult
             };
@@ -1776,7 +1776,9 @@ function Form({
           break;
         }
       } else if (type === ACTION_TELESIGN_VOICE_OTP) {
-        const phoneNum = fieldValues[action.telesign_target_field_key] as string;
+        const phoneNum = fieldValues[
+          action.telesign_target_field_key
+        ] as string;
         if (validators.phone(phoneNum)) {
           try {
             await client.telesignVoiceOTP(phoneNum);
@@ -1796,8 +1798,7 @@ function Form({
           if (!pinMatch) {
             setElementError('Invalid code. Please try again');
             break;
-          }
-          else client.submitCustom({ [pinKey]: pin });
+          } else client.submitCustom({ [pinKey]: pin });
         } catch (e) {
           setElementError((e as Error).message);
           break;

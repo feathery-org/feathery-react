@@ -924,53 +924,56 @@ export default class Client {
         fuser_key: userId
       })
     };
-    try {
-      const initialResponse = await this._fetch(initialUrl, options, false);
-      if (initialResponse) {
-        const { verification, reference_id, status } = await initialResponse.json();
-        if (!status) return status;
+    const initialResponse = await this._fetch(initialUrl, options, false);
+    if (initialResponse) {
+      const {
+        verification,
+        reference_id: referenceId,
+        status
+      } = await initialResponse.json();
+      if (!status) return status;
 
-        // Kick off process to establish session with carrier fron client side
-        const { 
-          verification_url: verificationUrl, 
-          method, 
-          expected_response_code: expectedResponseCode, 
-          post_body: postBody, 
-          query_string_params: queryStringParams 
-        } = verification;
-        let sessionUrl = verificationUrl;
-        if (queryStringParams) {
-            const queryParams = new URLSearchParams(queryStringParams).toString();
-            sessionUrl += `?${queryParams}`;
-        }
-        const sessionOptions : { 
-          method: string; 
-          body?: string 
-        } = { method: method };
-        if (postBody) {
-          sessionOptions.body = JSON.stringify(postBody);
-        }
-        const carrierResponse = await fetch(sessionUrl, sessionOptions);
-        const data = await carrierResponse.json();
-        if (carrierResponse.status !== expectedResponseCode) return false;
+      // Kick off process to establish session with carrier fron client side
+      const {
+        verification_url: verificationUrl,
+        method,
+        expected_response_code: expectedResponseCode,
+        post_body: postBody,
+        query_string_params: queryStringParams
+      } = verification;
+      let sessionUrl = verificationUrl;
+      if (queryStringParams) {
+        const queryParams = new URLSearchParams(queryStringParams).toString();
+        sessionUrl += `?${queryParams}`;
+      }
+      const sessionOptions: {
+        method: string;
+        body?: string;
+      } = { method: method };
+      if (postBody) {
+        sessionOptions.body = JSON.stringify(postBody);
+      }
+      const carrierResponse = await fetch(sessionUrl, sessionOptions);
+      if (carrierResponse.status !== expectedResponseCode) return false;
 
-        // If carrier session is successful, proceed with finalizing verification
-        const params: Record<string, any> = { 
-          verification: JSON.stringify(verification),
-          reference_id: reference_id,
-          form_key: this.formKey,
-          fuser_key: userId,
-        };
-        const finalUrl = `${API_URL}telesign/silent/final/?${encodeGetParams(params)}`;
-        const finalResponse = await this._fetch(finalUrl, {});
-        if (finalResponse) {
+      // If carrier session is successful, proceed with finalizing verification
+      const params: Record<string, any> = {
+        verification: JSON.stringify(verification),
+        reference_id: referenceId,
+        form_key: this.formKey,
+        fuser_key: userId
+      };
+      const finalUrl = `${API_URL}telesign/silent/final/?${encodeGetParams(
+        params
+      )}`;
+      const finalResponse = await this._fetch(finalUrl, {});
+      if (finalResponse) {
+        if (finalResponse.ok) {
           const { final_status: finalStatus } = await finalResponse.json();
           return finalStatus;
-        }
-        return false;
+        } else throw Error(parseError(await finalResponse.json()));
       }
-    } catch (e) {
-      throw e;
+      return false;
     }
   }
 
@@ -983,32 +986,26 @@ export default class Client {
       body: JSON.stringify({
         phone_number: phoneNumber,
         form_key: this.formKey,
-        fuser_key: userId,
+        fuser_key: userId
       })
     };
-    try {
-      await this._fetch(url, options, false);
-    } catch (e) {
-      throw e;
-    }
+    await this._fetch(url, options, false);
   }
 
   async telesignVerifyOTP(otp: string) {
     const { userId } = initInfo();
-    const params: Record<string, any> = { 
+    const params: Record<string, any> = {
       otp,
       form_key: this.formKey,
       fuser_key: userId
     };
     const url = `${API_URL}telesign/otp/verify/?${encodeGetParams(params)}`;
-    try {
-      const response = await this._fetch(url, {});
-      if (response) {
-        const { otp_status } = await response.json();
-        return otp_status;
-      }
-    } catch (e) {
-      throw e;
+    const response = await this._fetch(url, {});
+    if (response) {
+      if (response.ok) {
+        const { otp_status: otpStatus } = await response.json();
+        return otpStatus;
+      } else throw Error(parseError(await response.json()));
     }
   }
 }
