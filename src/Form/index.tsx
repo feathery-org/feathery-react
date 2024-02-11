@@ -1772,7 +1772,7 @@ function Form({
             break;
           }
         } else {
-          setElementError('Your phone number is invalid or requested too much');
+          setElementError('Your phone number is invalid');
           break;
         }
       } else if (type === ACTION_TELESIGN_VOICE_OTP) {
@@ -1787,7 +1787,7 @@ function Form({
             break;
           }
         } else {
-          setElementError('Your phone number is invalid or requested too much');
+          setElementError('Your phone number is invalid');
           break;
         }
       } else if (type === ACTION_TELESIGN_VERIFY_OTP) {
