@@ -69,12 +69,14 @@ export default function DropdownMultiField({
   const servar = element.servar;
   const labels = servar.metadata.option_labels;
   const labelMap: Record<string, string> = {};
-  const options = servar.metadata.options.map((option: any, index: number) => {
-    const label = labels && labels[index] ? labels[index] : option;
-    labelMap[option] = label;
-    const tooltip = servar.metadata.option_tooltips?.[index];
-    return { value: option, label, tooltip };
-  });
+  const options = [...servar.metadata.options, ...fieldVal].map(
+    (option: any, index: number) => {
+      const label = labels && labels[index] ? labels[index] : option;
+      labelMap[option] = label;
+      const tooltip = servar.metadata.option_tooltips?.[index];
+      return { value: option, label, tooltip };
+    }
+  );
   const selectVal = fieldVal
     ? fieldVal.map((val: any) => ({
         label: labelMap[val],

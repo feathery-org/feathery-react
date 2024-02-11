@@ -12,6 +12,7 @@ import { encodeGetParams } from './primitives';
 import {
   getABVariant,
   getDefaultFormFieldValue,
+  isStoreFieldValueAction,
   updateSessionValues
 } from './formHelperFunctions';
 import { loadPhoneValidator } from './validation';
@@ -83,7 +84,7 @@ export default class Client {
   ignoreNetworkErrors: any; // this should be a ref
   draft: boolean;
   bypassCDN: boolean;
-  eventQueue: Promise<any>;
+  submitQueue: Promise<any>;
   constructor(
     formKey = '',
     ignoreNetworkErrors?: any,
@@ -94,7 +95,7 @@ export default class Client {
     this.ignoreNetworkErrors = ignoreNetworkErrors;
     this.draft = draft;
     this.bypassCDN = bypassCDN;
-    this.eventQueue = Promise.resolve();
+    this.submitQueue = Promise.resolve();
   }
 
   async _checkResponseSuccess(response: any) {
@@ -153,6 +154,8 @@ export default class Client {
   }
 
   _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
+    if (servars.length === 0) return Promise.resolve();
+
     const { userId, collaboratorId } = initInfo();
     const url = `${API_URL}panel/step/submit/v3/`;
     const data: Record<string, any> = {
@@ -163,7 +166,7 @@ export default class Client {
       __feathery_version: this.version,
       no_complete: noComplete
     };
-    if (collaboratorId) data.collaborator = collaboratorId;
+    if (collaboratorId) data.collaborator_user = collaboratorId;
 
     const options = {
       headers: {
@@ -308,6 +311,11 @@ export default class Client {
           if (needQRScanner) loadQRScanner();
         }
       });
+      step.images.forEach((image: any) => {
+        // Preload images for better performance
+        const url = image.properties.source_image;
+        if (url) new Image().src = url;
+      });
     });
   }
 
@@ -378,7 +386,7 @@ export default class Client {
       override: overrideUserId
     };
     if (userId) params.fuser_key = userId;
-    if (collaboratorId) params.collaborator = collaboratorId;
+    if (collaboratorId) params.collaborator_user = collaboratorId;
     if (authState.authId) params.auth_id = authState.authId;
     if (noData) params.no_data = 'true';
     // @ts-expect-error TS(2322): Type 'string' is not assignable to type '{ form_ke... Remove this comment to see the full error message
@@ -396,7 +404,9 @@ export default class Client {
     });
 
     // Turn form off if invalid collaborator for submission
-    if (session.collaborator?.invalid) return [];
+    if (session.collaborator?.invalid || session.collaborator?.completed)
+      // will cause form to be disabled
+      return [{ collaborator: session.collaborator }];
 
     // If tracking disabled or ID overridden, update user id from backend
     if (!noData && session.new_user_id) initState.userId = session.new_user_id;
@@ -517,27 +527,38 @@ export default class Client {
   }
 
   // servars = [{key: <servarKey>, <type>: <value>}]
-  submitStep(servars: any, stepKey: string, hasNext: boolean) {
-    if (this.draft || this.noSave || servars.length === 0)
-      return [Promise.resolve(), false];
+  submitStep(servars: any, step: any, hasNext: boolean) {
+    if (this.draft || this.noSave) return Promise.resolve();
+
+    const items = [
+      ...step.buttons.filter(isStoreFieldValueAction),
+      ...step.subgrids.filter(isStoreFieldValueAction)
+    ];
+    const hiddenFields: Record<string, any> = {};
+    items.forEach(({ properties }: any) => {
+      const fieldKey = properties.custom_store_field_key;
+      const value = fieldValues[fieldKey];
+      // need to include value === '' so that we can clear out hidden fields
+      if (value !== undefined) hiddenFields[fieldKey] = value;
+    });
 
     const isFileServar = (servar: any) =>
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    const hasFiles = fileServars.length > 0;
-    return [
+    const promiseFunc = () =>
       Promise.all([
-        this._submitJSONData(jsonServars, stepKey, hasNext),
+        this.submitCustom(hiddenFields),
+        this._submitJSONData(jsonServars, step.key, hasNext),
         ...fileServars.map((servar: any) =>
-          this._submitFileData(servar, stepKey)
+          this._submitFileData(servar, step.key)
         )
-      ]),
-      hasFiles
-    ];
+      ]);
+    this.submitQueue = Promise.all([this.submitQueue, wrapUnload(promiseFunc)]);
+    return this.submitQueue;
   }
 
-  async registerEvent(eventData: any, promise: any = null) {
+  async registerEvent(eventData: any) {
     await initFormsPromise;
     const { userId, collaboratorId } = initInfo();
 
@@ -547,37 +568,20 @@ export default class Client {
       ...eventData,
       ...(userId ? { fuser_key: userId } : {})
     };
-    if (collaboratorId) data.collaborator = collaboratorId;
+    if (collaboratorId) data.collaborator_user = collaboratorId;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
     };
 
-    // Ensure events complete before user exits page
-    const handleUnload = promise || !this.draft;
-    if (handleUnload)
-      this.eventQueue = this.eventQueue.then(() =>
-        featheryWindow().addEventListener(
-          'beforeunload',
-          beforeUnloadEventHandler
-        )
-      );
-
-    if (promise) this.eventQueue = this.eventQueue.then(() => promise);
-    // no events for draft
-    if (!this.draft)
-      this.eventQueue = this.eventQueue.then(() => this._fetch(url, options));
-
-    if (handleUnload)
-      this.eventQueue = this.eventQueue.then(() =>
-        featheryWindow().removeEventListener(
-          'beforeunload',
-          beforeUnloadEventHandler
-        )
-      );
-
-    return this.eventQueue;
+    // Ensure events complete before user exits page. Submit and load event of
+    // next step must happen after the previous step is done submitting
+    return await this.submitQueue.then(() =>
+      wrapUnload(() =>
+        this.draft ? Promise.resolve() : this._fetch(url, options)
+      )
+    );
   }
 
   // Logic custom APIs
@@ -619,13 +623,12 @@ export default class Client {
   }
 
   // AI
-  extractAIDocument(fieldId: string, correctRotation: boolean) {
+  extractAIDocument(extractionId: string, runAsync: boolean) {
     const { userId } = initInfo();
     const data = {
-      form_key: this.formKey,
       fuser_key: userId,
-      field_id: fieldId,
-      correct_rotation: correctRotation
+      extraction_id: extractionId,
+      run_async: runAsync
     };
     return this._fetch(`${AI_URL}ai/vision/`, {
       headers: { 'Content-Type': 'application/json' },
@@ -638,7 +641,7 @@ export default class Client {
   async verifyCollaborator(email: string) {
     const { userId, collaboratorId } = initInfo();
     const params: Record<string, any> = { fuser_key: userId, email };
-    if (collaboratorId) params.collaborator = collaboratorId;
+    if (collaboratorId) params.collaborator_user = collaboratorId;
     const url = `${API_URL}collaborator/verify/?${encodeGetParams(params)}`;
     return this._fetch(url, {}).then((response) =>
       response ? response.json() : Promise.resolve()
@@ -653,7 +656,7 @@ export default class Client {
       email,
       template_id: templateId
     };
-    if (collaboratorId) data.collaborator = collaboratorId;
+    if (collaboratorId) data.collaborator_user = collaboratorId;
     const url = `${API_URL}collaborator/invite/`;
     return this._fetch(
       url,
@@ -1008,6 +1011,26 @@ export default class Client {
       } else throw Error(parseError(await response.json()));
     }
   }
+}
+
+let unloadCounter = 0;
+async function wrapUnload(promiseFunc: any) {
+  if (!promiseFunc) return;
+
+  if (unloadCounter === 0)
+    featheryWindow().addEventListener('beforeunload', beforeUnloadEventHandler);
+  unloadCounter++;
+
+  const res = await promiseFunc();
+
+  unloadCounter--;
+  if (unloadCounter === 0)
+    featheryWindow().removeEventListener(
+      'beforeunload',
+      beforeUnloadEventHandler
+    );
+
+  return res;
 }
 
 const beforeUnloadEventHandler = (event: any) => {

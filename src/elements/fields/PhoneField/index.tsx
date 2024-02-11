@@ -86,7 +86,7 @@ function PhoneField({
 
   useEffect(() => {
     const input = inputRef.current;
-    if (input) input.setSelectionRange(cursor, cursor);
+    if (input && cursor !== null) input.setSelectionRange(cursor, cursor);
   }, [cursorChange]);
 
   useEffect(() => {
@@ -97,10 +97,10 @@ function PhoneField({
 
       const ayt = new global.libphonenumber.AsYouType();
       ayt.input(`+${fullNumber}`);
-      const numberObj = ayt.getNumber();
+      const numberObj = ayt.getNumber() ?? '';
+      setCurFullNumber(fullNumber);
+      setRawNumber(fullNumber);
       if (numberObj) {
-        setCurFullNumber(fullNumber);
-        setRawNumber(fullNumber);
         setCurCountryCode(numberObj.country ?? curCountryCode);
       }
     });

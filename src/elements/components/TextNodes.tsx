@@ -2,13 +2,12 @@ import React, { useMemo } from 'react';
 import { isNum, stringifyWithNull } from '../../utils/primitives';
 import Delta from 'quill-delta';
 import useTextEdit from './useTextEdit';
-import { openTab } from '../../utils/browser';
 import { fieldValues, initInfo } from '../../utils/init';
 import { ACTION_NEXT } from '../../utils/elementActions';
 
 export const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 
-export function replaceTextVariables(text: string, repeat: any) {
+export function replaceTextVariables(text: string, repeat?: any) {
   if (!text) return '';
 
   return text.replace(TEXT_VARIABLE_PATTERN, (pattern: any) => {
@@ -51,19 +50,28 @@ function TextNode({
   cursor,
   onClick = () => {},
   fontStyles,
-  text
+  text,
+  link,
+  editMode
 }: any) {
-  return (
-    <span
+  const styles = {
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'anywhere',
+    cursor,
+    ...fontStyles
+  };
+  return link && !editMode ? (
+    <a
       data-index={index}
-      css={{
-        whiteSpace: 'pre-wrap',
-        overflowWrap: 'anywhere',
-        cursor,
-        ...fontStyles
-      }}
-      onClick={onClick}
+      css={styles}
+      href={link}
+      target='_blank'
+      rel='noreferrer'
     >
+      {text}
+    </a>
+  ) : (
+    <span data-index={index} css={styles} onClick={onClick}>
       {text}
     </span>
   );
@@ -143,6 +151,7 @@ function TextNodes({
               element.properties?.text_formatted[0]?.attributes ?? {}
             )}
             text={textFromData}
+            editMode={editMode}
           />
         ) : (
           delta
@@ -151,13 +160,10 @@ function TextNodes({
               const attrs = op.attributes || {};
               let onClick = () => {};
               let cursor = 'inherit';
+              let link = '';
               if (!editMode && !disabled) {
                 if (attrs.font_link) {
-                  const link = replaceTextVariables(
-                    attrs.font_link,
-                    element.repeat
-                  );
-                  onClick = () => openTab(link);
+                  link = replaceTextVariables(attrs.font_link, element.repeat);
                   cursor = 'pointer';
                 } else if (
                   attrs.fullSpan ||
@@ -180,6 +186,8 @@ function TextNodes({
                   fontStyles={responsiveStyles.getRichFontStyles(attrs)}
                   onClick={onClick}
                   text={text}
+                  link={link}
+                  editMode={editMode}
                 />
               );
             })

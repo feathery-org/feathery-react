@@ -76,10 +76,10 @@ function CountryDropdown(
                 alignItems: 'center',
                 transition: '0.1s ease all',
                 fontSize: '14px',
-                '&:hover': { backgroundColor: '#e6e6e633' },
+                '&:hover': { backgroundColor: '#e6e6e644' },
                 '&:focus-visible': {
                   outline: 'none',
-                  backgroundColor: '#e6e6e633'
+                  backgroundColor: '#e6e6e644'
                 }
               }}
               tabIndex={0}
