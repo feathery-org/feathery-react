@@ -135,7 +135,10 @@ import {
   ACTION_SEND_SMS_MESSAGE,
   ACTION_REWIND_COLLABORATION,
   ACTION_AI_DOCUMENT_EXTRACT,
-  ACTION_OPEN_FUSER_ENVELOPES
+  ACTION_OPEN_FUSER_ENVELOPES,
+  ACTION_TELESIGN_SILENT_VERIFICATION,
+  ACTION_TELESIGN_VOICE_OTP,
+  ACTION_TELESIGN_VERIFY_OTP
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -1735,6 +1738,58 @@ function Form({
         };
         updateFieldValues(newValues, true, false);
         client.submitCustom(newValues);
+      } else if (type === ACTION_TELESIGN_SILENT_VERIFICATION) {
+        const phoneNum = fieldValues[
+          action.telesign_target_field_key
+        ] as string;
+        if (validators.phone(phoneNum)) {
+          try {
+            const silentVeriResult: boolean =
+              await client.telesignSilentVerification(phoneNum);
+
+            // set specified field value to the result
+            const key = action.telesign_status_field_key;
+            const newValues = {
+              [key]: silentVeriResult
+            };
+            updateFieldValues(newValues, true, false);
+            client.submitCustom(newValues);
+          } catch (e) {
+            setElementError((e as Error).message);
+            break;
+          }
+        } else {
+          setElementError('Your phone number is invalid');
+          break;
+        }
+      } else if (type === ACTION_TELESIGN_VOICE_OTP) {
+        const phoneNum = fieldValues[
+          action.telesign_target_field_key
+        ] as string;
+        if (validators.phone(phoneNum)) {
+          try {
+            await client.telesignVoiceOTP(phoneNum);
+          } catch (e) {
+            setElementError((e as Error).message);
+            break;
+          }
+        } else {
+          setElementError('Your phone number is invalid');
+          break;
+        }
+      } else if (type === ACTION_TELESIGN_VERIFY_OTP) {
+        const pinKey = action.telesign_target_field_key;
+        const pin = fieldValues[pinKey] as string;
+        try {
+          const pinMatch = await client.telesignVerifyOTP(pin);
+          if (!pinMatch) {
+            setElementError('Invalid code. Please try again');
+            break;
+          } else client.submitCustom({ [pinKey]: pin });
+        } catch (e) {
+          setElementError((e as Error).message);
+          break;
+        }
       }
     }
 
