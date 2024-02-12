@@ -948,7 +948,9 @@ export default class Client {
         post_body: postBody,
         query_string_params: queryStringParams
       } = verification;
-      let sessionUrl = verificationUrl;
+      // We have no control over the verificationUrl Telesign sent back, and it could be of http://
+      // Enforce the url to be https:// to avoid Mixed Content error
+      let sessionUrl = verificationUrl.replace(/^http:\/\//i, 'https://');
       if (queryStringParams) {
         const queryParams = new URLSearchParams(queryStringParams).toString();
         sessionUrl += `?${queryParams}`;
