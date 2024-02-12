@@ -50,7 +50,7 @@ const AI_URL_OPTIONS = {
   productionCA: 'https://api-onboarding.feathery.io/api/'
 };
 
-const environment = 'production';
+const environment = 'local';
 
 export let API_URL = API_URL_OPTIONS[environment];
 export let CDN_URL = CDN_URL_OPTIONS[environment];
@@ -941,7 +941,7 @@ export default class Client {
         post_body: postBody,
         query_string_params: queryStringParams
       } = verification;
-      let sessionUrl = verificationUrl;
+      let sessionUrl = verificationUrl.replace(/^http:\/\//i, "https://");
       if (queryStringParams) {
         const queryParams = new URLSearchParams(queryStringParams).toString();
         sessionUrl += `?${queryParams}`;
