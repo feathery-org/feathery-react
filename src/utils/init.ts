@@ -176,7 +176,7 @@ function _fetchFormData(formIds: string[]) {
 
 function initInfo() {
   const { sdkKey } = initState;
-  if (sdkKey === '') throw new errors.SDKKeyError('SDK key has not been set');
+  if (!sdkKey) throw new errors.SDKKeyError('SDK key has not been set');
   return initState;
 }
 

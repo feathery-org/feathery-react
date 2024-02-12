@@ -38,12 +38,13 @@ export const getFormContext = (formUuid: string) => {
     products: internalState[formUuid]?.products,
     cart: internalState[formUuid]?.cart,
     collaborator: internalState[formUuid]?.collaborator,
-    setFormCompletion: (flag: boolean) => {
+    setFormCompletion: () => {
       const { client, currentStep } = internalState[formUuid];
       return client.registerEvent({
         step_key: currentStep.key,
-        event: 'load',
-        completed: flag
+        next_step_key: '',
+        event: 'skip',
+        completed: true
       });
     },
     setProgress: (val: any) => {

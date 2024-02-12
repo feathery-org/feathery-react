@@ -16,9 +16,11 @@ function justRemove(list: any, index: any) {
   return [...list.slice(0, index), ...list.slice(index + 1)];
 }
 
-function toList(itemOrList: any) {
+function toList(itemOrList: any, coerceCSV = false) {
   if (Array.isArray(itemOrList)) return itemOrList;
   else if ([null, undefined].includes(itemOrList)) return [];
+  else if (coerceCSV && typeof itemOrList === 'string')
+    return itemOrList.split(',').map((s: string) => s.trim());
   return [itemOrList];
 }
 
