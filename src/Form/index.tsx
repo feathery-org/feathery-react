@@ -42,7 +42,8 @@ import {
   httpHelpers,
   FieldStyles,
   updateStepFieldStyles,
-  isStoreFieldValueAction
+  isStoreFieldValueAction,
+  updateCustomHead
 } from '../utils/formHelperFunctions';
 import {
   getContainerById,
@@ -909,6 +910,8 @@ function Form({
           if (res.save_url_params) saveUrlParamsFormSetting = true;
           setFormSettings(mapFormSettingsResponse(res, formSettings));
           setLogicRules(res.logic_rules);
+          updateCustomHead(res.custom_head ?? '');
+
           trackHashes.current = res.track_hashes;
 
           // Add any logic_rule.elements to viewElements so that onView called for then too.

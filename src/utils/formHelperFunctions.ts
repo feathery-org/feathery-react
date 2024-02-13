@@ -16,14 +16,12 @@ import {
   ACTION_EXECUTION_ORDER,
   ACTION_STORE_FIELD
 } from './elementActions';
-import { featheryWindow } from './browser';
+import { featheryDoc, featheryWindow } from './browser';
 import Client from '../utils/client';
 import { isObjectEmpty } from './primitives';
 import Field from './api/Field';
 import { formatDateString } from '../elements/fields/DateSelectorField';
-import countryData, {
-  findCountryByID
-} from '../elements/components/data/countries';
+import { findCountryByID } from '../elements/components/data/countries';
 import { CLOSED } from '../elements/components/FormOff';
 
 export const ARRAY_FIELD_TYPES = [
@@ -846,6 +844,16 @@ export function mapFormSettingsResponse(res: any, formSettings: any) {
     globalStyles: res.global_styles,
     saveHideIfFields: res.save_hide_if_fields
   };
+}
+
+export function updateCustomHead(headCode: string) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(headCode, 'text/html');
+  doc.querySelectorAll('*').forEach((custom) => {
+    const el = featheryDoc().createElement(custom.tagName);
+    el.innerHTML = custom.innerHTML;
+    featheryDoc().head.appendChild(el);
+  });
 }
 
 export function httpHelpers(client: any, connectorFields: string[] = []) {
