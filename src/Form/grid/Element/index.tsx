@@ -435,12 +435,16 @@ const Element = ({ node: el, form, flags }: any) => {
             fieldVal={fieldVal}
             otherVal={otherVal}
             onChange={(e: any) => {
-              handleCheckboxGroupChange(e, el, updateFieldValues);
-              onChange();
+              const index = handleCheckboxGroupChange(e, el, updateFieldValues);
+              onChange({ valueRepeatIndex: index });
             }}
             onOtherChange={(e: any) => {
-              handleOtherStateChange(otherVal, e, updateFieldValues);
-              onChange();
+              const index = handleOtherStateChange(
+                otherVal,
+                e,
+                updateFieldValues
+              );
+              onChange({ valueRepeatIndex: index });
             }}
           />
         );

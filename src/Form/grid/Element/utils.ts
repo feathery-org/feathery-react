@@ -73,6 +73,7 @@ export function handleOtherStateChange(
     if (curFieldVal === oldOtherVal) curFieldVal = curOtherVal;
   }
   updateFieldValues({ [target.id]: curFieldVal });
+  return Array.isArray(curFieldVal) ? curFieldVal.length - 1 : undefined;
 }
 
 export function handleCheckboxGroupChange(
@@ -97,6 +98,7 @@ export function handleCheckboxGroupChange(
   } else {
     updateFieldValues({ [servar.key]: newValue });
   }
+  return target.checked ? newValue.length - 1 : -1;
 }
 
 export function fieldAllowedFromList(allowLists: any[], fieldKey: string) {

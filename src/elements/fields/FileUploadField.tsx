@@ -94,7 +94,7 @@ function FileUploadField({
       const newRawFiles = justRemove(rawFiles, index);
       // @ts-expect-error TS(2349): This expression is not callable.
       setRawFiles(newRawFiles);
-      customOnChange(newRawFiles, index);
+      customOnChange(newRawFiles, -1);
     };
   }
 
