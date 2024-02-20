@@ -7,6 +7,7 @@ import countryData from '../components/data/countries';
 import { getStateOptions, hasState } from '../components/data/states';
 import { Global, css } from '@emotion/react';
 import { hoverStylesGuard } from '../../utils/browser';
+import { fieldValues } from '../../utils/init';
 
 export default function DropdownField({
   element,
@@ -73,6 +74,13 @@ export default function DropdownField({
     options = servar.metadata.options.map((option: any, index: number) => {
       const label = labels && labels[index] ? labels[index] : option;
       const tooltip = tooltips?.[index] ?? '';
+      if (
+        servar.repeated &&
+        servar.metadata.unique_repeat_options &&
+        option !== fieldVal &&
+        (fieldValues[servar.key] as string[]).includes(option)
+      )
+        return null;
       return (
         <option key={option} value={option} title={tooltip}>
           {label}
