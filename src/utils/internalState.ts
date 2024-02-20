@@ -1,4 +1,8 @@
-import { FieldOptions, FieldStyles } from './formHelperFunctions';
+import {
+  FieldOptions,
+  FieldProperties,
+  FieldStyles
+} from './formHelperFunctions';
 import Field from './api/Field';
 import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
@@ -29,6 +33,10 @@ interface FormInternalState {
   setStepKey: (key: string) => void;
   updateFieldOptions: (newOptions: FieldOptions) => void;
   updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => void;
+  updateFieldProperties: (
+    fieldKey: string,
+    newProperties: FieldProperties
+  ) => void;
   setFieldErrors: (
     errors: Record<string, string | { index: number; message: string }>
   ) => void;

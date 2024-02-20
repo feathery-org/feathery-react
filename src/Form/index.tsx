@@ -40,9 +40,10 @@ import {
   mapFormSettingsResponse,
   saveInitialValuesAndUrlParams,
   httpHelpers,
+  FieldProperties,
   FieldStyles,
+  updateStepFieldProperties,
   updateStepFieldStyles,
-  isStoreFieldValueAction,
   updateCustomHead
 } from '../utils/formHelperFunctions';
 import {
@@ -793,6 +794,18 @@ function Form({
           setSteps(JSON.parse(JSON.stringify(steps)));
 
           updateStepFieldStyles(newStep, fieldKey, newStyles);
+          setActiveStep(JSON.parse(JSON.stringify(newStep)));
+        },
+        updateFieldProperties: (
+          fieldKey: string,
+          newProperties: FieldProperties
+        ) => {
+          Object.values(steps).forEach((step) =>
+            updateStepFieldProperties(step, fieldKey, newProperties)
+          );
+          setSteps(JSON.parse(JSON.stringify(steps)));
+
+          updateStepFieldProperties(newStep, fieldKey, newProperties);
           setActiveStep(JSON.parse(JSON.stringify(newStep)));
         },
         setFieldErrors: (
