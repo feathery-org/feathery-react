@@ -986,6 +986,25 @@ export default class Client {
     }
   }
 
+  async telesignPhoneType(phoneNumber: string) {
+    const { userId } = initInfo();
+    const url = `${API_URL}telesign/phone_type/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        phone_number: phoneNumber,
+        form_key: this.formKey,
+        fuser_key: userId
+      })
+    };
+    const response = await this._fetch(url, options, false);
+    if (response) {
+      const { phone_type: phoneType } = await response.json();
+      return phoneType;
+    }
+  }
+
   async telesignVoiceOTP(phoneNumber: string) {
     const { userId } = initInfo();
     const url = `${API_URL}telesign/otp/voice/`;

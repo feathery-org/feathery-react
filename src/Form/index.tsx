@@ -139,6 +139,7 @@ import {
   ACTION_AI_DOCUMENT_EXTRACT,
   ACTION_OPEN_FUSER_ENVELOPES,
   ACTION_TELESIGN_SILENT_VERIFICATION,
+  ACTION_TELESIGN_PHONE_TYPE,
   ACTION_TELESIGN_VOICE_OTP,
   ACTION_TELESIGN_VERIFY_OTP
 } from '../utils/elementActions';
@@ -1767,6 +1768,29 @@ function Form({
             const key = action.telesign_status_field_key;
             const newValues = {
               [key]: silentVeriResult
+            };
+            updateFieldValues(newValues, true, false);
+            client.submitCustom(newValues);
+          } catch (e) {
+            setElementError((e as Error).message);
+            break;
+          }
+        } else {
+          setElementError('Your phone number is invalid');
+          break;
+        }
+      } else if (type === ACTION_TELESIGN_PHONE_TYPE) {
+        const phoneNum = fieldValues[
+          action.telesign_target_field_key
+        ] as string;
+        if (validators.phone(phoneNum)) {
+          try {
+            const phoneType: string = await client.telesignPhoneType(phoneNum);
+
+            // set specified field value to the result
+            const key = action.telesign_status_field_key;
+            const newValues = {
+              [key]: phoneType
             };
             updateFieldValues(newValues, true, false);
             client.submitCustom(newValues);
