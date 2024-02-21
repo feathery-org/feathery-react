@@ -27,6 +27,7 @@ export const ACTION_REWIND_COLLABORATION = 'rewind_collaboration';
 export const ACTION_AI_DOCUMENT_EXTRACT = 'ai_document_extract';
 export const ACTION_TELESIGN_SILENT_VERIFICATION =
   'telesign_silent_verification';
+export const ACTION_TELESIGN_PHONE_TYPE = 'telesign_phone_type';
 export const ACTION_TELESIGN_VOICE_OTP = 'telesign_voice_otp';
 export const ACTION_TELESIGN_VERIFY_OTP = 'telesign_verify_otp';
 
