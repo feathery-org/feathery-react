@@ -4,6 +4,7 @@ import {
   rerenderAllForms,
   OptionType,
   getDefaultFormFieldValue,
+  FieldProperties,
   FieldStyles
 } from '../formHelperFunctions';
 import {
@@ -189,6 +190,17 @@ export default class Field {
   setStyles(newStyles: FieldStyles) {
     const context = internalState[this._formUuid];
     context.updateFieldStyles(this._fieldKey, newStyles);
+  }
+
+  // field placeholder text
+  get placeholder(): string {
+    const field = this._getSourceField();
+    return field ? field.properties.placeholder : '';
+  }
+
+  set placeholder(val: string) {
+    const context = internalState[this._formUuid];
+    context.updateFieldProperties(this._fieldKey, { placeholder: val });
   }
 
   // errors for a field - write only

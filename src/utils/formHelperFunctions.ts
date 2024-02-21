@@ -356,6 +356,18 @@ export function updateStepFieldStyles(
   });
 }
 
+export type FieldProperties = Record<string, any>;
+export function updateStepFieldProperties(
+  step: any,
+  fieldKey: string,
+  newProperties: Record<string, any>
+) {
+  step.servar_fields.forEach((field: any) => {
+    const servar = field.servar;
+    if (servar.key === fieldKey) Object.assign(field.properties, newProperties);
+  });
+}
+
 export const getAllElements = (step: any) => {
   return [
     ...step.progress_bars.map((e: any) => [e, 'progress_bar']),
