@@ -634,7 +634,28 @@ export default class Client {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
-    }).then((res) => (res ? res.json() : Promise.resolve({})));
+    }).then(async (res: any) => {
+      if (res) {
+        if (res.status === 400) {
+          let json = null;
+
+          try {
+            json = await res.json();
+          } catch (err) {
+            return Promise.resolve({});
+          }
+
+          if (json) {
+            const [error] = json;
+            throw new errors.FetchError(error.message);
+          }
+        }
+
+        return res.json();
+      }
+
+      return Promise.resolve({});
+    });
   }
 
   // Collaboration
