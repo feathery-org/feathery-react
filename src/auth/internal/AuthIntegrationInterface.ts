@@ -22,6 +22,7 @@ import { defaultClient, initState } from '../../utils/init';
 
 // All code that needs to do something different based on the auth integration should go in this file
 
+let nativeOtpCount = 0;
 let nativeOtpTimeSent = 0;
 
 function isHrefMagicLink(): boolean {
@@ -64,11 +65,11 @@ function sendSms(phoneNum: string, featheryClient: any) {
   else if (authState.authType === 'firebase')
     return firebaseSendSms({ fieldVal: phoneNum, servar: null });
   else {
-    if (!nativeOtpTimeSent) nativeOtpTimeSent = Date.now();
+    if (nativeOtpCount < 3) nativeOtpCount++;
     else {
       const timeDiff = Date.now() - nativeOtpTimeSent;
-      if (timeDiff < 60000) {
-        const roundedSeconds = Math.round((60000 - timeDiff) / 1000);
+      if (timeDiff < 30000) {
+        const roundedSeconds = Math.round((30000 - timeDiff) / 1000);
         const err = initState.defaultErrors.sms_wait.replace(
           '{time}',
           roundedSeconds.toString()
@@ -76,6 +77,7 @@ function sendSms(phoneNum: string, featheryClient: any) {
         throw new Error(err);
       }
     }
+    nativeOtpTimeSent = Date.now();
     return featheryClient.sendSMSMessage(phoneNum);
   }
 }
