@@ -13,6 +13,7 @@ import {
 } from './init';
 import internalState, { setFormInternalState } from './internalState';
 import { validateElements } from './validation';
+import Auth from '../auth/internal/AuthIntegrationInterface';
 
 /**
  * Used by contextRef in <Form />, renderAt for vanillajs, and the lifecycle
@@ -102,7 +103,7 @@ export const getFormContext = (formUuid: string) => {
       internalState[formUuid].setCalendlyUrl(url),
     sendSmsCode: (phoneNumber: string) => {
       const { client } = internalState[formUuid];
-      return client.sendSMSMessage(phoneNumber);
+      return Auth.sendSms(phoneNumber, client);
     },
     telesignVoice: (phoneNumber: string) => {
       const { client } = internalState[formUuid];
