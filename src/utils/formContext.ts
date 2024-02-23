@@ -100,6 +100,14 @@ export const getFormContext = (formUuid: string) => {
     },
     setCalendlyUrl: (url: string) =>
       internalState[formUuid].setCalendlyUrl(url),
+    sendSmsCode: (phoneNumber: string) => {
+      const { client } = internalState[formUuid];
+      return client.sendSMSMessage(phoneNumber);
+    },
+    telesignVoice: (phoneNumber: string) => {
+      const { client } = internalState[formUuid];
+      return client.telesignVoiceOTP(phoneNumber);
+    },
     // deprecated
     setFieldValues: (userVals: FieldValues): void => {
       console.warn(
