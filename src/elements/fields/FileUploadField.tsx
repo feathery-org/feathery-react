@@ -233,7 +233,7 @@ function FileUploadField({
           position: 'absolute',
           opacity: 0,
           bottom: 0,
-          left: 0,
+          left: '50%',
           width: '1px',
           height: '1px',
           zIndex: FORM_Z_INDEX - 2
