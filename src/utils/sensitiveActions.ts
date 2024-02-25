@@ -1,7 +1,9 @@
 import internalState, { setFormInternalState } from './internalState';
 import Auth from '../auth/internal/AuthIntegrationInterface';
 
-export const getSensitiveActions = (formUuid: string) => {
+// Certain actions are only supported in the no code logic rule
+// And we do not want to expose them in formContext for SDK access
+export const getPrivateActions = (formUuid: string) => {
   if (!internalState[formUuid]) {
     setFormInternalState(formUuid, {
       fields: {}
