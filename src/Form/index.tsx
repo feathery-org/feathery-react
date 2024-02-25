@@ -107,6 +107,7 @@ import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
 import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
+import { getSensitiveActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, { setFormInternalState } from '../utils/internalState';
 import useFormAuth from '../auth/internal/useFormAuth';
@@ -605,6 +606,7 @@ function Form({
   ) => {
     const props = {
       ...getFormContext(_internalId),
+      ...getSensitiveActions(_internalId),
       ...getProps()
     };
 
