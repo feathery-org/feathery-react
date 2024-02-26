@@ -1,11 +1,13 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useFileData, useThumbnailData } from '../../utils/image';
-import { justRemove } from '../../utils/array';
+import { isEmptyArray, justRemove, toList } from '../../utils/array';
 
 import { Image } from 'react-bootstrap';
 import { CloseIcon, FileUploadIcon } from '../components/icons';
 import { imgMaxSizeStyles } from '../styles';
 import { FORM_Z_INDEX } from '../../utils/styles';
+import { downloadFile } from '../../utils/browser';
+import DownloadIcon from '../components/icons/DownloadIcon';
 
 const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 const NUM_FILES_LIMIT = 20;
@@ -26,7 +28,15 @@ function FileUploadField({
   const isMultiple = servar.metadata.multiple;
   const fileInput = useRef<any>();
 
-  const [rawFiles, setRawFiles] = useFileData(initialFiles);
+  const [rawFiles, setRawFiles] = useState<any[]>([]);
+  const [hoverDownload, setHoverDownload] = useState(-1);
+
+  useEffect(() => {
+    // Prevent infinite loop of setting a new empty array as the value
+    if (isEmptyArray(rawFiles) && isEmptyArray(initialFiles)) return;
+    setRawFiles(toList(initialFiles));
+  }, [initialFiles]);
+
   const thumbnailData = useThumbnailData(rawFiles);
   const allowMoreFiles = isMultiple || thumbnailData.length === 0;
   const fileExists = thumbnailData.length > 0;
@@ -69,18 +79,15 @@ function FileUploadField({
 
     const uploadedFiles = files.map((file) => Promise.resolve(file));
     // If the value is [null] (initial state of repeating rows), we want to replace the null with the file
-    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     const isRawFilesNull = rawFiles.length === 1 && rawFiles[0] === null;
     let newRawFiles, length;
     if (isRawFilesNull || hidePreview) {
       newRawFiles = uploadedFiles;
       length = 0;
     } else {
-      // @ts-expect-error TS(2461): Type 'any[] | Dispatch<SetStateAction<any[]>>' is ... Remove this comment to see the full error message
       newRawFiles = [...rawFiles, ...uploadedFiles];
       length = rawFiles.length;
     }
-    // @ts-expect-error TS(2349): This expression is not callable.
     setRawFiles(newRawFiles);
     customOnChange(newRawFiles, length);
 
@@ -92,7 +99,6 @@ function FileUploadField({
   function onClear(index: any) {
     return () => {
       const newRawFiles = justRemove(rawFiles, index);
-      // @ts-expect-error TS(2349): This expression is not callable.
       setRawFiles(newRawFiles);
       customOnChange(newRawFiles, -1);
     };
@@ -139,7 +145,32 @@ function FileUploadField({
                 : { paddingLeft: '20px', paddingRight: '20px' }),
               ...responsiveStyles.getTarget('field')
             }}
+            onMouseEnter={() => setHoverDownload(index)}
+            onMouseLeave={() => setHoverDownload(-1)}
           >
+            {hoverDownload === index && (
+              <div
+                css={{
+                  position: 'absolute',
+                  margin: 'auto',
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '8px',
+                  backgroundColor: '#3E414D80',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                onClick={async () => downloadFile(await rawFiles[index])}
+              >
+                <DownloadIcon />
+              </div>
+            )}
             {thumbnail ? (
               <Image
                 src={thumbnail}
@@ -180,6 +211,7 @@ function FileUploadField({
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
+                transition: '0.2s ease all',
                 '&:hover': { backgroundColor: '#BBB' }
               }}
               onClick={(event) => {
