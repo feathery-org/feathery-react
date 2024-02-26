@@ -67,7 +67,7 @@ const defaultBorderFields = [
 export const DROPDOWN_Z_INDEX = 10;
 
 function applyFieldStyles(field: any, styles: any) {
-  const type = field?.servar?.type || field.type;
+  const type = field.servar.type;
   styles.addTargets(
     'fc',
     'sub-fc',
@@ -129,9 +129,11 @@ function applyFieldStyles(field: any, styles: any) {
     case 'file_upload':
       styles.addTargets('ac', 'add');
       styles.applyHeight('ac');
-      if (!field.servar.metadata.multiple) {
-        styles.applyHeight('fc');
-      }
+      if (field.servar.metadata.multiple) {
+        styles.apply('field', 'padding_bottom', (a: number) => ({
+          marginBottom: `${a}px`
+        }));
+      } else styles.applyHeight('fc');
       styles.applyHeight('field');
       styles.applyBorders({ target: 'field' });
       styles.applyCorners('field');

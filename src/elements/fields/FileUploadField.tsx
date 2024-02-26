@@ -167,7 +167,7 @@ function FileUploadField({
               </span>
             )}
             <div
-              style={{
+              css={{
                 position: 'absolute',
                 top: '4px',
                 right: '4px',
@@ -179,7 +179,8 @@ function FileUploadField({
                 cursor: 'pointer',
                 display: 'flex',
                 justifyContent: 'center',
-                alignItems: 'center'
+                alignItems: 'center',
+                '&:hover': { backgroundColor: '#BBB' }
               }}
               onClick={(event) => {
                 // Stop propagation so window doesn't open up to pick another file to upload
