@@ -1036,6 +1036,21 @@ export default class Client {
       } else throw Error(parseError(await response.json()));
     }
   }
+
+  async sendEmail(templateId: string) {
+    const { userId } = initInfo();
+    const url = `${API_URL}email-logic-rule/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        template_id: templateId,
+        form_key: this.formKey,
+        fuser_key: userId
+      })
+    };
+    await this._fetch(url, options, false);
+  }
 }
 
 let unloadCounter = 0;
