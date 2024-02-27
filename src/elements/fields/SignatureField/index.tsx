@@ -22,11 +22,11 @@ function SignatureField({
   const fieldKey = servar.key ?? element.key;
 
   useEffect(() => {
-    if (global.webfontloaderPromise) {
-      global.webfontloaderPromise.then((WebFont: any) => {
-        WebFont.load({ google: { families: ['Great Vibes'] } });
-      });
-    }
+    if (!global.webfontloaderPromise)
+      global.webfontloaderPromise = import('webfontloader');
+    global.webfontloaderPromise.then((WebFont: any) => {
+      WebFont.load({ google: { families: ['Great Vibes'] } });
+    });
   }, []);
 
   return (
