@@ -51,7 +51,7 @@ const AI_URL_OPTIONS = {
   productionCA: 'https://api-onboarding.feathery.io/api/'
 };
 
-const environment = 'production';
+const environment = 'local';
 
 export let API_URL = API_URL_OPTIONS[environment];
 export let CDN_URL = CDN_URL_OPTIONS[environment];
@@ -1039,7 +1039,7 @@ export default class Client {
 
   async sendEmail(templateId: string) {
     const { userId } = initInfo();
-    const url = `${API_URL}email-logic-rule/`;
+    const url = `${API_URL}email/logic-rule/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
