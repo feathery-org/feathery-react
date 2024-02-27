@@ -56,7 +56,12 @@ export default function InlineTooltip({
                 cursor: 'pointer',
                 height: '100%'
               }
-            : { marginLeft: '8px', display: 'flex', alignItems: 'center' }
+            : {
+                position: 'relative',
+                marginLeft: '8px',
+                display: 'flex',
+                alignItems: 'center'
+              }
         }
       >
         <HelpIcon cssStyles={responsiveStyles.getTarget('tooltipIcon')} />

@@ -3,6 +3,7 @@ import { imgMaxSizeStyles, noTextSelectStyles } from '../styles';
 import useBorder from '../components/useBorder';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import { hoverStylesGuard } from '../../utils/browser';
+import InlineTooltip from '../components/InlineTooltip';
 
 function ButtonGroupField({
   element,
@@ -33,6 +34,8 @@ function ButtonGroupField({
 
   const servar = element.servar;
   const labels = servar.metadata.option_labels;
+  const tooltips = servar.metadata.option_tooltips;
+
   return (
     <div
       css={{
@@ -56,6 +59,7 @@ function ButtonGroupField({
         {servar.metadata.options.map((opt: any, index: any) => {
           const imageUrl = servar.metadata.option_images[index];
           const label = labels && labels[index] ? labels[index] : opt;
+          const tooltip = tooltips[index];
           return (
             <div
               onClick={() => onClick(opt)}
@@ -106,6 +110,14 @@ function ButtonGroupField({
                 >
                   {label}
                 </div>
+              )}
+              {tooltip && (
+                <InlineTooltip
+                  id={`${element.id}-${label}`}
+                  text={tooltip}
+                  responsiveStyles={responsiveStyles}
+                  absolute={false}
+                />
               )}
             </div>
           );
