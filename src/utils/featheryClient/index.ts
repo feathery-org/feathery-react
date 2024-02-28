@@ -1,4 +1,4 @@
-import IntegClient from './integClient';
+import IntegrationClient from './integrationClient';
 import {
   fieldValues,
   filePathMap,
@@ -6,22 +6,22 @@ import {
   initInfo,
   initState,
   setFieldValues
-} from './init';
-import { dataURLToFile, isBase64Image } from './image';
-import { encodeGetParams } from './primitives';
+} from '../init';
+import { dataURLToFile, isBase64Image } from '../image';
+import { encodeGetParams } from '../primitives';
 import {
   getABVariant,
   getDefaultFormFieldValue,
   isStoreFieldValueAction,
   updateSessionValues
-} from './formHelperFunctions';
-import { loadPhoneValidator } from './validation';
-import { initializeIntegrations } from '../integrations/utils';
-import { loadLottieLight } from '../elements/components/Lottie';
-import { featheryDoc, featheryWindow } from './browser';
-import { authState } from '../auth/LoginForm';
-import { parseError } from './error';
-import { loadQRScanner } from '../elements/fields/QRScanner';
+} from '../formHelperFunctions';
+import { loadPhoneValidator } from '../validation';
+import { initializeIntegrations } from '../../integrations/utils';
+import { loadLottieLight } from '../../elements/components/Lottie';
+import { featheryDoc, featheryWindow } from '../browser';
+import { authState } from '../../auth/LoginForm';
+import { parseError } from '../error';
+import { loadQRScanner } from '../../elements/fields/QRScanner';
 
 // Convenience boolean for urls - manually change for testing
 export const API_URL_OPTIONS = {
@@ -70,7 +70,7 @@ export const updateRegionApiUrls = (region: string) => {
   }
 };
 
-export default class Client extends IntegClient {
+export default class FeatheryClient extends IntegrationClient {
   _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
     if (servars.length === 0) return Promise.resolve();
 

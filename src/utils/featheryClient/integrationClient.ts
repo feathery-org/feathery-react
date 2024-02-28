@@ -1,8 +1,8 @@
-import * as errors from './error';
-import { fieldValues, initFormsPromise, initInfo } from './init';
-import { encodeGetParams } from './primitives';
-import { parseError } from './error';
-import { API_URL } from './client';
+import * as errors from '../error';
+import { fieldValues, initFormsPromise, initInfo } from '../init';
+import { encodeGetParams } from '../primitives';
+import { parseError } from '../error';
+import { API_URL } from '.';
 
 const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -11,7 +11,8 @@ const TYPE_MESSAGES_TO_IGNORE = [
   'Load failed'
 ];
 
-export default class IntegClient {
+// THIRD-PARTY INTEGRATIONS
+export default class IntegrationClient {
   formKey: string;
   version?: string;
   noSave?: boolean;
@@ -87,7 +88,6 @@ export default class IntegClient {
       });
   }
 
-  // THIRD-PARTY INTEGRATIONS
   async fetchPlaidLinkToken(includeLiabilities: boolean) {
     await initFormsPromise;
     const { userId } = initInfo();
