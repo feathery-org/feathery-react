@@ -11,7 +11,7 @@ import {
   trackGAEvent
 } from './googleAnalytics';
 import Auth from '../auth/internal/AuthIntegrationInterface';
-import Client from '../utils/client';
+import FeatheryClient from '../utils/featheryClient';
 import { installArgyle } from './argyle';
 import { installHeap } from './heap';
 import { featheryWindow } from '../utils/browser';
@@ -76,7 +76,7 @@ export function dynamicImport(
 
 export async function initializeIntegrations(
   integs: Record<string, any>,
-  featheryClient: Client
+  featheryClient: FeatheryClient
 ) {
   await Promise.all([
     installArgyle(!!integs.argyle),

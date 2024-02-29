@@ -3,7 +3,7 @@ import React, { memo, useCallback, useEffect, useState } from 'react';
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/InlineTooltip';
 import { bootstrapStyles } from '../styles';
-import Client from '../../utils/client';
+import FeatheryClient from '../../utils/featheryClient';
 import useMounted from '../../hooks/useMounted';
 
 import debounce from 'lodash.debounce';
@@ -116,7 +116,9 @@ function AddressLine1({
                     const addressId = options.find(
                       (opt) => (opt as any).display === display
                     ).address_id;
-                    const details = await new Client().addressDetail(addressId);
+                    const details = await new FeatheryClient().addressDetail(
+                      addressId
+                    );
                     onSelect(details, addressId);
                   }}
                 >
@@ -190,7 +192,7 @@ function useAddressSearch(searchTerm: any, active: any, country: any) {
   const fetchAddresses = useCallback(
     debounce(
       (newTerm: any) =>
-        new Client()
+        new FeatheryClient()
           .addressSearchResults(newTerm, country ?? '')
           .then((addresses) => {
             if (mounted.current) {

@@ -63,7 +63,7 @@ import {
   updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
-import Client from '../utils/client';
+import FeatheryClient from '../utils/featheryClient';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
 import {
@@ -899,7 +899,7 @@ function Form({
 
   useEffect(() => {
     if (client === null) {
-      const clientInstance = new Client(
+      const clientInstance = new FeatheryClient(
         formName,
         hasRedirected,
         _draft,

@@ -1,4 +1,4 @@
-import Client, { API_URL, CDN_URL } from '../client';
+import FeatheryClient, { API_URL, CDN_URL } from '../featheryClient';
 import { initInfo, initFormsPromise } from '../init';
 
 jest.mock('../init', () => ({
@@ -9,12 +9,12 @@ jest.mock('../init', () => ({
   filePathMap: {}
 }));
 
-describe('client', () => {
+describe('featheryClient', () => {
   describe('fetchForm', () => {
     it('fetches a form with the provided parameters', async () => {
       // Arrange
       const formKey = 'formKey';
-      const client = new Client(formKey);
+      const featheryClient = new FeatheryClient(formKey);
       initInfo.mockReturnValue({
         sdkKey: 'sdkKey',
         userId: 'userId',
@@ -30,7 +30,7 @@ describe('client', () => {
       });
 
       // Act
-      const response = await client.fetchForm();
+      const response = await featheryClient.fetchForm();
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
@@ -53,7 +53,7 @@ describe('client', () => {
     it('fetches a session with the provided parameters', async () => {
       // Arrange
       const formKey = 'formKey';
-      const client = new Client(formKey);
+      const featheryClient = new FeatheryClient(formKey);
       initInfo.mockReturnValue({
         sdkKey: 'sdkKey',
         userId: 'userId',
@@ -72,7 +72,7 @@ describe('client', () => {
       });
 
       // Act
-      const response = await client.fetchSession();
+      const response = await featheryClient.fetchSession();
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
@@ -95,13 +95,13 @@ describe('client', () => {
     it('fetches on submit', async () => {
       // Arrange
       const formKey = 'formKey';
-      const client = new Client(formKey);
+      const featheryClient = new FeatheryClient(formKey);
       const customKeyValues = { foo: 'bar' };
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
-      const response = await client.submitCustom(customKeyValues);
+      const response = await featheryClient.submitCustom(customKeyValues);
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
@@ -130,7 +130,7 @@ describe('client', () => {
     it('fetches on step submission', async () => {
       // Arrange
       const formKey = 'formKey';
-      const client = new Client(formKey);
+      const featheryClient = new FeatheryClient(formKey);
       const servars = [
         {
           key: 'servar1',
@@ -147,7 +147,7 @@ describe('client', () => {
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
-      const response = await client.submitStep(servars, {
+      const response = await featheryClient.submitStep(servars, {
         key: 'stepKey',
         buttons: [],
         subgrids: []
@@ -178,7 +178,7 @@ describe('client', () => {
       const stepKey = 'stepKey';
       const event = { eventStuff: 'eventStuff' };
       const nextStepKey = '';
-      const client = new Client(formKey);
+      const featheryClient = new FeatheryClient(formKey);
       const body = {
         form_key: formKey,
         step_key: stepKey,
@@ -191,7 +191,7 @@ describe('client', () => {
 
       // Act
       await initFormsPromise;
-      await client.registerEvent({
+      await featheryClient.registerEvent({
         step_key: stepKey,
         next_step_key: nextStepKey,
         event
@@ -220,7 +220,7 @@ describe('client', () => {
     });
     const formKey = 'formKey';
     const userId = 'userId';
-    const client = new Client(formKey);
+    const featheryClient = new FeatheryClient(formKey);
     const mockFetch = (response) => {
       global.fetch = jest.fn().mockResolvedValue({
         status: 200,
@@ -239,7 +239,9 @@ describe('client', () => {
       mockFetch(intentSecret);
 
       // Act
-      const response = await client.setupPaymentIntent(paymentMethodFieldId);
+      const response = await featheryClient.setupPaymentIntent(
+        paymentMethodFieldId
+      );
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
@@ -276,7 +278,7 @@ describe('client', () => {
       mockFetch(paymentMethodData);
 
       // Act
-      const result = await client.retrievePaymentMethodData(
+      const result = await featheryClient.retrievePaymentMethodData(
         paymentMethodFieldId,
         stripePaymentMethodId
       );
@@ -305,7 +307,7 @@ describe('client', () => {
       mockFetch(intentSecret);
 
       // Act
-      const response = await client.createPayment();
+      const response = await featheryClient.createPayment();
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/payment/`, {
@@ -334,7 +336,7 @@ describe('client', () => {
       mockFetch(expectedResponse);
 
       // Act
-      const response = await client.createCheckoutSession(
+      const response = await featheryClient.createCheckoutSession(
         successUrl,
         cancelUrl
       );
