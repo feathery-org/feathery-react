@@ -1688,18 +1688,16 @@ function Form({
           break;
         }
       } else if (type === ACTION_INVITE_COLLABORATOR) {
+        // Invited collaborators is a mixed list of emails and/or user group names (comma sep or array)
         const val = fieldValues[action.email_field_key];
-        const emails = toList(val, true);
-        const invalidEmail = emails.reduce((acc, email) => {
-          if (!validators.email(email)) return true;
-          return acc;
-        }, false);
-        if (invalidEmail) {
-          setElementError(`${val} is an invalid email`);
+        if (!val) {
+          setElementError('Collaborators required');
           break;
         }
+        const invitees = toList(val, true);
+        // BE validates emails and user groups
         try {
-          await client.inviteCollaborator(emails, action.template_id);
+          await client.inviteCollaborator(invitees, action.template_id);
         } catch (e: any) {
           setElementError((e as Error).message);
           break;

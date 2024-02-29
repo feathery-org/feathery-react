@@ -570,12 +570,12 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
-  async inviteCollaborator(email: string, templateId: string) {
+  async inviteCollaborator(usersGroups: string, templateId: string) {
     const { userId, collaboratorId } = initInfo();
     const data: Record<string, any> = {
       form_key: this.formKey,
       fuser_key: userId,
-      email,
+      users_groups: usersGroups,
       template_id: templateId
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
