@@ -44,3 +44,17 @@ export function getStytchJwt() {
 
 export const openTab = (url: any) =>
   featheryWindow().open(url, '_blank', 'noopener');
+
+export function downloadFile(file: File) {
+  const element = featheryDoc().createElement('a');
+  element.style.display = 'none';
+  const href = featheryWindow().URL.createObjectURL(file);
+  element.href = href;
+  element.download = file.name;
+  featheryDoc().body.appendChild(element);
+
+  element.click();
+
+  featheryWindow().URL.revokeObjectURL(href);
+  featheryDoc().body.removeChild(element);
+}

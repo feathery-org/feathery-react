@@ -31,7 +31,8 @@ export function getThumbnailType(file: any) {
  * and will execute a callback every time that list changes.
  */
 export function useFileData(initialFiles: any, onSetFiles = () => {}) {
-  const [files, setFiles] = useState(toList(initialFiles));
+  const [files, setFiles] = useState<any[]>(toList(initialFiles));
+
   useEffect(() => {
     // Prevent infinite loop of setting a new empty array as the value
     if (isEmptyArray(files) && isEmptyArray(initialFiles)) return;
