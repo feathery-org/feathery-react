@@ -17,7 +17,7 @@ import {
   ACTION_STORE_FIELD
 } from './elementActions';
 import { featheryDoc, featheryWindow } from './browser';
-import Client from '../utils/client';
+import FeatheryClient from './featheryClient';
 import { isObjectEmpty } from './primitives';
 import Field from './api/Field';
 import { formatDateString } from '../elements/fields/DateSelectorField';
@@ -809,7 +809,7 @@ export function saveInitialValuesAndUrlParams({
   steps
 }: {
   updateFieldValues: (newFieldValues: any, rerender?: boolean) => boolean;
-  client: Client;
+  client: FeatheryClient;
   saveUrlParams: boolean;
   initialValues: any;
   steps: any;

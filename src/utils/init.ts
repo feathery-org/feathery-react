@@ -1,7 +1,7 @@
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { v4 as uuidv4 } from 'uuid';
 
-import Client, { updateRegionApiUrls } from './client';
+import FeatheryClient, { updateRegionApiUrls } from './featheryClient';
 import * as errors from './error';
 import {
   runningInClient,
@@ -64,7 +64,7 @@ type InitState = {
 } & Omit<InitOptions, keyof DeprecatedOptions>;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
-export const defaultClient = new Client();
+export const defaultClient = new FeatheryClient();
 const initState: InitState = {
   initialized: false,
   userTracking: 'cookie',
@@ -166,7 +166,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
 // must be called after userId loads
 function _fetchFormData(formIds: string[]) {
   formIds.forEach((key) => {
-    const formClient = new Client(key);
+    const formClient = new FeatheryClient(key);
     formClient.fetchCacheForm().then((stepsResponse: any) => {
       initState.preloadForms[key] = stepsResponse;
     });

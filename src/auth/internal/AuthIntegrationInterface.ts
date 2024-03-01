@@ -15,7 +15,7 @@ import {
   stytchVerifySms,
   setStytchDomainCookie
 } from '../../integrations/stytch';
-import Client from '../../utils/client';
+import FeatheryClient from '../../utils/featheryClient';
 import { isAuthStytch } from './utils';
 import { featheryWindow, getCookie, getStytchJwt } from '../../utils/browser';
 import { defaultClient, initState } from '../../utils/init';
@@ -32,7 +32,7 @@ function isHrefMagicLink(): boolean {
   );
 }
 
-function inferLoginOnLoad(featheryClient: Client) {
+function inferLoginOnLoad(featheryClient: FeatheryClient) {
   const queryParams = new URLSearchParams(featheryWindow().location.search);
   const type = queryParams.get('stytch_token_type');
   const token = queryParams.get('token');
