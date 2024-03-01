@@ -16,7 +16,7 @@ const UPPERCASE_LETTER_MATCH = /[A-Z]/;
 const LOWERCASE_LETTER_MATCH = /[a-z]/;
 const NUMBER_MATCH = /\d/;
 // eslint-disable-next-line no-useless-escape
-const SYMBOL_MATCH = /[#$\.%&'()\+,-/:;<=>?@\\\[\]\^_`{|}~\*]/;
+const SYMBOL_MATCH = /[#$\.%&'()\+,-/:;<=>!?@\\\[\]\^_`{|}~\*]/;
 
 /**
  * Validate elements on a form
