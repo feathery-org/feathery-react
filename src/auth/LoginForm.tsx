@@ -36,6 +36,7 @@ export const authState = {
   // This is a flag so we only redirect to the login start step immediately
   // after auth, not during other form navigation
   redirectAfterLogin: false,
+  hasRedirected: false,
   sentAuth: false,
   setAuthId: (newId: string) => {
     authState.authId = newId;

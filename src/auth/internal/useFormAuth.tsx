@@ -36,6 +36,7 @@ const useFormAuth = ({
         setStepKey(stepName);
         setUrlStepHash(history, steps, stepName);
         authState.redirectAfterLogin = false;
+        authState.hasRedirected = true;
       } else {
         // If there are no onboarding steps, we can mark the form as complete.
         // This is only guaranteed to happen for OAuth - both magic link & SMS have potential to set completed via goToNewStep
@@ -63,6 +64,7 @@ const useFormAuth = ({
     const metadata = getAuthIntegrationMetadata(integrations);
     if (authState.redirectAfterLogin && integrations && !metadata) {
       authState.redirectAfterLogin = false;
+      authState.hasRedirected = true;
       // We also need to set the step & hash because both those actions were
       // blocked by the `if (authState.redirectAfterLogin) return;` early
       // return in Form's fetchSession.then fn call

@@ -994,7 +994,12 @@ function Form({
           });
 
           // User is authenticating. auth hook will set the initial stepKey once auth has finished
-          if (authState.redirectAfterLogin) return;
+          if (
+            authState.redirectAfterLogin ||
+            authState.hasRedirected ||
+            stepKey
+          )
+            return;
 
           const newKey = getInitialStep({
             initialStepId,
