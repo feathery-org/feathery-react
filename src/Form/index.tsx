@@ -1589,17 +1589,15 @@ function Form({
         if (url) {
           if (!url.includes(':')) url = 'https://' + url;
           if (action.open_tab) openTab(url);
-          else {
-            const eventData: Record<string, any> = {
-              step_key: activeStep.key,
-              next_step_key: '',
-              event: submit ? 'complete' : 'skip',
-              completed: true
-            };
-            client.registerEvent(eventData).then(() => {
-              location.href = url;
-            });
-          }
+        }
+        if (!action.open_tab) {
+          const eventData: Record<string, any> = {
+            step_key: activeStep.key,
+            next_step_key: '',
+            event: submit ? 'complete' : 'skip',
+            completed: true
+          };
+          client.registerEvent(eventData).then(() => (location.href = url));
         }
       } else if (type === ACTION_SEND_SMS_MESSAGE) {
         const phoneNum = fieldValues[action.phone_target_field_key] as string;
