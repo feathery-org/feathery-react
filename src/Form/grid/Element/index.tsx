@@ -520,7 +520,7 @@ const Element = ({ node: el, form, flags }: any) => {
             rawValue={stringifyWithNull(fieldVal)}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index);
+              const change = changeValue(val, el, index, false);
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
@@ -640,10 +640,8 @@ const Element = ({ node: el, form, flags }: any) => {
               const newVal = mask._unmaskedValue === '' ? '' : val;
               if (newVal === stringifyWithNull(fieldVal)) return;
               // Rerender only necessary if autocomplete dropdown needs
-              // to be updated, first char is set, or last char is removed
-              const rerender =
-                (servar.metadata.options ?? []).length > 0 ||
-                newVal.length <= 1;
+              // to be updated
+              const rerender = (servar.metadata.options ?? []).length > 0;
               const change = changeValue(newVal, el, index, rerender);
               if (change) {
                 const submitData =

@@ -542,8 +542,8 @@ function Form({
     if (rerender || empty) setRender((render) => ({ ...render }));
     else if (hideIfDependenciesChanged) debouncedRerender();
 
-    // Only validate on each field change if auto validate is enabled due to prev a submit attempt
-    if (autoValidate) debouncedValidate(setInlineErrors);
+    // Only validate on each field change if auto validate is enabled due to prev submit attempt
+    if (autoValidate && rerender) debouncedValidate(setInlineErrors);
 
     return true;
   };
