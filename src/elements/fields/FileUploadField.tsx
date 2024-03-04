@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useFileData, useThumbnailData } from '../../utils/image';
+import { useThumbnailData } from '../../utils/image';
 import { isEmptyArray, justRemove, toList } from '../../utils/array';
 
 import { Image } from 'react-bootstrap';
-import { CloseIcon, FileUploadIcon } from '../components/icons';
+import { CloseIcon, FileUploadIcon, DownloadIcon } from '../components/icons';
 import { imgMaxSizeStyles } from '../styles';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import { downloadFile } from '../../utils/browser';
-import DownloadIcon from '../components/icons/DownloadIcon';
 
 const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 const NUM_FILES_LIMIT = 20;
