@@ -1727,7 +1727,7 @@ function Form({
           openTab(
             `https://document.feathery.io/to/${initState._internalUserId}`
           );
-        }, 10000);
+        }, 4000);
       } else if (type === ACTION_STORE_FIELD) {
         let val;
         if (action.custom_store_value_type === 'field') {
