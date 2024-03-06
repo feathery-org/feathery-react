@@ -366,7 +366,7 @@ function Form({
     const oldLanguage = curLanguage.current;
     curLanguage.current = language;
 
-    if (language && oldLanguage && oldLanguage !== language) {
+    if (oldLanguage && oldLanguage !== language) {
       // if language changes, need to remount form to refetch data
       initState.remountCallbacks[_internalId]();
     }
