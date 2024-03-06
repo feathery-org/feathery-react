@@ -287,15 +287,23 @@ export default class IntegrationClient {
     });
   }
 
-  quikDocuments(jsonKey: string) {
-    const formPayload = fieldValues[jsonKey] as string;
-    const url = `${API_URL}quik/document/`;
+  generateEnvelopes(action: Record<string, string>) {
+    const { userId } = initInfo();
+    const signer = fieldValues[action.envelope_signer_field_key];
+    const payload: Record<string, any> = {
+      fuser_key: userId,
+      documents: action.documents ?? [],
+      signer_email: signer
+    };
+    if (action.quik_documents)
+      payload.quik = fieldValues[action.quik_json_field_key];
+    const url = `${API_URL}document/form/generate/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
-      body: formPayload
+      body: JSON.stringify(payload)
     };
-    return fetch(url, options).then(async (response) => {
+    return this._fetch(url, options, false).then(async (response) => {
       if (response) {
         if (response.ok) return await response.json();
         else throw Error(parseError(await response.json()));
