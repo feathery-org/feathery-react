@@ -65,7 +65,7 @@ function sendSms(phoneNum: string, featheryClient: any) {
   else if (authState.authType === 'firebase')
     return firebaseSendSms({ fieldVal: phoneNum, servar: null });
   else {
-    if (nativeOtpCount < 3) nativeOtpCount++;
+    if (nativeOtpCount < 10) nativeOtpCount++;
     else {
       const timeDiff = Date.now() - nativeOtpTimeSent;
       if (timeDiff < 30000) {
