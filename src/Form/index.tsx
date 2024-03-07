@@ -521,8 +521,7 @@ function Form({
 
   const updateFieldValues = (
     newFieldValues: any,
-    rerender = true,
-    clearErrors = true
+    { rerender = true, clearErrors = true, triggerErrors = true } = {}
   ) => {
     if (clearErrors) clearBrowserErrors(formRef);
     const entries = Object.entries(newFieldValues);
@@ -543,7 +542,7 @@ function Form({
     else if (hideIfDependenciesChanged) debouncedRerender();
 
     // Only validate on each field change if auto validate is enabled due to prev submit attempt
-    if (autoValidate && rerender) debouncedValidate(setInlineErrors);
+    if (autoValidate && triggerErrors) debouncedValidate(setInlineErrors);
 
     return true;
   };
@@ -1040,7 +1039,8 @@ function Form({
     value: any,
     field: any,
     index = null,
-    rerender = true
+    rerender = true,
+    triggerErrors = true
   ) => {
     const updateValues = {};
     let repeatRowOperation;
@@ -1087,7 +1087,7 @@ function Form({
         ? value
         : justInsert(fieldValues[servar.key] || [], value, index);
 
-    const change = updateFieldValues(updateValues, rerender);
+    const change = updateFieldValues(updateValues, { rerender, triggerErrors });
     if (repeatRowOperation === 'add' && repeatContainer)
       addRepeatedRow(repeatContainer);
     return change;
@@ -1755,7 +1755,7 @@ function Form({
         const newValues = {
           [key]: setToDefaultValue ? defaultValue : castValue
         };
-        updateFieldValues(newValues, true, false);
+        updateFieldValues(newValues, { clearErrors: false });
         client.submitCustom(newValues);
       } else if (type === ACTION_TELESIGN_SILENT_VERIFICATION) {
         const phoneNum = fieldValues[
@@ -1771,7 +1771,7 @@ function Form({
             const newValues = {
               [key]: silentVeriResult
             };
-            updateFieldValues(newValues, true, false);
+            updateFieldValues(newValues, { clearErrors: false });
             client.submitCustom(newValues);
           } catch (e) {
             setElementError((e as Error).message);
@@ -1794,7 +1794,7 @@ function Form({
             const newValues = {
               [key]: phoneType
             };
-            updateFieldValues(newValues, true, false);
+            updateFieldValues(newValues, { clearErrors: false });
             client.submitCustom(newValues);
           } catch (e) {
             setElementError((e as Error).message);

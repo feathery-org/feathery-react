@@ -487,7 +487,7 @@ export async function purchaseCart(
 export async function checkForPaymentCheckoutCompletion(
   steps: any,
   client: any,
-  updateFieldValues: (fieldValues: any) => void,
+  updateFieldValues: (fieldValues: any, options?: any) => void,
   integrationData: any
 ) {
   // check if this is a checkout completion

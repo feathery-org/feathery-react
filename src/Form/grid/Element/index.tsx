@@ -505,7 +505,7 @@ const Element = ({ node: el, form, flags }: any) => {
             rawValue={stringifyWithNull(fieldVal)}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index);
+              const change = changeValue(val, el, index, true, false);
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
@@ -520,7 +520,7 @@ const Element = ({ node: el, form, flags }: any) => {
             rawValue={stringifyWithNull(fieldVal)}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index);
+              const change = changeValue(val, el, index, true, false);
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
@@ -534,7 +534,9 @@ const Element = ({ node: el, form, flags }: any) => {
             {...fieldProps}
             fullNumber={stringifyWithNull(fieldVal)}
             // Set values as they change since hide if dependencies need to update
-            onChange={(val: string) => changeValue(val, el, index, false)}
+            onChange={(val: string) =>
+              changeValue(val, el, index, false, false)
+            }
             onComplete={(val: string) => {
               const change = changeValue(val, el, index);
               if (change) debouncedOnChange();
@@ -551,7 +553,7 @@ const Element = ({ node: el, form, flags }: any) => {
             value={stringifyWithNull(fieldVal)}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index);
+              const change = changeValue(val, el, index, true, false);
               if (change) debouncedOnChange();
             }}
             onSelect={(address: any, addressId: string) => {
@@ -642,7 +644,7 @@ const Element = ({ node: el, form, flags }: any) => {
               // Rerender only necessary if autocomplete dropdown needs
               // to be updated
               const rerender = (servar.metadata.options ?? []).length > 0;
-              const change = changeValue(newVal, el, index, rerender);
+              const change = changeValue(newVal, el, index, rerender, false);
               if (change) {
                 const submitData =
                   autosubmit && textFieldShouldSubmit(servar, newVal);
