@@ -808,7 +808,7 @@ export function saveInitialValuesAndUrlParams({
   initialValues,
   steps
 }: {
-  updateFieldValues: (newFieldValues: any, rerender?: boolean) => boolean;
+  updateFieldValues: any;
   client: FeatheryClient;
   saveUrlParams: boolean;
   initialValues: any;
@@ -834,7 +834,7 @@ export function saveInitialValuesAndUrlParams({
     });
   }
   if (!isObjectEmpty(valuesToSubmit)) {
-    updateFieldValues(valuesToSubmit, rerenderRequired);
+    updateFieldValues(valuesToSubmit, { rerender: rerenderRequired });
     client.submitCustom(valuesToSubmit, false);
   }
 }
