@@ -859,6 +859,8 @@ export function mapFormSettingsResponse(res: any, formSettings: any) {
 }
 
 export function updateCustomHead(headCode: string) {
+  if (!headCode) return;
+
   const parser = new DOMParser();
   const doc = parser.parseFromString(headCode, 'text/html');
   doc.querySelectorAll('*').forEach((custom) => {
