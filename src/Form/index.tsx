@@ -254,6 +254,8 @@ function Form({
   const [userProgress, setUserProgress] = useState(null);
   const [curDepth, setCurDepth] = useState(0);
   const [maxDepth, setMaxDepth] = useState(0);
+  // No state since off reason is set in two locations almost simultaneously
+  const formOffReason = useRef('');
   const [formSettings, setFormSettings] = useState({
     errorType: 'html5',
     autocomplete: 'on',
@@ -261,7 +263,6 @@ function Form({
     showBrand: false,
     brandPosition: undefined,
     autoscroll: 'top_of_form',
-    formOffReason: '',
     rightToLeft: false,
     allowEdits: true,
     saveUrlParams: false,
@@ -924,6 +925,7 @@ function Form({
             };
           if (res.save_url_params) saveUrlParamsFormSetting = true;
           setFormSettings(mapFormSettingsResponse(res, formSettings));
+          formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
           setLogicRules(res.logic_rules);
           updateCustomHead(res.custom_head ?? '');
 
@@ -960,13 +962,10 @@ function Form({
         .fetchSession(formPromise, true)
         .then(([session, steps]) => {
           if (!session || session.collaborator?.invalid) {
-            setFormSettings({ ...formSettings, formOffReason: CLOSED });
+            formOffReason.current = CLOSED;
             return;
           } else if (session.collaborator?.completed) {
-            setFormSettings({
-              ...formSettings,
-              formOffReason: COLLAB_COMPLETED
-            });
+            formOffReason.current = COLLAB_COMPLETED;
             return;
           }
 
@@ -1968,9 +1967,9 @@ function Form({
   }, [anyFinished]);
 
   // Form is turned off
-  if (formSettings.formOffReason === CLOSED)
+  if (formOffReason.current === CLOSED)
     return <FormOff showCTA={formSettings.showBrand} />;
-  else if (formSettings.formOffReason === COLLAB_COMPLETED)
+  else if (formOffReason.current === COLLAB_COMPLETED)
     return <FormOff reason={COLLAB_COMPLETED} showCTA={false} />;
   else if (anyFinished) {
     if (!completeState && initState.isTestEnv)

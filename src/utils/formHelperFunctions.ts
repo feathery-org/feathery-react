@@ -844,7 +844,6 @@ export function mapFormSettingsResponse(res: any, formSettings: any) {
     errorType: res.error_type,
     autocomplete: res.autocomplete ? 'on' : 'off',
     autofocus: res.autofocus,
-    formOffReason: res.formOff ? CLOSED : formSettings.formOffReason,
     allowEdits: res.allow_edits,
     completionBehavior: res.completion_behavior,
     showBrand: Boolean(res.show_brand),
