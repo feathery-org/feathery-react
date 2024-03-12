@@ -89,6 +89,13 @@ const initState: InitState = {
 let fieldValues: FieldValues = {};
 let filePathMap: Record<string, null | string | (string | null)[]> = {};
 
+// Send message for replaying requests
+function replayOfflineRequests() {
+  if (navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({ type: 'replayRequests' });
+  }
+}
+
 function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (!sdkKey || typeof sdkKey !== 'string') {
     throw new errors.SDKKeyError();
@@ -154,6 +161,20 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
           .then((fp: any) => fp.get())
           .then((result: any) => (initState.userId = result.visitorId));
       }
+    }
+
+    // Register service worker on the client-side
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register('/service-worker.js')
+        .then((registration) => {
+          console.log('Service Worker registered:', registration);
+          // Adding an event listener for replaying requests
+          featheryWindow().addEventListener('online', replayOfflineRequests);
+        })
+        .catch((error) => {
+          console.error('Service Worker registration failed:', error);
+        });
     }
   }
 
