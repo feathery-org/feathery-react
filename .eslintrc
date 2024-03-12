@@ -10,8 +10,7 @@
     "plugin:@typescript-eslint/recommended"
   ],
   "env": {
-    "node": true,
-    "worker": true
+    "node": true
   },
   "parserOptions": {
     "ecmaVersion": 2020,
