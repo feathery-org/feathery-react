@@ -253,8 +253,12 @@ export default class FeatheryClient extends IntegrationClient {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
     };
-    const language = formLanguage ?? globalLanguage;
-    if (language) options.headers['Accept-Language'] = language;
+    let language = formLanguage ?? globalLanguage;
+    if (language) {
+      const defaults = navigator.languages.join(',');
+      if (defaults) language = language + ',' + defaults;
+      options.headers['Accept-Language'] = language;
+    }
 
     return this._fetch(url, options).then(async (response) => {
       if (!response) return {};
