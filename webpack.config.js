@@ -1,7 +1,6 @@
 const path = require('path');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
-const CopyPlugin = require('copy-webpack-plugin');
 
 module.exports = {
   entry: './src/index.tsx',
@@ -13,15 +12,7 @@ module.exports = {
       type: 'umd'
     }
   },
-  plugins: [
-    new CleanWebpackPlugin(),
-    new MiniCssExtractPlugin(),
-    new CopyPlugin({
-      patterns: [
-        { from: 'service-worker.js', to: path.resolve(__dirname, 'dist') }
-      ]
-    })
-  ],
+  plugins: [new CleanWebpackPlugin(), new MiniCssExtractPlugin()],
   module: {
     rules: [
       {
