@@ -22,6 +22,9 @@ import { featheryDoc, featheryWindow } from '../browser';
 import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
+import offlineRequestHandler, {
+  RequestOptions
+} from '../offlineRequestHandler';
 
 // Convenience boolean for urls - manually change for testing
 export const API_URL_OPTIONS = {
@@ -86,14 +89,27 @@ export default class FeatheryClient extends IntegrationClient {
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
 
-    const options = {
+    let options: RequestOptions = {
       headers: {
         'Content-Type': 'application/json'
       },
       method: 'POST',
       body: JSON.stringify(data)
     };
-    return this._fetch(url, options);
+    if (navigator.onLine) {
+      return this._fetch(url, options);
+    } else {
+      const { sdkKey } = initInfo();
+      options = {
+        ...options,
+        headers: {
+          ...options.headers,
+          Authorization: 'Token ' + sdkKey
+        }
+      };
+      const request = new Request(url, options);
+      return offlineRequestHandler.saveRequest(request);
+    }
   }
 
   async _getFileValue(servar: any) {
@@ -140,12 +156,27 @@ export default class FeatheryClient extends IntegrationClient {
     formData.set('__feathery_form_key', this.formKey);
     formData.set('__feathery_step_key', stepKey);
     if (this.version) formData.set('__feathery_version', this.version);
-    await this._fetch(url, {
+
+    let options: RequestOptions = {
       method: 'POST',
       body: formData,
       // In Safari, request fails with keepalive = true if over 64kb payload.
       keepalive: false
-    });
+    };
+    if (navigator.onLine) {
+      return this._fetch(url, options);
+    } else {
+      const { sdkKey } = initInfo();
+      options = {
+        ...options,
+        headers: {
+          ...options.headers,
+          Authorization: 'Token ' + sdkKey
+        }
+      };
+      const request = new Request(url, options);
+      return offlineRequestHandler.saveRequest(request);
+    }
   }
 
   updateUserId(newUserId: any, merge = false) {
@@ -445,7 +476,18 @@ export default class FeatheryClient extends IntegrationClient {
     }
     if (userId) formData.set('fuser_key', userId);
 
-    return this._fetch(url, { method: 'POST', body: formData });
+    if (navigator.onLine) {
+      return this._fetch(url, { method: 'POST', body: formData });
+    } else {
+      const { sdkKey } = initInfo();
+      const request = new Request(url, {
+        method: 'POST',
+        body: formData,
+        headers: { Authorization: 'Token ' + sdkKey }
+      });
+      await offlineRequestHandler.saveRequest(request);
+      return Promise.resolve();
+    }
   }
 
   // servars = [{key: <servarKey>, <type>: <value>}]
@@ -491,19 +533,33 @@ export default class FeatheryClient extends IntegrationClient {
       ...(userId ? { fuser_key: userId } : {})
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
-    const options = {
+    let options: RequestOptions = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
     };
-
-    // Ensure events complete before user exits page. Submit and load event of
-    // next step must happen after the previous step is done submitting
-    return await this.submitQueue.then(() =>
-      wrapUnload(() =>
-        this.draft ? Promise.resolve() : this._fetch(url, options)
-      )
-    );
+    if (navigator.onLine) {
+      // Ensure events complete before user exits page. Submit and load event of
+      // next step must happen after the previous step is done submitting
+      return await this.submitQueue.then(() =>
+        wrapUnload(() =>
+          this.draft ? Promise.resolve() : this._fetch(url, options)
+        )
+      );
+    } else {
+      const { sdkKey } = initInfo();
+      options = {
+        ...options,
+        headers: {
+          ...options.headers,
+          Authorization: 'Token ' + sdkKey
+        }
+      };
+      const request = new Request(url, options);
+      return await this.submitQueue.then(() =>
+        wrapUnload(() => offlineRequestHandler.saveRequest(request))
+      );
+    }
   }
 
   // Logic custom APIs
