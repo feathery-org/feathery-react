@@ -1,3 +1,6 @@
+import { useEffect } from 'react';
+import { featheryWindow } from './browser';
+
 // Constants for the IndexedDB database
 const DB_NAME = 'offlineRequestsDB';
 const STORE_NAME = 'offlineRequestsStore';
@@ -27,6 +30,25 @@ interface SerializedRequest {
   body: SerializedRequestBody['body'];
   bodyType: SerializedRequestBody['type'];
   timestamp: number;
+}
+
+export function useOfflineRequestHandler() {
+  useEffect(() => {
+    const handleOnline = () => {
+      offlineRequestHandler.replayRequests();
+    };
+
+    const windowObj = featheryWindow();
+    if (windowObj && windowObj.addEventListener) {
+      windowObj.addEventListener('online', handleOnline);
+    }
+
+    return () => {
+      if (windowObj && windowObj.removeEventListener) {
+        windowObj.removeEventListener('online', handleOnline);
+      }
+    };
+  }, []);
 }
 
 export class OfflineRequestHandler {

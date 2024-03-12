@@ -89,7 +89,7 @@ export default class FeatheryClient extends IntegrationClient {
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
 
-    let options: RequestOptions = {
+    const options: RequestOptions = {
       headers: {
         'Content-Type': 'application/json'
       },
@@ -100,12 +100,9 @@ export default class FeatheryClient extends IntegrationClient {
       return this._fetch(url, options);
     } else {
       const { sdkKey } = initInfo();
-      options = {
-        ...options,
-        headers: {
-          ...options.headers,
-          Authorization: 'Token ' + sdkKey
-        }
+      options.headers = {
+        ...options.headers,
+        Authorization: `Token ${sdkKey}`
       };
       const request = new Request(url, options);
       return offlineRequestHandler.saveRequest(request);
@@ -157,7 +154,7 @@ export default class FeatheryClient extends IntegrationClient {
     formData.set('__feathery_step_key', stepKey);
     if (this.version) formData.set('__feathery_version', this.version);
 
-    let options: RequestOptions = {
+    const options: RequestOptions = {
       method: 'POST',
       body: formData,
       // In Safari, request fails with keepalive = true if over 64kb payload.
@@ -167,12 +164,9 @@ export default class FeatheryClient extends IntegrationClient {
       return this._fetch(url, options);
     } else {
       const { sdkKey } = initInfo();
-      options = {
-        ...options,
-        headers: {
-          ...options.headers,
-          Authorization: 'Token ' + sdkKey
-        }
+      options.headers = {
+        ...options.headers,
+        Authorization: `Token ${sdkKey}`
       };
       const request = new Request(url, options);
       return offlineRequestHandler.saveRequest(request);
@@ -476,15 +470,17 @@ export default class FeatheryClient extends IntegrationClient {
     }
     if (userId) formData.set('fuser_key', userId);
 
+    const options: RequestOptions = { method: 'POST', body: formData };
+
     if (navigator.onLine) {
-      return this._fetch(url, { method: 'POST', body: formData });
+      return this._fetch(url, options);
     } else {
       const { sdkKey } = initInfo();
-      const request = new Request(url, {
-        method: 'POST',
-        body: formData,
-        headers: { Authorization: 'Token ' + sdkKey }
-      });
+      options.headers = {
+        ...options.headers,
+        Authorization: `Token ${sdkKey}`
+      };
+      const request = new Request(url, options);
       await offlineRequestHandler.saveRequest(request);
       return Promise.resolve();
     }
@@ -533,7 +529,7 @@ export default class FeatheryClient extends IntegrationClient {
       ...(userId ? { fuser_key: userId } : {})
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
-    let options: RequestOptions = {
+    const options: RequestOptions = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
@@ -548,12 +544,9 @@ export default class FeatheryClient extends IntegrationClient {
       );
     } else {
       const { sdkKey } = initInfo();
-      options = {
-        ...options,
-        headers: {
-          ...options.headers,
-          Authorization: 'Token ' + sdkKey
-        }
+      options.headers = {
+        ...options.headers,
+        Authorization: `Token ${sdkKey}`
       };
       const request = new Request(url, options);
       return await this.submitQueue.then(() =>
