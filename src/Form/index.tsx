@@ -158,6 +158,7 @@ import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
 import { fieldAllowedFromList } from './grid/Element/utils';
 import { triggerPersona } from '../integrations/persona';
 import Collaborator from '../utils/api/Collaborator';
+import offlineRequestHandler from '../utils/offlineRequestHandler';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -432,6 +433,23 @@ function Form({
       }
     }
   }, [stepKey]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      offlineRequestHandler.replayRequests();
+    };
+
+    const windowObj = featheryWindow();
+    if (windowObj && windowObj.addEventListener) {
+      windowObj.addEventListener('online', handleOnline);
+    }
+
+    return () => {
+      if (windowObj && windowObj.removeEventListener) {
+        windowObj.removeEventListener('online', handleOnline);
+      }
+    };
+  }, []);
 
   function updateRepeatValues(
     repeatContainer: Subgrid | undefined,
