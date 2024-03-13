@@ -19,7 +19,6 @@ export default class IntegrationClient {
   ignoreNetworkErrors: any; // this should be a ref
   draft: boolean;
   bypassCDN: boolean;
-  submitQueue: Promise<any>;
   constructor(
     formKey = '',
     ignoreNetworkErrors?: any,
@@ -30,7 +29,6 @@ export default class IntegrationClient {
     this.ignoreNetworkErrors = ignoreNetworkErrors;
     this.draft = draft;
     this.bypassCDN = bypassCDN;
-    this.submitQueue = Promise.resolve();
   }
 
   async _checkResponseSuccess(response: any) {

@@ -22,6 +22,9 @@ import { featheryDoc, featheryWindow } from '../browser';
 import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
+import offlineRequestHandler, {
+  RequestOptions
+} from '../offlineRequestHandler';
 
 // Convenience boolean for urls - manually change for testing
 export const API_URL_OPTIONS = {
@@ -71,10 +74,10 @@ export const updateRegionApiUrls = (region: string) => {
 };
 
 export default class FeatheryClient extends IntegrationClient {
-  _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
+  async _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
     if (servars.length === 0) return Promise.resolve();
 
-    const { userId, collaboratorId } = initInfo();
+    const { userId, collaboratorId, sdkKey } = initInfo();
     const url = `${API_URL}panel/step/submit/v3/`;
     const data: Record<string, any> = {
       fuser_key: userId,
@@ -86,14 +89,17 @@ export default class FeatheryClient extends IntegrationClient {
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
 
-    const options = {
+    const options: RequestOptions = {
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        Authorization: `Token ${sdkKey}`
       },
       method: 'POST',
       body: JSON.stringify(data)
     };
-    return this._fetch(url, options);
+
+    const request = new Request(url, options);
+    await offlineRequestHandler.saveRequest(request);
   }
 
   async _getFileValue(servar: any) {
@@ -121,7 +127,7 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   async _submitFileData(servar: any, stepKey: string) {
-    const { userId } = initInfo();
+    const { userId, sdkKey } = initInfo();
     const url = `${API_URL}panel/step/submit/file/${userId}/`;
 
     const formData = new FormData();
@@ -140,12 +146,17 @@ export default class FeatheryClient extends IntegrationClient {
     formData.set('__feathery_form_key', this.formKey);
     formData.set('__feathery_step_key', stepKey);
     if (this.version) formData.set('__feathery_version', this.version);
-    await this._fetch(url, {
+
+    const options: RequestOptions = {
       method: 'POST',
       body: formData,
+      headers: { Authorization: `Token ${sdkKey}` },
       // In Safari, request fails with keepalive = true if over 64kb payload.
       keepalive: false
-    });
+    };
+
+    const request = new Request(url, options);
+    await offlineRequestHandler.saveRequest(request);
   }
 
   updateUserId(newUserId: any, merge = false) {
@@ -401,11 +412,11 @@ export default class FeatheryClient extends IntegrationClient {
       });
   }
 
-  async submitCustom(customKeyValues: any, override = true) {
+  async submitCustom(customKeyValues: any, override = true, run = true) {
     if (this.draft || this.noSave) return;
     if (Object.keys(customKeyValues).length === 0) return;
 
-    const { userId } = initInfo();
+    const { userId, sdkKey } = initInfo();
     const url = `${API_URL}panel/custom/submit/v3/`;
 
     const jsonKeyVals: Record<string, any> = {};
@@ -445,12 +456,22 @@ export default class FeatheryClient extends IntegrationClient {
     }
     if (userId) formData.set('fuser_key', userId);
 
-    return this._fetch(url, { method: 'POST', body: formData });
+    const options: RequestOptions = {
+      method: 'POST',
+      body: formData,
+      headers: { Authorization: `Token ${sdkKey}` }
+    };
+    const request = new Request(url, options);
+    await offlineRequestHandler.saveRequest(request);
+
+    // TODO: update to only play the request that was just saved since
+    //  it shouldn't be blocked on any requests being replayed before it
+    if (run) await wrapUnload(() => offlineRequestHandler.replayRequests());
   }
 
   // servars = [{key: <servarKey>, <type>: <value>}]
-  submitStep(servars: any, step: any, hasNext: boolean) {
-    if (this.draft || this.noSave) return Promise.resolve();
+  async submitStep(servars: any, step: any, hasNext: boolean) {
+    if (this.draft || this.noSave) return;
 
     const items = [
       ...step.buttons.filter(isStoreFieldValueAction),
@@ -468,21 +489,26 @@ export default class FeatheryClient extends IntegrationClient {
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    const promiseFunc = () =>
-      Promise.all([
-        this.submitCustom(hiddenFields),
-        this._submitJSONData(jsonServars, step.key, hasNext),
-        ...fileServars.map((servar: any) =>
-          this._submitFileData(servar, step.key)
-        )
-      ]);
-    this.submitQueue = Promise.all([this.submitQueue, wrapUnload(promiseFunc)]);
-    return this.submitQueue;
+    await Promise.all([
+      this.submitCustom(hiddenFields, true, false),
+      this._submitJSONData(jsonServars, step.key, hasNext),
+      ...fileServars.map((servar: any) =>
+        this._submitFileData(servar, step.key)
+      )
+    ]);
+
+    // TODO: update to only play the requests that were just saved along with
+    //  all previous, existing submitStep requests (in parallel). Promise should be
+    //  blocked on all of them completing.
+    await wrapUnload(() => offlineRequestHandler.replayRequests());
   }
 
   async registerEvent(eventData: any) {
+    if (this.draft) return;
+
     await initFormsPromise;
-    const { userId, collaboratorId } = initInfo();
+
+    const { userId, collaboratorId, sdkKey } = initInfo();
 
     const url = `${API_URL}event/`;
     const data: Record<string, string> = {
@@ -492,18 +518,21 @@ export default class FeatheryClient extends IntegrationClient {
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
     const options = {
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Token ${sdkKey}`
+      },
       method: 'POST',
       body: JSON.stringify(data)
     };
 
-    // Ensure events complete before user exits page. Submit and load event of
-    // next step must happen after the previous step is done submitting
-    return await this.submitQueue.then(() =>
-      wrapUnload(() =>
-        this.draft ? Promise.resolve() : this._fetch(url, options)
-      )
-    );
+    const request = new Request(url, options);
+    await offlineRequestHandler.saveRequest(request);
+
+    // Ensure events complete before user exits page by replaying all requests.
+    // Submit and load event of next step must happen after the previous
+    // step is done submitting.
+    await wrapUnload(() => offlineRequestHandler.replayRequests());
   }
 
   // Logic custom APIs
