@@ -52,11 +52,12 @@ export function useOfflineRequestHandler() {
 }
 
 export class OfflineRequestHandler {
-  private dbName: string;
-  private storeName: string;
-  private dbVersion: number;
-  private maxRetryAttempts: number;
-  private retryDelayMs: number;
+  private readonly dbName: string;
+  private readonly storeName: string;
+  private readonly dbVersion: number;
+  private readonly maxRetryAttempts: number;
+  private readonly retryDelayMs: number;
+  onlineSignals: any[];
 
   constructor(
     dbName: string,
@@ -70,6 +71,11 @@ export class OfflineRequestHandler {
     this.dbVersion = dbVersion;
     this.maxRetryAttempts = maxRetryAttempts;
     this.retryDelayMs = retryDelayMs;
+    this.onlineSignals = [];
+  }
+
+  public _addOnlineSignal(signal: any) {
+    this.onlineSignals.push(signal);
   }
 
   // Open a connection to the IndexedDB database
@@ -89,6 +95,8 @@ export class OfflineRequestHandler {
     });
   }
 
+  // TODO: handle case where browser does not support IndexDB. Just run the
+  //  request directly with no offline support.
   // Save request to IndexedDB
   public async saveRequest(requestToSave: Request): Promise<void> {
     const db = await this.openDatabase();
@@ -157,8 +165,15 @@ export class OfflineRequestHandler {
     }
   }
 
+  // TODO: what does performance look like while using IndexDB?
   // Replay requests from IndexedDB
   public async replayRequests() {
+    if (!navigator.onLine) {
+      // If offline, block until requests are replayed from online event handler
+      await new Promise((resolve) => this._addOnlineSignal(resolve));
+      return;
+    }
+
     const db = await this.openDatabase();
     const tx = db.transaction(this.storeName, 'readwrite');
     const store = tx.objectStore(this.storeName);
@@ -201,6 +216,10 @@ export class OfflineRequestHandler {
           } else {
             attempts++;
             await this.delay(this.retryDelayMs);
+            // TODO: we should probably check to see if it's still online. If
+            //  offline again, abort retries and only clear out the transactions
+            //  that were successfully run. Then block like we do at the
+            //  beginning of this function
           }
         } catch (error) {
           console.error(`Failed to replay request: ${url}`, error);
@@ -215,14 +234,13 @@ export class OfflineRequestHandler {
       }
     }
 
-    try {
-      await db
-        .transaction(this.storeName, 'readwrite')
-        .objectStore(this.storeName)
-        .clear();
-    } catch (error) {
-      console.error('Error clearing IndexedDB:', error);
-    }
+    await db
+      .transaction(this.storeName, 'readwrite')
+      .objectStore(this.storeName)
+      .clear();
+
+    this.onlineSignals.forEach((signal) => signal());
+    this.onlineSignals = [];
   }
 
   private delay(ms: number): Promise<void> {
@@ -253,16 +271,12 @@ export class OfflineRequestHandler {
   }
 }
 
-function createOfflineRequestHandler(): OfflineRequestHandler {
-  return new OfflineRequestHandler(
-    DB_NAME,
-    STORE_NAME,
-    DB_VERSION,
-    MAX_RETRY_ATTEMPTS,
-    RETRY_DELAY_MS
-  );
-}
-
-const offlineRequestHandler = createOfflineRequestHandler();
+const offlineRequestHandler = new OfflineRequestHandler(
+  DB_NAME,
+  STORE_NAME,
+  DB_VERSION,
+  MAX_RETRY_ATTEMPTS,
+  RETRY_DELAY_MS
+);
 
 export default offlineRequestHandler;
