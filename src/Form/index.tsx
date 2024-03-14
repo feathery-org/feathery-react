@@ -911,6 +911,8 @@ function Form({
       const formPromise = clientInstance
         .fetchForm(initialValues, language)
         .then(({ steps, ...res }) => {
+          updateCustomHead(res.custom_head ?? '');
+
           steps = steps.reduce((result: any, step: any) => {
             result[step.key] = step;
             return result;
@@ -927,8 +929,6 @@ function Form({
           setFormSettings(mapFormSettingsResponse(res, formSettings));
           formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
           setLogicRules(res.logic_rules);
-          updateCustomHead(res.custom_head ?? '');
-
           trackHashes.current = res.track_hashes;
 
           // Add any logic_rule.elements to viewElements so that onView called for then too.
