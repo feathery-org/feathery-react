@@ -463,6 +463,7 @@ export default class ResponsiveStyles {
     if (attrs[`${p}font_strike`]) lines.push('line-through');
     if (attrs[`${p}font_underline`]) lines.push('underline');
     if (lines.length > 0) styles.textDecoration = lines.join(' ');
+    else styles.textDecoration = 'none';
 
     return styles;
   }
