@@ -158,6 +158,7 @@ import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
 import { fieldAllowedFromList } from './grid/Element/utils';
 import { triggerPersona } from '../integrations/persona';
 import Collaborator from '../utils/api/Collaborator';
+import { useOfflineRequestHandler } from '../utils/offlineRequestHandler';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -319,6 +320,8 @@ function Form({
     client,
     _internalId
   });
+
+  useOfflineRequestHandler();
 
   const [backNavMap, setBackNavMap] = useState<Record<string, string>>({});
   const updateBackNavMap = (newNavs: Record<string, string>) =>
@@ -885,11 +888,16 @@ function Form({
       props.disabled = props.disabled || disabled;
       if (servar.required && props.disabled) servar.required = false;
     });
+    const oldKey = activeStep?.key ?? '';
     // setActiveStep, apparently, must go after setting the callbackRef
     // because it triggers a new render, before this fn finishes execution,
     // which can cause onView to fire before the callbackRef is set
     setActiveStep(newStep);
-    client.registerEvent({ step_key: newStep.key, event: 'load' });
+    client.registerEvent({
+      step_key: newStep.key,
+      event: 'load',
+      previous_key: oldKey
+    });
   };
 
   const visiblePositions = useMemo(
