@@ -616,10 +616,12 @@ export function changeStep(
   history: any
 ) {
   const sameKey = oldKey === newKey;
-  if (!sameKey && newKey in steps) {
-    history.replace(location.pathname + location.search + `#${newKey}`);
-    setStepKey(newKey);
-    return true;
+  if (!sameKey && newKey) {
+    if (newKey in steps) {
+      history.replace(location.pathname + location.search + `#${newKey}`);
+      setStepKey(newKey);
+      return true;
+    } else console.warn(`${newKey} is not a valid step to navigate to`);
   }
   return false;
 }
