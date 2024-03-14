@@ -342,7 +342,7 @@ function Form({
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
 
-  useOfflineRequestHandler(hasRedirected);
+  useOfflineRequestHandler(formName);
 
   // All mount and unmount logic should live here
   useEffect(() => {
@@ -896,7 +896,7 @@ function Form({
     client.registerEvent({
       step_key: newStep.key,
       event: 'load',
-      previous_step: oldKey
+      previous_step_key: oldKey
     });
   };
 

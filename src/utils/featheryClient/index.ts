@@ -18,10 +18,11 @@ import {
 import { loadPhoneValidator } from '../validation';
 import { initializeIntegrations } from '../../integrations/utils';
 import { loadLottieLight } from '../../elements/components/Lottie';
-import { featheryDoc, featheryWindow } from '../browser';
+import { featheryDoc } from '../browser';
 import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
+import { gatherTrustedFormFields } from '../../integrations/trustedform';
 import offlineRequestHandler, {
   RequestOptions
 } from '../offlineRequestHandler';
@@ -74,24 +75,11 @@ export const updateRegionApiUrls = (region: string) => {
   }
 };
 
-function addAuthorizationHeader(
-  options: RequestInit,
-  sdkKey: string
-): RequestInit {
-  return {
-    ...options,
-    headers: {
-      ...(options.headers || {}),
-      Authorization: `Token ${sdkKey}`
-    }
-  };
-}
-
 export default class FeatheryClient extends IntegrationClient {
   async _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
     if (servars.length === 0) return Promise.resolve();
 
-    const { userId, collaboratorId, sdkKey } = initInfo();
+    const { userId, collaboratorId } = initInfo();
     const url = `${API_URL}panel/step/submit/v3/`;
     const data: Record<string, any> = {
       fuser_key: userId,
@@ -111,23 +99,14 @@ export default class FeatheryClient extends IntegrationClient {
       body: JSON.stringify(data)
     };
 
-    if (navigator.onLine) {
-      // Check if there are any requests in IndexedDB or if a replay is ongoing
-      const prioritizeOffline = await offlineRequestHandler.prioritizeOffline();
-      if (prioritizeOffline) {
-        // If so, wait for it to finish
-        await new Promise((resolve) =>
-          offlineRequestHandler._addOnlineSignal(resolve)
-        );
-      }
-      // Proceed with normal request sending
-      return this._fetch(url, options);
-    } else {
-      const authorizedOptions = addAuthorizationHeader(options, sdkKey);
-      const request = new Request(url, authorizedOptions);
-      await offlineRequestHandler.saveRequest(request, 'submit', stepKey);
-      return Promise.resolve();
-    }
+    return offlineRequestHandler.runOrSaveRequest(
+      () => this._fetch(url, options),
+      this.formKey,
+      url,
+      options,
+      'submit',
+      stepKey
+    );
   }
 
   async _getFileValue(servar: any) {
@@ -155,7 +134,7 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   async _submitFileData(servar: any, stepKey: string) {
-    const { userId, sdkKey } = initInfo();
+    const { userId } = initInfo();
     const url = `${API_URL}panel/step/submit/file/${userId}/`;
 
     const formData = new FormData();
@@ -182,22 +161,14 @@ export default class FeatheryClient extends IntegrationClient {
       keepalive: false
     };
 
-    if (navigator.onLine) {
-      // Check if there are any requests in IndexedDB or if a replay is ongoing
-      const prioritizeOffline = await offlineRequestHandler.prioritizeOffline();
-      if (prioritizeOffline) {
-        // If so, wait for it to finish
-        await new Promise((resolve) =>
-          offlineRequestHandler._addOnlineSignal(resolve)
-        );
-      }
-      // Proceed with normal request sending
-      await this._fetch(url, options);
-    } else {
-      const authorizedOptions = addAuthorizationHeader(options, sdkKey);
-      const request = new Request(url, authorizedOptions);
-      await offlineRequestHandler.saveRequest(request, 'submit', stepKey);
-    }
+    return offlineRequestHandler.runOrSaveRequest(
+      () => this._fetch(url, options),
+      this.formKey,
+      url,
+      options,
+      'submit',
+      stepKey
+    );
   }
 
   updateUserId(newUserId: any, merge = false) {
@@ -502,23 +473,13 @@ export default class FeatheryClient extends IntegrationClient {
       body: formData
     };
 
-    if (navigator.onLine) {
-      // Check if there are any requests in IndexedDB or if a replay is ongoing
-      const prioritizeOffline = await offlineRequestHandler.prioritizeOffline();
-      if (prioritizeOffline) {
-        // If so, wait for it to finish
-        await new Promise((resolve) =>
-          offlineRequestHandler._addOnlineSignal(resolve)
-        );
-      }
-      // Proceed with normal request sending
-      return this._fetch(url, options);
-    } else {
-      const authorizedOptions = addAuthorizationHeader(options, sdkKey);
-      const request = new Request(url, authorizedOptions);
-      await offlineRequestHandler.saveRequest(request, 'submit');
-      return Promise.resolve();
-    }
+    return offlineRequestHandler.runOrSaveRequest(
+      () => this._fetch(url, options),
+      this.formKey,
+      url,
+      options,
+      'submit'
+    );
   }
 
   // servars = [{key: <servarKey>, <type>: <value>}]
@@ -542,15 +503,14 @@ export default class FeatheryClient extends IntegrationClient {
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    const promiseFunc = () =>
-      Promise.all([
-        this.submitCustom(hiddenFields),
-        this._submitJSONData(jsonServars, step.key, hasNext),
-        ...fileServars.map((servar: any) =>
-          this._submitFileData(servar, step.key)
-        )
-      ]);
-    this.submitQueue = Promise.all([this.submitQueue, wrapUnload(promiseFunc)]);
+    this.submitQueue = Promise.all([
+      this.submitQueue,
+      this.submitCustom(hiddenFields),
+      this._submitJSONData(jsonServars, step.key, hasNext),
+      ...fileServars.map((servar: any) =>
+        this._submitFileData(servar, step.key)
+      )
+    ]);
     return this.submitQueue;
   }
 
@@ -559,7 +519,7 @@ export default class FeatheryClient extends IntegrationClient {
 
     await initFormsPromise;
 
-    const { userId, collaboratorId, sdkKey } = initInfo();
+    const { userId, collaboratorId } = initInfo();
 
     const url = `${API_URL}event/`;
     const data: Record<string, string> = {
@@ -574,36 +534,18 @@ export default class FeatheryClient extends IntegrationClient {
       body: JSON.stringify(data)
     };
 
-    if (navigator.onLine) {
-      const prioritizeOffline = await offlineRequestHandler.prioritizeOffline();
-      if (prioritizeOffline) {
-        await new Promise((resolve) =>
-          offlineRequestHandler._addOnlineSignal(resolve)
-        );
-      }
+    return offlineRequestHandler.runOrSaveRequest(
       // Ensure events complete before user exits page. Submit and load event of
       // next step must happen after the previous step is done submitting
-      return await this.submitQueue.then(() =>
-        wrapUnload(() =>
-          this.draft ? Promise.resolve() : this._fetch(url, options)
-        )
-      );
-    } else {
-      let eventStep = '';
-      if (eventData.event === 'complete') {
-        eventStep = eventData.step_key;
-      } else if (eventData.event === 'load') {
-        eventStep = eventData.previous_step;
-      }
-      const authorizedOptions = addAuthorizationHeader(options, sdkKey);
-      const request = new Request(url, authorizedOptions);
-      await offlineRequestHandler.saveRequest(
-        request,
-        'registerEvent',
-        eventStep
-      );
-      return Promise.resolve();
-    }
+      () => this.submitQueue.then(() => this._fetch(url, options)),
+      this.formKey,
+      url,
+      options,
+      'registerEvent',
+      eventData.event === 'load'
+        ? eventData.previous_step_key
+        : eventData.step_key
+    );
   }
 
   // Logic custom APIs
@@ -761,31 +703,3 @@ export default class FeatheryClient extends IntegrationClient {
     });
   }
 }
-
-let unloadCounter = 0;
-async function wrapUnload(promiseFunc: any) {
-  if (!promiseFunc) return;
-
-  if (unloadCounter === 0)
-    featheryWindow().addEventListener('beforeunload', beforeUnloadEventHandler);
-  unloadCounter++;
-
-  const res = await promiseFunc();
-
-  unloadCounter--;
-  if (unloadCounter === 0)
-    featheryWindow().removeEventListener(
-      'beforeunload',
-      beforeUnloadEventHandler
-    );
-
-  return res;
-}
-
-const beforeUnloadEventHandler = (event: any) => {
-  // Recommended
-  event.preventDefault();
-
-  // Included for legacy support, e.g. Chrome/Edge < 119
-  event.returnValue = true;
-};

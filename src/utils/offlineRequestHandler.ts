@@ -1,9 +1,7 @@
 import { useEffect } from 'react';
 import { featheryWindow, runningInClient } from './browser';
-import {
-  TYPE_MESSAGES_TO_IGNORE,
-  checkResponseSuccess
-} from './featheryClient/integrationClient';
+import { checkResponseSuccess } from './featheryClient/integrationClient';
+import { initInfo } from './init';
 
 // Constants for the IndexedDB database
 const DB_NAME = 'requestsDB';
@@ -28,6 +26,7 @@ interface SerializedRequestBody {
 }
 
 interface SerializedRequest {
+  formKey: string;
   url: string;
   method: string;
   headers: string;
@@ -39,46 +38,51 @@ interface SerializedRequest {
   keepalive?: boolean;
 }
 
-export function useOfflineRequestHandler(
-  hasRedirected: React.RefObject<boolean>
-) {
-  useEffect(() => {
-    const handleOnline = () => {
-      offlineRequestHandler.replayRequests();
-    };
+const beforeUnloadEventHandler = (event: any) => {
+  // Recommended
+  event.preventDefault();
 
+  // Included for legacy support, e.g. Chrome/Edge < 119
+  event.returnValue = true;
+};
+
+let unloadCounter = 0;
+
+const trackUnload = () => {
+  if (unloadCounter === 0)
+    featheryWindow().addEventListener('beforeunload', beforeUnloadEventHandler);
+  unloadCounter++;
+};
+
+const untrackUnload = () => {
+  unloadCounter--;
+  if (unloadCounter === 0)
+    featheryWindow().removeEventListener(
+      'beforeunload',
+      beforeUnloadEventHandler
+    );
+};
+
+export function useOfflineRequestHandler(formKey: string) {
+  useEffect(() => {
     if (!runningInClient()) return;
 
+    offlineRequestHandler.replayRequests(formKey);
+    const handleOnline = () => offlineRequestHandler.replayRequests(formKey);
     featheryWindow().addEventListener('online', handleOnline);
     return () => featheryWindow().removeEventListener('online', handleOnline);
-  }, []);
-
-  offlineRequestHandler.ignoreNetworkErrors = hasRedirected;
-
-  useEffect(() => {
-    async function checkAndReplayRequests() {
-      if (!offlineRequestHandler.isReplayingRequests) {
-        const hasRequestsInDB = await offlineRequestHandler.checkIndexedDB();
-        if (hasRequestsInDB) {
-          await offlineRequestHandler.replayRequests();
-        }
-      }
-    }
-
-    checkAndReplayRequests();
   }, []);
 }
 
 export class OfflineRequestHandler {
-  public isReplayingRequests = false;
+  private isReplayingRequests: Map<string, boolean>;
   private readonly dbName: string;
   private readonly storeName: string;
   private readonly dbVersion: number;
   private readonly maxRetryAttempts: number;
   private readonly retryDelayMs: number;
-  onlineSignals: any[];
+  private onlineSignals: Map<string, any[]>;
   private indexedDBSupported: boolean;
-  public ignoreNetworkErrors: React.RefObject<boolean> | undefined;
 
   constructor(
     dbName: string,
@@ -87,18 +91,18 @@ export class OfflineRequestHandler {
     maxRetryAttempts: number,
     retryDelayMs: number
   ) {
+    this.isReplayingRequests = new Map();
     this.dbName = dbName;
     this.storeName = storeName;
     this.dbVersion = dbVersion;
     this.maxRetryAttempts = maxRetryAttempts;
     this.retryDelayMs = retryDelayMs;
-    this.onlineSignals = [];
+    this.onlineSignals = new Map();
     this.indexedDBSupported = typeof indexedDB !== 'undefined';
-    this.ignoreNetworkErrors = undefined;
   }
 
-  // Check if any requestes stored in indexedDB
-  public async checkIndexedDB(): Promise<boolean> {
+  // Check if any requests are stored in indexedDB
+  public async dbHasRequest(): Promise<boolean> {
     const { store } = await this.getDbTransaction('readonly');
     const count = await new Promise<number>((resolve) => {
       const request = store.count();
@@ -108,15 +112,13 @@ export class OfflineRequestHandler {
     return count > 0;
   }
 
-  public async prioritizeOffline(): Promise<boolean> {
-    if (this.isReplayingRequests) {
-      return true;
-    }
-    return await this.checkIndexedDB();
-  }
-
-  public _addOnlineSignal(signal: any) {
-    this.onlineSignals.push(signal);
+  public onlineAndReplayed(formKey: string) {
+    return new Promise((resolve) => {
+      if (!this.onlineSignals.has(formKey)) {
+        this.onlineSignals.set(formKey, []);
+      }
+      this.onlineSignals.get(formKey)!.push(resolve);
+    });
   }
 
   // Open a connection to the IndexedDB database
@@ -148,18 +150,40 @@ export class OfflineRequestHandler {
   }
 
   // Save request to IndexedDB
-  public async saveRequest(
-    request: Request,
+  public async runOrSaveRequest(
+    run: any,
+    formKey: string,
+    url: string,
+    options: any,
     type: string,
     stepKey?: string
   ): Promise<void> {
+    if (navigator.onLine) {
+      trackUnload();
+      if (
+        this.isReplayingRequests.get(formKey) ||
+        (await this.dbHasRequest())
+      ) {
+        // Wait if any requests in IndexedDB or if a replay is ongoing
+        await offlineRequestHandler.onlineAndReplayed(formKey);
+      }
+      // Proceed with normal request sending
+      await run();
+      untrackUnload();
+      return;
+    }
+
+    // If IndexedDB is unsupported, we cannot store requests to replay
+    if (!this.indexedDBSupported) return;
+
+    const { sdkKey } = initInfo();
+    options.headers = { ...options.headers, Authorization: `Token ${sdkKey}` };
+    const request = new Request(url, options);
+
     const keepalive =
       request.keepalive !== undefined
         ? request.keepalive
         : ['POST', 'PATCH', 'PUT'].includes(request.method);
-
-    // If IndexedDB is unsupported, we cannot store requests to replay
-    if (!this.indexedDBSupported) return;
 
     try {
       const requestClone: Request = request.clone();
@@ -177,6 +201,7 @@ export class OfflineRequestHandler {
       });
 
       const serializedRequest: SerializedRequest = {
+        formKey: formKey,
         url: requestClone.url,
         method: requestClone.method,
         headers: JSON.stringify(headers),
@@ -197,7 +222,7 @@ export class OfflineRequestHandler {
       store.add(serializedRequest);
       await requestPromise;
     } catch (error) {
-      console.error('Error adding request to IndexedDB:', error);
+      console.warn('Error saving request', error);
     }
   }
 
@@ -226,23 +251,20 @@ export class OfflineRequestHandler {
   }
 
   // Replay requests from IndexedDB
-  public async replayRequests() {
+  public async replayRequests(formKey: string) {
     if (!this.indexedDBSupported) {
       return;
     }
 
     if (!navigator.onLine) {
       // If offline, block until requests are replayed from online event handler
-      await new Promise((resolve) => this._addOnlineSignal(resolve));
+      await offlineRequestHandler.onlineAndReplayed(formKey);
       return;
     }
 
-    if (this.isReplayingRequests) {
-      return;
-    }
-
-    this.isReplayingRequests = true;
-
+    if (this.isReplayingRequests.get(formKey)) return;
+    this.isReplayingRequests.set(formKey, true);
+    trackUnload();
     try {
       const { store } = await this.getDbTransaction('readwrite');
 
@@ -254,7 +276,10 @@ export class OfflineRequestHandler {
           const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
             .result;
           if (cursor) {
-            requests.push(cursor.value as SerializedRequest);
+            const request = cursor.value as SerializedRequest;
+            if (request.formKey === formKey) {
+              requests.push(request);
+            }
             cursor.continue();
           } else {
             requests.sort((a, b) => a.timestamp - b.timestamp);
@@ -264,7 +289,7 @@ export class OfflineRequestHandler {
       });
 
       const submitRequests = allRequests.filter((req) => req.type === 'submit');
-      await this.replayRequestsInParallel(submitRequests);
+      await this.replayRequestsInParallel(submitRequests, formKey);
 
       const registerEventRequests = allRequests.filter(
         (req) => req.type === 'registerEvent'
@@ -277,25 +302,26 @@ export class OfflineRequestHandler {
         const requestsForStep = registerEventRequests.filter(
           (req) => req.stepKey === stepKey
         );
-        await this.replayRequestsInParallel(requestsForStep);
+        await this.replayRequestsInParallel(requestsForStep, formKey);
       }
-
-      this.onlineSignals.forEach((signal) => signal());
-      this.onlineSignals = [];
     } finally {
-      this.isReplayingRequests = false;
+      this.isReplayingRequests.set(formKey, false);
 
       // Check if there are any new requests in IndexedDB and trigger replayRequests again
-      if (navigator.onLine) {
-        const requestsInDB = await this.checkIndexedDB();
-        if (requestsInDB) {
-          await this.replayRequests();
-        }
-      }
+      const requestsInDB = await this.dbHasRequest();
+      if (requestsInDB) await this.replayRequests(formKey);
+
+      untrackUnload();
+      const signals = this.onlineSignals.get(formKey) || [];
+      signals.forEach((signal) => signal());
+      this.onlineSignals.delete(formKey);
     }
   }
 
-  private async replayRequestsInParallel(requests: SerializedRequest[]) {
+  private async replayRequestsInParallel(
+    requests: SerializedRequest[],
+    formKey: string
+  ) {
     await Promise.all(
       requests.map(async (request) => {
         const { url, method, headers, body, bodyType, keepalive } = request;
@@ -318,20 +344,13 @@ export class OfflineRequestHandler {
             success = true;
             await this.removeRequest();
           } catch (error: any) {
-            if (
-              (this.ignoreNetworkErrors?.current ||
-                TYPE_MESSAGES_TO_IGNORE.includes(error.message)) &&
-              error instanceof TypeError
-            ) {
-              return;
-            }
             attempts++;
             await this.delay(this.retryDelayMs);
           }
 
           if (!navigator.onLine) {
             // If offline, block until requests are replayed from online event handler
-            await new Promise((resolve) => this._addOnlineSignal(resolve));
+            await offlineRequestHandler.onlineAndReplayed(formKey);
             return;
           }
 
