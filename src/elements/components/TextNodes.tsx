@@ -60,10 +60,13 @@ function TextNode({
     cursor,
     ...fontStyles
   };
+  const linkStyle = !fontStyles.textDecoration
+    ? { textDecoration: 'none' }
+    : {};
   return link && !editMode ? (
     <a
       data-index={index}
-      css={styles}
+      css={{ ...styles, ...linkStyle }}
       href={link}
       target='_blank'
       rel='noreferrer'
