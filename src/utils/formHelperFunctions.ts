@@ -859,7 +859,7 @@ export function mapFormSettingsResponse(res: any) {
   };
 }
 
-export function updateCustomHead(headCode: string) {
+export async function updateCustomHead(headCode: string) {
   if (!headCode) return;
 
   const parser = new DOMParser();
@@ -885,7 +885,7 @@ export function updateCustomHead(headCode: string) {
     }
     featheryDoc().head.appendChild(custom);
   });
-  return Promise.all(scriptWait);
+  await Promise.all(scriptWait);
 }
 
 export function httpHelpers(client: any, connectorFields: string[] = []) {
