@@ -841,7 +841,7 @@ export function saveInitialValuesAndUrlParams({
   }
 }
 
-export function mapFormSettingsResponse(res: any, formSettings: any) {
+export function mapFormSettingsResponse(res: any) {
   return {
     errorType: res.error_type,
     autocomplete: res.autocomplete ? 'on' : 'off',
@@ -864,11 +864,28 @@ export function updateCustomHead(headCode: string) {
 
   const parser = new DOMParser();
   const doc = parser.parseFromString(headCode, 'text/html');
+
+  const scriptWait: any[] = [];
   doc.querySelectorAll('*').forEach((custom) => {
-    const el = featheryDoc().createElement(custom.tagName);
-    el.innerHTML = custom.innerHTML;
-    featheryDoc().head.appendChild(el);
+    if (['HEAD', 'HTML', 'BODY'].includes(custom.tagName)) return;
+    if (custom.tagName === 'SCRIPT') {
+      const customScript = custom as HTMLScriptElement;
+      // Parsed script cannot be added directly, must be transferred to a
+      // created element
+      const el = featheryDoc().createElement(customScript.tagName);
+      el.type = customScript.type;
+      if (customScript.text) el.text = customScript.text;
+      if (customScript.src) {
+        el.src = customScript.src;
+        scriptWait.push(
+          new Promise((resolve) => (el.onload = () => resolve(custom)))
+        );
+      }
+      custom = el;
+    }
+    featheryDoc().head.appendChild(custom);
   });
+  return Promise.all(scriptWait);
 }
 
 export function httpHelpers(client: any, connectorFields: string[] = []) {

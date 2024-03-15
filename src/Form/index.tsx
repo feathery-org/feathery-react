@@ -910,9 +910,11 @@ function Form({
       // render form without values first for speed
       const formPromise = clientInstance
         .fetchForm(initialValues, language)
+        .then(async (data) => {
+          await updateCustomHead(data.custom_head ?? '');
+          return data;
+        })
         .then(({ steps, ...res }) => {
-          updateCustomHead(res.custom_head ?? '');
-
           steps = steps.reduce((result: any, step: any) => {
             result[step.key] = step;
             return result;
@@ -926,7 +928,7 @@ function Form({
               );
             };
           if (res.save_url_params) saveUrlParamsFormSetting = true;
-          setFormSettings(mapFormSettingsResponse(res, formSettings));
+          setFormSettings(mapFormSettingsResponse(res));
           formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
           setLogicRules(res.logic_rules);
           trackHashes.current = res.track_hashes;
