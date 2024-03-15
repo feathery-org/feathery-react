@@ -29,6 +29,7 @@ export default function RatingField({
       css={{
         maxWidth: '100%',
         width: '100%',
+        height: '100%',
         position: 'relative',
         ...responsiveStyles.getTarget('fc')
       }}

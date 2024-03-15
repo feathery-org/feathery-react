@@ -19,7 +19,7 @@ function MatrixField({
   const allowMultiple = servar.metadata.multiple;
   const inputType = allowMultiple ? 'checkbox' : 'radio';
 
-  const { backgroundColor, borderRadius, height } =
+  const { backgroundColor, borderRadius } =
     responsiveStyles.getTarget('sub-fc');
 
   const styles = useMemo(() => {
@@ -37,12 +37,12 @@ function MatrixField({
     <div
       css={{
         width: '100%',
+        height: '100%',
         ...responsiveStyles.getTarget('fc'),
         position: 'relative',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'center',
-        height
+        justifyContent: 'center'
       }}
       {...elementProps}
     >

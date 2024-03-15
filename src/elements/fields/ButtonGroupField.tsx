@@ -41,6 +41,7 @@ function ButtonGroupField({
       css={{
         position: 'relative',
         width: '100%',
+        height: '100%',
         pointerEvents: editMode || disabled ? 'none' : 'auto',
         ...responsiveStyles.getTarget('fc')
       }}

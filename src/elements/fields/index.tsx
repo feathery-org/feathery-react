@@ -133,7 +133,7 @@ function applyFieldStyles(field: any, styles: any) {
         styles.apply('field', 'padding_bottom', (a: number) => ({
           marginBottom: `${a}px`
         }));
-      } else styles.applyHeight('fc');
+      }
       styles.applyHeight('field');
       styles.applyBorders({ target: 'field' });
       styles.applyCorners('field');
@@ -276,7 +276,7 @@ function applyFieldStyles(field: any, styles: any) {
           if (b === '%')
             return {
               minHeight: `${DEFAULT_MIN_SIZE}px`,
-              height: 'auto'
+              height: '100%'
             };
           else return { minHeight: `${a}${b}` };
         });

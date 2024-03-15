@@ -143,6 +143,7 @@ const CardField = ({
       css={{
         maxWidth: '100%',
         width: '100%',
+        height: '100%',
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
         ...responsiveStyles.getTarget('fc')

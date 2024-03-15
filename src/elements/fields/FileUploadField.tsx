@@ -121,6 +121,7 @@ function FileUploadField({
         position: 'relative',
         pointerEvents: editMode || disabled ? 'none' : 'auto',
         width: '100%',
+        height: '100%',
         ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}

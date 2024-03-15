@@ -63,6 +63,7 @@ function QRScanner({
         css={{
           maxWidth: '100%',
           width: '100%',
+          height: '100%',
           ...responsiveStyles.getTarget('fc'),
           position: 'relative',
           pointerEvents: editMode || disabled ? 'none' : 'auto'

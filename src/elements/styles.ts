@@ -290,7 +290,7 @@ export default class ResponsiveStyles {
 
         if (b === '%') {
           style.minHeight = `${DEFAULT_MIN_SIZE}px`;
-          style.height = 'auto';
+          style.height = '100%';
         } else {
           const value = `${a}${b}`;
 
