@@ -458,12 +458,12 @@ export const getInnerContainerStyles = (
    */
   styles.apply(
     'inner-container',
-    ['height', 'height_unit'],
-    (height: any, heightUnit: any) => {
+    ['height', 'height_unit', 'padding_top', 'padding_bottom'],
+    (height: any, heightUnit: any, pt: any, pb: any) => {
       const s: any = {};
 
       if (heightUnit === 'px') {
-        s.minHeight = `${height}${heightUnit}`;
+        s.minHeight = `${height - pt - pb}${heightUnit}`;
       }
 
       return s;
