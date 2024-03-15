@@ -88,13 +88,6 @@ export class OfflineRequestHandler {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(this.dbName, this.dbVersion);
 
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains(this.storeName)) {
-          db.createObjectStore(this.storeName, { autoIncrement: true });
-        }
-      };
-
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -197,54 +190,45 @@ export class OfflineRequestHandler {
       const tx = db.transaction(this.storeName, 'readwrite');
       const store = tx.objectStore(this.storeName);
 
-      const requestsByStep: Record<string, SerializedRequest[]> = {};
-
-      await new Promise<void>((resolve) => {
+      const allRequests: SerializedRequest[] = await new Promise<
+        SerializedRequest[]
+      >((resolve) => {
+        const requests: SerializedRequest[] = [];
         store.openCursor().onsuccess = (event: Event) => {
           const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
             .result;
           if (cursor) {
-            const request = cursor.value as SerializedRequest;
-            if (request.stepKey) {
-              if (!requestsByStep[request.stepKey]) {
-                requestsByStep[request.stepKey] = [];
-              }
-              requestsByStep[request.stepKey].push(request);
-            }
+            requests.push(cursor.value as SerializedRequest);
             cursor.continue();
           } else {
-            // All entries have been collected, resolve the promise
-            resolve();
+            resolve(requests);
           }
         };
       });
 
-      // Replay submitCustom requests immediately
-      const submitCustomRequests = await this.getRequestsByType('submitCustom');
+      const submitCustomRequests = allRequests.filter(
+        (req) => req.type === 'submitCustom'
+      );
       await this.replayRequestsInParallel(submitCustomRequests);
 
-      // Replay submitStep requests immediately
-      const submitStepRequests = await this.getRequestsByType('submitStep');
+      const submitStepRequests = allRequests.filter(
+        (req) => req.type === 'submitStep'
+      );
       await this.replayRequestsInParallel(submitStepRequests);
 
-      const stepKeys = Object.keys(requestsByStep);
-      stepKeys.sort((a, b) => {
-        const firstRequest = requestsByStep[a][0];
-        const secondRequest = requestsByStep[b][0];
-        return firstRequest.timestamp - secondRequest.timestamp;
-      });
+      const registerEventRequests = allRequests.filter(
+        (req) => req.type === 'registerEvent'
+      );
+      const stepKeys = Array.from(
+        new Set(registerEventRequests.map((req) => req.stepKey))
+      );
 
       for (const stepKey of stepKeys) {
-        const requests = requestsByStep[stepKey];
-        const completeStepRequests = requests.filter(
-          (req) => req.type === 'completeStep'
+        const requestsForStep = registerEventRequests.filter(
+          (req) => req.stepKey === stepKey
         );
-        const loadStepRequests = requests.filter(
-          (req) => req.type === 'loadStep'
-        );
-
-        await this.replayRequestsInParallel(completeStepRequests);
-        await this.replayRequestsInParallel(loadStepRequests);
+        requestsForStep.sort((a, b) => a.timestamp - b.timestamp);
+        await this.replayRequestsInParallel(requestsForStep);
       }
 
       this.onlineSignals.forEach((signal) => signal());
@@ -263,33 +247,10 @@ export class OfflineRequestHandler {
         });
 
         if (count > 0) {
-          this.replayRequests();
+          await this.replayRequests();
         }
       }
     }
-  }
-
-  private async getRequestsByType(type: string): Promise<SerializedRequest[]> {
-    const db = await this.openDatabase();
-    const tx = db.transaction(this.storeName, 'readonly');
-    const store = tx.objectStore(this.storeName);
-
-    return new Promise<SerializedRequest[]>((resolve) => {
-      const requests: SerializedRequest[] = [];
-      store.openCursor().onsuccess = (event: Event) => {
-        const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
-          .result;
-        if (cursor) {
-          const request = cursor.value as SerializedRequest;
-          if (request.type === type) {
-            requests.push(request);
-          }
-          cursor.continue();
-        } else {
-          resolve(requests);
-        }
-      };
-    });
   }
 
   private async replayRequestsInParallel(requests: SerializedRequest[]) {

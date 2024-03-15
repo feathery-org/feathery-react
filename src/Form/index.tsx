@@ -896,7 +896,7 @@ function Form({
     client.registerEvent({
       step_key: newStep.key,
       event: 'load',
-      previous_key: oldKey
+      previous_step: oldKey
     });
   };
 

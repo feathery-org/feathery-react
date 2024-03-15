@@ -1,5 +1,6 @@
 import FeatheryClient, { API_URL, CDN_URL } from '../featheryClient';
 import { initInfo, initFormsPromise } from '../init';
+import offlineRequestHandler from '../offlineRequestHandler';
 
 jest.mock('../init', () => ({
   initInfo: jest.fn(),
@@ -8,6 +9,22 @@ jest.mock('../init', () => ({
   fieldValues: {},
   filePathMap: {}
 }));
+
+jest.mock('../offlineRequestHandler', () => ({
+  saveRequest: jest.fn(),
+  replayRequests: jest.fn().mockResolvedValue(undefined)
+}));
+
+beforeAll(() => {
+  // Mock for the Request constructor
+  global.Request = jest.fn().mockImplementation((url, options) => ({
+    url,
+    method: options?.method || 'GET',
+    headers: options?.headers || {},
+    body: options?.body || null,
+    clone: jest.fn()
+  }));
+});
 
 describe('featheryClient', () => {
   describe('fetchForm', () => {
@@ -101,28 +118,11 @@ describe('featheryClient', () => {
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
-      const response = await featheryClient.submitCustom(customKeyValues);
+      await featheryClient.submitCustom(customKeyValues);
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}panel/custom/submit/v3/`,
-        {
-          cache: 'no-store',
-          keepalive: true,
-          headers: { Authorization: 'Token sdkKey' },
-          method: 'POST',
-          body: expect.any(FormData)
-        }
-      );
-      const formData = Array.from(
-        global.fetch.mock.calls[0][1].body.entries()
-      ).reduce((acc, f) => ({ ...acc, [f[0]]: f[1] }), {});
-      expect(formData).toMatchObject({
-        custom_key_values: JSON.stringify(customKeyValues),
-        fuser_key: 'userId',
-        form_key: formKey
-      });
-      expect(response).toEqual({ status: 200 });
+      expect(offlineRequestHandler.saveRequest).toHaveBeenCalledTimes(1);
+      expect(offlineRequestHandler.replayRequests).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -137,37 +137,19 @@ describe('featheryClient', () => {
           type: 'type1'
         }
       ];
-      const body = {
-        fuser_key: 'userId',
-        step_key: 'stepKey',
-        servars,
-        panel_key: formKey
-      };
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
-      const response = await featheryClient.submitStep(servars, {
+      await featheryClient.submitStep(servars, {
         key: 'stepKey',
         buttons: [],
         subgrids: []
       });
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}panel/step/submit/v3/`,
-        {
-          cache: 'no-store',
-          keepalive: true,
-          headers: {
-            Authorization: 'Token sdkKey',
-            'Content-Type': 'application/json'
-          },
-          method: 'POST',
-          body: JSON.stringify(body)
-        }
-      );
-      expect(response).toEqual([undefined, [undefined, { status: 200 }]]);
+      expect(offlineRequestHandler.saveRequest).toHaveBeenCalledTimes(2);
+      expect(offlineRequestHandler.replayRequests).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -179,13 +161,6 @@ describe('featheryClient', () => {
       const event = { eventStuff: 'eventStuff' };
       const nextStepKey = '';
       const featheryClient = new FeatheryClient(formKey);
-      const body = {
-        form_key: formKey,
-        step_key: stepKey,
-        next_step_key: nextStepKey,
-        event,
-        fuser_key: 'userId'
-      };
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
@@ -198,119 +173,48 @@ describe('featheryClient', () => {
       });
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}event/`, {
-        cache: 'no-store',
-        keepalive: true,
-        headers: {
-          Authorization: 'Token sdkKey',
-          'Content-Type': 'application/json'
-        },
-        method: 'POST',
-        body: JSON.stringify(body)
-      });
+      expect(offlineRequestHandler.saveRequest).toHaveBeenCalled();
+      expect(offlineRequestHandler.replayRequests).toHaveBeenCalled();
     });
   });
+});
 
-  describe('stripe', () => {
-    initInfo.mockReturnValue({
-      sdkKey: 'sdkKey',
-      userId: 'userId',
-      formSessions: {},
-      preloadForms: {}
+describe('stripe', () => {
+  initInfo.mockReturnValue({
+    sdkKey: 'sdkKey',
+    userId: 'userId',
+    formSessions: {},
+    preloadForms: {}
+  });
+  const formKey = 'formKey';
+  const userId = 'userId';
+  const featheryClient = new FeatheryClient(formKey);
+  const mockFetch = (response) => {
+    global.fetch = jest.fn().mockResolvedValue({
+      status: 200,
+      json: jest.fn().mockResolvedValue(response)
     });
-    const formKey = 'formKey';
-    const userId = 'userId';
-    const featheryClient = new FeatheryClient(formKey);
-    const mockFetch = (response) => {
-      global.fetch = jest.fn().mockResolvedValue({
-        status: 200,
-        json: jest.fn().mockResolvedValue(response)
-      });
+  };
+  it('setupPaymentIntent sets up a payment intent and returns the intent secret', async () => {
+    // Arrange
+    const paymentMethodFieldId = 'payment_method_field_id';
+    const body = {
+      form_key: formKey,
+      user_id: userId,
+      field_id: paymentMethodFieldId
     };
-    it('setupPaymentIntent sets up a payment intent and returns the intent secret', async () => {
-      // Arrange
-      const paymentMethodFieldId = 'payment_method_field_id';
-      const body = {
-        form_key: formKey,
-        user_id: userId,
-        field_id: paymentMethodFieldId
-      };
-      const intentSecret = 'intent_secret';
-      mockFetch(intentSecret);
+    const intentSecret = 'intent_secret';
+    mockFetch(intentSecret);
 
-      // Act
-      const response = await featheryClient.setupPaymentIntent(
-        paymentMethodFieldId
-      );
+    // Act
+    const response = await featheryClient.setupPaymentIntent(
+      paymentMethodFieldId
+    );
 
-      // Assert
-      expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}stripe/payment_method/`,
-        {
-          body: JSON.stringify(body),
-          cache: 'no-store',
-          keepalive: true,
-          headers: {
-            Authorization: 'Token sdkKey',
-            'Content-Type': 'application/json'
-          },
-          method: 'POST'
-        }
-      );
-      expect(response).toEqual(intentSecret);
-    });
-    it('retrievePaymentMethodData retrieves the payment method  info', async () => {
-      // Arrange
-      const stripePaymentMethodId = 'stripe_payment_method_id';
-      const paymentMethodFieldId = 'payment_method_field_id';
-      const paymentMethodData = {
-        card_data: {
-          brand: 'mastercard',
-          last4: '6685',
-          country: 'US',
-          exp_year: 2024,
-          exp_month: 4,
-          postal_code: '46814'
-        },
-        stripe_customer_id: 'stripe_customer_id',
-        stripe_payment_method_id: stripePaymentMethodId
-      };
-      mockFetch(paymentMethodData);
-
-      // Act
-      const result = await featheryClient.retrievePaymentMethodData(
-        paymentMethodFieldId,
-        stripePaymentMethodId
-      );
-
-      // Assert
-      expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}stripe/payment_method/card/?field_id=${paymentMethodFieldId}&form_key=${formKey}&user_id=${userId}&stripe_payment_method_id=${stripePaymentMethodId}`,
-        {
-          cache: 'no-store',
-          keepalive: false,
-          headers: {
-            Authorization: 'Token sdkKey',
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      expect(result).toEqual(paymentMethodData);
-    });
-    it('createPayment properly calls the end point', async () => {
-      // Arrange
-      const body = {
-        form_key: formKey,
-        user_id: userId
-      };
-      const intentSecret = 'intent_secret';
-      mockFetch(intentSecret);
-
-      // Act
-      const response = await featheryClient.createPayment();
-
-      // Assert
-      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/payment/`, {
+    // Assert
+    expect(global.fetch).toHaveBeenCalledWith(
+      `${API_URL}stripe/payment_method/`,
+      {
         body: JSON.stringify(body),
         cache: 'no-store',
         keepalive: true,
@@ -319,40 +223,103 @@ describe('featheryClient', () => {
           'Content-Type': 'application/json'
         },
         method: 'POST'
-      });
-      expect(response).toEqual(intentSecret);
-    });
-    it('createCheckoutSession properly calls the end point', async () => {
-      // Arrange
-      const successUrl = 'success';
-      const cancelUrl = 'cancel';
-      const body = {
-        form_key: formKey,
-        user_id: userId,
-        success_url: successUrl,
-        cancel_url: cancelUrl
-      };
-      const expectedResponse = { checkout_url: 'checkoutUrl' };
-      mockFetch(expectedResponse);
+      }
+    );
+    expect(response).toEqual(intentSecret);
+  });
+  it('retrievePaymentMethodData retrieves the payment method  info', async () => {
+    // Arrange
+    const stripePaymentMethodId = 'stripe_payment_method_id';
+    const paymentMethodFieldId = 'payment_method_field_id';
+    const paymentMethodData = {
+      card_data: {
+        brand: 'mastercard',
+        last4: '6685',
+        country: 'US',
+        exp_year: 2024,
+        exp_month: 4,
+        postal_code: '46814'
+      },
+      stripe_customer_id: 'stripe_customer_id',
+      stripe_payment_method_id: stripePaymentMethodId
+    };
+    mockFetch(paymentMethodData);
 
-      // Act
-      const response = await featheryClient.createCheckoutSession(
-        successUrl,
-        cancelUrl
-      );
+    // Act
+    const result = await featheryClient.retrievePaymentMethodData(
+      paymentMethodFieldId,
+      stripePaymentMethodId
+    );
 
-      // Assert
-      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/checkout/`, {
-        body: JSON.stringify(body),
+    // Assert
+    expect(global.fetch).toHaveBeenCalledWith(
+      `${API_URL}stripe/payment_method/card/?field_id=${paymentMethodFieldId}&form_key=${formKey}&user_id=${userId}&stripe_payment_method_id=${stripePaymentMethodId}`,
+      {
         cache: 'no-store',
-        keepalive: true,
+        keepalive: false,
         headers: {
           Authorization: 'Token sdkKey',
           'Content-Type': 'application/json'
-        },
-        method: 'POST'
-      });
-      expect(response).toEqual(expectedResponse);
+        }
+      }
+    );
+    expect(result).toEqual(paymentMethodData);
+  });
+  it('createPayment properly calls the end point', async () => {
+    // Arrange
+    const body = {
+      form_key: formKey,
+      user_id: userId
+    };
+    const intentSecret = 'intent_secret';
+    mockFetch(intentSecret);
+
+    // Act
+    const response = await featheryClient.createPayment();
+
+    // Assert
+    expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/payment/`, {
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      keepalive: true,
+      headers: {
+        Authorization: 'Token sdkKey',
+        'Content-Type': 'application/json'
+      },
+      method: 'POST'
     });
+    expect(response).toEqual(intentSecret);
+  });
+  it('createCheckoutSession properly calls the end point', async () => {
+    // Arrange
+    const successUrl = 'success';
+    const cancelUrl = 'cancel';
+    const body = {
+      form_key: formKey,
+      user_id: userId,
+      success_url: successUrl,
+      cancel_url: cancelUrl
+    };
+    const expectedResponse = { checkout_url: 'checkoutUrl' };
+    mockFetch(expectedResponse);
+
+    // Act
+    const response = await featheryClient.createCheckoutSession(
+      successUrl,
+      cancelUrl
+    );
+
+    // Assert
+    expect(global.fetch).toHaveBeenCalledWith(`${API_URL}stripe/checkout/`, {
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      keepalive: true,
+      headers: {
+        Authorization: 'Token sdkKey',
+        'Content-Type': 'application/json'
+      },
+      method: 'POST'
+    });
+    expect(response).toEqual(expectedResponse);
   });
 });

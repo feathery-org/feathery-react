@@ -529,16 +529,17 @@ export default class FeatheryClient extends IntegrationClient {
     };
 
     const request = new Request(url, options);
-    let eventType = '';
     let eventStep = '';
     if (eventData.event === 'complete') {
-      eventType = 'completeStep';
       eventStep = eventData.step_key;
     } else if (eventData.event === 'load') {
-      eventType = 'loadStep';
-      eventStep = eventData.previous_key;
+      eventStep = eventData.previous_step;
     }
-    await offlineRequestHandler.saveRequest(request, eventType, eventStep);
+    await offlineRequestHandler.saveRequest(
+      request,
+      'registerEvent',
+      eventStep
+    );
 
     // Ensure events complete before user exits page by replaying all requests.
     // Submit and load event of next step must happen after the previous
