@@ -321,8 +321,6 @@ function Form({
     _internalId
   });
 
-  useOfflineRequestHandler();
-
   const [backNavMap, setBackNavMap] = useState<Record<string, string>>({});
   const updateBackNavMap = (newNavs: Record<string, string>) =>
     newNavs && setBackNavMap({ ...backNavMap, ...newNavs });
@@ -343,6 +341,8 @@ function Form({
   // Tracks if the form has redirected
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
+
+  useOfflineRequestHandler(hasRedirected);
 
   // All mount and unmount logic should live here
   useEffect(() => {

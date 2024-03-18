@@ -4,7 +4,7 @@ import { encodeGetParams } from '../primitives';
 import { parseError } from '../error';
 import { API_URL } from '.';
 
-const TYPE_MESSAGES_TO_IGNORE = [
+export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
   'Failed to fetch',
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3529742129/

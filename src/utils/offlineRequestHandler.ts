@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
-import { featheryWindow } from './browser';
+import { featheryWindow, runningInClient } from './browser';
+import { TYPE_MESSAGES_TO_IGNORE } from './featheryClient/integrationClient';
+import * as errors from './error';
 
 // Constants for the IndexedDB database
 const DB_NAME = 'requestsDB';
@@ -34,25 +36,21 @@ interface SerializedRequest {
   stepKey?: string;
 }
 
-export function useOfflineRequestHandler() {
+export function useOfflineRequestHandler(
+  hasRedirected: React.RefObject<boolean>
+) {
   useEffect(() => {
     const handleOnline = () => {
-      if (!offlineRequestHandler.isReplayingRequests) {
-        offlineRequestHandler.replayRequests();
-      }
+      offlineRequestHandler.replayRequests();
     };
 
-    const windowObj = featheryWindow();
-    if (windowObj && windowObj.addEventListener) {
-      windowObj.addEventListener('online', handleOnline);
-    }
+    if (!runningInClient()) return;
 
-    return () => {
-      if (windowObj && windowObj.removeEventListener) {
-        windowObj.removeEventListener('online', handleOnline);
-      }
-    };
+    featheryWindow().addEventListener('online', handleOnline);
+    return () => featheryWindow().removeEventListener('online', handleOnline);
   }, []);
+
+  offlineRequestHandler.ignoreNetworkErrors = hasRedirected;
 }
 
 export class OfflineRequestHandler {
@@ -63,6 +61,8 @@ export class OfflineRequestHandler {
   private readonly maxRetryAttempts: number;
   private readonly retryDelayMs: number;
   onlineSignals: any[];
+  private indexedDBSupported: boolean;
+  public ignoreNetworkErrors: React.RefObject<boolean> | undefined;
 
   constructor(
     dbName: string,
@@ -77,6 +77,8 @@ export class OfflineRequestHandler {
     this.maxRetryAttempts = maxRetryAttempts;
     this.retryDelayMs = retryDelayMs;
     this.onlineSignals = [];
+    this.indexedDBSupported = typeof indexedDB !== 'undefined';
+    this.ignoreNetworkErrors = undefined;
   }
 
   public _addOnlineSignal(signal: any) {
@@ -93,21 +95,42 @@ export class OfflineRequestHandler {
     });
   }
 
-  // TODO: handle case where browser does not support IndexDB. Just run the
-  //  request directly with no offline support.
+  private async getDbTransaction(
+    mode: 'readwrite' | 'readonly'
+  ): Promise<{ tx: IDBTransaction; store: IDBObjectStore }> {
+    const db = await this.openDatabase();
+    const tx = db.transaction(this.storeName, mode);
+    const store = tx.objectStore(this.storeName);
+    return { tx, store };
+  }
+
   // Save request to IndexedDB
   public async saveRequest(
     request: Request,
     type: string,
     stepKey?: string
   ): Promise<void> {
-    const db = await this.openDatabase();
+    // If IndexedDB is unsupported, directly send the request
+    if (!this.indexedDBSupported) {
+      try {
+        const response = await fetch(request.clone(), {
+          cache: 'no-store',
+          keepalive: ['POST', 'PATCH', 'PUT'].includes(request.method)
+        });
+        await this.checkResponseSuccess(response);
+      } catch (error: any) {
+        if (
+          (this.ignoreNetworkErrors?.current ||
+            TYPE_MESSAGES_TO_IGNORE.includes(error.message)) &&
+          error instanceof TypeError
+        ) {
+          return;
+        }
+        throw error;
+      }
+    }
+
     try {
-      const getTransaction = async () => {
-        const tx = db.transaction(this.storeName, 'readwrite');
-        const store = tx.objectStore(this.storeName);
-        return { tx, store };
-      };
       const requestClone: Request = request.clone();
       let serializedBody: SerializedRequestBody = { type: 'text', body: '' };
 
@@ -132,7 +155,8 @@ export class OfflineRequestHandler {
         type,
         stepKey
       };
-      const { tx, store } = await getTransaction();
+
+      const { tx, store } = await this.getDbTransaction('readwrite');
       const requestPromise = new Promise<void>((resolve, reject) => {
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
@@ -140,7 +164,6 @@ export class OfflineRequestHandler {
 
       store.add(serializedRequest);
       await requestPromise;
-      console.log('Request successfully added: ', request, type, stepKey);
     } catch (error) {
       console.error('Error adding request to IndexedDB:', error);
     }
@@ -170,9 +193,12 @@ export class OfflineRequestHandler {
     }
   }
 
-  // TODO: what does performance look like while using IndexDB?
   // Replay requests from IndexedDB
   public async replayRequests() {
+    if (!this.indexedDBSupported) {
+      return;
+    }
+
     if (!navigator.onLine) {
       // If offline, block until requests are replayed from online event handler
       await new Promise((resolve) => this._addOnlineSignal(resolve));
@@ -186,9 +212,7 @@ export class OfflineRequestHandler {
     this.isReplayingRequests = true;
 
     try {
-      const db = await this.openDatabase();
-      const tx = db.transaction(this.storeName, 'readwrite');
-      const store = tx.objectStore(this.storeName);
+      const { store } = await this.getDbTransaction('readwrite');
 
       const allRequests: SerializedRequest[] = await new Promise<
         SerializedRequest[]
@@ -209,12 +233,13 @@ export class OfflineRequestHandler {
       const submitCustomRequests = allRequests.filter(
         (req) => req.type === 'submitCustom'
       );
-      await this.replayRequestsInParallel(submitCustomRequests);
-
       const submitStepRequests = allRequests.filter(
         (req) => req.type === 'submitStep'
       );
-      await this.replayRequestsInParallel(submitStepRequests);
+      await Promise.all([
+        this.replayRequestsInParallel(submitCustomRequests),
+        this.replayRequestsInParallel(submitStepRequests)
+      ]);
 
       const registerEventRequests = allRequests.filter(
         (req) => req.type === 'registerEvent'
@@ -238,9 +263,7 @@ export class OfflineRequestHandler {
 
       // Check if there are any new requests in IndexedDB and trigger replayRequests again
       if (navigator.onLine) {
-        const db = await this.openDatabase();
-        const tx = db.transaction(this.storeName, 'readonly');
-        const store = tx.objectStore(this.storeName);
+        const { store } = await this.getDbTransaction('readonly');
         const count = await new Promise<number>((resolve) => {
           const request = store.count();
           request.onsuccess = () => resolve(request.result);
@@ -261,7 +284,9 @@ export class OfflineRequestHandler {
         const fetchOptions: RequestInit = {
           method,
           headers: JSON.parse(headers),
-          body: reconstructedBody
+          body: reconstructedBody,
+          cache: 'no-store',
+          keepalive: ['POST', 'PATCH', 'PUT'].includes(method)
         };
 
         let attempts = 0;
@@ -270,15 +295,17 @@ export class OfflineRequestHandler {
         while (!success && attempts < this.maxRetryAttempts) {
           try {
             const response = await fetch(url, fetchOptions);
-            if (response.ok) {
-              success = true;
-              await this.removeRequest();
-              console.log('Request replayed and removed: ', request);
-            } else {
-              attempts++;
-              await this.delay(this.retryDelayMs);
+            await this.checkResponseSuccess(response);
+            success = true;
+            await this.removeRequest();
+          } catch (error: any) {
+            if (
+              (this.ignoreNetworkErrors?.current ||
+                TYPE_MESSAGES_TO_IGNORE.includes(error.message)) &&
+              error instanceof TypeError
+            ) {
+              return;
             }
-          } catch (error) {
             attempts++;
             await this.delay(this.retryDelayMs);
           }
@@ -290,11 +317,6 @@ export class OfflineRequestHandler {
           }
 
           if (attempts === this.maxRetryAttempts) {
-            console.log(
-              'Max retry attempts reached for request: ',
-              url,
-              fetchOptions
-            );
             break;
           }
         }
@@ -303,10 +325,32 @@ export class OfflineRequestHandler {
   }
 
   private async removeRequest() {
-    const db = await this.openDatabase();
-    const tx = db.transaction(this.storeName, 'readwrite');
-    const store = tx.objectStore(this.storeName);
+    const { store } = await this.getDbTransaction('readwrite');
     await store.clear();
+  }
+
+  private async checkResponseSuccess(response: any) {
+    let payload;
+    switch (response.status) {
+      case 200:
+      case 201:
+        return;
+      case 400:
+        payload = JSON.stringify(await response.clone().text());
+        console.error(payload.toString());
+        return;
+      case 401:
+        throw new errors.SDKKeyError();
+      case 404:
+        throw new errors.FetchError("Can't find object");
+      case 409:
+        location.reload();
+        return;
+      case 500:
+        throw new errors.FetchError('Internal server error');
+      default:
+        throw new errors.FetchError('Unknown error');
+    }
   }
 
   private delay(ms: number): Promise<void> {

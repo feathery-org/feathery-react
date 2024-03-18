@@ -465,8 +465,6 @@ export default class FeatheryClient extends IntegrationClient {
     const request = new Request(url, options);
     await offlineRequestHandler.saveRequest(request, 'submitCustom');
 
-    // TODO: update to only play the request that was just saved since
-    //  it shouldn't be blocked on any requests being replayed before it
     if (run) await wrapUnload(() => offlineRequestHandler.replayRequests());
   }
 
@@ -499,9 +497,6 @@ export default class FeatheryClient extends IntegrationClient {
       )
     ]);
 
-    // TODO: update to only play the requests that were just saved along with
-    //  all previous, existing submitStep requests (in parallel). Promise should be
-    //  blocked on all of them completing.
     await wrapUnload(() => offlineRequestHandler.replayRequests());
   }
 
@@ -541,9 +536,6 @@ export default class FeatheryClient extends IntegrationClient {
       eventStep
     );
 
-    // Ensure events complete before user exits page by replaying all requests.
-    // Submit and load event of next step must happen after the previous
-    // step is done submitting.
     await wrapUnload(() => offlineRequestHandler.replayRequests());
   }
 
