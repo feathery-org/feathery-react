@@ -22,6 +22,7 @@ import { featheryDoc, featheryWindow } from '../browser';
 import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
+import { gatherTrustedFormFields } from '../../integrations/trustedform';
 
 // Convenience boolean for urls - manually change for testing
 export const API_URL_OPTIONS = {
@@ -463,6 +464,7 @@ export default class FeatheryClient extends IntegrationClient {
       // need to include value === '' so that we can clear out hidden fields
       if (value !== undefined) hiddenFields[fieldKey] = value;
     });
+    gatherTrustedFormFields(hiddenFields, this.formKey);
 
     const isFileServar = (servar: any) =>
       ['file_upload', 'signature'].some((type) => type in servar);
