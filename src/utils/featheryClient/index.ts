@@ -587,7 +587,7 @@ export default class FeatheryClient extends IntegrationClient {
             if (attempts < MAX_ATTEMPTS) {
               setTimeout(checkCompletion, CHECK_INTERVAL);
             } else {
-              console.error('Extraction took too long...');
+              console.warn('Extraction took too long...');
               return resolve({});
             }
           }
