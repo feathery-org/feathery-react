@@ -567,6 +567,10 @@ export default class FeatheryClient extends IntegrationClient {
       const MAX_ATTEMPTS = MAX_TIME / CHECK_INTERVAL;
       let attempts = 0;
 
+      if (runAsync) {
+        return resolve({});
+      }
+
       const checkCompletion = async () => {
         const response = await this._fetch(
           `${AI_URL}ai/vision/completion/?fid=${userId}&eid=${extractionId}`,
@@ -591,11 +595,7 @@ export default class FeatheryClient extends IntegrationClient {
         }
       };
 
-      if (runAsync) {
-        return resolve({}); // No need to wait for completion
-      } else {
-        setTimeout(checkCompletion, CHECK_INTERVAL); // Check every 2 seconds for a response
-      }
+      setTimeout(checkCompletion, CHECK_INTERVAL); // Check every 2 seconds for a response
     });
   }
 
