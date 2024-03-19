@@ -551,14 +551,51 @@ export default class FeatheryClient extends IntegrationClient {
     const { userId } = initInfo();
     const data = {
       fuser_key: userId,
-      extraction_id: extractionId,
-      run_async: runAsync
+      extraction_id: extractionId
     };
-    return this._fetch(`${AI_URL}ai/vision/`, {
+
+    this._fetch(`${AI_URL}ai/vision/`, {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
-    }).then((res) => (res ? res.json() : Promise.resolve({})));
+    });
+
+    return new Promise((resolve) => {
+      const CHECK_INTERVAL = 2000;
+      const MAX_TIME = 3 * 60 * 1000;
+      const MAX_ATTEMPTS = MAX_TIME / CHECK_INTERVAL;
+      let attempts = 0;
+
+      if (runAsync) {
+        return resolve({});
+      }
+
+      const checkCompletion = async () => {
+        const response = await this._fetch(
+          `${AI_URL}ai/vision/completion/?fid=${userId}&eid=${extractionId}`,
+          { method: 'GET' }
+        );
+
+        if (response && response.ok) {
+          const data = await response.json();
+
+          if (data.status === 'complete') {
+            return resolve(data.data);
+          } else {
+            attempts += 1;
+
+            if (attempts < MAX_ATTEMPTS) {
+              setTimeout(checkCompletion, CHECK_INTERVAL);
+            } else {
+              console.warn('Extraction took too long...');
+              return resolve({});
+            }
+          }
+        }
+      };
+
+      setTimeout(checkCompletion, CHECK_INTERVAL); // Check every 2 seconds for a response
+    });
   }
 
   // Collaboration
