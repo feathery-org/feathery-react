@@ -4,7 +4,6 @@ import {
   rerenderAllForms,
   OptionType,
   getDefaultFormFieldValue,
-  FieldProperties,
   FieldStyles
 } from '../formHelperFunctions';
 import {
