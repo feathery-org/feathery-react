@@ -74,6 +74,19 @@ export const updateRegionApiUrls = (region: string) => {
   }
 };
 
+function addAuthorizationHeader(
+  options: RequestInit,
+  sdkKey: string
+): RequestInit {
+  return {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Token ${sdkKey}`
+    }
+  };
+}
+
 export default class FeatheryClient extends IntegrationClient {
   async _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
     if (servars.length === 0) return Promise.resolve();
@@ -92,15 +105,29 @@ export default class FeatheryClient extends IntegrationClient {
 
     const options: RequestOptions = {
       headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Token ${sdkKey}`
+        'Content-Type': 'application/json'
       },
       method: 'POST',
       body: JSON.stringify(data)
     };
 
-    const request = new Request(url, options);
-    await offlineRequestHandler.saveRequest(request, 'submitStep', stepKey);
+    if (navigator.onLine) {
+      // Check if there are any requests in IndexedDB or if a replay is ongoing
+      const prioritizeOffline = await offlineRequestHandler.prioritizeOffline();
+      if (prioritizeOffline) {
+        // If so, wait for it to finish
+        await new Promise((resolve) =>
+          offlineRequestHandler._addOnlineSignal(resolve)
+        );
+      }
+      // Proceed with normal request sending
+      return this._fetch(url, options);
+    } else {
+      const authorizedOptions = addAuthorizationHeader(options, sdkKey);
+      const request = new Request(url, authorizedOptions);
+      await offlineRequestHandler.saveRequest(request, 'submit', stepKey);
+      return Promise.resolve();
+    }
   }
 
   async _getFileValue(servar: any) {
@@ -151,13 +178,26 @@ export default class FeatheryClient extends IntegrationClient {
     const options: RequestOptions = {
       method: 'POST',
       body: formData,
-      headers: { Authorization: `Token ${sdkKey}` },
       // In Safari, request fails with keepalive = true if over 64kb payload.
       keepalive: false
     };
 
-    const request = new Request(url, options);
-    await offlineRequestHandler.saveRequest(request, 'submitStep', stepKey);
+    if (navigator.onLine) {
+      // Check if there are any requests in IndexedDB or if a replay is ongoing
+      const prioritizeOffline = await offlineRequestHandler.prioritizeOffline();
+      if (prioritizeOffline) {
+        // If so, wait for it to finish
+        await new Promise((resolve) =>
+          offlineRequestHandler._addOnlineSignal(resolve)
+        );
+      }
+      // Proceed with normal request sending
+      await this._fetch(url, options);
+    } else {
+      const authorizedOptions = addAuthorizationHeader(options, sdkKey);
+      const request = new Request(url, authorizedOptions);
+      await offlineRequestHandler.saveRequest(request, 'submit', stepKey);
+    }
   }
 
   updateUserId(newUserId: any, merge = false) {
@@ -459,13 +499,26 @@ export default class FeatheryClient extends IntegrationClient {
 
     const options: RequestOptions = {
       method: 'POST',
-      body: formData,
-      headers: { Authorization: `Token ${sdkKey}` }
+      body: formData
     };
-    const request = new Request(url, options);
-    await offlineRequestHandler.saveRequest(request, 'submitCustom');
 
-    if (run) await wrapUnload(() => offlineRequestHandler.replayRequests());
+    if (navigator.onLine) {
+      // Check if there are any requests in IndexedDB or if a replay is ongoing
+      const prioritizeOffline = await offlineRequestHandler.prioritizeOffline();
+      if (prioritizeOffline) {
+        // If so, wait for it to finish
+        await new Promise((resolve) =>
+          offlineRequestHandler._addOnlineSignal(resolve)
+        );
+      }
+      // Proceed with normal request sending
+      return this._fetch(url, options);
+    } else {
+      const authorizedOptions = addAuthorizationHeader(options, sdkKey);
+      const request = new Request(url, authorizedOptions);
+      await offlineRequestHandler.saveRequest(request, 'submit');
+      return Promise.resolve();
+    }
   }
 
   // servars = [{key: <servarKey>, <type>: <value>}]
@@ -489,15 +542,16 @@ export default class FeatheryClient extends IntegrationClient {
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    await Promise.all([
-      this.submitCustom(hiddenFields, true, false),
-      this._submitJSONData(jsonServars, step.key, hasNext),
-      ...fileServars.map((servar: any) =>
-        this._submitFileData(servar, step.key)
-      )
-    ]);
-
-    await wrapUnload(() => offlineRequestHandler.replayRequests());
+    const promiseFunc = () =>
+      Promise.all([
+        this.submitCustom(hiddenFields),
+        this._submitJSONData(jsonServars, step.key, hasNext),
+        ...fileServars.map((servar: any) =>
+          this._submitFileData(servar, step.key)
+        )
+      ]);
+    this.submitQueue = Promise.all([this.submitQueue, wrapUnload(promiseFunc)]);
+    return this.submitQueue;
   }
 
   async registerEvent(eventData: any) {
@@ -515,28 +569,41 @@ export default class FeatheryClient extends IntegrationClient {
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
     const options = {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Token ${sdkKey}`
-      },
+      headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
     };
 
-    const request = new Request(url, options);
-    let eventStep = '';
-    if (eventData.event === 'complete') {
-      eventStep = eventData.step_key;
-    } else if (eventData.event === 'load') {
-      eventStep = eventData.previous_step;
+    if (navigator.onLine) {
+      const prioritizeOffline = await offlineRequestHandler.prioritizeOffline();
+      if (prioritizeOffline) {
+        await new Promise((resolve) =>
+          offlineRequestHandler._addOnlineSignal(resolve)
+        );
+      }
+      // Ensure events complete before user exits page. Submit and load event of
+      // next step must happen after the previous step is done submitting
+      return await this.submitQueue.then(() =>
+        wrapUnload(() =>
+          this.draft ? Promise.resolve() : this._fetch(url, options)
+        )
+      );
+    } else {
+      let eventStep = '';
+      if (eventData.event === 'complete') {
+        eventStep = eventData.step_key;
+      } else if (eventData.event === 'load') {
+        eventStep = eventData.previous_step;
+      }
+      const authorizedOptions = addAuthorizationHeader(options, sdkKey);
+      const request = new Request(url, authorizedOptions);
+      await offlineRequestHandler.saveRequest(
+        request,
+        'registerEvent',
+        eventStep
+      );
+      return Promise.resolve();
     }
-    await offlineRequestHandler.saveRequest(
-      request,
-      'registerEvent',
-      eventStep
-    );
-
-    await wrapUnload(() => offlineRequestHandler.replayRequests());
   }
 
   // Logic custom APIs

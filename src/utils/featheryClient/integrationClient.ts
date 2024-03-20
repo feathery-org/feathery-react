@@ -11,6 +11,30 @@ export const TYPE_MESSAGES_TO_IGNORE = [
   'Load failed'
 ];
 
+export async function checkResponseSuccess(response: any) {
+  let payload;
+  switch (response.status) {
+    case 200:
+    case 201:
+      return;
+    case 400:
+      payload = JSON.stringify(await response.clone().text());
+      console.error(payload.toString());
+      return;
+    case 401:
+      throw new errors.SDKKeyError();
+    case 404:
+      throw new errors.FetchError("Can't find object");
+    case 409:
+      location.reload();
+      return;
+    case 500:
+      throw new errors.FetchError('Internal server error');
+    default:
+      throw new errors.FetchError('Unknown error');
+  }
+}
+
 // THIRD-PARTY INTEGRATIONS
 export default class IntegrationClient {
   formKey: string;
@@ -19,6 +43,7 @@ export default class IntegrationClient {
   ignoreNetworkErrors: any; // this should be a ref
   draft: boolean;
   bypassCDN: boolean;
+  submitQueue: Promise<any>;
   constructor(
     formKey = '',
     ignoreNetworkErrors?: any,
@@ -29,30 +54,7 @@ export default class IntegrationClient {
     this.ignoreNetworkErrors = ignoreNetworkErrors;
     this.draft = draft;
     this.bypassCDN = bypassCDN;
-  }
-
-  async _checkResponseSuccess(response: any) {
-    let payload;
-    switch (response.status) {
-      case 200:
-      case 201:
-        return;
-      case 400:
-        payload = JSON.stringify(await response.clone().text());
-        console.error(payload.toString());
-        return;
-      case 401:
-        throw new errors.SDKKeyError();
-      case 404:
-        throw new errors.FetchError("Can't find object");
-      case 409:
-        location.reload();
-        return;
-      case 500:
-        throw new errors.FetchError('Internal server error');
-      default:
-        throw new errors.FetchError('Unknown error');
-    }
+    this.submitQueue = Promise.resolve();
   }
 
   _fetch(url: any, options: any, parseResponse = true) {
@@ -70,7 +72,7 @@ export default class IntegrationClient {
     };
     return fetch(url, options)
       .then(async (response) => {
-        if (parseResponse) await this._checkResponseSuccess(response);
+        if (parseResponse) await checkResponseSuccess(response);
         return response;
       })
       .catch((e) => {
