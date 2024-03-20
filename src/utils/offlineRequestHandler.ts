@@ -74,6 +74,19 @@ export function useOfflineRequestHandler(formKey: string) {
   }, []);
 
   offlineRequestHandler.ignoreNetworkErrors = hasRedirected;
+
+  useEffect(() => {
+    async function checkAndReplayRequests() {
+      if (!offlineRequestHandler.isReplayingRequests) {
+        const hasRequestsInDB = await offlineRequestHandler.checkIndexedDB();
+        if (hasRequestsInDB) {
+          await offlineRequestHandler.replayRequests();
+        }
+      }
+    }
+
+    checkAndReplayRequests();
+  }, []);
 }
 
 export class OfflineRequestHandler {
@@ -127,6 +140,15 @@ export class OfflineRequestHandler {
   public async openDatabase(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(this.dbName, this.dbVersion);
+
+      // Good practice to keep onupgradeneeded to handle
+      // database creation scenarios (after database deletion by user)
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains(this.storeName)) {
+          db.createObjectStore(this.storeName, { autoIncrement: true });
+        }
+      };
 
       // Good practice to keep onupgradeneeded to handle
       // database creation scenarios (after database deletion by user)
@@ -367,30 +389,6 @@ export class OfflineRequestHandler {
   private async removeRequest() {
     const { store } = await this.getDbTransaction('readwrite');
     await store.clear();
-  }
-
-  private async checkResponseSuccess(response: any) {
-    let payload;
-    switch (response.status) {
-      case 200:
-      case 201:
-        return;
-      case 400:
-        payload = JSON.stringify(await response.clone().text());
-        console.error(payload.toString());
-        return;
-      case 401:
-        throw new errors.SDKKeyError();
-      case 404:
-        throw new errors.FetchError("Can't find object");
-      case 409:
-        location.reload();
-        return;
-      case 500:
-        throw new errors.FetchError('Internal server error');
-      default:
-        throw new errors.FetchError('Unknown error');
-    }
   }
 
   private delay(ms: number): Promise<void> {

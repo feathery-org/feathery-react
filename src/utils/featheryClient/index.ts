@@ -75,6 +75,19 @@ export const updateRegionApiUrls = (region: string) => {
   }
 };
 
+function addAuthorizationHeader(
+  options: RequestInit,
+  sdkKey: string
+): RequestInit {
+  return {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Token ${sdkKey}`
+    }
+  };
+}
+
 export default class FeatheryClient extends IntegrationClient {
   async _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
     if (servars.length === 0) return Promise.resolve();
