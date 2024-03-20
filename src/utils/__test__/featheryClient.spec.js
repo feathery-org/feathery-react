@@ -9,6 +9,23 @@ jest.mock('../init', () => ({
   filePathMap: {}
 }));
 
+jest.mock('../offlineRequestHandler', () => ({
+  prioritizeOffline: jest.fn().mockResolvedValue(false),
+  saveRequest: jest.fn(),
+  replayRequests: jest.fn().mockResolvedValue(undefined)
+}));
+
+beforeAll(() => {
+  // Mock for the Request constructor
+  global.Request = jest.fn().mockImplementation((url, options) => ({
+    url,
+    method: options?.method || 'GET',
+    headers: options?.headers || {},
+    body: options?.body || null,
+    clone: jest.fn()
+  }));
+});
+
 describe('featheryClient', () => {
   describe('fetchForm', () => {
     it('fetches a form with the provided parameters', async () => {
