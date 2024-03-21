@@ -325,20 +325,32 @@ export type OptionType =
 // TODO: remove string[] for backcompat
 export type FieldOptions = Record<string, OptionType[]>;
 
-export function updateStepFieldOptions(step: any, newOptions: FieldOptions) {
+export function updateStepFieldOptions(
+  step: any,
+  newOptions: FieldOptions,
+  index: number
+) {
   step.servar_fields.forEach((field: any) => {
     const servar = field.servar;
     if (servar.key in newOptions) {
       const options = newOptions[servar.key];
-      servar.metadata.options = options.map((option) =>
-        typeof option === 'object' ? option.value : option
-      );
-      servar.metadata.option_labels = options.map((option) =>
-        typeof option === 'object' ? option.label ?? option.value : option
-      );
-      servar.metadata.option_images = options.map((option) =>
-        typeof option === 'object' ? option.image ?? '' : ''
-      );
+      if (index === null || index === undefined) {
+        servar.metadata.options = options.map((option) =>
+          typeof option === 'object' ? option.value : option
+        );
+        servar.metadata.option_labels = options.map((option) =>
+          typeof option === 'object' ? option.label ?? option.value : option
+        );
+        servar.metadata.option_images = options.map((option) =>
+          typeof option === 'object' ? option.image ?? '' : ''
+        );
+      } else {
+        if (!servar.metadata.repeat_options)
+          servar.metadata.repeat_options = [];
+        servar.metadata.repeat_options[index] = options.map((option) =>
+          typeof option === 'object' ? option.value : option
+        );
+      }
     }
   });
 }

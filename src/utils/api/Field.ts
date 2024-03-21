@@ -169,6 +169,46 @@ export default class Field {
   // options for the field
   get options(): OptionType[] {
     const field = this._getSourceField();
+
+    if (field && field.servar.repeated) {
+      const defaultOptions = field.servar.metadata.options.map(
+        (option: string, index: number) => ({
+          value: option,
+          label: (field.servar.metadata.option_labels ?? [])[index],
+          image: (field.servar.metadata.option_images ?? [])[index]
+        })
+      );
+      const fieldValueArray = Array.isArray(fieldValues[this._fieldKey])
+        ? (fieldValues[this._fieldKey] as any[])
+        : [];
+      const fieldValuesLength = fieldValueArray.length;
+
+      if (!field.servar.metadata.repeat_options) {
+        field.servar.metadata.repeat_options =
+          Array(fieldValuesLength).fill(defaultOptions);
+      } else {
+        const repeatOptionsLength = field.servar.metadata.repeat_options.length;
+        if (repeatOptionsLength < fieldValuesLength) {
+          field.servar.metadata.repeat_options.push(
+            ...Array(fieldValuesLength - repeatOptionsLength).fill(
+              defaultOptions
+            )
+          );
+        } else if (repeatOptionsLength > fieldValuesLength) {
+          field.servar.metadata.repeat_options.splice(fieldValuesLength);
+        }
+      }
+
+      return new Proxy(field.servar.metadata.repeat_options as object, {
+        set: (target: any, property: any, value: any) => {
+          target[property] = value;
+          const context = internalState[this._formUuid];
+          context.updateFieldOptions({ [this._fieldKey]: value }, property);
+          return true;
+        }
+      });
+    }
+
     return field
       ? field.servar.metadata.options.map((option: string, index: number) => ({
           value: option,
