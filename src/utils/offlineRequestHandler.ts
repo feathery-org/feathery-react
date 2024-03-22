@@ -72,21 +72,6 @@ export function useOfflineRequestHandler(formKey: string) {
     featheryWindow().addEventListener('online', handleOnline);
     return () => featheryWindow().removeEventListener('online', handleOnline);
   }, []);
-
-  offlineRequestHandler.ignoreNetworkErrors = hasRedirected;
-
-  useEffect(() => {
-    async function checkAndReplayRequests() {
-      if (!offlineRequestHandler.isReplayingRequests) {
-        const hasRequestsInDB = await offlineRequestHandler.checkIndexedDB();
-        if (hasRequestsInDB) {
-          await offlineRequestHandler.replayRequests();
-        }
-      }
-    }
-
-    checkAndReplayRequests();
-  }, []);
 }
 
 export class OfflineRequestHandler {
