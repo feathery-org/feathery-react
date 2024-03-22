@@ -74,19 +74,6 @@ export const updateRegionApiUrls = (region: string) => {
   }
 };
 
-function addAuthorizationHeader(
-  options: RequestInit,
-  sdkKey: string
-): RequestInit {
-  return {
-    ...options,
-    headers: {
-      ...(options.headers || {}),
-      Authorization: `Token ${sdkKey}`
-    }
-  };
-}
-
 export default class FeatheryClient extends IntegrationClient {
   async _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
     if (servars.length === 0) return Promise.resolve();
@@ -436,11 +423,11 @@ export default class FeatheryClient extends IntegrationClient {
       });
   }
 
-  async submitCustom(customKeyValues: any, override = true, run = true) {
+  async submitCustom(customKeyValues: any, override = true) {
     if (this.draft || this.noSave) return;
     if (Object.keys(customKeyValues).length === 0) return;
 
-    const { userId, sdkKey } = initInfo();
+    const { userId } = initInfo();
     const url = `${API_URL}panel/custom/submit/v3/`;
 
     const jsonKeyVals: Record<string, any> = {};

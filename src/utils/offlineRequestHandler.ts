@@ -135,15 +135,6 @@ export class OfflineRequestHandler {
         }
       };
 
-      // Good practice to keep onupgradeneeded to handle
-      // database creation scenarios (after database deletion by user)
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains(this.storeName)) {
-          db.createObjectStore(this.storeName, { autoIncrement: true });
-        }
-      };
-
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -327,11 +318,11 @@ export class OfflineRequestHandler {
     }
   }
 
-  private async replayRequestsInParallel(
+  private replayRequestsInParallel(
     requests: SerializedRequest[],
     formKey: string
   ) {
-    await Promise.all(
+    return Promise.all(
       requests.map(async (request) => {
         const { url, method, headers, body, bodyType, keepalive } = request;
         const reconstructedBody = this.reconstructBody(body, bodyType);
@@ -346,27 +337,31 @@ export class OfflineRequestHandler {
         let attempts = 0;
         let success = false;
 
-        while (!success && attempts < this.maxRetryAttempts) {
-          try {
-            const response = await fetch(url, fetchOptions);
-            await checkResponseSuccess(response);
-            success = true;
-            await this.removeRequest();
-          } catch (error: any) {
-            attempts++;
-            await this.delay(this.retryDelayMs);
-          }
+        const attemptRequest = async () => {
+          while (!success && attempts < this.maxRetryAttempts) {
+            try {
+              const response = await fetch(url, fetchOptions);
+              await checkResponseSuccess(response);
+              success = true;
+              await this.removeRequest();
+            } catch (error: any) {
+              attempts++;
+              await this.delay(this.retryDelayMs);
+            }
 
-          if (!navigator.onLine) {
-            // If offline, block until requests are replayed from online event handler
-            await offlineRequestHandler.onlineAndReplayed(formKey);
-            return;
-          }
+            if (!navigator.onLine) {
+              // If offline, block until requests are replayed from online event handler
+              await offlineRequestHandler.onlineAndReplayed(formKey);
+              return;
+            }
 
-          if (attempts === this.maxRetryAttempts) {
-            break;
+            if (attempts === this.maxRetryAttempts) {
+              break;
+            }
           }
-        }
+        };
+
+        return attemptRequest();
       })
     );
   }
