@@ -60,20 +60,39 @@ export function isFieldActuallyRequired(field: any, step: any) {
 export function handleOtherStateChange(
   oldOtherVal: any,
   e: any,
-  updateFieldValues: any
+  updateFieldValues: any,
+  index: number | null
 ) {
   const target = e.target;
   const curOtherVal = target.value;
-  let curFieldVal = fieldValues[target.id];
-  if (Array.isArray(curFieldVal)) {
-    // @ts-expect-error TS(2349): This expression is not callable.
-    curFieldVal = curFieldVal.filter((val: any) => val !== oldOtherVal);
-    (curFieldVal as string[]).push(curOtherVal);
+  let curFieldVal: any = fieldValues[target.id];
+  // Handle repeatbale fields
+  if (
+    index !== null &&
+    Array.isArray(curFieldVal) &&
+    Array.isArray(curFieldVal[0])
+  ) {
+    const updatedFieldVal = curFieldVal.map((val: any, i: number) => {
+      if (i === index) {
+        return val.map((item: any) =>
+          item === oldOtherVal ? curOtherVal : item
+        );
+      }
+      return val;
+    });
+    updateFieldValues({ [target.id]: updatedFieldVal });
+    return updatedFieldVal[index].length - 1;
   } else {
-    if (curFieldVal === oldOtherVal) curFieldVal = curOtherVal;
+    if (Array.isArray(curFieldVal)) {
+      // @ts-expect-error TS(2349): This expression is not callable.
+      curFieldVal = curFieldVal.filter((val: any) => val !== oldOtherVal);
+      (curFieldVal as string[]).push(curOtherVal);
+    } else if (curFieldVal === oldOtherVal) {
+      curFieldVal = curOtherVal;
+    }
+    updateFieldValues({ [target.id]: curFieldVal });
+    return Array.isArray(curFieldVal) ? curFieldVal.length - 1 : undefined;
   }
-  updateFieldValues({ [target.id]: curFieldVal });
-  return Array.isArray(curFieldVal) ? curFieldVal.length - 1 : undefined;
 }
 
 export function handleCheckboxGroupChange(

@@ -439,12 +439,13 @@ const Element = ({ node: el, form, flags }: any) => {
               onChange({ valueRepeatIndex: index });
             }}
             onOtherChange={(e: any) => {
-              const index = handleOtherStateChange(
+              const returnIndex = handleOtherStateChange(
                 otherVal,
                 e,
-                updateFieldValues
+                updateFieldValues,
+                index
               );
-              onChange({ valueRepeatIndex: index });
+              onChange({ valueRepeatIndex: returnIndex });
             }}
           />
         );
@@ -460,7 +461,7 @@ const Element = ({ node: el, form, flags }: any) => {
               onChange({ submitData: autosubmit && val });
             }}
             onOtherChange={(e: any) => {
-              handleOtherStateChange(otherVal, e, updateFieldValues);
+              handleOtherStateChange(otherVal, e, updateFieldValues, index);
               onChange({ submitData: autosubmit && e.target.value });
             }}
           />
