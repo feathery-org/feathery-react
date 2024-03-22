@@ -55,72 +55,18 @@ function CheckboxGroupField({
   const otherTextDisabled = !otherChecked || otherDisabled;
 
   let options;
-  const getOptions = (optionData: any) => {
-    return optionData.map((option: any, i: number) => {
-      const value = option.value ? option.value : option;
-      const label = option.label ? option.label : option;
-      const checked = fieldVal.includes(value);
-      const optionDisabled = isOptionDisabled(checked);
-
-      return (
-        <div
-          key={`${servar.key}-${i}`}
-          css={{
-            display: 'flex',
-            pointerEvents: optionDisabled ? 'none' : 'auto',
-            ...styles.getTarget('row')
-          }}
-        >
-          <input
-            type='checkbox'
-            id={`${servar.key}-${i}`}
-            name={value}
-            checked={checked}
-            onChange={onChange}
-            style={{ padding: 0, lineHeight: 'normal' }}
-            css={{
-              ...composeCheckableInputStyle(styles, optionDisabled),
-              ...styles.getTarget('checkboxGroup'),
-              ...(optionDisabled ? responsiveStyles.getTarget('disabled') : {}),
-              '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
-            }}
-            disabled={optionDisabled}
-            aria-label={element.properties.aria_label}
-          />
-          <label
-            htmlFor={`${servar.key}-${i}`}
-            css={{
-              whiteSpace: 'pre-wrap',
-              overflowWrap: 'anywhere',
-              ...styles.getTarget('checkboxLabel')
-            }}
-          >
-            {label}
-          </label>
-          <InlineTooltip
-            id={`${element.id}-${value}`}
-            text={option.tooltip ? option.tooltip : ''}
-            responsiveStyles={responsiveStyles}
-            absolute={false}
-          />
-        </div>
-      );
-    });
-  };
   if (
     repeatIndex !== null &&
     servar.metadata.repeat_options !== undefined &&
     servar.metadata.repeat_options[repeatIndex] !== undefined
   ) {
-    const repeatOptions = servar.metadata.repeat_options[repeatIndex];
-    options = getOptions(repeatOptions);
+    options = servar.metadata.repeat_options[repeatIndex];
   } else {
-    const optionData = servar.metadata.options.map((opt: any, i: number) => ({
+    options = servar.metadata.options.map((opt: any, index: number) => ({
       value: opt,
-      label: labels && labels[i] ? labels[i] : opt,
-      tooltip: tooltips[i]
+      label: labels && labels[index] ? labels[index] : opt,
+      tooltip: tooltips[index]
     }));
-    options = getOptions(optionData);
   }
 
   return (
@@ -134,7 +80,58 @@ function CheckboxGroupField({
     >
       {children}
       {fieldLabel}
-      {options}
+      {options.map((option: any, i: number) => {
+        const value = option.value ? option.value : option;
+        const label = option.label ? option.label : option;
+        const checked = fieldVal.includes(value);
+        const optionDisabled = isOptionDisabled(checked);
+
+        return (
+          <div
+            key={`${servar.key}-${i}`}
+            css={{
+              display: 'flex',
+              pointerEvents: optionDisabled ? 'none' : 'auto',
+              ...styles.getTarget('row')
+            }}
+          >
+            <input
+              type='checkbox'
+              id={`${servar.key}-${i}`}
+              name={value}
+              checked={checked}
+              onChange={onChange}
+              style={{ padding: 0, lineHeight: 'normal' }}
+              css={{
+                ...composeCheckableInputStyle(styles, optionDisabled),
+                ...styles.getTarget('checkboxGroup'),
+                ...(optionDisabled
+                  ? responsiveStyles.getTarget('disabled')
+                  : {}),
+                '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
+              }}
+              disabled={optionDisabled}
+              aria-label={element.properties.aria_label}
+            />
+            <label
+              htmlFor={`${servar.key}-${i}`}
+              css={{
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+                ...styles.getTarget('checkboxLabel')
+              }}
+            >
+              {label}
+            </label>
+            <InlineTooltip
+              id={`${element.id}-${value}`}
+              text={option.tooltip ? option.tooltip : ''}
+              responsiveStyles={responsiveStyles}
+              absolute={false}
+            />
+          </div>
+        );
+      })}
       {servar.metadata.other && (
         <div style={{ display: 'flex' }}>
           <input
