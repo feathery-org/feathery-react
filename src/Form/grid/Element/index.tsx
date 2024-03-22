@@ -256,6 +256,7 @@ const Element = ({ node: el, form, flags }: any) => {
               changeValue(newFieldVal, el, index);
               onChange();
             }}
+            repeatIndex={index}
           />
         );
       case 'date_selector':
