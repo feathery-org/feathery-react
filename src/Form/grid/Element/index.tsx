@@ -17,7 +17,8 @@ import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 import {
   getInlineError,
   handleCheckboxGroupChange,
-  handleOtherStateChange,
+  handleOtherStateChangeCheckboxGroup,
+  handleOtherStateChangeRadioButtonGroup,
   isFieldActuallyRequired,
   pickCloserElement,
   textFieldShouldSubmit
@@ -439,7 +440,7 @@ const Element = ({ node: el, form, flags }: any) => {
               onChange({ valueRepeatIndex: index });
             }}
             onOtherChange={(e: any) => {
-              const returnIndex = handleOtherStateChange(
+              const returnIndex = handleOtherStateChangeCheckboxGroup(
                 otherVal,
                 e,
                 updateFieldValues,
@@ -461,9 +462,14 @@ const Element = ({ node: el, form, flags }: any) => {
               onChange({ submitData: autosubmit && val });
             }}
             onOtherChange={(e: any) => {
-              handleOtherStateChange(otherVal, e, updateFieldValues, index);
+              handleOtherStateChangeRadioButtonGroup(
+                e,
+                updateFieldValues,
+                index
+              );
               onChange({ submitData: autosubmit && e.target.value });
             }}
+            repeatIndex={index}
           />
         );
       case 'hex_color':

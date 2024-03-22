@@ -57,23 +57,19 @@ export function isFieldActuallyRequired(field: any, step: any) {
   return field.servar.required && !isTrailingRepeatField;
 }
 
-export function handleOtherStateChange(
+export function handleOtherStateChangeCheckboxGroup(
   oldOtherVal: any,
   e: any,
   updateFieldValues: any,
-  index: number | null
+  repeatIndex: number | null
 ) {
   const target = e.target;
   const curOtherVal = target.value;
   let curFieldVal: any = fieldValues[target.id];
-  // Handle repeatbale fields
-  if (
-    index !== null &&
-    Array.isArray(curFieldVal) &&
-    Array.isArray(curFieldVal[0])
-  ) {
+  // Handle repeatable fields
+  if (repeatIndex !== null) {
     const updatedFieldVal = curFieldVal.map((val: any, i: number) => {
-      if (i === index) {
+      if (i === repeatIndex) {
         return val.map((item: any) =>
           item === oldOtherVal ? curOtherVal : item
         );
@@ -81,17 +77,35 @@ export function handleOtherStateChange(
       return val;
     });
     updateFieldValues({ [target.id]: updatedFieldVal });
-    return updatedFieldVal[index].length - 1;
+    return updatedFieldVal[repeatIndex].length - 1;
   } else {
-    if (Array.isArray(curFieldVal)) {
-      curFieldVal = curFieldVal.filter((val: any) => val !== oldOtherVal);
-      (curFieldVal as string[]).push(curOtherVal);
-    } else if (curFieldVal === oldOtherVal) {
-      curFieldVal = curOtherVal;
-    }
+    curFieldVal = curFieldVal.filter((val: any) => val !== oldOtherVal);
+    (curFieldVal as string[]).push(curOtherVal);
     updateFieldValues({ [target.id]: curFieldVal });
     return Array.isArray(curFieldVal) ? curFieldVal.length - 1 : undefined;
   }
+}
+
+export function handleOtherStateChangeRadioButtonGroup(
+  e: any,
+  updateFieldValues: any,
+  repeatIndex: number | null
+) {
+  const target = e.target;
+  const curOtherVal = target.value;
+  let curFieldVal: any = fieldValues[target.id];
+  // Handle repeatable fields
+  if (repeatIndex !== null) {
+    const updatedFieldVal = curFieldVal.map((val: any, i: number) => {
+      if (i === repeatIndex) return curOtherVal;
+      return val;
+    });
+    updateFieldValues({ [target.id]: updatedFieldVal });
+  } else {
+    curFieldVal = curOtherVal;
+    updateFieldValues({ [target.id]: curFieldVal });
+  }
+  return Array.isArray(curFieldVal) ? curFieldVal.length - 1 : undefined;
 }
 
 export function handleCheckboxGroupChange(
