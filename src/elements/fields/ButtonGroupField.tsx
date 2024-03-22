@@ -11,6 +11,7 @@ function ButtonGroupField({
   fieldLabel,
   inlineError,
   fieldVal = null,
+  repeatIndex = null,
   editMode,
   onClick = () => {},
   elementProps = {},
@@ -35,6 +36,149 @@ function ButtonGroupField({
   const servar = element.servar;
   const labels = servar.metadata.option_labels;
   const tooltips = servar.metadata.option_tooltips;
+  let options;
+  if (
+    repeatIndex !== null &&
+    servar.metadata.repeat_options !== undefined &&
+    servar.metadata.repeat_options[repeatIndex] !== undefined
+  ) {
+    const repeatOptions = servar.metadata.repeat_options[repeatIndex];
+    options = repeatOptions.map((option: any, index: number) => {
+      const value = option.value ? option.value : option;
+      const label = option.label ? option.label : option;
+      const imageUrl = option.image ? option.image : '';
+      const tooltip = option.tooltip ? option.tooltip : '';
+
+      return (
+        <div
+          onClick={() => onClick(value)}
+          key={`${servar.key}-${index}`}
+          css={{
+            position: 'relative',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            boxSizing: 'border-box',
+            cursor: 'pointer',
+            ...responsiveStyles.getTarget('field'),
+            '&:hover': hoverStylesGuard(
+              editMode || disabled
+                ? {}
+                : {
+                    ...responsiveStyles.getTarget('hover'),
+                    ...borderStyles.hover
+                  }
+            ),
+            '&&': selectedOptMap[value]
+              ? {
+                  ...responsiveStyles.getTarget('active'),
+                  ...borderStyles.active
+                }
+              : {}
+          }}
+        >
+          {customBorder}
+          {imageUrl && (
+            <img
+              src={imageUrl}
+              style={{
+                ...imgMaxSizeStyles,
+                ...responsiveStyles.getTargets('img')
+              }}
+            />
+          )}
+          {label && (
+            <div
+              css={{
+                display: 'flex',
+                maxWidth: '100%',
+                ...responsiveStyles.getTargets('label'),
+                // Do not highlight text when clicking the button
+                ...noTextSelectStyles
+              }}
+            >
+              {label}
+            </div>
+          )}
+          {tooltip && (
+            <InlineTooltip
+              id={`${element.id}-${label}`}
+              text={tooltip}
+              responsiveStyles={responsiveStyles}
+              absolute={false}
+            />
+          )}
+        </div>
+      );
+    });
+  } else {
+    options = servar.metadata.options.map((opt: any, index: any) => {
+      const imageUrl = servar.metadata.option_images[index];
+      const label = labels && labels[index] ? labels[index] : opt;
+      const tooltip = tooltips[index];
+      return (
+        <div
+          onClick={() => onClick(opt)}
+          key={`${servar.key}-${index}`}
+          css={{
+            position: 'relative',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            boxSizing: 'border-box',
+            cursor: 'pointer',
+            ...responsiveStyles.getTarget('field'),
+            '&:hover': hoverStylesGuard(
+              editMode || disabled
+                ? {}
+                : {
+                    ...responsiveStyles.getTarget('hover'),
+                    ...borderStyles.hover
+                  }
+            ),
+            '&&': selectedOptMap[opt]
+              ? {
+                  ...responsiveStyles.getTarget('active'),
+                  ...borderStyles.active
+                }
+              : {}
+          }}
+        >
+          {customBorder}
+          {imageUrl && (
+            <img
+              src={imageUrl}
+              style={{
+                ...imgMaxSizeStyles,
+                ...responsiveStyles.getTargets('img')
+              }}
+            />
+          )}
+          {label && (
+            <div
+              css={{
+                display: 'flex',
+                maxWidth: '100%',
+                ...responsiveStyles.getTargets('label'),
+                // Do not highlight text when clicking the button
+                ...noTextSelectStyles
+              }}
+            >
+              {label}
+            </div>
+          )}
+          {tooltip && (
+            <InlineTooltip
+              id={`${element.id}-${label}`}
+              text={tooltip}
+              responsiveStyles={responsiveStyles}
+              absolute={false}
+            />
+          )}
+        </div>
+      );
+    });
+  }
 
   return (
     <div
@@ -57,72 +201,7 @@ function ButtonGroupField({
         }}
         {...elementProps}
       >
-        {servar.metadata.options.map((opt: any, index: any) => {
-          const imageUrl = servar.metadata.option_images[index];
-          const label = labels && labels[index] ? labels[index] : opt;
-          const tooltip = tooltips[index];
-          return (
-            <div
-              onClick={() => onClick(opt)}
-              key={`${servar.key}-${index}`}
-              css={{
-                position: 'relative',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                boxSizing: 'border-box',
-                cursor: 'pointer',
-                ...responsiveStyles.getTarget('field'),
-                '&:hover': hoverStylesGuard(
-                  editMode || disabled
-                    ? {}
-                    : {
-                        ...responsiveStyles.getTarget('hover'),
-                        ...borderStyles.hover
-                      }
-                ),
-                '&&': selectedOptMap[opt]
-                  ? {
-                      ...responsiveStyles.getTarget('active'),
-                      ...borderStyles.active
-                    }
-                  : {}
-              }}
-            >
-              {customBorder}
-              {imageUrl && (
-                <img
-                  src={imageUrl}
-                  style={{
-                    ...imgMaxSizeStyles,
-                    ...responsiveStyles.getTargets('img')
-                  }}
-                />
-              )}
-              {label && (
-                <div
-                  css={{
-                    display: 'flex',
-                    maxWidth: '100%',
-                    ...responsiveStyles.getTargets('label'),
-                    // Do not highlight text when clicking the button
-                    ...noTextSelectStyles
-                  }}
-                >
-                  {label}
-                </div>
-              )}
-              {tooltip && (
-                <InlineTooltip
-                  id={`${element.id}-${label}`}
-                  text={tooltip}
-                  responsiveStyles={responsiveStyles}
-                  absolute={false}
-                />
-              )}
-            </div>
-          );
-        })}
+        {options}
         {/* This input must always be rendered so we can set field errors */}
         <input
           id={servar.key}

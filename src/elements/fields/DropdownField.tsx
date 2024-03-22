@@ -17,7 +17,7 @@ export default function DropdownField({
   required = false,
   disabled = false,
   fieldVal = '',
-  repeat = null,
+  repeatIndex = null,
   countryCode = '',
   editMode,
   rightToLeft,
@@ -72,9 +72,12 @@ export default function DropdownField({
   } else {
     const labels = servar.metadata.option_labels;
     const tooltips = servar.metadata.option_tooltips;
-    if (repeat !== null && servar.metadata.repeat_options !== undefined) {
-      const repeatOptions =
-        servar.metadata.repeat_options[repeat] || servar.metadata.options;
+    if (
+      repeatIndex !== null &&
+      servar.metadata.repeat_options !== undefined &&
+      servar.metadata.repeat_options[repeatIndex] !== undefined
+    ) {
+      const repeatOptions = servar.metadata.repeat_options[repeatIndex];
       options = repeatOptions.map((option: any) => {
         const value = option.value ? option.value : option;
         const label = option.label ? option.label : option;

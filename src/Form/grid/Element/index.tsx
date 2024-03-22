@@ -173,16 +173,28 @@ const Element = ({ node: el, form, flags }: any) => {
 
     const autosubmit = el.properties.submit_trigger === 'auto';
 
+    const hasRepeatOptions =
+      index !== null &&
+      servar.metadata.repeat_options !== undefined &&
+      servar.metadata.repeat_options[index] !== undefined;
+
     let otherVal = '';
     if (servar.metadata.other) {
-      if (
-        servar.type === 'select' &&
-        !servar.metadata.options.includes(fieldVal)
-      ) {
-        otherVal = fieldVal;
+      if (servar.type === 'select') {
+        if (hasRepeatOptions) {
+          otherVal = !servar.metadata.repeat_options[index].includes(fieldVal)
+            ? fieldVal
+            : '';
+        } else if (!servar.metadata.options.includes(fieldVal)) {
+          otherVal = fieldVal;
+        }
       } else if (servar.type === 'multiselect') {
         fieldVal.forEach((val: any) => {
-          if (!servar.metadata.options.includes(val)) otherVal = val;
+          if (hasRepeatOptions) {
+            otherVal = !servar.metadata.repeat_options[index].includes(val)
+              ? val
+              : '';
+          } else if (!servar.metadata.options.includes(val)) otherVal = val;
         });
       }
     }
@@ -342,6 +354,7 @@ const Element = ({ node: el, form, flags }: any) => {
               }
               onChange({ submitData: !multiple && autosubmit && selected });
             }}
+            repeatIndex={index}
           />
         );
       case 'checkbox':
@@ -401,7 +414,7 @@ const Element = ({ node: el, form, flags }: any) => {
             setRef={(ref: any) => {
               if (firstField) focusRef.current = ref;
             }}
-            repeat={index}
+            repeatIndex={index}
           />
         );
       case 'dropdown_multi':
@@ -414,6 +427,7 @@ const Element = ({ node: el, form, flags }: any) => {
               changeValue(val, el, index);
               onChange();
             }}
+            repeatIndex={index}
           />
         );
       case 'pin_input':
@@ -450,6 +464,7 @@ const Element = ({ node: el, form, flags }: any) => {
               );
               onChange({ valueRepeatIndex: returnIndex });
             }}
+            repeatIndex={index}
           />
         );
       case 'select':

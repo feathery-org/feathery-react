@@ -48,6 +48,125 @@ function RadioButtonGroupField({
 
   const labels = servar.metadata.option_labels;
   const tooltips = servar.metadata.option_tooltips ?? [];
+  let options;
+  if (
+    repeatIndex !== null &&
+    servar.metadata.repeat_options !== undefined &&
+    servar.metadata.repeat_options[repeatIndex] !== undefined
+  ) {
+    const repeatOptions = servar.metadata.repeat_options[repeatIndex];
+    options = repeatOptions.map((option: any, i: number) => {
+      const value = option.value ? option.value : option;
+      const label = option.label ? option.label : option;
+      const tooltip = option.tooltip ? option.tooltip : '';
+      return (
+        <div
+          key={`${servar.key}-${i}`}
+          css={{
+            display: 'flex',
+            ...styles.getTarget('row')
+          }}
+        >
+          <input
+            type='radio'
+            id={`${servar.key}-${i}`}
+            // All radio buttons in group must have same name to be evaluated
+            // together
+            name={
+              repeatIndex !== null ? `${servar.key}-${repeatIndex}` : servar.key
+            }
+            checked={fieldVal === value}
+            required={required}
+            disabled={disabled}
+            onChange={onChange}
+            aria-label={element.properties.aria_label}
+            value={value}
+            style={{
+              padding: 0,
+              lineHeight: 'normal'
+            }}
+            css={{
+              ...composeCheckableInputStyle(styles, disabled, true),
+              ...styles.getTarget('radioGroup'),
+              ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
+              '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
+            }}
+          />
+          <label
+            htmlFor={`${servar.key}-${i}`}
+            css={{
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
+              ...styles.getTarget('checkboxLabel')
+            }}
+          >
+            {label}
+          </label>
+          <InlineTooltip
+            id={`${element.id}-${value}`}
+            text={tooltip}
+            responsiveStyles={responsiveStyles}
+            absolute={false}
+          />
+        </div>
+      );
+    });
+  } else {
+    options = servar.metadata.options.map((opt: any, i: number) => {
+      const optionLabel = labels && labels[i] ? labels[i] : opt;
+      return (
+        <div
+          key={`${servar.key}-${i}`}
+          css={{
+            display: 'flex',
+            ...styles.getTarget('row')
+          }}
+        >
+          <input
+            type='radio'
+            id={`${servar.key}-${i}`}
+            // All radio buttons in group must have same name to be evaluated
+            // together
+            name={
+              repeatIndex !== null ? `${servar.key}-${repeatIndex}` : servar.key
+            }
+            checked={fieldVal === opt}
+            required={required}
+            disabled={disabled}
+            onChange={onChange}
+            aria-label={element.properties.aria_label}
+            value={opt}
+            style={{
+              padding: 0,
+              lineHeight: 'normal'
+            }}
+            css={{
+              ...composeCheckableInputStyle(styles, disabled, true),
+              ...styles.getTarget('radioGroup'),
+              ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
+              '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
+            }}
+          />
+          <label
+            htmlFor={`${servar.key}-${i}`}
+            css={{
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
+              ...styles.getTarget('checkboxLabel')
+            }}
+          >
+            {optionLabel}
+          </label>
+          <InlineTooltip
+            id={`${element.id}-${opt}`}
+            text={tooltips[i]}
+            responsiveStyles={responsiveStyles}
+            absolute={false}
+          />
+        </div>
+      );
+    });
+  }
 
   return (
     <div
@@ -61,62 +180,7 @@ function RadioButtonGroupField({
     >
       {children}
       {fieldLabel}
-      {servar.metadata.options.map((opt: any, i: number) => {
-        const optionLabel = labels && labels[i] ? labels[i] : opt;
-        return (
-          <div
-            key={`${servar.key}-${i}`}
-            css={{
-              display: 'flex',
-              ...styles.getTarget('row')
-            }}
-          >
-            <input
-              type='radio'
-              id={`${servar.key}-${i}`}
-              // All radio buttons in group must have same name to be evaluated
-              // together
-              name={
-                repeatIndex !== null
-                  ? `${servar.key}-${repeatIndex}`
-                  : servar.key
-              }
-              checked={fieldVal === opt}
-              required={required}
-              disabled={disabled}
-              onChange={onChange}
-              aria-label={element.properties.aria_label}
-              value={opt}
-              style={{
-                padding: 0,
-                lineHeight: 'normal'
-              }}
-              css={{
-                ...composeCheckableInputStyle(styles, disabled, true),
-                ...styles.getTarget('radioGroup'),
-                ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-                '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
-              }}
-            />
-            <label
-              htmlFor={`${servar.key}-${i}`}
-              css={{
-                whiteSpace: 'pre-wrap',
-                overflowWrap: 'anywhere',
-                ...styles.getTarget('checkboxLabel')
-              }}
-            >
-              {optionLabel}
-            </label>
-            <InlineTooltip
-              id={`${element.id}-${opt}`}
-              text={tooltips[i]}
-              responsiveStyles={responsiveStyles}
-              absolute={false}
-            />
-          </div>
-        );
-      })}
+      {options}
       {servar.metadata.other && (
         <div style={{ display: 'flex' }}>
           <input

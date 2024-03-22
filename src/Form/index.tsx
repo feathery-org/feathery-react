@@ -781,12 +781,15 @@ function Form({
         setUserProgress,
         steps,
         setStepKey,
-        updateFieldOptions: (newOptions: FieldOptions, index: number) => {
+        updateFieldOptions: (
+          newOptions: FieldOptions,
+          repeatIndex?: number
+        ) => {
           Object.values(steps).forEach((step) =>
-            updateStepFieldOptions(step, newOptions, index)
+            updateStepFieldOptions(step, newOptions, repeatIndex)
           );
           setSteps(JSON.parse(JSON.stringify(steps)));
-          updateStepFieldOptions(newStep, newOptions, index);
+          updateStepFieldOptions(newStep, newOptions, repeatIndex);
           setActiveStep(JSON.parse(JSON.stringify(newStep)));
         },
         updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => {

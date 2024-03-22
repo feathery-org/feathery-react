@@ -170,52 +170,35 @@ export default class Field {
   get options(): OptionType[] {
     const field = this._getSourceField();
 
-    if (field && field.servar.repeated) {
-      const defaultOptions = field.servar.metadata.options.map(
-        (option: string, index: number) => ({
-          value: option,
-          label: (field.servar.metadata.option_labels ?? [])[index],
-          image: (field.servar.metadata.option_images ?? [])[index]
-        })
-      );
-      const fieldValueArray = Array.isArray(fieldValues[this._fieldKey])
-        ? (fieldValues[this._fieldKey] as any[])
-        : [];
-      const fieldValuesLength = fieldValueArray.length;
+    if (!field) return [];
 
-      if (!field.servar.metadata.repeat_options) {
-        field.servar.metadata.repeat_options =
-          Array(fieldValuesLength).fill(defaultOptions);
-      } else {
-        const repeatOptionsLength = field.servar.metadata.repeat_options.length;
-        if (repeatOptionsLength < fieldValuesLength) {
-          field.servar.metadata.repeat_options.push(
-            ...Array(fieldValuesLength - repeatOptionsLength).fill(
-              defaultOptions
-            )
-          );
-        } else if (repeatOptionsLength > fieldValuesLength) {
-          field.servar.metadata.repeat_options.splice(fieldValuesLength);
-        }
+    const meta = field.servar.metadata;
+    const defaultOptions = meta.options.map(
+      (option: string, index: number) => ({
+        value: option,
+        label: (meta.option_labels ?? [])[index],
+        image: (meta.option_images ?? [])[index]
+      })
+    );
+    if (!field.servar.repeated) return defaultOptions;
+
+    const fieldVal = (fieldValues[this._fieldKey] ?? []) as any[];
+    const fieldValuesLength = fieldVal.length;
+
+    const repeatOptions = Array(fieldValuesLength).fill(defaultOptions);
+    (meta.repeat_options ?? []).forEach((options: string[], index: number) => {
+      if (options)
+        repeatOptions[index] = options.map((option) => ({ value: option }));
+    });
+
+    return new Proxy(repeatOptions, {
+      set: (target: any, property: any, value: any) => {
+        target[property] = value;
+        const context = internalState[this._formUuid];
+        context.updateFieldOptions({ [this._fieldKey]: value }, property);
+        return true;
       }
-
-      return new Proxy(field.servar.metadata.repeat_options as object, {
-        set: (target: any, property: any, value: any) => {
-          target[property] = value;
-          const context = internalState[this._formUuid];
-          context.updateFieldOptions({ [this._fieldKey]: value }, property);
-          return true;
-        }
-      });
-    }
-
-    return field
-      ? field.servar.metadata.options.map((option: string, index: number) => ({
-          value: option,
-          label: (field.servar.metadata.option_labels ?? [])[index],
-          image: (field.servar.metadata.option_images ?? [])[index]
-        }))
-      : [];
+    });
   }
 
   // options for the field

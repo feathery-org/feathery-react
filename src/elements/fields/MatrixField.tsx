@@ -28,7 +28,17 @@ function MatrixField({
     return responsiveStyles;
   }, [responsiveStyles]);
 
-  const options = servar.metadata.options;
+  let options;
+  if (
+    repeatIndex !== null &&
+    servar.metadata.repeat_options !== undefined &&
+    servar.metadata.repeat_options[repeatIndex] !== undefined
+  ) {
+    options = servar.metadata.repeat_options[repeatIndex];
+  } else {
+    options = servar.metadata.options;
+  }
+
   const optionFraction = 100 / (options.length + 1);
   const widthStyle = { minWidth: '100px', width: `${optionFraction}%` };
 

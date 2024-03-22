@@ -328,13 +328,13 @@ export type FieldOptions = Record<string, OptionType[]>;
 export function updateStepFieldOptions(
   step: any,
   newOptions: FieldOptions,
-  index: number
+  repeatIndex?: number
 ) {
   step.servar_fields.forEach((field: any) => {
     const servar = field.servar;
     if (servar.key in newOptions) {
       const options = newOptions[servar.key];
-      if (index === null || index === undefined) {
+      if (repeatIndex === null || repeatIndex === undefined) {
         servar.metadata.options = options.map((option) =>
           typeof option === 'object' ? option.value : option
         );
@@ -347,7 +347,7 @@ export function updateStepFieldOptions(
       } else {
         if (!servar.metadata.repeat_options)
           servar.metadata.repeat_options = [];
-        servar.metadata.repeat_options[index] = options.map((option) =>
+        servar.metadata.repeat_options[repeatIndex] = options.map((option) =>
           typeof option === 'object' ? option.value : option
         );
       }
