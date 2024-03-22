@@ -202,6 +202,17 @@ export default class Field {
     context.updateFieldProperties(this._fieldKey, { placeholder: val });
   }
 
+  // is the field disabled
+  get disabled(): boolean {
+    const field = this._getSourceField();
+    return field ? field.properties.disabled : false;
+  }
+
+  set disabled(flag: boolean) {
+    const context = internalState[this._formUuid];
+    context.updateFieldProperties(this._fieldKey, { disabled: flag });
+  }
+
   // errors for a field - write only
   setError(errors: string | { index: number; message: string }) {
     internalState[this._formUuid].setFieldErrors({ [this._fieldKey]: errors });
