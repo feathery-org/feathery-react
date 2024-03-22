@@ -28,7 +28,7 @@ function MatrixField({
     return responsiveStyles;
   }, [responsiveStyles]);
 
-  let options;
+  let options: any;
   if (
     repeatIndex !== null &&
     servar.metadata.repeat_options !== undefined &&
