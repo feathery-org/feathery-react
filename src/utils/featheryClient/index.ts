@@ -26,7 +26,6 @@ import { gatherTrustedFormFields } from '../../integrations/trustedform';
 import offlineRequestHandler, {
   RequestOptions
 } from '../offlineRequestHandler';
-import { gatherTrustedFormFields } from '../../integrations/trustedform';
 
 // Convenience boolean for urls - manually change for testing
 export const API_URL_OPTIONS = {
