@@ -59,7 +59,7 @@ function RadioButtonGroupField({
     options = servar.metadata.options.map((opt: any, index: number) => ({
       value: opt,
       label: labels && labels[index] ? labels[index] : opt,
-      tooltip: tooltips[index]
+      tooltip: tooltips && tooltips[index] ? tooltips[index] : ''
     }));
   }
 
@@ -76,9 +76,11 @@ function RadioButtonGroupField({
       {children}
       {fieldLabel}
       {options.map((option: any, i: number) => {
-        const value = option.value ? option.value : option;
-        const label = option.label ? option.label : option;
-        const tooltip = option.tooltip ? option.tooltip : '';
+        const value =
+          typeof option === 'string' ? option : option.value ?? option;
+        const label =
+          typeof option === 'string' ? option : option.label ?? option;
+        const tooltip = option.tooltip ?? '';
 
         return (
           <div

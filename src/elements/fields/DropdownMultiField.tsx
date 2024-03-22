@@ -78,10 +78,12 @@ export default function DropdownMultiField({
   ) {
     const repeatOptions = servar.metadata.repeat_options[repeatIndex];
     options = [...repeatOptions, ...fieldVal].map((option: any) => {
-      const value = option.value ? option.value : option;
-      const label = option.label ? option.label : option;
+      const value =
+        typeof option === 'string' ? option : option.value ?? option;
+      const label =
+        typeof option === 'string' ? option : option.label ?? option;
       labelMap[value] = label;
-      const tooltip = option.tooltip ? option.tooltip : '';
+      const tooltip = option.tooltip ?? '';
 
       return { value: value, label, tooltip };
     });

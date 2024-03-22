@@ -46,7 +46,8 @@ function ButtonGroupField({
   } else {
     options = servar.metadata.options.map((opt: any, index: number) => ({
       value: opt,
-      label: labels && labels[index] ? labels[index] : opt
+      label: labels && labels[index] ? labels[index] : opt,
+      tooltip: tooltips && tooltips[index] ? tooltips[index] : ''
     }));
   }
 
@@ -72,12 +73,14 @@ function ButtonGroupField({
         {...elementProps}
       >
         {options.map((option: any, index: number) => {
-          const value = option.value ? option.value : option;
-          const label = option.label ? option.label : option;
+          const value =
+            typeof option === 'string' ? option : option.value ?? option;
+          const label =
+            typeof option === 'string' ? option : option.label ?? option;
           const imageUrl = option.image
             ? option.image
             : servar.metadata.option_images[index];
-          const tooltip = option.tooltip ? option.tooltip : tooltips[index];
+          const tooltip = option.tooltip ?? '';
 
           return (
             <div
