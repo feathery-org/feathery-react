@@ -22,6 +22,7 @@ function RadioButtonGroupField({
   disabled = false,
   fieldVal = '',
   otherVal = '',
+  repeatIndex = null,
   onChange = () => {},
   onOtherChange = () => {},
   onEnter = () => {},
@@ -75,7 +76,11 @@ function RadioButtonGroupField({
               id={`${servar.key}-${i}`}
               // All radio buttons in group must have same name to be evaluated
               // together
-              name={servar.key}
+              name={
+                repeatIndex !== null
+                  ? `${servar.key}-${repeatIndex}`
+                  : servar.key
+              }
               checked={fieldVal === opt}
               required={required}
               disabled={disabled}
@@ -118,7 +123,9 @@ function RadioButtonGroupField({
             type='radio'
             id={`${servar.key}-`}
             key={`${servar.key}-`}
-            name={servar.key}
+            name={
+              repeatIndex !== null ? `${servar.key}-${repeatIndex}` : servar.key
+            }
             checked={otherChecked}
             disabled={disabled}
             onChange={(e) => {

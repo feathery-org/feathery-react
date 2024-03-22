@@ -10,6 +10,7 @@ function MatrixField({
   responsiveStyles,
   fieldLabel,
   fieldVal = {},
+  repeatIndex = null,
   onChange = () => {},
   elementProps = {},
   disabled = false,
@@ -104,7 +105,11 @@ function MatrixField({
                 >
                   <input
                     type={inputType}
-                    name={`${servar.key}-${i}`}
+                    name={
+                      repeatIndex !== null
+                        ? `${servar.key}-${i}-${repeatIndex}`
+                        : `${servar.key}-${i}`
+                    }
                     aria-label={element.properties.aria_label}
                     data-question-id={q.id}
                     value={opt}

@@ -57,22 +57,53 @@ export function isFieldActuallyRequired(field: any, step: any) {
   return field.servar.required && !isTrailingRepeatField;
 }
 
-export function handleOtherStateChange(
+export function otherChangeCheckboxGroup(
   oldOtherVal: any,
   e: any,
-  updateFieldValues: any
+  updateFieldValues: any,
+  repeatIndex: number | null
 ) {
   const target = e.target;
   const curOtherVal = target.value;
-  let curFieldVal = fieldValues[target.id];
-  if (Array.isArray(curFieldVal)) {
-    // @ts-expect-error TS(2349): This expression is not callable.
+  let curFieldVal: any = fieldValues[target.id];
+  // Handle repeatable fields
+  if (repeatIndex !== null) {
+    const updatedFieldVal = curFieldVal.map((val: any, i: number) => {
+      if (i === repeatIndex) {
+        return val.map((item: any) =>
+          item === oldOtherVal ? curOtherVal : item
+        );
+      }
+      return val;
+    });
+    updateFieldValues({ [target.id]: updatedFieldVal });
+    return updatedFieldVal[repeatIndex].length - 1;
+  } else {
     curFieldVal = curFieldVal.filter((val: any) => val !== oldOtherVal);
     (curFieldVal as string[]).push(curOtherVal);
-  } else {
-    if (curFieldVal === oldOtherVal) curFieldVal = curOtherVal;
+    updateFieldValues({ [target.id]: curFieldVal });
+    return Array.isArray(curFieldVal) ? curFieldVal.length - 1 : undefined;
   }
-  updateFieldValues({ [target.id]: curFieldVal });
+}
+
+export function otherChangeRadioButtonGroup(
+  e: any,
+  updateFieldValues: any,
+  repeatIndex: number | null
+) {
+  const target = e.target;
+  const curOtherVal = target.value;
+  let curFieldVal: any = fieldValues[target.id];
+  // Handle repeatable fields
+  if (repeatIndex !== null) {
+    const updatedFieldVal = curFieldVal.map((val: any, i: number) =>
+      i === repeatIndex ? curOtherVal : val
+    );
+    updateFieldValues({ [target.id]: updatedFieldVal });
+  } else {
+    curFieldVal = curOtherVal;
+    updateFieldValues({ [target.id]: curFieldVal });
+  }
   return Array.isArray(curFieldVal) ? curFieldVal.length - 1 : undefined;
 }
 
