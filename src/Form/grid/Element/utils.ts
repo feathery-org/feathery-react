@@ -84,7 +84,6 @@ export function handleOtherStateChange(
     return updatedFieldVal[index].length - 1;
   } else {
     if (Array.isArray(curFieldVal)) {
-      // @ts-expect-error TS(2349): This expression is not callable.
       curFieldVal = curFieldVal.filter((val: any) => val !== oldOtherVal);
       (curFieldVal as string[]).push(curOtherVal);
     } else if (curFieldVal === oldOtherVal) {
