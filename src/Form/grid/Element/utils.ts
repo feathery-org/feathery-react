@@ -57,7 +57,7 @@ export function isFieldActuallyRequired(field: any, step: any) {
   return field.servar.required && !isTrailingRepeatField;
 }
 
-export function handleOtherStateChangeCheckboxGroup(
+export function otherChangeCheckboxGroup(
   oldOtherVal: any,
   e: any,
   updateFieldValues: any,
@@ -86,7 +86,7 @@ export function handleOtherStateChangeCheckboxGroup(
   }
 }
 
-export function handleOtherStateChangeRadioButtonGroup(
+export function otherChangeRadioButtonGroup(
   e: any,
   updateFieldValues: any,
   repeatIndex: number | null
@@ -96,10 +96,9 @@ export function handleOtherStateChangeRadioButtonGroup(
   let curFieldVal: any = fieldValues[target.id];
   // Handle repeatable fields
   if (repeatIndex !== null) {
-    const updatedFieldVal = curFieldVal.map((val: any, i: number) => {
-      if (i === repeatIndex) return curOtherVal;
-      return val;
-    });
+    const updatedFieldVal = curFieldVal.map((val: any, i: number) =>
+      i === repeatIndex ? curOtherVal : val
+    );
     updateFieldValues({ [target.id]: updatedFieldVal });
   } else {
     curFieldVal = curOtherVal;

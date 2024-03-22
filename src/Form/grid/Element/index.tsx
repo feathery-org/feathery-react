@@ -17,8 +17,8 @@ import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 import {
   getInlineError,
   handleCheckboxGroupChange,
-  handleOtherStateChangeCheckboxGroup,
-  handleOtherStateChangeRadioButtonGroup,
+  otherChangeCheckboxGroup,
+  otherChangeRadioButtonGroup,
   isFieldActuallyRequired,
   pickCloserElement,
   textFieldShouldSubmit
@@ -441,7 +441,7 @@ const Element = ({ node: el, form, flags }: any) => {
               onChange({ valueRepeatIndex: index });
             }}
             onOtherChange={(e: any) => {
-              const returnIndex = handleOtherStateChangeCheckboxGroup(
+              const returnIndex = otherChangeCheckboxGroup(
                 otherVal,
                 e,
                 updateFieldValues,
@@ -463,11 +463,7 @@ const Element = ({ node: el, form, flags }: any) => {
               onChange({ submitData: autosubmit && val });
             }}
             onOtherChange={(e: any) => {
-              handleOtherStateChangeRadioButtonGroup(
-                e,
-                updateFieldValues,
-                index
-              );
+              otherChangeRadioButtonGroup(e, updateFieldValues, index);
               onChange({ submitData: autosubmit && e.target.value });
             }}
             repeatIndex={index}
