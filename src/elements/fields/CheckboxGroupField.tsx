@@ -20,6 +20,7 @@ function CheckboxGroupField({
   fieldLabel,
   fieldVal = [],
   otherVal = '',
+  repeatIndex = null,
   onChange = () => {},
   onOtherChange = () => {},
   onEnter = () => {},
@@ -53,6 +54,21 @@ function CheckboxGroupField({
   const otherDisabled = isOptionDisabled(otherChecked);
   const otherTextDisabled = !otherChecked || otherDisabled;
 
+  let options;
+  if (
+    repeatIndex !== null &&
+    servar.metadata.repeat_options !== undefined &&
+    servar.metadata.repeat_options[repeatIndex] !== undefined
+  ) {
+    options = servar.metadata.repeat_options[repeatIndex];
+  } else {
+    options = servar.metadata.options.map((opt: any, index: number) => ({
+      value: opt,
+      label: labels && labels[index] ? labels[index] : opt,
+      tooltip: tooltips && tooltips[index] ? tooltips[index] : ''
+    }));
+  }
+
   return (
     <div
       css={{
@@ -64,10 +80,12 @@ function CheckboxGroupField({
     >
       {children}
       {fieldLabel}
-      {servar.metadata.options.map((opt: any, i: number) => {
-        const optionLabel = labels && labels[i] ? labels[i] : opt;
-        const checked = fieldVal.includes(opt);
+      {options.map((option: any, i: number) => {
+        const value = option.value ?? option;
+        const label = option.label ?? option;
+        const checked = fieldVal.includes(value);
         const optionDisabled = isOptionDisabled(checked);
+
         return (
           <div
             key={`${servar.key}-${i}`}
@@ -80,13 +98,10 @@ function CheckboxGroupField({
             <input
               type='checkbox'
               id={`${servar.key}-${i}`}
-              name={opt}
+              name={value}
               checked={checked}
               onChange={onChange}
-              style={{
-                padding: 0,
-                lineHeight: 'normal'
-              }}
+              style={{ padding: 0, lineHeight: 'normal' }}
               css={{
                 ...composeCheckableInputStyle(styles, optionDisabled),
                 ...styles.getTarget('checkboxGroup'),
@@ -106,11 +121,11 @@ function CheckboxGroupField({
                 ...styles.getTarget('checkboxLabel')
               }}
             >
-              {optionLabel}
+              {label}
             </label>
             <InlineTooltip
-              id={`${element.id}-${opt}`}
-              text={tooltips[i]}
+              id={`${element.id}-${value}`}
+              text={option.tooltip ?? ''}
               responsiveStyles={responsiveStyles}
               absolute={false}
             />

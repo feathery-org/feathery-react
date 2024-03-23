@@ -17,6 +17,7 @@ export default function DropdownField({
   required = false,
   disabled = false,
   fieldVal = '',
+  repeatIndex = null,
   countryCode = '',
   editMode,
   rightToLeft,
@@ -71,22 +72,41 @@ export default function DropdownField({
   } else {
     const labels = servar.metadata.option_labels;
     const tooltips = servar.metadata.option_tooltips;
-    options = servar.metadata.options.map((option: any, index: number) => {
-      const label = labels && labels[index] ? labels[index] : option;
-      const tooltip = tooltips?.[index] ?? '';
-      if (
-        servar.repeated &&
-        servar.metadata.unique_repeat_options &&
-        option !== fieldVal &&
-        (fieldValues[servar.key] as string[]).includes(option)
-      )
-        return null;
-      return (
-        <option key={option} value={option} title={tooltip}>
-          {label}
-        </option>
-      );
-    });
+    if (
+      repeatIndex !== null &&
+      servar.metadata.repeat_options !== undefined &&
+      servar.metadata.repeat_options[repeatIndex] !== undefined
+    ) {
+      const repeatOptions = servar.metadata.repeat_options[repeatIndex];
+      options = repeatOptions.map((option: any) => {
+        const value = option.value ?? option;
+        const label = option.label ?? option;
+        const tooltip = option.tooltip ?? '';
+
+        return (
+          <option key={value} value={value} title={tooltip}>
+            {label}
+          </option>
+        );
+      });
+    } else {
+      options = servar.metadata.options.map((option: any, index: number) => {
+        const label = labels && labels[index] ? labels[index] : option;
+        const tooltip = tooltips?.[index] ?? '';
+        if (
+          servar.repeated &&
+          servar.metadata.unique_repeat_options &&
+          option !== fieldVal &&
+          (fieldValues[servar.key] as string[]).includes(option)
+        )
+          return null;
+        return (
+          <option key={option} value={option} title={tooltip}>
+            {label}
+          </option>
+        );
+      });
+    }
   }
 
   const hasTooltip = !!element.properties.tooltipText;
