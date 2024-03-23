@@ -73,10 +73,8 @@ function ButtonGroupField({
         {...elementProps}
       >
         {options.map((option: any, index: number) => {
-          const value =
-            typeof option === 'string' ? option : option.value ?? option;
-          const label =
-            typeof option === 'string' ? option : option.label ?? option;
+          const value = option.value ?? option;
+          const label = option.label ?? option;
           const imageUrl = option.image
             ? option.image
             : servar.metadata.option_images[index];

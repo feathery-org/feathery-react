@@ -81,10 +81,8 @@ function CheckboxGroupField({
       {children}
       {fieldLabel}
       {options.map((option: any, i: number) => {
-        const value =
-          typeof option === 'string' ? option : option.value ?? option;
-        const label =
-          typeof option === 'string' ? option : option.label ?? option;
+        const value = option.value ?? option;
+        const label = option.label ?? option;
         const checked = fieldVal.includes(value);
         const optionDisabled = isOptionDisabled(checked);
 

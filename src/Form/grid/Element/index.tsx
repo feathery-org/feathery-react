@@ -178,23 +178,20 @@ const Element = ({ node: el, form, flags }: any) => {
       servar.metadata.repeat_options !== undefined &&
       servar.metadata.repeat_options[index] !== undefined;
 
+    const isOtherVal = (curVal: string) => {
+      if (hasRepeatOptions) {
+        return !servar.metadata.repeat_options[index].includes(curVal);
+      }
+      return !servar.metadata.options.includes(curVal);
+    };
+
     let otherVal = '';
     if (servar.metadata.other) {
       if (servar.type === 'select') {
-        if (hasRepeatOptions) {
-          otherVal = !servar.metadata.repeat_options[index].includes(fieldVal)
-            ? fieldVal
-            : '';
-        } else if (!servar.metadata.options.includes(fieldVal)) {
-          otherVal = fieldVal;
-        }
+        if (isOtherVal(fieldVal)) otherVal = fieldVal;
       } else if (servar.type === 'multiselect') {
         fieldVal.forEach((val: any) => {
-          if (hasRepeatOptions) {
-            otherVal = !servar.metadata.repeat_options[index].includes(val)
-              ? val
-              : '';
-          } else if (!servar.metadata.options.includes(val)) otherVal = val;
+          if (isOtherVal(val)) otherVal = val;
         });
       }
     }

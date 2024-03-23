@@ -79,10 +79,8 @@ export default function DropdownField({
     ) {
       const repeatOptions = servar.metadata.repeat_options[repeatIndex];
       options = repeatOptions.map((option: any) => {
-        const value =
-          typeof option === 'string' ? option : option.value ?? option;
-        const label =
-          typeof option === 'string' ? option : option.label ?? option;
+        const value = option.value ?? option;
+        const label = option.label ?? option;
         const tooltip = option.tooltip ?? '';
 
         return (
