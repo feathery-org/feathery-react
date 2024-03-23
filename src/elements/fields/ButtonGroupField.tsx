@@ -11,6 +11,7 @@ function ButtonGroupField({
   fieldLabel,
   inlineError,
   fieldVal = null,
+  repeatIndex = null,
   editMode,
   onClick = () => {},
   elementProps = {},
@@ -35,6 +36,20 @@ function ButtonGroupField({
   const servar = element.servar;
   const labels = servar.metadata.option_labels;
   const tooltips = servar.metadata.option_tooltips;
+  let options;
+  if (
+    repeatIndex !== null &&
+    servar.metadata.repeat_options !== undefined &&
+    servar.metadata.repeat_options[repeatIndex] !== undefined
+  ) {
+    options = servar.metadata.repeat_options[repeatIndex];
+  } else {
+    options = servar.metadata.options.map((opt: any, index: number) => ({
+      value: opt,
+      label: labels && labels[index] ? labels[index] : opt,
+      tooltip: tooltips && tooltips[index] ? tooltips[index] : ''
+    }));
+  }
 
   return (
     <div
@@ -57,13 +72,17 @@ function ButtonGroupField({
         }}
         {...elementProps}
       >
-        {servar.metadata.options.map((opt: any, index: any) => {
-          const imageUrl = servar.metadata.option_images[index];
-          const label = labels && labels[index] ? labels[index] : opt;
-          const tooltip = tooltips[index];
+        {options.map((option: any, index: number) => {
+          const value = option.value ?? option;
+          const label = option.label ?? option;
+          const imageUrl = option.image
+            ? option.image
+            : servar.metadata.option_images[index];
+          const tooltip = option.tooltip ?? '';
+
           return (
             <div
-              onClick={() => onClick(opt)}
+              onClick={() => onClick(value)}
               key={`${servar.key}-${index}`}
               css={{
                 position: 'relative',
@@ -81,7 +100,7 @@ function ButtonGroupField({
                         ...borderStyles.hover
                       }
                 ),
-                '&&': selectedOptMap[opt]
+                '&&': selectedOptMap[value]
                   ? {
                       ...responsiveStyles.getTarget('active'),
                       ...borderStyles.active

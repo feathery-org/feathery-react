@@ -48,6 +48,20 @@ function RadioButtonGroupField({
 
   const labels = servar.metadata.option_labels;
   const tooltips = servar.metadata.option_tooltips ?? [];
+  let options;
+  if (
+    repeatIndex !== null &&
+    servar.metadata.repeat_options !== undefined &&
+    servar.metadata.repeat_options[repeatIndex] !== undefined
+  ) {
+    options = servar.metadata.repeat_options[repeatIndex];
+  } else {
+    options = servar.metadata.options.map((opt: any, index: number) => ({
+      value: opt,
+      label: labels && labels[index] ? labels[index] : opt,
+      tooltip: tooltips && tooltips[index] ? tooltips[index] : ''
+    }));
+  }
 
   return (
     <div
@@ -61,8 +75,11 @@ function RadioButtonGroupField({
     >
       {children}
       {fieldLabel}
-      {servar.metadata.options.map((opt: any, i: number) => {
-        const optionLabel = labels && labels[i] ? labels[i] : opt;
+      {options.map((option: any, i: number) => {
+        const value = option.value ?? option;
+        const label = option.label ?? option;
+        const tooltip = option.tooltip ?? '';
+
         return (
           <div
             key={`${servar.key}-${i}`}
@@ -74,19 +91,17 @@ function RadioButtonGroupField({
             <input
               type='radio'
               id={`${servar.key}-${i}`}
-              // All radio buttons in group must have same name to be evaluated
-              // together
               name={
                 repeatIndex !== null
                   ? `${servar.key}-${repeatIndex}`
                   : servar.key
               }
-              checked={fieldVal === opt}
+              checked={fieldVal === value}
               required={required}
               disabled={disabled}
               onChange={onChange}
               aria-label={element.properties.aria_label}
-              value={opt}
+              value={value}
               style={{
                 padding: 0,
                 lineHeight: 'normal'
@@ -106,11 +121,11 @@ function RadioButtonGroupField({
                 ...styles.getTarget('checkboxLabel')
               }}
             >
-              {optionLabel}
+              {label}
             </label>
             <InlineTooltip
-              id={`${element.id}-${opt}`}
-              text={tooltips[i]}
+              id={`${element.id}-${value}`}
+              text={tooltip}
               responsiveStyles={responsiveStyles}
               absolute={false}
             />
