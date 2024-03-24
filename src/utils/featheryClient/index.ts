@@ -23,9 +23,7 @@ import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
-import offlineRequestHandler, {
-  RequestOptions
-} from '../offlineRequestHandler';
+import { RequestOptions } from '../offlineRequestHandler';
 
 // Convenience boolean for urls - manually change for testing
 export const API_URL_OPTIONS = {
@@ -98,9 +96,8 @@ export default class FeatheryClient extends IntegrationClient {
       body: JSON.stringify(data)
     };
 
-    return offlineRequestHandler.runOrSaveRequest(
+    return this.offlineRequestHandler.runOrSaveRequest(
       () => this._fetch(url, options),
-      this.formKey,
       url,
       options,
       'submit',
@@ -160,9 +157,8 @@ export default class FeatheryClient extends IntegrationClient {
       keepalive: false
     };
 
-    return offlineRequestHandler.runOrSaveRequest(
+    return this.offlineRequestHandler.runOrSaveRequest(
       () => this._fetch(url, options),
-      this.formKey,
       url,
       options,
       'submit',
@@ -472,9 +468,8 @@ export default class FeatheryClient extends IntegrationClient {
       body: formData
     };
 
-    return offlineRequestHandler.runOrSaveRequest(
+    return this.offlineRequestHandler.runOrSaveRequest(
       () => this._fetch(url, options),
-      this.formKey,
       url,
       options,
       'submit'
@@ -533,11 +528,10 @@ export default class FeatheryClient extends IntegrationClient {
       body: JSON.stringify(data)
     };
 
-    return offlineRequestHandler.runOrSaveRequest(
+    return this.offlineRequestHandler.runOrSaveRequest(
       // Ensure events complete before user exits page. Submit and load event of
       // next step must happen after the previous step is done submitting
       () => this.submitQueue.then(() => this._fetch(url, options)),
-      this.formKey,
       url,
       options,
       'registerEvent',

@@ -1,6 +1,13 @@
 import FeatheryClient, { API_URL, CDN_URL } from '../featheryClient';
 import { initInfo, initFormsPromise } from '../init';
-import offlineRequestHandler from '../offlineRequestHandler';
+import { OfflineRequestHandler } from '../offlineRequestHandler';
+
+jest.mock('../offlineRequestHandler', () => ({
+  OfflineRequestHandler: jest.fn().mockImplementation(() => ({
+    runOrSaveRequest: jest.fn(),
+    replayRequests: jest.fn().mockResolvedValue(undefined)
+  }))
+}));
 
 jest.mock('../init', () => ({
   initInfo: jest.fn(),
@@ -8,11 +15,6 @@ jest.mock('../init', () => ({
   initState: { formSessions: {} },
   fieldValues: {},
   filePathMap: {}
-}));
-
-jest.mock('../offlineRequestHandler', () => ({
-  runOrSaveRequest: jest.fn(),
-  replayRequests: jest.fn().mockResolvedValue(undefined)
 }));
 
 beforeAll(() => {
@@ -121,7 +123,9 @@ describe('featheryClient', () => {
       await featheryClient.submitCustom(customKeyValues);
 
       // Assert
-      expect(offlineRequestHandler.runOrSaveRequest).toHaveBeenCalledTimes(1);
+      expect(
+        featheryClient.offlineRequestHandler.runOrSaveRequest
+      ).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -146,14 +150,16 @@ describe('featheryClient', () => {
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
-      const response = await featheryClient.submitStep(servars, {
+      await featheryClient.submitStep(servars, {
         key: 'stepKey',
         buttons: [],
         subgrids: []
       });
 
       // Assert
-      expect(offlineRequestHandler.runOrSaveRequest).toHaveBeenCalledTimes(2);
+      expect(
+        featheryClient.offlineRequestHandler.runOrSaveRequest
+      ).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -184,7 +190,9 @@ describe('featheryClient', () => {
       });
 
       // Assert
-      expect(offlineRequestHandler.runOrSaveRequest).toHaveBeenCalled();
+      expect(
+        featheryClient.offlineRequestHandler.runOrSaveRequest
+      ).toHaveBeenCalled();
     });
   });
 });

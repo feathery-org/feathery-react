@@ -3,6 +3,7 @@ import { fieldValues, initFormsPromise, initInfo } from '../init';
 import { encodeGetParams } from '../primitives';
 import { parseError } from '../error';
 import { API_URL } from '.';
+import { OfflineRequestHandler } from '../offlineRequestHandler';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -44,6 +45,7 @@ export default class IntegrationClient {
   draft: boolean;
   bypassCDN: boolean;
   submitQueue: Promise<any>;
+  offlineRequestHandler: OfflineRequestHandler;
   constructor(
     formKey = '',
     ignoreNetworkErrors?: any,
@@ -55,6 +57,7 @@ export default class IntegrationClient {
     this.draft = draft;
     this.bypassCDN = bypassCDN;
     this.submitQueue = Promise.resolve();
+    this.offlineRequestHandler = new OfflineRequestHandler(formKey);
   }
 
   _fetch(url: any, options: any, parseResponse = true) {

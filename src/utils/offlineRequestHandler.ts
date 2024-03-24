@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { featheryWindow, runningInClient } from './browser';
 import { checkResponseSuccess } from './featheryClient/integrationClient';
 import { initInfo } from './init';
+import FeatheryClient from './featheryClient';
 
 // Constants for the IndexedDB database
 const DB_NAME = 'requestsDB';
@@ -63,12 +64,12 @@ const untrackUnload = () => {
     );
 };
 
-export function useOfflineRequestHandler(formKey: string) {
+export function useOfflineRequestHandler(client: FeatheryClient) {
   useEffect(() => {
     if (!runningInClient()) return;
 
-    offlineRequestHandler.replayRequests(formKey);
-    const handleOnline = () => offlineRequestHandler.replayRequests(formKey);
+    client.offlineRequestHandler.replayRequests();
+    const handleOnline = () => client.offlineRequestHandler.replayRequests();
     featheryWindow().addEventListener('online', handleOnline);
     return () => featheryWindow().removeEventListener('online', handleOnline);
   }, []);
@@ -76,6 +77,7 @@ export function useOfflineRequestHandler(formKey: string) {
 
 export class OfflineRequestHandler {
   private isReplayingRequests: Map<string, boolean>;
+  private readonly formKey: string;
   private readonly dbName: string;
   private readonly storeName: string;
   private readonly dbVersion: number;
@@ -84,19 +86,14 @@ export class OfflineRequestHandler {
   private onlineSignals: Map<string, any[]>;
   private indexedDBSupported: boolean;
 
-  constructor(
-    dbName: string,
-    storeName: string,
-    dbVersion: number,
-    maxRetryAttempts: number,
-    retryDelayMs: number
-  ) {
+  constructor(formKey: string) {
     this.isReplayingRequests = new Map();
-    this.dbName = dbName;
-    this.storeName = storeName;
-    this.dbVersion = dbVersion;
-    this.maxRetryAttempts = maxRetryAttempts;
-    this.retryDelayMs = retryDelayMs;
+    this.formKey = formKey;
+    this.dbName = DB_NAME;
+    this.storeName = STORE_NAME;
+    this.dbVersion = DB_VERSION;
+    this.maxRetryAttempts = MAX_RETRY_ATTEMPTS;
+    this.retryDelayMs = RETRY_DELAY_MS;
     this.onlineSignals = new Map();
     this.indexedDBSupported = typeof indexedDB !== 'undefined';
   }
@@ -105,19 +102,31 @@ export class OfflineRequestHandler {
   public async dbHasRequest(): Promise<boolean> {
     const { store } = await this.getDbTransaction('readonly');
     const count = await new Promise<number>((resolve) => {
-      const request = store.count();
-      request.onsuccess = () => resolve(request.result);
+      const request = store.openCursor();
+      let count = 0;
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor) {
+          const request = cursor.value as SerializedRequest;
+          if (request.formKey === this.formKey) {
+            count++;
+          }
+          cursor.continue();
+        } else {
+          resolve(count);
+        }
+      };
     });
 
     return count > 0;
   }
 
-  public onlineAndReplayed(formKey: string) {
+  public onlineAndReplayed() {
     return new Promise((resolve) => {
-      if (!this.onlineSignals.has(formKey)) {
-        this.onlineSignals.set(formKey, []);
+      if (!this.onlineSignals.has(this.formKey)) {
+        this.onlineSignals.set(this.formKey, []);
       }
-      this.onlineSignals.get(formKey)!.push(resolve);
+      this.onlineSignals.get(this.formKey)?.push(resolve);
     });
   }
 
@@ -152,7 +161,6 @@ export class OfflineRequestHandler {
   // Save request to IndexedDB
   public async runOrSaveRequest(
     run: any,
-    formKey: string,
     url: string,
     options: any,
     type: string,
@@ -161,11 +169,11 @@ export class OfflineRequestHandler {
     if (navigator.onLine) {
       trackUnload();
       if (
-        this.isReplayingRequests.get(formKey) ||
+        this.isReplayingRequests.get(this.formKey) ||
         (await this.dbHasRequest())
       ) {
         // Wait if any requests in IndexedDB or if a replay is ongoing
-        await offlineRequestHandler.onlineAndReplayed(formKey);
+        await this.onlineAndReplayed();
       }
       // Proceed with normal request sending
       await run();
@@ -201,7 +209,7 @@ export class OfflineRequestHandler {
       });
 
       const serializedRequest: SerializedRequest = {
-        formKey: formKey,
+        formKey: this.formKey,
         url: requestClone.url,
         method: requestClone.method,
         headers: JSON.stringify(headers),
@@ -251,19 +259,19 @@ export class OfflineRequestHandler {
   }
 
   // Replay requests from IndexedDB
-  public async replayRequests(formKey: string) {
+  public async replayRequests() {
     if (!this.indexedDBSupported) {
       return;
     }
 
     if (!navigator.onLine) {
       // If offline, block until requests are replayed from online event handler
-      await offlineRequestHandler.onlineAndReplayed(formKey);
+      await this.onlineAndReplayed();
       return;
     }
 
-    if (this.isReplayingRequests.get(formKey)) return;
-    this.isReplayingRequests.set(formKey, true);
+    if (this.isReplayingRequests.get(this.formKey)) return;
+    this.isReplayingRequests.set(this.formKey, true);
     trackUnload();
     try {
       const { store } = await this.getDbTransaction('readwrite');
@@ -277,7 +285,7 @@ export class OfflineRequestHandler {
             .result;
           if (cursor) {
             const request = cursor.value as SerializedRequest;
-            if (request.formKey === formKey) {
+            if (request.formKey === this.formKey) {
               requests.push(request);
             }
             cursor.continue();
@@ -289,7 +297,7 @@ export class OfflineRequestHandler {
       });
 
       const submitRequests = allRequests.filter((req) => req.type === 'submit');
-      await this.replayRequestsInParallel(submitRequests, formKey);
+      await this.replayRequestsInParallel(submitRequests);
 
       const registerEventRequests = allRequests.filter(
         (req) => req.type === 'registerEvent'
@@ -302,26 +310,23 @@ export class OfflineRequestHandler {
         const requestsForStep = registerEventRequests.filter(
           (req) => req.stepKey === stepKey
         );
-        await this.replayRequestsInParallel(requestsForStep, formKey);
+        await this.replayRequestsInParallel(requestsForStep);
       }
     } finally {
-      this.isReplayingRequests.set(formKey, false);
+      this.isReplayingRequests.set(this.formKey, false);
 
       // Check if there are any new requests in IndexedDB and trigger replayRequests again
       const requestsInDB = await this.dbHasRequest();
-      if (requestsInDB) await this.replayRequests(formKey);
+      if (requestsInDB) await this.replayRequests();
 
       untrackUnload();
-      const signals = this.onlineSignals.get(formKey) || [];
+      const signals = this.onlineSignals.get(this.formKey) || [];
       signals.forEach((signal) => signal());
-      this.onlineSignals.delete(formKey);
+      this.onlineSignals.delete(this.formKey);
     }
   }
 
-  private replayRequestsInParallel(
-    requests: SerializedRequest[],
-    formKey: string
-  ) {
+  private replayRequestsInParallel(requests: SerializedRequest[]) {
     return Promise.all(
       requests.map(async (request) => {
         const { url, method, headers, body, bodyType, keepalive } = request;
@@ -351,7 +356,7 @@ export class OfflineRequestHandler {
 
             if (!navigator.onLine) {
               // If offline, block until requests are replayed from online event handler
-              await offlineRequestHandler.onlineAndReplayed(formKey);
+              await this.onlineAndReplayed();
               return;
             }
 
@@ -398,13 +403,3 @@ export class OfflineRequestHandler {
     }
   }
 }
-
-const offlineRequestHandler = new OfflineRequestHandler(
-  DB_NAME,
-  STORE_NAME,
-  DB_VERSION,
-  MAX_RETRY_ATTEMPTS,
-  RETRY_DELAY_MS
-);
-
-export default offlineRequestHandler;
