@@ -671,6 +671,7 @@ const Element = ({ node: el, form, flags }: any) => {
             setRef={(ref: any) => {
               if (firstField) focusRef.current = ref;
             }}
+            repeatIndex={index}
           />
         );
     }
