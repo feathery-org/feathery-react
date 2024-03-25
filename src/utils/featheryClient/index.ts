@@ -81,7 +81,7 @@ export default class FeatheryClient extends IntegrationClient {
       fuser_key: userId,
       step_key: stepKey,
       servars,
-      panel_key: this.formId,
+      form_external_id: this.formId,
       __feathery_version: this.version,
       no_complete: noComplete
     };
