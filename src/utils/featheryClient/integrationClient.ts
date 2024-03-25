@@ -277,7 +277,11 @@ export default class IntegrationClient {
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
-      body: JSON.stringify({ otp, fuser_key: userId, form_external_id: this.formId })
+      body: JSON.stringify({
+        otp,
+        fuser_key: userId,
+        form_external_id: this.formId
+      })
     };
     return this._fetch(url, options, false).then(async (response) => {
       if (response) {

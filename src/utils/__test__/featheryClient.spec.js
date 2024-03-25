@@ -13,8 +13,8 @@ describe('featheryClient', () => {
   describe('fetchForm', () => {
     it('fetches a form with the provided parameters', async () => {
       // Arrange
-      const form_external_key = 'form_external_key';
-      const featheryClient = new FeatheryClient(form_external_key);
+      const formExternalKey = 'form_external_key';
+      const featheryClient = new FeatheryClient(formExternalKey);
       initInfo.mockReturnValue({
         sdkKey: 'sdkKey',
         userId: 'userId',
@@ -52,8 +52,8 @@ describe('featheryClient', () => {
   describe('fetchSession', () => {
     it('fetches a session with the provided parameters', async () => {
       // Arrange
-      const form_external_key = 'form_external_key';
-      const featheryClient = new FeatheryClient(form_external_key);
+      const formExternalKey = 'form_external_key';
+      const featheryClient = new FeatheryClient(formExternalKey);
       initInfo.mockReturnValue({
         sdkKey: 'sdkKey',
         userId: 'userId',
@@ -94,8 +94,8 @@ describe('featheryClient', () => {
   describe('submitCustom', () => {
     it('fetches on submit', async () => {
       // Arrange
-      const form_external_key = 'form_external_key';
-      const featheryClient = new FeatheryClient(form_external_key);
+      const formExternalKey = 'form_external_key';
+      const featheryClient = new FeatheryClient(formExternalKey);
       const customKeyValues = { foo: 'bar' };
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
@@ -129,8 +129,8 @@ describe('featheryClient', () => {
   describe('submitStep', () => {
     it('fetches on step submission', async () => {
       // Arrange
-      const form_external_key = 'form_external_key';
-      const featheryClient = new FeatheryClient(form_external_key);
+      const formExternalKey = 'form_external_key';
+      const featheryClient = new FeatheryClient(formExternalKey);
       const servars = [
         {
           key: 'servar1',
@@ -174,11 +174,11 @@ describe('featheryClient', () => {
   describe('registerEvent', () => {
     it('registers an event', async () => {
       // Arrange
-      const form_external_key = 'form_external_key';
+      const formExternalKey = 'form_external_key';
       const stepKey = 'stepKey';
       const event = { eventStuff: 'eventStuff' };
       const nextStepKey = '';
-      const featheryClient = new FeatheryClient(form_external_key);
+      const featheryClient = new FeatheryClient(formExternalKey);
       const body = {
         form_external_key: form_external_key,
         step_key: stepKey,
@@ -218,9 +218,9 @@ describe('featheryClient', () => {
       formSessions: {},
       preloadForms: {}
     });
-    const form_external_key = 'form_external_key';
+    const formExternalKey = 'form_external_key';
     const userId = 'userId';
-    const featheryClient = new FeatheryClient(form_external_key);
+    const featheryClient = new FeatheryClient(formExternalKey);
     const mockFetch = (response) => {
       global.fetch = jest.fn().mockResolvedValue({
         status: 200,

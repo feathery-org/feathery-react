@@ -218,7 +218,7 @@ function Form({
   _isAuthLoading = false,
   _bypassCDN = false,
   formName,
-  formId=formName,
+  formId = formName,
   onChange = null,
   onLoad = null,
   onFormComplete = null,
@@ -2045,7 +2045,7 @@ function Form({
 // renderAt without exposing InternalProps to SDK users
 export function JSForm({
   formName,
-  formId=formName,
+  formId = formName,
   _internalId,
   _isAuthLoading = false,
   ...props
