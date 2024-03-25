@@ -19,6 +19,7 @@ function TextArea({
   setRef = () => {},
   rawValue = '',
   inlineError,
+  repeatIndex = null,
   children
 }: any) {
   const [focused, setFocused] = useState(false);
@@ -102,6 +103,7 @@ function TextArea({
           responsiveStyles={responsiveStyles}
           type='textarea'
           rightToLeft={rightToLeft}
+          repeatIndex={repeatIndex}
         />
         <InlineTooltip
           id={element.id}
