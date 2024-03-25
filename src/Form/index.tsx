@@ -163,6 +163,7 @@ export type { StyledContainerProps } from './grid/StyledContainer';
 
 export interface Props {
   formName: string;
+  formId?: string;
   onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
   onLoad?: null | ((context: FormContext) => Promise<any> | void);
   onFormComplete?: null | ((context: FormContext) => Promise<any> | void);
@@ -217,6 +218,7 @@ function Form({
   _isAuthLoading = false,
   _bypassCDN = false,
   formName,
+  formId=formName,
   onChange = null,
   onLoad = null,
   onFormComplete = null,
@@ -242,7 +244,7 @@ function Form({
 }: InternalProps & Props) {
   const [client, setClient] = useState<any>(null);
   const history = useHistory();
-  const session = initState.formSessions[formName];
+  const session = initState.formSessions[formId];
 
   const [autoValidate, setAutoValidate] = useState(false);
 
@@ -594,7 +596,7 @@ function Form({
       fieldData.amplitude = data;
     if (integrations?.['google-tag-manager']?.metadata.track_fields)
       fieldData['google-tag-manager'] = data;
-    trackEvent(integrations, 'FeatheryFormComplete', '', formName, fieldData);
+    trackEvent(integrations, 'FeatheryFormComplete', '', formId, fieldData);
 
     await runUserLogic('form_complete');
   };
@@ -2043,6 +2045,7 @@ function Form({
 // renderAt without exposing InternalProps to SDK users
 export function JSForm({
   formName,
+  formId=formName,
   _internalId,
   _isAuthLoading = false,
   ...props
@@ -2066,8 +2069,8 @@ export function JSForm({
         <Route path='/'>
           <Form
             {...props}
-            formName={formName}
-            key={`${formName}_${remount}`}
+            formName={formId}
+            key={`${formId}_${remount}`}
             _internalId={_internalId}
             _isAuthLoading={_isAuthLoading}
           />

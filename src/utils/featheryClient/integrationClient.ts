@@ -13,7 +13,7 @@ const TYPE_MESSAGES_TO_IGNORE = [
 
 // THIRD-PARTY INTEGRATIONS
 export default class IntegrationClient {
-  formKey: string;
+  formId: string;
   version?: string;
   noSave?: boolean;
   ignoreNetworkErrors: any; // this should be a ref
@@ -21,12 +21,12 @@ export default class IntegrationClient {
   bypassCDN: boolean;
   submitQueue: Promise<any>;
   constructor(
-    formKey = '',
+    formId = '',
     ignoreNetworkErrors?: any,
     draft = false,
     bypassCDN = false
   ) {
-    this.formKey = formKey;
+    this.formId = formId;
     this.ignoreNetworkErrors = ignoreNetworkErrors;
     this.draft = draft;
     this.bypassCDN = bypassCDN;
@@ -92,7 +92,7 @@ export default class IntegrationClient {
     await initFormsPromise;
     const { userId } = initInfo();
     const params = encodeGetParams({
-      form_key: this.formKey,
+      form_external_id: this.formId,
       fuser_key: userId,
       liabilities: includeLiabilities ? 'true' : 'false'
     });
@@ -108,7 +108,7 @@ export default class IntegrationClient {
     const url = `${API_URL}plaid/user_data/`;
     const data = {
       public_token: publicToken,
-      form_key: this.formKey,
+      form_external_id: this.formId,
       fuser_key: userId
     };
     const options = {
@@ -125,7 +125,7 @@ export default class IntegrationClient {
     await initFormsPromise;
     const { userId } = initInfo();
     const params = encodeGetParams({
-      form_key: this.formKey,
+      form_external_id: this.formId,
       fuser_key: userId
     });
     const url = `${API_URL}argyle/user_token/?${params}`;
@@ -171,7 +171,7 @@ export default class IntegrationClient {
     const { userId } = initInfo();
     const url = `${API_URL}stripe/payment_method/`;
     const data = {
-      form_key: this.formKey,
+      form_external_id: this.formId,
       ...(userId ? { user_id: userId } : {}),
       field_id: paymentMethodFieldId
     };
@@ -194,7 +194,7 @@ export default class IntegrationClient {
     const { userId } = initInfo();
     const params = encodeGetParams({
       field_id: paymentMethodFieldId,
-      form_key: this.formKey,
+      form_external_id: this.formId,
       ...(userId ? { user_id: userId } : {}),
       stripe_payment_method_id: stripePaymentMethodId
     });
@@ -211,7 +211,7 @@ export default class IntegrationClient {
     const { userId } = initInfo();
     const url = `${API_URL}stripe/payment/`;
     const data = {
-      form_key: this.formKey,
+      form_external_id: this.formId,
       user_id: userId,
       ...extraParams
     };
@@ -234,7 +234,7 @@ export default class IntegrationClient {
     const { userId } = initInfo();
     const url = `${API_URL}stripe/checkout/`;
     const data = {
-      form_key: this.formKey,
+      form_external_id: this.formId,
       user_id: userId,
       success_url: successUrl,
       cancel_url: cancelUrl || ''
@@ -257,7 +257,7 @@ export default class IntegrationClient {
       method: 'POST',
       body: JSON.stringify({
         phone_number: phoneNumber,
-        form_key: this.formKey,
+        form_external_id: this.formId,
         fuser_key: userId,
         message,
         type: message ? 'sms-message' : 'sms-otp'
@@ -277,7 +277,7 @@ export default class IntegrationClient {
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
-      body: JSON.stringify({ otp, fuser_key: userId, form_key: this.formKey })
+      body: JSON.stringify({ otp, fuser_key: userId, form_external_id: this.formId })
     };
     return this._fetch(url, options, false).then(async (response) => {
       if (response) {
@@ -320,7 +320,7 @@ export default class IntegrationClient {
       method: 'POST',
       body: JSON.stringify({
         phone_number: phoneNumber,
-        form_key: this.formKey,
+        form_external_id: this.formId,
         fuser_key: userId
       })
     };
@@ -362,7 +362,7 @@ export default class IntegrationClient {
       const params: Record<string, any> = {
         verification: JSON.stringify(verification),
         reference_id: referenceId,
-        form_key: this.formKey,
+        form_external_id: this.formId,
         fuser_key: userId
       };
       const finalUrl = `${API_URL}telesign/silent/final/?${encodeGetParams(
@@ -387,7 +387,7 @@ export default class IntegrationClient {
       method: 'POST',
       body: JSON.stringify({
         phone_number: phoneNumber,
-        form_key: this.formKey,
+        form_external_id: this.formId,
         fuser_key: userId
       })
     };
@@ -406,7 +406,7 @@ export default class IntegrationClient {
       method: 'POST',
       body: JSON.stringify({
         phone_number: phoneNumber,
-        form_key: this.formKey,
+        form_external_id: this.formId,
         fuser_key: userId
       })
     };
@@ -417,7 +417,7 @@ export default class IntegrationClient {
     const { userId } = initInfo();
     const params: Record<string, any> = {
       otp,
-      form_key: this.formKey,
+      form_external_id: this.formId,
       fuser_key: userId
     };
     const url = `${API_URL}telesign/otp/verify/?${encodeGetParams(params)}`;
@@ -438,7 +438,7 @@ export default class IntegrationClient {
       method: 'POST',
       body: JSON.stringify({
         template_id: templateId,
-        form_key: this.formKey,
+        form_external_id: this.formId,
         fuser_key: userId
       })
     };
