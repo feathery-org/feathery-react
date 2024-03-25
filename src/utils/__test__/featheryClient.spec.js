@@ -13,8 +13,8 @@ describe('featheryClient', () => {
   describe('fetchForm', () => {
     it('fetches a form with the provided parameters', async () => {
       // Arrange
-      const formExternalKey = 'form_external_key';
-      const featheryClient = new FeatheryClient(formExternalKey);
+      const formExternalId = 'formId';
+      const featheryClient = new FeatheryClient(formExternalId);
       initInfo.mockReturnValue({
         sdkKey: 'sdkKey',
         userId: 'userId',
@@ -52,8 +52,8 @@ describe('featheryClient', () => {
   describe('fetchSession', () => {
     it('fetches a session with the provided parameters', async () => {
       // Arrange
-      const formExternalKey = 'form_external_key';
-      const featheryClient = new FeatheryClient(formExternalKey);
+      const formExternalId = 'formId';
+      const featheryClient = new FeatheryClient(formExternalId);
       initInfo.mockReturnValue({
         sdkKey: 'sdkKey',
         userId: 'userId',
@@ -94,8 +94,8 @@ describe('featheryClient', () => {
   describe('submitCustom', () => {
     it('fetches on submit', async () => {
       // Arrange
-      const formExternalKey = 'form_external_key';
-      const featheryClient = new FeatheryClient(formExternalKey);
+      const formExternalId = 'formId';
+      const featheryClient = new FeatheryClient(formExternalId);
       const customKeyValues = { foo: 'bar' };
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
@@ -120,7 +120,7 @@ describe('featheryClient', () => {
       expect(formData).toMatchObject({
         custom_key_values: JSON.stringify(customKeyValues),
         fuser_key: 'userId',
-        form_external_key: formExternalKey
+        form_external_id: formExternalId
       });
       expect(response).toEqual({ status: 200 });
     });
@@ -129,8 +129,8 @@ describe('featheryClient', () => {
   describe('submitStep', () => {
     it('fetches on step submission', async () => {
       // Arrange
-      const formExternalKey = 'form_external_key';
-      const featheryClient = new FeatheryClient(formExternalKey);
+      const formExternalId = 'formId';
+      const featheryClient = new FeatheryClient(formExternalId);
       const servars = [
         {
           key: 'servar1',
@@ -141,7 +141,7 @@ describe('featheryClient', () => {
         fuser_key: 'userId',
         step_key: 'stepKey',
         servars,
-        form_external_key: formExternalKey
+        form_external_id: formExternalId
       };
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
@@ -174,13 +174,13 @@ describe('featheryClient', () => {
   describe('registerEvent', () => {
     it('registers an event', async () => {
       // Arrange
-      const formExternalKey = 'form_external_key';
+      const formExternalId = 'formId';
       const stepKey = 'stepKey';
       const event = { eventStuff: 'eventStuff' };
       const nextStepKey = '';
-      const featheryClient = new FeatheryClient(formExternalKey);
+      const featheryClient = new FeatheryClient(formExternalId);
       const body = {
-        form_external_key: formExternalKey,
+        form_external_id: formExternalId,
         step_key: stepKey,
         next_step_key: nextStepKey,
         event,
@@ -218,9 +218,9 @@ describe('featheryClient', () => {
       formSessions: {},
       preloadForms: {}
     });
-    const formExternalKey = 'form_external_key';
+    const formExternalId = 'formId';
     const userId = 'userId';
-    const featheryClient = new FeatheryClient(formExternalKey);
+    const featheryClient = new FeatheryClient(formExternalId);
     const mockFetch = (response) => {
       global.fetch = jest.fn().mockResolvedValue({
         status: 200,
@@ -231,7 +231,7 @@ describe('featheryClient', () => {
       // Arrange
       const paymentMethodFieldId = 'payment_method_field_id';
       const body = {
-        form_external_key: formExternalKey,
+        form_external_id: formExternalId,
         user_id: userId,
         field_id: paymentMethodFieldId
       };
@@ -285,7 +285,7 @@ describe('featheryClient', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}stripe/payment_method/card/?field_id=${paymentMethodFieldId}&form_external_key=${formExternalKey}&user_id=${userId}&stripe_payment_method_id=${stripePaymentMethodId}`,
+        `${API_URL}stripe/payment_method/card/?field_id=${paymentMethodFieldId}&form_external_id=${formExternalId}&user_id=${userId}&stripe_payment_method_id=${stripePaymentMethodId}`,
         {
           cache: 'no-store',
           keepalive: false,
@@ -300,7 +300,7 @@ describe('featheryClient', () => {
     it('createPayment properly calls the end point', async () => {
       // Arrange
       const body = {
-        form_external_key: formExternalKey,
+        form_external_id: formExternalId,
         user_id: userId
       };
       const intentSecret = 'intent_secret';
@@ -327,7 +327,7 @@ describe('featheryClient', () => {
       const successUrl = 'success';
       const cancelUrl = 'cancel';
       const body = {
-        form_external_key: formExternalKey,
+        form_external_id: formExternalId,
         user_id: userId,
         success_url: successUrl,
         cancel_url: cancelUrl
