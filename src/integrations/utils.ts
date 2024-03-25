@@ -93,13 +93,13 @@ export async function initializeIntegrations(
     installIntercom(integs['intercom-embedded']),
     installRudderStack(integs.rudderstack),
     installPersona(integs.persona),
-    installTrustedForm(integs.trustedform, featheryClient.formKey)
+    installTrustedForm(integs.trustedform, featheryClient.formId)
   ]);
 
   const gtm = integs['google-tag-manager'];
   if (gtm) initializeTagManager(gtm);
   if (integs.firebase || integs.stytch) {
-    authState.authFormKey = featheryClient.formKey;
+    authState.authFormKey = featheryClient.formId;
     return Auth.inferLoginOnLoad(featheryClient);
   }
 }
