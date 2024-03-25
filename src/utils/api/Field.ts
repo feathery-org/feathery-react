@@ -217,11 +217,43 @@ export default class Field {
   // field placeholder text
   get placeholder(): string {
     const field = this._getSourceField();
-    return field ? field.properties.placeholder : '';
+    const context = internalState[this._formUuid];
+
+    return new Proxy(field.servar.metadata.repeat_placeholder, {
+      set: (target: string[] | string, idx: any, newVal: any) => {
+        if (target === undefined) return false;
+
+        const size = Math.max(
+          field.servar.metadata.repeat_placeholder.length,
+          parseInt(idx)
+        );
+        const newArray = Array(size).fill('');
+
+        field.servar.metadata.repeat_placeholder.map((v: string, i: number) => {
+          newArray[i] = v;
+        });
+
+        newArray[parseInt(idx)] = newVal;
+        target = newArray;
+        context.updateFieldProperties(this._fieldKey, {
+          placeholder: newArray
+        });
+
+        return true;
+      },
+
+      get: (target: string[] | string) => {
+        return target;
+      }
+    });
   }
 
-  set placeholder(val: string) {
+  set placeholder(val: string | string[]) {
+    const field = this._getSourceField();
     const context = internalState[this._formUuid];
+
+    if (!field) return;
+
     context.updateFieldProperties(this._fieldKey, { placeholder: val });
   }
 
