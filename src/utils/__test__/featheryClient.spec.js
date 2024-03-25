@@ -120,7 +120,7 @@ describe('featheryClient', () => {
       expect(formData).toMatchObject({
         custom_key_values: JSON.stringify(customKeyValues),
         fuser_key: 'userId',
-        form_external_key: form_external_key
+        form_external_key: formExternalKey
       });
       expect(response).toEqual({ status: 200 });
     });
@@ -180,7 +180,7 @@ describe('featheryClient', () => {
       const nextStepKey = '';
       const featheryClient = new FeatheryClient(formExternalKey);
       const body = {
-        form_external_key: form_external_key,
+        form_external_key: formExternalKey,
         step_key: stepKey,
         next_step_key: nextStepKey,
         event,
@@ -231,7 +231,7 @@ describe('featheryClient', () => {
       // Arrange
       const paymentMethodFieldId = 'payment_method_field_id';
       const body = {
-        form_external_key: form_external_key,
+        form_external_key: formExternalKey,
         user_id: userId,
         field_id: paymentMethodFieldId
       };
@@ -300,7 +300,7 @@ describe('featheryClient', () => {
     it('createPayment properly calls the end point', async () => {
       // Arrange
       const body = {
-        form_external_key: form_external_key,
+        form_external_key: formExternalKey,
         user_id: userId
       };
       const intentSecret = 'intent_secret';
@@ -327,7 +327,7 @@ describe('featheryClient', () => {
       const successUrl = 'success';
       const cancelUrl = 'cancel';
       const body = {
-        form_external_key: form_external_key,
+        form_external_key: formExternalKey,
         user_id: userId,
         success_url: successUrl,
         cancel_url: cancelUrl
