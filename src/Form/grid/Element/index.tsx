@@ -279,6 +279,7 @@ const Element = ({ node: el, form }: any) => {
             setRef={(ref: any) => {
               if (focusRef.current === el.id) focusRef.current = ref;
             }}
+            repeatIndex={index}
           />
         );
       case 'signature':
@@ -527,6 +528,7 @@ const Element = ({ node: el, form }: any) => {
             setRef={(ref: any) => {
               if (focusRef.current === el.id) focusRef.current = ref;
             }}
+            repeatIndex={index}
           />
         );
       case 'text_area':
@@ -542,6 +544,7 @@ const Element = ({ node: el, form }: any) => {
             setRef={(ref: any) => {
               if (focusRef.current === el.id) focusRef.current = ref;
             }}
+            repeatIndex={index}
           />
         );
       case 'phone_number':
@@ -560,6 +563,7 @@ const Element = ({ node: el, form }: any) => {
             setRef={(ref: any) => {
               if (focusRef.current === el.id) focusRef.current = ref;
             }}
+            repeatIndex={index}
           />
         );
       case 'gmap_line_1':
@@ -567,6 +571,7 @@ const Element = ({ node: el, form }: any) => {
           <Elements.AddressLine1
             {...fieldProps}
             value={stringifyWithNull(fieldVal)}
+            repeatIndex={index}
             onChange={(e: any) => {
               const val = e.target.value;
               const change = changeValue(val, el, index, true, false);
