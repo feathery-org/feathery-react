@@ -141,7 +141,7 @@ describe('featheryClient', () => {
         fuser_key: 'userId',
         step_key: 'stepKey',
         servars,
-        panel_key: form_external_key
+        form_external_key: formExternalKey
       };
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
@@ -285,7 +285,7 @@ describe('featheryClient', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}stripe/payment_method/card/?field_id=${paymentMethodFieldId}&form_external_key=${form_external_key}&user_id=${userId}&stripe_payment_method_id=${stripePaymentMethodId}`,
+        `${API_URL}stripe/payment_method/card/?field_id=${paymentMethodFieldId}&form_external_key=${formExternalKey}&user_id=${userId}&stripe_payment_method_id=${stripePaymentMethodId}`,
         {
           cache: 'no-store',
           keepalive: false,
