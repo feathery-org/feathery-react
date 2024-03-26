@@ -173,16 +173,25 @@ const Element = ({ node: el, form, flags }: any) => {
 
     const autosubmit = el.properties.submit_trigger === 'auto';
 
+    const hasRepeatOptions =
+      index !== null &&
+      servar.metadata.repeat_options !== undefined &&
+      servar.metadata.repeat_options[index] !== undefined;
+
+    const isOtherVal = (curVal: string) => {
+      if (hasRepeatOptions) {
+        return !servar.metadata.repeat_options[index].includes(curVal);
+      }
+      return !servar.metadata.options.includes(curVal);
+    };
+
     let otherVal = '';
     if (servar.metadata.other) {
-      if (
-        servar.type === 'select' &&
-        !servar.metadata.options.includes(fieldVal)
-      ) {
-        otherVal = fieldVal;
+      if (servar.type === 'select') {
+        if (isOtherVal(fieldVal)) otherVal = fieldVal;
       } else if (servar.type === 'multiselect') {
         fieldVal.forEach((val: any) => {
-          if (!servar.metadata.options.includes(val)) otherVal = val;
+          if (isOtherVal(val)) otherVal = val;
         });
       }
     }
@@ -342,6 +351,7 @@ const Element = ({ node: el, form, flags }: any) => {
               }
               onChange({ submitData: !multiple && autosubmit && selected });
             }}
+            repeatIndex={index}
           />
         );
       case 'checkbox':
@@ -401,6 +411,7 @@ const Element = ({ node: el, form, flags }: any) => {
             setRef={(ref: any) => {
               if (firstField) focusRef.current = ref;
             }}
+            repeatIndex={index}
           />
         );
       case 'dropdown_multi':
@@ -413,6 +424,7 @@ const Element = ({ node: el, form, flags }: any) => {
               changeValue(val, el, index);
               onChange();
             }}
+            repeatIndex={index}
           />
         );
       case 'pin_input':
@@ -449,6 +461,7 @@ const Element = ({ node: el, form, flags }: any) => {
               );
               onChange({ valueRepeatIndex: returnIndex });
             }}
+            repeatIndex={index}
           />
         );
       case 'select':
