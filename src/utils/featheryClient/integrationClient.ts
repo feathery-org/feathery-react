@@ -60,7 +60,13 @@ export default class IntegrationClient {
     this.offlineRequestHandler = new OfflineRequestHandler(formKey);
   }
 
-  _fetch(url: any, options: any, parseResponse = true) {
+  _fetch(
+    url: any,
+    options: any,
+    parseResponse = true,
+    type?: string,
+    stepKey?: string
+  ) {
     const { sdkKey } = initInfo();
     const { headers, ...otherOptions } = options;
     options = {
@@ -79,6 +85,10 @@ export default class IntegrationClient {
         return response;
       })
       .catch((e) => {
+        // Handle requests that failed due to network connectivity
+        if (e instanceof TypeError && type) {
+          this.offlineRequestHandler.saveRequest(url, options, type, stepKey);
+        }
         // Ignore TypeErrors if form has redirected because `fetch` in
         // Safari will error after redirect
         if (

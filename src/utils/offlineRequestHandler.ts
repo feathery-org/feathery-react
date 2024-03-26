@@ -175,12 +175,19 @@ export class OfflineRequestHandler {
         // Wait if any requests in IndexedDB or if a replay is ongoing
         await this.onlineAndReplayed();
       }
-      // Proceed with normal request sending
       await run();
       untrackUnload();
       return;
     }
+    this.saveRequest(url, options, type, stepKey);
+  }
 
+  public async saveRequest(
+    url: string,
+    options: any,
+    type: string,
+    stepKey?: string
+  ): Promise<void> {
     // If IndexedDB is unsupported, we cannot store requests to replay
     if (!this.indexedDBSupported) return;
 
