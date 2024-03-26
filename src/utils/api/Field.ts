@@ -242,7 +242,7 @@ export default class Field {
         return true;
       },
 
-      get: (target: string[] | string) => {
+      get: (target: string[] | typeof Proxy) => {
         return target;
       }
     });
