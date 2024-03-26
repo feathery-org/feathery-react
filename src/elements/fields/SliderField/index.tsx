@@ -36,7 +36,7 @@ export default function SliderField({
         width: '100%',
         height: '100%',
         position: 'relative',
-        pointerEvents: editMode ? 'none' : 'auto',
+        pointerEvents: editMode || disabled ? 'none' : 'auto',
         ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
@@ -68,7 +68,6 @@ export default function SliderField({
           min={minVal}
           max={maxVal}
           step={stepSize}
-          disabled={disabled}
           onChange={(val) => {
             setInternalValue(val);
             onChange(val);
