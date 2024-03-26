@@ -64,7 +64,7 @@ export default class IntegrationClient {
     url: any,
     options: any,
     parseResponse = true,
-    propogateNetworkErrors = false
+    propagateNetworkErrors = false
   ) {
     const { sdkKey } = initInfo();
     const { headers, ...otherOptions } = options;
@@ -84,16 +84,12 @@ export default class IntegrationClient {
         return response;
       })
       .catch((e) => {
-        // Throw error for offline handler
-        if (propogateNetworkErrors && e instanceof TypeError) throw e;
         // Ignore TypeErrors if form has redirected because `fetch` in
         // Safari will error after redirect
-        if (
-          (this.ignoreNetworkErrors?.current ||
-            TYPE_MESSAGES_TO_IGNORE.includes(e.message)) &&
-          e instanceof TypeError
-        )
-          return;
+        const ignore =
+          this.ignoreNetworkErrors?.current ||
+          TYPE_MESSAGES_TO_IGNORE.includes(e.message);
+        if (ignore && !propagateNetworkErrors && e instanceof TypeError) return;
         throw e;
       });
   }
