@@ -18,11 +18,12 @@ import {
 import { loadPhoneValidator } from '../validation';
 import { initializeIntegrations } from '../../integrations/utils';
 import { loadLottieLight } from '../../elements/components/Lottie';
-import { featheryDoc, featheryWindow } from '../browser';
+import { featheryDoc } from '../browser';
 import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
+import { RequestOptions } from '../offlineRequestHandler';
 
 // Convenience boolean for urls - manually change for testing
 export const API_URL_OPTIONS = {
@@ -72,7 +73,7 @@ export const updateRegionApiUrls = (region: string) => {
 };
 
 export default class FeatheryClient extends IntegrationClient {
-  _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
+  async _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
     if (servars.length === 0) return Promise.resolve();
 
     const { userId, collaboratorId } = initInfo();
@@ -87,14 +88,21 @@ export default class FeatheryClient extends IntegrationClient {
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
 
-    const options = {
+    const options: RequestOptions = {
       headers: {
         'Content-Type': 'application/json'
       },
       method: 'POST',
       body: JSON.stringify(data)
     };
-    return this._fetch(url, options);
+
+    return this.offlineRequestHandler.runOrSaveRequest(
+      () => this._fetch(url, options, true, true),
+      url,
+      options,
+      'submit',
+      stepKey
+    );
   }
 
   async _getFileValue(servar: any) {
@@ -141,12 +149,21 @@ export default class FeatheryClient extends IntegrationClient {
     formData.set('__feathery_form_key', this.formKey);
     formData.set('__feathery_step_key', stepKey);
     if (this.version) formData.set('__feathery_version', this.version);
-    await this._fetch(url, {
+
+    const options: RequestOptions = {
       method: 'POST',
       body: formData,
       // In Safari, request fails with keepalive = true if over 64kb payload.
       keepalive: false
-    });
+    };
+
+    return this.offlineRequestHandler.runOrSaveRequest(
+      () => this._fetch(url, options, true, true),
+      url,
+      options,
+      'submit',
+      stepKey
+    );
   }
 
   updateUserId(newUserId: any, merge = false) {
@@ -446,12 +463,22 @@ export default class FeatheryClient extends IntegrationClient {
     }
     if (userId) formData.set('fuser_key', userId);
 
-    return this._fetch(url, { method: 'POST', body: formData });
+    const options: RequestOptions = {
+      method: 'POST',
+      body: formData
+    };
+
+    return this.offlineRequestHandler.runOrSaveRequest(
+      () => this._fetch(url, options, true, true),
+      url,
+      options,
+      'submit'
+    );
   }
 
   // servars = [{key: <servarKey>, <type>: <value>}]
-  submitStep(servars: any, step: any, hasNext: boolean) {
-    if (this.draft || this.noSave) return Promise.resolve();
+  async submitStep(servars: any, step: any, hasNext: boolean) {
+    if (this.draft || this.noSave) return;
 
     const items = [
       ...step.buttons.filter(isStoreFieldValueAction),
@@ -470,20 +497,22 @@ export default class FeatheryClient extends IntegrationClient {
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    const promiseFunc = () =>
-      Promise.all([
-        this.submitCustom(hiddenFields),
-        this._submitJSONData(jsonServars, step.key, hasNext),
-        ...fileServars.map((servar: any) =>
-          this._submitFileData(servar, step.key)
-        )
-      ]);
-    this.submitQueue = Promise.all([this.submitQueue, wrapUnload(promiseFunc)]);
+    this.submitQueue = Promise.all([
+      this.submitQueue,
+      this.submitCustom(hiddenFields),
+      this._submitJSONData(jsonServars, step.key, hasNext),
+      ...fileServars.map((servar: any) =>
+        this._submitFileData(servar, step.key)
+      )
+    ]);
     return this.submitQueue;
   }
 
   async registerEvent(eventData: any) {
+    if (this.draft) return;
+
     await initFormsPromise;
+
     const { userId, collaboratorId } = initInfo();
 
     const url = `${API_URL}event/`;
@@ -499,12 +528,18 @@ export default class FeatheryClient extends IntegrationClient {
       body: JSON.stringify(data)
     };
 
-    // Ensure events complete before user exits page. Submit and load event of
-    // next step must happen after the previous step is done submitting
-    return await this.submitQueue.then(() =>
-      wrapUnload(() =>
-        this.draft ? Promise.resolve() : this._fetch(url, options)
-      )
+    const stepKey =
+      eventData.event === 'load'
+        ? eventData.previous_step_key
+        : eventData.step_key;
+    return this.offlineRequestHandler.runOrSaveRequest(
+      // Ensure events complete before user exits page. Submit and load event of
+      // next step must happen after the previous step is done submitting
+      () => this.submitQueue.then(() => this._fetch(url, options, true, true)),
+      url,
+      options,
+      'registerEvent',
+      stepKey
     );
   }
 
@@ -663,31 +698,3 @@ export default class FeatheryClient extends IntegrationClient {
     });
   }
 }
-
-let unloadCounter = 0;
-async function wrapUnload(promiseFunc: any) {
-  if (!promiseFunc) return;
-
-  if (unloadCounter === 0)
-    featheryWindow().addEventListener('beforeunload', beforeUnloadEventHandler);
-  unloadCounter++;
-
-  const res = await promiseFunc();
-
-  unloadCounter--;
-  if (unloadCounter === 0)
-    featheryWindow().removeEventListener(
-      'beforeunload',
-      beforeUnloadEventHandler
-    );
-
-  return res;
-}
-
-const beforeUnloadEventHandler = (event: any) => {
-  // Recommended
-  event.preventDefault();
-
-  // Included for legacy support, e.g. Chrome/Edge < 119
-  event.returnValue = true;
-};

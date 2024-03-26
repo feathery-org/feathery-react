@@ -887,11 +887,16 @@ function Form({
       props.disabled = props.disabled || disabled;
       if (servar.required && props.disabled) servar.required = false;
     });
+    const oldKey = activeStep?.key ?? '';
     // setActiveStep, apparently, must go after setting the callbackRef
     // because it triggers a new render, before this fn finishes execution,
     // which can cause onView to fire before the callbackRef is set
     setActiveStep(newStep);
-    client.registerEvent({ step_key: newStep.key, event: 'load' });
+    client.registerEvent({
+      step_key: newStep.key,
+      event: 'load',
+      previous_step_key: oldKey
+    });
   };
 
   const visiblePositions = useMemo(
@@ -1021,6 +1026,17 @@ function Form({
         });
     }
   }, [client, activeStep, setClient, setSteps, updateFieldValues]);
+
+  useEffect(() => {
+    if (!runningInClient()) return;
+
+    if (client !== null) {
+      client.offlineRequestHandler.replayRequests();
+      const handleOnline = () => client.offlineRequestHandler.replayRequests();
+      featheryWindow().addEventListener('online', handleOnline);
+      return () => featheryWindow().removeEventListener('online', handleOnline);
+    }
+  }, [client]);
 
   useEffect(() => {
     return history.listen(async () => {
