@@ -175,9 +175,16 @@ export class OfflineRequestHandler {
         // Wait if any requests in IndexedDB or if a replay is ongoing
         await this.onlineAndReplayed();
       }
-      await run();
-      untrackUnload();
-      return;
+      try {
+        await run();
+        untrackUnload();
+        return;
+      } catch (e) {
+        if (e instanceof TypeError) {
+          this.saveRequest(url, options, type, stepKey);
+          untrackUnload();
+        }
+      }
     }
     this.saveRequest(url, options, type, stepKey);
   }

@@ -97,7 +97,7 @@ export default class FeatheryClient extends IntegrationClient {
     };
 
     return this.offlineRequestHandler.runOrSaveRequest(
-      () => this._fetch(url, options, true, 'submit', stepKey),
+      () => this._fetch(url, options, true, true),
       url,
       options,
       'submit',
@@ -158,7 +158,7 @@ export default class FeatheryClient extends IntegrationClient {
     };
 
     return this.offlineRequestHandler.runOrSaveRequest(
-      () => this._fetch(url, options, true, 'submit', stepKey),
+      () => this._fetch(url, options, true, true),
       url,
       options,
       'submit',
@@ -469,7 +469,7 @@ export default class FeatheryClient extends IntegrationClient {
     };
 
     return this.offlineRequestHandler.runOrSaveRequest(
-      () => this._fetch(url, options, true, 'submit'),
+      () => this._fetch(url, options, true, true),
       url,
       options,
       'submit'
@@ -535,10 +535,7 @@ export default class FeatheryClient extends IntegrationClient {
     return this.offlineRequestHandler.runOrSaveRequest(
       // Ensure events complete before user exits page. Submit and load event of
       // next step must happen after the previous step is done submitting
-      () =>
-        this.submitQueue.then(() =>
-          this._fetch(url, options, true, 'registerEvent', stepKey)
-        ),
+      () => this.submitQueue.then(() => this._fetch(url, options, true, true)),
       url,
       options,
       'registerEvent',
