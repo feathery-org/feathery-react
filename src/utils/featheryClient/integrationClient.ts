@@ -3,13 +3,38 @@ import { fieldValues, initFormsPromise, initInfo } from '../init';
 import { encodeGetParams } from '../primitives';
 import { parseError } from '../error';
 import { API_URL } from '.';
+import { OfflineRequestHandler } from '../offlineRequestHandler';
 
-const TYPE_MESSAGES_TO_IGNORE = [
+export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
   'Failed to fetch',
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3529742129/
   'Load failed'
 ];
+
+export async function checkResponseSuccess(response: any) {
+  let payload;
+  switch (response.status) {
+    case 200:
+    case 201:
+      return;
+    case 400:
+      payload = JSON.stringify(await response.clone().text());
+      console.error(payload.toString());
+      return;
+    case 401:
+      throw new errors.SDKKeyError();
+    case 404:
+      throw new errors.FetchError("Can't find object");
+    case 409:
+      location.reload();
+      return;
+    case 500:
+      throw new errors.FetchError('Internal server error');
+    default:
+      throw new errors.FetchError('Unknown error');
+  }
+}
 
 // THIRD-PARTY INTEGRATIONS
 export default class IntegrationClient {
@@ -20,6 +45,7 @@ export default class IntegrationClient {
   draft: boolean;
   bypassCDN: boolean;
   submitQueue: Promise<any>;
+  offlineRequestHandler: OfflineRequestHandler;
   constructor(
     formKey = '',
     ignoreNetworkErrors?: any,
@@ -31,33 +57,15 @@ export default class IntegrationClient {
     this.draft = draft;
     this.bypassCDN = bypassCDN;
     this.submitQueue = Promise.resolve();
+    this.offlineRequestHandler = new OfflineRequestHandler(formKey);
   }
 
-  async _checkResponseSuccess(response: any) {
-    let payload;
-    switch (response.status) {
-      case 200:
-      case 201:
-        return;
-      case 400:
-        payload = JSON.stringify(await response.clone().text());
-        console.error(payload.toString());
-        return;
-      case 401:
-        throw new errors.SDKKeyError();
-      case 404:
-        throw new errors.FetchError("Can't find object");
-      case 409:
-        location.reload();
-        return;
-      case 500:
-        throw new errors.FetchError('Internal server error');
-      default:
-        throw new errors.FetchError('Unknown error');
-    }
-  }
-
-  _fetch(url: any, options: any, parseResponse = true) {
+  _fetch(
+    url: any,
+    options: any,
+    parseResponse = true,
+    propagateNetworkErrors = false
+  ) {
     const { sdkKey } = initInfo();
     const { headers, ...otherOptions } = options;
     options = {
@@ -72,18 +80,16 @@ export default class IntegrationClient {
     };
     return fetch(url, options)
       .then(async (response) => {
-        if (parseResponse) await this._checkResponseSuccess(response);
+        if (parseResponse) await checkResponseSuccess(response);
         return response;
       })
       .catch((e) => {
         // Ignore TypeErrors if form has redirected because `fetch` in
         // Safari will error after redirect
-        if (
-          (this.ignoreNetworkErrors?.current ||
-            TYPE_MESSAGES_TO_IGNORE.includes(e.message)) &&
-          e instanceof TypeError
-        )
-          return;
+        const ignore =
+          this.ignoreNetworkErrors?.current ||
+          TYPE_MESSAGES_TO_IGNORE.includes(e.message);
+        if (ignore && !propagateNetworkErrors && e instanceof TypeError) return;
         throw e;
       });
   }
