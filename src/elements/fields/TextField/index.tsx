@@ -195,6 +195,7 @@ function TextField({
   onEnter = () => {},
   setRef = () => {},
   inlineError,
+  repeatIndex = null,
   children
 }: any) {
   const [showAutocomplete, setShowAutocomplete] = useState(false);
@@ -324,6 +325,7 @@ function TextField({
           value={rawValue}
           element={element}
           responsiveStyles={responsiveStyles}
+          repeatIndex={repeatIndex}
         />
         <InlineTooltip
           id={element.id}

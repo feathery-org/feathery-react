@@ -31,6 +31,7 @@ function PhoneField({
   elementProps = {},
   required = false,
   disabled = false,
+  repeatIndex = null,
   autoComplete,
   editMode,
   onChange = () => {},
@@ -357,6 +358,7 @@ function PhoneField({
             value={formattedNumber}
             element={{ properties: { placeholder } }}
             responsiveStyles={responsiveStyles}
+            repeatIndex={repeatIndex}
           />
           <InlineTooltip
             id={element.id}
