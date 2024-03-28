@@ -224,7 +224,7 @@ function ButtonElement({
         // Fall back on default focus behavior if custom active state
         // is not set for button
         ...(active === null ? { '&:focus:enabled': activeStyles } : {}),
-        '&&': styles.getTarget('button')
+        '&&&': styles.getTarget('button')
       }}
       disabled={!editMode && (noActions || loader || disabled)}
       onClick={onClick}
