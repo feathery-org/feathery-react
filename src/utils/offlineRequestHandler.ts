@@ -169,8 +169,9 @@ export class OfflineRequestHandler {
     if (navigator.onLine) {
       trackUnload();
       if (
-        this.isReplayingRequests.get(this.formKey) ||
-        (await this.dbHasRequest())
+        this.indexedDBSupported &&
+        (this.isReplayingRequests.get(this.formKey) ||
+          (await this.dbHasRequest()))
       ) {
         // Wait if any requests in IndexedDB or if a replay is ongoing
         await this.onlineAndReplayed();
