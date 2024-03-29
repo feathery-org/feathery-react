@@ -39,6 +39,13 @@ interface SerializedRequest {
   keepalive?: boolean;
 }
 
+class IndexedDBError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'IndexedDBError';
+  }
+}
+
 const beforeUnloadEventHandler = (event: any) => {
   // Recommended
   event.preventDefault();
@@ -133,19 +140,34 @@ export class OfflineRequestHandler {
   // Open a connection to the IndexedDB database
   public async openDatabase(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, this.dbVersion);
+      try {
+        const request = indexedDB.open(this.dbName, this.dbVersion);
 
-      // Good practice to keep onupgradeneeded to handle
-      // database creation scenarios (after database deletion by user)
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains(this.storeName)) {
-          db.createObjectStore(this.storeName, { autoIncrement: true });
-        }
-      };
+        // Good practice to keep onupgradeneeded to handle
+        // database creation scenarios (after database deletion by user)
+        request.onupgradeneeded = (event) => {
+          const db = (event.target as IDBOpenDBRequest).result;
+          if (!db.objectStoreNames.contains(this.storeName)) {
+            db.createObjectStore(this.storeName, { autoIncrement: true });
+          }
+        };
 
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = (event) => {
+          const error = (event.target as IDBRequest<IDBDatabase>).error;
+          if (
+            error?.name === 'SecurityError' ||
+            error?.message?.includes('denied permission')
+          ) {
+            reject(new IndexedDBError('IndexedDB access denied'));
+          } else {
+            reject(new IndexedDBError('IndexedDB error'));
+          }
+        };
+      } catch (error) {
+        console.error('Error opening IndexedDB database:', error);
+        reject(error);
+      }
     });
   }
 
