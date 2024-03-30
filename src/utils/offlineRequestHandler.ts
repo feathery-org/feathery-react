@@ -338,12 +338,13 @@ export class OfflineRequestHandler {
       });
 
       const noFormKeyRequests = allRequests.filter((req) => !req.formKey);
-      await this.replayRequestsInParallel(noFormKeyRequests);
-
       const submitRequests = allRequests.filter(
         (req) => req.type === 'submit' || req.type === 'customRequest'
       );
-      await this.replayRequestsInParallel(submitRequests);
+      await Promise.all([
+        this.replayRequestsInParallel(noFormKeyRequests),
+        this.replayRequestsInParallel(submitRequests)
+      ]);
 
       const registerEventRequests = allRequests.filter(
         (req) => req.type === 'registerEvent'
