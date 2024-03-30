@@ -317,6 +317,7 @@ export class OfflineRequestHandler {
         SerializedRequest[]
       >((resolve) => {
         const requests: SerializedRequest[] = [];
+        const noFormKeyRequests: SerializedRequest[] = [];
         store.openCursor().onsuccess = (event: Event) => {
           const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
             .result;
@@ -324,16 +325,24 @@ export class OfflineRequestHandler {
             const request = cursor.value as SerializedRequest;
             if (request.formKey === this.formKey) {
               requests.push(request);
+            } else if (!request.formKey) {
+              noFormKeyRequests.push(request);
             }
             cursor.continue();
           } else {
             requests.sort((a, b) => a.timestamp - b.timestamp);
-            resolve(requests);
+            noFormKeyRequests.sort((a, b) => a.timestamp - b.timestamp);
+            resolve([...noFormKeyRequests, ...requests]);
           }
         };
       });
 
-      const submitRequests = allRequests.filter((req) => req.type === 'submit');
+      const noFormKeyRequests = allRequests.filter((req) => !req.formKey);
+      await this.replayRequestsInParallel(noFormKeyRequests);
+
+      const submitRequests = allRequests.filter(
+        (req) => req.type === 'submit' || req.type === 'customRequest'
+      );
       await this.replayRequestsInParallel(submitRequests);
 
       const registerEventRequests = allRequests.filter(
