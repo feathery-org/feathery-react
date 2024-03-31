@@ -317,34 +317,26 @@ export class OfflineRequestHandler {
         SerializedRequest[]
       >((resolve) => {
         const requests: SerializedRequest[] = [];
-        const noFormKeyRequests: SerializedRequest[] = [];
         store.openCursor().onsuccess = (event: Event) => {
           const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
             .result;
           if (cursor) {
             const request = cursor.value as SerializedRequest;
-            if (request.formKey === this.formKey) {
+            if (request.formKey === this.formKey || !request.formKey) {
               requests.push(request);
-            } else if (!request.formKey) {
-              noFormKeyRequests.push(request);
             }
             cursor.continue();
           } else {
             requests.sort((a, b) => a.timestamp - b.timestamp);
-            noFormKeyRequests.sort((a, b) => a.timestamp - b.timestamp);
-            resolve([...noFormKeyRequests, ...requests]);
+            resolve(requests);
           }
         };
       });
 
-      const noFormKeyRequests = allRequests.filter((req) => !req.formKey);
       const submitRequests = allRequests.filter(
         (req) => req.type === 'submit' || req.type === 'customRequest'
       );
-      await Promise.all([
-        this.replayRequestsInParallel(noFormKeyRequests),
-        this.replayRequestsInParallel(submitRequests)
-      ]);
+      await this.replayRequestsInParallel(submitRequests);
 
       const registerEventRequests = allRequests.filter(
         (req) => req.type === 'registerEvent'
