@@ -574,11 +574,25 @@ export default class FeatheryClient extends IntegrationClient {
       data.field_values = fieldValues;
     }
 
-    return this._fetch(`${API_URL}custom_request/`, {
+    const url = `${API_URL}custom_request/`;
+    const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
-    }).then((response) => (response ? response.json() : Promise.resolve()));
+    };
+
+    const run = () => this._fetch(url, options);
+    if (typeof payload !== 'string' && payload.method === 'GET') {
+      return run().then((response) =>
+        response ? response.json() : Promise.resolve()
+      );
+    }
+    return this.offlineRequestHandler.runOrSaveRequest(
+      run,
+      url,
+      options,
+      'customRequest'
+    );
   }
 
   // AI

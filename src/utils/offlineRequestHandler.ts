@@ -322,7 +322,7 @@ export class OfflineRequestHandler {
             .result;
           if (cursor) {
             const request = cursor.value as SerializedRequest;
-            if (request.formKey === this.formKey) {
+            if (request.formKey === this.formKey || !request.formKey) {
               requests.push(request);
             }
             cursor.continue();
@@ -333,7 +333,9 @@ export class OfflineRequestHandler {
         };
       });
 
-      const submitRequests = allRequests.filter((req) => req.type === 'submit');
+      const submitRequests = allRequests.filter((req) =>
+        ['submit', 'customRequest'].includes(req.type)
+      );
       await this.replayRequestsInParallel(submitRequests);
 
       const registerEventRequests = allRequests.filter(
