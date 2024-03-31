@@ -333,8 +333,8 @@ export class OfflineRequestHandler {
         };
       });
 
-      const submitRequests = allRequests.filter(
-        (req) => req.type === 'submit' || req.type === 'customRequest'
+      const submitRequests = allRequests.filter((req) =>
+        ['submit', 'customRequest'].includes(req.type)
       );
       await this.replayRequestsInParallel(submitRequests);
 
