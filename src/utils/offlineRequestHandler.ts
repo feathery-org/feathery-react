@@ -127,7 +127,6 @@ export class OfflineRequestHandler {
 
       return count > 0;
     } else {
-      console.warn('Cannot perform IndexedDB operation.');
       return false;
     }
   }
@@ -278,8 +277,6 @@ export class OfflineRequestHandler {
         });
         store.add(serializedRequest);
         await requestPromise;
-      } else {
-        console.warn('Cannot perform IndexedDB operation.');
       }
     } catch (error) {
       console.warn('Error saving request', error);
@@ -369,8 +366,6 @@ export class OfflineRequestHandler {
           );
           await this.replayRequestsInParallel(requestsForStep);
         }
-      } else {
-        console.warn('Cannot perform IndexedDB operation.');
       }
     } finally {
       this.isReplayingRequests.set(this.formKey, false);
@@ -436,8 +431,6 @@ export class OfflineRequestHandler {
     if (dbTransaction) {
       const { store } = dbTransaction;
       await store.clear();
-    } else {
-      console.warn('Cannot perform IndexedDB operation.');
     }
   }
 
