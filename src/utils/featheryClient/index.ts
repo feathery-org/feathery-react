@@ -89,9 +89,7 @@ export default class FeatheryClient extends IntegrationClient {
     if (collaboratorId) data.collaborator_user = collaboratorId;
 
     const options: RequestOptions = {
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
     };
@@ -581,11 +579,12 @@ export default class FeatheryClient extends IntegrationClient {
       body: JSON.stringify(data)
     };
 
-    const run = () => this._fetch(url, options);
-    if (typeof payload !== 'string' && payload.method === 'GET') {
-      return run().then((response) =>
+    const run = () =>
+      this._fetch(url, options).then((response) =>
         response ? response.json() : Promise.resolve()
       );
+    if (typeof payload !== 'string' && payload.method === 'GET') {
+      return run();
     }
     return this.offlineRequestHandler.runOrSaveRequest(
       run,

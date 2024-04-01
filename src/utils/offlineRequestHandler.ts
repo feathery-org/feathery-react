@@ -199,9 +199,9 @@ export class OfflineRequestHandler {
         await this.onlineAndReplayed();
       }
       try {
-        await run();
+        const response = await run();
         untrackUnload();
-        return;
+        return response;
       } catch (e) {
         if (e instanceof TypeError) {
           this.saveRequest(url, options, type, stepKey);
