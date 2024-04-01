@@ -920,6 +920,8 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
         data: Record<string, any> | any[],
         headers: Record<string, string>
       ) => {
+        if (!url) return;
+
         const _fieldValues: { [key: string]: any } = connectorFields.reduce(
           (acc, fieldKey) => ({
             ...acc,
@@ -937,6 +939,8 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
   );
 
   helpers.connect = async (name: string) => {
+    if (!name) return {};
+
     const _fieldValues: { [key: string]: any } = connectorFields.reduce(
       (acc, fieldKey) => ({
         ...acc,
