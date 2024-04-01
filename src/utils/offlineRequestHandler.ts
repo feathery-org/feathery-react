@@ -70,13 +70,13 @@ const untrackUnload = () => {
 
 export function useOfflineRequestHandler(client: FeatheryClient) {
   useEffect(() => {
-    if (!runningInClient()) return;
+    if (!runningInClient() || !client) return;
 
     client.offlineRequestHandler.replayRequests();
     const handleOnline = () => client.offlineRequestHandler.replayRequests();
     featheryWindow().addEventListener('online', handleOnline);
     return () => featheryWindow().removeEventListener('online', handleOnline);
-  }, []);
+  }, [client]);
 }
 
 export class OfflineRequestHandler {
@@ -213,13 +213,13 @@ export class OfflineRequestHandler {
         untrackUnload();
         return response;
       } catch (e) {
-        if (e instanceof TypeError) {
+        if (e instanceof TypeError)
           this.saveRequest(url, options, type, stepKey);
-          untrackUnload();
-        }
+        untrackUnload();
       }
+    } else {
+      this.saveRequest(url, options, type, stepKey);
     }
-    this.saveRequest(url, options, type, stepKey);
   }
 
   public async saveRequest(
@@ -383,7 +383,7 @@ export class OfflineRequestHandler {
 
   private replayRequestsInParallel(requests: SerializedRequest[]) {
     return Promise.all(
-      requests.map(async (request) => {
+      requests.map((request) => {
         const { url, method, headers, body, bodyType, keepalive } = request;
         const reconstructedBody = this.reconstructBody(body, bodyType);
         const fetchOptions: RequestInit = {
@@ -394,16 +394,13 @@ export class OfflineRequestHandler {
           keepalive: keepalive
         };
 
-        let attempts = 0;
-        let success = false;
-
         const attemptRequest = async () => {
-          while (!success && attempts < this.maxRetryAttempts) {
+          let attempts = 0;
+          while (attempts < this.maxRetryAttempts) {
             try {
               const response = await fetch(url, fetchOptions);
               await checkResponseSuccess(response);
-              success = true;
-              await this.removeRequest();
+              break;
             } catch (error: any) {
               attempts++;
               await this.delay(this.retryDelayMs);
@@ -414,11 +411,9 @@ export class OfflineRequestHandler {
               await this.onlineAndReplayed();
               return;
             }
-
-            if (attempts === this.maxRetryAttempts) {
-              break;
-            }
           }
+
+          await this.removeRequest();
         };
 
         return attemptRequest();

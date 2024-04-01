@@ -158,6 +158,7 @@ import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
 import { fieldAllowedFromList } from './grid/Element/utils';
 import { triggerPersona } from '../integrations/persona';
 import Collaborator from '../utils/api/Collaborator';
+import { useOfflineRequestHandler } from '../utils/offlineRequestHandler';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -1027,16 +1028,7 @@ function Form({
     }
   }, [client, activeStep, setClient, setSteps, updateFieldValues]);
 
-  useEffect(() => {
-    if (!runningInClient()) return;
-
-    if (client !== null) {
-      client.offlineRequestHandler.replayRequests();
-      const handleOnline = () => client.offlineRequestHandler.replayRequests();
-      featheryWindow().addEventListener('online', handleOnline);
-      return () => featheryWindow().removeEventListener('online', handleOnline);
-    }
-  }, [client]);
+  useOfflineRequestHandler(client);
 
   useEffect(() => {
     return history.listen(async () => {
