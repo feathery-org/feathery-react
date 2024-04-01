@@ -10,6 +10,10 @@ const STORE_NAME = 'requestsStore';
 const DB_VERSION = 1;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 2000;
+const INDEXEDDB_ACCESS_DENIED_ERRORS = [
+  'invalid security context',
+  'denied permission'
+];
 
 export interface RequestOptions {
   headers?: {
@@ -37,13 +41,6 @@ interface SerializedRequest {
   type: string;
   stepKey?: string;
   keepalive?: boolean;
-}
-
-class IndexedDBError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'IndexedDBError';
-  }
 }
 
 const beforeUnloadEventHandler = (event: any) => {
@@ -107,25 +104,31 @@ export class OfflineRequestHandler {
 
   // Check if any requests are stored in indexedDB
   public async dbHasRequest(): Promise<boolean> {
-    const { store } = await this.getDbTransaction('readonly');
-    const count = await new Promise<number>((resolve) => {
-      const request = store.openCursor();
-      let count = 0;
-      request.onsuccess = (event) => {
-        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
-        if (cursor) {
-          const request = cursor.value as SerializedRequest;
-          if (request.formKey === this.formKey) {
-            count++;
+    const dbTransaction = await this.getDbTransaction('readonly');
+    if (dbTransaction) {
+      const { store } = dbTransaction;
+      const count = await new Promise<number>((resolve) => {
+        const request = store.openCursor();
+        let count = 0;
+        request.onsuccess = (event) => {
+          const cursor = (event.target as IDBRequest<IDBCursorWithValue>)
+            .result;
+          if (cursor) {
+            const request = cursor.value as SerializedRequest;
+            if (request.formKey === this.formKey) {
+              count++;
+            }
+            cursor.continue();
+          } else {
+            resolve(count);
           }
-          cursor.continue();
-        } else {
-          resolve(count);
-        }
-      };
-    });
+        };
+      });
 
-    return count > 0;
+      return count > 0;
+    } else {
+      return false;
+    }
   }
 
   public onlineAndReplayed() {
@@ -138,7 +141,7 @@ export class OfflineRequestHandler {
   }
 
   // Open a connection to the IndexedDB database
-  public async openDatabase(): Promise<IDBDatabase> {
+  public async openDatabase(): Promise<IDBDatabase | undefined> {
     return new Promise((resolve, reject) => {
       try {
         const request = indexedDB.open(this.dbName, this.dbVersion);
@@ -156,12 +159,15 @@ export class OfflineRequestHandler {
         request.onerror = (event) => {
           const error = (event.target as IDBRequest<IDBDatabase>).error;
           if (
-            error?.name === 'SecurityError' ||
-            error?.message?.includes('denied permission')
+            INDEXEDDB_ACCESS_DENIED_ERRORS.some((msg) =>
+              error?.message?.includes(msg)
+            )
           ) {
-            reject(new IndexedDBError('IndexedDB access denied'));
+            console.warn('IndexedDB access denied:', error);
+            resolve(undefined);
           } else {
-            reject(new IndexedDBError('IndexedDB error'));
+            console.warn('IndexedDB error:', error);
+            resolve(undefined);
           }
         };
       } catch (error) {
@@ -173,11 +179,15 @@ export class OfflineRequestHandler {
 
   private async getDbTransaction(
     mode: 'readwrite' | 'readonly'
-  ): Promise<{ tx: IDBTransaction; store: IDBObjectStore }> {
+  ): Promise<{ tx: IDBTransaction; store: IDBObjectStore } | undefined> {
     const db = await this.openDatabase();
-    const tx = db.transaction(this.storeName, mode);
-    const store = tx.objectStore(this.storeName);
-    return { tx, store };
+    if (db) {
+      const tx = db.transaction(this.storeName, mode);
+      const store = tx.objectStore(this.storeName);
+      return { tx, store };
+    } else {
+      return undefined;
+    }
   }
 
   // Save request to IndexedDB
@@ -258,14 +268,16 @@ export class OfflineRequestHandler {
         keepalive
       };
 
-      const { tx, store } = await this.getDbTransaction('readwrite');
-      const requestPromise = new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-
-      store.add(serializedRequest);
-      await requestPromise;
+      const dbTransaction = await this.getDbTransaction('readwrite');
+      if (dbTransaction) {
+        const { tx, store } = dbTransaction;
+        const requestPromise = new Promise<void>((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+        store.add(serializedRequest);
+        await requestPromise;
+      }
     } catch (error) {
       console.warn('Error saving request', error);
     }
@@ -311,45 +323,49 @@ export class OfflineRequestHandler {
     this.isReplayingRequests.set(this.formKey, true);
     trackUnload();
     try {
-      const { store } = await this.getDbTransaction('readwrite');
+      const dbTransaction = await this.getDbTransaction('readwrite');
+      if (dbTransaction) {
+        const { store } = dbTransaction;
 
-      const allRequests: SerializedRequest[] = await new Promise<
-        SerializedRequest[]
-      >((resolve) => {
-        const requests: SerializedRequest[] = [];
-        store.openCursor().onsuccess = (event: Event) => {
-          const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
-            .result;
-          if (cursor) {
-            const request = cursor.value as SerializedRequest;
-            if (request.formKey === this.formKey || !request.formKey) {
-              requests.push(request);
+        const allRequests: SerializedRequest[] = await new Promise<
+          SerializedRequest[]
+        >((resolve) => {
+          const requests: SerializedRequest[] = [];
+          store.openCursor().onsuccess = (event: Event) => {
+            const cursor = (
+              event.target as IDBRequest<IDBCursorWithValue | null>
+            ).result;
+            if (cursor) {
+              const request = cursor.value as SerializedRequest;
+              if (request.formKey === this.formKey || !request.formKey) {
+                requests.push(request);
+              }
+              cursor.continue();
+            } else {
+              requests.sort((a, b) => a.timestamp - b.timestamp);
+              resolve(requests);
             }
-            cursor.continue();
-          } else {
-            requests.sort((a, b) => a.timestamp - b.timestamp);
-            resolve(requests);
-          }
-        };
-      });
+          };
+        });
 
-      const submitRequests = allRequests.filter((req) =>
-        ['submit', 'customRequest'].includes(req.type)
-      );
-      await this.replayRequestsInParallel(submitRequests);
-
-      const registerEventRequests = allRequests.filter(
-        (req) => req.type === 'registerEvent'
-      );
-      const stepKeys = Array.from(
-        new Set(registerEventRequests.map((req) => req.stepKey))
-      );
-
-      for (const stepKey of stepKeys) {
-        const requestsForStep = registerEventRequests.filter(
-          (req) => req.stepKey === stepKey
+        const submitRequests = allRequests.filter((req) =>
+          ['submit', 'customRequest'].includes(req.type)
         );
-        await this.replayRequestsInParallel(requestsForStep);
+        await this.replayRequestsInParallel(submitRequests);
+
+        const registerEventRequests = allRequests.filter(
+          (req) => req.type === 'registerEvent'
+        );
+        const stepKeys = Array.from(
+          new Set(registerEventRequests.map((req) => req.stepKey))
+        );
+
+        for (const stepKey of stepKeys) {
+          const requestsForStep = registerEventRequests.filter(
+            (req) => req.stepKey === stepKey
+          );
+          await this.replayRequestsInParallel(requestsForStep);
+        }
       }
     } finally {
       this.isReplayingRequests.set(this.formKey, false);
@@ -411,8 +427,11 @@ export class OfflineRequestHandler {
   }
 
   private async removeRequest() {
-    const { store } = await this.getDbTransaction('readwrite');
-    await store.clear();
+    const dbTransaction = await this.getDbTransaction('readwrite');
+    if (dbTransaction) {
+      const { store } = dbTransaction;
+      await store.clear();
+    }
   }
 
   private delay(ms: number): Promise<void> {
