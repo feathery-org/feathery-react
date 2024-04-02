@@ -11,7 +11,7 @@ const DB_VERSION = 1;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 2000;
 const INDEXEDDB_ACCESS_DENIED_ERRORS = [
-  'invalid security context',
+  'IDBFactory.open() called in an invalid security context',
   'denied permission'
 ];
 
@@ -41,6 +41,7 @@ interface SerializedRequest {
   type: string;
   stepKey?: string;
   keepalive?: boolean;
+  key?: IDBValidKey;
 }
 
 const beforeUnloadEventHandler = (event: any) => {
@@ -337,6 +338,7 @@ export class OfflineRequestHandler {
             ).result;
             if (cursor) {
               const request = cursor.value as SerializedRequest;
+              request.key = cursor.key;
               if (request.formKey === this.formKey || !request.formKey) {
                 requests.push(request);
               }
@@ -384,7 +386,8 @@ export class OfflineRequestHandler {
   private replayRequestsInParallel(requests: SerializedRequest[]) {
     return Promise.all(
       requests.map((request) => {
-        const { url, method, headers, body, bodyType, keepalive } = request;
+        const { url, method, headers, body, bodyType, keepalive, key } =
+          request;
         const reconstructedBody = this.reconstructBody(body, bodyType);
         const fetchOptions: RequestInit = {
           method,
@@ -412,8 +415,7 @@ export class OfflineRequestHandler {
               return;
             }
           }
-
-          await this.removeRequest();
+          await this.removeRequest(key);
         };
 
         return attemptRequest();
@@ -421,11 +423,12 @@ export class OfflineRequestHandler {
     );
   }
 
-  private async removeRequest() {
+  private async removeRequest(key?: IDBValidKey) {
+    if (!key) return;
     const dbTransaction = await this.getDbTransaction('readwrite');
     if (dbTransaction) {
       const { store } = dbTransaction;
-      await store.clear();
+      await store.delete(key);
     }
   }
 
