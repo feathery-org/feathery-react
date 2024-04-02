@@ -1,13 +1,5 @@
 import FeatheryClient, { API_URL, CDN_URL } from '../featheryClient';
 import { initInfo, initFormsPromise } from '../init';
-import { OfflineRequestHandler } from '../offlineRequestHandler';
-
-jest.mock('../offlineRequestHandler', () => ({
-  OfflineRequestHandler: jest.fn().mockImplementation(() => ({
-    runOrSaveRequest: jest.fn(),
-    replayRequests: jest.fn().mockResolvedValue(undefined)
-  }))
-}));
 
 jest.mock('../init', () => ({
   initInfo: jest.fn(),
@@ -16,17 +8,6 @@ jest.mock('../init', () => ({
   fieldValues: {},
   filePathMap: {}
 }));
-
-beforeAll(() => {
-  // Mock for the Request constructor
-  global.Request = jest.fn().mockImplementation((url, options) => ({
-    url,
-    method: options?.method || 'GET',
-    headers: options?.headers || {},
-    body: options?.body || null,
-    clone: jest.fn()
-  }));
-});
 
 describe('featheryClient', () => {
   describe('fetchForm', () => {
@@ -123,9 +104,38 @@ describe('featheryClient', () => {
       await featheryClient.submitCustom(customKeyValues);
 
       // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}panel/custom/submit/v3/`,
+        {
+          method: 'POST',
+          body: expect.any(FormData),
+          cache: 'no-store',
+          keepalive: true,
+          headers: {
+            Authorization: 'Token sdkKey'
+          }
+        }
+      );
+    });
+
+    it('saves request when fetch fails', async () => {
+      // Arrange
+      const formKey = 'formKey';
+      const featheryClient = new FeatheryClient(formKey);
+      const customKeyValues = { foo: 'bar' };
+      initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
+      global.fetch = jest
+        .fn()
+        .mockRejectedValue(new TypeError('Network error'));
+      featheryClient.offlineRequestHandler.saveRequest = jest.fn();
+
+      // Act
+      await featheryClient.submitCustom(customKeyValues);
+
+      // Assert
       expect(
-        featheryClient.offlineRequestHandler.runOrSaveRequest
-      ).toHaveBeenCalledTimes(1);
+        featheryClient.offlineRequestHandler.saveRequest
+      ).toHaveBeenCalled();
     });
   });
 
@@ -157,9 +167,48 @@ describe('featheryClient', () => {
       });
 
       // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}panel/step/submit/v3/`,
+        {
+          method: 'POST',
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          keepalive: true,
+          headers: {
+            Authorization: 'Token sdkKey',
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+    });
+
+    it('saves request when fetch fails', async () => {
+      // Arrange
+      const formKey = 'formKey';
+      const featheryClient = new FeatheryClient(formKey);
+      const servars = [
+        {
+          key: 'servar1',
+          type: 'type1'
+        }
+      ];
+      initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
+      global.fetch = jest
+        .fn()
+        .mockRejectedValue(new TypeError('Network error'));
+      featheryClient.offlineRequestHandler.saveRequest = jest.fn();
+
+      // Act
+      await featheryClient.submitStep(servars, {
+        key: 'stepKey',
+        buttons: [],
+        subgrids: []
+      });
+
+      // Assert
       expect(
-        featheryClient.offlineRequestHandler.runOrSaveRequest
-      ).toHaveBeenCalledTimes(1);
+        featheryClient.offlineRequestHandler.saveRequest
+      ).toHaveBeenCalled();
     });
   });
 
@@ -190,8 +239,176 @@ describe('featheryClient', () => {
       });
 
       // Assert
+      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}event/`, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Token sdkKey'
+        },
+        method: 'POST',
+        body: JSON.stringify(body),
+        cache: 'no-store',
+        keepalive: true
+      });
+    });
+
+    it('saves request when fetch fails', async () => {
+      // Arrange
+      const formKey = 'formKey';
+      const stepKey = 'stepKey';
+      const event = { eventStuff: 'eventStuff' };
+      const nextStepKey = '';
+      const featheryClient = new FeatheryClient(formKey);
+      initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
+      global.fetch = jest
+        .fn()
+        .mockRejectedValue(new TypeError('Network error'));
+      featheryClient.offlineRequestHandler.saveRequest = jest.fn();
+
+      // Act
+      await initFormsPromise;
+      await featheryClient.registerEvent({
+        step_key: stepKey,
+        next_step_key: nextStepKey,
+        event
+      });
+
+      // Assert
       expect(
-        featheryClient.offlineRequestHandler.runOrSaveRequest
+        featheryClient.offlineRequestHandler.saveRequest
+      ).toHaveBeenCalled();
+    });
+  });
+
+  describe('runCustomRequest', () => {
+    const formKey = 'formKey';
+    const userId = 'userId';
+    const mockFetch = (response) => {
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 200,
+        json: jest.fn().mockResolvedValue(response)
+      });
+    };
+
+    const featheryClient = new FeatheryClient(formKey);
+    initInfo.mockReturnValue({ userId });
+
+    it('should make a custom GET request with a payload object', async () => {
+      // Arrange
+      const payload = {
+        method: 'GET',
+        url: 'https://test.com',
+        data: { key: 'value' },
+        headers: { 'Content-Type': 'application/json' }
+      };
+      const expectedResponse = { data: 'response data' };
+      mockFetch(expectedResponse);
+
+      // Act
+      const response = await featheryClient.runCustomRequest(payload);
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}custom_request/`, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Token sdkKey'
+        },
+        method: 'POST',
+        body: JSON.stringify({
+          fuser_key: userId,
+          form_key: formKey,
+          method: payload.method,
+          url: payload.url,
+          user_data: payload.data,
+          headers: payload.headers
+        }),
+        cache: 'no-store',
+        keepalive: true
+      });
+      expect(response).toEqual(expectedResponse);
+    });
+
+    it('should make a custom POST request with a payload object', async () => {
+      // Arrange
+      const payload = {
+        method: 'POST',
+        url: 'https://test.com',
+        data: { key: 'value' },
+        headers: { 'Content-Type': 'application/json' }
+      };
+      const expectedResponse = { field_values: { field1: 'value1' } };
+      mockFetch(expectedResponse);
+
+      // Act
+      const response = await featheryClient.runCustomRequest(payload);
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}custom_request/`, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Token sdkKey'
+        },
+        method: 'POST',
+        body: JSON.stringify({
+          fuser_key: userId,
+          form_key: formKey,
+          method: payload.method,
+          url: payload.url,
+          user_data: payload.data,
+          headers: payload.headers
+        }),
+        cache: 'no-store',
+        keepalive: true
+      });
+      expect(response).toEqual(expectedResponse);
+    });
+
+    it('should make a custom request with a payload string', async () => {
+      // Arrange
+      const payload = 'connectionName';
+      const fieldValues = { field1: 'value1', field2: 'value2' };
+      const expectedResponse = { data: 'response data' };
+      mockFetch(expectedResponse);
+
+      // Act
+      const response = await featheryClient.runCustomRequest(
+        payload,
+        fieldValues
+      );
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}custom_request/`, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Token sdkKey'
+        },
+        method: 'POST',
+        body: JSON.stringify({
+          fuser_key: userId,
+          form_key: formKey,
+          name: payload,
+          field_values: fieldValues
+        }),
+        cache: 'no-store',
+        keepalive: true
+      });
+      expect(response).toEqual(expectedResponse);
+    });
+
+    it('saves request when fetch fails', async () => {
+      // Arrange
+      const payload = 'connectionName';
+      const fieldValues = { field1: 'value1', field2: 'value2' };
+      global.fetch = jest
+        .fn()
+        .mockRejectedValue(new TypeError('Network error'));
+      featheryClient.offlineRequestHandler.saveRequest = jest.fn();
+
+      // Act
+      await featheryClient.runCustomRequest(payload, fieldValues);
+
+      // Assert
+      expect(
+        featheryClient.offlineRequestHandler.saveRequest
       ).toHaveBeenCalled();
     });
   });
