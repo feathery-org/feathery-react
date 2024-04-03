@@ -962,3 +962,18 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
 
   return helpers;
 }
+
+export function isElementInViewport(el: any) {
+  const rect = el.getBoundingClientRect();
+
+  const height =
+    featheryWindow().innerHeight || featheryDoc().documentElement.clientHeight;
+  const width =
+    featheryWindow().innerWidth || featheryDoc().documentElement.clientWidth;
+  return (
+    rect.top >= 0 &&
+    rect.left >= 0 &&
+    rect.bottom <= height &&
+    rect.right <= width
+  );
+}

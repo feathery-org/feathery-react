@@ -44,7 +44,8 @@ import {
   FieldStyles,
   updateStepFieldProperties,
   updateStepFieldStyles,
-  updateCustomHead
+  updateCustomHead,
+  isElementInViewport
 } from '../utils/formHelperFunctions';
 import {
   getContainerById,
@@ -380,17 +381,14 @@ function Form({
 
     setAutoValidate(false); // Each step to initially not auto validate
 
-    // Don't autofocus on first step since it might be embedded and cause
-    // undesired focus
+    // Don't autofocus if it will scroll page
     if (
       formSettings.autofocus &&
       focusRef.current?.focus &&
-      !activeStep.origin
+      isElementInViewport(focusRef.current)
     ) {
-      focusRef.current.focus({
-        preventScroll: true
-      });
-      focusRef.current = null;
+      focusRef.current.focus({ preventScroll: true });
+      focusRef.current = 'already focused';
     }
 
     let requiredStepAction: any = '';
@@ -879,6 +877,7 @@ function Form({
     trackEvent(integrations, 'FeatheryStepLoad', newKey, formName);
 
     callbackRef.current = new CallbackQueue(newStep, setLoaders);
+    focusRef.current = null;
     // Hydrate field descriptions
     newStep.servar_fields.forEach((field: any) => {
       const servar = field.servar;

@@ -25,17 +25,10 @@ const Grid = ({ step, form, viewport }: any) => {
     form.visiblePositions
   );
 
-  return (
-    <Subgrid
-      tree={formattedStep.tree}
-      form={form}
-      flags={{ fieldSeen: false }}
-      viewport={viewport}
-    />
-  );
+  return <Subgrid tree={formattedStep.tree} form={form} viewport={viewport} />;
 };
 
-const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
+const Subgrid = ({ tree: node, form, viewport }: any) => {
   const props = node.properties ?? {};
 
   useEffect(() => {
@@ -70,7 +63,7 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
   if (node.isElement) {
     return (
       <Container node={node} viewport={viewport}>
-        <Element form={form} node={node} flags={flags} />
+        <Element form={form} node={node} />
       </Container>
     );
   } else {
@@ -89,7 +82,6 @@ const Subgrid = ({ tree: node, form, flags, viewport }: any) => {
           tree={child}
           axis={node.axis}
           form={form}
-          flags={flags}
           viewport={viewport}
         />
       );

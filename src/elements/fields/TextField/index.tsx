@@ -208,7 +208,7 @@ function TextField({
   const rawValue = stringifyWithNull(fieldVal);
 
   const servar = element.servar;
-  const options = servar.metadata.options ?? [];
+  const options = (servar.metadata.options ?? []).filter((opt: string) => opt);
   return (
     <div
       css={{
