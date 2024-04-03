@@ -36,7 +36,7 @@ const MAP_FIELD_TYPES = new Set([
   'gmap_zip'
 ]);
 
-const Element = ({ node: el, form, flags }: any) => {
+const Element = ({ node: el, form }: any) => {
   const { type } = el;
 
   const {
@@ -167,11 +167,8 @@ const Element = ({ node: el, form, flags }: any) => {
     const servar = el.servar;
     const { value: fieldVal } = getFieldValue(el);
 
-    let firstField = false;
-    if (!fieldVal || fieldVal === servar.metadata.default_value) {
-      firstField = !flags.fieldSeen;
-      flags.fieldSeen = true;
-    }
+    const empty = !fieldVal || fieldVal === servar.metadata.default_value;
+    if (!focusRef.current && empty) focusRef.current = el.id;
 
     const autosubmit = el.properties.submit_trigger === 'auto';
 
@@ -280,7 +277,7 @@ const Element = ({ node: el, form, flags }: any) => {
               if (change) onChange();
             }}
             setRef={(ref: any) => {
-              if (firstField) focusRef.current = ref;
+              if (focusRef.current === el.id) focusRef.current = ref;
             }}
           />
         );
@@ -411,7 +408,7 @@ const Element = ({ node: el, form, flags }: any) => {
             }}
             countryCode={countryCode}
             setRef={(ref: any) => {
-              if (firstField) focusRef.current = ref;
+              if (focusRef.current === el.id) focusRef.current = ref;
             }}
             repeatIndex={index}
           />
@@ -528,7 +525,7 @@ const Element = ({ node: el, form, flags }: any) => {
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
-              if (firstField) focusRef.current = ref;
+              if (focusRef.current === el.id) focusRef.current = ref;
             }}
           />
         );
@@ -543,7 +540,7 @@ const Element = ({ node: el, form, flags }: any) => {
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
-              if (firstField) focusRef.current = ref;
+              if (focusRef.current === el.id) focusRef.current = ref;
             }}
           />
         );
@@ -561,7 +558,7 @@ const Element = ({ node: el, form, flags }: any) => {
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
-              if (firstField) focusRef.current = ref;
+              if (focusRef.current === el.id) focusRef.current = ref;
             }}
           />
         );
@@ -625,7 +622,7 @@ const Element = ({ node: el, form, flags }: any) => {
               }
             }}
             setRef={(ref: any) => {
-              if (firstField) focusRef.current = ref;
+              if (focusRef.current === el.id) focusRef.current = ref;
             }}
           />
         );
@@ -633,7 +630,7 @@ const Element = ({ node: el, form, flags }: any) => {
         return (
           <Elements.PaymentMethodField
             {...fieldProps}
-            autoFocus={firstField && formSettings.autofocus}
+            autoFocus={focusRef.current === el.id && formSettings.autofocus}
             setCardElement={setCardElement}
             setFieldError={(message: any) =>
               setFormElementError({
@@ -671,7 +668,7 @@ const Element = ({ node: el, form, flags }: any) => {
               }
             }}
             setRef={(ref: any) => {
-              if (firstField) focusRef.current = ref;
+              if (focusRef.current === el.id) focusRef.current = ref;
             }}
           />
         );
