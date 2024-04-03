@@ -1739,12 +1739,13 @@ function Form({
           );
         }, 4000);
       } else if (type === ACTION_STORE_FIELD) {
+        const key = action.custom_store_field_key;
+        if (!key) continue;
+
         let val;
         if (action.custom_store_value_type === 'field') {
           val = fieldValues[action.custom_store_value_field_key];
         } else val = action.custom_store_value;
-
-        const key = action.custom_store_field_key;
 
         // Nested find statements return an item from the outer collection, so
         // short circuit the "some" statement once the field has been found

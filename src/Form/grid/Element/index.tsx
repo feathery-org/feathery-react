@@ -131,7 +131,9 @@ const Element = ({ node: el, form, flags }: any) => {
         .map(({ element }) => element)
         .filter(({ properties }) =>
           (properties.actions ?? []).some(
-            (action: any) => action.type === ACTION_STORE_FIELD
+            (action: any) =>
+              action.type === ACTION_STORE_FIELD &&
+              action.custom_store_field_key
           )
         );
       const elementsHaveValues =
