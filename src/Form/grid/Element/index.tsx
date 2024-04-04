@@ -599,9 +599,16 @@ const Element = ({ node: el, form }: any) => {
                     servar.metadata.store_abbreviation
                   )
                     val = address.gmap_state_short;
-                  else val = address[servar.type];
+                  else if (
+                    servar.type === 'gmap_country' &&
+                    !servar.metadata.store_abbreviation
+                  ) {
+                    const countryObject = findCountryByID(address.gmap_country);
+                    val = countryObject
+                      ? countryObject.countryName
+                      : address.gmap_country;
+                  } else val = address[servar.type];
                   val = val ?? '';
-
                   addrValues[servar.key] =
                     index === null
                       ? val

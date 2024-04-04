@@ -1,4 +1,8 @@
-import FeatheryClient, { API_URL, CDN_URL } from '../featheryClient';
+import FeatheryClient, {
+  API_URL,
+  CDN_URL,
+  STATIC_URL
+} from '../featheryClient';
 import { initInfo, initFormsPromise } from '../init';
 
 jest.mock('../init', () => ({
@@ -307,23 +311,26 @@ describe('featheryClient', () => {
       const response = await featheryClient.runCustomRequest(payload);
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}custom_request/`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Token sdkKey'
-        },
-        method: 'POST',
-        body: JSON.stringify({
-          fuser_key: userId,
-          form_key: formKey,
-          method: payload.method,
-          url: payload.url,
-          user_data: payload.data,
-          headers: payload.headers
-        }),
-        cache: 'no-store',
-        keepalive: true
-      });
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${STATIC_URL}custom_request/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Token sdkKey'
+          },
+          method: 'POST',
+          body: JSON.stringify({
+            fuser_key: userId,
+            form_key: formKey,
+            method: payload.method,
+            url: payload.url,
+            user_data: payload.data,
+            headers: payload.headers
+          }),
+          cache: 'no-store',
+          keepalive: true
+        }
+      );
       expect(response).toEqual(expectedResponse);
     });
 
@@ -342,23 +349,26 @@ describe('featheryClient', () => {
       const response = await featheryClient.runCustomRequest(payload);
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}custom_request/`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Token sdkKey'
-        },
-        method: 'POST',
-        body: JSON.stringify({
-          fuser_key: userId,
-          form_key: formKey,
-          method: payload.method,
-          url: payload.url,
-          user_data: payload.data,
-          headers: payload.headers
-        }),
-        cache: 'no-store',
-        keepalive: true
-      });
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${STATIC_URL}custom_request/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Token sdkKey'
+          },
+          method: 'POST',
+          body: JSON.stringify({
+            fuser_key: userId,
+            form_key: formKey,
+            method: payload.method,
+            url: payload.url,
+            user_data: payload.data,
+            headers: payload.headers
+          }),
+          cache: 'no-store',
+          keepalive: true
+        }
+      );
       expect(response).toEqual(expectedResponse);
     });
 
@@ -376,21 +386,24 @@ describe('featheryClient', () => {
       );
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}custom_request/`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Token sdkKey'
-        },
-        method: 'POST',
-        body: JSON.stringify({
-          fuser_key: userId,
-          form_key: formKey,
-          name: payload,
-          field_values: fieldValues
-        }),
-        cache: 'no-store',
-        keepalive: true
-      });
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${STATIC_URL}custom_request/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Token sdkKey'
+          },
+          method: 'POST',
+          body: JSON.stringify({
+            fuser_key: userId,
+            form_key: formKey,
+            name: payload,
+            field_values: fieldValues
+          }),
+          cache: 'no-store',
+          keepalive: true
+        }
+      );
       expect(response).toEqual(expectedResponse);
     });
 
