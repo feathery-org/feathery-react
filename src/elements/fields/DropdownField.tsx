@@ -93,11 +93,12 @@ export default function DropdownField({
       options = servar.metadata.options.map((option: any, index: number) => {
         const label = labels && labels[index] ? labels[index] : option;
         const tooltip = tooltips?.[index] ?? '';
+        const allVals = (fieldValues[servar.key] ?? []) as string[];
         if (
           servar.repeated &&
           servar.metadata.unique_repeat_options &&
           option !== fieldVal &&
-          (fieldValues[servar.key] as string[]).includes(option)
+          allVals.includes(option)
         )
           return null;
         return (
