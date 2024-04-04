@@ -34,9 +34,12 @@ export function gatherTrustedFormFields(existingFields: any, formKey: string) {
     const fieldKey = config.metadata[attr];
     if (!(fieldKey in fieldValues)) {
       // Not stored yet
-      const fieldVal = featheryDoc().getElementsByName(fieldKey)[0].value;
-      fieldValues[fieldKey] = fieldVal;
-      existingFields[fieldKey] = fieldVal;
+      const el = featheryDoc().getElementsByName(fieldKey)[0];
+      if (el) {
+        const fieldVal = el.value;
+        fieldValues[fieldKey] = fieldVal;
+        existingFields[fieldKey] = fieldVal;
+      }
     }
   });
 }
