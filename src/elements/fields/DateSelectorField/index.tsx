@@ -90,6 +90,13 @@ function DateSelectorField({
     return true;
   };
 
+  const filterPassedDate = (date: any) => {
+    if (servarMeta.no_weekends && [0, 6].includes(date.getDay())) return false;
+
+    const disabledDates = servarMeta.disabled_dates ?? [];
+    return !disabledDates.includes(`${date.getMonth() + 1}-${date.getDate()}`);
+  };
+
   const onDateChange = (newDate: any) => {
     newDate = newDate ?? '';
     setInternalDate(newDate);
@@ -155,6 +162,7 @@ function DateSelectorField({
           required={required}
           placeholder=''
           readOnly={disabled}
+          filterDate={filterPassedDate}
           filterTime={filterPassedTime}
           showTimeSelect={servarMeta.choose_time ?? false}
           dateFormat={dateMask}
