@@ -44,20 +44,20 @@ const CDN_URL_OPTIONS = {
   productionCA: 'https://cdn-ca.feathery.io/api/'
 };
 
-const AI_URL_OPTIONS = {
+const STATIC_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
   staging: 'https://staging.feathery.io/api/',
-  production: 'https://api-onboarding.feathery.io/api/',
-  productionAU: 'https://api-onboarding.feathery.io/api/',
-  productionEU: 'https://api-onboarding.feathery.io/api/',
-  productionCA: 'https://api-onboarding.feathery.io/api/'
+  production: 'https://api-static-2.feathery.io/api/',
+  productionAU: 'https://api-static-2.feathery.io/api/',
+  productionEU: 'https://api-static-2.feathery.io/api/',
+  productionCA: 'https://api-static-2.feathery.io/api/'
 };
 
 const environment = 'production';
 
 export let API_URL = API_URL_OPTIONS[environment];
 export let CDN_URL = CDN_URL_OPTIONS[environment];
-export const AI_URL = AI_URL_OPTIONS[environment];
+export const STATIC_URL = STATIC_URL_OPTIONS[environment];
 
 export const updateRegionApiUrls = (region: string) => {
   if (region === 'au') {
@@ -572,7 +572,7 @@ export default class FeatheryClient extends IntegrationClient {
       data.field_values = fieldValues;
     }
 
-    const url = `${API_URL}custom_request/`;
+    const url = `${STATIC_URL}custom_request/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
@@ -602,7 +602,7 @@ export default class FeatheryClient extends IntegrationClient {
       extraction_id: extractionId
     };
 
-    this._fetch(`${AI_URL}ai/vision/`, {
+    this._fetch(`${STATIC_URL}ai/vision/`, {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
@@ -620,7 +620,7 @@ export default class FeatheryClient extends IntegrationClient {
 
       const checkCompletion = async () => {
         const response = await this._fetch(
-          `${AI_URL}ai/vision/completion/?fid=${userId}&eid=${extractionId}`,
+          `${STATIC_URL}ai/vision/completion/?fid=${userId}&eid=${extractionId}`,
           { method: 'GET' }
         );
 
