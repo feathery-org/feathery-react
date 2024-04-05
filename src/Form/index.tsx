@@ -1414,24 +1414,28 @@ function Form({
       );
     };
 
-    if (button.properties.captcha_verification && !initState.isTestEnv) {
-      const invalid = await verifyRecaptcha(client);
-      if (invalid) {
-        setButtonError('Submission failed');
-        return;
+    try {
+      if (button.properties.captcha_verification && !initState.isTestEnv) {
+        const invalid = await verifyRecaptcha(client);
+        if (invalid) {
+          setButtonError('Submission failed');
+          return;
+        }
       }
+
+      const running = await runElementActions({
+        actions: button.properties.actions ?? [],
+        element: button,
+        elementType: 'button',
+        submit: button.properties.submit,
+        setElementError: setButtonError,
+        onAsyncEnd: () => clearLoaders()
+      });
+
+      if (!running) clearLoaders();
+    } catch (e: any) {
+      setButtonError(e.toString());
     }
-
-    const running = await runElementActions({
-      actions: button.properties.actions ?? [],
-      element: button,
-      elementType: 'button',
-      submit: button.properties.submit,
-      setElementError: setButtonError,
-      onAsyncEnd: () => clearLoaders()
-    });
-
-    if (!running) clearLoaders();
   };
 
   const runElementActions = async ({
