@@ -95,7 +95,12 @@ export default class FeatheryClient extends IntegrationClient {
     };
 
     return this.offlineRequestHandler.runOrSaveRequest(
-      () => this._fetch(url, options, true, true),
+      // Elevenlabs TODO: add retry logic for run command, short circuit associated complete event if submit fails
+      () =>
+        this._fetch(url, options, true, true, true).catch((e) => {
+          this.stepSubmitFails.add(stepKey);
+          throw e;
+        }),
       url,
       options,
       'submit',
@@ -335,7 +340,7 @@ export default class FeatheryClient extends IntegrationClient {
     const response = await this._fetch(url, options);
     if (!response) return [];
 
-    const session = await response.json().catch((reason) => {
+    const session = await response.json().catch((reason: any) => {
       throw new Error(
         reason + ' ' + userId + ' ' + this.formKey + response.status
       );
@@ -533,7 +538,17 @@ export default class FeatheryClient extends IntegrationClient {
     return this.offlineRequestHandler.runOrSaveRequest(
       // Ensure events complete before user exits page. Submit and load event of
       // next step must happen after the previous step is done submitting
-      () => this.submitQueue.then(() => this._fetch(url, options, true, true)),
+      () =>
+        this.submitQueue.then(() => {
+          if (
+            eventData.event === 'complete' &&
+            this.stepSubmitFails.has(stepKey)
+          )
+            // If step submit failed, do not send associated "complete" event
+            // for step
+            return;
+          return this._fetch(url, options, true, true);
+        }),
       url,
       options,
       'registerEvent',

@@ -1,7 +1,7 @@
 import * as errors from '../error';
 import { fieldValues, initFormsPromise, initInfo } from '../init';
 import { encodeGetParams } from '../primitives';
-import { parseError } from '../error';
+import { parseError, SDKKeyError } from '../error';
 import { API_URL } from '.';
 import { OfflineRequestHandler } from '../offlineRequestHandler';
 
@@ -46,6 +46,8 @@ export default class IntegrationClient {
   bypassCDN: boolean;
   submitQueue: Promise<any>;
   offlineRequestHandler: OfflineRequestHandler;
+  stepSubmitFails: Set<string>;
+
   constructor(
     formKey = '',
     ignoreNetworkErrors?: any,
@@ -58,13 +60,15 @@ export default class IntegrationClient {
     this.bypassCDN = bypassCDN;
     this.submitQueue = Promise.resolve();
     this.offlineRequestHandler = new OfflineRequestHandler(formKey);
+    this.stepSubmitFails = new Set();
   }
 
   _fetch(
     url: any,
     options: any,
     parseResponse = true,
-    propagateNetworkErrors = false
+    propagateNetworkErrors = false,
+    retry = false
   ) {
     const { sdkKey } = initInfo();
     const { headers, ...otherOptions } = options;
@@ -78,20 +82,30 @@ export default class IntegrationClient {
       },
       ...otherOptions
     };
-    return fetch(url, options)
-      .then(async (response) => {
-        if (parseResponse) await checkResponseSuccess(response);
-        return response;
-      })
-      .catch((e) => {
-        // Ignore TypeErrors if form has redirected because `fetch` in
-        // Safari will error after redirect
-        const ignore =
-          this.ignoreNetworkErrors?.current ||
-          TYPE_MESSAGES_TO_IGNORE.includes(e.message);
-        if (ignore && !propagateNetworkErrors && e instanceof TypeError) return;
-        throw e;
-      });
+    const run = (recurse: boolean): Promise<any> => {
+      return fetch(url, options)
+        .then(async (response) => {
+          if (parseResponse) await checkResponseSuccess(response);
+          return response;
+        })
+        .catch((e) => {
+          if (recurse && retry && !(e instanceof SDKKeyError)) {
+            return new Promise((resolve) => setTimeout(resolve, 500)).then(() =>
+              run(false)
+            );
+          }
+          // Ignore TypeErrors if form has redirected because `fetch` in
+          // Safari will error after redirect
+          const ignore =
+            this.ignoreNetworkErrors?.current ||
+            TYPE_MESSAGES_TO_IGNORE.includes(e.message);
+          if (ignore && !propagateNetworkErrors && e instanceof TypeError)
+            return;
+          throw e;
+        });
+    };
+
+    return run(true);
   }
 
   async fetchPlaidLinkToken(includeLiabilities: boolean) {
