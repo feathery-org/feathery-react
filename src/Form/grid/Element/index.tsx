@@ -666,16 +666,11 @@ const Element = ({ node: el, form }: any) => {
         return (
           <Elements.TextField
             {...fieldProps}
-            onAccept={(val: any, mask: any) => {
-              const newVal = mask._unmaskedValue === '' ? '' : val;
-              if (newVal === stringifyWithNull(fieldVal)) return;
-              // Rerender only necessary if autocomplete dropdown needs
-              // to be updated
-              const rerender = (servar.metadata.options ?? []).length > 0;
-              const change = changeValue(newVal, el, index, rerender, false);
+            onChange={(val: string) => {
+              const change = changeValue(val, el, index, false, false);
               if (change) {
                 const submitData =
-                  autosubmit && textFieldShouldSubmit(servar, newVal);
+                  autosubmit && textFieldShouldSubmit(servar, val);
                 debouncedOnChange({ submitData });
               }
             }}
