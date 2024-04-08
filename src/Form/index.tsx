@@ -1431,6 +1431,7 @@ function Form({
       if (!running) clearLoaders();
     } catch (e: any) {
       if (e) setButtonError(e.toString());
+      else clearLoaders();
     }
   };
 
