@@ -242,7 +242,8 @@ function Form({
   children,
   _draft = false
 }: InternalProps & Props) {
-  const [client, setClient] = useState<any>(null);
+  const clientRef = useRef<any>();
+  const client = clientRef.current;
   const history = useHistory();
   const session = initState.formSessions[formName];
 
@@ -905,127 +906,122 @@ function Form({
   );
 
   useEffect(() => {
-    if (client === null) {
-      const clientInstance = new FeatheryClient(
-        formName,
-        hasRedirected,
-        _draft,
-        _bypassCDN
-      );
-      setClient(clientInstance);
-      let saveUrlParamsFormSetting = false;
-      // render form without values first for speed
-      const formPromise = clientInstance
-        .fetchForm(initialValues, language)
-        .then(async (data) => {
-          await updateCustomHead(data.custom_head ?? '');
-          return data;
-        })
-        .then(({ steps, ...res }) => {
-          steps = steps.reduce((result: any, step: any) => {
-            result[step.key] = step;
-            return result;
-          }, {});
-          setSteps(steps);
-          if (res.completion_behavior === 'redirect' && res.redirect_url)
-            initState.redirectCallbacks[_internalId] = () => {
-              featheryWindow().location.href = replaceTextVariables(
-                res.redirect_url,
-                0
-              );
-            };
-          if (res.save_url_params) saveUrlParamsFormSetting = true;
-          setFormSettings(mapFormSettingsResponse(res));
-          formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
-          setLogicRules(res.logic_rules);
-          trackHashes.current = res.track_hashes;
+    if (clientRef.current) return;
 
-          // Add any logic_rule.elements to viewElements so that onView called for then too.
-          // Make sure there are no duplicate entries.
-          if (res.logic_rules) {
-            const newViewElements: string[] = [...viewElements];
-            res.logic_rules.forEach((logicRule: LogicRule) => {
-              if (logicRule.trigger_event === 'view') {
-                logicRule.elements.forEach((elementId: any) => {
-                  if (!newViewElements.includes(elementId)) {
-                    newViewElements.push(elementId);
-                  }
-                });
-              }
-            });
-            setViewElements(newViewElements);
-          }
+    clientRef.current = new FeatheryClient(
+      formName,
+      hasRedirected,
+      _draft,
+      _bypassCDN
+    );
+    const newClient = clientRef.current;
+    let saveUrlParamsFormSetting = false;
+    // render form without values first for speed
+    const formPromise = newClient
+      .fetchForm(initialValues, language)
+      .then(async (data: any) => {
+        await updateCustomHead(data.custom_head ?? '');
+        return data;
+      })
+      .then(({ steps, ...res }: any) => {
+        steps = steps.reduce((result: any, step: any) => {
+          result[step.key] = step;
+          return result;
+        }, {});
+        setSteps(steps);
+        if (res.completion_behavior === 'redirect' && res.redirect_url)
+          initState.redirectCallbacks[_internalId] = () => {
+            featheryWindow().location.href = replaceTextVariables(
+              res.redirect_url,
+              0
+            );
+          };
+        if (res.save_url_params) saveUrlParamsFormSetting = true;
+        setFormSettings(mapFormSettingsResponse(res));
+        formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
+        setLogicRules(res.logic_rules);
+        trackHashes.current = res.track_hashes;
 
-          if (res.connector_fields) {
-            setConnectorFields(res.connector_fields);
-          }
-
-          if (res.production) installRecaptcha(steps);
-          return steps;
-        });
-      // fetch values separately because this request
-      // goes to Feathery origin, while the previous
-      // request goes to our CDN
-      clientInstance
-        // @ts-expect-error TS(2345): Argument of type 'Promise<any[]>' is not assignabl... Remove this comment to see the full error message
-        .fetchSession(formPromise, true)
-        .then(([session, steps]) => {
-          if (!session || session.collaborator?.invalid) {
-            formOffReason.current = CLOSED;
-            return;
-          } else if (session.collaborator?.completed) {
-            formOffReason.current = COLLAB_COMPLETED;
-            return;
-          }
-
-          if (!session.track_location && trackHashes.current) {
-            // Clear URL hash on new session if not tracking location
-            history.replace(location.pathname + location.search);
-          }
-          updateBackNavMap(session.back_nav_map);
-          setIntegrations(session.integrations);
-
-          setFieldKeys(session.servars);
-          setHiddenFieldKeys(session.hidden_fields);
-          setAllowLists([
-            session.collaborator?.whitelist,
-            session.collaborator?.blacklist
-          ]);
-
-          saveInitialValuesAndUrlParams({
-            updateFieldValues,
-            client: clientInstance,
-            saveUrlParams: saveUrlParams || saveUrlParamsFormSetting,
-            initialValues,
-            steps
+        // Add any logic_rule.elements to viewElements so that onView called for then too.
+        // Make sure there are no duplicate entries.
+        if (res.logic_rules) {
+          const newViewElements: string[] = [...viewElements];
+          res.logic_rules.forEach((logicRule: LogicRule) => {
+            if (logicRule.trigger_event === 'view') {
+              logicRule.elements.forEach((elementId: any) => {
+                if (!newViewElements.includes(elementId)) {
+                  newViewElements.push(elementId);
+                }
+              });
+            }
           });
+          setViewElements(newViewElements);
+        }
 
-          // User is authenticating. auth hook will set the initial stepKey once auth has finished
-          if (
-            authState.redirectAfterLogin ||
-            authState.hasRedirected ||
-            stepKey
-          )
-            return;
+        if (res.connector_fields) {
+          setConnectorFields(res.connector_fields);
+        }
 
-          const newKey = getInitialStep({
-            initialStepId,
-            steps,
-            sessionCurrentStep: session.current_step_key
-          });
-          if (trackHashes.current) setUrlStepHash(history, steps, newKey);
-          setStepKey(newKey);
-        })
-        .catch(async (error) => {
-          console.warn(error);
-          // Go to first step if origin fails
-          const [data] = await formPromise;
-          const newKey = (getOrigin as any)(data).key;
-          if (trackHashes.current) setUrlStepHash(history, steps, newKey);
-          else setStepKey(newKey);
+        if (res.production) installRecaptcha(steps);
+        return steps;
+      });
+    // fetch values separately because this request
+    // goes to Feathery origin, while the previous
+    // request goes to our CDN
+    newClient
+      .fetchSession(formPromise, true)
+      .then(([session, steps]: any) => {
+        if (!session || session.collaborator?.invalid) {
+          formOffReason.current = CLOSED;
+          return;
+        } else if (session.collaborator?.completed) {
+          formOffReason.current = COLLAB_COMPLETED;
+          return;
+        }
+
+        if (!session.track_location && trackHashes.current) {
+          // Clear URL hash on new session if not tracking location
+          history.replace(location.pathname + location.search);
+        }
+        updateBackNavMap(session.back_nav_map);
+        setIntegrations(session.integrations);
+
+        setFieldKeys(session.servars);
+        setHiddenFieldKeys(session.hidden_fields);
+        setAllowLists([
+          session.collaborator?.whitelist,
+          session.collaborator?.blacklist
+        ]);
+
+        saveInitialValuesAndUrlParams({
+          updateFieldValues,
+          client: newClient,
+          saveUrlParams: saveUrlParams || saveUrlParamsFormSetting,
+          initialValues,
+          steps
         });
-    }
-  }, [client, activeStep, setClient, setSteps, updateFieldValues]);
+
+        // User is authenticating. auth hook will set the initial stepKey once auth has finished
+        if (authState.redirectAfterLogin || authState.hasRedirected || stepKey)
+          return;
+
+        const newKey = getInitialStep({
+          initialStepId,
+          steps,
+          sessionCurrentStep: session.current_step_key
+        });
+        if (trackHashes.current) setUrlStepHash(history, steps, newKey);
+        setStepKey(newKey);
+      })
+      .catch(async (error: any) => {
+        console.warn(error);
+        // Go to first step if origin fails
+        const [data] = await formPromise;
+        const newKey = (getOrigin as any)(data).key;
+        if (trackHashes.current) setUrlStepHash(history, steps, newKey);
+        else setStepKey(newKey);
+      });
+  }, [activeStep, setSteps, updateFieldValues]);
 
   useOfflineRequestHandler(client);
 
@@ -1168,11 +1164,11 @@ function Form({
     }
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
-      let newVal = (val as any).value;
+      let newVal = val.value as any;
       newVal = Array.isArray(newVal)
         ? newVal.filter((v) => ![null, undefined].includes(v))
         : newVal;
-      return { key, [(val as any).type]: newVal };
+      return { key, [val.type]: newVal };
     });
 
     const stepPromise = client.submitStep(featheryFields, activeStep, hasNext);

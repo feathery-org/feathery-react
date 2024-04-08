@@ -217,33 +217,32 @@ export default class Field {
   // field placeholder text
   get placeholder(): string {
     const field = this._getSourceField();
+    if (!field) return '';
     const context = internalState[this._formUuid];
 
-    return new Proxy(field.servar.metadata.repeat_placeholder, {
-      set: (target: string[] | string, idx: any, newVal: any) => {
-        if (target === undefined) return false;
+    const defaultPlaceholder = field.properties.placeholder;
+    if (!field.servar.repeated) return defaultPlaceholder;
 
-        const size = Math.max(
-          field.servar.metadata.repeat_placeholder.length,
-          parseInt(idx)
-        );
-        const newArray = Array(size).fill('');
+    const fieldVal = (fieldValues[this._fieldKey] ?? []) as any[];
+    const fieldValuesLength = fieldVal.length;
 
-        field.servar.metadata.repeat_placeholder.map((v: string, i: number) => {
-          newArray[i] = v;
-        });
+    const repeatPlaceholders: string[] =
+      Array(fieldValuesLength).fill(defaultPlaceholder);
+    (field.properties.repeat_placeholder ?? []).forEach(
+      (placeholder: any, index: number) => {
+        if (typeof placeholder === 'string')
+          repeatPlaceholders[index] = placeholder;
+      }
+    );
 
-        newArray[parseInt(idx)] = newVal;
-        target = newArray;
+    return new Proxy(repeatPlaceholders, {
+      set: (target: any, idx: any, newVal: string) => {
+        target[idx] = newVal;
         context.updateFieldProperties(this._fieldKey, {
-          placeholder: newArray
+          repeat_placeholder: target
         });
 
         return true;
-      },
-
-      get: (target: string[] | typeof Proxy) => {
-        return target;
       }
     });
   }
@@ -254,7 +253,8 @@ export default class Field {
 
     if (!field) return;
 
-    context.updateFieldProperties(this._fieldKey, { placeholder: val });
+    const key = Array.isArray(val) ? 'repeat_placeholder' : 'placeholder';
+    context.updateFieldProperties(this._fieldKey, { [key]: val });
   }
 
   // is the field disabled

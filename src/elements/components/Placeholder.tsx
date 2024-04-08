@@ -9,9 +9,10 @@ export default function Placeholder({
   rightToLeft = false,
   repeatIndex = null
 }: any) {
-  const placeholder = Array.isArray(element.properties.placeholder)
-    ? element.properties.placeholder[repeatIndex]
-    : element.properties.placeholder;
+  const props = element.properties;
+  const repeatPlaceholders = props.repeat_placeholder ?? [];
+  const placeholder =
+    repeatPlaceholders[repeatIndex ?? 0] ?? (props.placeholder || '');
 
   const focusedStyles = {
     ...responsiveStyles.getTarget('placeholderFocus'),
@@ -31,7 +32,7 @@ export default function Placeholder({
         [`${type}:focus ~ &`]: focusedStyles
       }}
     >
-      {placeholder || ''}
+      {placeholder}
     </span>
   );
 }

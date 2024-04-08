@@ -376,13 +376,7 @@ export function updateStepFieldProperties(
 ) {
   step.servar_fields.forEach((field: any, i: number) => {
     const servar = field.servar;
-    if (servar.key === fieldKey) {
-      if (Array.isArray(newProperties.placeholder)) {
-        servar.metadata.repeat_placeholder = newProperties.placeholder;
-      }
-
-      Object.assign(field.properties, newProperties);
-    }
+    if (servar.key === fieldKey) Object.assign(field.properties, newProperties);
   });
 }
 
