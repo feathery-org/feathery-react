@@ -1430,7 +1430,7 @@ function Form({
 
       if (!running) clearLoaders();
     } catch (e: any) {
-      setButtonError(e.toString());
+      if (e) setButtonError(e.toString());
     }
   };
 
