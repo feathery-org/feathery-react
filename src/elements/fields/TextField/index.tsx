@@ -191,12 +191,14 @@ function TextField({
   autoComplete,
   editMode,
   rightToLeft,
-  onAccept = () => {},
+  onChange = () => {},
   onEnter = () => {},
   setRef = () => {},
   inlineError,
+  repeatIndex = null,
   children
 }: any) {
+  const [, setRender] = useState(false);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [showPassword, setShowPassword] = useState(true);
   const { borderStyles, customBorder, borderId } = useBorder({
@@ -245,7 +247,7 @@ function TextField({
           value={rawValue}
           showOptions={showAutocomplete}
           onSelect={(option) => {
-            onAccept(option, {});
+            onChange(option);
             setShowAutocomplete(false);
           }}
           responsiveStyles={responsiveStyles}
@@ -297,7 +299,16 @@ function TextField({
             inputRef={setRef}
             {...getInputProps(servar, options, autoComplete, showPassword)}
             {...getMaskProps(servar, rawValue, showPassword)}
-            onAccept={onAccept}
+            onAccept={(val: any, mask: any) => {
+              const newVal = mask._unmaskedValue === '' ? '' : val;
+              if (newVal === rawValue) return;
+
+              const empty = !newVal || !rawValue;
+              if (empty || (servar.metadata.options ?? []).length > 0) {
+                setRender((render) => !render);
+              }
+              onChange(newVal);
+            }}
           />
         </TextAutocomplete>
         {servar.type === 'ssn' && rawValue && (
@@ -324,6 +335,7 @@ function TextField({
           value={rawValue}
           element={element}
           responsiveStyles={responsiveStyles}
+          repeatIndex={repeatIndex}
         />
         <InlineTooltip
           id={element.id}

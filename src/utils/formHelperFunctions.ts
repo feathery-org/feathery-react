@@ -374,7 +374,7 @@ export function updateStepFieldProperties(
   fieldKey: string,
   newProperties: Record<string, any>
 ) {
-  step.servar_fields.forEach((field: any) => {
+  step.servar_fields.forEach((field: any, i: number) => {
     const servar = field.servar;
     if (servar.key === fieldKey) Object.assign(field.properties, newProperties);
   });

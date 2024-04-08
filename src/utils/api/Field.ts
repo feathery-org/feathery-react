@@ -217,12 +217,44 @@ export default class Field {
   // field placeholder text
   get placeholder(): string {
     const field = this._getSourceField();
-    return field ? field.properties.placeholder : '';
+    if (!field) return '';
+    const context = internalState[this._formUuid];
+
+    const defaultPlaceholder = field.properties.placeholder;
+    if (!field.servar.repeated) return defaultPlaceholder;
+
+    const fieldVal = (fieldValues[this._fieldKey] ?? []) as any[];
+    const fieldValuesLength = fieldVal.length;
+
+    const repeatPlaceholders: string[] =
+      Array(fieldValuesLength).fill(defaultPlaceholder);
+    (field.properties.repeat_placeholder ?? []).forEach(
+      (placeholder: any, index: number) => {
+        if (typeof placeholder === 'string')
+          repeatPlaceholders[index] = placeholder;
+      }
+    );
+
+    return new Proxy(repeatPlaceholders, {
+      set: (target: any, idx: any, newVal: string) => {
+        target[idx] = newVal;
+        context.updateFieldProperties(this._fieldKey, {
+          repeat_placeholder: target
+        });
+
+        return true;
+      }
+    });
   }
 
-  set placeholder(val: string) {
+  set placeholder(val: string | string[]) {
+    const field = this._getSourceField();
     const context = internalState[this._formUuid];
-    context.updateFieldProperties(this._fieldKey, { placeholder: val });
+
+    if (!field) return;
+
+    const key = Array.isArray(val) ? 'repeat_placeholder' : 'placeholder';
+    context.updateFieldProperties(this._fieldKey, { [key]: val });
   }
 
   // is the field disabled

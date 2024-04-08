@@ -6,8 +6,14 @@ export default function Placeholder({
   responsiveStyles,
   type = 'input',
   inputFocused = false,
-  rightToLeft = false
+  rightToLeft = false,
+  repeatIndex = null
 }: any) {
+  const props = element.properties;
+  const repeatPlaceholders = props.repeat_placeholder ?? [];
+  const placeholder =
+    repeatPlaceholders[repeatIndex ?? 0] ?? (props.placeholder || '');
+
   const focusedStyles = {
     ...responsiveStyles.getTarget('placeholderFocus'),
     ...responsiveStyles.getTarget('placeholderActive')
@@ -26,7 +32,7 @@ export default function Placeholder({
         [`${type}:focus ~ &`]: focusedStyles
       }}
     >
-      {element.properties.placeholder || ''}
+      {placeholder}
     </span>
   );
 }
