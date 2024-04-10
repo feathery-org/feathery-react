@@ -27,7 +27,7 @@ import pt from './pt';
 import ro from './ro';
 import ru from './ru';
 import th from './th';
-import us from './us';
+import us, { onlyStates } from './us';
 import za from './za';
 import React from 'react';
 
@@ -78,8 +78,14 @@ export function hasState(
   return stateVals.includes(state);
 }
 
-export function getStateOptions(country: string, shortcode: boolean) {
-  return (stateMap[country] ?? []).map(({ name, code }) => (
+export function getStateOptions(
+  country: string,
+  shortcode: boolean,
+  territories: boolean
+) {
+  let stateOptions = stateMap[country] ?? [];
+  if (country === 'us' && !territories) stateOptions = onlyStates;
+  return stateOptions.map(({ name, code }) => (
     <option key={code} value={shortcode ? code : name}>
       {name}
     </option>

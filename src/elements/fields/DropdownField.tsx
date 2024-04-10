@@ -57,7 +57,12 @@ export default function DropdownField({
           {fieldVal}
         </option>
       ];
-    } else options = getStateOptions(curCountry, short);
+    } else
+      options = getStateOptions(
+        curCountry,
+        short,
+        servar.metadata.include_territories
+      );
   } else if (servar.type === 'gmap_country') {
     options = countryData.map(({ countryCode, countryName }) => {
       const val = servar.metadata.store_abbreviation
