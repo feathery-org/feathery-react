@@ -83,9 +83,7 @@ function TextArea({
               : { color: 'transparent !important' })
           }}
           aria-label={element.properties.aria_label}
-          maxLength={
-            servar.max_length ? Math.min(servar.max_length, 4096) : 4096
-          }
+          maxLength={servar.max_length || 4096}
           minLength={servar.min_length}
           required={required}
           onChange={onChange}
