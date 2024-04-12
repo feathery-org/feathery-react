@@ -67,6 +67,15 @@ export default function DropdownMultiField({
   });
   const [focused, setFocused] = useState(false);
 
+  const addFieldValOptions = (options: string[]) => {
+    const newOptions = [...options];
+    if (fieldVal)
+      fieldVal.forEach((val: string) => {
+        if (!newOptions.includes(val)) newOptions.push(val);
+      });
+    return newOptions;
+  };
+
   const servar = element.servar;
   const labels = servar.metadata.option_labels;
   const labelMap: Record<string, string> = {};
@@ -77,7 +86,7 @@ export default function DropdownMultiField({
     servar.metadata.repeat_options[repeatIndex] !== undefined
   ) {
     const repeatOptions = servar.metadata.repeat_options[repeatIndex];
-    options = [...repeatOptions, ...fieldVal].map((option: any) => {
+    options = addFieldValOptions(repeatOptions).map((option: any) => {
       const value = option.value ?? option;
       const label = option.label ?? option;
       labelMap[value] = label;
@@ -86,7 +95,7 @@ export default function DropdownMultiField({
       return { value: value, label, tooltip };
     });
   } else {
-    options = [...servar.metadata.options, ...fieldVal].map(
+    options = addFieldValOptions(servar.metadata.options).map(
       (option: any, index: number) => {
         const label = labels && labels[index] ? labels[index] : option;
         labelMap[option] = label;
