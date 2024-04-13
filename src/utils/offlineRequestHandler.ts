@@ -172,8 +172,8 @@ export class OfflineRequestHandler {
           }
         };
       } catch (error) {
-        console.error('Error opening IndexedDB database:', error);
-        reject(error);
+        console.warn('Error opening IndexedDB database:', error);
+        resolve(undefined);
       }
     });
   }
