@@ -266,7 +266,7 @@ export function getDefaultFieldValue(field: any) {
     return meta.default_value;
   }
   if (servar.type === 'date_selector' && meta.default_date_today)
-    return formatDateString(new Date(), meta.choose_time);
+    return formatDateString(new Date(), meta);
 
   const matrixVal: Record<string, any> = {};
   let country: string;
