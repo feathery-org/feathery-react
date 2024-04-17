@@ -7,7 +7,7 @@ const keyframes = {
   },
   '@keyframes feathery-spinner-arc': {
     from: { 'stroke-dasharray': '0 150', 'stroke-dashoffset': 0 },
-    to: { 'stroke-dasharray': '100 150', 'stroke-dashoffset': -140 }
+    to: { 'stroke-dasharray': '250 150', 'stroke-dashoffset': -140 }
   }
 };
 
@@ -55,14 +55,9 @@ function FeatherySpinner() {
       <circle
         style={{
           fill: 'none',
-          stroke: lineColor,
+          stroke: ringColor,
           strokeWidth: ringSize,
-          opacity: lineAlpha,
-          strokeLinecap: 'round',
-          transformOrigin: '50% 50%',
-          transform: 'rotate3d(0, 0, 1, 0deg)',
-          animation:
-            '2156ms feathery-spinner-arc ease-in-out infinite, 1829ms feathery-spinner-rotate linear infinite'
+          opacity: ringAlpha
         }}
         cx='25'
         cy='25'
@@ -71,9 +66,14 @@ function FeatherySpinner() {
       <circle
         style={{
           fill: 'none',
-          stroke: ringColor,
+          stroke: lineColor,
           strokeWidth: ringSize,
-          opacity: ringAlpha
+          opacity: lineAlpha,
+          strokeLinecap: 'round',
+          transformOrigin: '50% 50%',
+          transform: 'rotate3d(0, 0, 1, 0deg)',
+          animation:
+            '2156ms feathery-spinner-arc ease-in-out infinite, 1829ms feathery-spinner-rotate linear infinite'
         }}
         cx='25'
         cy='25'
