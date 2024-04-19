@@ -201,6 +201,7 @@ const validators = {
     try {
       const urlObj = new URL(a);
       if (!urlObj) return false;
+      if (urlObj.hostname.includes('_')) return false;
       const parts = urlObj.hostname.split('.');
       if (parts.some((part) => !part)) return false;
       return parts.length > 1;
