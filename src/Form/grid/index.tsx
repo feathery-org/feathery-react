@@ -90,14 +90,11 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
     if (props.embed_calendly && form.calendly?.api_key) {
       let url = form.calendly.api_key;
       if (!url.endsWith('/')) url += '/';
-      const prefillParams = transformCalendlyParams(form.calendly.prefill_info);
-      if (prefillParams) url += '?' + prefillParams;
-      const customParams = transformCalendlyParams(
-        form.calendly.custom_questions
-      );
-      if (customParams) {
-        if (prefillParams) url += '&' + customParams;
-        else url += '?' + customParams;
+
+      const params = transformCalendlyParams(form.calendly);
+      if (params) {
+        if (url.includes('?')) url += url.includes('?') ? '&' : '?';
+        url += params;
       }
 
       children.push(
