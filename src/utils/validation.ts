@@ -184,7 +184,8 @@ const validators = {
     const parts = a.split('@');
     if (parts.length !== 2) return false;
     // Email handle cannot end with '.'
-    if (parts[0].endsWith('.')) return false;
+    const part = parts[0];
+    if (part.endsWith('.') || part.startsWith('.')) return false;
 
     return emailPattern.test(a);
   },
