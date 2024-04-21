@@ -1,8 +1,10 @@
 import { fieldValues } from '../utils/init';
 import { encodeGetParams } from '../utils/primitives';
 
-export function transformCalendlyParams(params: any) {
-  if (!params) return '';
+export function transformCalendlyParams(config: any) {
+  if (!config) return '';
+
+  const params = { ...config.prefill_info, ...config.custom_questions };
   const newParams = Object.entries(params)
     .map(([cKey, { key }]: any[]) => [cKey, fieldValues[key]])
     .reduce((cur, [cKey, val]) => {

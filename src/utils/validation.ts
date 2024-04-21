@@ -5,6 +5,8 @@ import React from 'react';
 import { fieldValues, initInfo } from './init';
 import { getVisibleElements } from './hideAndRepeats';
 import { Trigger } from '../types/Form';
+// @ts-ignore
+import isUrl from 'is-url';
 
 export interface ResolvedCustomValidation {
   message: string;
@@ -182,7 +184,8 @@ const validators = {
     const parts = a.split('@');
     if (parts.length !== 2) return false;
     // Email handle cannot end with '.'
-    if (parts[0].endsWith('.')) return false;
+    const part = parts[0];
+    if (part.endsWith('.') || part.startsWith('.')) return false;
 
     return emailPattern.test(a);
   },
@@ -195,11 +198,11 @@ const validators = {
     }
   },
   url: (a: string) => {
+    if (!isUrl(a)) return false;
     try {
       const urlObj = new URL(a);
       if (!urlObj) return false;
-      // Catch whitespace in hostname
-      if (urlObj.hostname.includes('%20')) return false;
+      if (urlObj.hostname.includes('_')) return false;
       const parts = urlObj.hostname.split('.');
       if (parts.some((part) => !part)) return false;
       return parts.length > 1;

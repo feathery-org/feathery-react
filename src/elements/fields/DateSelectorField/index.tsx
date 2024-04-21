@@ -11,12 +11,35 @@ import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';
 import { hoverStylesGuard } from '../../../utils/browser';
 
-export function formatDateString(date: any, chooseTime: boolean) {
+export function formatDateString(date: any, meta: Record<string, any>) {
   if (!date) return '';
+
+  const chooseTime: boolean = meta.choose_time;
+  const minTime: string | undefined = meta.min_time;
+  const maxTime: string | undefined = meta.max_time;
 
   // If simply a date, then not in UTC.
   // If it is a date time, then it is in UTC with the 'Z' at the end.
   if (chooseTime) {
+    if (minTime) {
+      const [minHour, minMinute] = parseTimeThreshold(minTime);
+      let localHour = date.getHours();
+      if (localHour < minHour) date.setHours(minHour);
+      localHour = date.getHours();
+      const localMinute = date.getMinutes();
+      if (localHour === minHour && localMinute < minMinute)
+        date.setMinutes(minMinute);
+    }
+    if (maxTime) {
+      const [maxHour, maxMinute] = parseTimeThreshold(maxTime);
+      let localHour = date.getHours();
+      if (localHour > maxHour) date.setHours(maxHour);
+      localHour = date.getHours();
+      const localMinute = date.getMinutes();
+      if (localHour === maxHour && localMinute > maxMinute)
+        date.setMinutes(maxMinute);
+    }
+
     const day = date.getUTCDate().toString().padStart(2, '0');
     const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
     const year = date.getUTCFullYear();
@@ -101,7 +124,7 @@ function DateSelectorField({
   const onDateChange = (newDate: any) => {
     newDate = newDate ?? '';
     setInternalDate(newDate);
-    onChange(formatDateString(newDate, servarMeta.choose_time));
+    onChange(formatDateString(newDate, servarMeta));
   };
 
   const { borderStyles, customBorder } = useBorder({

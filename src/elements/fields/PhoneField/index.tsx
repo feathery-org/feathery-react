@@ -157,6 +157,15 @@ function PhoneField({
   }, [triggerOnChange]);
 
   const triggerChange = () => setTriggerOnChange((prev) => !prev);
+  const countriesEnabled = !servar.metadata.disable_other_countries;
+  const enabledCountryStyles = countriesEnabled
+    ? {
+        cursor: 'pointer',
+        '&:hover': hoverStylesGuard({
+          backgroundColor: '#e6e6e633'
+        })
+      }
+    : {};
 
   return (
     <div
@@ -197,18 +206,18 @@ function PhoneField({
         {customBorder}
         <div
           css={{
-            cursor: 'pointer',
             transition: '0.2s ease all',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: '0 6px',
             position: 'relative',
+            cursor: 'default',
             ...responsiveStyles.getTarget('fieldToggle'),
-            '&:hover': hoverStylesGuard({ backgroundColor: '#e6e6e633' })
+            ...enabledCountryStyles
           }}
           ref={triggerRef}
-          onClick={() => setShow(!show)}
+          onClick={() => countriesEnabled && setShow(!show)}
         >
           {countryMap[curCountryCode].flag}
         </div>
