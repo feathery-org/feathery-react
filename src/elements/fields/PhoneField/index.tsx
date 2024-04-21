@@ -313,9 +313,11 @@ function PhoneField({
               const newNum = e.target.value;
               if (newNum) {
                 const LPN = global.libphonenumber;
+                const spacesStrippedNum = newNum.replace(/\s/g, '');
+
                 if (!LPN) return;
                 // Don't let user delete the country code
-                else if (!newNum.startsWith(`+${phoneCode}`)) return;
+                else if (!spacesStrippedNum.startsWith(`+${phoneCode}`)) return;
                 // Prevent US phone numbers from starting with a 1
                 else if (newNum.startsWith('+11')) return;
 
