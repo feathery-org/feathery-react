@@ -93,7 +93,7 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
 
       const params = transformCalendlyParams(form.calendly);
       if (params) {
-        if (url.includes('?')) url += url.includes('?') ? '&' : '?';
+        url += url.includes('?') ? '&' : '?';
         url += params;
       }
 
