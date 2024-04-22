@@ -19,6 +19,7 @@ const LOWERCASE_LETTER_MATCH = /[a-z]/;
 const NUMBER_MATCH = /\d/;
 // eslint-disable-next-line no-useless-escape
 const SYMBOL_MATCH = /[#$\.%&'()\+,-/:;<=>!?@\\\[\]\^_`{|}~\*]/;
+const DOMAIN_ALLOWED_CHARACTERS = /^[a-zA-Z0-9.\\-]+$/;
 
 /**
  * Validate elements on a form
@@ -202,8 +203,9 @@ const validators = {
     try {
       const urlObj = new URL(a);
       if (!urlObj) return false;
-      if (urlObj.hostname.includes('_')) return false;
-      const parts = urlObj.hostname.split('.');
+      const hostname = urlObj.hostname;
+      if (!DOMAIN_ALLOWED_CHARACTERS.test(hostname)) return false;
+      const parts = hostname.split('.');
       if (parts.some((part) => !part)) return false;
       return parts.length > 1;
     } catch (e) {
