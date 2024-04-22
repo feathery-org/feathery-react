@@ -85,6 +85,11 @@ function PhoneField({
     error: inlineError
   });
 
+  const resetToPhoneCode = (code: string) => {
+    const delta = code.length > 3 ? 2 : 1;
+    setCursor(code.length + delta);
+  };
+
   useEffect(() => {
     const input = inputRef.current;
     if (input && cursor !== null) input.setSelectionRange(cursor, cursor);
@@ -237,7 +242,7 @@ function PhoneField({
                 itemOnClick={(countryCode: string, phoneCode: string) => {
                   setCurCountryCode(countryCode);
                   setRawNumber(phoneCode);
-                  setCursor(phoneCode.length + 1);
+                  resetToPhoneCode(phoneCode);
                   setShow(false);
                   triggerChange();
                   inputRef.current.focus();
@@ -291,7 +296,7 @@ function PhoneField({
               setRawNumber((prevNum) => {
                 // We only want to set the country code if the field is empty
                 if (prevNum === '') {
-                  setCursor(phoneCode.length + 1);
+                  resetToPhoneCode(phoneCode);
                   return phoneCode;
                 }
                 return prevNum;
@@ -319,9 +324,12 @@ function PhoneField({
             }}
             onChange={(e) => {
               let start = e.target.selectionStart;
-              const newNum = e.target.value;
+              let newNum = e.target.value;
               if (newNum) {
                 const LPN = global.libphonenumber;
+                // Phone codes with >3 characters will have a whitespace
+                newNum = newNum.replace(/\s/g, '');
+
                 if (!LPN) return;
                 // Don't let user delete the country code
                 else if (!newNum.startsWith(`+${phoneCode}`)) return;
@@ -356,7 +364,8 @@ function PhoneField({
                 onChange(onlyDigits);
               } else {
                 setRawNumber(phoneCode);
-                start = phoneCode.length + 1;
+                const delta = phoneCode.length > 3 ? 2 : 1;
+                start = phoneCode.length + delta;
               }
 
               setCursor(start);
