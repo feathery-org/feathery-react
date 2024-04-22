@@ -72,6 +72,7 @@ function getTextFieldMask(servar: any) {
 
 function getMaskProps(servar: any, value: any, showPassword: boolean) {
   let maskProps;
+  // Max length included in mask for validation of typed inputs
   let maxLength = servar.max_length ?? maxFieldLength(servar.type);
   switch (servar.type) {
     case 'integer_field':
@@ -134,6 +135,10 @@ function getInputProps(
   const constraints: Record<string, any> = {
     minLength: servar.min_length
   };
+  // Max length included here for validation of programmatically set
+  // inputs
+  const maxLength = servar.max_length ?? maxFieldLength(servar.type);
+
   if (options.length > 0) constraints.autoComplete = 'off';
 
   const meta = servar.metadata;
@@ -147,6 +152,7 @@ function getInputProps(
       return {
         type: 'email',
         pattern: emailPatternStr,
+        maxLength,
         ...constraints
       };
     case 'gmap_zip':
@@ -154,6 +160,8 @@ function getInputProps(
         constraints.autoComplete = 'postal-code';
       }
       return {
+        ...constraints,
+        maxLength,
         inputMode: (meta.allowed_characters === 'digits'
           ? 'numeric'
           : 'text') as any
@@ -161,6 +169,7 @@ function getInputProps(
     case 'url':
       if (autoComplete && !constraints.autoComplete) {
         constraints.autoComplete = 'url';
+        constraints.maxLength = maxLength;
       }
       return constraints;
     case 'ssn':
@@ -170,6 +179,7 @@ function getInputProps(
         ...constraints
       };
     default:
+      constraints.maxLength = maxLength;
       if (meta.custom_autocomplete && !constraints.autoComplete)
         constraints.autoComplete = meta.custom_autocomplete;
       if (meta.number_keypad || meta.allowed_characters === 'digits') {
