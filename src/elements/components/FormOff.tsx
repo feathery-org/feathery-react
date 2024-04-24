@@ -5,17 +5,20 @@ import { openTab } from '../../utils/browser';
 export const FILLED_OUT = 'filled_out';
 export const CLOSED = 'closed';
 export const COLLAB_COMPLETED = 'collab_completed';
+export const NO_BUSINESS_EMAIL = 'no_business_email';
+const messages: any = {
+  [FILLED_OUT]: 'You have successfully filled out the form.',
+  [CLOSED]: "This form isn't currently collecting responses.",
+  [COLLAB_COMPLETED]: 'Your collaboration group has completed this form.',
+  [NO_BUSINESS_EMAIL]:
+    'Activate your form by inviting a verified business email to your Feathery account'
+};
 
 export default function FormOff({
   width = 400,
   reason = CLOSED,
   showCTA = true
 }) {
-  const messages: any = {
-    [FILLED_OUT]: 'You have successfully filled out the form.',
-    [CLOSED]: "This form isn't currently collecting responses.",
-    [COLLAB_COMPLETED]: 'Your collaboration group has completed this form.'
-  };
   return (
     <div
       css={{
