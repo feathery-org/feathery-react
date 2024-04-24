@@ -86,7 +86,8 @@ import { featheryWindow, openTab, runningInClient } from '../utils/browser';
 import FormOff, {
   CLOSED,
   COLLAB_COMPLETED,
-  FILLED_OUT
+  FILLED_OUT,
+  NO_BUSINESS_EMAIL
 } from '../elements/components/FormOff';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
@@ -971,11 +972,14 @@ function Form({
     newClient
       .fetchSession(formPromise, true)
       .then(([session, steps]: any) => {
-        if (!session || session.collaborator?.invalid) {
+        if (!session || session.collaborator?.invalid)
           formOffReason.current = CLOSED;
-          return;
-        } else if (session.collaborator?.completed) {
+        else if (session.collaborator?.completed)
           formOffReason.current = COLLAB_COMPLETED;
+        else if (session.no_business_email)
+          formOffReason.current = NO_BUSINESS_EMAIL;
+        if (formOffReason.current) {
+          setRender((render) => ({ ...render }));
           return;
         }
 
@@ -1956,11 +1960,6 @@ function Form({
     featheryContext: getFormContext(_internalId)
   };
 
-  const completeState =
-    formSettings.completionBehavior === 'show_completed_screen' ? (
-      <FormOff reason={FILLED_OUT} showCTA={formSettings.showBrand} />
-    ) : null;
-
   // If form was completed in a previous session and edits are disabled,
   // consider the form finished
   const anyFinished =
@@ -1982,9 +1981,15 @@ function Form({
   // Form is turned off
   if (formOffReason.current === CLOSED)
     return <FormOff showCTA={formSettings.showBrand} />;
-  else if (formOffReason.current === COLLAB_COMPLETED)
-    return <FormOff reason={COLLAB_COMPLETED} showCTA={false} />;
+  else if (
+    [COLLAB_COMPLETED, NO_BUSINESS_EMAIL].includes(formOffReason.current)
+  )
+    return <FormOff reason={formOffReason.current} showCTA={false} />;
   else if (anyFinished) {
+    const completeState =
+      formSettings.completionBehavior === 'show_completed_screen' ? (
+        <FormOff reason={FILLED_OUT} showCTA={formSettings.showBrand} />
+      ) : null;
     if (!completeState && initState.isTestEnv)
       console.log('Form has been hidden');
     return completeState;
