@@ -227,6 +227,7 @@ function PhoneField({
           {countryMap[curCountryCode].flag}
         </div>
         <Overlay
+          key={`overlay-${curCountryCode}`}
           target={triggerRef.current}
           show={show}
           onHide={() => setShow(false)}
