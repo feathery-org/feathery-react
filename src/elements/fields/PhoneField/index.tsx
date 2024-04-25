@@ -227,10 +227,12 @@ function PhoneField({
           {countryMap[curCountryCode].flag}
         </div>
         <Overlay
+          key={`overlay-${curCountryCode}`}
           target={triggerRef.current}
           show={show}
           onHide={() => setShow(false)}
           placement='bottom-start'
+          container={triggerRef.current}
         >
           {(props) => {
             ['placement', 'arrowProps', 'show', 'popper'].forEach(
