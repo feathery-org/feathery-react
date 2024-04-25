@@ -11,7 +11,7 @@ import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';
 import { hoverStylesGuard } from '../../../utils/browser';
 
-const isMobile = () => true; // /Mobi|Android/i.test(navigator.userAgent);
+const isMobile = () => /Mobi|Android/i.test(navigator.userAgent);
 // Helper function to determine if the native datepicker should be used
 const shouldUseNativePicker = (servarMeta: any) => {
   if (!isMobile()) return false;
