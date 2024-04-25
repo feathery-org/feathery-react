@@ -227,11 +227,17 @@ function PhoneField({
           {countryMap[curCountryCode].flag}
         </div>
         <Overlay
+          // CONTEXT: The key prop will force React to remount the component if the container changes. 
+          // This is helpful when react is dealing with left over components. 
+          // It will be able to perform cleanup and avoid the node not found type of errors.
           key={`overlay-${curCountryCode}`}
           target={triggerRef.current}
           show={show}
           onHide={() => setShow(false)}
           placement='bottom-start'
+          // CONTEXT: The container prop of the overlay lets us specify which element will hold the overlay. 
+          // If we do not specify the container, there are chances that the page's body is taken as the container. 
+          // This can cause the auto-scrolling issue that we observed.
           container={triggerRef.current}
         >
           {(props) => {
