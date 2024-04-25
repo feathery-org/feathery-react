@@ -198,6 +198,115 @@ export default function SelectorStyles() {
           margin: 0 2px;
         }
 
+        @media (min-width: 478px) {
+          .react-datepicker__time-container
+            .react-datepicker__time
+            .react-datepicker__time-box {
+            width: 85px;
+            overflow-x: hidden;
+            margin: 0 auto;
+            text-align: center;
+            border-bottom-right-radius: 0.3rem;
+          }
+          .react-datepicker__time-container
+            .react-datepicker__time
+            .react-datepicker__time-box
+            ul.react-datepicker__time-list {
+            list-style: none;
+            margin: 0;
+            height: calc(195px + (1.7rem / 2));
+            overflow-y: scroll;
+            padding-right: 0;
+            padding-left: 0;
+            width: 100%;
+            box-sizing: content-box;
+          }
+          .react-datepicker__navigation--next--with-time:not(.react-datepicker__navigation--next--with-today-button) {
+            right: 85px;
+          }
+        }
+        @media (max-width: 478px) {
+          .react-datepicker {
+            display: flex;
+            flex-direction: column;
+          }
+          div.react-datepicker__time-container {
+            float: none;
+            border-top: 1px solid #aeaeae;
+            width: auto;
+            border-left: none;
+          }
+          div.react-datepicker__time-box {
+            width: auto;
+            overflow-x: auto;
+            margin: 0 0;
+            text-align: center;
+            border-bottom-right-radius: inherit;
+          }
+          .react-datepicker__time-container
+            .react-datepicker__time
+            .react-datepicker__time-box
+            ul.react-datepicker__time-list {
+            list-style: none;
+            margin: 0;
+            height: min(calc(195px + (1.7rem / 2)), 40svh) !important;
+            overflow-y: scroll;
+            padding-right: 0;
+            padding-left: 0;
+            width: 100%;
+            box-sizing: content-box;
+          }
+        }
+
+        .react-datepicker__header__dropdown {
+          display: flex;
+          flex-wrap: wrap;
+          margin-inline: 32px;
+        }
+        .react-datepicker__month-dropdown-container--select,
+        .react-datepicker__year-dropdown-container--select {
+          flex: auto;
+          border: 1px solid #dedede;
+          border-radius: 0.25em;
+          padding: 0.25em 0.5em;
+          font-size: 1rem;
+          cursor: pointer;
+          line-height: 1.1;
+          background-color: #fff;
+          background-image: linear-gradient(to top, #f9f9f9, #fff 33%);
+          display: grid;
+          grid-template-areas: 'select';
+          align-items: center;
+        }
+        .react-datepicker__month-dropdown-container--select::after,
+        .react-datepicker__year-dropdown-container--select::after {
+          content: '';
+          width: 0.6em;
+          height: 0.375em;
+          background-color: #aaa;
+          clip-path: polygon(100% 0%, 0 0%, 50% 100%);
+          grid-area: select;
+          justify-self: end;
+        }
+        .react-datepicker__month-select,
+        .react-datepicker__year-select {
+          // A reset of styles, including removing the default dropdown arrow
+          appearance: none;
+          // Additional resets for further consistency
+          background-color: transparent;
+          border: none;
+          padding: 0 1em 0 0;
+          margin: 0;
+          width: 100%;
+          font-family: inherit;
+          font-size: inherit;
+          cursor: inherit;
+          line-height: inherit;
+          outline: none;
+          grid-area: select;
+        }
+        /* } */
+
         .react-datepicker__current-month,
         .react-datepicker-time__header,
         .react-datepicker-year-header {
@@ -235,9 +344,6 @@ export default function SelectorStyles() {
         }
         .react-datepicker__navigation--next {
           right: 2px;
-        }
-        .react-datepicker__navigation--next--with-time:not(.react-datepicker__navigation--next--with-today-button) {
-          right: 85px;
         }
         .react-datepicker__navigation--years {
           position: relative;
@@ -378,34 +484,14 @@ export default function SelectorStyles() {
         }
         .react-datepicker__time-container
           .react-datepicker__time
-          .react-datepicker__time-box {
-          width: 85px;
-          overflow-x: hidden;
-          margin: 0 auto;
-          text-align: center;
-          border-bottom-right-radius: 0.3rem;
-        }
-        .react-datepicker__time-container
-          .react-datepicker__time
-          .react-datepicker__time-box
-          ul.react-datepicker__time-list {
-          list-style: none;
-          margin: 0;
-          height: calc(195px + (1.7rem / 2));
-          overflow-y: scroll;
-          padding-right: 0;
-          padding-left: 0;
-          width: 100%;
-          box-sizing: content-box;
-        }
-        .react-datepicker__time-container
-          .react-datepicker__time
           .react-datepicker__time-box
           ul.react-datepicker__time-list
           li.react-datepicker__time-list-item {
           height: 30px;
           padding: 5px 10px;
           white-space: nowrap;
+          line-height: 30px;
+          font-size: 0.8rem;
         }
         .react-datepicker__time-container
           .react-datepicker__time
