@@ -572,6 +572,7 @@ export default function SelectorStyles() {
           border-radius: 0.3rem;
           background-color: #216ba5;
           color: #fff;
+          font-weight: bold;
         }
         .react-datepicker__day--selected:hover,
         .react-datepicker__day--in-selecting-range:hover,
@@ -587,14 +588,7 @@ export default function SelectorStyles() {
         .react-datepicker__year-text--in-range:hover {
           background-color: #1d5d90;
         }
-        .react-datepicker__day--keyboard-selected,
-        .react-datepicker__month-text--keyboard-selected,
-        .react-datepicker__quarter-text--keyboard-selected,
-        .react-datepicker__year-text--keyboard-selected {
-          border-radius: 0.3rem;
-          background-color: #2579ba;
-          color: #fff;
-        }
+
         .react-datepicker__day--keyboard-selected:hover,
         .react-datepicker__month-text--keyboard-selected:hover,
         .react-datepicker__quarter-text--keyboard-selected:hover,
