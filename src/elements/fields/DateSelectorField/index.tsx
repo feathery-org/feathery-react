@@ -9,9 +9,7 @@ import DateSelectorStyles from './styles';
 import { bootstrapStyles } from '../../styles';
 import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';
-import { hoverStylesGuard } from '../../../utils/browser';
-
-const isMobile = () => /Mobi|Android/i.test(navigator.userAgent);
+import { isTouchDevice, hoverStylesGuard } from '../../../utils/browser';
 
 // Helper function to parse time limits
 const parseTimeThreshold = (timeThreshold: string) =>
@@ -186,7 +184,7 @@ function DateSelectorField({
           onSelect={onDateChange} // when day is clicked
           onChange={onDateChange} // only when value has changed
           onFocus={(e: any) => {
-            if (isMobile()) {
+            if (isTouchDevice()) {
               // hide keyboard on mobile focus
               e.target.readOnly = true;
             }
@@ -208,7 +206,7 @@ function DateSelectorField({
           forceShowMonthNavigation={false}
           dropdownMode='select'
           // Open up calendar as a modal in mobile
-          withPortal={isMobile()}
+          withPortal={isTouchDevice()}
           aria-label={element.properties.aria_label}
           css={{
             height: '100%',
