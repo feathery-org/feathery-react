@@ -60,6 +60,7 @@ export default function useBorder({
           bottom: 0,
           right: 0,
           transition: '0.2s ease all !important',
+          pointerEvents: 'none',
           ...styles.getTarget('border'),
           ...(error ? { borderColor: ERROR_COLOR } : {})
         }}
