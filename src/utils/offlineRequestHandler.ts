@@ -143,7 +143,7 @@ export class OfflineRequestHandler {
 
   // Open a connection to the IndexedDB database
   public async openDatabase(): Promise<IDBDatabase | undefined> {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       try {
         const request = indexedDB.open(this.dbName, this.dbVersion);
 

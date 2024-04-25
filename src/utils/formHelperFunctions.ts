@@ -22,7 +22,6 @@ import { isObjectEmpty } from './primitives';
 import Field from './api/Field';
 import { formatDateString } from '../elements/fields/DateSelectorField';
 import { findCountryByID } from '../elements/components/data/countries';
-import { CLOSED } from '../elements/components/FormOff';
 
 export const ARRAY_FIELD_TYPES = [
   'button_group',
@@ -374,7 +373,7 @@ export function updateStepFieldProperties(
   fieldKey: string,
   newProperties: Record<string, any>
 ) {
-  step.servar_fields.forEach((field: any, i: number) => {
+  step.servar_fields.forEach((field: any) => {
     const servar = field.servar;
     if (servar.key === fieldKey) Object.assign(field.properties, newProperties);
   });
