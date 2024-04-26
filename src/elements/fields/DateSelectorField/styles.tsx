@@ -270,7 +270,6 @@ export default function SelectorStyles() {
           border-radius: 0.25em;
           padding: 0.25em 0.5em;
           font-size: 1rem;
-          cursor: pointer;
           line-height: 1.1;
           background-color: #fff;
           background-image: linear-gradient(to top, #f9f9f9, #fff 33%);
@@ -597,7 +596,10 @@ export default function SelectorStyles() {
           background-color: transparent;
         }
 
-        .react-datepicker__day,
+        .react-datepicker__day {
+          cursor: default;
+        }
+
         .react-datepicker__month-text,
         .react-datepicker__quarter-text,
         .react-datepicker__year-text {
@@ -780,11 +782,7 @@ export default function SelectorStyles() {
           border-radius: 0.3rem;
           border: 1px solid #aeaeae;
         }
-        .react-datepicker__year-dropdown:hover,
-        .react-datepicker__month-dropdown:hover,
-        .react-datepicker__month-year-dropdown:hover {
-          cursor: pointer;
-        }
+
         .react-datepicker__year-dropdown--scrollable,
         .react-datepicker__month-dropdown--scrollable,
         .react-datepicker__month-year-dropdown--scrollable {
