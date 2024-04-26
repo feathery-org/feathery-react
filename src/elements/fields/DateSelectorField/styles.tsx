@@ -305,7 +305,6 @@ export default function SelectorStyles() {
           outline: none;
           grid-area: select;
         }
-        /* } */
 
         .react-datepicker__current-month,
         .react-datepicker-time__header,
