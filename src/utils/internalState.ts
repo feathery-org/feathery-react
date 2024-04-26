@@ -18,6 +18,7 @@ interface FormInternalState {
   cart: Cart;
   collaborator: Collaborator;
   formName: string;
+  formId: string;
   formRef: React.MutableRefObject<any>;
   formSettings: any;
   getErrorCallback: (

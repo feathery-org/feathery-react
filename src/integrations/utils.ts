@@ -99,7 +99,7 @@ export async function initializeIntegrations(
   const gtm = integs['google-tag-manager'];
   if (gtm) initializeTagManager(gtm);
   if (integs.firebase || integs.stytch) {
-    authState.authFormKey = featheryClient.formKey;
+    authState.authFormKey = featheryClient.formKey; // TODO: refactor to form slug
     return Auth.inferLoginOnLoad(featheryClient);
   }
 }

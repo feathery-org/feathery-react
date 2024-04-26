@@ -51,8 +51,8 @@ type InitState = {
   initialized: boolean;
   sdkKey: string;
   overrideUserId: boolean;
-  preloadForms: { [formName: string]: any };
-  formSessions: { [formName: string]: any };
+  preloadForms: { [formId: string]: any };
+  formSessions: { [formId: string]: any };
   fieldValuesInitialized: boolean;
   redirectCallbacks: Record<string, any>;
   renderCallbacks: Record<string, Record<string, any>>;
