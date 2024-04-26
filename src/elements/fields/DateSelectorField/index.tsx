@@ -9,7 +9,11 @@ import DateSelectorStyles from './styles';
 import { bootstrapStyles } from '../../styles';
 import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';
-import { isTouchDevice, hoverStylesGuard } from '../../../utils/browser';
+import {
+  isTouchDevice,
+  hoverStylesGuard,
+  featheryDoc
+} from '../../../utils/browser';
 
 // Helper function to parse time limits
 const parseTimeThreshold = (timeThreshold: string) =>
@@ -59,6 +63,8 @@ export function formatDateString(date: any, meta: Record<string, any>) {
   }
 }
 
+const stopTouchPropagation = (e: TouchEvent) => e.stopPropagation();
+
 function DateSelectorField({
   element,
   responsiveStyles,
@@ -79,6 +85,16 @@ function DateSelectorField({
 
   const pickerRef = useRef<any>();
   const [internalDate, setInternalDate] = useState('');
+
+  // disables mobile devices from focusing inputs through a portal
+  // https://github.com/Hacker0x01/react-datepicker/issues/2524
+  const handleCalendarOpen = () => {
+    featheryDoc().addEventListener('touchstart', stopTouchPropagation, true);
+  };
+
+  const handleCalendarClose = () => {
+    featheryDoc().removeEventListener('touchstart', stopTouchPropagation, true);
+  };
 
   useEffect(() => {
     if (pickerRef.current !== null) {
@@ -187,6 +203,8 @@ function DateSelectorField({
           selected={internalDate}
           preventOpenOnFocus
           autoComplete='off'
+          onCalendarOpen={handleCalendarOpen}
+          onCalendarClose={handleCalendarClose}
           onSelect={onDateChange} // when day is clicked
           onChange={onDateChange} // only when value has changed
           onFocus={(e: any) => {
