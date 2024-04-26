@@ -171,7 +171,13 @@ function DateSelectorField({
                 ...responsiveStyles.getTarget('active'),
                 ...borderStyles.active
               }
-            : {}
+            : {},
+          // withPortal adds an extra unstyled div
+          // this selects it and fixes its height
+          // TODO: better selector using :has()
+          '&>div:not([class])': {
+            height: '100%'
+          }
         }}
       >
         {customBorder}
