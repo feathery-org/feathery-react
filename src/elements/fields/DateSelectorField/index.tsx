@@ -9,7 +9,15 @@ import DateSelectorStyles from './styles';
 import { bootstrapStyles } from '../../styles';
 import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';
-import { hoverStylesGuard } from '../../../utils/browser';
+import {
+  isTouchDevice,
+  hoverStylesGuard,
+  featheryDoc
+} from '../../../utils/browser';
+
+// Helper function to parse time limits
+const parseTimeThreshold = (timeThreshold: string) =>
+  timeThreshold.split(':').map(Number);
 
 export function formatDateString(date: any, meta: Record<string, any>) {
   if (!date) return '';
@@ -55,8 +63,7 @@ export function formatDateString(date: any, meta: Record<string, any>) {
   }
 }
 
-const parseTimeThreshold = (timeThreshold: string) =>
-  timeThreshold.split(':').map((entry) => parseInt(entry));
+const stopTouchPropagation = (e: TouchEvent) => e.stopPropagation();
 
 function DateSelectorField({
   element,
@@ -78,6 +85,16 @@ function DateSelectorField({
 
   const pickerRef = useRef<any>();
   const [internalDate, setInternalDate] = useState('');
+
+  // disables mobile devices from focusing inputs through a portal
+  // https://github.com/Hacker0x01/react-datepicker/issues/2524
+  const handleCalendarOpen = () => {
+    featheryDoc().addEventListener('touchstart', stopTouchPropagation, true);
+  };
+
+  const handleCalendarClose = () => {
+    featheryDoc().removeEventListener('touchstart', stopTouchPropagation, true);
+  };
 
   useEffect(() => {
     if (pickerRef.current !== null) {
@@ -136,6 +153,7 @@ function DateSelectorField({
   let dateMask = servarMeta.display_format ? 'd/MM/yyyy' : 'MM/d/yyyy';
   const timeMask = servarMeta.time_format === '12hr' ? 'h:mm aa' : 'HH:mm';
   if (servarMeta.choose_time) dateMask = `${dateMask} ${timeMask}`;
+
   return (
     <div
       css={{
@@ -169,7 +187,13 @@ function DateSelectorField({
                 ...responsiveStyles.getTarget('active'),
                 ...borderStyles.active
               }
-            : {}
+            : {},
+          // withPortal adds an extra unstyled div
+          // this selects it and fixes its height
+          // TODO: better selector using :has()
+          '&>div:not([class])': {
+            height: '100%'
+          }
         }}
       >
         {customBorder}
@@ -179,9 +203,17 @@ function DateSelectorField({
           selected={internalDate}
           preventOpenOnFocus
           autoComplete='off'
+          onCalendarOpen={handleCalendarOpen}
+          onCalendarClose={handleCalendarClose}
           onSelect={onDateChange} // when day is clicked
           onChange={onDateChange} // only when value has changed
-          onFocus={() => setFocused(true)}
+          onFocus={(e: any) => {
+            if (isTouchDevice()) {
+              // hide keyboard on mobile focus
+              e.target.readOnly = true;
+            }
+            setFocused(true);
+          }}
           onBlur={() => setFocused(false)}
           required={required}
           placeholder=''
@@ -193,7 +225,12 @@ function DateSelectorField({
           timeFormat={timeMask}
           maxDate={servarMeta.no_future ? new Date() : undefined}
           minDate={servarMeta.no_past ? new Date() : undefined}
+          showMonthDropdown
           showYearDropdown
+          forceShowMonthNavigation={false}
+          dropdownMode='select'
+          // Open up calendar as a modal in mobile
+          withPortal={isTouchDevice()}
           aria-label={element.properties.aria_label}
           css={{
             height: '100%',
