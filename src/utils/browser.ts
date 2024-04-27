@@ -16,6 +16,10 @@ export function featheryWindow() {
 
 export const isHoverDevice = () =>
   featheryWindow().matchMedia('(hover: hover)').matches;
+
+export const isTouchDevice = () =>
+  featheryWindow().matchMedia('(pointer: coarse)').matches;
+
 export const hoverStylesGuard = (styles: any) =>
   isHoverDevice() ? styles : {};
 

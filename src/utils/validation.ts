@@ -208,6 +208,8 @@ const validators = {
       if (!DOMAIN_ALLOWED_CHARACTERS.test(hostname)) return false;
       const parts = hostname.split('.');
       if (parts.some((part) => !part)) return false;
+      // Last part of domain cannot contain digit
+      if (NUMBER_MATCH.test(parts[parts.length - 1])) return false;
       return parts.length > 1;
     } catch (e) {
       return false;
