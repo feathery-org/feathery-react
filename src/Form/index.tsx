@@ -924,7 +924,7 @@ function Form({
       .fetchForm(initialValues, language)
       .then(async (data: any) => {
         await updateCustomHead(data.custom_head ?? '');
-        setFormName(data['form_name']); // API definition guarantees this.
+        setFormName(data.form_name); // API definition guarantees this.
         return data;
       })
       .then(({ steps, ...res }: any) => {
