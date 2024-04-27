@@ -82,7 +82,7 @@ export default class FeatheryClient extends IntegrationClient {
       fuser_key: userId,
       step_key: stepKey,
       servars,
-      panel_key: this.formKey, // TODO: refactor to form_slug
+      panel_key: this.formKey,
       __feathery_version: this.version,
       no_complete: noComplete
     };
@@ -123,7 +123,7 @@ export default class FeatheryClient extends IntegrationClient {
     };
     return Array.isArray(fileValue)
       ? // @ts-expect-error TS(2345): Argument of type '(file: any, index?: null) => Pro... Remove this comment to see the full error message
-      Promise.all(fileValue.map(resolveFile))
+        Promise.all(fileValue.map(resolveFile))
       : resolveFile(fileValue);
   }
 
@@ -144,7 +144,7 @@ export default class FeatheryClient extends IntegrationClient {
       }
     }
 
-    formData.set('__feathery_form_key', this.formKey); // TODO: refactor to __feathery_form_slug
+    formData.set('__feathery_form_key', this.formKey);
     formData.set('__feathery_step_key', stepKey);
     if (this.version) formData.set('__feathery_version', this.version);
 
@@ -255,11 +255,11 @@ export default class FeatheryClient extends IntegrationClient {
 
   fetchCacheForm(formLanguage?: string) {
     const { preloadForms, language: globalLanguage, theme } = initInfo();
-    if (!formLanguage && this.formKey in preloadForms) // TODO: refactor to form_slug
-      return Promise.resolve(preloadForms[this.formKey]); // TODO: refactor to form_slug
+    if (!formLanguage && this.formKey in preloadForms)
+      return Promise.resolve(preloadForms[this.formKey]);
 
     const params = encodeGetParams({
-      form_key: this.formKey, // TODO: refactor to form_slug
+      form_key: this.formKey,
       draft: this.draft,
       theme
     });
@@ -312,14 +312,14 @@ export default class FeatheryClient extends IntegrationClient {
       fieldValuesInitialized: noData
     } = initInfo();
 
-    if (this.formKey in formSessions) { // TODO: refactor to form_slug
+    if (this.formKey in formSessions) {
       const formData = await (formPromise ?? Promise.resolve());
-      return [formSessions[this.formKey], formData];  // TODO: refactor to form_slug
+      return [formSessions[this.formKey], formData];
     }
 
     initState.fieldValuesInitialized = true;
     let params: Record<string, any> = {
-      form_key: this.formKey,  // TODO: refactor to form_slug
+      form_key: this.formKey,
       draft: this.draft,
       override: overrideUserId
     };
@@ -359,7 +359,7 @@ export default class FeatheryClient extends IntegrationClient {
     if (!noData) updateSessionValues(trueSession);
 
     // submitAuthInfo can set formCompleted before the session is set, so we don't want to override completed flags
-    if (initState.formSessions[this.formKey]?.form_completed) // TODO: refactor to form_slug
+    if (initState.formSessions[this.formKey]?.form_completed)
       trueSession.form_completed = true;
     initState.formSessions[this.formKey] = trueSession;
     initState._internalUserId = trueSession.internal_id;
@@ -379,11 +379,11 @@ export default class FeatheryClient extends IntegrationClient {
     const data = {
       auth_id: authId,
       auth_data: authData,
-      auth_form_key: authState.authFormKey, // TODO: refactor to auth_form_slug
+      auth_form_key: authState.authFormKey,
       is_stytch_template_key: isStytchTemplateKey,
       ...(userId ? { fuser_key: userId } : {})
     };
-    const url = `${API_URL}panel/update_auth/v2/`; // TODO: bump to v3 when we deploy this
+    const url = `${API_URL}panel/update_auth/v3/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'PATCH',
@@ -400,7 +400,6 @@ export default class FeatheryClient extends IntegrationClient {
         if (data?.no_merge) {
           setFieldValues(data.field_values);
         } else {
-          // TODO: refactor to form_slug and refactor API to form_slug
           data.completed_forms.forEach((formKey: string) => {
             if (!initState.formSessions[formKey])
               initState.formSessions[formKey] = {};
@@ -456,7 +455,7 @@ export default class FeatheryClient extends IntegrationClient {
     formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
     // @ts-expect-error TS(2345): Argument of type 'boolean' is not assignable to pa... Remove this comment to see the full error message
     formData.set('override', override);
-    if (this.formKey) { // TODO: refactor to form_slug
+    if (this.formKey) {
       formData.set('form_key', this.formKey);
       if (this.version) formData.set('__feathery_version', this.version);
     }
@@ -516,7 +515,7 @@ export default class FeatheryClient extends IntegrationClient {
 
     const url = `${API_URL}event/`;
     const data: Record<string, string> = {
-      form_key: this.formKey, // TODO: refactor to form_slug
+      form_key: this.formKey,
       ...eventData,
       ...(userId ? { fuser_key: userId } : {})
     };
@@ -547,17 +546,17 @@ export default class FeatheryClient extends IntegrationClient {
     payload:
       | string
       | {
-        method: string;
-        url: string;
-        data: Record<string, any> | any[];
-        headers: Record<string, string>;
-      },
+          method: string;
+          url: string;
+          data: Record<string, any> | any[];
+          headers: Record<string, string>;
+        },
     fieldValues: { [key: string]: any } | null = null
   ) {
     const { userId } = initInfo();
     const data: any = {
       fuser_key: userId,
-      form_key: this.formKey // TODO: refactor to form_slug
+      form_key: this.formKey
     };
 
     if (typeof payload === 'string') {
@@ -653,7 +652,7 @@ export default class FeatheryClient extends IntegrationClient {
     const params: Record<string, any> = {
       fuser_key: userId,
       email,
-      form_key: this.formKey // TODO: refactor to form_slug
+      form_key: this.formKey
     };
     if (collaboratorId) params.collaborator_user = collaboratorId;
     const url = `${API_URL}collaborator/verify/?${encodeGetParams(params)}`;
@@ -665,7 +664,7 @@ export default class FeatheryClient extends IntegrationClient {
   async inviteCollaborator(usersGroups: string, templateId: string) {
     const { userId, collaboratorId } = initInfo();
     const data: Record<string, any> = {
-      form_key: this.formKey, // TODO: refactor to form_slug
+      form_key: this.formKey,
       fuser_key: userId,
       users_groups: usersGroups,
       template_id: templateId
