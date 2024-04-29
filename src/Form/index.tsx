@@ -937,10 +937,10 @@ function Form({
         await updateCustomHead(data.custom_head ?? '');
         return data;
       })
-      .then(({ steps, form_name, ...res }: any) => {
+      .then(({ steps, form_name: formNameResult, ...res }: any) => {
         // In the future formName will not be initialized with a prop value
         // so we set it using the response data
-        setFormName(form_name);
+        setFormName(formNameResult);
         steps = steps.reduce((result: any, step: any) => {
           result[step.key] = step;
           return result;
