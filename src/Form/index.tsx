@@ -165,11 +165,11 @@ export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
 export interface Props {
-  formId?: string;
+  formId: string;
   /**
    * @deprecated use formId instead
    */
-  formName: string; // TODO: remove support for formName
+  formName?: string; // TODO: remove support for formName
   onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
   onLoad?: null | ((context: FormContext) => Promise<any> | void);
   onFormComplete?: null | ((context: FormContext) => Promise<any> | void);
@@ -248,12 +248,7 @@ function Form({
   children,
   _draft = false
 }: InternalProps & Props) {
-  // TODO: remove support for formName
-  if (formNameProp)
-    console.warn(
-      'The `formName` parameter is deprecated and support will be removed in a future library version. Please use `formId` instead.'
-    );
-  const [formName, setFormName] = useState(formNameProp || '');
+  const [formName, setFormName] = useState(formNameProp || ''); // TODO: remove support for formName
   const formKey = formId || formName; // prioritize formID but fall back to name
   const clientRef = useRef<any>();
   const client = clientRef.current;
@@ -356,6 +351,15 @@ function Form({
   // Tracks if the form has redirected
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
+
+  useEffect(() => {
+    // TODO: remove support for formName
+    if (formNameProp) {
+      console.warn(
+        'The `formName` parameter is deprecated and support will be removed in a future library version. Please use `formId` instead.'
+      );
+    }
+  }, [formNameProp]);
 
   // All mount and unmount logic should live here
   useEffect(() => {
@@ -784,7 +788,6 @@ function Form({
             session?.collaborator?.whitelist ?? []
           )
         ),
-        formName,
         formId,
         formRef,
         formSettings,

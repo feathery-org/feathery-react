@@ -17,7 +17,6 @@ interface FormInternalState {
   products: Record<string, SimplifiedProduct>;
   cart: Cart;
   collaborator: Collaborator;
-  formName: string; // TODO: remove support for formName
   formId: string;
   formRef: React.MutableRefObject<any>;
   formSettings: any;
