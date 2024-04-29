@@ -99,7 +99,7 @@ export async function initializeIntegrations(
   const gtm = integs['google-tag-manager'];
   if (gtm) initializeTagManager(gtm);
   if (integs.firebase || integs.stytch) {
-    authState.authFormKey = featheryClient.formKey; // TODO: refactor to form slug
+    authState.authFormKey = featheryClient.formKey;
     return Auth.inferLoginOnLoad(featheryClient);
   }
 }
@@ -119,10 +119,10 @@ export function trackEvent(
   integrations: any,
   title: string,
   stepId: string,
-  formId: string,
+  formName: string,
   fieldData?: any
 ) {
-  const metadata: Record<string, string> = { formId };
+  const metadata: Record<string, string> = { formName };
   if (stepId) metadata.stepId = stepId;
 
   // Google Tag Manager
@@ -140,7 +140,7 @@ export function trackEvent(
     trackRudderEvent(title, rudderData, integrations?.rudderstack);
   }
   // Google Analytics
-  if (gaInstalled) trackGAEvent(formId, title, stepId);
+  if (gaInstalled) trackGAEvent(formName, title, stepId);
   // Segment
   const segmentData: any = { ...metadata };
   if (fieldData?.segment) segmentData.submittedData = fieldData.segment;

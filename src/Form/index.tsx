@@ -165,7 +165,11 @@ export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
 export interface Props {
-  formId: string;
+  formId?: string;
+  /**
+   * @deprecated use formId instead
+   */
+  formName: string; // TODO: remove support for formName
   onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
   onLoad?: null | ((context: FormContext) => Promise<any> | void);
   onFormComplete?: null | ((context: FormContext) => Promise<any> | void);
@@ -219,6 +223,7 @@ function Form({
   _internalId,
   _isAuthLoading = false,
   _bypassCDN = false,
+  formName: formNameProp,
   formId, // The 'live' env slug
   onChange = null,
   onLoad = null,
@@ -243,11 +248,17 @@ function Form({
   children,
   _draft = false
 }: InternalProps & Props) {
-  const [formName, setFormName] = useState('');
+  // TODO: remove support for formName
+  if (formNameProp)
+    console.warn(
+      'The `formName` parameter is deprecated and support will be removed in a future library version. Please use `formId` instead.'
+    );
+  const [formName, setFormName] = useState(formNameProp || '');
+  const formKey = formId || formName; // prioritize formID but fall back to name
   const clientRef = useRef<any>();
   const client = clientRef.current;
   const history = useHistory();
-  const session = initState.formSessions[formId];
+  const session = initState.formSessions[formKey];
 
   const [autoValidate, setAutoValidate] = useState(false);
 
@@ -912,7 +923,7 @@ function Form({
     if (clientRef.current) return;
 
     clientRef.current = new FeatheryClient(
-      formId,
+      formKey,
       hasRedirected,
       _draft,
       _bypassCDN
@@ -924,10 +935,12 @@ function Form({
       .fetchForm(initialValues, language)
       .then(async (data: any) => {
         await updateCustomHead(data.custom_head ?? '');
-        setFormName(data.form_name); // API definition guarantees this.
         return data;
       })
-      .then(({ steps, ...res }: any) => {
+      .then(({ steps, form_name, ...res }: any) => {
+        // In the future formName will not be initialized with a prop value
+        // so we set it using the response data
+        setFormName(form_name);
         steps = steps.reduce((result: any, step: any) => {
           result[step.key] = step;
           return result;
@@ -2061,6 +2074,7 @@ function Form({
 // renderAt without exposing InternalProps to SDK users
 export function JSForm({
   formId,
+  formName,
   _internalId,
   _isAuthLoading = false,
   ...props
@@ -2076,7 +2090,7 @@ export function JSForm({
   }, []);
 
   // Check client for NextJS support
-  if (formId && runningInClient())
+  if ((formId || formName) && runningInClient())
     return (
       /* @ts-ignore */
       <BrowserRouter>
@@ -2085,7 +2099,8 @@ export function JSForm({
           <Form
             {...props}
             formId={formId}
-            key={`${formId}_${remount}`}
+            formName={formName}
+            key={`${formId || formName}_${remount}`}
             _internalId={_internalId}
             _isAuthLoading={_isAuthLoading}
           />
