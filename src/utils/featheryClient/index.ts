@@ -489,7 +489,7 @@ export default class FeatheryClient extends IntegrationClient {
       // need to include value === '' so that we can clear out hidden fields
       if (value !== undefined) hiddenFields[fieldKey] = value;
     });
-    gatherTrustedFormFields(hiddenFields, this.formKey); // TODO: I think we can leave this lookup to the form name
+    gatherTrustedFormFields(hiddenFields, this.formKey);
 
     const isFileServar = (servar: any) =>
       ['file_upload', 'signature'].some((type) => type in servar);
@@ -690,7 +690,7 @@ export default class FeatheryClient extends IntegrationClient {
   async rewindCollaboration(templateId: string) {
     const { userId } = initInfo();
     const data: Record<string, any> = {
-      form_key: this.formKey, // TOOD: refactor to form_slug
+      form_key: this.formKey,
       fuser_key: userId,
       template_id: templateId
     };
