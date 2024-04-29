@@ -169,7 +169,7 @@ export interface Props {
   /**
    * @deprecated use formId instead
    */
-  formName?: string; // TODO: remove support for formName
+  formName?: string; // TODO: remove support for formName (deprecated)
   onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
   onLoad?: null | ((context: FormContext) => Promise<any> | void);
   onFormComplete?: null | ((context: FormContext) => Promise<any> | void);
@@ -248,7 +248,7 @@ function Form({
   children,
   _draft = false
 }: InternalProps & Props) {
-  const [formName, setFormName] = useState(formNameProp || ''); // TODO: remove support for formName
+  const [formName, setFormName] = useState(formNameProp || ''); // TODO: remove support for formName (deprecated)
   const formKey = formId || formName; // prioritize formID but fall back to name
   const clientRef = useRef<any>();
   const client = clientRef.current;
@@ -353,7 +353,7 @@ function Form({
   const elementClicks = useRef<any>({}).current;
 
   useEffect(() => {
-    // TODO: remove support for formName
+    // TODO: remove support for formName (deprecated)
     if (formNameProp) {
       console.warn(
         'The `formName` parameter is deprecated and support will be removed in a future library version. Please use `formId` instead.'
@@ -788,7 +788,6 @@ function Form({
             session?.collaborator?.whitelist ?? []
           )
         ),
-        formId,
         formRef,
         formSettings,
         getErrorCallback,
