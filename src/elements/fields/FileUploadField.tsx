@@ -110,7 +110,7 @@ function FileUploadField({
   const icon = element.properties.icon ? (
     <Image src={element.properties.icon} fluid style={imgStyles} />
   ) : (
-    <FileUploadIcon width={imgStyles.width} />
+    <FileUploadIcon width={imgStyles.width} style={{ maxHeight: '100%' }} />
   );
 
   return (
