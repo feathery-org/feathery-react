@@ -383,7 +383,7 @@ export default class FeatheryClient extends IntegrationClient {
       is_stytch_template_key: isStytchTemplateKey,
       ...(userId ? { fuser_key: userId } : {})
     };
-    const url = `${API_URL}panel/update_auth/v2/`;
+    const url = `${API_URL}panel/update_auth/v3/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'PATCH',

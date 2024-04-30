@@ -165,7 +165,11 @@ export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
 export interface Props {
-  formName: string;
+  formId: string;
+  /**
+   * @deprecated use formId instead
+   */
+  formName?: string; // TODO: remove support for formName (deprecated)
   onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
   onLoad?: null | ((context: FormContext) => Promise<any> | void);
   onFormComplete?: null | ((context: FormContext) => Promise<any> | void);
@@ -219,7 +223,8 @@ function Form({
   _internalId,
   _isAuthLoading = false,
   _bypassCDN = false,
-  formName,
+  formName: formNameProp,
+  formId, // The 'live' env slug
   onChange = null,
   onLoad = null,
   onFormComplete = null,
@@ -243,10 +248,12 @@ function Form({
   children,
   _draft = false
 }: InternalProps & Props) {
+  const [formName, setFormName] = useState(formNameProp || ''); // TODO: remove support for formName (deprecated)
+  const formKey = formId || formName; // prioritize formID but fall back to name
   const clientRef = useRef<any>();
   const client = clientRef.current;
   const history = useHistory();
-  const session = initState.formSessions[formName];
+  const session = initState.formSessions[formKey];
 
   const [autoValidate, setAutoValidate] = useState(false);
 
@@ -344,6 +351,15 @@ function Form({
   // Tracks if the form has redirected
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
+
+  useEffect(() => {
+    // TODO: remove support for formName (deprecated)
+    if (formNameProp) {
+      console.warn(
+        'The `formName` parameter is deprecated and support will be removed in a future library version. Please use `formId` instead.'
+      );
+    }
+  }, [formNameProp]);
 
   // All mount and unmount logic should live here
   useEffect(() => {
@@ -772,7 +788,6 @@ function Form({
             session?.collaborator?.whitelist ?? []
           )
         ),
-        formName,
         formRef,
         formSettings,
         getErrorCallback,
@@ -910,7 +925,7 @@ function Form({
     if (clientRef.current) return;
 
     clientRef.current = new FeatheryClient(
-      formName,
+      formKey,
       hasRedirected,
       _draft,
       _bypassCDN
@@ -924,7 +939,10 @@ function Form({
         await updateCustomHead(data.custom_head ?? '');
         return data;
       })
-      .then(({ steps, ...res }: any) => {
+      .then(({ steps, form_name: formNameResult, ...res }: any) => {
+        // In the future formName will not be initialized with a prop value
+        // so we set it using the response data
+        setFormName(formNameResult);
         steps = steps.reduce((result: any, step: any) => {
           result[step.key] = step;
           return result;
@@ -996,7 +1014,6 @@ function Form({
           session.collaborator?.whitelist,
           session.collaborator?.blacklist
         ]);
-
         saveInitialValuesAndUrlParams({
           updateFieldValues,
           client: newClient,
@@ -2058,6 +2075,7 @@ function Form({
 // Props`, so need this component to support exposing _internalId for use in
 // renderAt without exposing InternalProps to SDK users
 export function JSForm({
+  formId,
   formName,
   _internalId,
   _isAuthLoading = false,
@@ -2074,7 +2092,7 @@ export function JSForm({
   }, []);
 
   // Check client for NextJS support
-  if (formName && runningInClient())
+  if ((formId || formName) && runningInClient())
     return (
       /* @ts-ignore */
       <BrowserRouter>
@@ -2082,8 +2100,9 @@ export function JSForm({
         <Route path='/'>
           <Form
             {...props}
+            formId={formId}
             formName={formName}
-            key={`${formName}_${remount}`}
+            key={`${formId || formName}_${remount}`}
             _internalId={_internalId}
             _isAuthLoading={_isAuthLoading}
           />
