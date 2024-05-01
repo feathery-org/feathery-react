@@ -23,7 +23,7 @@ import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
-import { RequestOptions } from '../offlineRequestHandler';
+import { RequestOptions, trackUnload } from '../offlineRequestHandler';
 import debounce from 'lodash.debounce';
 import { DebouncedFunc } from 'lodash';
 import { getFormContext } from '../formContext';
@@ -517,7 +517,6 @@ export default class FeatheryClient extends IntegrationClient {
       method: 'POST',
       body: formData
     };
-
     return this.offlineRequestHandler.runOrSaveRequest(
       () => this._fetch(url, options, true, true),
       url,
@@ -542,6 +541,11 @@ export default class FeatheryClient extends IntegrationClient {
     Object.entries(customKeyValues).forEach(
       ([key, value]) => (this.pendingSubmitCustomUpdates[key] = value)
     );
+    if (Object.keys(this.pendingSubmitCustomUpdates).length) {
+      // prevent user from exiting page and losing pending updates
+      // processing the request will untrack the event, so no need to untrack it if pendingSubmitCustomUpdates is empty
+      trackUnload();
+    }
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush
     if (!override || shouldFlush) {
       return this.flushPendingSubmitCustomUpdates();

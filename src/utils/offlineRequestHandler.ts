@@ -54,7 +54,7 @@ const beforeUnloadEventHandler = (event: any) => {
 
 let unloadCounter = 0;
 
-const trackUnload = () => {
+export const trackUnload = () => {
   if (unloadCounter === 0)
     featheryWindow().addEventListener('beforeunload', beforeUnloadEventHandler);
   unloadCounter++;
