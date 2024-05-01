@@ -95,9 +95,7 @@ export default class FeatheryClient extends IntegrationClient {
   /**
    * If there is a pending invocation of submitCustom, this method calls it immediately
    */
-  flushPendingSubmitCustomUpdates: (
-    override: boolean
-  ) => Promise<void> | undefined;
+  flushPendingSubmitCustomUpdates: () => Promise<void> | undefined;
 
   /**
    * Inner context of the form.
@@ -528,20 +526,27 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
-  async submitCustom(customKeyValues: { [key: string]: any }, override = true) {
+  async submitCustom(
+    customKeyValues: { [key: string]: any },
+    options?: {
+      override?: boolean;
+      shouldFlush?: boolean;
+    }
+  ) {
+    let override = options?.override ?? true;
+    let shouldFlush = options?.shouldFlush ?? false;
+
     if (this.draft || this.noSave) return;
-    const shouldFlushPendingUpdates = this.formContext?.isLastStep();
-    if (Object.keys(customKeyValues).length === 0 && !shouldFlushPendingUpdates)
-      return;
+    if (Object.keys(customKeyValues).length === 0 && !shouldFlush) return;
     // If there are values passed, aggregate them in the pending queue
     Object.entries(customKeyValues).forEach(
       ([key, value]) => (this.pendingSubmitCustomUpdates[key] = value)
     );
-    // if the form is on its last step, so it is about to be completed, flush pending updates
-    if (shouldFlushPendingUpdates) {
-      return this.flushPendingSubmitCustomUpdates(override);
+    // if we don't want to override the existing values or the caller tells us to flush, immediately flush
+    if (!override || shouldFlush) {
+      return this.flushPendingSubmitCustomUpdates();
     }
-    // otherwise, ping API in normal debounced cadence
+    // otherwise, ping the API in normal debounced cadence
     return this.debouncedSubmitCustom(override);
   }
 
@@ -568,7 +573,7 @@ export default class FeatheryClient extends IntegrationClient {
     const fileServars = servars.filter(isFileServar);
     this.submitQueue = Promise.all([
       this.submitQueue,
-      this.submitCustom(hiddenFields),
+      this.submitCustom(hiddenFields, { shouldFlush: true }),
       this._submitJSONData(jsonServars, step.key, hasNext),
       ...fileServars.map((servar: any) =>
         this._submitFileData(servar, step.key)
@@ -601,6 +606,10 @@ export default class FeatheryClient extends IntegrationClient {
       eventData.event === 'load'
         ? eventData.previous_step_key
         : eventData.step_key;
+    // If the user completed a step or skipped it, submit pending changes to BE
+    if (['complete', 'skip'].includes(eventData.event)) {
+      this.flushPendingSubmitCustomUpdates();
+    }
     return this.offlineRequestHandler.runOrSaveRequest(
       // Ensure events complete before user exits page. Submit and load event of
       // next step must happen after the previous step is done submitting
