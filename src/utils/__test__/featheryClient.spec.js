@@ -23,7 +23,7 @@ describe('featheryClient', () => {
         sdkKey: 'sdkKey',
         userId: 'userId',
         formSessions: {},
-        preloadForms: {},
+        formSchemas: {},
         theme: ''
       });
       global.fetch = jest.fn().mockResolvedValue({
@@ -62,7 +62,7 @@ describe('featheryClient', () => {
         sdkKey: 'sdkKey',
         userId: 'userId',
         formSessions: {},
-        preloadForms: {},
+        formSchemas: {},
         overrideUserId: true,
         fieldValuesInitialized: false
       });
@@ -432,7 +432,7 @@ describe('stripe', () => {
     sdkKey: 'sdkKey',
     userId: 'userId',
     formSessions: {},
-    preloadForms: {}
+    formSchemas: {}
   });
   const formKey = 'formKey';
   const userId = 'userId';

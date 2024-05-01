@@ -302,9 +302,9 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   fetchCacheForm(formLanguage?: string) {
-    const { preloadForms, language: globalLanguage, theme } = initInfo();
-    if (!formLanguage && this.formKey in preloadForms)
-      return Promise.resolve(preloadForms[this.formKey]);
+    const { formSchemas, language: globalLanguage, theme } = initInfo();
+    if (!formLanguage && this.formKey in formSchemas)
+      return Promise.resolve(formSchemas[this.formKey]);
 
     const params = encodeGetParams({
       form_key: this.formKey,
