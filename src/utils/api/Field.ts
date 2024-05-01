@@ -311,6 +311,14 @@ export default class Field {
     return this._executeLogic('not_equal', values);
   }
 
+  equalsIgnoreCase(...values: ({ id: string } | string)[]): boolean {
+    return this._executeLogic('equal_ignore_case', values);
+  }
+
+  notEqualsIgnoreCase(...values: ({ id: string } | string)[]): boolean {
+    return this._executeLogic('not_equal_ignore_case', values);
+  }
+
   greaterThan(...values: ({ id: string } | string)[]): boolean {
     return this._executeLogic('greater_than', values);
   }
