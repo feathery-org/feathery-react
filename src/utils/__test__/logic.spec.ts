@@ -165,6 +165,33 @@ describe('logic', () => {
         expect(evalComparisonRule(rule(op, field()))).toBeFalsy();
       });
 
+      it('contains_ignore_case', () => {
+        const op = 'contains_ignore_case';
+
+        setFieldValues('test');
+        expect(evalComparisonRule(rule(op, 'Test'))).toBeTruthy();
+      });
+
+      it('equal_ignore_case', () => {
+        const op = 'equal_ignore_case';
+
+        setFieldValues('test');
+        expect(evalComparisonRule(rule(op, 'Test'))).toBeTruthy();
+
+        setFieldValues('test');
+        expect(evalComparisonRule(rule(op, 'non-matching'))).toBeFalsy();
+      });
+
+      it('not_equal_ignore_case', () => {
+        const op = 'not_equal_ignore_case';
+
+        setFieldValues('test');
+        expect(evalComparisonRule(rule(op, 'Test'))).toBeFalsy();
+
+        setFieldValues('test');
+        expect(evalComparisonRule(rule(op, 'non-matching'))).toBeTruthy();
+      });
+
       it('selections_include', () => {
         const op = 'selections_include';
         // multi valued field

@@ -4,6 +4,8 @@ import internalState from './internalState';
 type OPERATOR_CODE =
   | 'equal'
   | 'not_equal'
+  | 'equal_ignore_case'
+  | 'not_equal_ignore_case'
   | 'greater_than'
   | 'greater_than_or_equal'
   | 'less_than'
@@ -166,6 +168,27 @@ const COMPARISON_FUNCTIONS: {
           if (!l) return !!r;
           else if (!r) return !!l;
           else return !deepEquals(coerceType(l), coerceType(r));
+        },
+        l,
+        r
+      )
+    ),
+  equal_ignore_case: (l, r) =>
+    l.some((l: any) =>
+      someRight(
+        (l, r) =>
+          (!l && !r) || deepEquals(coerceType(l, true), coerceType(r, true)),
+        l,
+        r
+      )
+    ),
+  not_equal_ignore_case: (l, r) =>
+    l.some((l: any) =>
+      everyRight(
+        (l, r) => {
+          if (!l) return !!r;
+          else if (!r) return !!l;
+          else return !deepEquals(coerceType(l, true), coerceType(r, true));
         },
         l,
         r
@@ -345,9 +368,11 @@ function detectType(val: unknown): TYPE {
     type = 'number';
   return type;
 }
-function coerceType(val: any, type: TYPE = detectType(val)): any {
+function coerceType(val: any, ignoreCase = false): any {
+  const type = detectType(val);
   if (type === 'number') return Number(val);
   if (type === 'bigint') return BigInt(val);
+  if (type === 'string' && ignoreCase) return val.toLowerCase();
   return val;
 }
 
