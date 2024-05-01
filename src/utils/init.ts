@@ -28,14 +28,6 @@ export type FieldValues = {
   [fieldKey: string]: FeatheryFieldTypes;
 };
 
-// TODO: remove these deprecated options
-type DeprecatedOptions = {
-  formKeys?: string[];
-  forms?: string[];
-  userKey?: string;
-  tracking?: 'cookie' | 'fingerprint';
-};
-
 type InitOptions = {
   userId?: string;
   cacheUserId?: boolean;
@@ -45,13 +37,13 @@ type InitOptions = {
   language?: string;
   theme?: string;
   _enterpriseRegion?: string;
-} & DeprecatedOptions;
+};
 
 type InitState = {
   initialized: boolean;
   sdkKey: string;
   overrideUserId: boolean;
-  preloadForms: { [formId: string]: any };
+  formSchemas: { [formId: string]: any };
   formSessions: { [formId: string]: any };
   fieldValuesInitialized: boolean;
   redirectCallbacks: Record<string, any>;
@@ -61,7 +53,7 @@ type InitState = {
   isTestEnv: boolean;
   theme: string;
   _internalUserId: string;
-} & Omit<InitOptions, keyof DeprecatedOptions>;
+} & InitOptions;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
 export const defaultClient = new FeatheryClient();
@@ -74,7 +66,7 @@ const initState: InitState = {
   collaboratorId: '',
   overrideUserId: false,
   language: '',
-  preloadForms: [],
+  formSchemas: {},
   formSessions: {},
   defaultErrors: {},
   // Since all field values are fetched with each session, only fetch field
@@ -93,11 +85,6 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (!sdkKey || typeof sdkKey !== 'string') {
     throw new errors.SDKKeyError();
   }
-
-  if (options.tracking) options.userTracking = options.tracking;
-  if (options.userKey) options.userId = options.userKey;
-  options.preloadForms =
-    options.preloadForms ?? options.forms ?? options.formKeys ?? [];
 
   // If client attempts to set userId but it's not yet valid, don't initialize
   // until it becomes valid
@@ -158,7 +145,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   }
 
   initFormsPromise = initFormsPromise.then(() =>
-    _fetchFormData(initState.preloadForms)
+    _fetchFormData(options.preloadForms ?? [])
   );
   return initFormsPromise.then(() => initState.userId ?? '');
 }
@@ -168,7 +155,7 @@ function _fetchFormData(formIds: string[]) {
   formIds.forEach((key) => {
     const formClient = new FeatheryClient(key);
     formClient.fetchCacheForm().then((stepsResponse: any) => {
-      initState.preloadForms[key] = stepsResponse;
+      initState.formSchemas[key] = stepsResponse;
     });
     formClient.fetchSession();
   });
