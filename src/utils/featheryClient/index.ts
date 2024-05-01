@@ -24,6 +24,9 @@ import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
 import { RequestOptions } from '../offlineRequestHandler';
+import debounce from 'lodash.debounce';
+import { DebouncedFunc } from 'lodash';
+import { getFormContext } from '../formContext';
 
 // Convenience boolean for urls - manually change for testing
 export const API_URL_OPTIONS = {
@@ -72,7 +75,53 @@ export const updateRegionApiUrls = (region: string) => {
   }
 };
 
+/**
+ * The number of milliseconds waited until another submitCustom call
+ */
+const SUBMIT_CUSTOM_DEBOUNCE_WINDOW = 1000;
+
 export default class FeatheryClient extends IntegrationClient {
+  /**
+   * Used to aggregate field value updates for sucessive calls to
+   * submitCustom within the debounce window
+   */
+  pendingSubmitCustomUpdates: { [key: string]: any };
+
+  /**
+   * Debounced implementation of submitCustom
+   */
+  debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
+
+  /**
+   * If there is a pending invocation of submitCustom, this method calls it immediately
+   */
+  flushPendingSubmitCustomUpdates: (
+    override: boolean
+  ) => Promise<void> | undefined;
+
+  /**
+   * Inner context of the form.
+   */
+  formContext?: ReturnType<typeof getFormContext>;
+
+  constructor(
+    formKey = '',
+    ignoreNetworkErrors?: any,
+    draft = false,
+    bypassCDN = false,
+    formContext?: ReturnType<typeof getFormContext>
+  ) {
+    super(formKey, ignoreNetworkErrors, draft, bypassCDN);
+    this.pendingSubmitCustomUpdates = {};
+    this.debouncedSubmitCustom = debounce(
+      this._debouncedSubmitCustom.bind(this),
+      SUBMIT_CUSTOM_DEBOUNCE_WINDOW
+    );
+    this.flushPendingSubmitCustomUpdates = () =>
+      this.debouncedSubmitCustom.flush();
+    this.formContext = formContext;
+  }
+
   async _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
     if (servars.length === 0) return Promise.resolve();
 
@@ -417,9 +466,14 @@ export default class FeatheryClient extends IntegrationClient {
       });
   }
 
-  async submitCustom(customKeyValues: any, override = true) {
-    if (this.draft || this.noSave) return;
-    if (Object.keys(customKeyValues).length === 0) return;
+  /**
+   * Debounceable function responsible for pinging `/api/panel/custom/submit/<version>`
+   */
+  async _debouncedSubmitCustom(override: boolean) {
+    if (Object.keys(this.pendingSubmitCustomUpdates).length === 0) return;
+
+    const customKeyValues = { ...this.pendingSubmitCustomUpdates };
+    this.pendingSubmitCustomUpdates = {}; // Clear pending updates after copying them
 
     const { userId } = initInfo();
     const url = `${API_URL}panel/custom/submit/v3/`;
@@ -472,6 +526,23 @@ export default class FeatheryClient extends IntegrationClient {
       options,
       'submit'
     );
+  }
+
+  async submitCustom(customKeyValues: { [key: string]: any }, override = true) {
+    if (this.draft || this.noSave) return;
+    const shouldFlushPendingUpdates = this.formContext?.isLastStep();
+    if (Object.keys(customKeyValues).length === 0 && !shouldFlushPendingUpdates)
+      return;
+    // If there are values passed, aggregate them in the pending queue
+    Object.entries(customKeyValues).forEach(
+      ([key, value]) => (this.pendingSubmitCustomUpdates[key] = value)
+    );
+    // if the form is on its last step, so it is about to be completed, flush pending updates
+    if (shouldFlushPendingUpdates) {
+      return this.flushPendingSubmitCustomUpdates(override);
+    }
+    // otherwise, ping API in normal debounced cadence
+    return this.debouncedSubmitCustom(override);
   }
 
   // servars = [{key: <servarKey>, <type>: <value>}]
