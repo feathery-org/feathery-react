@@ -541,8 +541,8 @@ export default class FeatheryClient extends IntegrationClient {
       shouldFlush?: boolean;
     }
   ) {
-    let override = options?.override ?? true;
-    let shouldFlush = options?.shouldFlush ?? false;
+    const override = options?.override ?? true;
+    const shouldFlush = options?.shouldFlush ?? false;
 
     if (this.draft || this.noSave) return;
     if (Object.keys(customKeyValues).length === 0 && !shouldFlush) return;
