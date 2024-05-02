@@ -525,7 +525,7 @@ export default class FeatheryClient extends IntegrationClient {
   /**
    * If there is a pending invocation of submitCustom, this method calls it immediately
    */
-  flushPendingSubmitCustomUpdates(override = true) {
+  _flushPendingSubmitCustomUpdates(override = true) {
     // we call the debounced method and then flush() to immediately submit changes
     // see: https://github.com/lodash/lodash/issues/4185#issuecomment-462388355
     this.debouncedSubmitCustom(override);
@@ -540,7 +540,7 @@ export default class FeatheryClient extends IntegrationClient {
    */
   _flushPendingChangesBeforeUnload(event: BeforeUnloadEvent) {
     event.preventDefault();
-    this.flushPendingSubmitCustomUpdates();
+    this._flushPendingSubmitCustomUpdates();
     return (event.returnValue = '');
   }
 
@@ -560,7 +560,7 @@ export default class FeatheryClient extends IntegrationClient {
     );
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush
     if (!override || shouldFlush) {
-      return this.flushPendingSubmitCustomUpdates(override);
+      return this._flushPendingSubmitCustomUpdates(override);
     }
     if (Object.keys(this.pendingCustomFieldUpdates).length) {
       // if there are pending changes, prevent user from exiting page and losing them
@@ -632,7 +632,7 @@ export default class FeatheryClient extends IntegrationClient {
       stepKey = eventData.previous_step_key;
     } else {
       stepKey = eventData.step_key;
-      this.flushPendingSubmitCustomUpdates();
+      this._flushPendingSubmitCustomUpdates();
     }
     return this.offlineRequestHandler.runOrSaveRequest(
       // Ensure events complete before user exits page. Submit and load event of
