@@ -518,7 +518,7 @@ export default class FeatheryClient extends IntegrationClient {
   /**
    * If there is a pending invocation of submitCustom, this method calls it immediately
    */
-  flushPendingSubmitCustomUpdates(override: boolean = true) {
+  flushPendingSubmitCustomUpdates(override = true) {
     // we call the debounced method and then flush() to immediately submit changes
     // see: https://github.com/lodash/lodash/issues/4185#issuecomment-462388355
     this.debouncedSubmitCustom(override);
