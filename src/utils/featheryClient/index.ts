@@ -110,10 +110,10 @@ export default class FeatheryClient extends IntegrationClient {
       this._debouncedSubmitCustom.bind(this),
       SUBMIT_CUSTOM_DEBOUNCE_WINDOW
     );
-    this.flushPendingSubmitCustomUpdates = (override: boolean = true) => {
+    this.flushPendingSubmitCustomUpdates = (override?: boolean) => {
       // we call the debounced method and then the flush to immediately submit changes
       // see: https://github.com/lodash/lodash/issues/4185#issuecomment-462388355
-      this.debouncedSubmitCustom(override);
+      this.debouncedSubmitCustom(override ?? true);
       return this.debouncedSubmitCustom.flush();
     };
   }
