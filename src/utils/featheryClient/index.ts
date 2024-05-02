@@ -453,7 +453,14 @@ export default class FeatheryClient extends IntegrationClient {
    * Debounceable function responsible for pinging `/api/panel/custom/submit/<version>`
    */
   async _debouncedSubmitCustom(override: boolean) {
-    if (Object.keys(this.pendingCustomFieldUpdates).length === 0) return;
+    if (Object.keys(this.pendingCustomFieldUpdates).length === 0) {
+      // if no pending changes, no need to keep listening for unload events.
+      featheryWindow().removeEventListener(
+        'beforeunload',
+        this._flushPendingChangesBeforeUnload
+      );
+      return;
+    }
 
     const customKeyValues = { ...this.pendingCustomFieldUpdates };
     this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
@@ -551,6 +558,10 @@ export default class FeatheryClient extends IntegrationClient {
     Object.entries(customKeyValues).forEach(
       ([key, value]) => (this.pendingCustomFieldUpdates[key] = value)
     );
+    // if we don't want to override the existing values or the caller tells us to flush, immediately flush
+    if (!override || shouldFlush) {
+      return this.flushPendingSubmitCustomUpdates(override);
+    }
     if (Object.keys(this.pendingCustomFieldUpdates).length) {
       // if there are pending changes, prevent user from exiting page and losing them
       featheryWindow().addEventListener(
@@ -559,10 +570,6 @@ export default class FeatheryClient extends IntegrationClient {
         // the event is triggered
         this._flushPendingChangesBeforeUnload.bind(this)
       );
-    }
-    // if we don't want to override the existing values or the caller tells us to flush, immediately flush
-    if (!override || shouldFlush) {
-      return this.flushPendingSubmitCustomUpdates(override);
     }
     // otherwise, ping the API in normal debounced cadence
     return this.debouncedSubmitCustom(override);
