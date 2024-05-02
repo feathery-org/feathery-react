@@ -94,7 +94,9 @@ export default class FeatheryClient extends IntegrationClient {
   /**
    * If there is a pending invocation of submitCustom, this method calls it immediately
    */
-  flushPendingSubmitCustomUpdates: () => Promise<void> | undefined;
+  flushPendingSubmitCustomUpdates: (
+    override?: boolean
+  ) => Promise<void> | undefined;
 
   constructor(
     formKey = '',
@@ -108,8 +110,12 @@ export default class FeatheryClient extends IntegrationClient {
       this._debouncedSubmitCustom.bind(this),
       SUBMIT_CUSTOM_DEBOUNCE_WINDOW
     );
-    this.flushPendingSubmitCustomUpdates = () =>
-      this.debouncedSubmitCustom.flush();
+    this.flushPendingSubmitCustomUpdates = (override: boolean = true) => {
+      // we call the debounced method and then the flush to immediately submit changes
+      // see: https://github.com/lodash/lodash/issues/4185#issuecomment-462388355
+      this.debouncedSubmitCustom(override);
+      return this.debouncedSubmitCustom.flush();
+    };
   }
 
   async _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
@@ -462,6 +468,8 @@ export default class FeatheryClient extends IntegrationClient {
   async _debouncedSubmitCustom(override: boolean) {
     if (Object.keys(this.pendingSubmitCustomUpdates).length === 0) return;
 
+    console.log(' I AM FLUSHING?');
+
     const customKeyValues = { ...this.pendingSubmitCustomUpdates };
     this.pendingSubmitCustomUpdates = {}; // Clear pending updates after copying them
 
@@ -550,6 +558,7 @@ export default class FeatheryClient extends IntegrationClient {
     Object.entries(customKeyValues).forEach(
       ([key, value]) => (this.pendingSubmitCustomUpdates[key] = value)
     );
+    console.log('\nPENDING UPDATES: ', this.pendingSubmitCustomUpdates);
     if (Object.keys(this.pendingSubmitCustomUpdates).length) {
       // if there are pending changes, prevent user from exiting page and losing them
       featheryWindow().addEventListener(
@@ -561,7 +570,8 @@ export default class FeatheryClient extends IntegrationClient {
     }
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush
     if (!override || shouldFlush) {
-      return this.flushPendingSubmitCustomUpdates();
+      console.log('\nSHOULD FLUSH!!!');
+      return this.flushPendingSubmitCustomUpdates(override);
     }
     // otherwise, ping the API in normal debounced cadence
     return this.debouncedSubmitCustom(override);

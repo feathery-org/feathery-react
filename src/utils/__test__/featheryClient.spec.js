@@ -105,7 +105,7 @@ describe('featheryClient', () => {
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
 
       // Act
-      await featheryClient.submitCustom(customKeyValues);
+      await featheryClient.submitCustom(customKeyValues, { shouldFlush: true });
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
@@ -134,7 +134,7 @@ describe('featheryClient', () => {
       featheryClient.offlineRequestHandler.saveRequest = jest.fn();
 
       // Act
-      await featheryClient.submitCustom(customKeyValues);
+      await featheryClient.submitCustom(customKeyValues, { shouldFlush: true });
 
       // Assert
       expect(
