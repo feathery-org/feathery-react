@@ -18,15 +18,14 @@ import {
 import { loadPhoneValidator } from '../validation';
 import { initializeIntegrations } from '../../integrations/utils';
 import { loadLottieLight } from '../../elements/components/Lottie';
-import { featheryDoc } from '../browser';
+import { featheryDoc, featheryWindow } from '../browser';
 import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
-import { RequestOptions, trackUnload } from '../offlineRequestHandler';
+import { RequestOptions } from '../offlineRequestHandler';
 import debounce from 'lodash.debounce';
 import { DebouncedFunc } from 'lodash';
-import { getFormContext } from '../formContext';
 
 // Convenience boolean for urls - manually change for testing
 export const API_URL_OPTIONS = {
@@ -97,17 +96,11 @@ export default class FeatheryClient extends IntegrationClient {
    */
   flushPendingSubmitCustomUpdates: () => Promise<void> | undefined;
 
-  /**
-   * Inner context of the form.
-   */
-  formContext?: ReturnType<typeof getFormContext>;
-
   constructor(
     formKey = '',
     ignoreNetworkErrors?: any,
     draft = false,
-    bypassCDN = false,
-    formContext?: ReturnType<typeof getFormContext>
+    bypassCDN = false
   ) {
     super(formKey, ignoreNetworkErrors, draft, bypassCDN);
     this.pendingSubmitCustomUpdates = {};
@@ -117,7 +110,6 @@ export default class FeatheryClient extends IntegrationClient {
     );
     this.flushPendingSubmitCustomUpdates = () =>
       this.debouncedSubmitCustom.flush();
-    this.formContext = formContext;
   }
 
   async _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
@@ -517,12 +509,29 @@ export default class FeatheryClient extends IntegrationClient {
       method: 'POST',
       body: formData
     };
+    // Here we can safely remove the listener becasue offlineRequestHandler has its own beforeunload
+    featheryWindow().removeEventListener(
+      'beforeunload',
+      this.flushPendingChangesBeforeUnload
+    );
     return this.offlineRequestHandler.runOrSaveRequest(
       () => this._fetch(url, options, true, true),
       url,
       options,
       'submit'
     );
+  }
+
+  /**
+   * `beforeunload` event handler that flushes the pending submit custome changes
+   * when a user is attempting to exit the page.
+   * @param event `BeforeUnloadEvent`
+   * @returns
+   */
+  flushPendingChangesBeforeUnload(event: BeforeUnloadEvent) {
+    event.preventDefault();
+    this.flushPendingSubmitCustomUpdates();
+    return (event.returnValue = '');
   }
 
   async submitCustom(
@@ -542,9 +551,13 @@ export default class FeatheryClient extends IntegrationClient {
       ([key, value]) => (this.pendingSubmitCustomUpdates[key] = value)
     );
     if (Object.keys(this.pendingSubmitCustomUpdates).length) {
-      // prevent user from exiting page and losing pending updates
-      // processing the request will untrack the event, so no need to untrack it if pendingSubmitCustomUpdates is empty
-      trackUnload();
+      // if there are pending changes, prevent user from exiting page and losing them
+      featheryWindow().addEventListener(
+        'beforeunload',
+        // if the method is not bound to itself, the event handler will not be able to recognize it when
+        // the event is triggered
+        this.flushPendingChangesBeforeUnload.bind(this)
+      );
     }
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush
     if (!override || shouldFlush) {

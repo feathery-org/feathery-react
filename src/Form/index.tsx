@@ -928,8 +928,7 @@ function Form({
       formKey,
       hasRedirected,
       _draft,
-      _bypassCDN,
-      contextRef?.current || undefined
+      _bypassCDN
     );
     const newClient = clientRef.current;
     let saveUrlParamsFormSetting = false;
