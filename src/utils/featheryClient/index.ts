@@ -84,19 +84,12 @@ export default class FeatheryClient extends IntegrationClient {
    * Used to aggregate field value updates for sucessive calls to
    * submitCustom within the debounce window
    */
-  pendingSubmitCustomUpdates: { [key: string]: any };
+  pendingCustomFieldUpdates: { [key: string]: any };
 
   /**
    * Debounced implementation of submitCustom
    */
   debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
-
-  /**
-   * If there is a pending invocation of submitCustom, this method calls it immediately
-   */
-  flushPendingSubmitCustomUpdates: (
-    override?: boolean
-  ) => Promise<void> | undefined;
 
   constructor(
     formKey = '',
@@ -105,17 +98,11 @@ export default class FeatheryClient extends IntegrationClient {
     bypassCDN = false
   ) {
     super(formKey, ignoreNetworkErrors, draft, bypassCDN);
-    this.pendingSubmitCustomUpdates = {};
+    this.pendingCustomFieldUpdates = {};
     this.debouncedSubmitCustom = debounce(
       this._debouncedSubmitCustom.bind(this),
       SUBMIT_CUSTOM_DEBOUNCE_WINDOW
     );
-    this.flushPendingSubmitCustomUpdates = (override?: boolean) => {
-      // we call the debounced method and then the flush to immediately submit changes
-      // see: https://github.com/lodash/lodash/issues/4185#issuecomment-462388355
-      this.debouncedSubmitCustom(override ?? true);
-      return this.debouncedSubmitCustom.flush();
-    };
   }
 
   async _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
@@ -466,12 +453,10 @@ export default class FeatheryClient extends IntegrationClient {
    * Debounceable function responsible for pinging `/api/panel/custom/submit/<version>`
    */
   async _debouncedSubmitCustom(override: boolean) {
-    if (Object.keys(this.pendingSubmitCustomUpdates).length === 0) return;
+    if (Object.keys(this.pendingCustomFieldUpdates).length === 0) return;
 
-    console.log(' I AM FLUSHING?');
-
-    const customKeyValues = { ...this.pendingSubmitCustomUpdates };
-    this.pendingSubmitCustomUpdates = {}; // Clear pending updates after copying them
+    const customKeyValues = { ...this.pendingCustomFieldUpdates };
+    this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
 
     const { userId } = initInfo();
     const url = `${API_URL}panel/custom/submit/v3/`;
@@ -531,7 +516,17 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   /**
-   * `beforeunload` event handler that flushes the pending submit custome changes
+   * If there is a pending invocation of submitCustom, this method calls it immediately
+   */
+  flushPendingSubmitCustomUpdates(override: boolean = true) {
+    // we call the debounced method and then flush() to immediately submit changes
+    // see: https://github.com/lodash/lodash/issues/4185#issuecomment-462388355
+    this.debouncedSubmitCustom(override);
+    return this.debouncedSubmitCustom.flush();
+  }
+
+  /**
+   * `beforeunload` event handler that flushes the pending submit custom changes
    * when a user is attempting to exit the page.
    * @param event `BeforeUnloadEvent`
    * @returns
@@ -544,22 +539,19 @@ export default class FeatheryClient extends IntegrationClient {
 
   async submitCustom(
     customKeyValues: { [key: string]: any },
-    options?: {
-      override?: boolean;
-      shouldFlush?: boolean;
-    }
+    // Options
+    {
+      override = true,
+      shouldFlush = false
+    }: { override?: boolean; shouldFlush?: boolean } = {}
   ) {
-    const override = options?.override ?? true;
-    const shouldFlush = options?.shouldFlush ?? false;
-
     if (this.draft || this.noSave) return;
     if (Object.keys(customKeyValues).length === 0 && !shouldFlush) return;
     // If there are values passed, aggregate them in the pending queue
     Object.entries(customKeyValues).forEach(
-      ([key, value]) => (this.pendingSubmitCustomUpdates[key] = value)
+      ([key, value]) => (this.pendingCustomFieldUpdates[key] = value)
     );
-    console.log('\nPENDING UPDATES: ', this.pendingSubmitCustomUpdates);
-    if (Object.keys(this.pendingSubmitCustomUpdates).length) {
+    if (Object.keys(this.pendingCustomFieldUpdates).length) {
       // if there are pending changes, prevent user from exiting page and losing them
       featheryWindow().addEventListener(
         'beforeunload',
@@ -570,7 +562,6 @@ export default class FeatheryClient extends IntegrationClient {
     }
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush
     if (!override || shouldFlush) {
-      console.log('\nSHOULD FLUSH!!!');
       return this.flushPendingSubmitCustomUpdates(override);
     }
     // otherwise, ping the API in normal debounced cadence
@@ -629,12 +620,11 @@ export default class FeatheryClient extends IntegrationClient {
       body: JSON.stringify(data)
     };
 
-    const stepKey =
-      eventData.event === 'load'
-        ? eventData.previous_step_key
-        : eventData.step_key;
-    // If the user completed a step or skipped it, submit pending changes to BE
-    if (['complete', 'skip'].includes(eventData.event)) {
+    let stepKey;
+    if (eventData.event === 'load') {
+      stepKey = eventData.previous_step_key;
+    } else {
+      stepKey = eventData.step_key;
       this.flushPendingSubmitCustomUpdates();
     }
     return this.offlineRequestHandler.runOrSaveRequest(
