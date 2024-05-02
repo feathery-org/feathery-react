@@ -512,7 +512,7 @@ export default class FeatheryClient extends IntegrationClient {
     // Here we can safely remove the listener becasue offlineRequestHandler has its own beforeunload
     featheryWindow().removeEventListener(
       'beforeunload',
-      this.flushPendingChangesBeforeUnload
+      this._flushPendingChangesBeforeUnload
     );
     return this.offlineRequestHandler.runOrSaveRequest(
       () => this._fetch(url, options, true, true),
@@ -528,7 +528,7 @@ export default class FeatheryClient extends IntegrationClient {
    * @param event `BeforeUnloadEvent`
    * @returns
    */
-  flushPendingChangesBeforeUnload(event: BeforeUnloadEvent) {
+  _flushPendingChangesBeforeUnload(event: BeforeUnloadEvent) {
     event.preventDefault();
     this.flushPendingSubmitCustomUpdates();
     return (event.returnValue = '');
@@ -556,7 +556,7 @@ export default class FeatheryClient extends IntegrationClient {
         'beforeunload',
         // if the method is not bound to itself, the event handler will not be able to recognize it when
         // the event is triggered
-        this.flushPendingChangesBeforeUnload.bind(this)
+        this._flushPendingChangesBeforeUnload.bind(this)
       );
     }
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush
