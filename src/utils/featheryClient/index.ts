@@ -18,12 +18,14 @@ import {
 import { loadPhoneValidator } from '../validation';
 import { initializeIntegrations } from '../../integrations/utils';
 import { loadLottieLight } from '../../elements/components/Lottie';
-import { featheryDoc } from '../browser';
+import { featheryDoc, featheryWindow } from '../browser';
 import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
 import { RequestOptions } from '../offlineRequestHandler';
+import debounce from 'lodash.debounce';
+import { DebouncedFunc } from 'lodash';
 
 // Convenience boolean for urls - manually change for testing
 export const API_URL_OPTIONS = {
@@ -72,7 +74,37 @@ export const updateRegionApiUrls = (region: string) => {
   }
 };
 
+/**
+ * The number of milliseconds waited until another submitCustom call
+ */
+const SUBMIT_CUSTOM_DEBOUNCE_WINDOW = 1000;
+
 export default class FeatheryClient extends IntegrationClient {
+  /**
+   * Used to aggregate field value updates for sucessive calls to
+   * submitCustom within the debounce window
+   */
+  pendingCustomFieldUpdates: { [key: string]: any };
+
+  /**
+   * Debounced implementation of submitCustom
+   */
+  debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
+
+  constructor(
+    formKey = '',
+    ignoreNetworkErrors?: any,
+    draft = false,
+    bypassCDN = false
+  ) {
+    super(formKey, ignoreNetworkErrors, draft, bypassCDN);
+    this.pendingCustomFieldUpdates = {};
+    this.debouncedSubmitCustom = debounce(
+      this._debouncedSubmitCustom.bind(this),
+      SUBMIT_CUSTOM_DEBOUNCE_WINDOW
+    );
+  }
+
   async _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
     if (servars.length === 0) return Promise.resolve();
 
@@ -417,9 +449,21 @@ export default class FeatheryClient extends IntegrationClient {
       });
   }
 
-  async submitCustom(customKeyValues: any, override = true) {
-    if (this.draft || this.noSave) return;
-    if (Object.keys(customKeyValues).length === 0) return;
+  /**
+   * Debounceable function responsible for pinging `/api/panel/custom/submit/<version>`
+   */
+  async _debouncedSubmitCustom(override: boolean) {
+    if (Object.keys(this.pendingCustomFieldUpdates).length === 0) {
+      // if no pending changes, no need to keep listening for unload events.
+      featheryWindow().removeEventListener(
+        'beforeunload',
+        this._flushPendingChangesBeforeUnload
+      );
+      return;
+    }
+
+    const customKeyValues = { ...this.pendingCustomFieldUpdates };
+    this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
 
     const { userId } = initInfo();
     const url = `${API_URL}panel/custom/submit/v3/`;
@@ -465,13 +509,70 @@ export default class FeatheryClient extends IntegrationClient {
       method: 'POST',
       body: formData
     };
-
+    // Here we can safely remove the listener becasue offlineRequestHandler has its own beforeunload
+    featheryWindow().removeEventListener(
+      'beforeunload',
+      this._flushPendingChangesBeforeUnload
+    );
     return this.offlineRequestHandler.runOrSaveRequest(
       () => this._fetch(url, options, true, true),
       url,
       options,
       'submit'
     );
+  }
+
+  /**
+   * If there is a pending invocation of submitCustom, this method calls it immediately
+   */
+  _flushPendingSubmitCustomUpdates(override = true) {
+    // we call the debounced method and then flush() to immediately submit changes
+    // see: https://github.com/lodash/lodash/issues/4185#issuecomment-462388355
+    this.debouncedSubmitCustom(override);
+    return this.debouncedSubmitCustom.flush();
+  }
+
+  /**
+   * `beforeunload` event handler that flushes the pending submit custom changes
+   * when a user is attempting to exit the page.
+   * @param event `BeforeUnloadEvent`
+   * @returns
+   */
+  _flushPendingChangesBeforeUnload(event: BeforeUnloadEvent) {
+    event.preventDefault();
+    this._flushPendingSubmitCustomUpdates();
+    return (event.returnValue = '');
+  }
+
+  async submitCustom(
+    customKeyValues: { [key: string]: any },
+    // Options
+    {
+      override = true,
+      shouldFlush = false
+    }: { override?: boolean; shouldFlush?: boolean } = {}
+  ) {
+    if (this.draft || this.noSave) return;
+    if (Object.keys(customKeyValues).length === 0 && !shouldFlush) return;
+    // If there are values passed, aggregate them in the pending queue
+    Object.entries(customKeyValues).forEach(
+      ([key, value]) => (this.pendingCustomFieldUpdates[key] = value)
+    );
+    // if we don't want to override the existing values or the caller tells us to flush, immediately flush
+    if (!override || shouldFlush) {
+      return this._flushPendingSubmitCustomUpdates(override);
+    }
+    if (Object.keys(this.pendingCustomFieldUpdates).length) {
+      // if there are pending changes, prevent user from exiting page and losing them
+      featheryWindow().addEventListener(
+        'beforeunload',
+        // if the method is not bound to itself, the event handler will not be able to recognize it when
+        // the event is triggered
+        this._flushPendingChangesBeforeUnload.bind(this)
+      );
+    }
+    // otherwise, ping the API in normal debounced cadence
+    return this.debouncedSubmitCustom(override);
   }
 
   // servars = [{key: <servarKey>, <type>: <value>}]
@@ -497,7 +598,7 @@ export default class FeatheryClient extends IntegrationClient {
     const fileServars = servars.filter(isFileServar);
     this.submitQueue = Promise.all([
       this.submitQueue,
-      this.submitCustom(hiddenFields),
+      this.submitCustom(hiddenFields, { shouldFlush: true }),
       this._submitJSONData(jsonServars, step.key, hasNext),
       ...fileServars.map((servar: any) =>
         this._submitFileData(servar, step.key)
@@ -526,10 +627,13 @@ export default class FeatheryClient extends IntegrationClient {
       body: JSON.stringify(data)
     };
 
-    const stepKey =
-      eventData.event === 'load'
-        ? eventData.previous_step_key
-        : eventData.step_key;
+    let stepKey;
+    if (eventData.event === 'load') {
+      stepKey = eventData.previous_step_key;
+    } else {
+      stepKey = eventData.step_key;
+      this._flushPendingSubmitCustomUpdates();
+    }
     return this.offlineRequestHandler.runOrSaveRequest(
       // Ensure events complete before user exits page. Submit and load event of
       // next step must happen after the previous step is done submitting

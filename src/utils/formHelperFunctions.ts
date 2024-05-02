@@ -848,7 +848,7 @@ export function saveInitialValuesAndUrlParams({
   }
   if (!isObjectEmpty(valuesToSubmit)) {
     updateFieldValues(valuesToSubmit, { rerender: rerenderRequired });
-    client.submitCustom(valuesToSubmit, false);
+    client.submitCustom(valuesToSubmit, { override: false });
   }
 }
 
