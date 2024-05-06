@@ -455,10 +455,7 @@ export default class FeatheryClient extends IntegrationClient {
   async _debouncedSubmitCustom(override: boolean) {
     if (Object.keys(this.pendingCustomFieldUpdates).length === 0) {
       // if no pending changes, no need to keep listening for unload events.
-      featheryWindow().removeEventListener(
-        'beforeunload',
-        this._flushPendingChangesBeforeUnload
-      );
+      this._removeCustomFieldListener();
       return;
     }
 
@@ -509,11 +506,8 @@ export default class FeatheryClient extends IntegrationClient {
       method: 'POST',
       body: formData
     };
-    // Here we can safely remove the listener becasue offlineRequestHandler has its own beforeunload
-    featheryWindow().removeEventListener(
-      'beforeunload',
-      this._flushPendingChangesBeforeUnload
-    );
+    // Here we can safely remove the listener because offlineRequestHandler has its own beforeunload
+    this._removeCustomFieldListener();
     return this.offlineRequestHandler.runOrSaveRequest(
       () => this._fetch(url, options, true, true),
       url,
@@ -525,7 +519,7 @@ export default class FeatheryClient extends IntegrationClient {
   /**
    * If there is a pending invocation of submitCustom, this method calls it immediately
    */
-  _flushPendingSubmitCustomUpdates(override = true) {
+  _flushCustomFields(override = true) {
     // we call the debounced method and then flush() to immediately submit changes
     // see: https://github.com/lodash/lodash/issues/4185#issuecomment-462388355
     this.debouncedSubmitCustom(override);
@@ -535,13 +529,29 @@ export default class FeatheryClient extends IntegrationClient {
   /**
    * `beforeunload` event handler that flushes the pending submit custom changes
    * when a user is attempting to exit the page.
+   * Defined via an arrow function so that event handler has a consistent reference
+   * when adding and removing the listener
    * @param event `BeforeUnloadEvent`
    * @returns
    */
-  _flushPendingChangesBeforeUnload(event: BeforeUnloadEvent) {
+  _flushCustomFieldsBeforeUnload = (event: BeforeUnloadEvent) => {
     event.preventDefault();
-    this._flushPendingSubmitCustomUpdates();
+    this._flushCustomFields();
     return (event.returnValue = '');
+  };
+
+  _removeCustomFieldListener() {
+    featheryWindow().removeEventListener(
+      'beforeunload',
+      this._flushCustomFieldsBeforeUnload
+    );
+  }
+
+  _addCustomFieldListener() {
+    featheryWindow().addEventListener(
+      'beforeunload',
+      this._flushCustomFieldsBeforeUnload
+    );
   }
 
   async submitCustom(
@@ -560,16 +570,11 @@ export default class FeatheryClient extends IntegrationClient {
     );
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush
     if (!override || shouldFlush) {
-      return this._flushPendingSubmitCustomUpdates(override);
+      return this._flushCustomFields(override);
     }
     if (Object.keys(this.pendingCustomFieldUpdates).length) {
       // if there are pending changes, prevent user from exiting page and losing them
-      featheryWindow().addEventListener(
-        'beforeunload',
-        // if the method is not bound to itself, the event handler will not be able to recognize it when
-        // the event is triggered
-        this._flushPendingChangesBeforeUnload.bind(this)
-      );
+      this._addCustomFieldListener();
     }
     // otherwise, ping the API in normal debounced cadence
     return this.debouncedSubmitCustom(override);
@@ -632,7 +637,7 @@ export default class FeatheryClient extends IntegrationClient {
       stepKey = eventData.previous_step_key;
     } else {
       stepKey = eventData.step_key;
-      this._flushPendingSubmitCustomUpdates();
+      this._flushCustomFields();
     }
     return this.offlineRequestHandler.runOrSaveRequest(
       // Ensure events complete before user exits page. Submit and load event of
