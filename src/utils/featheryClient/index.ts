@@ -454,10 +454,10 @@ export default class FeatheryClient extends IntegrationClient {
    */
   async _debouncedSubmitCustom(override: boolean) {
     if (Object.keys(this.pendingCustomFieldUpdates).length === 0) {
-      // if no pending changes, no need to keep listening for unload events.
-      this._removeCustomFieldListener();
       return;
     }
+    // if there are changes, listen for beforeunload events
+    this._addCustomFieldListener();
 
     const customKeyValues = { ...this.pendingCustomFieldUpdates };
     this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
@@ -507,9 +507,11 @@ export default class FeatheryClient extends IntegrationClient {
       body: formData
     };
     // Here we can safely remove the listener because offlineRequestHandler has its own beforeunload
-    this._removeCustomFieldListener();
     return this.offlineRequestHandler.runOrSaveRequest(
-      () => this._fetch(url, options, true, true),
+      () => {
+        this._fetch(url, options, true, true);
+        this._removeCustomFieldListener();
+      },
       url,
       options,
       'submit'
@@ -563,18 +565,13 @@ export default class FeatheryClient extends IntegrationClient {
     }: { override?: boolean; shouldFlush?: boolean } = {}
   ) {
     if (this.draft || this.noSave) return;
-    if (Object.keys(customKeyValues).length === 0 && !shouldFlush) return;
-    // If there are values passed, aggregate them in the pending queue
+
     Object.entries(customKeyValues).forEach(
       ([key, value]) => (this.pendingCustomFieldUpdates[key] = value)
     );
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush
     if (!override || shouldFlush) {
       return this._flushCustomFields(override);
-    }
-    if (Object.keys(this.pendingCustomFieldUpdates).length) {
-      // if there are pending changes, prevent user from exiting page and losing them
-      this._addCustomFieldListener();
     }
     // otherwise, ping the API in normal debounced cadence
     return this.debouncedSubmitCustom(override);
