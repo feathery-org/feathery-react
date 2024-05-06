@@ -506,6 +506,7 @@ export default class FeatheryClient extends IntegrationClient {
       method: 'POST',
       body: formData
     };
+
     // Here we can safely remove the listener because offlineRequestHandler has its own beforeunload
     this._removeCustomFieldListener();
     return this.offlineRequestHandler.runOrSaveRequest(
@@ -565,9 +566,9 @@ export default class FeatheryClient extends IntegrationClient {
     if (this.draft || this.noSave) return;
     if (Object.keys(customKeyValues).length === 0 && !shouldFlush) return;
     // If there are values passed, aggregate them in the pending queue
-    Object.entries(customKeyValues).forEach(
-      ([key, value]) => (this.pendingCustomFieldUpdates[key] = value)
-    );
+    Object.entries(customKeyValues).forEach(([key, value]) => {
+      if (value !== undefined) this.pendingCustomFieldUpdates[key] = value;
+    });
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush
     if (!override || shouldFlush) {
       return this._flushCustomFields(override);
