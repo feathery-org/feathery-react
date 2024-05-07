@@ -210,6 +210,9 @@ const validators = {
       if (parts.some((part) => !part)) return false;
       // Last part of domain cannot contain digit
       if (NUMBER_MATCH.test(parts[parts.length - 1])) return false;
+      // Colon at end of hostname gets filtered out by URL object but
+      // should be invalid
+      if (a[urlObj.origin.length] === ':') return false;
       return parts.length > 1;
     } catch (e) {
       return false;
