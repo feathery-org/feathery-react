@@ -140,7 +140,6 @@ function DateSelectorField({
 
   const onDateChange = (newDate: any) => {
     newDate = newDate ?? '';
-    setInternalDate(newDate);
     onChange(formatDateString(newDate, servarMeta));
   };
 
@@ -201,12 +200,11 @@ function DateSelectorField({
         <DatePicker
           id={element.servar.key}
           selected={internalDate}
-          preventOpenOnFocus
           autoComplete='off'
           onCalendarOpen={handleCalendarOpen}
           onCalendarClose={handleCalendarClose}
           onSelect={onDateChange} // when day is clicked
-          onChange={onDateChange} // only when value has changed
+          onChange={setInternalDate} // only when value has changed
           onFocus={(e: any) => {
             if (isTouchDevice()) {
               // hide keyboard on mobile focus
@@ -214,7 +212,10 @@ function DateSelectorField({
             }
             setFocused(true);
           }}
-          onBlur={() => setFocused(false)}
+          onBlur={() => {
+            setFocused(false);
+            onDateChange(internalDate);
+          }}
           required={required}
           placeholder=''
           readOnly={disabled}
