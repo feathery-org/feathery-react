@@ -210,6 +210,8 @@ function DateSelectorField({
               // hide keyboard on mobile focus
               e.target.readOnly = true;
             }
+            // select all text on focus
+            e.target.select();
             setFocused(true);
           }}
           onBlur={() => {
