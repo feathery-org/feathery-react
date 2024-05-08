@@ -193,6 +193,7 @@ export interface Props {
   className?: string;
   children?: JSX.Element;
   _draft?: boolean;
+  readonly?: boolean;
 }
 
 interface InternalProps {
@@ -247,7 +248,8 @@ function Form({
   style = {},
   className = '',
   children,
-  _draft = false
+  _draft = false,
+  readonly = false
 }: InternalProps & Props) {
   const [formName, setFormName] = useState(formNameProp || ''); // TODO: remove support for formName (deprecated)
   const formKey = formId || formName; // prioritize formID but fall back to name
@@ -269,6 +271,8 @@ function Form({
   // No state since off reason is set in two locations almost simultaneously
   const formOffReason = useRef('');
   const [formSettings, setFormSettings] = useState({
+    readonly: readonly,
+
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
@@ -957,7 +961,7 @@ function Form({
             );
           };
         if (res.save_url_params) saveUrlParamsFormSetting = true;
-        setFormSettings(mapFormSettingsResponse(res));
+        setFormSettings({ ...formSettings, ...mapFormSettingsResponse(res) });
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);
         trackHashes.current = res.track_hashes;
@@ -1509,41 +1513,45 @@ function Form({
         return;
       }
 
-      // run default form validation
-      const { invalid } = validateElements({
-        step: activeStep,
-        visiblePositions,
-        triggerErrors: true,
-        errorType: formSettings.errorType,
-        formRef,
-        errorCallback: getErrorCallback({ trigger }),
-        setInlineErrors,
-        trigger
-      });
-      if (invalid) {
-        setAutoValidate(true);
-        elementClicks[id] = false;
-        return;
-      }
+      // If the step is readonly, don't run validation or submit
+      if (!readonly) {
+        // run default form validation
+        const { invalid } = validateElements({
+          step: activeStep,
+          visiblePositions,
+          triggerErrors: true,
+          errorType: formSettings.errorType,
+          formRef,
+          errorCallback: getErrorCallback({ trigger }),
+          setInlineErrors,
+          trigger
+        });
+        if (invalid) {
+          setAutoValidate(true);
+          elementClicks[id] = false;
+          return;
+        }
 
-      // Don't try to complete the form on step submission if navigating to
-      // a new step. The nav action goToNewStep will attempt to complete
-      // it. If navigating but there is no step to navigate to, still attempt
-      // to complete the form here since the user may leave before the
-      // nav action event gets sent
-      const hasNext =
-        actions.some((action: any) => action.type === ACTION_NEXT) &&
-        getNextStepKey(metadata);
-      const newPromise = await submitStep(
-        metadata,
-        element.repeat || 0,
-        !!hasNext
-      );
-      if (!newPromise) {
-        elementClicks[id] = false;
-        return;
+        // Don't try to complete the form on step submission if navigating to
+        // a new step. The nav action goToNewStep will attempt to complete
+        // it. If navigating but there is no step to navigate to, still attempt
+        // to complete the form here since the user may leave before the
+        // nav action event gets sent
+        const hasNext =
+          actions.some((action: any) => action.type === ACTION_NEXT) &&
+          getNextStepKey(metadata);
+        const newPromise = await submitStep(
+          metadata,
+          element.repeat || 0,
+          !!hasNext
+        );
+
+        if (!newPromise) {
+          elementClicks[id] = false;
+          return;
+        }
+        submitPromise = newPromise[0];
       }
-      submitPromise = newPromise[0];
     }
 
     // Adjust action order to prioritize certain actions and

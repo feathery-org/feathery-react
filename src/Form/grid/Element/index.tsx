@@ -226,7 +226,7 @@ const Element = ({ node: el, form }: any) => {
       elementProps: elementProps[servar.key],
       autoComplete: formSettings.autocomplete,
       rightToLeft: formSettings.rightToLeft,
-      disabled: el.properties.disabled,
+      disabled: el.properties.disabled || formSettings.readonly,
       onEnter,
       required
     };
