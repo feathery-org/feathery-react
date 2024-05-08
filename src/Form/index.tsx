@@ -271,7 +271,7 @@ function Form({
   // No state since off reason is set in two locations almost simultaneously
   const formOffReason = useRef('');
   const [formSettings, setFormSettings] = useState({
-    readOnly: readOnly,
+    readOnly,
 
     errorType: 'html5',
     autocomplete: 'on',
