@@ -193,6 +193,7 @@ export interface Props {
   className?: string;
   children?: JSX.Element;
   _draft?: boolean;
+  readOnly?: boolean;
 }
 
 interface InternalProps {
@@ -247,7 +248,8 @@ function Form({
   style = {},
   className = '',
   children,
-  _draft = false
+  _draft = false,
+  readOnly = false
 }: InternalProps & Props) {
   const [formName, setFormName] = useState(formNameProp || ''); // TODO: remove support for formName (deprecated)
   const formKey = formId || formName; // prioritize formID but fall back to name
@@ -269,6 +271,8 @@ function Form({
   // No state since off reason is set in two locations almost simultaneously
   const formOffReason = useRef('');
   const [formSettings, setFormSettings] = useState({
+    readOnly,
+
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
@@ -957,7 +961,7 @@ function Form({
             );
           };
         if (res.save_url_params) saveUrlParamsFormSetting = true;
-        setFormSettings(mapFormSettingsResponse(res));
+        setFormSettings({ ...formSettings, ...mapFormSettingsResponse(res) });
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);
         trackHashes.current = res.track_hashes;
@@ -1497,7 +1501,8 @@ function Form({
     } as Trigger;
     let submitPromise: Promise<any> = Promise.resolve();
 
-    if (submit) {
+    // If the step is readOnly, don't run validation or submit
+    if (submit && !readOnly) {
       // Do not proceed until user has gone through required flows
       if (
         !hasFlowActions(actions) &&
@@ -1539,6 +1544,7 @@ function Form({
         element.repeat || 0,
         !!hasNext
       );
+
       if (!newPromise) {
         elementClicks[id] = false;
         return;
