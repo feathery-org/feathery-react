@@ -140,15 +140,13 @@ function DateSelectorField({
     return !disabledDates.includes(`${date.getMonth() + 1}-${date.getDate()}`);
   };
 
-  // Called when the input is changed
+  // Updates the date value on change, and calls onComplete if
+  // the date is complete (i.e. the user has selected a day)
   const onDateChange = (newDate: any, isComplete = false) => {
+    const callback = isComplete ? onComplete : onChange;
     newDate = newDate ?? '';
     setInternalDate(newDate);
-    if (isComplete) {
-      onComplete(formatDateString(newDate, servarMeta));
-    } else {
-      onChange(formatDateString(newDate, servarMeta));
-    }
+    callback(formatDateString(newDate, servarMeta));
   };
 
   const { borderStyles, customBorder } = useBorder({
