@@ -76,6 +76,7 @@ function DateSelectorField({
   editMode,
   rightToLeft,
   onChange = () => {},
+  onComplete = () => {},
   onEnter = () => {},
   setRef = () => {},
   value = '',
@@ -139,10 +140,18 @@ function DateSelectorField({
     return !disabledDates.includes(`${date.getMonth() + 1}-${date.getDate()}`);
   };
 
+  // Called when the input is changed
   const onDateChange = (newDate: any) => {
     newDate = newDate ?? '';
     setInternalDate(newDate);
     onChange(formatDateString(newDate, servarMeta));
+  };
+
+  // Called when the date is selected, or field is blurred
+  const onDateComplete = (newDate: any) => {
+    newDate = newDate ?? '';
+    setInternalDate(newDate);
+    onComplete(formatDateString(newDate, servarMeta));
   };
 
   const { borderStyles, customBorder } = useBorder({
@@ -206,7 +215,7 @@ function DateSelectorField({
           preventOpenOnFocus={isTouchDevice()}
           onCalendarOpen={handleCalendarOpen}
           onCalendarClose={handleCalendarClose}
-          onSelect={onDateChange} // when day is clicked
+          onSelect={onDateComplete} // when day is clicked
           onChange={onDateChange} // only when value has changed
           onFocus={(e: any) => {
             if (isTouchDevice()) {
@@ -217,7 +226,10 @@ function DateSelectorField({
             e.target.select();
             setFocused(true);
           }}
-          onBlur={() => setFocused(false)}
+          onBlur={() => {
+            onDateComplete(internalDate);
+            setFocused(false);
+          }}
           onKeyDown={(e: any) => {
             if (e.key === 'Enter') onEnter(e);
           }}
