@@ -141,17 +141,14 @@ function DateSelectorField({
   };
 
   // Called when the input is changed
-  const onDateChange = (newDate: any) => {
+  const onDateChange = (newDate: any, isComplete = false) => {
     newDate = newDate ?? '';
     setInternalDate(newDate);
-    onChange(formatDateString(newDate, servarMeta));
-  };
-
-  // Called when the date is selected, or field is blurred
-  const onDateComplete = (newDate: any) => {
-    newDate = newDate ?? '';
-    setInternalDate(newDate);
-    onComplete(formatDateString(newDate, servarMeta));
+    if (isComplete) {
+      onComplete(formatDateString(newDate, servarMeta));
+    } else {
+      onChange(formatDateString(newDate, servarMeta));
+    }
   };
 
   const { borderStyles, customBorder } = useBorder({
@@ -215,8 +212,8 @@ function DateSelectorField({
           preventOpenOnFocus={isTouchDevice()}
           onCalendarOpen={handleCalendarOpen}
           onCalendarClose={handleCalendarClose}
-          onSelect={onDateComplete} // when day is clicked
-          onChange={onDateChange} // only when value has changed
+          onSelect={(date: any) => onDateChange(date, true)} // when day is clicked
+          onChange={(date: any) => onDateChange(date)} // only when value has changed
           onFocus={(e: any) => {
             if (isTouchDevice()) {
               // hide keyboard on mobile focus
@@ -227,7 +224,7 @@ function DateSelectorField({
             setFocused(true);
           }}
           onBlur={() => {
-            onDateComplete(internalDate);
+            onDateChange(internalDate, true);
             setFocused(false);
           }}
           onKeyDown={(e: any) => {

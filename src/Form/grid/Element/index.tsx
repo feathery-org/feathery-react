@@ -276,8 +276,8 @@ const Element = ({ node: el, form }: any) => {
               changeValue(val, el, index, false, false);
             }}
             onComplete={(val: any) => {
-              changeValue(val, el, index);
-              onChange();
+              const change = changeValue(val, el, index);
+              if (change) onChange();
             }}
             setRef={(ref: any) => {
               if (focusRef.current === el.id) focusRef.current = ref;
