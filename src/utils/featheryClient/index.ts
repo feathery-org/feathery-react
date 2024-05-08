@@ -196,7 +196,7 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
-  updateUserId(newUserId: any, merge = false) {
+  updateUserId(newUserId: string, merge = false) {
     const { userId: oldUserId } = initInfo();
     const data = {
       new_fuser_key: newUserId,
