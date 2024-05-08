@@ -217,9 +217,7 @@ function DateSelectorField({
             e.target.select();
             setFocused(true);
           }}
-          onBlur={() => {
-            setFocused(false);
-          }}
+          onBlur={() => setFocused(false)}
           onKeyDown={(e: any) => {
             if (e.key === 'Enter') onEnter(e);
           }}
