@@ -201,7 +201,7 @@ function DateSelectorField({
           id={element.servar.key}
           selected={internalDate}
           autoComplete='off'
-          preventOpenOnFocus
+          preventOpenOnFocus={isTouchDevice()}
           onCalendarOpen={handleCalendarOpen}
           onCalendarClose={handleCalendarClose}
           onSelect={onDateChange} // when day is clicked
