@@ -167,7 +167,8 @@ function initInfo() {
   return initState;
 }
 
-async function updateUserId(newUserId: string, merge = false): Promise<void> {
+async function updateUserId(newUserId?: string, merge = false): Promise<void> {
+  if (!newUserId) newUserId = uuidv4();
   if (merge) await defaultClient.updateUserId(newUserId, true);
   initState.userId = newUserId;
   if (initState.userTracking === 'cookie') {
