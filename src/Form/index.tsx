@@ -1509,8 +1509,6 @@ function Form({
         return;
       }
 
-      setAutoValidate(true);
-
       // run default form validation
       const { invalid } = validateElements({
         step: activeStep,
@@ -1523,6 +1521,7 @@ function Form({
         trigger
       });
       if (invalid) {
+        setAutoValidate(true);
         elementClicks[id] = false;
         return;
       }
