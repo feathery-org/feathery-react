@@ -1,5 +1,9 @@
 import { featheryWindow } from './browser';
-import { changeStep, formatAllFormFields } from './formHelperFunctions';
+import {
+  changeStep,
+  FieldOptions,
+  formatAllFormFields
+} from './formHelperFunctions';
 import {
   setFieldValues,
   getFieldValues,
@@ -96,14 +100,14 @@ export const getFormContext = (formUuid: string) => {
     },
     setCalendlyUrl: (url: string) =>
       internalState[formUuid].setCalendlyUrl(url),
-    // @deprecated
+    // deprecated
     setFieldValues: (userVals: FieldValues): void => {
       console.warn(
         'setFieldValues is deprecated.  Please use the fields object and set the value directly in individual fields instead.'
       );
       return setFieldValues(userVals);
     },
-    // @deprecated
+    // deprecated
     getFieldValues: () => {
       console.warn(
         'getFieldValues is deprecated.  Please use the fields object instead.'
@@ -111,12 +115,30 @@ export const getFormContext = (formUuid: string) => {
       return getFieldValues();
     },
     // @deprecated
-    // TODO: remove when support getFormFields is dropped
+    // TODO: remove when support for setFieldOptions is dropped
+    setFieldOptions: (newOptions: FieldOptions) => {
+      console.warn(
+        'setFieldOptions is deprecated.  Please use the fields object instead and set the options directly on individual fields.'
+      );
+      return internalState[formUuid].updateFieldOptions(newOptions);
+    },
+    // @deprecated
+    // TODO: remove when support for getFormFields is dropped
     getFormFields: () => {
       console.warn(
         'getFormFields is deprecated.  Please use the fields object instead.'
       );
       return formatAllFormFields(internalState[formUuid].steps, true);
+    },
+    // @deprecated
+    // TODO: remove when support for setFieldErrors is dropped
+    setFieldErrors: (
+      errors: Record<string, string | { index: number; message: string }>
+    ) => {
+      console.warn(
+        'setFieldErrors is deprecated.  Please use the fields object instead and set the error directly on a field.'
+      );
+      return internalState[formUuid].setFieldErrors(errors);
     }
   };
 };
