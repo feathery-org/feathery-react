@@ -273,8 +273,8 @@ const Element = ({ node: el, form }: any) => {
             {...fieldProps}
             value={fieldVal}
             onChange={(val: any) => {
-              const change = changeValue(val, el, index);
-              if (change) onChange();
+              const change = changeValue(val, el, index, false, false);
+              if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
               if (focusRef.current === el.id) focusRef.current = ref;

@@ -76,6 +76,7 @@ function DateSelectorField({
   editMode,
   rightToLeft,
   onChange = () => {},
+  onEnter = () => {},
   setRef = () => {},
   value = '',
   inlineError,
@@ -140,6 +141,7 @@ function DateSelectorField({
 
   const onDateChange = (newDate: any) => {
     newDate = newDate ?? '';
+    setInternalDate(newDate);
     onChange(formatDateString(newDate, servarMeta));
   };
 
@@ -205,7 +207,7 @@ function DateSelectorField({
           onCalendarOpen={handleCalendarOpen}
           onCalendarClose={handleCalendarClose}
           onSelect={onDateChange} // when day is clicked
-          onChange={setInternalDate} // only when value has changed
+          onChange={onDateChange} // only when value has changed
           onFocus={(e: any) => {
             if (isTouchDevice()) {
               // hide keyboard on mobile focus
@@ -217,13 +219,9 @@ function DateSelectorField({
           }}
           onBlur={() => {
             setFocused(false);
-            onDateChange(internalDate);
           }}
           onKeyDown={(e: any) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              e.target.blur();
-            }
+            if (e.key === 'Enter') onEnter(e);
           }}
           required={required}
           placeholder=''
