@@ -61,7 +61,8 @@ import {
   initState,
   fieldValues,
   FieldValues,
-  updateUserId
+  updateUserId,
+  defaultClient
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
 import FeatheryClient from '../utils/featheryClient';
@@ -152,7 +153,7 @@ import {
   getAuthIntegrationMetadata,
   isTerminalStepAuth
 } from '../auth/internal/utils';
-import Field, { flushFieldUpdates } from '../utils/api/Field';
+import Field from '../utils/api/Field';
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
@@ -692,9 +693,9 @@ function Form({
         }
       }
     }
-    // If any logic ran, then make sure any field updates are flushed to the BE
-    // at the end of the event handling.  Could be important on submit event for example.
-    if (logicRan) flushFieldUpdates();
+
+    // Flush field updates to backend before form completes
+    if (event === 'form_complete') await defaultClient.flushCustomFields();
 
     return logicRan;
   };
