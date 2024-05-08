@@ -193,7 +193,7 @@ export interface Props {
   className?: string;
   children?: JSX.Element;
   _draft?: boolean;
-  readonly?: boolean;
+  readOnly?: boolean;
 }
 
 interface InternalProps {
@@ -249,7 +249,7 @@ function Form({
   className = '',
   children,
   _draft = false,
-  readonly = false
+  readOnly = false
 }: InternalProps & Props) {
   const [formName, setFormName] = useState(formNameProp || ''); // TODO: remove support for formName (deprecated)
   const formKey = formId || formName; // prioritize formID but fall back to name
@@ -271,7 +271,7 @@ function Form({
   // No state since off reason is set in two locations almost simultaneously
   const formOffReason = useRef('');
   const [formSettings, setFormSettings] = useState({
-    readonly: readonly,
+    readOnly: readOnly,
 
     errorType: 'html5',
     autocomplete: 'on',
@@ -1513,8 +1513,8 @@ function Form({
         return;
       }
 
-      // If the step is readonly, don't run validation or submit
-      if (!readonly) {
+      // If the step is readOnly, don't run validation or submit
+      if (!readOnly) {
         // run default form validation
         const { invalid } = validateElements({
           step: activeStep,
