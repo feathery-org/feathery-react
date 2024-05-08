@@ -69,11 +69,6 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
   } else {
     const { customClickSelectionState, runElementActions } = form;
 
-    // Until we fully deprecate `callback_id`, we will check for custom components using it if the node's key is not found
-    const customComponent =
-      form.customComponents[node.key ?? ''] ||
-      form.customComponents[props.callback_id ?? '']; // TODO: Eventually we'll remove the check for callback_id and solely rely on the node's key as we deprecate the callback_id
-
     const children: any[] = (node.children || []).map((child: any, i: any) => {
       const fieldKey = child.servar?.key ?? '';
       return (
@@ -102,17 +97,13 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
           key='calendly-component'
           className='calendly-inline-widget'
           data-url={url}
-          style={{
-            width: '100%',
-            height: '100%'
-          }}
+          style={{ width: '100%', height: '100%' }}
         />
       );
     }
 
-    if (customComponent) {
-      children.push(customComponent);
-    }
+    const customComponent = form.customComponents[node.key ?? ''];
+    if (customComponent) children.push(customComponent);
 
     if (props.iframe_url) {
       children.push(

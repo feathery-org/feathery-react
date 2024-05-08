@@ -1,16 +1,6 @@
 import { featheryWindow } from './browser';
-import {
-  changeStep,
-  FieldOptions,
-  formatAllFormFields
-} from './formHelperFunctions';
-import {
-  setFieldValues,
-  getFieldValues,
-  FieldValues,
-  updateUserId,
-  initState
-} from './init';
+import { changeStep } from './formHelperFunctions';
+import { updateUserId, initState } from './init';
 import internalState, { setFormInternalState } from './internalState';
 import { validateElements } from './validation';
 
@@ -98,47 +88,6 @@ export const getFormContext = (formUuid: string) => {
     openUrl: (url: string, target = '_blank') => {
       featheryWindow()?.open(url, target, 'noopener');
     },
-    setCalendlyUrl: (url: string) =>
-      internalState[formUuid].setCalendlyUrl(url),
-    // deprecated
-    setFieldValues: (userVals: FieldValues): void => {
-      console.warn(
-        'setFieldValues is deprecated.  Please use the fields object and set the value directly in individual fields instead.'
-      );
-      return setFieldValues(userVals);
-    },
-    // deprecated
-    getFieldValues: () => {
-      console.warn(
-        'getFieldValues is deprecated.  Please use the fields object instead.'
-      );
-      return getFieldValues();
-    },
-    // @deprecated
-    // TODO: remove when support setFieldOptions is dropped
-    setFieldOptions: (newOptions: FieldOptions) => {
-      console.warn(
-        'setFieldOptions is deprecated.  Please use the fields object instead and set the options directly on individual fields.'
-      );
-      return internalState[formUuid].updateFieldOptions(newOptions);
-    },
-    // @deprecated
-    // TODO: remove when support setFieldOptions is dropped
-    getFormFields: () => {
-      console.warn(
-        'getFormFields is deprecated.  Please use the fields object instead.'
-      );
-      return formatAllFormFields(internalState[formUuid].steps, true);
-    },
-    // @deprecated
-    // TODO: remove when support setFieldOptions is dropped
-    setFieldErrors: (
-      errors: Record<string, string | { index: number; message: string }>
-    ) => {
-      console.warn(
-        'setFieldErrors is deprecated.  Please use the fields object instead and set the error directly on a field.'
-      );
-      return internalState[formUuid].setFieldErrors(errors);
-    }
+    setCalendlyUrl: (url: string) => internalState[formUuid].setCalendlyUrl(url)
   };
 };
