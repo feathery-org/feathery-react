@@ -273,6 +273,9 @@ const Element = ({ node: el, form }: any) => {
             {...fieldProps}
             value={fieldVal}
             onChange={(val: any) => {
+              changeValue(val, el, index, false, false);
+            }}
+            onComplete={(val: any) => {
               const change = changeValue(val, el, index);
               if (change) onChange();
             }}

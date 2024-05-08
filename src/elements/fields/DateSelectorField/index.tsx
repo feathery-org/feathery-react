@@ -76,6 +76,8 @@ function DateSelectorField({
   editMode,
   rightToLeft,
   onChange = () => {},
+  onComplete = () => {},
+  onEnter = () => {},
   setRef = () => {},
   value = '',
   inlineError,
@@ -138,10 +140,13 @@ function DateSelectorField({
     return !disabledDates.includes(`${date.getMonth() + 1}-${date.getDate()}`);
   };
 
-  const onDateChange = (newDate: any) => {
+  // Updates the date value on change, and calls onComplete if
+  // the date is complete (i.e. the user has selected a day)
+  const onDateChange = (newDate: any, isComplete = false) => {
+    const callback = isComplete ? onComplete : onChange;
     newDate = newDate ?? '';
     setInternalDate(newDate);
-    onChange(formatDateString(newDate, servarMeta));
+    callback(formatDateString(newDate, servarMeta));
   };
 
   const { borderStyles, customBorder } = useBorder({
@@ -201,20 +206,28 @@ function DateSelectorField({
         <DatePicker
           id={element.servar.key}
           selected={internalDate}
-          preventOpenOnFocus
           autoComplete='off'
+          preventOpenOnFocus={isTouchDevice()}
           onCalendarOpen={handleCalendarOpen}
           onCalendarClose={handleCalendarClose}
-          onSelect={onDateChange} // when day is clicked
-          onChange={onDateChange} // only when value has changed
+          onSelect={(date: any) => onDateChange(date, true)} // when day is clicked
+          onChange={(date: any) => onDateChange(date)} // only when value has changed
           onFocus={(e: any) => {
             if (isTouchDevice()) {
               // hide keyboard on mobile focus
               e.target.readOnly = true;
             }
+            // select all text on focus
+            e.target.select();
             setFocused(true);
           }}
-          onBlur={() => setFocused(false)}
+          onBlur={() => {
+            onDateChange(internalDate, true);
+            setFocused(false);
+          }}
+          onKeyDown={(e: any) => {
+            if (e.key === 'Enter') onEnter(e);
+          }}
           required={required}
           placeholder=''
           readOnly={disabled}
