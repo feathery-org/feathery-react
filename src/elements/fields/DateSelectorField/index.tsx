@@ -140,8 +140,10 @@ function DateSelectorField({
     return !disabledDates.includes(`${date.getMonth() + 1}-${date.getDate()}`);
   };
 
-  // Updates the date value on change, and calls onComplete if
-  // the date is complete (i.e. the user has selected a day)
+  // Updates the date value on change, if the calendar is closed,
+  // picking date is complete and onComplete is ran
+  // onSelect cannot run onComplete because it runs on day click and
+  // not when time is selected if enabled
   const onDateChange = (newDate: any, isComplete = false) => {
     const callback = isComplete ? onComplete : onChange;
     newDate = newDate ?? '';
@@ -209,8 +211,13 @@ function DateSelectorField({
           autoComplete='off'
           preventOpenOnFocus={isTouchDevice()}
           onCalendarOpen={handleCalendarOpen}
-          onCalendarClose={handleCalendarClose}
-          onSelect={(date: any) => onDateChange(date, true)} // when day is clicked
+          onCalendarClose={() => {
+            handleCalendarClose();
+            // the calendar closes on blur, select, or modal close on mobile
+            // this ensures the date is updated on close and triggers logic rules
+            onDateChange(internalDate, true);
+          }}
+          onSelect={(date: any) => onDateChange(date)} // when day is clicked
           onChange={(date: any) => onDateChange(date)} // only when value has changed
           onFocus={(e: any) => {
             if (isTouchDevice()) {
@@ -221,10 +228,7 @@ function DateSelectorField({
             e.target.select();
             setFocused(true);
           }}
-          onBlur={() => {
-            onDateChange(internalDate, true);
-            setFocused(false);
-          }}
+          onBlur={() => setFocused(false)}
           onKeyDown={(e: any) => {
             if (e.key === 'Enter') onEnter(e);
           }}
