@@ -1501,7 +1501,8 @@ function Form({
     } as Trigger;
     let submitPromise: Promise<any> = Promise.resolve();
 
-    if (submit) {
+    // If the step is readOnly, don't run validation or submit
+    if (submit && !readOnly) {
       // Do not proceed until user has gone through required flows
       if (
         !hasFlowActions(actions) &&
@@ -1513,45 +1514,42 @@ function Form({
         return;
       }
 
-      // If the step is readOnly, don't run validation or submit
-      if (!readOnly) {
-        // run default form validation
-        const { invalid } = validateElements({
-          step: activeStep,
-          visiblePositions,
-          triggerErrors: true,
-          errorType: formSettings.errorType,
-          formRef,
-          errorCallback: getErrorCallback({ trigger }),
-          setInlineErrors,
-          trigger
-        });
-        if (invalid) {
-          setAutoValidate(true);
-          elementClicks[id] = false;
-          return;
-        }
-
-        // Don't try to complete the form on step submission if navigating to
-        // a new step. The nav action goToNewStep will attempt to complete
-        // it. If navigating but there is no step to navigate to, still attempt
-        // to complete the form here since the user may leave before the
-        // nav action event gets sent
-        const hasNext =
-          actions.some((action: any) => action.type === ACTION_NEXT) &&
-          getNextStepKey(metadata);
-        const newPromise = await submitStep(
-          metadata,
-          element.repeat || 0,
-          !!hasNext
-        );
-
-        if (!newPromise) {
-          elementClicks[id] = false;
-          return;
-        }
-        submitPromise = newPromise[0];
+      // run default form validation
+      const { invalid } = validateElements({
+        step: activeStep,
+        visiblePositions,
+        triggerErrors: true,
+        errorType: formSettings.errorType,
+        formRef,
+        errorCallback: getErrorCallback({ trigger }),
+        setInlineErrors,
+        trigger
+      });
+      if (invalid) {
+        setAutoValidate(true);
+        elementClicks[id] = false;
+        return;
       }
+
+      // Don't try to complete the form on step submission if navigating to
+      // a new step. The nav action goToNewStep will attempt to complete
+      // it. If navigating but there is no step to navigate to, still attempt
+      // to complete the form here since the user may leave before the
+      // nav action event gets sent
+      const hasNext =
+        actions.some((action: any) => action.type === ACTION_NEXT) &&
+        getNextStepKey(metadata);
+      const newPromise = await submitStep(
+        metadata,
+        element.repeat || 0,
+        !!hasNext
+      );
+
+      if (!newPromise) {
+        elementClicks[id] = false;
+        return;
+      }
+      submitPromise = newPromise[0];
     }
 
     // Adjust action order to prioritize certain actions and
