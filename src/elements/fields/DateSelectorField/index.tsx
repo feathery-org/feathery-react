@@ -151,7 +151,7 @@ function DateSelectorField({
   const [focused, setFocused] = useState(false);
 
   let dateMask = servarMeta.display_format ? 'd/MM/yyyy' : 'MM/d/yyyy';
-  const timeMask = servarMeta.time_format === '12hr' ? 'h:mm aa' : 'HH:mm';
+  const timeMask = servarMeta.time_format === '24hr' ? 'HH:mm' : 'h:mm aa';
   if (servarMeta.choose_time) dateMask = `${dateMask} ${timeMask}`;
 
   return (
