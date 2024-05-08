@@ -219,6 +219,12 @@ function DateSelectorField({
             setFocused(false);
             onDateChange(internalDate);
           }}
+          onKeyDown={(e: any) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.target.blur();
+            }
+          }}
           required={required}
           placeholder=''
           readOnly={disabled}
