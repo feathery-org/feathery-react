@@ -1,6 +1,12 @@
 import { featheryWindow } from './browser';
-import { changeStep } from './formHelperFunctions';
-import { updateUserId, initState } from './init';
+import { changeStep, formatAllFormFields } from './formHelperFunctions';
+import {
+  setFieldValues,
+  getFieldValues,
+  FieldValues,
+  updateUserId,
+  initState
+} from './init';
 import internalState, { setFormInternalState } from './internalState';
 import { validateElements } from './validation';
 
@@ -88,6 +94,29 @@ export const getFormContext = (formUuid: string) => {
     openUrl: (url: string, target = '_blank') => {
       featheryWindow()?.open(url, target, 'noopener');
     },
-    setCalendlyUrl: (url: string) => internalState[formUuid].setCalendlyUrl(url)
+    setCalendlyUrl: (url: string) =>
+      internalState[formUuid].setCalendlyUrl(url),
+    // @deprecated
+    setFieldValues: (userVals: FieldValues): void => {
+      console.warn(
+        'setFieldValues is deprecated.  Please use the fields object and set the value directly in individual fields instead.'
+      );
+      return setFieldValues(userVals);
+    },
+    // @deprecated
+    getFieldValues: () => {
+      console.warn(
+        'getFieldValues is deprecated.  Please use the fields object instead.'
+      );
+      return getFieldValues();
+    },
+    // @deprecated
+    // TODO: remove when support getFormFields is dropped
+    getFormFields: () => {
+      console.warn(
+        'getFormFields is deprecated.  Please use the fields object instead.'
+      );
+      return formatAllFormFields(internalState[formUuid].steps, true);
+    }
   };
 };
