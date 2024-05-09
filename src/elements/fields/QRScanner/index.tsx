@@ -5,10 +5,24 @@ import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
 const QR_SCANNER_URL = 'https://unpkg.com/html5-qrcode';
 
+const qrDivId = 'qr-reader';
 let qrPromise = Promise.resolve();
 export function loadQRScanner() {
   qrPromise = dynamicImport(QR_SCANNER_URL);
 }
+
+const onQRError = (error: any) => {
+  const errorMessageElement = featheryDoc().getElementById(
+    `${qrDivId}__header_message`
+  );
+  if (
+    errorMessageElement &&
+    error === 'D: No MultiFormat Readers were able to detect the code.'
+  ) {
+    errorMessageElement.textContent =
+      'No QR code detected. Please try with a different image.';
+  }
+};
 
 function QRScanner({
   element,
@@ -21,7 +35,7 @@ function QRScanner({
   fieldVal = '',
   children
 }: any) {
-  const qrDivId = 'qr-reader';
+  
   let scanner: any = null;
   const servar = element.servar ?? {};
 
@@ -56,20 +70,7 @@ function QRScanner({
         if (decodedText !== fieldVal) onChange(decodedText);
       };
 
-      const onError = (error: any) => {
-        const errorMessageElement = featheryDoc().getElementById(
-          `${qrDivId}__header_message`
-        );
-        if (
-          errorMessageElement &&
-          error === 'D: No MultiFormat Readers were able to detect the code.'
-        ) {
-          errorMessageElement.textContent =
-            'No QR code detected. Please try with a different image.';
-        }
-      };
-
-      scanner.render(onSuccess, onError);
+      scanner.render(onSuccess, onQRError);
     });
   }, []);
 
