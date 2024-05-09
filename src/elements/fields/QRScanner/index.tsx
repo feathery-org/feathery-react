@@ -35,7 +35,6 @@ function QRScanner({
   fieldVal = '',
   children
 }: any) {
-  
   let scanner: any = null;
   const servar = element.servar ?? {};
 
