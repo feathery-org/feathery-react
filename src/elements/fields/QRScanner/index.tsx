@@ -40,6 +40,7 @@ function QRScanner({
           } catch (e) {
             // TypeError because HTMLScanner object not initialized yet
             // https://feathery-forms.sentry.io/issues/4870682565/
+            console.error(e);
             if (!(e instanceof TypeError)) {
               throw e;
             }
@@ -53,8 +54,24 @@ function QRScanner({
         if (editMode || !decodedText) return;
         if (decodedText !== fieldVal) onChange(decodedText);
       };
-      scanner.render(onSuccess);
+
+      const onError = (error: any) => {
+        const errorMessageElement = document.getElementById("qr-reader__header_message");
+        if (errorMessageElement && error === "D: No MultiFormat Readers were able to detect the code.") {
+          errorMessageElement.textContent = "No QR code detected. Please try with a different image.";
+        }
+      };
+
+      scanner.render(onSuccess, onError);
+      
     });
+
+    // Cleanup function to stop and clear the scanner instance
+    return () => {
+      if (scanner && scanner?.stop) scanner.stop();
+      if (scanner && scanner?.clear) scanner.clear();
+      scanner = null;
+    };
   }, []);
 
   return (
