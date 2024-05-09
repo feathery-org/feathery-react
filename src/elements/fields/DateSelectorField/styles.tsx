@@ -116,6 +116,7 @@ export default function SelectorStyles() {
           border-radius: 0.3rem;
           display: inline-block;
           position: relative;
+          width: max-content;
         }
 
         .react-datepicker--time-only .react-datepicker__triangle {

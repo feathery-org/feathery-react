@@ -76,6 +76,8 @@ function DateSelectorField({
   editMode,
   rightToLeft,
   onChange = () => {},
+  onComplete = () => {},
+  onEnter = () => {},
   setRef = () => {},
   value = '',
   inlineError,
@@ -138,10 +140,15 @@ function DateSelectorField({
     return !disabledDates.includes(`${date.getMonth() + 1}-${date.getDate()}`);
   };
 
-  const onDateChange = (newDate: any) => {
+  // Updates the date value on change, if the calendar is closed,
+  // picking date is complete and onComplete is ran
+  // onSelect cannot run onComplete because it runs on day click and
+  // not when time is selected if enabled
+  const onDateChange = (newDate: any, isComplete = false) => {
+    const callback = isComplete ? onComplete : onChange;
     newDate = newDate ?? '';
     setInternalDate(newDate);
-    onChange(formatDateString(newDate, servarMeta));
+    callback(formatDateString(newDate, servarMeta));
   };
 
   const { borderStyles, customBorder } = useBorder({
@@ -151,7 +158,7 @@ function DateSelectorField({
   const [focused, setFocused] = useState(false);
 
   let dateMask = servarMeta.display_format ? 'd/MM/yyyy' : 'MM/d/yyyy';
-  const timeMask = servarMeta.time_format === '12hr' ? 'h:mm aa' : 'HH:mm';
+  const timeMask = servarMeta.time_format === '24hr' ? 'HH:mm' : 'h:mm aa';
   if (servarMeta.choose_time) dateMask = `${dateMask} ${timeMask}`;
 
   return (
@@ -201,20 +208,30 @@ function DateSelectorField({
         <DatePicker
           id={element.servar.key}
           selected={internalDate}
-          preventOpenOnFocus
           autoComplete='off'
+          preventOpenOnFocus={isTouchDevice()}
           onCalendarOpen={handleCalendarOpen}
-          onCalendarClose={handleCalendarClose}
-          onSelect={onDateChange} // when day is clicked
-          onChange={onDateChange} // only when value has changed
+          onCalendarClose={() => {
+            handleCalendarClose();
+            // the calendar closes on blur, select, or modal close on mobile
+            // this ensures the date is updated on close and triggers logic rules
+            onDateChange(internalDate, true);
+          }}
+          onSelect={(date: any) => onDateChange(date)} // when day is clicked
+          onChange={(date: any) => onDateChange(date)} // only when value has changed
           onFocus={(e: any) => {
             if (isTouchDevice()) {
               // hide keyboard on mobile focus
               e.target.readOnly = true;
             }
+            // select all text on focus
+            e.target.select();
             setFocused(true);
           }}
           onBlur={() => setFocused(false)}
+          onKeyDown={(e: any) => {
+            if (e.key === 'Enter') onEnter(e);
+          }}
           required={required}
           placeholder=''
           readOnly={disabled}

@@ -61,7 +61,8 @@ import {
   initState,
   fieldValues,
   FieldValues,
-  updateUserId
+  updateUserId,
+  defaultClient
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
 import FeatheryClient from '../utils/featheryClient';
@@ -152,7 +153,7 @@ import {
   getAuthIntegrationMetadata,
   isTerminalStepAuth
 } from '../auth/internal/utils';
-import Field, { flushFieldUpdates } from '../utils/api/Field';
+import Field from '../utils/api/Field';
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
@@ -192,6 +193,7 @@ export interface Props {
   className?: string;
   children?: JSX.Element;
   _draft?: boolean;
+  readOnly?: boolean;
 }
 
 interface InternalProps {
@@ -246,7 +248,8 @@ function Form({
   style = {},
   className = '',
   children,
-  _draft = false
+  _draft = false,
+  readOnly = false
 }: InternalProps & Props) {
   const [formName, setFormName] = useState(formNameProp || ''); // TODO: remove support for formName (deprecated)
   const formKey = formId || formName; // prioritize formID but fall back to name
@@ -268,6 +271,8 @@ function Form({
   // No state since off reason is set in two locations almost simultaneously
   const formOffReason = useRef('');
   const [formSettings, setFormSettings] = useState({
+    readOnly,
+
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
@@ -692,9 +697,9 @@ function Form({
         }
       }
     }
-    // If any logic ran, then make sure any field updates are flushed to the BE
-    // at the end of the event handling.  Could be important on submit event for example.
-    if (logicRan) flushFieldUpdates();
+
+    // Flush field updates to backend before form completes
+    if (event === 'form_complete') await defaultClient.flushCustomFields();
 
     return logicRan;
   };
@@ -956,7 +961,7 @@ function Form({
             );
           };
         if (res.save_url_params) saveUrlParamsFormSetting = true;
-        setFormSettings(mapFormSettingsResponse(res));
+        setFormSettings({ ...formSettings, ...mapFormSettingsResponse(res) });
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);
         trackHashes.current = res.track_hashes;
@@ -1496,7 +1501,8 @@ function Form({
     } as Trigger;
     let submitPromise: Promise<any> = Promise.resolve();
 
-    if (submit) {
+    // If the step is readOnly, don't run validation or submit
+    if (submit && !readOnly) {
       // Do not proceed until user has gone through required flows
       if (
         !hasFlowActions(actions) &&
@@ -1507,8 +1513,6 @@ function Form({
         elementClicks[id] = false;
         return;
       }
-
-      setAutoValidate(true);
 
       // run default form validation
       const { invalid } = validateElements({
@@ -1522,6 +1526,7 @@ function Form({
         trigger
       });
       if (invalid) {
+        setAutoValidate(true);
         elementClicks[id] = false;
         return;
       }
@@ -1539,6 +1544,7 @@ function Form({
         element.repeat || 0,
         !!hasNext
       );
+
       if (!newPromise) {
         elementClicks[id] = false;
         return;

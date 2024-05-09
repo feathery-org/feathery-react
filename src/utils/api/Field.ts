@@ -50,6 +50,13 @@ export default class Field {
     return this._fieldKey;
   }
 
+  _runFieldUpdate() {
+    debouncedFormRerender();
+    return defaultClient.submitCustom({
+      [this._fieldKey]: fieldValues[this._fieldKey]
+    });
+  }
+
   clear() {
     let newVal = null;
     if (!this._hiddenField) {
@@ -57,10 +64,7 @@ export default class Field {
       newVal = getDefaultFormFieldValue(field);
     }
     fieldValues[this._fieldKey] = newVal;
-
-    // update
-    updateFieldKeys.push(this._fieldKey);
-    notifyFieldsChanged();
+    this._runFieldUpdate();
   }
 
   // raw field value
@@ -73,9 +77,7 @@ export default class Field {
       return new Proxy(fieldValues[this._fieldKey] as object, {
         set: (target: any, property: any, value) => {
           target[property] = parseUserVal(value, this._fieldKey);
-          // we just need to know there is a change
-          updateFieldKeys.push(this._fieldKey);
-          notifyFieldsChanged();
+          this._runFieldUpdate();
           return true;
         }
       });
@@ -89,10 +91,7 @@ export default class Field {
         parseUserVal(entry, this._fieldKey)
       );
     else fieldValues[this._fieldKey] = parseUserVal(val, this._fieldKey);
-
-    // update
-    updateFieldKeys.push(this._fieldKey);
-    notifyFieldsChanged();
+    this._runFieldUpdate();
   }
 
   _getFormSpecificProps(): {
@@ -407,28 +406,8 @@ export function parseUserVal(userVal: FeatheryFieldTypes, key: string) {
   return val instanceof File ? Promise.resolve(val) : val;
 }
 
-// Debouncing the update of field values to avoid unnecessary rerenders and BE updates
-const updateFieldKeys: string[] = [];
-
-export function flushFieldUpdates() {
-  if (updateFieldKeys.length) {
-    const fieldValuesToUpdate = updateFieldKeys.reduce(
-      (newObj, key) =>
-        key in fieldValues ? { ...newObj, [key]: fieldValues[key] } : newObj,
-      {}
-    );
-    // update BE
-    defaultClient.submitCustom(fieldValuesToUpdate);
-    updateFieldKeys.length = 0;
-
-    rerenderAllForms();
-  }
-}
-
-// Debounce the field updates to avoid unnecessary rerenders and BE updates.
+// Debounce the rerenders.
 // Note: Even though we flushFieldUpdates at the end of event handling, this
 // debounce is still needed for long running async logic rules that could
 // complete after the event handling is done.
-const notifyFieldsChanged = debounce(() => {
-  flushFieldUpdates();
-}, 100);
+const debouncedFormRerender = debounce(() => rerenderAllForms(), 100);
