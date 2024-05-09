@@ -205,6 +205,7 @@ const validators = {
       const urlObj = new URL(a);
       if (!urlObj) return false;
       const hostname = urlObj.hostname;
+      if (hostname.length >= 64) return false;
       if (!DOMAIN_ALLOWED_CHARACTERS.test(hostname)) return false;
       const parts = hostname.split('.');
       if (parts.some((part) => !part)) return false;
