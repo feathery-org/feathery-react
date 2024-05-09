@@ -21,6 +21,7 @@ function QRScanner({
   fieldVal = '',
   children
 }: any) {
+  const qrDivId = 'qr-reader';
   let scanner: any = null;
   const servar = element.servar ?? {};
 
@@ -33,7 +34,7 @@ function QRScanner({
         const window = featheryWindow();
         for (let i = 0; i < 3; i++) {
           try {
-            scanner = new window.Html5QrcodeScanner('qr-reader', {
+            scanner = new window.Html5QrcodeScanner(qrDivId, {
               fps: 10
             });
             break;
@@ -57,7 +58,7 @@ function QRScanner({
 
       const onError = (error: any) => {
         const errorMessageElement = featheryDoc().getElementById(
-          'qr-reader__header_message'
+          `${qrDivId}__header_message`
         );
         if (
           errorMessageElement &&
@@ -70,13 +71,6 @@ function QRScanner({
 
       scanner.render(onSuccess, onError);
     });
-
-    // Cleanup function to stop and clear the scanner instance
-    return () => {
-      if (scanner && scanner?.stop) scanner.stop();
-      if (scanner && scanner?.clear) scanner.clear();
-      scanner = null;
-    };
   }, []);
 
   return (
@@ -100,7 +94,7 @@ function QRScanner({
             ...responsiveStyles.getTarget('sub-fc')
           }}
         >
-          <div id='qr-reader' css={{ width: '100%' }} />
+          <div id={qrDivId} css={{ width: '100%' }} />
           {/* This input must always be rendered so we can set field errors */}
           <input
             id={servar.key}
