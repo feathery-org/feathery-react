@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { dynamicImport } from '../../../integrations/utils';
-import { featheryWindow } from '../../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
 const QR_SCANNER_URL = 'https://unpkg.com/html5-qrcode';
 
@@ -56,14 +56,19 @@ function QRScanner({
       };
 
       const onError = (error: any) => {
-        const errorMessageElement = document.getElementById("qr-reader__header_message");
-        if (errorMessageElement && error === "D: No MultiFormat Readers were able to detect the code.") {
-          errorMessageElement.textContent = "No QR code detected. Please try with a different image.";
+        const errorMessageElement = featheryDoc().getElementById(
+          'qr-reader__header_message'
+        );
+        if (
+          errorMessageElement &&
+          error === 'D: No MultiFormat Readers were able to detect the code.'
+        ) {
+          errorMessageElement.textContent =
+            'No QR code detected. Please try with a different image.';
         }
       };
 
       scanner.render(onSuccess, onError);
-      
     });
 
     // Cleanup function to stop and clear the scanner instance
