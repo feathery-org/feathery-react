@@ -280,9 +280,9 @@ export default class Field {
     return {
       comparison,
       values: (values ?? []).map((v) =>
-        typeof v === 'string'
-          ? v
-          : { field_key: v.id, field_id: v.id, field_type: 'servar' }
+        typeof v === 'object'
+          ? { field_key: v.id, field_id: v.id, field_type: 'servar' }
+          : v
       ),
       field_id: null,
       field_key: this._fieldKey,
