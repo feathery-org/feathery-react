@@ -34,7 +34,8 @@ interface FormInternalState {
   updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => void;
   updateFieldProperties: (
     fieldKey: string,
-    newProperties: FieldProperties
+    newProperties: FieldProperties,
+    onServar?: boolean
   ) => void;
   setFieldErrors: (
     errors: Record<string, string | { index: number; message: string }>

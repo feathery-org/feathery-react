@@ -824,14 +824,15 @@ function Form({
         },
         updateFieldProperties: (
           fieldKey: string,
-          newProperties: FieldProperties
+          newProperties: FieldProperties,
+          onServar = false
         ) => {
           Object.values(steps).forEach((step) =>
-            updateStepFieldProperties(step, fieldKey, newProperties)
+            updateStepFieldProperties(step, fieldKey, newProperties, onServar)
           );
           setSteps(JSON.parse(JSON.stringify(steps)));
 
-          updateStepFieldProperties(newStep, fieldKey, newProperties);
+          updateStepFieldProperties(newStep, fieldKey, newProperties, onServar);
           setActiveStep(JSON.parse(JSON.stringify(newStep)));
         },
         setFieldErrors: (

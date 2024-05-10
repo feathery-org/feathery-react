@@ -371,11 +371,14 @@ export type FieldProperties = Record<string, any>;
 export function updateStepFieldProperties(
   step: any,
   fieldKey: string,
-  newProperties: Record<string, any>
+  newProperties: Record<string, any>,
+  onServar = false
 ) {
   step.servar_fields.forEach((field: any) => {
     const servar = field.servar;
-    if (servar.key === fieldKey) Object.assign(field.properties, newProperties);
+    if (servar.key === fieldKey) {
+      Object.assign(onServar ? servar : field.properties, newProperties);
+    }
   });
 }
 
