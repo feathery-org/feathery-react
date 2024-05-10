@@ -1,14 +1,28 @@
 import React, { useEffect } from 'react';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { dynamicImport } from '../../../integrations/utils';
-import { featheryWindow } from '../../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
 const QR_SCANNER_URL = 'https://unpkg.com/html5-qrcode';
 
+const qrDivId = 'qr-reader';
 let qrPromise = Promise.resolve();
 export function loadQRScanner() {
   qrPromise = dynamicImport(QR_SCANNER_URL);
 }
+
+const onQRError = (error: any) => {
+  const errorMessageElement = featheryDoc().getElementById(
+    `${qrDivId}__header_message`
+  );
+  if (
+    errorMessageElement &&
+    error === 'D: No MultiFormat Readers were able to detect the code.'
+  ) {
+    errorMessageElement.textContent =
+      'No QR code detected. Please try with a different image.';
+  }
+};
 
 function QRScanner({
   element,
@@ -33,13 +47,14 @@ function QRScanner({
         const window = featheryWindow();
         for (let i = 0; i < 3; i++) {
           try {
-            scanner = new window.Html5QrcodeScanner('qr-reader', {
+            scanner = new window.Html5QrcodeScanner(qrDivId, {
               fps: 10
             });
             break;
           } catch (e) {
             // TypeError because HTMLScanner object not initialized yet
             // https://feathery-forms.sentry.io/issues/4870682565/
+            console.error(e);
             if (!(e instanceof TypeError)) {
               throw e;
             }
@@ -53,7 +68,8 @@ function QRScanner({
         if (editMode || !decodedText) return;
         if (decodedText !== fieldVal) onChange(decodedText);
       };
-      scanner.render(onSuccess);
+
+      scanner.render(onSuccess, onQRError);
     });
   }, []);
 
@@ -78,7 +94,7 @@ function QRScanner({
             ...responsiveStyles.getTarget('sub-fc')
           }}
         >
-          <div id='qr-reader' css={{ width: '100%' }} />
+          <div id={qrDivId} css={{ width: '100%' }} />
           {/* This input must always be rendered so we can set field errors */}
           <input
             id={servar.key}
