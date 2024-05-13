@@ -17,10 +17,11 @@ const onQRError = (error: any) => {
   );
   if (
     errorMessageElement &&
-    error === 'D: No MultiFormat Readers were able to detect the code.'
+    errorMessageElement.textContent?.trim() ===
+      'D: No MultiFormat Readers were able to detect the code.'
   ) {
     errorMessageElement.textContent =
-      'No QR code detected. Please try with a different image.';
+      'No QR code detected. Please try with a different image.'; 
   }
 };
 
@@ -110,6 +111,7 @@ function QRScanner({
               width: '1px',
               height: '1px',
               zIndex: FORM_Z_INDEX - 2
+              
             }}
           />
         </div>
