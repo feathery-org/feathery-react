@@ -253,9 +253,8 @@ const COMPARISON_FUNCTIONS: {
   greater_than: (l, r) =>
     l.some((l: any) =>
       someRight(
-        (l, r) =>
-          // If either side is null/empty, then the expression is false
-          !anyEmptyOperands(l, r) && coerceType(l) > coerceType(r),
+        // If either side is null/empty, then the expression is false
+        (l, r) => !anyEmptyOperands(l, r) && coerceType(l) > coerceType(r),
         l,
         r
       )

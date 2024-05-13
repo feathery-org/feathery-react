@@ -165,6 +165,22 @@ export default class Field {
     console.warn('The isHiddenField property is read-only');
   }
 
+  get required(): boolean {
+    const field = this._getSourceField();
+    return field.servar.required;
+  }
+
+  set required(flag: boolean) {
+    const context = internalState[this._formUuid];
+    context.updateFieldProperties(
+      this._fieldKey,
+      {
+        required: flag
+      },
+      true
+    );
+  }
+
   // options for the field
   get options(): OptionType[] {
     const field = this._getSourceField();
@@ -280,9 +296,9 @@ export default class Field {
     return {
       comparison,
       values: (values ?? []).map((v) =>
-        typeof v === 'string'
-          ? v
-          : { field_key: v.id, field_id: v.id, field_type: 'servar' }
+        typeof v === 'object'
+          ? { field_key: v.id, field_id: v.id, field_type: 'servar' }
+          : v
       ),
       field_id: null,
       field_key: this._fieldKey,

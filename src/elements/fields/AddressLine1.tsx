@@ -13,7 +13,7 @@ import { DROPDOWN_Z_INDEX } from './index';
 import { hoverStylesGuard } from '../../utils/browser';
 
 // Milliseconds
-const SEARCH_DELAY_TIME = 300;
+const SEARCH_DELAY_TIME = 800;
 const EXIT_DELAY_TIME = 200;
 
 function AddressLine1({

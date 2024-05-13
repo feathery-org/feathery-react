@@ -3,26 +3,26 @@
  */
 
 export default class Collaborator {
-  _label = '';
+  _role = '';
   _orderNumber = 0; // the index of the collaborator in the list of collaborators
   _permission = ''; // custom/all
   _permssionFields: string[] = []; // fields for custom
 
   constructor(
-    label: string,
+    role: string,
     orderNumber: number,
     permission: string,
     permissionFields: string[]
   ) {
-    this._label = label;
+    this._role = role;
     this._orderNumber = orderNumber;
     this._permission = permission;
     this._permssionFields = permissionFields;
   }
 
   // all properties are read-only
-  get label(): string {
-    return this._label;
+  get role(): string {
+    return this._role;
   }
 
   get orderNumber(): number {

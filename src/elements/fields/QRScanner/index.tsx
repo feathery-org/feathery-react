@@ -2,9 +2,11 @@ import React, { useEffect } from 'react';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { dynamicImport } from '../../../integrations/utils';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
 const QR_SCANNER_URL = 'https://unpkg.com/html5-qrcode';
 
+const qrDivId = 'qr-reader';
 const qrDivId = 'qr-reader';
 let qrPromise = Promise.resolve();
 export function loadQRScanner() {
