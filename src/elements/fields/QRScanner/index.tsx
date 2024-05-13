@@ -11,15 +11,13 @@ export function loadQRScanner() {
   qrPromise = dynamicImport(QR_SCANNER_URL);
 }
 
-const onQRError = (error: any) => {
-  const errorMessageElement = featheryDoc().getElementById(
-    `${qrDivId}__header_message`
-  );
+const onQRError = () => {
+  const errorEl = featheryDoc().getElementById(`${qrDivId}__header_message`);
   if (
-    errorMessageElement &&
-    error === 'D: No MultiFormat Readers were able to detect the code.'
+    errorEl?.textContent?.trim() ===
+    'D: No MultiFormat Readers were able to detect the code.'
   ) {
-    errorMessageElement.textContent =
+    errorEl.textContent =
       'No QR code detected. Please try with a different image.';
   }
 };
