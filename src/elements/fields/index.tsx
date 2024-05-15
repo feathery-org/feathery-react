@@ -370,6 +370,7 @@ function applyFieldStyles(field: any, styles: any) {
 
       styles.applyFontStyles('dropdown', false, true);
       styles.apply('dropdown', 'background_color', (color: any) => {
+        color = color || 'ffffffff';
         if (color.substring(6).toLowerCase() !== 'ff')
           return { backgroundColor: 'white', color: 'black' };
         return { backgroundColor: `#${color}` };
@@ -423,6 +424,7 @@ function applyFieldStyles(field: any, styles: any) {
       styles.addTargets('dropdown');
       styles.applyFontStyles('dropdown');
       styles.apply('dropdown', 'background_color', (color: any) => {
+        color = color || 'ffffffff';
         if (color.substring(6).toLowerCase() !== 'ff')
           return { backgroundColor: 'white', color: 'black' };
         return { backgroundColor: `#${color}` };

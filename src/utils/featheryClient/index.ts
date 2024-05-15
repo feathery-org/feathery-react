@@ -296,7 +296,7 @@ export default class FeatheryClient extends IntegrationClient {
       theme
     });
     const baseURL = this.bypassCDN ? API_URL : CDN_URL;
-    const url = `${baseURL}panel/v20/?${params}`;
+    const url = `${baseURL}panel/v21/?${params}`;
     const options: Record<string, any> = {
       importance: 'high',
       headers: { 'Accept-Encoding': 'gzip' }
