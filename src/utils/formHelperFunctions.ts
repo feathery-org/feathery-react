@@ -457,6 +457,7 @@ export const getStepDepthMap = (steps: any, hasProgressBar = false) => {
   while (stepQueue.length > 0) {
     // @ts-expect-error TS(2461): Type 'unknown[] | undefined' is not an array type.
     const [step, depth] = stepQueue.shift();
+    if (!step) continue;
     if (step.key in depthMap) continue;
 
     // Optionally filter only for steps with progress bar
@@ -667,9 +668,10 @@ export function clearFilePathMapEntry(key: any, index = null) {
 
 export function setUrlStepHash(history: any, steps: any, stepName: string) {
   // No hash necessary if form only has one step
-  if (Object.keys(steps).length > 1) {
-    history.replace(location.pathname + location.search + `#${stepName}`);
-  }
+  // TODO: payload
+  // if (Object.keys(steps).length > 1) {
+  history.replace(location.pathname + location.search + `#${stepName}`);
+  // }
 }
 
 export function registerRenderCallback(

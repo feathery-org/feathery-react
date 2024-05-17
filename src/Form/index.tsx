@@ -268,6 +268,9 @@ function Form({
   const [userProgress, setUserProgress] = useState(null);
   const [curDepth, setCurDepth] = useState(0);
   const [maxDepth, setMaxDepth] = useState(0);
+
+  const allStepsLoadedPromise = useRef<Promise<any>>();
+
   // No state since off reason is set in two locations almost simultaneously
   const formOffReason = useRef('');
   const [formSettings, setFormSettings] = useState({
@@ -738,8 +741,20 @@ function Form({
   };
 
   const getNewStep = async (newKey: any) => {
-    let newStep = steps[newKey];
-    if (!newStep) return;
+    let currSteps = steps;
+    let newStep = currSteps[newKey];
+    if (!newStep) {
+      if (allStepsLoadedPromise.current != null) {
+        console.log('waiting for all steps to load');
+        currSteps = await allStepsLoadedPromise.current;
+        newStep = currSteps[newKey];
+        if (!newStep) {
+          return;
+        }
+      } else {
+        return;
+      }
+    }
 
     const nextStep = getNextAuthStep(newStep);
     if (
@@ -760,7 +775,7 @@ function Form({
 
     // This could be a redirect from Stripe following a successful payment checkout
     checkForPaymentCheckoutCompletion(
-      steps,
+      currSteps,
       client,
       updateFieldValues,
       integrations?.stripe
@@ -800,24 +815,24 @@ function Form({
         inlineErrors,
         setInlineErrors,
         setUserProgress,
-        steps,
+        steps: currSteps,
         setStepKey,
         updateFieldOptions: (
           newOptions: FieldOptions,
           repeatIndex?: number
         ) => {
-          Object.values(steps).forEach((step) =>
+          Object.values(currSteps).forEach((step) =>
             updateStepFieldOptions(step, newOptions, repeatIndex)
           );
-          setSteps(JSON.parse(JSON.stringify(steps)));
+          setSteps(JSON.parse(JSON.stringify(currSteps)));
           updateStepFieldOptions(newStep, newOptions, repeatIndex);
           setActiveStep(JSON.parse(JSON.stringify(newStep)));
         },
         updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => {
-          Object.values(steps).forEach((step) =>
+          Object.values(currSteps).forEach((step) =>
             updateStepFieldStyles(step, fieldKey, newStyles)
           );
-          setSteps(JSON.parse(JSON.stringify(steps)));
+          setSteps(JSON.parse(JSON.stringify(currSteps)));
 
           updateStepFieldStyles(newStep, fieldKey, newStyles);
           setActiveStep(JSON.parse(JSON.stringify(newStep)));
@@ -827,10 +842,10 @@ function Form({
           newProperties: FieldProperties,
           onServar = false
         ) => {
-          Object.values(steps).forEach((step) =>
+          Object.values(currSteps).forEach((step) =>
             updateStepFieldProperties(step, fieldKey, newProperties, onServar)
           );
-          setSteps(JSON.parse(JSON.stringify(steps)));
+          setSteps(JSON.parse(JSON.stringify(currSteps)));
 
           updateStepFieldProperties(newStep, fieldKey, newProperties, onServar);
           setActiveStep(JSON.parse(JSON.stringify(newStep)));
@@ -938,10 +953,76 @@ function Form({
     );
     const newClient = clientRef.current;
     let saveUrlParamsFormSetting = false;
+    let allStepsLoaded = false;
     // render form without values first for speed
     const formPromise = newClient
-      .fetchForm(initialValues, language)
+      .fetchForm(initialValues, language, true)
       .then(async (data: any) => {
+        console.log('first step loaded');
+        if (allStepsLoaded) return;
+        await updateCustomHead(data.custom_head ?? '');
+        return data;
+      })
+      .then((data: any) => {
+        if (allStepsLoaded) return;
+        let { steps, form_name: formNameResult, ...res } = data;
+        // In the future formName will not be initialized with a prop value
+        // so we set it using the response data
+        setFormName(formNameResult);
+        steps = steps.reduce((result: any, step: any) => {
+          result[step.key] = step;
+          return result;
+        }, {});
+        setSteps(steps);
+        if (res.completion_behavior === 'redirect' && res.redirect_url)
+          initState.redirectCallbacks[_internalId] = () => {
+            featheryWindow().location.href = replaceTextVariables(
+              res.redirect_url,
+              0
+            );
+          };
+        if (res.save_url_params) saveUrlParamsFormSetting = true;
+        setFormSettings({ ...formSettings, ...mapFormSettingsResponse(res) });
+        formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
+        setLogicRules(res.logic_rules);
+        trackHashes.current = res.track_hashes;
+        console.log('trackHashes', trackHashes.current);
+
+        // Add any logic_rule.elements to viewElements so that onView called for then too.
+        // Make sure there are no duplicate entries.
+        if (res.logic_rules) {
+          const newViewElements: string[] = [...viewElements];
+          res.logic_rules.forEach((logicRule: LogicRule) => {
+            if (logicRule.trigger_event === 'view') {
+              logicRule.elements.forEach((elementId: any) => {
+                if (!newViewElements.includes(elementId)) {
+                  newViewElements.push(elementId);
+                }
+              });
+            }
+          });
+          setViewElements(newViewElements);
+        }
+
+        if (res.connector_fields) {
+          setConnectorFields(res.connector_fields);
+        }
+
+        if (res.production) installRecaptcha(steps);
+        return steps;
+      });
+
+    // render form without values first for speed
+    allStepsLoadedPromise.current = newClient
+      .fetchForm(initialValues, language, false)
+      .then(async (data: any) => {
+        // wait 5 seconds
+        await new Promise((resolve) => setTimeout(resolve, 10000));
+        return data;
+      })
+      .then(async (data: any) => {
+        console.log('all steps loaded');
+        allStepsLoaded = true;
         await updateCustomHead(data.custom_head ?? '');
         return data;
       })
@@ -990,11 +1071,17 @@ function Form({
         if (res.production) installRecaptcha(steps);
         return steps;
       });
+
+    const firstFormDataPromise = Promise.race([
+      formPromise,
+      allStepsLoadedPromise.current
+    ]);
+
     // fetch values separately because this request
     // goes to Feathery origin, while the previous
     // request goes to our CDN
     newClient
-      .fetchSession(formPromise, true)
+      .fetchSession(firstFormDataPromise, true)
       .then(([session, steps]: any) => {
         if (!session || session.collaborator?.invalid)
           formOffReason.current = CLOSED;
@@ -1053,6 +1140,8 @@ function Form({
   useOfflineRequestHandler(client);
 
   useEffect(() => {
+    const hashKey = getUrlHash();
+    if (stepKey !== hashKey && hashKey in steps) setStepKey(hashKey);
     return history.listen(async () => {
       if (!trackHashes.current) return;
       const hashKey = getUrlHash();
@@ -1126,8 +1215,9 @@ function Form({
     return change;
   };
 
-  const getNextStepKey = (metadata: any) =>
-    nextStepKey(activeStep.next_conditions, metadata);
+  const getNextStepKey = (metadata: any) => {
+    return nextStepKey(activeStep.next_conditions, metadata);
+  };
 
   const submitStep = async (
     metadata: any,
@@ -1310,12 +1400,18 @@ function Form({
   }
 
   async function goToNewStep({ metadata, submitData = false }: any) {
+    let currSteps = steps;
     let eventData: Record<string, any> = {
       step_key: activeStep.key,
       event: submitData ? 'complete' : 'skip'
     };
 
     const redirectKey = getNextStepKey(metadata);
+
+    if (!currSteps[redirectKey] && allStepsLoadedPromise.current != null) {
+      console.log('waiting for all steps to load');
+      currSteps = await allStepsLoadedPromise.current;
+    }
     eventData = { ...eventData, next_step_key: redirectKey };
 
     await callbackRef.current.all();
@@ -1334,12 +1430,12 @@ function Form({
         });
       }
     } else {
-      const nextStep = steps[redirectKey];
+      const nextStep = currSteps[redirectKey];
       if (isStepTerminal(nextStep)) {
         const authIntegration = getAuthIntegrationMetadata(integrations);
         const complete = !isTerminalStepAuth(
           authIntegration,
-          steps[stepKey].id
+          currSteps[stepKey].id
         );
         if (complete) {
           eventData.completed = true;
