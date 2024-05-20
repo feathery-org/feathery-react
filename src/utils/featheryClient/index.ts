@@ -285,7 +285,7 @@ export default class FeatheryClient extends IntegrationClient {
     });
   }
 
-  fetchCacheForm(formLanguage?: string) {
+  fetchCacheForm(formLanguage?: string, originOnly = false) {
     const { formSchemas, language: globalLanguage, theme } = initInfo();
     if (!formLanguage && this.formKey in formSchemas)
       return Promise.resolve(formSchemas[this.formKey]);
@@ -293,12 +293,13 @@ export default class FeatheryClient extends IntegrationClient {
     const params = encodeGetParams({
       form_key: this.formKey,
       draft: this.draft,
+      origin_only: originOnly,
       theme
     });
     const baseURL = this.bypassCDN ? API_URL : CDN_URL;
     const url = `${baseURL}panel/v21/?${params}`;
     const options: Record<string, any> = {
-      importance: 'high',
+      importance: originOnly ? 'high' : 'auto',
       headers: { 'Accept-Encoding': 'gzip' }
     };
     let language = formLanguage ?? globalLanguage;
@@ -323,8 +324,8 @@ export default class FeatheryClient extends IntegrationClient {
     });
   }
 
-  async fetchForm(initVals: any, language?: string) {
-    const res = await this.fetchCacheForm(language);
+  async fetchForm(initVals: any, language?: string, originOnly = false) {
+    const res = await this.fetchCacheForm(language, originOnly);
     // If form is disabled, data will equal `null`
     if (!res.steps) return { steps: [], formOff: true };
     this.version = res.version;

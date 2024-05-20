@@ -731,8 +731,22 @@ function Form({
     internalState[_internalId].inlineErrors = inlineErrors;
   }
 
-  const changeFormStep = (newKey: string, oldKey: string, load: boolean) => {
-    const changed = changeStep(newKey, oldKey, steps, setStepKey, history);
+  const changeFormStep = async (
+    newKey: string,
+    oldKey: string,
+    load: boolean
+  ) => {
+    let currSteps = steps;
+    if (
+      newKey &&
+      newKey !== oldKey &&
+      !(newKey in steps) &&
+      allStepsLoadedPromise.current
+    ) {
+      console.log('waiting for all steps to load');
+      currSteps = await allStepsLoadedPromise.current;
+    }
+    const changed = changeStep(newKey, oldKey, currSteps, setStepKey, history);
     if (changed) {
       const backKey = load ? backNavMap[oldKey] : oldKey;
       updateBackNavMap({ [newKey]: backKey });
@@ -957,6 +971,10 @@ function Form({
     // render form without values first for speed
     const formPromise = newClient
       .fetchForm(initialValues, language, true)
+      // .then(async (data: any) => {
+      //   await new Promise((resolve) => setTimeout(resolve, 10000));
+      //   return data;
+      // })
       .then(async (data: any) => {
         console.log('first step loaded');
         if (allStepsLoaded) return;
@@ -1016,7 +1034,6 @@ function Form({
     allStepsLoadedPromise.current = newClient
       .fetchForm(initialValues, language, false)
       .then(async (data: any) => {
-        // wait 5 seconds
         await new Promise((resolve) => setTimeout(resolve, 10000));
         return data;
       })
