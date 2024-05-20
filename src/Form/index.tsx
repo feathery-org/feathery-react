@@ -1072,7 +1072,7 @@ function Form({
         return steps;
       });
 
-    const firstFormDataPromise = Promise.race([
+    const firstFormDataPromise = Promise.any([
       formPromise,
       allStepsLoadedPromise.current
     ]);
