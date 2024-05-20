@@ -9,6 +9,7 @@ import Cart from '../integrations/stripe/Cart';
 import Collaborator from './api/Collaborator';
 
 interface FormInternalState {
+  language: string | undefined;
   currentStep: any;
   previousStepName: string;
   visiblePositions: any;

@@ -776,6 +776,7 @@ function Form({
     setFormInternalState(
       _internalId,
       {
+        language: language ?? initState.language,
         currentStep: newStep,
         previousStepName: activeStep?.key ?? '',
         visiblePositions: getVisiblePositions(newStep, _internalId),
