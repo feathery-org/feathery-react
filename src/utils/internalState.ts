@@ -8,7 +8,7 @@ import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
 import Collaborator from './api/Collaborator';
 
-interface FormInternalState {
+export interface FormInternalState {
   language: string | undefined;
   currentStep: any;
   previousStepName: string;
