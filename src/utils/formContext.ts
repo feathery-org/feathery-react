@@ -72,7 +72,7 @@ export const getFormContext = (formUuid: string) => {
         stepName: step.key ?? '',
         previousStepName: state.previousStepName,
         backgroundColor: rootStyles?.background_color ?? 'FFFFFF',
-        language: internalState.language
+        language: state.language
       };
     },
     validateStep: (showErrors = true) => {
