@@ -15,7 +15,50 @@ jest.mock('../init', () => ({
 
 describe('featheryClient', () => {
   describe('fetchForm', () => {
-    it('fetches a form with the provided parameters', async () => {
+    it("fetches a form's origin step with the provided parameters", async () => {
+      // Arrange
+      const formKey = 'formKey';
+      const featheryClient = new FeatheryClient(formKey);
+      initInfo.mockReturnValue({
+        sdkKey: 'sdkKey',
+        userId: 'userId',
+        formSessions: {},
+        formSchemas: {},
+        theme: ''
+      });
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 200,
+        json: jest
+          .fn()
+          .mockResolvedValue({ data: [], fonts: [], uploaded_fonts: {} })
+      });
+
+      // Act
+      const response = await featheryClient.fetchForm(
+        undefined,
+        undefined,
+        true
+      );
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${CDN_URL}panel/v21/?form_key=formKey&draft=false&origin_only=true&theme=`,
+        {
+          cache: 'no-store',
+          keepalive: false,
+          importance: 'high',
+          headers: {
+            Authorization: 'Token sdkKey',
+            'Accept-Encoding': 'gzip'
+          }
+        }
+      );
+      expect(response).toEqual({ steps: [], fonts: [], uploaded_fonts: {} });
+    });
+  });
+
+  describe('fetchForm', () => {
+    it('fetches all steps of a form with the provided parameters', async () => {
       // Arrange
       const formKey = 'formKey';
       const featheryClient = new FeatheryClient(formKey);
@@ -38,11 +81,11 @@ describe('featheryClient', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${CDN_URL}panel/v20/?form_key=formKey&draft=false&theme=`,
+        `${CDN_URL}panel/v21/?form_key=formKey&draft=false&origin_only=false&theme=`,
         {
           cache: 'no-store',
           keepalive: false,
-          importance: 'high',
+          importance: 'auto',
           headers: {
             Authorization: 'Token sdkKey',
             'Accept-Encoding': 'gzip'
