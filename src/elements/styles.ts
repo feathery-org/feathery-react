@@ -260,7 +260,7 @@ export default class ResponsiveStyles {
       ],
       // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
       (a, b, c, d) => ({
-        borderRadius: `${a}px ${b}px ${c}px ${d}px`
+        borderRadius: `${a ?? 0}px ${b ?? 0}px ${c ?? 0}px ${d ?? 0}px`
       })
     );
   }
@@ -274,8 +274,9 @@ export default class ResponsiveStyles {
         'shadow_blur_radius',
         'shadow_color'
       ],
-      (a = 0, b = 0, c = 0, d = '000000') => ({
-        boxShadow: `${a}px ${b}px ${c}px #${d}`
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
+      (a, b, c, d) => ({
+        boxShadow: `${a ?? 0}px ${b ?? 0}px ${c ?? 0}px #${d ?? '000000'}`
       })
     );
   }
