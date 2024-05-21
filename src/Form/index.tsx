@@ -1137,7 +1137,7 @@ function Form({
           steps,
           sessionCurrentStep: session.current_step_key
         });
-        if (trackHashes.current) setUrlStepHash(history, steps, newKey);
+        if (trackHashes.current) setUrlStepHash(history, newKey);
         setStepKey(newKey);
       })
       .catch(async (error: any) => {
@@ -1145,7 +1145,7 @@ function Form({
         // Go to first step if origin fails
         const [data] = await formPromise;
         const newKey = (getOrigin as any)(data).key;
-        if (trackHashes.current) setUrlStepHash(history, steps, newKey);
+        if (trackHashes.current) setUrlStepHash(history, newKey);
         else setStepKey(newKey);
       });
   }, [activeStep, setSteps, updateFieldValues]);

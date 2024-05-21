@@ -134,12 +134,9 @@ export default class ResponsiveStyles {
   }
 
   applyFlexDirection(target: string, prefix = '') {
-    this.apply(target, `${prefix}flex_direction`, (a: any) => {
-      if (!a) return {};
-      return {
-        flexDirection: a
-      };
-    });
+    this.apply(target, `${prefix}flex_direction`, (a: any) => ({
+      flexDirection: a
+    }));
   }
 
   // Content align needs to be applied on the opposite axis from the flex
@@ -157,12 +154,9 @@ export default class ResponsiveStyles {
   }
 
   applyTextAlign(target: string, prefix = '') {
-    this.apply(target, `${prefix}text_align`, (a: any) => {
-      if (!a) return {};
-      return {
-        textAlign: a
-      };
-    });
+    this.apply(target, `${prefix}text_align`, (a: any) => ({
+      textAlign: a
+    }));
   }
 
   applyBorders({ target = '', prefix = '', important = true }) {
@@ -187,14 +181,16 @@ export default class ResponsiveStyles {
         `${prefix}border_bottom_pattern`,
         `${prefix}border_left_pattern`
       ],
-      (a = 'solid', b = 'solid', c = 'solid', d = 'solid') => ({
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
+      (a, b, c, d) => ({
         borderStyle: `${a} ${b} ${c} ${d} ${i}`
       })
     );
     this.apply(
       target,
       borderWidthProps.map((prop) => `${prefix}${prop}`),
-      (a = 0, b = 0, c = 0, d = 0) => ({
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
+      (a, b, c, d) => ({
         borderWidth: `${a}px ${b}px ${c}px ${d}px ${i}`
       })
     );
@@ -230,7 +226,8 @@ export default class ResponsiveStyles {
         `${prefix}padding_bottom`,
         `${prefix}padding_left`
       ],
-      (a = 0, b = 0, c = 0, d = 0) => ({
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
+      (a, b, c, d) => ({
         [margin ? 'margin' : 'padding']: `${a}px ${b}px ${c}px ${d}px`
       })
     );
@@ -245,7 +242,8 @@ export default class ResponsiveStyles {
         `${prefix}margin_bottom`,
         `${prefix}margin_left`
       ],
-      (a = 0, b = 0, c = 0, d = 0) => ({
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
+      (a, b, c, d) => ({
         margin: `${a}px ${b}px ${c}px ${d}px`
       })
     );
@@ -260,7 +258,8 @@ export default class ResponsiveStyles {
         'corner_bottom_right_radius',
         'corner_bottom_left_radius'
       ],
-      (a = 0, b = 0, c = 0, d = 0) => ({
+      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
+      (a, b, c, d) => ({
         borderRadius: `${a}px ${b}px ${c}px ${d}px`
       })
     );
@@ -341,7 +340,7 @@ export default class ResponsiveStyles {
       fontWeight: a
     }));
     this.applyFontFamily(target);
-    this.apply(target, 'font_size', (a = 0) => ({
+    this.apply(target, 'font_size', (a: any) => ({
       fontSize: `${a}px`
     }));
     this.apply(target, 'line_height', (a: any) => ({

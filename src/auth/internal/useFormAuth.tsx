@@ -34,7 +34,7 @@ const useFormAuth = ({
       if (hasAuthGatedSteps(integrations)) {
         const stepName = getNextAuthStep();
         setStepKey(stepName);
-        setUrlStepHash(history, steps, stepName);
+        setUrlStepHash(history, stepName);
         authState.redirectAfterLogin = false;
         authState.hasRedirected = true;
       } else {
@@ -69,7 +69,7 @@ const useFormAuth = ({
       // blocked by the `if (authState.redirectAfterLogin) return;` early
       // return in Form's fetchSession.then fn call
       setStepKey(initialStep);
-      setUrlStepHash(history, steps, initialStep);
+      setUrlStepHash(history, initialStep);
     }
   }, [integrations]);
 

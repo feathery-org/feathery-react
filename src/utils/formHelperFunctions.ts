@@ -666,12 +666,8 @@ export function clearFilePathMapEntry(key: any, index = null) {
   }
 }
 
-export function setUrlStepHash(history: any, steps: any, stepName: string) {
-  // No hash necessary if form only has one step
-  // TODO: payload
-  // if (Object.keys(steps).length > 1) {
+export function setUrlStepHash(history: any, stepName: string) {
   history.replace(location.pathname + location.search + `#${stepName}`);
-  // }
 }
 
 export function registerRenderCallback(
