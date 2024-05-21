@@ -731,8 +731,13 @@ function Form({
     internalState[_internalId].inlineErrors = inlineErrors;
   }
 
-  const changeFormStep = (newKey: string, oldKey: string, load: boolean) => {
-    const changed = changeStep(newKey, oldKey, steps, setStepKey, history);
+  const changeFormStep = (
+    newKey: string,
+    oldKey: string,
+    load: boolean,
+    currSteps = steps
+  ) => {
+    const changed = changeStep(newKey, oldKey, currSteps, setStepKey, history);
     if (changed) {
       const backKey = load ? backNavMap[oldKey] : oldKey;
       updateBackNavMap({ [newKey]: backKey });
@@ -758,22 +763,21 @@ function Form({
 
     const nextStep = getNextAuthStep(newStep);
     const hasNextStep = currSteps[nextStep];
-    if (!hasNextStep && allStepsLoadedPromise.current != null) {
-      console.log('waiting for all steps to load');
+    if (nextStep && !hasNextStep && allStepsLoadedPromise.current != null) {
       currSteps = await allStepsLoadedPromise.current;
     }
 
     if (
       nextStep !== '' &&
       !initState.isTestEnv &&
-      changeFormStep(nextStep, newKey, true)
+      changeFormStep(nextStep, newKey, true, currSteps)
     )
       return;
     const nextKey = nextStepKey(newStep.next_conditions, {
       elementType: 'step',
       elementIDs: [newStep.id]
     });
-    if (nextKey && changeFormStep(nextKey, newKey, true)) {
+    if (nextKey && changeFormStep(nextKey, newKey, true, currSteps)) {
       return;
     }
 
