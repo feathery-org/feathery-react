@@ -55,7 +55,7 @@ const STATIC_URL_OPTIONS = {
   productionCA: 'https://api-static-2.feathery.io/api/'
 };
 
-const environment = 'production';
+const environment = 'local';
 
 export let API_URL = API_URL_OPTIONS[environment];
 export let CDN_URL = CDN_URL_OPTIONS[environment];
@@ -297,7 +297,7 @@ export default class FeatheryClient extends IntegrationClient {
       theme
     });
     const baseURL = this.bypassCDN ? API_URL : CDN_URL;
-    const url = `${baseURL}panel/v21/?${params}`;
+    const url = `${baseURL}panel/v20/?${params}`;
     const options: Record<string, any> = {
       importance: originOnly ? 'high' : 'auto',
       headers: { 'Accept-Encoding': 'gzip' }

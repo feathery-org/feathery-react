@@ -42,7 +42,7 @@ describe('featheryClient', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${CDN_URL}panel/v21/?form_key=formKey&draft=false&origin_only=true&theme=`,
+        `${CDN_URL}panel/v20/?form_key=formKey&draft=false&origin_only=true&theme=`,
         {
           cache: 'no-store',
           keepalive: false,
@@ -81,7 +81,7 @@ describe('featheryClient', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${CDN_URL}panel/v21/?form_key=formKey&draft=false&origin_only=false&theme=`,
+        `${CDN_URL}panel/v20/?form_key=formKey&draft=false&origin_only=false&theme=`,
         {
           cache: 'no-store',
           keepalive: false,
