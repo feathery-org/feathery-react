@@ -71,7 +71,8 @@ export const getFormContext = (formUuid: string) => {
         totalSteps: Object.keys(state.steps).length,
         stepName: step.key ?? '',
         previousStepName: state.previousStepName,
-        backgroundColor: rootStyles?.background_color ?? 'FFFFFF'
+        backgroundColor: rootStyles?.background_color ?? 'FFFFFF',
+        language: state.language
       };
     },
     validateStep: (showErrors = true) => {

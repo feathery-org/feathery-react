@@ -23,7 +23,7 @@ const mountedForms: Record<string, boolean> = {};
  * @param {string} elementId The ID of the DOM element to hold the form
  * @param {Object} props The props defined on the *Form* component
  */
-function renderAt(elementId: any, props: FormProps) {
+function renderAt(elementId: any, props: FormProps, loginEnabled = false) {
   const container = featheryDoc().getElementById(elementId);
   const destroy = () => unmountComponentAtNode(container);
   if (mountedForms[elementId]) destroy();
@@ -31,8 +31,15 @@ function renderAt(elementId: any, props: FormProps) {
 
   const uuid = uuidv4();
 
-  // @ts-ignore
-  ReactDOM.render(<JSForm {...props} _internalId={uuid} />, container);
+  const formProps = { ...props, _internalId: uuid };
+
+  const component = loginEnabled ? (
+    <LoginForm formProps={formProps} />
+  ) : (
+    <JSForm {...formProps} />
+  );
+
+  ReactDOM.render(component, container);
 
   return {
     ...getFormContext(uuid),

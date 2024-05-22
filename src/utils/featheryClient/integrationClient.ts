@@ -1,5 +1,5 @@
 import * as errors from '../error';
-import { fieldValues, initFormsPromise, initInfo } from '../init';
+import { fieldValues, initFormsPromise, initInfo, initState } from '../init';
 import { encodeGetParams } from '../primitives';
 import { parseError } from '../error';
 import { API_URL } from '.';
@@ -40,7 +40,7 @@ export async function checkResponseSuccess(response: any) {
 export default class IntegrationClient {
   formKey: string;
   version?: string;
-  noSave?: boolean;
+  _noSave?: boolean;
   ignoreNetworkErrors: any; // this should be a ref
   draft: boolean;
   bypassCDN: boolean;

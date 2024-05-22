@@ -335,18 +335,30 @@ function PhoneField({
               let newNum = e.target.value;
               if (newNum) {
                 const LPN = global.libphonenumber;
+                if (!LPN) return;
+                const validateLength = LPN.validatePhoneNumberLength;
+
                 // Phone codes with >3 characters will have a whitespace
                 newNum = newNum.replace(/\s/g, '');
 
-                if (!LPN) return;
+                // Number is being pasted in (iphone autofill)...
+                // if the number is valid but missing the country code, add it
+                if (
+                  !newNum.includes('+') &&
+                  !validateLength(newNum, curCountryCode) // undefined = valid
+                ) {
+                  newNum = `+${phoneCode}${newNum}`;
+                }
+
                 // Don't let user delete the country code
-                else if (!newNum.startsWith(`+${phoneCode}`)) return;
+                if (!newNum.startsWith(`+${phoneCode}`)) return;
                 // Prevent US phone numbers from starting with a 1
-                else if (newNum.startsWith('+11')) return;
+                if (newNum.startsWith('+11')) return;
 
                 const onlyDigits = LPN.parseDigits(newNum, curCountryCode);
-                const validate = LPN.validatePhoneNumberLength;
-                if (validate(onlyDigits, curCountryCode) === 'TOO_LONG') return;
+
+                if (validateLength(onlyDigits, curCountryCode) === 'TOO_LONG')
+                  return;
 
                 const asYouType = new LPN.AsYouType(curCountryCode);
                 const newFormatted = asYouType.input(`+${onlyDigits}`);

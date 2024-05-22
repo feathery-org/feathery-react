@@ -36,6 +36,7 @@ type InitOptions = {
   userTracking?: 'cookie' | 'fingerprint';
   language?: string;
   theme?: string;
+  noSave?: boolean;
   _enterpriseRegion?: string;
 };
 
@@ -52,6 +53,7 @@ type InitState = {
   defaultErrors: Record<string, string>;
   isTestEnv: boolean;
   theme: string;
+  initNoSave: boolean;
   _internalUserId: string;
 } & InitOptions;
 
@@ -76,6 +78,7 @@ const initState: InitState = {
   renderCallbacks: {},
   remountCallbacks: {},
   isTestEnv: false,
+  initNoSave: false,
   theme: ''
 };
 let fieldValues: FieldValues = {};
@@ -105,6 +108,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
     initState.userId = options.userId;
     initState.overrideUserId = true;
   }
+  if (options.noSave) initState.initNoSave = true;
   if (options.userTracking) initState.userTracking = options.userTracking;
   if (options.theme) initState.theme = options.theme;
   if (options.collaboratorId) initState.collaboratorId = options.collaboratorId;

@@ -329,7 +329,7 @@ export default class FeatheryClient extends IntegrationClient {
     // If form is disabled, data will equal `null`
     if (!res.steps) return { steps: [], formOff: true };
     this.version = res.version;
-    this.noSave = res.no_save_data;
+    this._noSave = res.no_save_data;
     this.setDefaultFormValues({ steps: res.steps, additionalValues: initVals });
     return res;
   }
@@ -556,6 +556,11 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
+  getNoSave() {
+    if (this._noSave !== undefined) return this._noSave;
+    return initInfo().initNoSave;
+  }
+
   async submitCustom(
     customKeyValues: { [key: string]: any },
     // Options
@@ -564,7 +569,7 @@ export default class FeatheryClient extends IntegrationClient {
       shouldFlush = false
     }: { override?: boolean; shouldFlush?: boolean } = {}
   ) {
-    if (this.draft || this.noSave) return;
+    if (this.draft || this.getNoSave()) return;
     if (Object.keys(customKeyValues).length === 0 && !shouldFlush) return;
     // If there are values passed, aggregate them in the pending queue
     Object.entries(customKeyValues).forEach(([key, value]) => {
@@ -584,7 +589,7 @@ export default class FeatheryClient extends IntegrationClient {
 
   // servars = [{key: <servarKey>, <type>: <value>}]
   async submitStep(servars: any, step: any, hasNext: boolean) {
-    if (this.draft || this.noSave) return;
+    if (this.draft || this.getNoSave()) return;
 
     const items = [
       ...step.buttons.filter(isStoreFieldValueAction),
