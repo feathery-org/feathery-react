@@ -113,6 +113,12 @@ function FileUploadField({
     <FileUploadIcon width={imgStyles.width} style={{ maxHeight: '100%' }} />
   );
 
+  const fileTypes = [...servar.metadata.file_types];
+  if (servar.metadata.custom_file_types)
+    fileTypes.push(
+      servar.metadata.custom_file_types.map((type: string) => `.${type}`)
+    );
+
   return (
     <div
       css={{
@@ -258,7 +264,8 @@ function FileUploadField({
         type='file'
         onChange={onChange}
         required={required && !fileExists}
-        accept={servar.metadata.file_types}
+        // @ts-ignore
+        accept={fileTypes}
         disabled={element.properties.disabled ?? false}
         aria-label={element.properties.aria_label}
         multiple={isMultiple}
