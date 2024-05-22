@@ -750,7 +750,6 @@ function Form({
     let newStep = currSteps[newKey];
     if (!newStep) {
       if (allStepsLoadedPromise.current != null) {
-        console.log('waiting for all steps to load');
         currSteps = await allStepsLoadedPromise.current;
         newStep = currSteps[newKey];
         if (!newStep) {
@@ -967,12 +966,7 @@ function Form({
     // render form without values first for speed
     const formPromise = newClient
       .fetchForm(initialValues, language, true)
-      // .then(async (data: any) => {
-      //   await new Promise((resolve) => setTimeout(resolve, 10000));
-      //   return data;
-      // })
       .then(async (data: any) => {
-        console.log('first step loaded');
         if (allStepsLoaded) return;
         await updateCustomHead(data.custom_head ?? '');
         return data;
@@ -1000,7 +994,6 @@ function Form({
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);
         trackHashes.current = res.track_hashes;
-        console.log('trackHashes', trackHashes.current);
 
         // Add any logic_rule.elements to viewElements so that onView called for then too.
         // Make sure there are no duplicate entries.
@@ -1030,11 +1023,6 @@ function Form({
     allStepsLoadedPromise.current = newClient
       .fetchForm(initialValues, language, false)
       .then(async (data: any) => {
-        await new Promise((resolve) => setTimeout(resolve, 10000));
-        return data;
-      })
-      .then(async (data: any) => {
-        console.log('all steps loaded');
         allStepsLoaded = true;
         await updateCustomHead(data.custom_head ?? '');
         return data;
@@ -1422,7 +1410,6 @@ function Form({
     const redirectKey = getNextStepKey(metadata);
 
     if (!currSteps[redirectKey] && allStepsLoadedPromise.current != null) {
-      console.log('waiting for all steps to load');
       currSteps = await allStepsLoadedPromise.current;
     }
     eventData = { ...eventData, next_step_key: redirectKey };

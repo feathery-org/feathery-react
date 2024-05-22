@@ -55,7 +55,7 @@ const STATIC_URL_OPTIONS = {
   productionCA: 'https://api-static-2.feathery.io/api/'
 };
 
-const environment = 'local';
+const environment = 'production';
 
 export let API_URL = API_URL_OPTIONS[environment];
 export let CDN_URL = CDN_URL_OPTIONS[environment];
