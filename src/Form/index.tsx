@@ -162,6 +162,10 @@ import { fieldAllowedFromList } from './grid/Element/utils';
 import { triggerPersona } from '../integrations/persona';
 import Collaborator from '../utils/api/Collaborator';
 import { useOfflineRequestHandler } from '../utils/offlineRequestHandler';
+import {
+  removeCustomErrorHandler,
+  setCustomErrorHandler
+} from '../utils/error';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -943,7 +947,9 @@ function Form({
     const formPromise = newClient
       .fetchForm(initialValues, language)
       .then(async (data: any) => {
+        setCustomErrorHandler();
         await updateCustomHead(data.custom_head ?? '');
+        removeCustomErrorHandler();
         return data;
       })
       .then(({ steps, form_name: formNameResult, ...res }: any) => {
