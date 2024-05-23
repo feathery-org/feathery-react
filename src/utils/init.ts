@@ -114,9 +114,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (options.collaboratorId) initState.collaboratorId = options.collaboratorId;
   if (options.language) {
     const langPieces = options.language.split(',');
-    initState.language = langPieces
-      .map((piece) => piece.trim().slice(0, 2))
-      .join(',');
+    initState.language = langPieces.map((piece) => piece.trim()).join(',');
   }
 
   // NextJS support
