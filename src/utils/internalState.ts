@@ -3,10 +3,10 @@ import {
   FieldProperties,
   FieldStyles
 } from './formHelperFunctions';
-import Field from './api/Field';
+import Field from './entities/Field';
 import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
-import Collaborator from './api/Collaborator';
+import Collaborator from './entities/Collaborator';
 
 export interface FormInternalState {
   language: string | undefined;

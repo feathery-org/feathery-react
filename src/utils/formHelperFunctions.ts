@@ -19,7 +19,7 @@ import {
 import { featheryDoc, featheryWindow } from './browser';
 import FeatheryClient from './featheryClient';
 import { isObjectEmpty } from './primitives';
-import Field from './api/Field';
+import Field from './entities/Field';
 import { formatDateString } from '../elements/fields/DateSelectorField';
 import { findCountryByID } from '../elements/components/data/countries';
 

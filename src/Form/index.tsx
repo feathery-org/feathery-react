@@ -153,14 +153,14 @@ import {
   getAuthIntegrationMetadata,
   isTerminalStepAuth
 } from '../auth/internal/utils';
-import Field from '../utils/api/Field';
+import Field from '../utils/entities/Field';
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
 import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
 import { fieldAllowedFromList } from './grid/Element/utils';
 import { triggerPersona } from '../integrations/persona';
-import Collaborator from '../utils/api/Collaborator';
+import Collaborator from '../utils/entities/Collaborator';
 import { useOfflineRequestHandler } from '../utils/offlineRequestHandler';
 import {
   removeCustomErrorHandler,
