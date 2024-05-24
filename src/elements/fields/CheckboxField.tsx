@@ -1,6 +1,5 @@
-import React, { FocusEvent, useMemo } from 'react';
-import { hoverStylesGuard, isIOS } from '../../utils/browser';
-import { isElementInViewport } from '../../utils/formHelperFunctions';
+import React, { useMemo } from 'react';
+import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
 
 // Draws a checkmark, similar in dimensions to the default Chrome checkbox, in CSS
 const checkmarkClipPath =
@@ -257,22 +256,6 @@ function CheckboxField({
 
   const servar = element.servar;
 
-  // iOS devices do not scroll to focused checkboxes
-  // we manually scroll to the element to
-  // handle form errors and provide the same experience other devices have
-  const scrollOnFocus = (event: FocusEvent<HTMLInputElement, Element>) => {
-    const element = event.target;
-    // scroll to element if it's not in viewport and an iOS device
-    if (
-      element &&
-      element instanceof HTMLElement &&
-      !isElementInViewport(element) &&
-      isIOS()
-    ) {
-      element.scrollIntoView();
-    }
-  };
-
   return (
     <div
       css={{
@@ -290,7 +273,7 @@ function CheckboxField({
         checked={fieldVal}
         disabled={disabled}
         onChange={onChange}
-        onFocus={scrollOnFocus}
+        onFocus={iosScrollOnFocus}
         aria-label={element.properties.aria_label}
         css={{
           ...composeCheckableInputStyle(styles, disabled),

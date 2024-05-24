@@ -1,3 +1,6 @@
+import { type FocusEvent } from 'react';
+import { isElementInViewport } from './formHelperFunctions';
+
 export function runningInClient() {
   // eslint-disable-next-line no-restricted-globals
   return typeof window === 'object';
@@ -74,4 +77,20 @@ export function downloadFile(file: File) {
 
   featheryWindow().URL.revokeObjectURL(href);
   featheryDoc().body.removeChild(element);
+}
+// iOS devices do not scroll to focused radio buttons
+// and checkboxes so we manually scroll to maintain a
+// consistent user experience.
+//
+// scroll to element if it's not in viewport and an iOS device
+export function iosScrollOnFocus(event: FocusEvent) {
+  if (!isIOS()) return;
+  const element = event.target;
+  if (
+    element &&
+    element instanceof HTMLElement &&
+    !isElementInViewport(element)
+  ) {
+    element.scrollIntoView();
+  }
 }

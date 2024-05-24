@@ -1,11 +1,10 @@
-import React, { FocusEvent, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import TextHoverTooltip from '../components/TextHoverTooltip';
 import {
   applyCheckableInputStyles,
   composeCheckableInputStyle
 } from './CheckboxField';
-import { isElementInViewport } from '../../utils/formHelperFunctions';
-import { isIOS } from '../../utils/browser';
+import { iosScrollOnFocus } from '../../utils/browser';
 
 function MatrixField({
   element,
@@ -45,22 +44,6 @@ function MatrixField({
   const widthStyle = { minWidth: '100px', width: `${optionFraction}%` };
 
   const firstColStyle = { ...widthStyle, fontWeight: 400, padding: 8 };
-
-  // iOS devices do not scroll to focused radio buttons
-  // we manually scroll to the focused radio button to
-  // handle form errors and provide the same experience other devices have
-  const scrollOnFocus = (event: FocusEvent<HTMLInputElement, Element>) => {
-    const element = event.target;
-    // scroll to element if it's not in viewport and an iOS device
-    if (
-      element &&
-      element instanceof HTMLElement &&
-      !isElementInViewport(element) &&
-      isIOS()
-    ) {
-      element.scrollIntoView();
-    }
-  };
 
   return (
     <div
@@ -144,7 +127,7 @@ function MatrixField({
                     disabled={disabled || q.read_only}
                     checked={isChecked}
                     onChange={onChange}
-                    onFocus={scrollOnFocus}
+                    onFocus={iosScrollOnFocus}
                     css={composeCheckableInputStyle(
                       styles,
                       disabled,
