@@ -20,6 +20,19 @@ export const isHoverDevice = () =>
 export const isTouchDevice = () =>
   featheryWindow().matchMedia('(pointer: coarse)').matches;
 
+// Returns whether or not user device is running iOS
+// based on: https://stackoverflow.com/a/76302335
+export const isIOS = () => {
+  let userAgentString = navigator.userAgent;
+  const uaData = (navigator as any).userAgentData;
+  if (uaData != null && uaData.brands) {
+    userAgentString = uaData.brands
+      .map((item: any) => item.brand + '/' + item.version)
+      .join(' ');
+  }
+  return /iPad|iPhone|iPod/.test(userAgentString);
+};
+
 export const hoverStylesGuard = (styles: any) =>
   isHoverDevice() ? styles : {};
 
