@@ -81,11 +81,10 @@ export default class Cart {
   _stripeConfig: StripeConfig;
 
   constructor(updateFieldValues: any, stripeConfig: StripeConfig) {
-    const allProductsPriceCache = {
+    this._productPriceCacheConfig = {
       ...(stripeConfig?.metadata.live?.product_price_cache ?? {}),
       ...(stripeConfig?.metadata.test?.product_price_cache ?? {})
     };
-    this._productPriceCacheConfig = allProductsPriceCache;
     this._updateFieldValues = updateFieldValues;
     this._stripeConfig = stripeConfig;
   }

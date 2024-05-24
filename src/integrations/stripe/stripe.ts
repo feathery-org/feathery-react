@@ -291,12 +291,12 @@ function getLiveOrTestProduct(
     ...liveProductsPriceCache,
     ...testProductsPriceCache
   };
-  const targetCache = !initState?.isTestEnv // initState is undefined in unit test env
-    ? liveProductsPriceCache
-    : testProductsPriceCache;
   const product = allProductsPriceCache[productId];
   if (product) {
     const { name } = product;
+    const targetCache = !initState?.isTestEnv // initState is undefined in unit test env
+      ? liveProductsPriceCache
+      : testProductsPriceCache;
     // find products with the same name in the target cache
     // If find more than one, stick with the one you have the id for because there
     // are naming collisions.  Too many products named the same and
@@ -304,9 +304,7 @@ function getLiveOrTestProduct(
     const products = Object.values(targetCache).filter(
       (p) => p.name === name
     ) as Product[];
-    if (products.length === 1) {
-      return products[0].id;
-    }
+    if (products.length === 1) return products[0].id;
   }
   return productId;
 }
