@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, FocusEvent } from 'react';
 import ReactForm from 'react-bootstrap/Form';
 import { bootstrapStyles } from '../styles';
 import {
@@ -7,6 +7,8 @@ import {
   composeCheckableInputStyle
 } from './CheckboxField';
 import InlineTooltip from '../components/InlineTooltip';
+import { isElementInViewport } from '../../utils/formHelperFunctions';
+import { isIOS } from '../../utils/browser';
 
 const applyRadioGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('radioGroup');
@@ -63,6 +65,23 @@ function RadioButtonGroupField({
     }));
   }
 
+  // iOS devices do not scroll to focused radio buttons
+  // we manually scroll to the focused radio button to
+  // handle form errors and provide the same experience other devices have
+  const scrollOnFocus = (event: FocusEvent<HTMLInputElement, Element>) => {
+    const element = event.target;
+    // scroll to element if it's not in viewport and an iOS device
+
+    if (
+      element &&
+      element instanceof HTMLElement &&
+      !isElementInViewport(element) &&
+      isIOS()
+    ) {
+      element.scrollIntoView();
+    }
+  };
+
   return (
     <div
       css={{
@@ -100,6 +119,7 @@ function RadioButtonGroupField({
               required={required}
               disabled={disabled}
               onChange={onChange}
+              onFocus={scrollOnFocus}
               aria-label={element.properties.aria_label}
               value={value}
               style={{
@@ -150,6 +170,7 @@ function RadioButtonGroupField({
               });
               onChange(e);
             }}
+            onFocus={scrollOnFocus}
             value={otherVal || ''}
             style={{
               padding: 0,
