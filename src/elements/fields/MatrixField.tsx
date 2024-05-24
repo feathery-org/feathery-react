@@ -4,6 +4,7 @@ import {
   applyCheckableInputStyles,
   composeCheckableInputStyle
 } from './CheckboxField';
+import { iosScrollOnFocus } from '../../utils/browser';
 
 function MatrixField({
   element,
@@ -126,6 +127,7 @@ function MatrixField({
                     disabled={disabled || q.read_only}
                     checked={isChecked}
                     onChange={onChange}
+                    onFocus={iosScrollOnFocus}
                     css={composeCheckableInputStyle(
                       styles,
                       disabled,

@@ -7,6 +7,7 @@ import {
   composeCheckableInputStyle
 } from './CheckboxField';
 import InlineTooltip from '../components/InlineTooltip';
+import { iosScrollOnFocus } from '../../utils/browser';
 
 const applyCheckboxGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('checkboxGroup');
@@ -101,6 +102,7 @@ function CheckboxGroupField({
               name={value}
               checked={checked}
               onChange={onChange}
+              onFocus={iosScrollOnFocus}
               style={{ padding: 0, lineHeight: 'normal' }}
               css={{
                 ...composeCheckableInputStyle(styles, optionDisabled),
@@ -142,6 +144,7 @@ function CheckboxGroupField({
             checked={otherChecked}
             disabled={otherDisabled}
             onChange={onChange}
+            onFocus={iosScrollOnFocus}
             style={{
               padding: 0,
               lineHeight: 'normal'

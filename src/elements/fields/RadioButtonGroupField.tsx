@@ -7,6 +7,7 @@ import {
   composeCheckableInputStyle
 } from './CheckboxField';
 import InlineTooltip from '../components/InlineTooltip';
+import { iosScrollOnFocus } from '../../utils/browser';
 
 const applyRadioGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('radioGroup');
@@ -100,6 +101,7 @@ function RadioButtonGroupField({
               required={required}
               disabled={disabled}
               onChange={onChange}
+              onFocus={iosScrollOnFocus}
               aria-label={element.properties.aria_label}
               value={value}
               style={{
@@ -150,6 +152,7 @@ function RadioButtonGroupField({
               });
               onChange(e);
             }}
+            onFocus={iosScrollOnFocus}
             value={otherVal || ''}
             style={{
               padding: 0,

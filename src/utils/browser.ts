@@ -1,3 +1,6 @@
+import { type FocusEvent } from 'react';
+import { isElementInViewport } from './formHelperFunctions';
+
 export function runningInClient() {
   // eslint-disable-next-line no-restricted-globals
   return typeof window === 'object';
@@ -19,6 +22,19 @@ export const isHoverDevice = () =>
 
 export const isTouchDevice = () =>
   featheryWindow().matchMedia('(pointer: coarse)').matches;
+
+// Returns whether or not user device is running iOS
+// based on: https://stackoverflow.com/a/76302335
+export const isIOS = () => {
+  let userAgentString = navigator.userAgent;
+  const uaData = (navigator as any).userAgentData;
+  if (uaData != null && uaData.brands) {
+    userAgentString = uaData.brands
+      .map((item: any) => item.brand + '/' + item.version)
+      .join(' ');
+  }
+  return /iPad|iPhone|iPod/.test(userAgentString);
+};
 
 export const hoverStylesGuard = (styles: any) =>
   isHoverDevice() ? styles : {};
@@ -61,4 +77,20 @@ export function downloadFile(file: File) {
 
   featheryWindow().URL.revokeObjectURL(href);
   featheryDoc().body.removeChild(element);
+}
+// iOS devices do not scroll to focused radio buttons
+// and checkboxes so we manually scroll to maintain a
+// consistent user experience.
+//
+// scroll to element if it's not in viewport and an iOS device
+export function iosScrollOnFocus(event: FocusEvent) {
+  if (!isIOS()) return;
+  const element = event.target;
+  if (
+    element &&
+    element instanceof HTMLElement &&
+    !isElementInViewport(element)
+  ) {
+    element.scrollIntoView();
+  }
 }
