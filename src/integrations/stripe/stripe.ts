@@ -68,7 +68,7 @@ export const FEATHERY_CART_TOTAL = 'feathery.cart.total';
 
 export function getPaymentsReservedFieldValues() {
   return Object.entries(fieldValues).reduce((result, [key, value]) => {
-    if (key.startsWith('feathery.cart')) {
+    if (key.startsWith(FEATHERY_CART)) {
       result[key] = value;
     }
     return result;
@@ -274,8 +274,8 @@ export function getSimplifiedProducts(
 
 // Dynamically use the live or test product id based on the environment
 // (test or live).  If live/test products have the same name
-// then use the apropriate one based on the initState.isTestEnv.
-function getLiveOrTestProduct(
+// then use the appropriate one based on the initState.isTestEnv.
+export function getLiveOrTestProduct(
   productId: string,
   stripeConfig: StripeConfig
 ): string {

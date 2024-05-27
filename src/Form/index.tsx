@@ -77,7 +77,8 @@ import {
   usePayments,
   removeFromCart,
   setupPaymentMethod,
-  purchaseCart
+  purchaseCart,
+  getLiveOrTestProduct
 } from '../integrations/stripe';
 import { ActionData, trackEvent } from '../integrations/utils';
 import DevNavBar from './components/DevNavBar';
@@ -1416,7 +1417,11 @@ function Form({
           state = true;
       } else if (action.type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
         if (state === null) state = false;
-        if (isProductInPurchaseSelections(action.product_id)) state = true;
+        const productId = getLiveOrTestProduct(
+          action.product_id,
+          integrations?.stripe
+        );
+        if (isProductInPurchaseSelections(productId)) state = true;
       }
     }
     return state;
