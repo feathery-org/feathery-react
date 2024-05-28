@@ -673,8 +673,17 @@ const Element = ({ node: el, form }: any) => {
         return (
           <Elements.TextField
             {...fieldProps}
-            onChange={(val: string) => {
-              const change = changeValue(val, el, index, false, false);
+            onAccept={(val: any, mask: any) => {
+              // This logic should be here and not inside the text field component
+              // It was causing issues with typing in embedded forms on Android
+              // PR (#1225)
+              const newVal = mask._unmaskedValue === '' ? '' : val;
+              if (newVal === stringifyWithNull(fieldVal)) return;
+
+              const isOrWasEmpty = !newVal || !fieldVal;
+              const rerender =
+                isOrWasEmpty || (servar.metadata.options ?? []).length > 0;
+              const change = changeValue(val, el, index, rerender, false);
               if (change) {
                 const submitData =
                   autosubmit && textFieldShouldSubmit(servar, val);
