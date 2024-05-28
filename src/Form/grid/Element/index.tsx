@@ -673,8 +673,14 @@ const Element = ({ node: el, form }: any) => {
         return (
           <Elements.TextField
             {...fieldProps}
-            onChange={(val: string) => {
-              const change = changeValue(val, el, index, false, false);
+            onAccept={(val: any, mask: any) => {
+              const newVal = mask._unmaskedValue === '' ? '' : val;
+              if (newVal === stringifyWithNull(fieldVal)) return;
+
+              const isOrWasEmpty = !newVal || !stringifyWithNull(fieldVal);
+              const rerender =
+                isOrWasEmpty || (servar.metadata.options ?? []).length > 0;
+              const change = changeValue(val, el, index, rerender, false);
               if (change) {
                 const submitData =
                   autosubmit && textFieldShouldSubmit(servar, val);
