@@ -25,21 +25,21 @@ export const getFormContext = (formUuid: string) => {
   // If internal state for the formUuid doesn't exist, initialize it so that
   // there will be object stability for the for state object props.  Important for
   // use of certain props in the callback functions.
-  if (!internalState[formUuid]) {
-    setFormInternalState(formUuid, {
-      fields: {}
-    });
+  let formState = internalState[formUuid];
+  if (!formState) {
+    formState = { fields: {} } as any;
+    setFormInternalState(formUuid, formState);
   }
 
   return {
     userId: initState.userId,
     _getInternalUserId: () => initState._internalUserId,
-    fields: internalState[formUuid]?.fields,
-    products: internalState[formUuid]?.products,
-    cart: internalState[formUuid]?.cart,
-    collaborator: internalState[formUuid]?.collaborator,
+    fields: formState.fields,
+    products: formState.products,
+    cart: formState.cart,
+    collaborator: formState.collaborator,
     setFormCompletion: () => {
-      const { client, currentStep } = internalState[formUuid];
+      const { client, currentStep } = formState;
       return client.registerEvent({
         step_key: currentStep.key,
         next_step_key: '',
@@ -47,22 +47,21 @@ export const getFormContext = (formUuid: string) => {
         completed: true
       });
     },
-    setProgress: (val: any) => {
-      return internalState[formUuid].setUserProgress(val);
-    },
+    runIntegrationAction: (actionId: string, waitForCompletion = true) =>
+      formState.runIntegrationAction(actionId, waitForCompletion),
+    setProgress: (val: any) => formState.setUserProgress(val),
     updateUserId,
     goToStep: (stepKey: any) => {
-      const { currentStep, history, steps, setStepKey } =
-        internalState[formUuid];
+      const { currentStep, history, steps, setStepKey } = formState;
       changeStep(stepKey, currentStep.key, steps, setStepKey, history);
     },
     isTestForm: () => initState.isTestEnv,
     isLastStep: () => {
-      const step = internalState[formUuid].currentStep;
+      const step = formState.currentStep;
       return step.next_conditions.length === 0;
     },
     getStepProperties: () => {
-      const state = internalState[formUuid];
+      const state = formState;
       const step = state?.currentStep ?? {};
       const rootStyles = step
         ? step.subgrids.find((grid: any) => grid.position.length === 0).styles
@@ -83,7 +82,7 @@ export const getFormContext = (formUuid: string) => {
         formSettings,
         getErrorCallback,
         setInlineErrors
-      } = internalState[formUuid];
+      } = formState;
 
       const { errors } = validateElements({
         step: currentStep,
@@ -99,8 +98,7 @@ export const getFormContext = (formUuid: string) => {
     openUrl: (url: string, target = '_blank') => {
       featheryWindow()?.open(url, target, 'noopener');
     },
-    setCalendlyUrl: (url: string) =>
-      internalState[formUuid].setCalendlyUrl(url),
+    setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     // deprecated
     setFieldValues: (userVals: FieldValues): void => {
       console.warn(
@@ -121,7 +119,7 @@ export const getFormContext = (formUuid: string) => {
       console.warn(
         'setFieldOptions is deprecated.  Please use the fields object instead and set the options directly on individual fields.'
       );
-      return internalState[formUuid].updateFieldOptions(newOptions);
+      return formState.updateFieldOptions(newOptions);
     },
     // @deprecated
     // TODO: remove when support for getFormFields is dropped
@@ -129,7 +127,7 @@ export const getFormContext = (formUuid: string) => {
       console.warn(
         'getFormFields is deprecated.  Please use the fields object instead.'
       );
-      return formatAllFormFields(internalState[formUuid].steps, true);
+      return formatAllFormFields(formState.steps, true);
     },
     // @deprecated
     // TODO: remove when support for setFieldErrors is dropped
@@ -139,7 +137,7 @@ export const getFormContext = (formUuid: string) => {
       console.warn(
         'setFieldErrors is deprecated.  Please use the fields object instead and set the error directly on a field.'
       );
-      return internalState[formUuid].setFieldErrors(errors);
+      return formState.setFieldErrors(errors);
     }
   };
 };

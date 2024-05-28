@@ -42,6 +42,10 @@ export interface FormInternalState {
     errors: Record<string, string | { index: number; message: string }>
   ) => void;
   setCalendlyUrl: (url: string) => void;
+  runIntegrationAction: (
+    actionId: string,
+    sync: boolean
+  ) => Promise<{ ok: boolean; error?: string; payload?: any }>;
 }
 type InternalState = {
   [formUuid: string]: FormInternalState;
