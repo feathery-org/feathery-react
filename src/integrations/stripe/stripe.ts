@@ -87,7 +87,7 @@ async function syncStripeFieldChanges(client: any, integrationData: any) {
     ...paymentsReservedFieldValues
   };
   if (Object.keys(fieldValuesToSubmit).length) {
-    await client.submitCustom(fieldValuesToSubmit);
+    await client.submitCustom(fieldValuesToSubmit, { shouldFlush: true });
   }
 }
 
@@ -462,8 +462,8 @@ export async function purchaseCart(
         };
       else {
         const { field_values: newFieldValues } = result;
-        // BE is the source of truth here.  Update fieldValues.
-        // This will set the any payment indicator field.
+        // BE is the source of truth here. Update fieldValues.
+        // This will set any payment indicator field.
         updateFieldValues(newFieldValues ?? {});
         calculateSelectedProductsTotal(stripeConfig, updateFieldValues);
       }
