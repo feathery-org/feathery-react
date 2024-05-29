@@ -881,7 +881,9 @@ function Form({
               }
             }));
           }
-        }
+        },
+        runIntegrationAction: (actionId: string, sync: boolean) =>
+          client.customRolloutAction(actionId, sync)
       },
       // Avoid all these other obj props going through Object.assign which is not necessary.
       // It turns out that not doing so caused breakage on steps after the first step.

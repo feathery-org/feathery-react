@@ -450,4 +450,23 @@ export default class IntegrationClient {
     };
     await this._fetch(url, options, false);
   }
+
+  async customRolloutAction(automationId: string, sync: boolean) {
+    const { userId } = initInfo();
+    const url = `${API_URL}rollout/custom-trigger/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        automation_id: automationId,
+        sync,
+        payload: fieldValues,
+        form_key: this.formKey,
+        fuser_key: userId
+      })
+    };
+    const res = await this._fetch(url, options, false);
+    if (res && res.status === 201) return { ok: true, payload: res.json() };
+    else return { ok: false, error: res?.text() ?? '' };
+  }
 }
