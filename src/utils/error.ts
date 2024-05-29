@@ -5,6 +5,13 @@ export class SDKKeyError extends Error {
   }
 }
 
+export class StaleFormError extends Error {
+  constructor(message = 'Form version is not up-to-date with latest version') {
+    super(message);
+    this.name = 'StaleFormError';
+  }
+}
+
 export class UserIdError extends Error {
   constructor() {
     super('Invalid User ID');

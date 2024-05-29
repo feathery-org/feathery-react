@@ -3,6 +3,7 @@ import { featheryWindow, runningInClient } from './browser';
 import { checkResponseSuccess } from './featheryClient/integrationClient';
 import { initInfo } from './init';
 import FeatheryClient from './featheryClient';
+import { StaleFormError } from './error';
 
 // Constants for the IndexedDB database
 const DB_NAME = 'requestsDB';
@@ -60,7 +61,12 @@ const trackUnload = () => {
   unloadCounter++;
 };
 
-const untrackUnload = () => {
+const untrackUnload = (force = false) => {
+  if (force) {
+    unloadCounter = 0;
+  } else {
+    unloadCounter--;
+  }
   unloadCounter--;
   if (unloadCounter === 0)
     featheryWindow().removeEventListener(
@@ -217,6 +223,13 @@ export class OfflineRequestHandler {
         if (e instanceof TypeError)
           this.saveRequest(url, options, type, stepKey);
         untrackUnload();
+        // On stale form error, remove beforeunload listener and reload window to
+        // refresh the form version without user data loss warnings.
+        if ((e as any).name == StaleFormError.name) {
+          untrackUnload(true); // assure beforeunload is removed
+          this.saveRequest(url, options, type, stepKey);
+          location.reload();
+        }
       }
     } else {
       this.saveRequest(url, options, type, stepKey);

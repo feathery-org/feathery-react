@@ -27,8 +27,7 @@ export async function checkResponseSuccess(response: any) {
     case 404:
       throw new errors.FetchError("Can't find object");
     case 409:
-      location.reload();
-      return;
+      throw new errors.StaleFormError();
     case 500:
       throw new errors.FetchError('Internal server error');
     default:
