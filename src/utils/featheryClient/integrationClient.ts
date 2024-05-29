@@ -466,7 +466,7 @@ export default class IntegrationClient {
       })
     };
     const res = await this._fetch(url, options, false);
-    if (res && res.status === 201) return { ok: true, payload: res.json() };
+    if (res && res.status === 200) return { ok: true, payload: res.json() };
     else return { ok: false, error: res?.text() ?? '' };
   }
 }
