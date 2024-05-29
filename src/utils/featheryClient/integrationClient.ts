@@ -451,9 +451,10 @@ export default class IntegrationClient {
     await this._fetch(url, options, false);
   }
 
-  async customRolloutAction(automationIds: string[], sync: boolean) {
+  async customRolloutAction(automationIds: string[] | string, sync: boolean) {
     const { userId } = initInfo();
     const url = `${API_URL}rollout/custom-trigger/`;
+    if (typeof automationIds === 'string') automationIds = [automationIds];
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',

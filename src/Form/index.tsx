@@ -882,7 +882,7 @@ function Form({
             }));
           }
         },
-        runIntegrationAction: (actionIds: string[], sync: boolean) =>
+        runIntegrationAction: (actionIds: string[] | string, sync: boolean) =>
           client.customRolloutAction(actionIds, sync)
       },
       // Avoid all these other obj props going through Object.assign which is not necessary.

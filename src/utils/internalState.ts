@@ -43,7 +43,7 @@ export interface FormInternalState {
   ) => void;
   setCalendlyUrl: (url: string) => void;
   runIntegrationAction: (
-    actionIds: string[],
+    actionIds: string[] | string,
     sync: boolean
   ) => Promise<{ ok: boolean; error?: string; payload?: any }>;
 }
