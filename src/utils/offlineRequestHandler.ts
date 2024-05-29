@@ -419,6 +419,10 @@ export class OfflineRequestHandler {
               break;
             } catch (error: any) {
               attempts++;
+              if (error.name == StaleFormError.name) {
+                untrackUnload(true);
+                location.reload();
+              }
               await this.delay(this.retryDelayMs);
             }
 
