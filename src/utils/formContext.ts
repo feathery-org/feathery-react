@@ -47,8 +47,10 @@ export const getFormContext = (formUuid: string) => {
         completed: true
       });
     },
-    runIntegrationAction: (actionId: string, waitForCompletion = true) =>
-      formState.runIntegrationAction(actionId, waitForCompletion),
+    runIntegrationAction: (
+      actionIds: string[] | string,
+      waitForCompletion = true
+    ) => formState.runIntegrationAction(actionIds, waitForCompletion),
     setProgress: (val: any) => formState.setUserProgress(val),
     updateUserId,
     goToStep: (stepKey: any) => {
