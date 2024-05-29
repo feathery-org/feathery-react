@@ -60,8 +60,8 @@ const trackUnload = () => {
   unloadCounter++;
 };
 
-const untrackUnload = () => {
-  unloadCounter--;
+export const untrackUnload = (force = false) => {
+  unloadCounter = force ? 0 : unloadCounter - 1;
   if (unloadCounter === 0)
     featheryWindow().removeEventListener(
       'beforeunload',
