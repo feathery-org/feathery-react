@@ -3,7 +3,7 @@ import { fieldValues, initFormsPromise, initInfo, initState } from '../init';
 import { encodeGetParams } from '../primitives';
 import { parseError } from '../error';
 import { API_URL } from '.';
-import { OfflineRequestHandler } from '../offlineRequestHandler';
+import { OfflineRequestHandler, untrackUnload } from '../offlineRequestHandler';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -27,6 +27,8 @@ export async function checkResponseSuccess(response: any) {
     case 404:
       throw new errors.FetchError("Can't find object");
     case 409:
+      // Note: remove beforeunload listeners if there is a conflict
+      untrackUnload(true);
       location.reload();
       return;
     case 500:
