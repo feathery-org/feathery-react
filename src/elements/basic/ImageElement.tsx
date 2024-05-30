@@ -19,10 +19,6 @@ function ImageElement({
   elementProps = {},
   children
 }: any) {
-  const imageField = element.properties.uploaded_image_file_field_key ?? '';
-  let imageFieldFile = fieldValues[imageField] as any[] | undefined;
-  if (imageFieldFile) imageFieldFile = imageFieldFile[0];
-
   const [imageUrl, setImageUrl] = useState(element.properties.source_image);
   const [applyWidth, setApplyWidth] = useState(true);
 
@@ -31,13 +27,21 @@ function ImageElement({
     [responsiveStyles]
   );
 
+  const imageField = element.properties.uploaded_image_file_field_key ?? '';
+  let imageFieldSource = fieldValues[imageField];
+  if (imageFieldSource && Array.isArray(imageFieldSource))
+    imageFieldSource = imageFieldSource[0];
+
   useEffect(() => {
-    if (imageFieldFile)
-      getThumbnailData(imageFieldFile).then((data) =>
-        setImageUrl(data.thumbnail)
-      );
-    else setImageUrl(element.properties.source_image);
-  }, [imageFieldFile, element.properties.source_image]);
+    if (imageFieldSource) {
+      if (typeof imageFieldSource === 'string') setImageUrl(imageFieldSource);
+      else {
+        getThumbnailData(imageFieldSource).then((data) =>
+          setImageUrl(data.thumbnail)
+        );
+      }
+    } else setImageUrl(element.properties.source_image);
+  }, [imageFieldSource, element.properties.source_image]);
 
   return (
     <div
