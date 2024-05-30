@@ -8,6 +8,16 @@ import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
 
+export type IntegrationActionIds = string[] | string;
+export type IntegrationActionOptions = {
+  waitForCompletion?: boolean;
+  multiple?: boolean;
+};
+export type RunIntegrationActions = (
+  actionIds: IntegrationActionIds,
+  options: IntegrationActionOptions
+) => Promise<{ ok: boolean; error?: string; payload?: any }>;
+
 export interface FormInternalState {
   language: string | undefined;
   currentStep: any;
@@ -42,11 +52,9 @@ export interface FormInternalState {
     errors: Record<string, string | { index: number; message: string }>
   ) => void;
   setCalendlyUrl: (url: string) => void;
-  runIntegrationAction: (
-    actionIds: string[] | string,
-    sync: boolean
-  ) => Promise<{ ok: boolean; error?: string; payload?: any }>;
+  runIntegrationActions: RunIntegrationActions;
 }
+
 type InternalState = {
   [formUuid: string]: FormInternalState;
 };
