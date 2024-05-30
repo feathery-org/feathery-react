@@ -11,7 +11,11 @@ import {
   updateUserId,
   initState
 } from './init';
-import internalState, { setFormInternalState } from './internalState';
+import internalState, {
+  IntegrationActionIds,
+  IntegrationActionOptions,
+  setFormInternalState
+} from './internalState';
 import { validateElements } from './validation';
 
 /**
@@ -47,10 +51,10 @@ export const getFormContext = (formUuid: string) => {
         completed: true
       });
     },
-    runIntegrationAction: (
-      actionIds: string[] | string,
-      waitForCompletion = true
-    ) => formState.runIntegrationAction(actionIds, waitForCompletion),
+    runIntegrationActions: (
+      actionIds: IntegrationActionIds,
+      options: IntegrationActionOptions
+    ) => formState.runIntegrationActions(actionIds, options),
     setProgress: (val: any) => formState.setUserProgress(val),
     updateUserId,
     goToStep: (stepKey: any) => {
