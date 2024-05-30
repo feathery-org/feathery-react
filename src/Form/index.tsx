@@ -187,6 +187,7 @@ export interface Props {
   saveUrlParams?: boolean;
   initialValues?: FieldValues;
   initialStepId?: string;
+  hideTestUI?: boolean;
   language?: string;
   initialLoader?: InitialLoader;
   popupOptions?: PopupOptions;
@@ -241,6 +242,7 @@ function Form({
   onAction = null,
   onViewElements = [],
   saveUrlParams = false,
+  hideTestUI = false,
   initialValues = {},
   initialStepId = '',
   language,
@@ -2065,7 +2067,7 @@ function Form({
             onClick={() => popupOptions.onHide && popupOptions.onHide()}
           />
         )}
-        {initState.isTestEnv && (
+        {initState.isTestEnv && !hideTestUI && (
           <DevNavBar
             allSteps={steps}
             curStep={activeStep}
