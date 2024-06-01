@@ -638,22 +638,27 @@ export default class FeatheryClient extends IntegrationClient {
       body: JSON.stringify(data)
     };
 
+    let prom = null;
     let stepKey;
     if (eventData.event === 'load') {
       stepKey = eventData.previous_step_key;
     } else {
       stepKey = eventData.step_key;
-      this.flushCustomFields();
+      prom = this.flushCustomFields();
     }
-    return this.offlineRequestHandler.runOrSaveRequest(
-      // Ensure events complete before user exits page. Submit and load event of
-      // next step must happen after the previous step is done submitting
-      () => this.submitQueue.then(() => this._fetch(url, options, true, true)),
-      url,
-      options,
-      'registerEvent',
-      stepKey
-    );
+    return Promise.all([
+      prom,
+      this.offlineRequestHandler.runOrSaveRequest(
+        // Ensure events complete before user exits page. Submit and load event of
+        // next step must happen after the previous step is done submitting
+        () =>
+          this.submitQueue.then(() => this._fetch(url, options, true, true)),
+        url,
+        options,
+        'registerEvent',
+        stepKey
+      )
+    ]);
   }
 
   // Logic custom APIs
