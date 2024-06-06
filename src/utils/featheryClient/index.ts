@@ -55,7 +55,11 @@ const STATIC_URL_OPTIONS = {
   productionCA: 'https://api-static-2.feathery.io/api/'
 };
 
-const environment = 'production';
+type URL_ENUM = keyof typeof API_URL_OPTIONS;
+let environment: URL_ENUM = 'production';
+try {
+  environment = (process.env.BACKEND_ENV || 'production') as URL_ENUM;
+} catch (e) {} // process.env won't exist in production build
 
 export let API_URL = API_URL_OPTIONS[environment];
 export let CDN_URL = CDN_URL_OPTIONS[environment];
