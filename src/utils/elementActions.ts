@@ -29,6 +29,7 @@ export const ACTION_TELESIGN_SILENT_VERIFICATION =
   'telesign_silent_verification';
 export const ACTION_TELESIGN_PHONE_TYPE = 'telesign_phone_type';
 export const ACTION_TELESIGN_VOICE_OTP = 'telesign_voice_otp';
+export const ACTION_TELESIGN_SMS_OTP = 'telesign_sms_otp';
 export const ACTION_TELESIGN_VERIFY_OTP = 'telesign_verify_otp';
 
 export const REQUIRED_FLOW_ACTIONS = {
