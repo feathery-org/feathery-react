@@ -15,6 +15,8 @@
     "build:node": "webpack --mode production --config webpack.node.js",
     "build:umd": "webpack --mode production --config webpack.umd.js",
     "dev": "webpack --mode development --config webpack.development.js --watch",
+    "dev-local": "webpack --env BACKEND_ENV=local --mode development --config webpack.development.js --watch",
+    "dev-staging": "webpack --env BACKEND_ENV=staging --mode development --config webpack.development.js --watch",
     "analyze-bundle": "webpack --mode development --config webpack.development.js --env analyze",
     "analyze-prod-bundle": "webpack --mode production --config webpack.development.js --env analyze",
     "prepublishOnly": "yarn build",
