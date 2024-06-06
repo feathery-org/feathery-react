@@ -113,7 +113,10 @@ import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
-import internalState, { setFormInternalState } from '../utils/internalState';
+import internalState, {
+  RunIntegrationActions,
+  setFormInternalState
+} from '../utils/internalState';
 import useFormAuth from '../auth/internal/useFormAuth';
 import {
   ACTION_ADD_REPEATED_ROW,
@@ -188,6 +191,7 @@ export interface Props {
   saveUrlParams?: boolean;
   initialValues?: FieldValues;
   initialStepId?: string;
+  hideTestUI?: boolean;
   language?: string;
   initialLoader?: InitialLoader;
   popupOptions?: PopupOptions;
@@ -242,6 +246,7 @@ function Form({
   onAction = null,
   onViewElements = [],
   saveUrlParams = false,
+  hideTestUI = false,
   initialValues = {},
   initialStepId = '',
   language,
@@ -779,6 +784,8 @@ function Form({
         getAllFields(fieldKeys, hiddenFieldKeys, _internalId)
       );
 
+    const runIntegrationActions: RunIntegrationActions = (actionIds, options) =>
+      client.customRolloutAction(actionIds, options);
     setFormInternalState(
       _internalId,
       {
@@ -883,8 +890,7 @@ function Form({
             }));
           }
         },
-        runIntegrationAction: (actionIds: string[] | string, sync: boolean) =>
-          client.customRolloutAction(actionIds, sync)
+        runIntegrationActions
       },
       // Avoid all these other obj props going through Object.assign which is not necessary.
       // It turns out that not doing so caused breakage on steps after the first step.
@@ -2071,7 +2077,7 @@ function Form({
             onClick={() => popupOptions.onHide && popupOptions.onHide()}
           />
         )}
-        {initState.isTestEnv && (
+        {initState.isTestEnv && !hideTestUI && (
           <DevNavBar
             allSteps={steps}
             curStep={activeStep}
