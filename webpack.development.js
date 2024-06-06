@@ -15,6 +15,9 @@ module.exports = (env) => {
   config.plugins.push(
     new webpack.optimize.LimitChunkCountPlugin({
       maxChunks: 1
+    }),
+    new webpack.DefinePlugin({
+      'process.env.BACKEND_ENV': JSON.stringify(env.BACKEND_ENV || 'production')
     })
   );
   return config;

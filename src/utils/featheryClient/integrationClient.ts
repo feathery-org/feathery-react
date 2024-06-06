@@ -1,9 +1,13 @@
 import * as errors from '../error';
-import { fieldValues, initFormsPromise, initInfo, initState } from '../init';
+import { fieldValues, initFormsPromise, initInfo } from '../init';
 import { encodeGetParams } from '../primitives';
 import { parseError } from '../error';
 import { API_URL } from '.';
 import { OfflineRequestHandler, untrackUnload } from '../offlineRequestHandler';
+import {
+  IntegrationActionIds,
+  IntegrationActionOptions
+} from '../internalState';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -406,9 +410,9 @@ export default class IntegrationClient {
     }
   }
 
-  async telesignVoiceOTP(phoneNumber: string) {
+  async telesignSendOTP(phoneNumber: string, mode: 'voice' | 'sms' = 'voice') {
     const { userId } = initInfo();
-    const url = `${API_URL}telesign/otp/voice/`;
+    const url = `${API_URL}telesign/otp/${mode}/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
@@ -453,22 +457,26 @@ export default class IntegrationClient {
     await this._fetch(url, options, false);
   }
 
-  async customRolloutAction(automationIds: string[] | string, sync: boolean) {
+  async customRolloutAction(
+    automationIds: IntegrationActionIds,
+    options: IntegrationActionOptions
+  ) {
     const { userId } = initInfo();
     const url = `${API_URL}rollout/custom-trigger/`;
     if (typeof automationIds === 'string') automationIds = [automationIds];
-    const options = {
+    const reqOptions = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify({
         automation_ids: automationIds,
-        sync,
+        sync: options.waitForCompletion ?? true,
+        multiple: options.multiple ?? false,
         payload: fieldValues,
         form_key: this.formKey,
         fuser_key: userId
       })
     };
-    const res = await this._fetch(url, options, false);
+    const res = await this._fetch(url, reqOptions, false);
     if (res && res.status === 200)
       return { ok: true, payload: await res.json() };
     else return { ok: false, error: (await res?.text()) ?? '' };

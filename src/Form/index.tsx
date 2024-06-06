@@ -113,7 +113,10 @@ import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
-import internalState, { setFormInternalState } from '../utils/internalState';
+import internalState, {
+  RunIntegrationActions,
+  setFormInternalState
+} from '../utils/internalState';
 import useFormAuth from '../auth/internal/useFormAuth';
 import {
   ACTION_ADD_REPEATED_ROW,
@@ -146,6 +149,7 @@ import {
   ACTION_TELESIGN_SILENT_VERIFICATION,
   ACTION_TELESIGN_PHONE_TYPE,
   ACTION_TELESIGN_VOICE_OTP,
+  ACTION_TELESIGN_SMS_OTP,
   ACTION_TELESIGN_VERIFY_OTP
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
@@ -187,6 +191,7 @@ export interface Props {
   saveUrlParams?: boolean;
   initialValues?: FieldValues;
   initialStepId?: string;
+  hideTestUI?: boolean;
   language?: string;
   initialLoader?: InitialLoader;
   popupOptions?: PopupOptions;
@@ -241,6 +246,7 @@ function Form({
   onAction = null,
   onViewElements = [],
   saveUrlParams = false,
+  hideTestUI = false,
   initialValues = {},
   initialStepId = '',
   language,
@@ -778,6 +784,8 @@ function Form({
         getAllFields(fieldKeys, hiddenFieldKeys, _internalId)
       );
 
+    const runIntegrationActions: RunIntegrationActions = (actionIds, options) =>
+      client.customRolloutAction(actionIds, options);
     setFormInternalState(
       _internalId,
       {
@@ -882,8 +890,7 @@ function Form({
             }));
           }
         },
-        runIntegrationAction: (actionIds: string[] | string, sync: boolean) =>
-          client.customRolloutAction(actionIds, sync)
+        runIntegrationActions
       },
       // Avoid all these other obj props going through Object.assign which is not necessary.
       // It turns out that not doing so caused breakage on steps after the first step.
@@ -1858,13 +1865,18 @@ function Form({
           setElementError('Your phone number is invalid');
           break;
         }
-      } else if (type === ACTION_TELESIGN_VOICE_OTP) {
+      } else if (
+        [ACTION_TELESIGN_VOICE_OTP, ACTION_TELESIGN_SMS_OTP].includes(type)
+      ) {
         const phoneNum = fieldValues[
           action.telesign_target_field_key
         ] as string;
         if (validators.phone(phoneNum)) {
           try {
-            await client.telesignVoiceOTP(phoneNum);
+            await client.telesignSendOTP(
+              phoneNum,
+              type === ACTION_TELESIGN_VOICE_OTP ? 'voice' : 'sms'
+            );
           } catch (e) {
             setElementError((e as Error).message);
             break;
@@ -2065,7 +2077,7 @@ function Form({
             onClick={() => popupOptions.onHide && popupOptions.onHide()}
           />
         )}
-        {initState.isTestEnv && (
+        {initState.isTestEnv && !hideTestUI && (
           <DevNavBar
             allSteps={steps}
             curStep={activeStep}

@@ -218,7 +218,7 @@ const CardField = ({
 function PaymentMethodField({ editMode, children, ...props }: any) {
   const stripePromise = getStripe();
   useEffect(() => {
-    // if ediatble, i.e. running in dashboard, then just load stripe with key so cardElement shows
+    // if editable, i.e. running in dashboard, then just load stripe with key so cardElement shows
     if (editMode)
       featheryDoc().dispatchEvent(
         new CustomEvent('stripe_key_loaded', {

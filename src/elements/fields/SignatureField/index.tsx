@@ -25,7 +25,7 @@ function SignatureField({
     if (!global.webfontloaderPromise)
       global.webfontloaderPromise = import('webfontloader');
     global.webfontloaderPromise.then((WebFont: any) => {
-      WebFont.load({ google: { families: ['Great Vibes'] } });
+      WebFont.load({ google: { families: ['La Belle Aurore'] } });
     });
   }, []);
 

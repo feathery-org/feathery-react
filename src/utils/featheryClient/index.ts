@@ -55,7 +55,11 @@ const STATIC_URL_OPTIONS = {
   productionCA: 'https://api-static-2.feathery.io/api/'
 };
 
-const environment = 'production';
+type URL_ENUM = keyof typeof API_URL_OPTIONS;
+let environment: URL_ENUM = 'production';
+try {
+  environment = (process.env.BACKEND_ENV || 'production') as URL_ENUM;
+} catch (e) {} // process.env won't exist in production build
 
 export let API_URL = API_URL_OPTIONS[environment];
 export let CDN_URL = CDN_URL_OPTIONS[environment];
@@ -638,22 +642,27 @@ export default class FeatheryClient extends IntegrationClient {
       body: JSON.stringify(data)
     };
 
+    let prom = null;
     let stepKey;
     if (eventData.event === 'load') {
       stepKey = eventData.previous_step_key;
     } else {
       stepKey = eventData.step_key;
-      this.flushCustomFields();
+      prom = this.flushCustomFields();
     }
-    return this.offlineRequestHandler.runOrSaveRequest(
-      // Ensure events complete before user exits page. Submit and load event of
-      // next step must happen after the previous step is done submitting
-      () => this.submitQueue.then(() => this._fetch(url, options, true, true)),
-      url,
-      options,
-      'registerEvent',
-      stepKey
-    );
+    return Promise.all([
+      prom,
+      this.offlineRequestHandler.runOrSaveRequest(
+        // Ensure events complete before user exits page. Submit and load event of
+        // next step must happen after the previous step is done submitting
+        () =>
+          this.submitQueue.then(() => this._fetch(url, options, true, true)),
+        url,
+        options,
+        'registerEvent',
+        stepKey
+      )
+    ]);
   }
 
   // Logic custom APIs
