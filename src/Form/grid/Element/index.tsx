@@ -129,12 +129,14 @@ const Element = ({ node: el, form }: any) => {
         true
       )
         .map(({ element }) => element)
-        .filter(({ properties }) =>
-          (properties.actions ?? []).some(
-            (action: any) =>
-              action.type === ACTION_STORE_FIELD &&
-              action.custom_store_field_key
-          )
+        .filter(
+          ({ id, properties }) =>
+            id !== el.id &&
+            (properties.actions ?? []).some(
+              (action: any) =>
+                action.type === ACTION_STORE_FIELD &&
+                action.custom_store_field_key
+            )
         );
       const elementsHaveValues =
         storeElements.length === 0 || // Loose check via "some" since "requiredness" of click action
