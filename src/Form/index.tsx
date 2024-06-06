@@ -146,6 +146,7 @@ import {
   ACTION_TELESIGN_SILENT_VERIFICATION,
   ACTION_TELESIGN_PHONE_TYPE,
   ACTION_TELESIGN_VOICE_OTP,
+  ACTION_TELESIGN_SMS_OTP,
   ACTION_TELESIGN_VERIFY_OTP
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
@@ -1858,13 +1859,18 @@ function Form({
           setElementError('Your phone number is invalid');
           break;
         }
-      } else if (type === ACTION_TELESIGN_VOICE_OTP) {
+      } else if (
+        [ACTION_TELESIGN_VOICE_OTP, ACTION_TELESIGN_SMS_OTP].includes(type)
+      ) {
         const phoneNum = fieldValues[
           action.telesign_target_field_key
         ] as string;
         if (validators.phone(phoneNum)) {
           try {
-            await client.telesignVoiceOTP(phoneNum);
+            await client.telesignSendOTP(
+              phoneNum,
+              type === ACTION_TELESIGN_VOICE_OTP ? 'voice' : 'sms'
+            );
           } catch (e) {
             setElementError((e as Error).message);
             break;

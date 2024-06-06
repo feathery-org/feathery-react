@@ -406,9 +406,9 @@ export default class IntegrationClient {
     }
   }
 
-  async telesignVoiceOTP(phoneNumber: string) {
+  async telesignSendOTP(phoneNumber: string, mode: 'voice' | 'sms' = 'voice') {
     const { userId } = initInfo();
-    const url = `${API_URL}telesign/otp/voice/`;
+    const url = `${API_URL}telesign/otp/${mode}/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',

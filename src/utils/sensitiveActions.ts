@@ -17,7 +17,11 @@ export const getPrivateActions = (formUuid: string) => {
     },
     _telesignVoice: (phoneNumber: string) => {
       const { client } = internalState[formUuid];
-      return client.telesignVoiceOTP(phoneNumber);
+      return client.telesignSendOTP(phoneNumber, 'voice');
+    },
+    _telesignSms: (phoneNumber: string) => {
+      const { client } = internalState[formUuid];
+      return client.telesignSendOTP(phoneNumber, 'sms');
     },
     _sendEmail: (templateId: string) => {
       const { client } = internalState[formUuid];
