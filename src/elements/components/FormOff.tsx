@@ -11,7 +11,7 @@ const messages: any = {
   [CLOSED]: "This form isn't currently collecting responses.",
   [COLLAB_COMPLETED]: 'Your collaboration group has completed this form.',
   [NO_BUSINESS_EMAIL]:
-    'Activate this form by inviting a business domain email to your Feathery account and accepting'
+    'Activate forms by adding an email from a company domain to your Feathery account'
 };
 
 export default function FormOff({
