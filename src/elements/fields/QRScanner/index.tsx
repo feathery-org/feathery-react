@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { dynamicImport } from '../../../integrations/utils';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
@@ -11,7 +11,17 @@ export function loadQRScanner() {
   qrPromise = dynamicImport(QR_SCANNER_URL);
 }
 
-
+const onQRError = (qrDivId: string, onChange: any) => () => {
+  const errorEl = featheryDoc().getElementById(`${qrDivId}__header_message`);
+  if (
+    errorEl?.textContent?.trim() ===
+    'D: No MultiFormat Readers were able to detect the code.'
+  ) {
+    errorEl.textContent =
+      'No QR code detected. Please try with a different image.';
+  }
+  onChange('');
+};
 
 function QRScanner({
   element,
@@ -26,7 +36,7 @@ function QRScanner({
 }: any) {
   let scanner: any = null;
   const servar = element.servar ?? {};
-  const qrDivId = useRef(`qr-reader-${uuidv4()}`);
+  const [qrDivId] = useState(`qr-reader-${uuidv4()}`);
 
   useEffect(() => {
     if (disabled) return;
@@ -37,7 +47,7 @@ function QRScanner({
         const window = featheryWindow();
         for (let i = 0; i < 3; i++) {
           try {
-            scanner = new window.Html5QrcodeScanner(qrDivId.current, {
+            scanner = new window.Html5QrcodeScanner(qrDivId, {
               fps: 10
             });
             break;
@@ -59,19 +69,7 @@ function QRScanner({
         if (decodedText !== fieldVal) onChange(decodedText);
       };
 
-      const onQRError = () => {
-        const errorEl = featheryDoc().getElementById(`${qrDivId}__header_message`);
-        if (
-          errorEl?.textContent?.trim() ===
-          'D: No MultiFormat Readers were able to detect the code.'
-        ) {
-          errorEl.textContent =
-            'No QR code detected. Please try with a different image.';
-        }
-        onChange('');
-      };
-
-      scanner.render(onSuccess, onQRError);
+      scanner.render(onSuccess, onQRError(qrDivId, onChange));
     });
 
     // Creating the variables outside of the setTimeout for the return function to have access to them
@@ -81,7 +79,7 @@ function QRScanner({
     setTimeout(() => {
       // Had to go this route to ensure we are able to modify the text of the DnD element too.
       scanTypeChangeButton = featheryDoc().querySelector(
-        `#${qrDivId.current} #html5-qrcode-anchor-scan-type-change`
+        `#${qrDivId} #html5-qrcode-anchor-scan-type-change`
       );
 
       handleDrop = () => {
@@ -96,9 +94,11 @@ function QRScanner({
       handleClick = () => {
         const labelToHide: HTMLLabelElement | null =
           featheryDoc().querySelector(
-            `#${qrDivId.current} label[for='html5-qrcode-private-filescan-input']`
+            `#${qrDivId} label[for='html5-qrcode-private-filescan-input']`
           );
-        const dropZoneParent = featheryDoc().getElementById(`${qrDivId.current}__dashboard_section_csr`).parentNode;
+        const dropZoneParent = featheryDoc().getElementById(
+          `${qrDivId}__dashboard_section_csr`
+        ).parentNode;
         dropZone = dropZoneParent?.children[1];
 
         if (dropZone) {
@@ -145,7 +145,7 @@ function QRScanner({
             ...responsiveStyles.getTarget('sub-fc')
           }}
         >
-          <div id={qrDivId.current} css={{ width: '100%' }} />
+          <div id={qrDivId} css={{ width: '100%' }} />
           {/* This input must always be rendered so we can set field errors */}
           <input
             id={servar.key}
