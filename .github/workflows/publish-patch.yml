@@ -1,0 +1,39 @@
+name: Publish @feathery/react Patch to npm
+
+on: workflow_dispatch
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '16'
+        cache: 'yarn'
+
+    - name: Install dependencies
+      run: yarn install
+
+    - name: Bump version
+      run: |
+        # This will increment the PATCH portion of the package's version string.
+        # i.e. X.X.[PATCH]
+        yarn version --patch
+
+    - name: Publish package to npm
+      run: yarn publish --access public
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    
+    - name: Push changes to master
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git add package.json
+        git commit -m "chore: bump version"
+        git push origin main
