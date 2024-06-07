@@ -1,17 +1,18 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { dynamicImport } from '../../../integrations/utils';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
+import { v4 as uuidv4 } from 'uuid';
 
 const QR_SCANNER_URL = 'https://unpkg.com/html5-qrcode';
 
-const qrDivId = 'qr-reader';
+
 let qrPromise = Promise.resolve();
 export function loadQRScanner() {
   qrPromise = dynamicImport(QR_SCANNER_URL);
 }
 
-const onQRError = () => {
+const onQRError = (qrDivId: string) => {
   const errorEl = featheryDoc().getElementById(`${qrDivId}__header_message`);
   if (
     errorEl?.textContent?.trim() ===
@@ -29,12 +30,13 @@ function QRScanner({
   editMode,
   elementProps = {},
   disabled = false,
-  onChange = () => {},
+  onChange = () => { },
   fieldVal = '',
   children
 }: any) {
   let scanner: any = null;
   const servar = element.servar ?? {};
+  const qrDivId = useRef(`qr-reader-${uuidv4()}`)
 
   useEffect(() => {
     if (disabled) return;
@@ -45,7 +47,7 @@ function QRScanner({
         const window = featheryWindow();
         for (let i = 0; i < 3; i++) {
           try {
-            scanner = new window.Html5QrcodeScanner(qrDivId, {
+            scanner = new window.Html5QrcodeScanner(qrDivId.current, {
               fps: 10
             });
             break;
@@ -67,8 +69,56 @@ function QRScanner({
         if (decodedText !== fieldVal) onChange(decodedText);
       };
 
-      scanner.render(onSuccess, onQRError);
+      scanner.render(onSuccess, () => onQRError(qrDivId.current));
     });
+
+    // Creating the variables outside of the setTimeout for the return function to have access to them
+    let scanTypeChangeButton: Element | null, handleClick: () => void;
+    let dropZone: Element | null, handleDrop: () => void;
+
+    setTimeout(() => {
+      // Had to go this route to ensure we are able to modify the text of the DnD element too.
+      scanTypeChangeButton = document.querySelector(`#${qrDivId.current} #html5-qrcode-anchor-scan-type-change`);
+
+      handleDrop = () => {
+        const dropTextDiv = dropZone ? dropZone.querySelector('div:last-child') : null;
+        if (dropTextDiv) {
+          dropTextDiv.textContent = 'Drop an image to scan';
+        }
+      };
+
+      handleClick = () => {
+        const dashboard: Element | null = featheryDoc().getElementById(`${qrDivId.current}__dashboard`);
+        const textDiv: Element | null | undefined = dashboard?.querySelector("div[style*='margin: auto auto 10px;']");
+        const labelToHide: HTMLLabelElement | null = document.querySelector(`#${qrDivId.current} label[for='html5-qrcode-private-filescan-input']`);
+        dropZone = document.querySelector(`#${qrDivId.current} div[style*='border: 6px dashed']`);
+
+        if (dropZone) {
+          dropZone.addEventListener('drop', handleDrop);
+        }
+
+        if (labelToHide) {
+          if (labelToHide?.style)
+            labelToHide.style.display = 'none';
+        }
+
+        if (textDiv) {
+          const dropTextDiv = textDiv.querySelector('div:last-child');
+          if (dropTextDiv) {
+            dropTextDiv.textContent = 'Drop an image to scan';
+          }
+        }
+      };
+
+      scanTypeChangeButton?.addEventListener('click', handleClick);
+
+    }, 1000);
+
+    // Clean up the event listener when the component unmounts
+    return () => {
+      scanTypeChangeButton?.removeEventListener('click', handleClick);
+      dropZone?.removeEventListener('drop', handleDrop);
+    };
   }, []);
 
   return (
@@ -92,7 +142,7 @@ function QRScanner({
             ...responsiveStyles.getTarget('sub-fc')
           }}
         >
-          <div id={qrDivId} css={{ width: '100%' }} />
+          <div id={qrDivId.current} css={{ width: '100%' }} />
           {/* This input must always be rendered so we can set field errors */}
           <input
             id={servar.key}
