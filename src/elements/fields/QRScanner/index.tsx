@@ -11,16 +11,7 @@ export function loadQRScanner() {
   qrPromise = dynamicImport(QR_SCANNER_URL);
 }
 
-const onQRError = (qrDivId: string) => {
-  const errorEl = featheryDoc().getElementById(`${qrDivId}__header_message`);
-  if (
-    errorEl?.textContent?.trim() ===
-    'D: No MultiFormat Readers were able to detect the code.'
-  ) {
-    errorEl.textContent =
-      'No QR code detected. Please try with a different image.';
-  }
-};
+
 
 function QRScanner({
   element,
@@ -68,12 +59,24 @@ function QRScanner({
         if (decodedText !== fieldVal) onChange(decodedText);
       };
 
-      scanner.render(onSuccess, () => onQRError(qrDivId.current));
+      const onQRError = () => {
+        const errorEl = featheryDoc().getElementById(`${qrDivId}__header_message`);
+        if (
+          errorEl?.textContent?.trim() ===
+          'D: No MultiFormat Readers were able to detect the code.'
+        ) {
+          errorEl.textContent =
+            'No QR code detected. Please try with a different image.';
+        }
+        onChange('');
+      };
+
+      scanner.render(onSuccess, onQRError);
     });
 
     // Creating the variables outside of the setTimeout for the return function to have access to them
     let scanTypeChangeButton: Element | null, handleClick: () => void;
-    let dropZone: Element | null, handleDrop: () => void;
+    let dropZone: Element | null | undefined, handleDrop: () => void;
 
     setTimeout(() => {
       // Had to go this route to ensure we are able to modify the text of the DnD element too.
@@ -91,33 +94,23 @@ function QRScanner({
       };
 
       handleClick = () => {
-        const dashboard: Element | null = featheryDoc().getElementById(
-          `${qrDivId.current}__dashboard`
-        );
-        const textDiv: Element | null | undefined = dashboard?.querySelector(
-          "div[style*='margin: auto auto 10px;']"
-        );
         const labelToHide: HTMLLabelElement | null =
           featheryDoc().querySelector(
             `#${qrDivId.current} label[for='html5-qrcode-private-filescan-input']`
           );
-        dropZone = featheryDoc().querySelector(
-          `#${qrDivId.current} div[style*='border: 6px dashed']`
-        );
+        const dropZoneParent = featheryDoc().getElementById(`${qrDivId.current}__dashboard_section_csr`).parentNode;
+        dropZone = dropZoneParent?.children[1];
 
         if (dropZone) {
           dropZone.addEventListener('drop', handleDrop);
+          const dropTextDiv = dropZone.querySelector('div:last-child');
+          if (dropTextDiv) {
+            dropTextDiv.textContent = 'Drop an image to scan';
+          }
         }
 
         if (labelToHide) {
           if (labelToHide?.style) labelToHide.style.display = 'none';
-        }
-
-        if (textDiv) {
-          const dropTextDiv = textDiv.querySelector('div:last-child');
-          if (dropTextDiv) {
-            dropTextDiv.textContent = 'Drop an image to scan';
-          }
         }
       };
 
