@@ -2077,7 +2077,7 @@ function Form({
             onClick={() => popupOptions.onHide && popupOptions.onHide()}
           />
         )}
-        {initState.isTestEnv && !hideTestUI && (
+        {initState.isTestEnv && (
           <DevNavBar
             allSteps={steps}
             curStep={activeStep}
@@ -2087,6 +2087,7 @@ function Form({
             }}
             formName={formName}
             draft={_draft}
+            visible={!hideTestUI}
           />
         )}
         {global.firebase && (

@@ -1,6 +1,10 @@
 import React from 'react';
 
-export default function DiagonalArrowIcon({ width = 24, height = 24 }) {
+export default function DiagonalArrowIcon({
+  width = 24,
+  height = 24,
+  color = '#414859'
+}) {
   return (
     <svg
       width={width}
@@ -11,7 +15,7 @@ export default function DiagonalArrowIcon({ width = 24, height = 24 }) {
     >
       <path
         d='m14.293 11.249 8.278.008.007 8.277M11.257 22.57 22.57 11.257'
-        stroke='#414859'
+        stroke={color}
         strokeWidth='2'
         strokeLinecap='round'
         strokeLinejoin='round'

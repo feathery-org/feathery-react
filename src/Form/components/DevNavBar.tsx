@@ -19,10 +19,11 @@ export default function DevNavBar({
   curStep,
   changeStep,
   formName,
+  visible = true,
   draft
 }: any) {
   const [activeNav, setActiveNav] = useState('');
-  const [isVisible, setIsVisible] = useState(true);
+  const [isVisible, setIsVisible] = useState(visible);
 
   const [prevStepKeys, nextStepKeys] = useMemo(() => {
     const [prevStepKeys, nextStepKeys] = handleBoth(
@@ -239,7 +240,7 @@ export default function DevNavBar({
         zIndex: DEV_NAV_BAR_Z_INDEX,
         position: 'fixed',
         top: '0',
-        backgroundColor: 'white',
+        backgroundColor: '#e2626e',
         // Specific values required for this to be the same height as the Preview header
         right: '-2px',
         width: '108px',
@@ -258,7 +259,7 @@ export default function DevNavBar({
           bottom: '4px'
         }}
       >
-        <DiagonalArrowIcon />
+        <DiagonalArrowIcon color='white' />
       </div>
     </div>
   );
