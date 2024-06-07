@@ -6,7 +6,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 const QR_SCANNER_URL = 'https://unpkg.com/html5-qrcode';
 
-
 let qrPromise = Promise.resolve();
 export function loadQRScanner() {
   qrPromise = dynamicImport(QR_SCANNER_URL);
@@ -30,13 +29,13 @@ function QRScanner({
   editMode,
   elementProps = {},
   disabled = false,
-  onChange = () => { },
+  onChange = () => {},
   fieldVal = '',
   children
 }: any) {
   let scanner: any = null;
   const servar = element.servar ?? {};
-  const qrDivId = useRef(`qr-reader-${uuidv4()}`)
+  const qrDivId = useRef(`qr-reader-${uuidv4()}`);
 
   useEffect(() => {
     if (disabled) return;
@@ -78,28 +77,40 @@ function QRScanner({
 
     setTimeout(() => {
       // Had to go this route to ensure we are able to modify the text of the DnD element too.
-      scanTypeChangeButton = document.querySelector(`#${qrDivId.current} #html5-qrcode-anchor-scan-type-change`);
+      scanTypeChangeButton = featheryDoc().querySelector(
+        `#${qrDivId.current} #html5-qrcode-anchor-scan-type-change`
+      );
 
       handleDrop = () => {
-        const dropTextDiv = dropZone ? dropZone.querySelector('div:last-child') : null;
+        const dropTextDiv = dropZone
+          ? dropZone.querySelector('div:last-child')
+          : null;
         if (dropTextDiv) {
           dropTextDiv.textContent = 'Drop an image to scan';
         }
       };
 
       handleClick = () => {
-        const dashboard: Element | null = featheryDoc().getElementById(`${qrDivId.current}__dashboard`);
-        const textDiv: Element | null | undefined = dashboard?.querySelector("div[style*='margin: auto auto 10px;']");
-        const labelToHide: HTMLLabelElement | null = document.querySelector(`#${qrDivId.current} label[for='html5-qrcode-private-filescan-input']`);
-        dropZone = document.querySelector(`#${qrDivId.current} div[style*='border: 6px dashed']`);
+        const dashboard: Element | null = featheryDoc().getElementById(
+          `${qrDivId.current}__dashboard`
+        );
+        const textDiv: Element | null | undefined = dashboard?.querySelector(
+          "div[style*='margin: auto auto 10px;']"
+        );
+        const labelToHide: HTMLLabelElement | null =
+          featheryDoc().querySelector(
+            `#${qrDivId.current} label[for='html5-qrcode-private-filescan-input']`
+          );
+        dropZone = featheryDoc().querySelector(
+          `#${qrDivId.current} div[style*='border: 6px dashed']`
+        );
 
         if (dropZone) {
           dropZone.addEventListener('drop', handleDrop);
         }
 
         if (labelToHide) {
-          if (labelToHide?.style)
-            labelToHide.style.display = 'none';
+          if (labelToHide?.style) labelToHide.style.display = 'none';
         }
 
         if (textDiv) {
@@ -111,7 +122,6 @@ function QRScanner({
       };
 
       scanTypeChangeButton?.addEventListener('click', handleClick);
-
     }, 1000);
 
     // Clean up the event listener when the component unmounts
