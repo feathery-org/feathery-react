@@ -295,6 +295,8 @@ function TextField({
             onKeyDown={(e) => {
               if (e.key === 'Enter') onEnter(e);
               else if (options.length) {
+                if (!rawValue && ['Backspace', 'Delete'].includes(e.key))
+                  return;
                 setShowAutocomplete(e.key !== 'Escape');
               }
             }}
