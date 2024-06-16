@@ -152,7 +152,8 @@ import {
   ACTION_TELESIGN_VOICE_OTP,
   ACTION_TELESIGN_SMS_OTP,
   ACTION_TELESIGN_VERIFY_OTP,
-  ACTION_ALLOY_VERIFY_ID
+  ACTION_ALLOY_VERIFY_ID,
+  ACTION_TRIGGER_FLINKS
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -174,6 +175,7 @@ import {
   setCustomErrorHandler
 } from '../utils/error';
 import { verifyAlloyId } from '../integrations/alloy';
+import { openFlinksConnect } from '../integrations/flinks';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -1653,6 +1655,10 @@ function Form({
       } else if (type === ACTION_TRIGGER_ARGYLE) {
         await submitPromise;
         await openArgyleLink(client, flowOnSuccess(i), integrations?.argyle);
+        break;
+      } else if (type === ACTION_TRIGGER_FLINKS) {
+        await submitPromise;
+        await openFlinksConnect(client, flowOnSuccess(i), integrations?.flinks);
         break;
       } else if (type === ACTION_URL) {
         let url = replaceTextVariables(action.url, element.repeat);
