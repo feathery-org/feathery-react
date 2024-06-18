@@ -1360,10 +1360,9 @@ function Form({
         );
         if (complete) {
           eventData.completed = true;
-          await Promise.all([
-            handleFormComplete(),
-            client.registerEvent(eventData)
-          ]);
+          // Form completion must run after since logic may depend on
+          // presence of fully submitted data
+          client.registerEvent(eventData).then(() => handleFormComplete());
         }
       }
       if (!eventData.completed) client.registerEvent(eventData);
