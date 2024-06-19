@@ -9,7 +9,8 @@ import {
   getFieldValues,
   FieldValues,
   updateUserId,
-  initState
+  initState,
+  defaultClient
 } from './init';
 import internalState, {
   IntegrationActionIds,
@@ -102,7 +103,14 @@ export const getFormContext = (formUuid: string) => {
       return errors;
     },
     openUrl: (url: string, target = '_blank') => {
-      featheryWindow()?.open(url, target, 'noopener');
+      const open = () => featheryWindow()?.open(url, target, 'noopener');
+      if (target === '_blank') open();
+      else {
+        Promise.all([
+          formState.client.flushCustomFields(),
+          defaultClient.flushCustomFields()
+        ]).then(open);
+      }
     },
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     // deprecated
