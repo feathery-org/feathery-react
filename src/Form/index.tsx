@@ -114,6 +114,7 @@ import { getFormContext } from '../utils/formContext';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
+  ApplyAlloyJourney,
   RunIntegrationActions,
   setFormInternalState
 } from '../utils/internalState';
@@ -150,7 +151,8 @@ import {
   ACTION_TELESIGN_PHONE_TYPE,
   ACTION_TELESIGN_VOICE_OTP,
   ACTION_TELESIGN_SMS_OTP,
-  ACTION_TELESIGN_VERIFY_OTP
+  ACTION_TELESIGN_VERIFY_OTP,
+  ACTION_ALLOY_VERIFY_ID
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -171,6 +173,7 @@ import {
   removeCustomErrorHandler,
   setCustomErrorHandler
 } from '../utils/error';
+import { verifyAlloyId } from '../integrations/alloy';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -786,6 +789,8 @@ function Form({
 
     const runIntegrationActions: RunIntegrationActions = (actionIds, options) =>
       client.customRolloutAction(actionIds, options);
+    const applyAlloyJourney: ApplyAlloyJourney = (journeyToken, entities) =>
+      client.alloyJourneyApplication(journeyToken, entities);
     setFormInternalState(
       _internalId,
       {
@@ -890,7 +895,8 @@ function Form({
             }));
           }
         },
-        runIntegrationActions
+        runIntegrationActions,
+        applyAlloyJourney
       },
       // Avoid all these other obj props going through Object.assign which is not necessary.
       // It turns out that not doing so caused breakage on steps after the first step.
@@ -1626,6 +1632,9 @@ function Form({
           flowOnSuccess(i),
           setElementError
         );
+        break;
+      } else if (type === ACTION_ALLOY_VERIFY_ID) {
+        await verifyAlloyId(action, integrations?.alloy, flowOnSuccess(i));
         break;
       } else if (type === ACTION_TRIGGER_PLAID) {
         await submitPromise;

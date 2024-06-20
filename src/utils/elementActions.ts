@@ -19,6 +19,7 @@ export const ACTION_STORE_FIELD = 'store_field_value';
 export const ACTION_TRIGGER_ARGYLE = 'trigger_argyle';
 export const ACTION_TRIGGER_PLAID = 'trigger_plaid';
 export const ACTION_TRIGGER_PERSONA = 'trigger_persona';
+export const ACTION_ALLOY_VERIFY_ID = 'alloy_verify_id';
 export const ACTION_URL = 'url';
 export const ACTION_VERIFY_SMS = 'verify_sms';
 export const ACTION_VERIFY_COLLABORATOR = 'verify_collaborator';
@@ -35,7 +36,8 @@ export const ACTION_TELESIGN_VERIFY_OTP = 'telesign_verify_otp';
 export const REQUIRED_FLOW_ACTIONS = {
   [ACTION_TRIGGER_ARGYLE]: 'You must authorize Argyle before proceeding',
   [ACTION_TRIGGER_PLAID]: 'You must authorize Plaid before proceeding',
-  [ACTION_TRIGGER_PERSONA]: 'You must verify your identity before proceeding'
+  [ACTION_ALLOY_VERIFY_ID]: 'You must verify your ID before proceeding',
+  [ACTION_TRIGGER_PERSONA]: 'You must verify your ID before proceeding'
 };
 
 export function hasFlowActions(actions: any[]) {
