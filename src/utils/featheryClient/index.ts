@@ -248,12 +248,21 @@ export default class FeatheryClient extends IntegrationClient {
     }
     // Load user-uploaded fonts
     Object.entries(res.uploaded_fonts).forEach(([family, fontStyles]) => {
-      (fontStyles as any).forEach(({ source, style, weight }: any) =>
-        new FontFace(family, `url(${source})`, { style, weight })
-          .load()
-          .then((font) => featheryDoc().fonts.add(font))
-          .catch((e) => console.warn(e))
-      );
+      (fontStyles as any).forEach(({ source, style, weight }: any) => {
+        const loadFont = (url: string) =>
+          new FontFace(family, `url(${url})`, { style, weight })
+            .load()
+            .then((font) => featheryDoc().fonts.add(font));
+        loadFont(source).catch(() => {
+          // Cloudfront might run into CORS issues so fall back to
+          // S3 directly if needed
+          const fallback = new URL(source);
+          fallback.hostname = 'user-files-1.s3.us-west-1.amazonaws.com';
+          loadFont(fallback.toString()).catch((e) =>
+            console.warn(`Font load issue: ${e}`)
+          );
+        });
+      });
     });
     // Load Lottie if form needs animations
     let needLottie = false;

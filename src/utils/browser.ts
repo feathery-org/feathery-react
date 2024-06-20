@@ -94,3 +94,5 @@ export function iosScrollOnFocus(event: FocusEvent) {
     element.scrollIntoView();
   }
 }
+
+export function loadCustomFont(fontUrl: string) {}
