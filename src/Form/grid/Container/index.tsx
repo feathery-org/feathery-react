@@ -34,7 +34,8 @@ export const Container = ({
       actions.length > 0
         ? {
             cursor: 'pointer',
-            transition: '0.2s ease all',
+            transition:
+              '0.2s ease opacity, color, background-color, border-width, border-color, outline, box-shadow',
             ...(selected ? cellActiveStyle : {}),
             '&:hover': cellHoverStyle
           }
