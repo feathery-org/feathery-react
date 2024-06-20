@@ -102,15 +102,14 @@ export const getFormContext = (formUuid: string) => {
       });
       return errors;
     },
-    openUrl: (url: string, target = '_blank') => {
-      const open = () => featheryWindow()?.open(url, target, 'noopener');
-      if (target === '_blank') open();
-      else {
-        Promise.all([
+    openUrl: async (url: string, target = '_blank') => {
+      if (target !== '_blank') {
+        await Promise.all([
           formState.client.flushCustomFields(),
           defaultClient.flushCustomFields()
-        ]).then(open);
+        ]);
       }
+      featheryWindow()?.open(url, target, 'noopener');
     },
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     // deprecated
