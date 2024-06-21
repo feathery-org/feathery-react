@@ -50,9 +50,9 @@ const STATIC_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
   staging: 'https://staging.feathery.io/api/',
   production: 'https://api-static-2.feathery.io/api/',
-  productionAU: 'https://api-static-2.feathery.io/api/',
-  productionEU: 'https://api-static-2.feathery.io/api/',
-  productionCA: 'https://api-static-2.feathery.io/api/'
+  productionAU: 'https://api-au.feathery.io/api/',
+  productionEU: 'https://api-eu.feathery.io/api/',
+  productionCA: 'https://api-ca.feathery.io/api/'
 };
 
 type URL_ENUM = keyof typeof API_URL_OPTIONS;
