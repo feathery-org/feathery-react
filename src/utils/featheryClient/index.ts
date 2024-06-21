@@ -27,7 +27,6 @@ import { RequestOptions } from '../offlineRequestHandler';
 import debounce from 'lodash.debounce';
 import { DebouncedFunc } from 'lodash';
 
-// Convenience boolean for urls - manually change for testing
 export const API_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
   staging: 'https://staging.feathery.io/api/',
