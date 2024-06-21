@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import React from 'react';
 import { fieldValues } from '../../utils/init';
 
 export default function PdfView({ fieldKey }: any) {
-  const [pdf, setPdf] = useState<any>(null);
-  let fieldVal: any = fieldKey ? fieldValues[fieldKey] : null;
+  const [pdf, setPdf] = React.useState<any>(null);
+  const fieldVal: any = fieldKey ? fieldValues[fieldKey] : null;
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (fieldVal && fieldVal[0]) {
       const val = fieldVal[0];
       Promise.resolve(val).then((file: any) => {
