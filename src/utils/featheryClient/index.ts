@@ -63,6 +63,9 @@ try {
 export let API_URL = API_URL_OPTIONS[environment];
 export let CDN_URL = CDN_URL_OPTIONS[environment];
 export const STATIC_URL = STATIC_URL_OPTIONS[environment];
+console.log(STATIC_URL_OPTIONS);
+console.log(environment);
+console.log(STATIC_URL);
 
 export const updateRegionApiUrls = (region: string) => {
   if (region === 'au') {
