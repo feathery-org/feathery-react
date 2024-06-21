@@ -62,21 +62,21 @@ try {
 
 export let API_URL = API_URL_OPTIONS[environment];
 export let CDN_URL = CDN_URL_OPTIONS[environment];
-export const STATIC_URL = STATIC_URL_OPTIONS[environment];
-console.log(STATIC_URL_OPTIONS);
-console.log(environment);
-console.log(STATIC_URL);
+export let STATIC_URL = STATIC_URL_OPTIONS[environment];
 
 export const updateRegionApiUrls = (region: string) => {
   if (region === 'au') {
     CDN_URL = CDN_URL_OPTIONS.productionAU;
     API_URL = API_URL_OPTIONS.productionAU;
+    STATIC_URL = STATIC_URL_OPTIONS.productionAU;
   } else if (region === 'eu') {
     CDN_URL = CDN_URL_OPTIONS.productionEU;
     API_URL = API_URL_OPTIONS.productionEU;
+    STATIC_URL = STATIC_URL_OPTIONS.productionEU;
   } else if (region === 'ca') {
     CDN_URL = CDN_URL_OPTIONS.productionCA;
     API_URL = API_URL_OPTIONS.productionCA;
+    STATIC_URL = STATIC_URL_OPTIONS.productionCA;
   }
 };
 
