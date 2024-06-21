@@ -52,6 +52,7 @@ export default class IntegrationClient {
   bypassCDN: boolean;
   submitQueue: Promise<any>;
   offlineRequestHandler: OfflineRequestHandler;
+
   constructor(
     formKey = '',
     ignoreNetworkErrors?: any,

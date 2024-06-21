@@ -26,6 +26,7 @@ import { gatherTrustedFormFields } from '../../integrations/trustedform';
 import { RequestOptions } from '../offlineRequestHandler';
 import debounce from 'lodash.debounce';
 import { DebouncedFunc } from 'lodash';
+import { v4 as uuidv4 } from 'uuid';
 
 export const API_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
@@ -96,6 +97,7 @@ export default class FeatheryClient extends IntegrationClient {
    * Debounced implementation of submitCustom
    */
   debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
+  customSubmitInFlight: Record<string, any>;
 
   constructor(
     formKey = '',
@@ -105,6 +107,7 @@ export default class FeatheryClient extends IntegrationClient {
   ) {
     super(formKey, ignoreNetworkErrors, draft, bypassCDN);
     this.pendingCustomFieldUpdates = {};
+    this.customSubmitInFlight = {};
     this.debouncedSubmitCustom = debounce(
       this._debouncedSubmitCustom.bind(this),
       SUBMIT_CUSTOM_DEBOUNCE_WINDOW
@@ -524,22 +527,29 @@ export default class FeatheryClient extends IntegrationClient {
 
     // Here we can safely remove the listener because offlineRequestHandler has its own beforeunload
     this._removeCustomFieldListener();
-    return await this.offlineRequestHandler.runOrSaveRequest(
+    const uniqueId = uuidv4();
+    const req = this.offlineRequestHandler.runOrSaveRequest(
       () => this._fetch(url, options, true, true),
       url,
       options,
       'submit'
     );
+    this.customSubmitInFlight[uniqueId] = req.then(
+      () => delete this.customSubmitInFlight[uniqueId]
+    );
+    return await req;
   }
 
   /**
    * If there is a pending invocation of submitCustom, this method calls it immediately
    */
-  flushCustomFields(override = true) {
+  async flushCustomFields(override = true) {
     // we call the debounced method and then flush() to immediately submit changes
     // see: https://github.com/lodash/lodash/issues/4185#issuecomment-462388355
     this.debouncedSubmitCustom(override);
-    return this.debouncedSubmitCustom.flush();
+    const ret = await this.debouncedSubmitCustom.flush();
+    await Promise.all(Object.values(this.customSubmitInFlight));
+    return ret;
   }
 
   /**
