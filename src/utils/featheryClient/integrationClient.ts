@@ -477,6 +477,7 @@ export default class IntegrationClient {
         fuser_key: userId
       })
     };
+    await this.submitQueue;
     const res = await this._fetch(url, reqOptions, false);
     if (res && res.status === 200)
       return { ok: true, payload: await res.json() };
