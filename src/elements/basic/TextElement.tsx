@@ -63,7 +63,7 @@ function TextElement({
     () => applyTextStyles(element, responsiveStyles),
     [responsiveStyles]
   );
-  const { borderStyles, customBorder } = useBorder({ element });
+  const { borderStyles, customBorder } = useBorder({ element, corners: false });
   return (
     <div
       css={{
