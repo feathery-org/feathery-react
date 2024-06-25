@@ -79,14 +79,16 @@ export default class Cart {
   _productPriceCacheConfig;
   _updateFieldValues: any;
   _stripeConfig: StripeConfig;
+  _client: any;
 
-  constructor(updateFieldValues: any, stripeConfig: StripeConfig) {
+  constructor(updateFieldValues: any, stripeConfig: StripeConfig, client: any) {
     this._productPriceCacheConfig = {
       ...(stripeConfig?.metadata.live?.product_price_cache ?? {}),
       ...(stripeConfig?.metadata.test?.product_price_cache ?? {})
     };
     this._updateFieldValues = updateFieldValues;
     this._stripeConfig = stripeConfig;
+    this._client = client;
   }
 
   get items() {
@@ -138,7 +140,8 @@ export default class Cart {
         add_to_quantity: !replace
       },
       this._updateFieldValues,
-      this._stripeConfig
+      this._stripeConfig,
+      this._client
     );
     return { ...newCartSelections };
   }
@@ -150,7 +153,8 @@ export default class Cart {
         clear_cart: false
       },
       this._updateFieldValues,
-      this._stripeConfig
+      this._stripeConfig,
+      this._client
     );
     return { ...newCartSelections };
   }

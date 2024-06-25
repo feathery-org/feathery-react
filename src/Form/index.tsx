@@ -801,9 +801,11 @@ function Form({
         client,
         fields,
         products: Object.seal(
-          getSimplifiedProducts(integrations?.stripe, updateFieldValues)
+          getSimplifiedProducts(integrations?.stripe, updateFieldValues, client)
         ),
-        cart: Object.seal(getCart(integrations?.stripe, updateFieldValues)),
+        cart: Object.seal(
+          getCart(integrations?.stripe, updateFieldValues, client)
+        ),
         collaborator: Object.seal(
           new Collaborator(
             session?.collaborator?.template_label ?? '',
@@ -1739,9 +1741,9 @@ function Form({
         const actionSuccess = await purchaseProductsAction(element);
         if (!actionSuccess) break;
       } else if (type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
-        addToCart(action, updateFieldValues, integrations?.stripe);
+        addToCart(action, updateFieldValues, integrations?.stripe, client);
       } else if (type === ACTION_REMOVE_PRODUCT_FROM_PURCHASE) {
-        removeFromCart(action, updateFieldValues, integrations?.stripe);
+        removeFromCart(action, updateFieldValues, integrations?.stripe, client);
       } else if (type === ACTION_VERIFY_COLLABORATOR) {
         const val = fieldValues[action.email_field_key] as string;
         if (!validators.email(val)) {
