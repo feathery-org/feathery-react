@@ -27,6 +27,7 @@ import { fieldValues } from '../utils/init';
 import { installPersona } from './persona';
 import { authState } from '../auth/LoginForm';
 import { installTrustedForm } from './trustedform';
+import { installAlloy } from './alloy';
 
 const IMPORTED_URLS = new Set();
 
@@ -93,6 +94,7 @@ export async function initializeIntegrations(
     installIntercom(integs['intercom-embedded']),
     installRudderStack(integs.rudderstack),
     installPersona(integs.persona),
+    installAlloy(integs.alloy),
     installTrustedForm(integs.trustedform, featheryClient.formKey)
   ]);
 

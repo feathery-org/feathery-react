@@ -5,6 +5,7 @@ import { parseError } from '../error';
 import { API_URL } from '.';
 import { OfflineRequestHandler, untrackUnload } from '../offlineRequestHandler';
 import {
+  AlloyEntities,
   IntegrationActionIds,
   IntegrationActionOptions
 } from '../internalState';
@@ -456,6 +457,25 @@ export default class IntegrationClient {
       })
     };
     await this._fetch(url, options, false);
+  }
+
+  async alloyJourneyApplication(journeyToken: string, entities: AlloyEntities) {
+    const { userId } = initInfo();
+    const url = `${API_URL}alloy/journey/application/`;
+    const reqOptions = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        journey_token: journeyToken,
+        entities,
+        form_key: this.formKey,
+        fuser_key: userId
+      })
+    };
+    const res = await this._fetch(url, reqOptions, false);
+    if (res && res.status === 201)
+      return { ok: true, payload: await res.json() };
+    else return { ok: false, error: (await res?.text()) ?? '' };
   }
 
   async customRolloutAction(
