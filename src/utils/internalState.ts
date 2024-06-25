@@ -18,6 +18,12 @@ export type RunIntegrationActions = (
   options: IntegrationActionOptions
 ) => Promise<{ ok: boolean; error?: string; payload?: any }>;
 
+export type AlloyEntities = Record<string, any>[];
+export type ApplyAlloyJourney = (
+  journeyToken: string,
+  entities: AlloyEntities
+) => Promise<{ ok: boolean; error?: string; payload?: any }>;
+
 export interface FormInternalState {
   language: string | undefined;
   currentStep: any;
@@ -53,6 +59,7 @@ export interface FormInternalState {
   ) => void;
   setCalendlyUrl: (url: string) => void;
   runIntegrationActions: RunIntegrationActions;
+  applyAlloyJourney: ApplyAlloyJourney;
 }
 
 type InternalState = {

@@ -183,9 +183,12 @@ function getCartSelections(): Record<string, number> {
 // save the cart selections into fields values object key feathery.cart
 function saveCartSelections(
   cartSelections: Record<string, number> | null,
-  updateFieldValues: any
+  updateFieldValues: any,
+  client: any
 ) {
-  updateFieldValues({ [FEATHERY_CART]: cartSelections });
+  const newVals = { [FEATHERY_CART]: cartSelections };
+  updateFieldValues(newVals);
+  client.submitCustom(newVals);
 }
 
 /**
@@ -237,12 +240,17 @@ export interface StripeConfig {
   };
 }
 
-export function getCart(stripeConfig: StripeConfig, updateFieldValues: any) {
-  return new Cart(updateFieldValues, stripeConfig);
+export function getCart(
+  stripeConfig: StripeConfig,
+  updateFieldValues: any,
+  client: any
+) {
+  return new Cart(updateFieldValues, stripeConfig, client);
 }
 export function getSimplifiedProducts(
   stripeConfig: StripeConfig,
-  updateFieldValues: any
+  updateFieldValues: any,
+  client: any
 ): Record<string, any> {
   const liveProductsPriceCache =
     stripeConfig?.metadata.live?.product_price_cache ?? {};
@@ -256,7 +264,8 @@ export function getSimplifiedProducts(
       product,
       'test',
       updateFieldValues,
-      stripeConfig
+      stripeConfig,
+      client
     );
   });
   Object.values(liveProductsPriceCache).forEach((product: any) => {
@@ -265,7 +274,8 @@ export function getSimplifiedProducts(
       product,
       'live',
       updateFieldValues,
-      stripeConfig
+      stripeConfig,
+      client
     );
   });
 
@@ -317,7 +327,8 @@ export function getLiveOrTestProduct(
 export function addToCart(
   paymentAction: PaymentAction,
   updateFieldValues: any,
-  stripeConfig: StripeConfig
+  stripeConfig: StripeConfig,
+  client: any
 ) {
   const {
     product_id: configuredProductId,
@@ -356,8 +367,8 @@ export function addToCart(
   const newCartSelections = Object.keys(cartSelections).length
     ? cartSelections
     : null;
-  saveCartSelections(newCartSelections, updateFieldValues);
-  calculateSelectedProductsTotal(stripeConfig, updateFieldValues);
+  saveCartSelections(newCartSelections, updateFieldValues, client);
+  calculateSelectedProductsTotal(stripeConfig, updateFieldValues, client);
   return newCartSelections;
 }
 
@@ -368,7 +379,8 @@ export function addToCart(
 export function removeFromCart(
   paymentAction: PaymentAction,
   updateFieldValues: any,
-  stripeConfig: any
+  stripeConfig: any,
+  client: any
 ) {
   const { product_id: configuredProductId, clear_cart: clearCart } =
     paymentAction;
@@ -387,8 +399,8 @@ export function removeFromCart(
   const newCartSelections = Object.keys(cartSelections).length
     ? cartSelections
     : null;
-  saveCartSelections(newCartSelections, updateFieldValues);
-  calculateSelectedProductsTotal(stripeConfig, updateFieldValues);
+  saveCartSelections(newCartSelections, updateFieldValues, client);
+  calculateSelectedProductsTotal(stripeConfig, updateFieldValues, client);
   return newCartSelections;
 }
 
@@ -465,7 +477,7 @@ export async function purchaseCart(
         // BE is the source of truth here. Update fieldValues.
         // This will set any payment indicator field.
         updateFieldValues(newFieldValues ?? {});
-        calculateSelectedProductsTotal(stripeConfig, updateFieldValues);
+        calculateSelectedProductsTotal(stripeConfig, updateFieldValues, client);
       }
     }
   } catch (e: any) {
@@ -513,8 +525,12 @@ export async function checkForPaymentCheckoutCompletion(
     );
     if (paymentElement) {
       // auto clear the cart on successful payment
-      saveCartSelections(null, updateFieldValues);
-      calculateSelectedProductsTotal(integrationData, updateFieldValues);
+      saveCartSelections(null, updateFieldValues, client);
+      calculateSelectedProductsTotal(
+        integrationData,
+        updateFieldValues,
+        client
+      );
 
       // clearing after successful payment
       const fieldValuesToSubmit: Record<string, any> = {
@@ -570,7 +586,8 @@ export function usePayments(): [
 
 export function calculateSelectedProductsTotal(
   stripeConfig: StripeConfig,
-  updateFieldValues: (fv: { [key: string]: any }) => void
+  updateFieldValues: (fv: { [key: string]: any }) => void,
+  client: any
 ): string {
   // Each key in feathery.cart is a product id.
   // Each value is the quantity of that product.
@@ -597,11 +614,10 @@ export function calculateSelectedProductsTotal(
   const totalCost = cost
     .divide(new BigDecimal(100), 12)
     .round(2, BigDecimal.RoundingModes.HALF_UP)
-    // .getPrettyValue(3, ',');
     .getValue();
-  updateFieldValues({
-    [FEATHERY_CART_TOTAL]: totalCost
-  });
+  const newVals = { [FEATHERY_CART_TOTAL]: totalCost };
+  updateFieldValues(newVals);
+  client.submitCustom(newVals);
   return totalCost;
 }
 

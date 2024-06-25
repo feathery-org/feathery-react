@@ -114,6 +114,7 @@ import { getFormContext } from '../utils/formContext';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
+  ApplyAlloyJourney,
   RunIntegrationActions,
   setFormInternalState
 } from '../utils/internalState';
@@ -150,7 +151,8 @@ import {
   ACTION_TELESIGN_PHONE_TYPE,
   ACTION_TELESIGN_VOICE_OTP,
   ACTION_TELESIGN_SMS_OTP,
-  ACTION_TELESIGN_VERIFY_OTP
+  ACTION_TELESIGN_VERIFY_OTP,
+  ACTION_ALLOY_VERIFY_ID
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -171,6 +173,7 @@ import {
   removeCustomErrorHandler,
   setCustomErrorHandler
 } from '../utils/error';
+import { verifyAlloyId } from '../integrations/alloy';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -786,6 +789,8 @@ function Form({
 
     const runIntegrationActions: RunIntegrationActions = (actionIds, options) =>
       client.customRolloutAction(actionIds, options);
+    const applyAlloyJourney: ApplyAlloyJourney = (journeyToken, entities) =>
+      client.alloyJourneyApplication(journeyToken, entities);
     setFormInternalState(
       _internalId,
       {
@@ -796,9 +801,11 @@ function Form({
         client,
         fields,
         products: Object.seal(
-          getSimplifiedProducts(integrations?.stripe, updateFieldValues)
+          getSimplifiedProducts(integrations?.stripe, updateFieldValues, client)
         ),
-        cart: Object.seal(getCart(integrations?.stripe, updateFieldValues)),
+        cart: Object.seal(
+          getCart(integrations?.stripe, updateFieldValues, client)
+        ),
         collaborator: Object.seal(
           new Collaborator(
             session?.collaborator?.template_label ?? '',
@@ -890,7 +897,8 @@ function Form({
             }));
           }
         },
-        runIntegrationActions
+        runIntegrationActions,
+        applyAlloyJourney
       },
       // Avoid all these other obj props going through Object.assign which is not necessary.
       // It turns out that not doing so caused breakage on steps after the first step.
@@ -1627,6 +1635,9 @@ function Form({
           setElementError
         );
         break;
+      } else if (type === ACTION_ALLOY_VERIFY_ID) {
+        await verifyAlloyId(action, integrations?.alloy, flowOnSuccess(i));
+        break;
       } else if (type === ACTION_TRIGGER_PLAID) {
         await submitPromise;
         await openPlaidLink(
@@ -1730,9 +1741,9 @@ function Form({
         const actionSuccess = await purchaseProductsAction(element);
         if (!actionSuccess) break;
       } else if (type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
-        addToCart(action, updateFieldValues, integrations?.stripe);
+        addToCart(action, updateFieldValues, integrations?.stripe, client);
       } else if (type === ACTION_REMOVE_PRODUCT_FROM_PURCHASE) {
-        removeFromCart(action, updateFieldValues, integrations?.stripe);
+        removeFromCart(action, updateFieldValues, integrations?.stripe, client);
       } else if (type === ACTION_VERIFY_COLLABORATOR) {
         const val = fieldValues[action.email_field_key] as string;
         if (!validators.email(val)) {

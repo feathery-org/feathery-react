@@ -5,6 +5,7 @@ import { adjustColor } from '../../utils/styles';
 export default function useBorder({
   element,
   defaultHover = false,
+  corners = true,
   error = false
 }: any) {
   const styles = useMemo(() => {
@@ -13,7 +14,7 @@ export default function useBorder({
       ['border', 'borderHover', 'borderActive', 'borderDisabled'],
       true
     );
-    styles.applyCorners('border');
+    if (corners) styles.applyCorners('border');
     styles.applyBorders({ target: 'border' });
 
     if (element.styles.hover_border_top_color) {

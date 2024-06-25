@@ -46,6 +46,8 @@ const mockStripeConfig = (
   }
 });
 
+const mockClientConfig = { submitCustom: jest.fn() };
+
 const paymentMethodFieldKey = 'payment-method-1';
 const mockServar = {
   id: 'some id',
@@ -246,7 +248,8 @@ describe('Stripe integration helper', () => {
         const cartSelections = addToCart(
           _mockAction,
           mockUpdateFieldValues,
-          mockStripeConfig()
+          mockStripeConfig(),
+          mockClientConfig
         );
 
         // Assert
@@ -267,7 +270,8 @@ describe('Stripe integration helper', () => {
         const cartSelections = addToCart(
           _mockAction,
           mockUpdateFieldValues,
-          mockStripeConfig()
+          mockStripeConfig(),
+          mockClientConfig
         );
 
         // Assert
@@ -292,12 +296,18 @@ describe('Stripe integration helper', () => {
         const mockUpdateFieldValues = jest.fn();
 
         // act
-        addToCart(_mockAction, mockUpdateFieldValues, mockStripeConfig());
+        addToCart(
+          _mockAction,
+          mockUpdateFieldValues,
+          mockStripeConfig(),
+          mockClientConfig
+        );
         // now increment it by 2
         const cartSelections = addToCart(
           _mockFixedQuantityAction,
           mockUpdateFieldValues,
-          mockStripeConfig()
+          mockStripeConfig(),
+          mockClientConfig
         );
 
         // Assert
@@ -323,7 +333,8 @@ describe('Stripe integration helper', () => {
         const cartSelections = removeFromCart(
           _mockAction,
           mockUpdateFieldValues,
-          mockStripeConfig()
+          mockStripeConfig(),
+          mockClientConfig
         );
 
         // Assert
@@ -340,7 +351,8 @@ describe('Stripe integration helper', () => {
         const cartSelections = removeFromCart(
           mockAction(),
           mockUpdateFieldValues,
-          mockStripeConfig()
+          mockStripeConfig(),
+          mockClientConfig
         );
 
         // Assert
@@ -701,7 +713,8 @@ describe('Stripe integration helper', () => {
         expect(
           calculateSelectedProductsTotal(
             mockStripeConfig('stripe', products),
-            mockUpdateFieldValues
+            mockUpdateFieldValues,
+            mockClientConfig
           )
         ).toBe('1500.00');
       });

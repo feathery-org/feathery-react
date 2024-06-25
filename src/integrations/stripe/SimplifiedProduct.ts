@@ -17,13 +17,15 @@ export default class SimplifiedProduct {
   _mode: 'live' | 'test';
   _updateFieldValues: any;
   _stripeConfig: StripeConfig;
+  _client: any;
 
   constructor(
     id: string,
     productPriceCacheItem: StripeProductProductCacheItem,
     mode: 'live' | 'test',
     updateFieldValues: any,
-    stripeConfig: StripeConfig
+    stripeConfig: StripeConfig,
+    client: any
   ) {
     this._id = id;
     this._productPriceCacheItem = productPriceCacheItem;
@@ -31,6 +33,7 @@ export default class SimplifiedProduct {
     this._mode = mode;
     this._updateFieldValues = updateFieldValues;
     this._stripeConfig = stripeConfig;
+    this._client = client;
   }
 
   get id(): string {
@@ -152,7 +155,8 @@ export default class SimplifiedProduct {
         add_to_quantity: !replace
       },
       this._updateFieldValues,
-      this._stripeConfig
+      this._stripeConfig,
+      this._client
     );
     return { ...newCartSelections };
   }
@@ -164,7 +168,8 @@ export default class SimplifiedProduct {
         clear_cart: false
       },
       this._updateFieldValues,
-      this._stripeConfig
+      this._stripeConfig,
+      this._client
     );
     return { ...newCartSelections };
   }

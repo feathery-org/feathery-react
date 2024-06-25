@@ -13,6 +13,7 @@ import {
   defaultClient
 } from './init';
 import internalState, {
+  AlloyEntities,
   IntegrationActionIds,
   IntegrationActionOptions,
   setFormInternalState
@@ -52,10 +53,6 @@ export const getFormContext = (formUuid: string) => {
         completed: true
       });
     },
-    runIntegrationActions: (
-      actionIds: IntegrationActionIds,
-      options: IntegrationActionOptions
-    ) => formState.runIntegrationActions(actionIds, options),
     setProgress: (val: any) => formState.setUserProgress(val),
     updateUserId,
     goToStep: (stepKey: any) => {
@@ -111,7 +108,13 @@ export const getFormContext = (formUuid: string) => {
       }
       featheryWindow()?.open(url, target, 'noopener');
     },
+    runIntegrationActions: (
+      actionIds: IntegrationActionIds,
+      options: IntegrationActionOptions
+    ) => formState.runIntegrationActions(actionIds, options),
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
+    applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
+      formState.applyAlloyJourney(journeyToken, entities),
     // deprecated
     setFieldValues: (userVals: FieldValues): void => {
       console.warn(
