@@ -15,7 +15,6 @@ import {
 import { featheryWindow } from '../../utils/browser';
 import { getRepeatedContainers } from '../../utils/repeat';
 import { replaceTextVariables } from '../../elements/components/TextNodes';
-import PdfView from '../../elements/components/PDFView';
 
 const Grid = ({ step, form, viewport }: any) => {
   if (!step || !form.visiblePositions) return null;
@@ -125,11 +124,6 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
           html={replaceTextVariables(props.custom_html)}
           css={children.length === 0 ? { height: '100%', width: '100%' } : {}}
         />
-      );
-    }
-    if (props.pdf_field && props.pdf_field.field_key) {
-      children.push(
-        <PdfView key='pdf-component' fieldKey={props.pdf_field.field_key} />
       );
     }
 
