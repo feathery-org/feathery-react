@@ -1469,7 +1469,7 @@ function Form({
       if (button.properties.captcha_verification && !initState.isTestEnv) {
         const invalid = await verifyRecaptcha(client);
         if (invalid) {
-          setButtonError('Submission failed');
+          setButtonError("You didn't pass CAPTCHA verification");
           return;
         }
       }
