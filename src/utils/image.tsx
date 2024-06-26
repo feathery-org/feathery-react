@@ -69,6 +69,19 @@ export async function getThumbnailData(filePromise: any) {
 }
 
 /**
+ * Given a File (or a Promise<File>), convert the file to a source url and file type.
+ */
+export async function getRenderData(filePromise: any) {
+  const file = await filePromise;
+
+  if (file) {
+    return { type: file.type, url: URL.createObjectURL(file) };
+  } else {
+    return { type: '', url: '' };
+  }
+}
+
+/**
  * Utility hook for converting a list of files into a list of thumbnail information.
  */
 export function useThumbnailData(files: any) {

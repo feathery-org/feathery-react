@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fieldValues } from '../../utils/init';
-import { getThumbnailData } from '../../utils/image';
+import { getRenderData } from '../../utils/image';
 
 const PLACEHOLDER_IMAGE =
   'https://feathery.s3.us-west-1.amazonaws.com/theme-image-preview.png';
@@ -20,29 +20,36 @@ function ImageElement({
   children
 }: any) {
   const [imageUrl, setImageUrl] = useState(element.properties.source_image);
+  const [documentType, setDocumentType] = useState<string | undefined>('');
   const [applyWidth, setApplyWidth] = useState(true);
-
   const styles = useMemo(
     () => applyImageStyles(element, responsiveStyles),
     [responsiveStyles]
   );
 
-  const imageField = element.properties.uploaded_image_file_field_key ?? '';
-  let imageFieldSource = fieldValues[imageField];
+  const fieldKey = element.properties.uploaded_image_file_field_key ?? '';
+  let imageFieldSource = fieldValues[fieldKey];
   if (imageFieldSource && Array.isArray(imageFieldSource))
     imageFieldSource = imageFieldSource[0];
-
   useEffect(() => {
     if (imageFieldSource) {
-      if (typeof imageFieldSource === 'string') setImageUrl(imageFieldSource);
-      else {
-        getThumbnailData(imageFieldSource).then((data) =>
-          setImageUrl(data.thumbnail)
-        );
+      if (typeof imageFieldSource === 'string') {
+        setDocumentType('');
+        setImageUrl(imageFieldSource);
+      } else {
+        getRenderData(imageFieldSource).then((data) => {
+          setDocumentType(data.type);
+          setImageUrl(data.url);
+        });
       }
-    } else setImageUrl(element.properties.source_image);
+    } else {
+      setImageUrl(element.properties.source_image);
+      setDocumentType('');
+    }
   }, [imageFieldSource, element.properties.source_image]);
 
+  const displayPDF = imageUrl && documentType === 'application/pdf';
+  const displayImage = !fieldKey || (imageUrl && !displayPDF);
   return (
     <div
       css={{
@@ -56,12 +63,34 @@ function ImageElement({
       }}
     >
       {children}
-      {imageField && !imageUrl ? null : (
+      {displayImage && (
         <img
           src={imageUrl || PLACEHOLDER_IMAGE}
           alt=''
           aria-label={element.properties.aria_label}
           css={{
+            objectFit: 'contain',
+            width: '100%',
+            maxWidth: '100%',
+            height: '100%',
+            maxHeight: '100%',
+            ...styles.getTarget('image'),
+            ...(applyWidth ? styles.getTarget('dimension') : {})
+          }}
+          onLoad={() => setApplyWidth(false)}
+          {...elementProps}
+        />
+      )}
+      {displayPDF && (
+        <embed
+          type='application/pdf'
+          width='100%'
+          height='100%'
+          alt=''
+          aria-label={element.properties.aria_label}
+          src={imageUrl + '#view=FitH'}
+          css={{
+            border: 'none',
             objectFit: 'contain',
             width: '100%',
             maxWidth: '100%',
