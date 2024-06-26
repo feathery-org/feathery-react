@@ -19,7 +19,9 @@ function ImageElement({
   elementProps = {},
   children
 }: any) {
-  const [imageUrl, setImageUrl] = useState(element.properties.source_image);
+  const [documentUrl, setDocumentUrl] = useState(
+    element.properties.source_image
+  );
   const [documentType, setDocumentType] = useState<string | undefined>('');
   const [applyWidth, setApplyWidth] = useState(true);
   const styles = useMemo(
@@ -35,21 +37,21 @@ function ImageElement({
     if (imageFieldSource) {
       if (typeof imageFieldSource === 'string') {
         setDocumentType('');
-        setImageUrl(imageFieldSource);
+        setDocumentUrl(imageFieldSource);
       } else {
         getRenderData(imageFieldSource).then((data) => {
           setDocumentType(data.type);
-          setImageUrl(data.url);
+          setDocumentUrl(data.url);
         });
       }
     } else {
-      setImageUrl(element.properties.source_image);
+      setDocumentUrl(element.properties.source_image);
       setDocumentType('');
     }
   }, [imageFieldSource, element.properties.source_image]);
 
-  const displayPDF = imageUrl && documentType === 'application/pdf';
-  const displayImage = !fieldKey || (imageUrl && !displayPDF);
+  const displayPDF = documentUrl && documentType === 'application/pdf';
+  const displayImage = !fieldKey || (documentUrl && !displayPDF);
   return (
     <div
       css={{
@@ -65,7 +67,7 @@ function ImageElement({
       {children}
       {displayImage && (
         <img
-          src={imageUrl || PLACEHOLDER_IMAGE}
+          src={documentUrl || PLACEHOLDER_IMAGE}
           alt=''
           aria-label={element.properties.aria_label}
           css={{
@@ -88,7 +90,7 @@ function ImageElement({
           height='100%'
           alt=''
           aria-label={element.properties.aria_label}
-          src={imageUrl + '#view=FitH'}
+          src={documentUrl + '#view=FitH'}
           css={{
             border: 'none',
             objectFit: 'contain',
