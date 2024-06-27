@@ -176,6 +176,20 @@ export default function DropdownMultiField({
               height: '100%',
               minHeight: 'inherit'
             }),
+            valueContainer: (baseStyles) => ({
+              ...baseStyles,
+              paddingRight: 28
+            }),
+            multiValueLabel: (baseStyles) => ({
+              ...baseStyles,
+              // allow word wrap
+              whiteSpace: 'normal',
+              // line clamp to 3 lines
+              overflow: 'hidden',
+              display: '-webkit-box',
+              WebkitBoxOrient: 'vertical',
+              WebkitLineClamp: 3
+            }),
             indicatorSeparator: () => ({ display: 'none' }),
             indicatorsContainer: () => ({ display: 'none' }),
             menuPortal: (baseStyles) => ({

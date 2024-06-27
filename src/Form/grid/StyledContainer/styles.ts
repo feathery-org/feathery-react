@@ -87,7 +87,8 @@ export const getContainerStyles = (
       if (contentResponsive)
         contentResponsive = getElementType(node) !== 'button_group';
 
-      s.minWidth = 'min-content';
+      // if element is mutli dropdown, don't apply min-width: min-content
+      if (getElementType(node) !== 'dropdown_multi') s.minWidth = 'min-content';
       s.width = '100%';
 
       const isFillWidth = isFill(width) || isFill(widthUnit);
