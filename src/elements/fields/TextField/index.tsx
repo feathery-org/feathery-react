@@ -343,6 +343,7 @@ function TextField({
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
+          repeat={element.repeat}
         />
       </div>
     </div>
