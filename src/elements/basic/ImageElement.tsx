@@ -51,7 +51,6 @@ function ImageElement({
   }, [imageFieldSource, element.properties.source_image]);
 
   const displayPDF = documentUrl && documentType === 'application/pdf';
-  const displayImage = !fieldKey || (documentUrl && !displayPDF);
   return (
     <div
       css={{
@@ -65,12 +64,16 @@ function ImageElement({
       }}
     >
       {children}
-      {displayImage && (
-        <img
-          src={documentUrl || PLACEHOLDER_IMAGE}
+      {displayPDF ? (
+        <embed
+          type='application/pdf'
+          width='100%'
+          height='100%'
           alt=''
           aria-label={element.properties.aria_label}
+          src={documentUrl + '#view=FitH'}
           css={{
+            border: 'none',
             objectFit: 'contain',
             width: '100%',
             maxWidth: '100%',
@@ -82,17 +85,12 @@ function ImageElement({
           onLoad={() => setApplyWidth(false)}
           {...elementProps}
         />
-      )}
-      {displayPDF && (
-        <embed
-          type='application/pdf'
-          width='100%'
-          height='100%'
+      ) : (
+        <img
+          src={documentUrl || PLACEHOLDER_IMAGE}
           alt=''
           aria-label={element.properties.aria_label}
-          src={documentUrl + '#view=FitH'}
           css={{
-            border: 'none',
             objectFit: 'contain',
             width: '100%',
             maxWidth: '100%',
