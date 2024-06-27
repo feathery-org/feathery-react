@@ -2,16 +2,20 @@ import React, { useState } from 'react';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { HelpIcon } from './icons';
 import { FORM_Z_INDEX } from '../../utils/styles';
+import { replaceTextVariables } from './TextNodes';
 
 export default function InlineTooltip({
   id,
   text,
   responsiveStyles,
-  absolute = true
+  absolute = true,
+  repeat
 }: any) {
   // Explicitly managing popover state prevents a bug on mobile where
   // tooltip needs to be pressed twice to show
   const [show, setShow] = useState(false);
+
+  text = replaceTextVariables(text, repeat);
 
   return text ? (
     <OverlayTrigger

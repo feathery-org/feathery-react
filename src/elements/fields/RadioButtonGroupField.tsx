@@ -130,6 +130,7 @@ function RadioButtonGroupField({
               text={tooltip}
               responsiveStyles={responsiveStyles}
               absolute={false}
+              repeat={element.repeat}
             />
           </div>
         );
@@ -200,6 +201,7 @@ function RadioButtonGroupField({
             text={servar.metadata.other_tooltip}
             responsiveStyles={responsiveStyles}
             absolute={false}
+            repeat={element.repeat}
           />
         </div>
       )}

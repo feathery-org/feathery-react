@@ -137,6 +137,7 @@ function ButtonGroupField({
                   text={tooltip}
                   responsiveStyles={responsiveStyles}
                   absolute={false}
+                  repeat={element.repeat}
                 />
               )}
             </div>

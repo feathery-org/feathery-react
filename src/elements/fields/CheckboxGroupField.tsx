@@ -130,6 +130,7 @@ function CheckboxGroupField({
               text={option.tooltip ?? ''}
               responsiveStyles={responsiveStyles}
               absolute={false}
+              repeat={element.repeat}
             />
           </div>
         );
@@ -190,6 +191,7 @@ function CheckboxGroupField({
             text={servar.metadata.other_tooltip}
             responsiveStyles={responsiveStyles}
             absolute={false}
+            repeat={element.repeat}
           />
         </div>
       )}
