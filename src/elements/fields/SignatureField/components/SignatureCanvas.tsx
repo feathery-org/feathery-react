@@ -47,7 +47,7 @@ function SignatureCanvas(props: SignatureCanvasProps) {
 
         const hRatio = sig.offsetWidth / img.width;
         const vRatio = sig.offsetHeight / img.height;
-        const ratio = Math.min(hRatio, vRatio, 1);
+        const ratio = Math.min(hRatio, vRatio, 1.5);
         const imgWidth = img.width * ratio;
         const imgHeight = img.height * ratio;
         const xOffset = (sig.offsetWidth - imgWidth) / 2;
