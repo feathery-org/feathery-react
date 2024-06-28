@@ -109,9 +109,12 @@ function SignatureCanvas(props: SignatureCanvasProps) {
         }}
         ref={signatureRef}
         onEnd={() => {
-          const base64Img = signatureRef.current.toDataURL('image/png');
-          const newFile = dataURLToFile(base64Img, `${fieldKey}.png`);
-          onEnd(newFile);
+          const trimmedCanvas = signatureRef.current.getTrimmedCanvas();
+
+          const imgData = trimmedCanvas.toDataURL('image/png');
+          const imgFile = dataURLToFile(imgData, `${fieldKey}.png`);
+
+          onEnd(imgFile);
           setIsClearVisible(!signatureRef.current.isEmpty());
         }}
       />
