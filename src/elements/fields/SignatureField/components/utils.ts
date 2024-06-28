@@ -1,6 +1,10 @@
 /*
  * Implementation of canvas trimming is taken from:
  * https://github.com/agilgur5/trim-canvas/blob/master/src/index.js
+ *
+ * Implementation of drawing a signature from a data URL is taken from:
+ * https://github.com/szimek/signature_pad/blob/356e97d1c9fc27b8d5930544b50feadc754dd8ba/src/signature_pad.ts#L128C10-L128C21
+ *
  */
 
 export function trimCanvas(canvas: HTMLCanvasElement) {
@@ -127,3 +131,35 @@ function scanX(
   return null;
 }
 
+export function fromDataURL(
+  canvas: HTMLCanvasElement,
+  dataUrl: string,
+  options: {
+    ratio?: number;
+    width?: number;
+    height?: number;
+    xOffset?: number;
+    yOffset?: number;
+  } = {}
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const context = canvas.getContext('2d');
+
+    const image = new Image();
+    const ratio = options.ratio || window.devicePixelRatio || 1;
+    const width = options.width || canvas.width / ratio;
+    const height = options.height || canvas.height / ratio;
+    const xOffset = options.xOffset || 0;
+    const yOffset = options.yOffset || 0;
+
+    image.onload = (): void => {
+      context?.drawImage(image, xOffset, yOffset, width, height);
+      resolve();
+    };
+    image.onerror = (error): void => {
+      reject(error);
+    };
+    image.crossOrigin = 'anonymous';
+    image.src = dataUrl;
+  });
+}

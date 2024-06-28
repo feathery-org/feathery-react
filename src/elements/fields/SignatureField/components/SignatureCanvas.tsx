@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { dataURLToFile, toBase64 } from '../../../../utils/image';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
 import Signature from 'react-signature-canvas';
+import { fromDataURL } from './utils';
 
 export type SignatureCanvasProps = {
   fieldKey?: string;
@@ -55,7 +56,11 @@ function SignatureCanvas(props: SignatureCanvasProps) {
         // TODO: fix offsets. for some reason they're not being respected and
         //  are treated as 0, 0
         sig.getContext('2d').clearRect(0, 0, sig.width, sig.height);
-        signatureRef.current.fromDataURL(base64, {
+
+        // custom implementation of fromDataURL to support xOffset and yOffset
+        // since they are not supported by signature-pad v2.3.2
+        // previously: signatureRef.current.fromDataURL(base64, options);
+        fromDataURL(sig, base64, {
           width: imgWidth,
           height: imgHeight,
           xOffset,
