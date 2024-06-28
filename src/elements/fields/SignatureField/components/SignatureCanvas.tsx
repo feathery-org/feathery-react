@@ -50,8 +50,11 @@ function SignatureCanvas(props: SignatureCanvasProps) {
         const ratio = Math.min(hRatio, vRatio, 1.5);
         const imgWidth = img.width * ratio;
         const imgHeight = img.height * ratio;
-        const xOffset = (sig.offsetWidth - imgWidth) / 2;
-        const yOffset = (sig.offsetHeight - imgHeight) / 2;
+
+        // position signature in bottom left corner
+        const xOffset = 0;
+        const yOffset = sig.offsetHeight - imgHeight;
+
         // Preserve aspect ratio when loading signature
         // TODO: fix offsets. for some reason they're not being respected and
         //  are treated as 0, 0
