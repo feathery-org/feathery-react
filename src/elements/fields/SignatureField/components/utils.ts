@@ -7,6 +7,8 @@
  *
  */
 
+import { devicePixelRatio } from '../../../../utils/browser';
+
 export function trimCanvas(canvas: HTMLCanvasElement) {
   const context = canvas.getContext('2d');
   if (!context) {
@@ -146,7 +148,7 @@ export function fromDataURL(
     const context = canvas.getContext('2d');
 
     const image = new Image();
-    const ratio = options.ratio || window.devicePixelRatio || 1;
+    const ratio = options.ratio || devicePixelRatio();
     const width = options.width || canvas.width / ratio;
     const height = options.height || canvas.height / ratio;
     const xOffset = options.xOffset || 0;
