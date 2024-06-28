@@ -5,6 +5,7 @@ import { MODAL_Z_INDEX } from '../../../../utils/styles';
 import SignatureCanvas, { SignatureCanvasProps } from './SignatureCanvas';
 import html2canvas from 'html2canvas';
 import debounce from 'lodash.debounce';
+import { trimCanvas } from './utils';
 
 type SignatureModalProps = SignatureCanvasProps & {
   show: boolean;
@@ -60,7 +61,9 @@ function SignatureModal(props: SignatureModalProps) {
     if (previewRef.current) {
       html2canvas(previewRef.current, { backgroundColor: null }).then(
         (canvas) => {
-          const imgData = canvas.toDataURL('image/png');
+          const trimmedCanvas = trimCanvas(canvas);
+
+          const imgData = trimmedCanvas.toDataURL('image/png');
           const imgFile = dataURLToFile(imgData, `${fieldKey}.png`);
 
           setSignatureImgData(imgData);

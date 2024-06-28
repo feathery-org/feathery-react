@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { dataURLToFile, toBase64 } from '../../../../utils/image';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
 import Signature from 'react-signature-canvas';
+import { fromDataURL } from './utils';
 
 export type SignatureCanvasProps = {
   fieldKey?: string;
@@ -46,16 +47,23 @@ function SignatureCanvas(props: SignatureCanvasProps) {
 
         const hRatio = sig.offsetWidth / img.width;
         const vRatio = sig.offsetHeight / img.height;
-        const ratio = Math.min(hRatio, vRatio, 1);
+        const ratio = Math.min(hRatio, vRatio, 1.5);
         const imgWidth = img.width * ratio;
         const imgHeight = img.height * ratio;
-        const xOffset = (sig.offsetWidth - imgWidth) / 2;
-        const yOffset = (sig.offsetHeight - imgHeight) / 2;
+
+        // position signature in bottom left corner
+        const xOffset = 0;
+        const yOffset = sig.offsetHeight - imgHeight;
+
         // Preserve aspect ratio when loading signature
         // TODO: fix offsets. for some reason they're not being respected and
         //  are treated as 0, 0
         sig.getContext('2d').clearRect(0, 0, sig.width, sig.height);
-        signatureRef.current.fromDataURL(base64, {
+
+        // custom implementation of fromDataURL to support xOffset and yOffset
+        // since they are not supported by signature-pad v2.3.2
+        // previously: signatureRef.current.fromDataURL(base64, options);
+        fromDataURL(sig, base64, {
           width: imgWidth,
           height: imgHeight,
           xOffset,
@@ -109,9 +117,12 @@ function SignatureCanvas(props: SignatureCanvasProps) {
         }}
         ref={signatureRef}
         onEnd={() => {
-          const base64Img = signatureRef.current.toDataURL('image/png');
-          const newFile = dataURLToFile(base64Img, `${fieldKey}.png`);
-          onEnd(newFile);
+          const trimmedCanvas = signatureRef.current.getTrimmedCanvas();
+
+          const imgData = trimmedCanvas.toDataURL('image/png');
+          const imgFile = dataURLToFile(imgData, `${fieldKey}.png`);
+
+          onEnd(imgFile);
           setIsClearVisible(!signatureRef.current.isEmpty());
         }}
       />
