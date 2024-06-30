@@ -22,6 +22,7 @@ export async function checkResponseSuccess(response: any) {
   switch (response.status) {
     case 200:
     case 201:
+      return;
     case 202:
       return;
     case 400:
