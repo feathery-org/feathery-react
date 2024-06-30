@@ -11,15 +11,17 @@ export async function openFlinksConnect(
     'width=600,height=400'
   );
 
-  const instance = flinksConfig.instance;
+  const instance = flinksConfig.metadata.instance;
   let flinksUrl = `https://${instance}-iframe.private.fin.ag/v2/`;
-  if (flinksConfig.environment === 'sandbox') flinksUrl += '?demo=true';
+
+  if (flinksConfig.metadata.environment === 'sandbox')
+    flinksUrl += '?demo=true';
 
   featheryWindow().addEventListener('message', async (e: any) => {
     console.log(e.data);
     if (e.data.step === 'REDIRECT') {
       const loginId = new URLSearchParams(e.data.url).get('loginId');
-      await client.triggerFlinksLoginId(loginId);
+      client.triggerFlinksLoginId.bind(client);
       return onSuccess();
     }
   });
