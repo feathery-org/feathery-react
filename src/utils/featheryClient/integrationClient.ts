@@ -151,7 +151,7 @@ export default class IntegrationClient {
     );
   }
 
-  async triggerFlinksLoginId(loginId: string) {
+  async triggerFlinksLoginId(loginId: string, updateFieldValues: any) {
     await initFormsPromise;
     const { userId } = initInfo();
     const params = encodeGetParams({
@@ -160,9 +160,25 @@ export default class IntegrationClient {
       login_id: loginId
     });
     const url = `${API_URL}flinks/login-id/?${params}`;
-    return this._fetch(url).then((response) =>
-      response ? response.json() : Promise.resolve()
-    );
+
+    const responseData: any = await this._fetch(url)
+      .then(async (response: any) => response.json())
+
+      .catch((e) => {
+        console.error(e);
+        return null;
+      });
+
+    if (!responseData) {
+      console.log('responseData is null');
+      return;
+    }
+
+    if (responseData['field_values']) {
+      const fieldValues = responseData['field_values'];
+      console.log({ fieldValues });
+      updateFieldValues(fieldValues);
+    }
   }
 
   addressSearchResults(searchTerm: any, country: any) {

@@ -1658,7 +1658,12 @@ function Form({
         break;
       } else if (type === ACTION_TRIGGER_FLINKS) {
         await submitPromise;
-        await openFlinksConnect(client, flowOnSuccess(i), integrations?.flinks);
+        await openFlinksConnect(
+          client,
+          flowOnSuccess(i),
+          integrations?.flinks,
+          updateFieldValues
+        );
         break;
       } else if (type === ACTION_URL) {
         let url = replaceTextVariables(action.url, element.repeat);

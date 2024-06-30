@@ -3,7 +3,8 @@ import { featheryWindow } from '../utils/browser';
 export async function openFlinksConnect(
   client: any,
   onSuccess: any,
-  flinksConfig: any
+  flinksConfig: any,
+  updateFieldValues: any
 ) {
   const childWindow = featheryWindow().open(
     '',
@@ -21,7 +22,7 @@ export async function openFlinksConnect(
     console.log(e.data);
     if (e.data.step === 'REDIRECT') {
       const loginId = new URLSearchParams(e.data.url).get('loginId');
-      client.triggerFlinksLoginId.bind(client);
+      client.triggerFlinksLoginId(loginId, updateFieldValues);
       return onSuccess();
     }
   });
