@@ -161,13 +161,48 @@ export default class IntegrationClient {
     });
     const url = `${API_URL}flinks/login-id/?${params}`;
 
-    const responseData: any = await this._fetch(url)
-      .then(async (response: any) => response.json())
+    let response = await this._fetch(url).catch((e) => {
+      console.error(e);
+      return null;
+    });
 
-      .catch((e) => {
+    let pollInterval: NodeJS.Timeout;
+    let intervalCleared = false;
+
+    response = await new Promise((res, rej) => {
+      let innerResponse: any;
+
+      setTimeout(async () => {
+        if (!intervalCleared) {
+          clearInterval(pollInterval);
+          rej(innerResponse);
+        }
+      }, 40 * 1000);
+
+      pollInterval = setInterval(async () => {
+        innerResponse = await this._fetch(url).catch((e) => {
         console.error(e);
         return null;
       });
+
+        //console.log({ innerResponse });
+
+        if (innerResponse && (innerResponse as any).status === 200) {
+          clearInterval(pollInterval);
+          intervalCleared = true;
+          res(innerResponse);
+        }
+      }, 1000);
+    });
+
+    if (!response) {
+      console.log('response is null');
+      return;
+    }
+
+    const responseData = await response?.json();
+
+    //console.log({ responseData });
 
     if (!responseData) {
       console.log('responseData is null');
