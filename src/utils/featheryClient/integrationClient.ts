@@ -175,15 +175,16 @@ export default class IntegrationClient {
       setTimeout(async () => {
         if (!intervalCleared) {
           clearInterval(pollInterval);
+          intervalCleared = true;
           rej(innerResponse);
         }
       }, 40 * 1000);
 
       pollInterval = setInterval(async () => {
         innerResponse = await this._fetch(url).catch((e) => {
-        console.error(e);
-        return null;
-      });
+          console.error(e);
+          return null;
+        });
 
         //console.log({ innerResponse });
 
