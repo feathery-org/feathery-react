@@ -161,61 +161,93 @@ export default class IntegrationClient {
       fuser_key: userId,
       login_id: loginId
     });
+
     const url = `${API_URL}flinks/login-id/?${params}`;
 
-    let response = await this._fetch(url).catch((e) => {
-      console.error(e);
+    let response: any = await this._fetch(url).catch((e) => {
+      console.error(
+        {
+          id: 'triggerFlinksLoginId',
+          message: 'failed to fetch flinks field values'
+        },
+        e
+      );
       return null;
     });
 
     let pollInterval: NodeJS.Timeout;
     let intervalCleared = false;
 
-    response = await new Promise((res, rej) => {
+    response = await new Promise((resolve, reject) => {
       let innerResponse: any;
 
       setTimeout(async () => {
         if (!intervalCleared) {
           clearInterval(pollInterval);
           intervalCleared = true;
-          rej(innerResponse);
+          resolve(innerResponse);
         }
       }, this.FLINKS_TIMEOUT_MS);
 
       pollInterval = setInterval(async () => {
         innerResponse = await this._fetch(url).catch((e) => {
-          console.error(e);
+          console.error(
+            {
+              id: 'triggerFlinksLoginId',
+              message: 'failed to fetch flinks field values'
+            },
+            e
+          );
           return null;
         });
-
-        //console.log({ innerResponse });
 
         if (innerResponse && (innerResponse as any).status === 200) {
           clearInterval(pollInterval);
           intervalCleared = true;
-          res(innerResponse);
+          resolve(innerResponse);
+        } else {
+          reject(innerResponse);
         }
       }, this.FLINKS_REQUEST_RETRY_TIME_MS);
+    }).catch((err) => {
+      console.error(
+        {
+          id: 'triggerFlinksLoginId',
+          message: 'failed to fetch flinks field values'
+        },
+        err
+      );
+      return null;
     });
 
     if (!response) {
-      console.log('response is null');
+      console.log({ id: 'triggerFlinksLoginId', message: 'response is null' });
       return;
     }
 
     const responseData = await response?.json();
 
-    //console.log({ responseData });
-
     if (!responseData) {
-      console.log('responseData is null');
+      console.log({
+        id: 'triggerFlinksLoginId',
+        message: 'responseData is null'
+      });
       return;
     }
 
-    if (responseData['field_values']) {
-      const fieldValues = responseData['field_values'];
-      console.log({ fieldValues });
+    if (responseData.field_values) {
+      const fieldValues = responseData.field_values;
+      console.log({
+        id: 'triggerFlinksLoginId',
+        message: 'updating field values',
+        fieldValues
+      });
       updateFieldValues(fieldValues);
+    } else {
+      console.log({
+        id: 'triggerFlinksLoginId',
+        message: "field values not found. Can't update field values"
+      });
     }
   }
 
