@@ -55,8 +55,6 @@ export default class IntegrationClient {
   bypassCDN: boolean;
   submitQueue: Promise<any>;
   offlineRequestHandler: OfflineRequestHandler;
-  private FLINKS_TIMEOUT_MS = 40 * 1000;
-  private FLINKS_REQUEST_RETRY_TIME_MS = 5 * 1000;
 
   constructor(
     formKey = '',
@@ -156,7 +154,7 @@ export default class IntegrationClient {
     );
   }
 
-  async triggerFlinksLoginId(loginId: string, updateFieldValues: any) {
+  async triggerFlinksLoginId(loginId: string) {
     await initFormsPromise;
     const { userId } = initInfo();
     const params = encodeGetParams({
@@ -167,58 +165,9 @@ export default class IntegrationClient {
 
     const url = `${API_URL}flinks/login-id/?${params}`;
 
-    let response: any = await this._fetch(url).catch((e) => {
-      console.error(e);
-      return null;
-    });
-
-    let pollInterval: NodeJS.Timeout;
-    let intervalCleared = false;
-
-    response = await new Promise((resolve, reject) => {
-      let innerResponse: any;
-
-      setTimeout(async () => {
-        if (!intervalCleared) {
-          clearInterval(pollInterval);
-          intervalCleared = true;
-          resolve(innerResponse);
-        }
-      }, this.FLINKS_TIMEOUT_MS);
-
-      pollInterval = setInterval(async () => {
-        innerResponse = await this._fetch(url).catch((e) => {
-          console.error(e);
-          return null;
-        });
-
-        if (innerResponse && (innerResponse as any).status === 200) {
-          clearInterval(pollInterval);
-          intervalCleared = true;
-          resolve(innerResponse);
-        } else {
-          reject(innerResponse);
-        }
-      }, this.FLINKS_REQUEST_RETRY_TIME_MS);
-    }).catch((err) => {
-      console.error(err);
-      return null;
-    });
-
-    if (!response) {
-      return;
-    }
-
-    const responseData = await response?.json();
-
-    if (!responseData) {
-      return;
-    }
-
-    if (responseData.field_values) {
-      const fieldValues = responseData.field_values;
-      updateFieldValues(fieldValues);
-    }
+    return this._fetch(url).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
   }
 
   addressSearchResults(searchTerm: any, country: any) {
@@ -574,5 +523,9 @@ export default class IntegrationClient {
     if (res && res.status === 200)
       return { ok: true, payload: await res.json() };
     else return { ok: false, error: (await res?.text()) ?? '' };
+  }
+
+  getFormKey(): string {
+    return this.formKey;
   }
 }
