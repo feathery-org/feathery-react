@@ -95,4 +95,8 @@ export function iosScrollOnFocus(event: FocusEvent) {
   }
 }
 
+export function devicePixelRatio() {
+  return featheryWindow().devicePixelRatio || 1;
+}
+
 export function loadCustomFont(fontUrl: string) {}
