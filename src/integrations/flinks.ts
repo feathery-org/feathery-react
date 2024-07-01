@@ -32,7 +32,7 @@ export async function openFlinksConnect(
       <head>
         <title>Child Window</title>
       </head>
-      <body>
+      <body style="height: 100vh; width: 100vw;">
         <iframe src="${flinksUrl}" width="100%" height="100%"></iframe>
         <script>
           // Listen for messages from the iframe
