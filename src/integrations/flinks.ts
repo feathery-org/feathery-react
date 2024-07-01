@@ -19,7 +19,11 @@ export async function openFlinksConnect(
     'width=600,height=400'
   );
 
-  const instance = flinksConfig.metadata.instance;
+  const instance =
+    flinksConfig.metadata.environment === 'sandbox'
+      ? 'toolbox'
+      : flinksConfig.metadata.instance;
+
   let flinksUrl = `https://${instance}-iframe.private.fin.ag/v2/`;
 
   if (flinksConfig.metadata.environment === 'sandbox')
