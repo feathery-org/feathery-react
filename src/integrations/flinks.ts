@@ -19,7 +19,6 @@ export async function openFlinksConnect(
     flinksUrl += '?demo=true';
 
   featheryWindow().addEventListener('message', async (e: any) => {
-    console.log(e.data);
     if (e.data.step === 'REDIRECT') {
       const loginId = new URLSearchParams(e.data.url).get('loginId');
       client.triggerFlinksLoginId(loginId, updateFieldValues);
