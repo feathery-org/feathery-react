@@ -83,7 +83,10 @@ export default class IntegrationClient {
     options = {
       cache: 'no-store',
       // Write requests must succeed so data is tracked
-      keepalive: ['POST', 'PATCH', 'PUT'].includes(options.method),
+      keepalive:
+        options &&
+        typeof options.method === 'string' &&
+        ['POST', 'PATCH', 'PUT'].includes(options.method),
       headers: {
         Authorization: 'Token ' + sdkKey,
         ...headers
