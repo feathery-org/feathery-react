@@ -55,6 +55,8 @@ export default class IntegrationClient {
   bypassCDN: boolean;
   submitQueue: Promise<any>;
   offlineRequestHandler: OfflineRequestHandler;
+  private FLINKS_TIMEOUT_MS = 40 * 1000;
+  private FLINKS_REQUEST_RETRY_TIME_MS = 5 * 1000;
 
   constructor(
     formKey = '',
@@ -178,7 +180,7 @@ export default class IntegrationClient {
           intervalCleared = true;
           rej(innerResponse);
         }
-      }, 40 * 1000);
+      }, this.FLINKS_TIMEOUT_MS);
 
       pollInterval = setInterval(async () => {
         innerResponse = await this._fetch(url).catch((e) => {
@@ -193,7 +195,7 @@ export default class IntegrationClient {
           intervalCleared = true;
           res(innerResponse);
         }
-      }, 1000);
+      }, this.FLINKS_REQUEST_RETRY_TIME_MS);
     });
 
     if (!response) {
