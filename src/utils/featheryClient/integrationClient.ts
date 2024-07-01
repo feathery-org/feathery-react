@@ -168,13 +168,7 @@ export default class IntegrationClient {
     const url = `${API_URL}flinks/login-id/?${params}`;
 
     let response: any = await this._fetch(url).catch((e) => {
-      console.error(
-        {
-          id: 'triggerFlinksLoginId',
-          message: 'failed to fetch flinks field values'
-        },
-        e
-      );
+      console.error(e);
       return null;
     });
 
@@ -194,13 +188,7 @@ export default class IntegrationClient {
 
       pollInterval = setInterval(async () => {
         innerResponse = await this._fetch(url).catch((e) => {
-          console.error(
-            {
-              id: 'triggerFlinksLoginId',
-              message: 'failed to fetch flinks field values'
-            },
-            e
-          );
+          console.error(e);
           return null;
         });
 
@@ -213,44 +201,23 @@ export default class IntegrationClient {
         }
       }, this.FLINKS_REQUEST_RETRY_TIME_MS);
     }).catch((err) => {
-      console.error(
-        {
-          id: 'triggerFlinksLoginId',
-          message: 'failed to fetch flinks field values'
-        },
-        err
-      );
+      console.error(err);
       return null;
     });
 
     if (!response) {
-      console.log({ id: 'triggerFlinksLoginId', message: 'response is null' });
       return;
     }
 
     const responseData = await response?.json();
 
     if (!responseData) {
-      console.log({
-        id: 'triggerFlinksLoginId',
-        message: 'responseData is null'
-      });
       return;
     }
 
     if (responseData.field_values) {
       const fieldValues = responseData.field_values;
-      console.log({
-        id: 'triggerFlinksLoginId',
-        message: 'updating field values',
-        fieldValues
-      });
       updateFieldValues(fieldValues);
-    } else {
-      console.log({
-        id: 'triggerFlinksLoginId',
-        message: "field values not found. Can't update field values"
-      });
     }
   }
 
