@@ -77,14 +77,12 @@ export default class IntegrationClient {
     propagateNetworkErrors = false
   ) {
     const { sdkKey } = initInfo();
+    options = options ?? {};
     const { headers, ...otherOptions } = options ?? {};
     options = {
       cache: 'no-store',
       // Write requests must succeed so data is tracked
-      keepalive:
-        options &&
-        typeof options.method === 'string' &&
-        ['POST', 'PATCH', 'PUT'].includes(options.method),
+      keepalive: ['POST', 'PATCH', 'PUT'].includes(options.method),
       headers: {
         Authorization: 'Token ' + sdkKey,
         ...headers
