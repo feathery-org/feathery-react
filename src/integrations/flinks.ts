@@ -132,29 +132,33 @@ async function setupFlinks(
       }
     }, FLINKS_TIMEOUT_MS);
 
-    pollInterval = setInterval(async () => {
-      innerResponse = await _fetch(url).catch((e) => {
-        return null;
-      });
-
-      if (innerResponse && innerResponse.status === 202) {
-        // return and simply retry the fetch
-        return;
-      }
-
-      if (innerResponse && (innerResponse as any).status === 200) {
+    async function fetchAndHandleResponse(resolve: any, reject: any) {
+      let innerResponse: any;
+      try {
+        innerResponse = await _fetch(url);
+        if (innerResponse && innerResponse.status === 202) {
+          // Simply retry the fetch by not doing anything here
+        } else if (innerResponse && innerResponse.status === 200) {
+          clearInterval(pollInterval);
+          intervalCleared = true;
+          resolve(innerResponse);
+        } else if (innerResponse && innerResponse.status > 400) {
+          clearInterval(pollInterval);
+          intervalCleared = true;
+          reject(innerResponse);
+        }
+      } catch (e) {
+        // Handle fetch error, possibly by rejecting
         clearInterval(pollInterval);
         intervalCleared = true;
-        resolve(innerResponse);
-      } else if (innerResponse && (innerResponse as any).status > 400) {
-        clearInterval(pollInterval);
-        intervalCleared = true;
-        reject(innerResponse);
+        reject(e);
       }
+    }
+
+    pollInterval = setInterval(() => {
+      fetchAndHandleResponse(resolve, reject);
     }, FLINKS_REQUEST_RETRY_TIME_MS);
-  }).catch((err) => {
-    return null;
-  });
+  }).catch((err) => null);
 
   if (!response) {
     return;
