@@ -1,8 +1,8 @@
 import { featheryWindow } from '../utils/browser';
 import IntegrationClient from '../utils/featheryClient/integrationClient';
 
-const FLINKS_TIMEOUT_MS = 60 * 1000;
-const FLINKS_REQUEST_RETRY_TIME_MS = 5 * 1000;
+const FLINKS_TIMEOUT_MS = 20 * 1000;
+const FLINKS_REQUEST_RETRY_DELAY_MS = 5 * 1000;
 
 type UpdateFieldValuesCallback = (fieldValues: any) => void;
 
@@ -31,12 +31,9 @@ export async function openFlinksConnect(
   featheryWindow().addEventListener('message', async (e: any) => {
     if (e.data.step === 'REDIRECT') {
       const loginId = new URLSearchParams(e.data.url).get('loginId');
-      client
-        .triggerFlinksLoginId(loginId as string)
-        .then((response: any) =>
-          setupFlinks(client, updateFieldValues, loginId as string)
-        )
-        .catch((err: any) => null);
+      if (!loginId) return;
+      const data = setupFlinks(client, loginId);
+      updateFieldValues(data);
       return onSuccess();
     }
   });
@@ -62,79 +59,36 @@ export async function openFlinksConnect(
   childWindow.document.close();
 }
 
-function pollerClosure(
-  client: IntegrationClient,
-  loginId: string
-): (resolve: (value: unknown) => void, reject: (reason?: any) => void) => void {
-  let pollInterval: NodeJS.Timeout;
-  let intervalCleared = false;
-
-  return function (
-    resolve: (value: unknown) => void,
-    reject: (reason?: any) => void
-  ): void {
-    let innerResponse: any;
-
-    const clearPollInterval = (): void => {
-      if (!intervalCleared) {
-        clearInterval(pollInterval);
-        intervalCleared = true;
-      }
-    };
-
-    setTimeout(() => {
-      if (!intervalCleared) {
-        clearPollInterval();
-        resolve(innerResponse);
-      }
-    }, FLINKS_TIMEOUT_MS);
-
-    pollInterval = setInterval(() => {
-      client.fetchAndHandleFlinksResponse(
-        loginId,
-        resolve,
-        reject,
-        clearPollInterval,
-        true
-      );
-    }, FLINKS_REQUEST_RETRY_TIME_MS);
+async function setupFlinks(client: IntegrationClient, loginId: string) {
+  const toReturn = { err: '', fieldValues: {} };
+  const setError = () => {
+    toReturn.err = 'Unable to set up Flinks';
+    return toReturn;
   };
-}
 
-function checkResponseAndUpdateFieldValues(
-  response: any,
-  updateFieldValues: UpdateFieldValuesCallback
-): void {
-  if (response?.field_values) {
-    updateFieldValues(response.field_values);
+  let res = await client.triggerFlinksLoginId(loginId);
+  if (!res) return setError();
+
+  let tries = 0;
+  while (res.status === 202) {
+    tries++;
+    if (tries === 5) return setError();
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, FLINKS_REQUEST_RETRY_DELAY_MS)
+    );
+    res = await client.triggerFlinksLoginId();
+
+    if (!res) return setError();
   }
-}
 
-async function setupFlinks(
-  client: IntegrationClient,
-  updateFieldValues: any,
-  loginId: string
-) {
-  let initialResponseData: any = await new Promise((resolve, reject) =>
-    client.fetchAndHandleFlinksResponse(
-      loginId,
-      resolve,
-      reject,
-      () => {},
-      false
-    )
-  )
-    .then((res: any) => res?.json())
-    .catch((err) => null);
+  if (res.status === 200) {
+    const data = await res.json();
+    toReturn.fieldValues = data.field_values;
+  } else if (res.status === 400) {
+    const data = await res.json();
+    toReturn.err = data.message;
+  } else setError();
 
-  // edge case: if initial response has the field values we don't need to poll
-  checkResponseAndUpdateFieldValues(initialResponseData, updateFieldValues);
-
-  const poller = pollerClosure(client, loginId);
-
-  const response: any = await new Promise(poller)
-    .then((res: any) => res.json())
-    .catch((err) => null);
-
-  checkResponseAndUpdateFieldValues(response, updateFieldValues);
+  return toReturn;
 }

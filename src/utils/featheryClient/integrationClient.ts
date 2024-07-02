@@ -22,7 +22,6 @@ export async function checkResponseSuccess(response: any) {
   switch (response.status) {
     case 200:
     case 201:
-      return;
     case 202:
       return;
     case 400:
@@ -152,67 +151,16 @@ export default class IntegrationClient {
     );
   }
 
-  async triggerFlinksLoginId(loginId: string) {
+  async triggerFlinksLoginId(loginId?: string) {
     await initFormsPromise;
     const { userId } = initInfo();
-    const params = encodeGetParams({
+    const params: Record<string, any> = {
       form_key: this.formKey,
-      fuser_key: userId,
-      login_id: loginId
-    });
-
-    const url = `${API_URL}flinks/login-id/?${params}`;
-
-    return this._fetch(url).then((response) =>
-      response ? response.json() : Promise.resolve()
-    );
-  }
-
-  async fetchAndHandleFlinksResponse(
-    loginId: string,
-    resolve: (value: unknown) => void,
-    reject: (reason?: any) => void,
-    clearPollInterval: () => void,
-    isPolling: boolean
-  ): Promise<void> {
-    try {
-      const { userId } = initInfo();
-
-      const params = encodeGetParams({
-        form_key: this.formKey,
-        fuser_key: userId,
-        login_id: loginId,
-        is_polling: isPolling
-      });
-
-      const url = `${API_URL}flinks/login-id/?${params}`;
-
-      let innerResponse: any;
-      innerResponse = await this._fetch(url);
-
-      if (innerResponse && innerResponse.status === 202) {
-        // Simply retry the fetch by not doing anything here
-        if (!isPolling) {
-          resolve(innerResponse);
-        }
-        return;
-      } else if (innerResponse && innerResponse.status === 200) {
-        if (isPolling) {
-          clearPollInterval();
-        }
-        resolve(innerResponse);
-      } else if (innerResponse && innerResponse.status > 400) {
-        if (isPolling) {
-          clearPollInterval();
-        }
-        reject(innerResponse);
-      }
-    } catch (e) {
-      if (isPolling) {
-        clearPollInterval();
-      }
-      reject(e);
-    }
+      fuser_key: userId
+    };
+    if (loginId) params.login_id = loginId;
+    const url = `${API_URL}flinks/login-id/?${encodeGetParams(params)}`;
+    return this._fetch(url);
   }
 
   addressSearchResults(searchTerm: any, country: any) {
@@ -568,9 +516,5 @@ export default class IntegrationClient {
     if (res && res.status === 200)
       return { ok: true, payload: await res.json() };
     else return { ok: false, error: (await res?.text()) ?? '' };
-  }
-
-  getFormKey(): string {
-    return this.formKey;
   }
 }
