@@ -175,19 +175,19 @@ export default class IntegrationClient {
     clearPollInterval: () => void,
     isPolling: boolean
   ): Promise<void> {
-    const { userId } = initInfo();
-
-    const params = encodeGetParams({
-      form_key: this.formKey,
-      fuser_key: userId,
-      login_id: loginId,
-      is_polling: isPolling
-    });
-
-    const url = `${API_URL}flinks/login-id/?${params}`;
-
-    let innerResponse: any;
     try {
+      const { userId } = initInfo();
+
+      const params = encodeGetParams({
+        form_key: this.formKey,
+        fuser_key: userId,
+        login_id: loginId,
+        is_polling: isPolling
+      });
+
+      const url = `${API_URL}flinks/login-id/?${params}`;
+
+      let innerResponse: any;
       innerResponse = await this._fetch(url);
       console.log({ innerResponse });
       if (innerResponse && innerResponse.status === 202) {
