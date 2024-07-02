@@ -168,6 +168,47 @@ export default class IntegrationClient {
     );
   }
 
+  async fetchAndHandleFlinksResponse(
+    loginId: string,
+    resolve: (value: unknown) => void,
+    reject: (reason?: any) => void,
+    clearPollInterval: () => void,
+    isPolling: boolean
+  ): Promise<void> {
+    const { userId } = initInfo();
+
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      fuser_key: userId,
+      login_id: loginId,
+      is_polling: isPolling
+    });
+
+    const url = `${API_URL}flinks/login-id/?${params}`;
+
+    let innerResponse: any;
+    try {
+      innerResponse = await this._fetch(url);
+      console.log({ innerResponse });
+      if (innerResponse && innerResponse.status === 202) {
+        // Simply retry the fetch by not doing anything here
+        if (!isPolling) {
+          resolve(innerResponse);
+        }
+        return;
+      } else if (innerResponse && innerResponse.status === 200) {
+        clearPollInterval();
+        resolve(innerResponse);
+      } else if (innerResponse && innerResponse.status > 400) {
+        clearPollInterval();
+        reject(innerResponse);
+      }
+    } catch (e) {
+      clearPollInterval();
+      reject(e);
+    }
+  }
+
   addressSearchResults(searchTerm: any, country: any) {
     const params = encodeGetParams({ search_term: searchTerm, country });
     const url = `${API_URL}integration/address/search/?${params}`;
