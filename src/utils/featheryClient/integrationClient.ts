@@ -78,7 +78,7 @@ export default class IntegrationClient {
   ) {
     const { sdkKey } = initInfo();
     options = options ?? {};
-    const { headers, ...otherOptions } = options ?? {};
+    const { headers, ...otherOptions } = options;
     options = {
       cache: 'no-store',
       // Write requests must succeed so data is tracked
