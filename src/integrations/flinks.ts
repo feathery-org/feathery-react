@@ -4,11 +4,13 @@ import IntegrationClient from '../utils/featheryClient/integrationClient';
 const FLINKS_TIMEOUT_MS = 60 * 1000;
 const FLINKS_REQUEST_RETRY_TIME_MS = 5 * 1000;
 
+type UpdateFieldValuesCallback = (fieldValues: any) => void;
+
 export async function openFlinksConnect(
-  client: any,
-  onSuccess: any,
+  client: IntegrationClient,
+  onSuccess: () => void,
   flinksConfig: any,
-  updateFieldValues: any
+  updateFieldValues: UpdateFieldValuesCallback
 ) {
   const childWindow = featheryWindow().open(
     '',
@@ -30,7 +32,7 @@ export async function openFlinksConnect(
     if (e.data.step === 'REDIRECT') {
       const loginId = new URLSearchParams(e.data.url).get('loginId');
       client
-        .triggerFlinksLoginId(loginId)
+        .triggerFlinksLoginId(loginId as string)
         .then((response: any) =>
           setupFlinks(client, updateFieldValues, loginId as string)
         )
@@ -70,10 +72,10 @@ function pollerClosure(
   return function (
     resolve: (value: unknown) => void,
     reject: (reason?: any) => void
-  ) {
+  ): void {
     let innerResponse: any;
 
-    const clearPollInterval = () => {
+    const clearPollInterval = (): void => {
       if (!intervalCleared) {
         clearInterval(pollInterval);
         intervalCleared = true;
@@ -101,7 +103,7 @@ function pollerClosure(
 
 function checkResponseAndUpdateFieldValues(
   response: any,
-  updateFieldValues: any
+  updateFieldValues: UpdateFieldValuesCallback
 ): void {
   if (response?.field_values) {
     updateFieldValues(response.field_values);
