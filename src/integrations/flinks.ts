@@ -38,7 +38,8 @@ export async function openFlinksConnect(
           setupFlinks(
             updateFieldValues,
             loginId as string,
-            client.getFormKey()
+            client.getFormKey(),
+            response?.request_id
           );
         })
         .catch((err: any) => null);
@@ -87,7 +88,6 @@ async function _fetch(url: any, options?: any, parseResponse = true) {
       return response;
     })
     .catch((e) => {
-      console.error(e);
       return null;
     });
 }
@@ -95,20 +95,26 @@ async function _fetch(url: any, options?: any, parseResponse = true) {
 async function setupFlinks(
   updateFieldValues: any,
   loginId: string,
-  formKey: string
+  formKey: string,
+  requestId: string
 ) {
   const { userId } = initInfo();
 
-  const params = encodeGetParams({
+  const paramsObj: any = {
     form_key: formKey,
     fuser_key: userId,
     login_id: loginId
-  });
+  };
+
+  if (requestId) {
+    paramsObj.request_id = requestId;
+  }
+
+  const params = encodeGetParams(paramsObj);
 
   const url = `${API_URL}flinks/login-id/?${params}`;
 
   let response: any = await _fetch(url).catch((e) => {
-    console.error(e);
     return null;
   });
 
@@ -128,7 +134,6 @@ async function setupFlinks(
 
     pollInterval = setInterval(async () => {
       innerResponse = await _fetch(url).catch((e) => {
-        console.error(e);
         return null;
       });
 
@@ -148,7 +153,6 @@ async function setupFlinks(
       }
     }, FLINKS_REQUEST_RETRY_TIME_MS);
   }).catch((err) => {
-    console.error(err);
     return null;
   });
 
