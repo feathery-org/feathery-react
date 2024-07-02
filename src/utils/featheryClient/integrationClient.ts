@@ -189,7 +189,7 @@ export default class IntegrationClient {
 
       let innerResponse: any;
       innerResponse = await this._fetch(url);
-      console.log({ innerResponse });
+
       if (innerResponse && innerResponse.status === 202) {
         // Simply retry the fetch by not doing anything here
         if (!isPolling) {
@@ -197,14 +197,20 @@ export default class IntegrationClient {
         }
         return;
       } else if (innerResponse && innerResponse.status === 200) {
-        clearPollInterval();
+        if (isPolling) {
+          clearPollInterval();
+        }
         resolve(innerResponse);
       } else if (innerResponse && innerResponse.status > 400) {
-        clearPollInterval();
+        if (isPolling) {
+          clearPollInterval();
+        }
         reject(innerResponse);
       }
     } catch (e) {
-      clearPollInterval();
+      if (isPolling) {
+        clearPollInterval();
+      }
       reject(e);
     }
   }
