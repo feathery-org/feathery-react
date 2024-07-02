@@ -60,34 +60,17 @@ export async function openFlinksConnect(
   childWindow.document.close();
 }
 
-async function setupFlinks(
+function pollerClosure(
   client: IntegrationClient,
-  updateFieldValues: any,
   loginId: string
-) {
-  let initialResponseData: any = await new Promise((resolve, reject) =>
-    client.fetchAndHandleFlinksResponse(
-      loginId,
-      resolve,
-      reject,
-      () => {},
-      false
-    )
-  )
-    .then((res: any) => res?.json())
-    .catch((err) => null);
-
-  // edge case: if initial response has the field values we don't need to poll
-  if (initialResponseData?.field_values) {
-    const fieldValues = initialResponseData.field_values;
-    updateFieldValues(fieldValues);
-    return;
-  }
-
+): (resolve: (value: unknown) => void, reject: (reason?: any) => void) => void {
   let pollInterval: NodeJS.Timeout;
   let intervalCleared = false;
 
-  const response: any = await new Promise(function (resolve, reject) {
+  return function (
+    resolve: (value: unknown) => void,
+    reject: (reason?: any) => void
+  ) {
     let innerResponse: any;
 
     const clearPollInterval = () => {
@@ -113,22 +96,43 @@ async function setupFlinks(
         true
       );
     }, FLINKS_REQUEST_RETRY_TIME_MS);
-  }).catch((err) => {
-    return null;
-  });
+  };
+}
 
-  if (!response) {
-    return;
+function checkResponseAndUpdateFieldValues(
+  response: any,
+  updateFieldValues: any
+): void {
+  if (response?.field_values) {
+    updateFieldValues(response.field_values);
   }
+}
 
-  const responseData = await response?.json();
+async function setupFlinks(
+  client: IntegrationClient,
+  updateFieldValues: any,
+  loginId: string
+) {
+  let initialResponseData: any = await new Promise((resolve, reject) =>
+    client.fetchAndHandleFlinksResponse(
+      loginId,
+      resolve,
+      reject,
+      () => {},
+      false
+    )
+  )
+    .then((res: any) => res?.json())
+    .catch((err) => null);
 
-  if (!responseData) {
-    return;
-  }
+  // edge case: if initial response has the field values we don't need to poll
+  checkResponseAndUpdateFieldValues(initialResponseData, updateFieldValues);
 
-  if (responseData.field_values) {
-    const fieldValues = responseData.field_values;
-    updateFieldValues(fieldValues);
-  }
+  const poller = pollerClosure(client, loginId);
+
+  const response: any = await new Promise(poller)
+    .then((res: any) => res.json())
+    .catch((err) => null);
+
+  checkResponseAndUpdateFieldValues(response, updateFieldValues);
 }
