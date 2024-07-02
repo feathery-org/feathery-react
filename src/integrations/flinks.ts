@@ -1,8 +1,5 @@
 import { featheryWindow } from '../utils/browser';
-import { API_URL } from '../utils/featheryClient';
-import { checkResponseSuccess } from '../utils/featheryClient/integrationClient';
-import { initInfo } from '../utils/init';
-import { encodeGetParams } from '../utils/primitives';
+import IntegrationClient from '../utils/featheryClient/integrationClient';
 
 const FLINKS_TIMEOUT_MS = 60 * 1000;
 const FLINKS_REQUEST_RETRY_TIME_MS = 5 * 1000;
@@ -34,14 +31,9 @@ export async function openFlinksConnect(
       const loginId = new URLSearchParams(e.data.url).get('loginId');
       client
         .triggerFlinksLoginId(loginId)
-        .then((response: any) => {
-          setupFlinks(
-            updateFieldValues,
-            loginId as string,
-            client.getFormKey(),
-            response?.request_id
-          );
-        })
+        .then((response: any) =>
+          setupFlinks(client, updateFieldValues, loginId as string)
+        )
         .catch((err: any) => null);
       return onSuccess();
     }
@@ -68,60 +60,34 @@ export async function openFlinksConnect(
   childWindow.document.close();
 }
 
-async function _fetch(url: any, options?: any, parseResponse = true) {
-  const { sdkKey } = initInfo();
-  options = options ?? {};
-  const { headers, ...otherOptions } = options ?? {};
-  options = {
-    cache: 'no-store',
-    // Write requests must succeed so data is tracked
-    keepalive: ['POST', 'PATCH', 'PUT'].includes(options.method),
-    headers: {
-      Authorization: 'Token ' + sdkKey,
-      ...headers
-    },
-    ...otherOptions
-  };
-  return fetch(url, options)
-    .then(async (response) => {
-      if (parseResponse) await checkResponseSuccess(response);
-      return response;
-    })
-    .catch((e) => {
-      return null;
-    });
-}
-
 async function setupFlinks(
+  client: IntegrationClient,
   updateFieldValues: any,
-  loginId: string,
-  formKey: string,
-  requestId: string
+  loginId: string
 ) {
-  const { userId } = initInfo();
+  let initialResponseData: any = await new Promise((resolve, reject) =>
+    client.fetchAndHandleFlinksResponse(
+      loginId,
+      resolve,
+      reject,
+      () => {},
+      false
+    )
+  )
+    .then((res: any) => res?.json())
+    .catch((err) => null);
 
-  const paramsObj: any = {
-    form_key: formKey,
-    fuser_key: userId,
-    login_id: loginId
-  };
-
-  if (requestId) {
-    paramsObj.request_id = requestId;
+  // edge case: if initial response has the field values we don't need to poll
+  if (initialResponseData?.field_values) {
+    const fieldValues = initialResponseData.field_values;
+    updateFieldValues(fieldValues);
+    return;
   }
-
-  const params = encodeGetParams(paramsObj);
-
-  const url = `${API_URL}flinks/login-id/?${params}`;
-
-  let response: any = await _fetch(url).catch((e) => {
-    return null;
-  });
 
   let pollInterval: NodeJS.Timeout;
   let intervalCleared = false;
 
-  response = await new Promise((resolve, reject) => {
+  const response: any = await new Promise(function (resolve, reject) {
     let innerResponse: any;
 
     const clearPollInterval = () => {
@@ -131,37 +97,25 @@ async function setupFlinks(
       }
     };
 
-    setTimeout(async () => {
+    setTimeout(() => {
       if (!intervalCleared) {
         clearPollInterval();
         resolve(innerResponse);
       }
     }, FLINKS_TIMEOUT_MS);
 
-    async function fetchAndHandleResponse(resolve: any, reject: any) {
-      let innerResponse: any;
-      try {
-        innerResponse = await _fetch(url);
-        if (innerResponse && innerResponse.status === 202) {
-          // Simply retry the fetch by not doing anything here
-        } else if (innerResponse && innerResponse.status === 200) {
-          clearPollInterval();
-          resolve(innerResponse);
-        } else if (innerResponse && innerResponse.status > 400) {
-          clearPollInterval();
-          reject(innerResponse);
-        }
-      } catch (e) {
-        // Handle fetch error, possibly by rejecting
-        clearPollInterval();
-        reject(e);
-      }
-    }
-
     pollInterval = setInterval(() => {
-      fetchAndHandleResponse(resolve, reject);
+      client.fetchAndHandleFlinksResponse(
+        loginId,
+        resolve,
+        reject,
+        clearPollInterval,
+        true
+      );
     }, FLINKS_REQUEST_RETRY_TIME_MS);
-  }).catch((err) => null);
+  }).catch((err) => {
+    return null;
+  });
 
   if (!response) {
     return;
