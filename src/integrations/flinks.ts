@@ -124,10 +124,16 @@ async function setupFlinks(
   response = await new Promise((resolve, reject) => {
     let innerResponse: any;
 
-    setTimeout(async () => {
+    const clearPollInterval = () => {
       if (!intervalCleared) {
         clearInterval(pollInterval);
         intervalCleared = true;
+      }
+    };
+
+    setTimeout(async () => {
+      if (!intervalCleared) {
+        clearPollInterval();
         resolve(innerResponse);
       }
     }, FLINKS_TIMEOUT_MS);
@@ -139,18 +145,15 @@ async function setupFlinks(
         if (innerResponse && innerResponse.status === 202) {
           // Simply retry the fetch by not doing anything here
         } else if (innerResponse && innerResponse.status === 200) {
-          clearInterval(pollInterval);
-          intervalCleared = true;
+          clearPollInterval();
           resolve(innerResponse);
         } else if (innerResponse && innerResponse.status > 400) {
-          clearInterval(pollInterval);
-          intervalCleared = true;
+          clearPollInterval();
           reject(innerResponse);
         }
       } catch (e) {
         // Handle fetch error, possibly by rejecting
-        clearInterval(pollInterval);
-        intervalCleared = true;
+        clearPollInterval();
         reject(e);
       }
     }
