@@ -23,6 +23,8 @@ export async function checkResponseSuccess(response: any) {
     case 200:
     case 201:
       return;
+    case 202:
+      return;
     case 400:
       payload = JSON.stringify(await response.clone().text());
       console.error(payload.toString());
@@ -70,12 +72,13 @@ export default class IntegrationClient {
 
   _fetch(
     url: any,
-    options: any,
+    options?: any,
     parseResponse = true,
     propagateNetworkErrors = false
   ) {
     const { sdkKey } = initInfo();
-    const { headers, ...otherOptions } = options;
+    options = options ?? {};
+    const { headers, ...otherOptions } = options ?? {};
     options = {
       cache: 'no-store',
       // Write requests must succeed so data is tracked
@@ -145,6 +148,22 @@ export default class IntegrationClient {
     const url = `${API_URL}argyle/user_token/?${params}`;
     const options = { headers: { 'Content-Type': 'application/json' } };
     return this._fetch(url, options).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
+  }
+
+  async triggerFlinksLoginId(loginId: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      fuser_key: userId,
+      login_id: loginId
+    });
+
+    const url = `${API_URL}flinks/login-id/?${params}`;
+
+    return this._fetch(url).then((response) =>
       response ? response.json() : Promise.resolve()
     );
   }
@@ -502,5 +521,9 @@ export default class IntegrationClient {
     if (res && res.status === 200)
       return { ok: true, payload: await res.json() };
     else return { ok: false, error: (await res?.text()) ?? '' };
+  }
+
+  getFormKey(): string {
+    return this.formKey;
   }
 }
