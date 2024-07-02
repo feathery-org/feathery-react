@@ -4,7 +4,7 @@ import { checkResponseSuccess } from '../utils/featheryClient/integrationClient'
 import { initInfo } from '../utils/init';
 import { encodeGetParams } from '../utils/primitives';
 
-const FLINKS_TIMEOUT_MS = 40 * 1000;
+const FLINKS_TIMEOUT_MS = 60 * 1000;
 const FLINKS_REQUEST_RETRY_TIME_MS = 5 * 1000;
 
 export async function openFlinksConnect(
