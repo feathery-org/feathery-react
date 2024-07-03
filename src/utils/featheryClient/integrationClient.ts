@@ -22,6 +22,7 @@ export async function checkResponseSuccess(response: any) {
   switch (response.status) {
     case 200:
     case 201:
+    case 202:
       return;
     case 400:
       payload = JSON.stringify(await response.clone().text());
@@ -70,11 +71,12 @@ export default class IntegrationClient {
 
   _fetch(
     url: any,
-    options: any,
+    options?: any,
     parseResponse = true,
     propagateNetworkErrors = false
   ) {
     const { sdkKey } = initInfo();
+    options = options ?? {};
     const { headers, ...otherOptions } = options;
     options = {
       cache: 'no-store',
@@ -111,7 +113,7 @@ export default class IntegrationClient {
       liabilities: includeLiabilities ? 'true' : 'false'
     });
     const url = `${API_URL}plaid/link_token/?${params}`;
-    return this._fetch(url, {}).then((response) =>
+    return this._fetch(url).then((response) =>
       response ? response.json() : Promise.resolve()
     );
   }
@@ -147,6 +149,18 @@ export default class IntegrationClient {
     return this._fetch(url, options).then((response) =>
       response ? response.json() : Promise.resolve()
     );
+  }
+
+  async triggerFlinksLoginId(loginId?: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const params: Record<string, any> = {
+      form_key: this.formKey,
+      fuser_key: userId
+    };
+    if (loginId) params.login_id = loginId;
+    const url = `${API_URL}flinks/login-id/?${encodeGetParams(params)}`;
+    return this._fetch(url);
   }
 
   addressSearchResults(searchTerm: any, country: any) {
@@ -435,7 +449,7 @@ export default class IntegrationClient {
       fuser_key: userId
     };
     const url = `${API_URL}telesign/otp/verify/?${encodeGetParams(params)}`;
-    const response = await this._fetch(url, {});
+    const response = await this._fetch(url);
     if (response) {
       if (response.ok) {
         const { otp_status: otpStatus } = await response.json();
