@@ -113,7 +113,7 @@ export default class IntegrationClient {
       liabilities: includeLiabilities ? 'true' : 'false'
     });
     const url = `${API_URL}plaid/link_token/?${params}`;
-    return this._fetch(url, {}).then((response) =>
+    return this._fetch(url).then((response) =>
       response ? response.json() : Promise.resolve()
     );
   }
@@ -449,7 +449,7 @@ export default class IntegrationClient {
       fuser_key: userId
     };
     const url = `${API_URL}telesign/otp/verify/?${encodeGetParams(params)}`;
-    const response = await this._fetch(url, {});
+    const response = await this._fetch(url);
     if (response) {
       if (response.ok) {
         const { otp_status: otpStatus } = await response.json();

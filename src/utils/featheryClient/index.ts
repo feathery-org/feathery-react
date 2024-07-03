@@ -801,7 +801,7 @@ export default class FeatheryClient extends IntegrationClient {
     };
     if (collaboratorId) params.collaborator_user = collaboratorId;
     const url = `${API_URL}collaborator/verify/?${encodeGetParams(params)}`;
-    return this._fetch(url, {}).then((response) =>
+    return this._fetch(url).then((response) =>
       response ? response.json() : Promise.resolve()
     );
   }

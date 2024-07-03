@@ -1,7 +1,7 @@
 import { featheryWindow } from '../utils/browser';
 import IntegrationClient from '../utils/featheryClient/integrationClient';
 
-const FLINKS_TIMEOUT_MS = 20 * 1000;
+const FLINKS_MAX_POLL_RETRIES = 5;
 const FLINKS_REQUEST_RETRY_DELAY_MS = 5 * 1000;
 
 type UpdateFieldValuesCallback = (fieldValues: any) => void;
@@ -15,7 +15,7 @@ export async function openFlinksConnect(
   const childWindow = featheryWindow().open(
     '',
     'Flinks Connect',
-    'width=600,height=400'
+    'width=700,height=700'
   );
 
   const instance =
@@ -30,9 +30,10 @@ export async function openFlinksConnect(
 
   featheryWindow().addEventListener('message', async (e: any) => {
     if (e.data.step === 'REDIRECT') {
+      childWindow.close();
       const loginId = new URLSearchParams(e.data.url).get('loginId');
       if (!loginId) return;
-      const data = setupFlinks(client, loginId);
+      const data = await setupFlinks(client, loginId);
       updateFieldValues(data);
       return onSuccess();
     }
@@ -44,8 +45,8 @@ export async function openFlinksConnect(
       <head>
         <title>Child Window</title>
       </head>
-      <body style="height: 100vh; width: 100vw;">
-        <iframe src="${flinksUrl}" width="100%" height="100%"></iframe>
+      <body style="height: 100vh; width: 100vw; margin: 0;">
+        <iframe src="${flinksUrl}" width="100%" height="100%" style="border: none;"></iframe>
         <script>
           // Listen for messages from the iframe
           window.addEventListener("message", function(event) {
@@ -72,7 +73,7 @@ async function setupFlinks(client: IntegrationClient, loginId: string) {
   let tries = 0;
   while (res.status === 202) {
     tries++;
-    if (tries === 5) return setError();
+    if (tries === FLINKS_MAX_POLL_RETRIES) return setError();
 
     await new Promise((resolve) =>
       setTimeout(resolve, FLINKS_REQUEST_RETRY_DELAY_MS)
