@@ -27,6 +27,7 @@ function useTextEdit({
     let editableProps: any = {};
     const css = {
       outline: 'none',
+      minWidth: '5px',
       display: 'inline-block',
       cursor: 'inherit',
       position: 'relative',
