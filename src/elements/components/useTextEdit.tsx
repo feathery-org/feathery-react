@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { featheryDoc, featheryWindow } from '../../utils/browser';
+import { featheryWindow } from '../../utils/browser';
 
 function useTextEdit({
   editable,
@@ -12,28 +12,15 @@ function useTextEdit({
   const spanRef = useRef();
   const [editMode, setEditMode] = useState('hover');
 
-  const updateEditMode = (newMode: string) => {
+  const updateEditMode = (newMode: 'edit' | 'hover') => {
     setEditMode(newMode);
     onEditModeChange && onEditModeChange(newMode === 'edit');
   };
 
   useEffect(() => {
-    if (editMode === 'edit') {
-      // @ts-expect-error TS(2532): Object is possibly 'undefined'.
-      const node = spanRef.current.childNodes[0];
-      const range = featheryDoc().createRange();
-      range.setStart(node, 0);
-      range.setEnd(node, 0);
-      const sel = featheryWindow().getSelection();
-      if (sel) {
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
+    if (!focused) {
+      updateEditMode('hover');
     }
-  }, [editMode]);
-
-  useEffect(() => {
-    if (!focused) updateEditMode('hover');
   }, [focused]);
 
   const editableProps = useMemo(() => {
@@ -55,7 +42,9 @@ function useTextEdit({
       editableProps = {
         contentEditable: true,
         suppressContentEditableWarning: true,
-        onMouseDown: (e: MouseEvent) => !focused && e.preventDefault(),
+        onMouseDown: (e: MouseEvent) => {
+          if (!focused) e.preventDefault();
+        },
         onSelect: (e: any) => {
           if (!focused) e.preventDefault();
           onTextSelect && onTextSelect(featheryWindow().getSelection());
@@ -72,11 +61,13 @@ function useTextEdit({
       };
 
       if (focused) {
-        if (editMode === 'hover') {
-          editableProps = { onClick: () => updateEditMode('edit') };
-          // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-          css['&:hover'] = { backgroundColor: 'rgb(230, 240, 252)' };
-        } else if (editMode === 'edit') css.cursor = 'text';
+        editableProps = {
+          ...editableProps,
+          onClick: () => {
+            updateEditMode('edit');
+          }
+        };
+        css.cursor = 'text';
       }
     }
 
