@@ -66,6 +66,7 @@ function useTextEdit({
             updateEditMode('edit');
           }
         };
+        css.cursor = 'text';
       }
     }
 
