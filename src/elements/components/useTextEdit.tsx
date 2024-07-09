@@ -17,27 +17,6 @@ function useTextEdit({
     onEditModeChange && onEditModeChange(newMode === 'edit');
   };
 
-  // useEffect(() => {
-  //   console.log('effect editMode', editMode);
-
-  //   if (editMode === 'edit') {
-  //     console.log('is edit');
-
-  //     // @ts-expect-error TS(2532): Object is possibly 'undefined'.
-  //     const node = spanRef.current.childNodes[0];
-  //     const range = featheryDoc().createRange();
-  //     range.setStart(node, 0);
-  //     range.setEnd(node, 0);
-  //     const sel = featheryWindow().getSelection();
-  //     if (sel) {
-  //       console.log('has select');
-
-  //       sel.removeAllRanges();
-  //       sel.addRange(range);
-  //     }
-  //   }
-  // }, [editMode]);
-
   useEffect(() => {
     if (!focused) {
       updateEditMode('hover');
@@ -69,9 +48,6 @@ function useTextEdit({
           if (!focused) e.preventDefault();
           onTextSelect && onTextSelect(featheryWindow().getSelection());
         },
-        // onFocus: () => {
-        //   updateEditMode('edit');
-        // },
         onKeyDown: (e: any) => {
           if (!focused) e.preventDefault();
           if (onTextKeyDown)
