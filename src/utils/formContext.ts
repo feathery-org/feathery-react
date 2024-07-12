@@ -103,7 +103,8 @@ export const getFormContext = (formUuid: string) => {
       if (target !== '_blank') {
         await Promise.all([
           formState.client.flushCustomFields(),
-          defaultClient.flushCustomFields()
+          defaultClient.flushCustomFields(),
+          formState.client.submitQueue
         ]);
       }
       featheryWindow()?.open(url, target, 'noopener');
