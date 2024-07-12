@@ -176,6 +176,7 @@ import {
 } from '../utils/error';
 import { verifyAlloyId } from '../integrations/alloy';
 import { openFlinksConnect } from '../integrations/flinks';
+import { isNum } from '../utils/primitives';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -1431,6 +1432,7 @@ function Form({
         if (action.custom_store_value_type === 'field') {
           val = fieldValues[action.custom_store_value_field_key];
         } else val = action.custom_store_value;
+        if (isNum(el.repeat) && Array.isArray(val)) val = val[el.repeat] ?? '';
         if (!!val && fieldValues[action.custom_store_field_key] === val)
           state = true;
       } else if (action.type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
@@ -1827,16 +1829,19 @@ function Form({
           if (field) return true;
         });
 
-        const castValue = castVal(field?.servar.type, val);
+        if (isNum(element.repeat) && Array.isArray(val))
+          val = val[element.repeat] ?? '';
+        if (field) val = castVal(field.servar.type, val);
+
         const setToDefaultValue =
           action.toggle &&
-          JSON.stringify(fieldValues[key]) === JSON.stringify(castValue);
+          JSON.stringify(fieldValues[key]) === JSON.stringify(val);
+        if (setToDefaultValue) {
+          // could be a hidden field
+          val = field ? getDefaultFieldValue(field) : '';
+        }
 
-        // could be a hidden field
-        const defaultValue = field ? getDefaultFieldValue(field) : '';
-        const newValues = {
-          [key]: setToDefaultValue ? defaultValue : castValue
-        };
+        const newValues = { [key]: val };
         updateFieldValues(newValues, { clearErrors: false });
         client.submitCustom(newValues);
       } else if (type === ACTION_TELESIGN_SILENT_VERIFICATION) {
