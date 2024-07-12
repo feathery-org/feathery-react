@@ -23,10 +23,10 @@ export async function openFlinksConnect(
       ? 'toolbox'
       : flinksConfig.metadata.instance;
 
-  let flinksUrl = `https://${instance}-iframe.private.fin.ag/v2/`;
+  let flinksUrl = `https://${instance}-iframe.private.fin.ag/v2/?accountSelectorEnable=true&showAllOperationsAccounts=true`;
 
   if (flinksConfig.metadata.environment === 'sandbox')
-    flinksUrl += '?demo=true';
+    flinksUrl += '&demo=true';
 
   featheryWindow().addEventListener('message', async (e: any) => {
     if (e.data.step === 'REDIRECT') {
