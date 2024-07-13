@@ -379,10 +379,10 @@ export default class ResponsiveStyles {
     );
     if (!placeholder && !ignoreSelectorFontColor) {
       this.apply(target, 'hover_font_color', (color: any) => ({
-        '&:hover': { color: `#${color}` }
+        '&:hover': color ? { color: `#${color}` } : {}
       }));
       this.apply(target, 'selected_font_color', (color: any) => ({
-        '&:focus': { color: `#${color}` }
+        '&:focus': color ? { color: `#${color}` } : {}
       }));
     }
 

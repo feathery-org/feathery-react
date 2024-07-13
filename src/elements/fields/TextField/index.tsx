@@ -241,6 +241,10 @@ function TextField({
           whiteSpace: 'nowrap',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
+          '&:focus-within': {
+            ...responsiveStyles.getTarget('active'),
+            ...borderStyles.active
+          },
           '&:hover': hoverStylesGuard(
             disabled
               ? {}
@@ -274,11 +278,7 @@ function TextField({
               backgroundColor: 'transparent',
               ...bootstrapStyles,
               ...responsiveStyles.getTarget('field'),
-              '&:focus': {
-                ...responsiveStyles.getTarget('active'),
-                ...responsiveStyles.getTarget('field')['&:focus'],
-                ...borderStyles.active
-              },
+              '&:focus': responsiveStyles.getTarget('field')['&:focus'],
               [`&:focus ~ #${borderId}`]: Object.values(borderStyles.active)[0],
               '&:not(:focus)':
                 rawValue || !element.properties.placeholder
