@@ -31,8 +31,8 @@ function ImageElement({
 
   const fieldKey = element.properties.uploaded_image_file_field_key ?? '';
   let imageFieldSource = fieldValues[fieldKey];
-  if (imageFieldSource && Array.isArray(imageFieldSource))
-    imageFieldSource = imageFieldSource[0];
+  if (Array.isArray(imageFieldSource))
+    imageFieldSource = imageFieldSource[element.repeat ?? 0];
   useEffect(() => {
     if (imageFieldSource) {
       if (typeof imageFieldSource === 'string') {
