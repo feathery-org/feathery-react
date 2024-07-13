@@ -42,17 +42,20 @@ export const Container = ({
         : {};
 
     handleClick = (e: any) => {
-      // Don't run value changes for fields that were clicked and already had
-      // their values changed
-      const filtered = actions.filter(
-        (action: any) =>
-          !(
-            action.type === ACTION_STORE_FIELD &&
-            action.custom_store_field_key === e.target.id
-          )
-      );
+      const newActions = JSON.parse(JSON.stringify(actions));
+      newActions.forEach((action: any) => {
+        if (
+          action.type === ACTION_STORE_FIELD &&
+          action.custom_store_field_key === e.target.id
+        ) {
+          // Don't run value changes for fields that were clicked and already had
+          // their values changed
+          action.retain_click_value = true;
+        }
+      });
+
       runElementActions({
-        actions: filtered,
+        actions: newActions,
         element: node,
         elementType: 'container'
       });

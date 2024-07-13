@@ -1432,9 +1432,13 @@ function Form({
         if (action.custom_store_value_type === 'field') {
           val = fieldValues[action.custom_store_value_field_key];
         } else val = action.custom_store_value;
-        if (isNum(el.repeat) && Array.isArray(val)) val = val[el.repeat] ?? '';
-        if (!!val && fieldValues[action.custom_store_field_key] === val)
-          state = true;
+
+        let destVal = fieldValues[action.custom_store_field_key];
+        if (isNum(el.repeat)) {
+          if (Array.isArray(val)) val = val[el.repeat] ?? '';
+          if (Array.isArray(destVal)) destVal = destVal[el.repeat] ?? '';
+        }
+        if (!!val && destVal === val) state = true;
       } else if (action.type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
         if (state === null) state = false;
         const productId = getLiveOrTestProduct(
@@ -1821,25 +1825,45 @@ function Form({
 
         // Nested find statements return an item from the outer collection, so
         // short circuit the "some" statement once the field has been found
-        let field: any;
+        let servar: any;
         Object.values(steps).some((step) => {
-          field = step.servar_fields.find(
+          const field = step.servar_fields.find(
             (field: any) => field.servar.key === key
           );
-          if (field) return true;
+          if (field) {
+            servar = field.servar;
+            return true;
+          }
         });
 
         if (isNum(element.repeat) && Array.isArray(val))
           val = val[element.repeat] ?? '';
-        if (field) val = castVal(field.servar.type, val);
 
+        val = castVal(servar?.type, val);
+
+        let destVal = fieldValues[key] as any[];
+        if (servar?.repeated) destVal = destVal[element.repeat ?? 0];
         const setToDefaultValue =
-          action.toggle &&
-          JSON.stringify(fieldValues[key]) === JSON.stringify(val);
+          action.toggle && JSON.stringify(destVal) === JSON.stringify(val);
         if (setToDefaultValue) {
           // could be a hidden field
-          val = field ? getDefaultFieldValue(field) : '';
+          val = servar ? getDefaultFieldValue({ servar }) : '';
         }
+
+        if (servar?.repeated) {
+          destVal = [...(fieldValues[key] as any[])];
+          const curIndex = element.repeat ?? 0;
+          // Repeat index already set via click if retain_click_value
+          if (!action.retain_click_value) destVal[curIndex] = val;
+          if (action.repeat_single) {
+            const defaultVal = getDefaultFieldValue({ servar });
+            for (let i = 0; i < destVal.length; i++) {
+              if (i !== curIndex) destVal[i] = defaultVal;
+            }
+          }
+
+          val = destVal;
+        } else if (action.retain_click_value) continue; // Field already set via click
 
         const newValues = { [key]: val };
         updateFieldValues(newValues, { clearErrors: false });

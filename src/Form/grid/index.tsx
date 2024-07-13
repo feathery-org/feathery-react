@@ -132,8 +132,8 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
         node={node}
         viewport={viewport}
         selected={customClickSelectionState({
-          id: node.key,
-          properties: props
+          ...node,
+          id: node.key
         })}
         runElementActions={runElementActions}
       >
