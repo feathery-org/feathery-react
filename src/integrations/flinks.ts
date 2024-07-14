@@ -34,7 +34,7 @@ export async function openFlinksConnect(
       const loginId = new URLSearchParams(e.data.url).get('loginId');
       if (!loginId) return;
       const data = await setupFlinks(client, loginId);
-      updateFieldValues(data);
+      if (!data.err) updateFieldValues(data.fieldValues);
       return onSuccess();
     }
   });
