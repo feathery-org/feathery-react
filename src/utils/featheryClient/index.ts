@@ -832,13 +832,16 @@ export default class FeatheryClient extends IntegrationClient {
     });
   }
 
-  async rewindCollaboration(templateId: string) {
+  async rewindCollaboration(templateId: string, rewindEmailKey: string) {
     const { userId } = initInfo();
     const data: Record<string, any> = {
       form_key: this.formKey,
       fuser_key: userId,
       template_id: templateId
     };
+    const email = fieldValues[rewindEmailKey];
+    if (email) data.rewind_email = email;
+
     const url = `${API_URL}collaborator/rewind/`;
     return this._fetch(
       url,

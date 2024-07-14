@@ -1789,7 +1789,10 @@ function Form({
         }
       } else if (type === ACTION_REWIND_COLLABORATION) {
         try {
-          await client.rewindCollaboration(action.template_id);
+          await client.rewindCollaboration(
+            action.template_id,
+            action.email_field_key
+          );
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
