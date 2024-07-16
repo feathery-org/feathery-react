@@ -3,6 +3,7 @@ import { isNum } from '../../utils/primitives';
 import { useHotkeys } from 'react-hotkeys-hook';
 import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
+import useOTPListener from '../../hooks/useOTPListener';
 
 function SingleOtpInput({
   index,
@@ -214,6 +215,15 @@ function OtpInput({
     handleOtpChange(newVal);
   };
 
+  const handleSMSOTP = (otpCode: string) => {
+    const splitCode = otpCode.slice(0, numInputs - activeInput).split('');
+    handleMultipleValues(splitCode);
+    if (activeInput + splitCode.length >= numInputs) {
+      setPasted(true);
+    }
+  };
+
+  useOTPListener(handleSMSOTP);
   // Handle pasted OTP
   const handleOnPaste = (e: any) => {
     e.preventDefault();
