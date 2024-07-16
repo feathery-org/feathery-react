@@ -106,6 +106,8 @@ export const getFormContext = (formUuid: string) => {
           defaultClient.flushCustomFields(),
           formState.client.submitQueue
         ]);
+        // submitQueue may have updated when awaiting the first time
+        await formState.client.submitQueue;
       }
       featheryWindow()?.open(url, target, 'noopener');
     },
