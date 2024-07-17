@@ -119,12 +119,11 @@ function SingleOtpInput({
           position: 'relative',
           textAlign: 'center',
           outline: 'none',
-          // border: 'none',
+          border: 'none',
           background: 'none',
           height: '100%',
           width: '100%',
-          ...responsiveStyles.getTarget('field'),
-          border: '2px solid #F008'
+          ...responsiveStyles.getTarget('field')
         }}
         autoComplete={autoComplete ? 'one-time-code' : 'off'}
         inputMode='numeric'
