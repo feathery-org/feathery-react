@@ -3,7 +3,7 @@ import { featheryDoc, featheryWindow } from '../utils/browser';
 export let mixpanelInstalled = false;
 
 export function installMixpanel(mixpanelConfig: any) {
-  if (mixpanelConfig && !mixpanelInstalled) {
+  if (mixpanelConfig && !mixpanelInstalled && !featheryWindow().mixpanel) {
     mixpanelInstalled = true;
 
     (function (f, b) {
