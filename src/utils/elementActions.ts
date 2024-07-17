@@ -49,6 +49,14 @@ export function hasFlowActions(actions: any[]) {
 export const stepEvents = ['submit', 'load'];
 export const elementEvents = ['view', 'change', 'action'];
 
+export function isRunnableStepEventRule(rule: any, curStepId: string) {
+  return (
+    stepEvents.includes(rule.trigger_event) &&
+    (rule.steps.length === 0 ||
+      (rule.steps.length > 0 && rule.steps.includes(curStepId)))
+  );
+}
+
 // Apply steps and elements filters to the applicable event types
 // to determine if the rule should be run.  Some event types support
 // neither filter and will always run.
@@ -67,10 +75,7 @@ export function canRunAction(
     (props[key] && !runAfterEvent) || (!props[key] && runAfterEvent);
 
   if (
-    stepEvents.includes(event) &&
-    (logicRule.steps.length === 0 ||
-      (logicRule.steps.length > 0 &&
-        logicRule.steps.includes(currentStepId))) &&
+    isRunnableStepEventRule(logicRule, currentStepId) &&
     !(event === 'submit' && !isRightSequence)
   )
     return true;
