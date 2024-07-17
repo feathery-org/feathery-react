@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { featheryWindow } from '../utils/browser';
+import { featheryWindow } from '../../../utils/browser';
 
 export default function useOTPListener(onOTP: (otp: string) => void) {
   const onOTPRef = useRef(onOTP);
