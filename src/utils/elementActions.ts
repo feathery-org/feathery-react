@@ -58,44 +58,47 @@ export function canRunAction(
   props: any,
   containerId: string | undefined
 ) {
-  if (![...stepEvents, ...elementEvents].includes(logicRule.trigger_event))
-    return true;
+  const event = logicRule.trigger_event;
+  if (![...stepEvents, ...elementEvents].includes(event)) return true;
+
+  const runAfterEvent = logicRule.metadata?.after_click;
+  const key = event === 'submit' ? 'beforeSubmit' : 'beforeClickActions';
+  const isRightSequence =
+    (props[key] && !runAfterEvent) || (!props[key] && runAfterEvent);
+
   if (
-    stepEvents.includes(logicRule.trigger_event) &&
+    stepEvents.includes(event) &&
     (logicRule.steps.length === 0 ||
-      (logicRule.steps.length > 0 && logicRule.steps.includes(currentStepId)))
+      (logicRule.steps.length > 0 &&
+        logicRule.steps.includes(currentStepId))) &&
+    !(event === 'submit' && !isRightSequence)
   )
     return true;
+
   if (
-    logicRule.trigger_event === 'view' &&
+    event === 'view' &&
     logicRule.elements.includes(
       (props as ContextOnView).visibilityStatus.elementId
     )
   )
     return true;
+
   if (
-    logicRule.trigger_event === 'change' &&
+    event === 'change' &&
     logicRule.elements.includes(
       (props as ContextOnChange | ContextOnAction).trigger._servarId ?? ''
     )
   )
     return true;
 
-  const runAfterClick = logicRule.metadata?.after_click;
-  const isRightSequence =
-    (props.beforeClickActions && !runAfterClick) ||
-    (!props.beforeClickActions && runAfterClick);
-  if (
-    logicRule.trigger_event === 'action' &&
+  return (
+    event === 'action' &&
     isRightSequence &&
     (logicRule.elements.includes(
       (props as ContextOnChange | ContextOnAction).trigger.id
     ) ||
       logicRule.elements.includes(containerId ?? ''))
-  )
-    return true;
-
-  return false;
+  );
 }
 
 // Lower execution order actions are executed before higher execution order actions.

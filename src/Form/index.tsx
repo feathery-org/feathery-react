@@ -651,8 +651,12 @@ function Form({
 
     let logicRan = false;
     if (typeof eventCallbackMap[event] === 'function') {
-      logicRan = true;
-      await eventCallbackMap[event](props);
+      // Don't run submit function twice
+      // @ts-ignore
+      if (event !== 'submit' || props.beforeSubmit) {
+        logicRan = true;
+        await eventCallbackMap[event](props);
+      }
     }
     // filter the logicRules that have trigger_event matching the trigger event (type_)
     if (logicRules) {
@@ -1198,25 +1202,32 @@ function Form({
       }
     }
 
-    // Execute user-provided onSubmit function or submit rules if present
-    if (
-      await runUserLogic('submit', () => ({
-        submitFields: formattedFields,
-        trigger
-      }))
-    ) {
-      // do validation check in case user has manually invalidated the step
-      const invalid = await setFormElementError({
-        formRef,
-        errorType: formSettings.errorType,
-        // Need the latest accrued inlineErrors here.
-        // This could have come potentially from multiple setFieldErrors calls.
-        inlineErrors: internalState[_internalId].inlineErrors,
-        setInlineErrors,
-        triggerErrors: true
-      });
-      if (invalid) return;
-    }
+    const customSubmitCode = async (beforeSubmit: boolean) => {
+      let invalid = false;
+      // Execute user-provided onSubmit function or submit rules if present
+      if (
+        await runUserLogic('submit', () => ({
+          submitFields: formattedFields,
+          trigger,
+          beforeSubmit
+        }))
+      ) {
+        // do validation check in case user has manually invalidated the step
+        invalid = await setFormElementError({
+          formRef,
+          errorType: formSettings.errorType,
+          // Need the latest accrued inlineErrors here.
+          // This could have come potentially from multiple setFieldErrors calls.
+          inlineErrors: internalState[_internalId].inlineErrors,
+          setInlineErrors,
+          triggerErrors: true
+        });
+      }
+      return invalid;
+    };
+
+    let invalid = await customSubmitCode(true);
+    if (invalid) return;
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       let newVal = val.value as any;
@@ -1248,6 +1259,9 @@ function Form({
       formName,
       fieldData
     );
+
+    invalid = await customSubmitCode(false);
+    if (invalid) return;
 
     return [stepPromise];
   };
