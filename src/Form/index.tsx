@@ -153,7 +153,8 @@ import {
   ACTION_TELESIGN_SMS_OTP,
   ACTION_TELESIGN_VERIFY_OTP,
   ACTION_ALLOY_VERIFY_ID,
-  ACTION_TRIGGER_FLINKS
+  ACTION_TRIGGER_FLINKS,
+  isRunnableStepEventRule
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -1260,8 +1261,19 @@ function Form({
       fieldData
     );
 
-    invalid = await customSubmitCode(false);
-    if (invalid) return;
+    const hasSubmitAfter = logicRules.some(
+      (logicRule: any) =>
+        logicRule.trigger_event === 'submit' &&
+        isRunnableStepEventRule(logicRule, activeStep.id) &&
+        logicRule.metadata?.after_click
+    );
+    if (hasSubmitAfter) {
+      // If running submit logic rule after, must finish
+      // submit data first
+      await stepPromise;
+      invalid = await customSubmitCode(false);
+      if (invalid) return;
+    }
 
     return [stepPromise];
   };
