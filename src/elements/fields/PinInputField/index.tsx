@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { isNum } from '../../utils/primitives';
+import { isNum } from '../../../utils/primitives';
 import { useHotkeys } from 'react-hotkeys-hook';
-import useBorder from '../components/useBorder';
-import { hoverStylesGuard } from '../../utils/browser';
+import useBorder from '../../components/useBorder';
+import { hoverStylesGuard } from '../../../utils/browser';
+import useOTPListener from './useOTPListener';
 
 function SingleOtpInput({
   index,
@@ -118,11 +119,12 @@ function SingleOtpInput({
           position: 'relative',
           textAlign: 'center',
           outline: 'none',
-          border: 'none',
+          // border: 'none',
           background: 'none',
           height: '100%',
           width: '100%',
-          ...responsiveStyles.getTarget('field')
+          ...responsiveStyles.getTarget('field'),
+          border: '2px solid #F008'
         }}
         autoComplete={autoComplete ? 'one-time-code' : 'off'}
         inputMode='numeric'
@@ -214,6 +216,15 @@ function OtpInput({
     handleOtpChange(newVal);
   };
 
+  const handleSMSOTP = (otpCode: string) => {
+    const splitCode = otpCode.slice(0, numInputs - activeInput).split('');
+    handleMultipleValues(splitCode);
+    if (activeInput + splitCode.length >= numInputs) {
+      setPasted(true);
+    }
+  };
+
+  useOTPListener(handleSMSOTP);
   // Handle pasted OTP
   const handleOnPaste = (e: any) => {
     e.preventDefault();
