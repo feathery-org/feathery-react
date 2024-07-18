@@ -429,6 +429,8 @@ function applyFieldStyles(field: any, styles: any) {
       });
 
       if (type !== 'qr_scanner') styles.applyHeight('sub-fc');
+      if (type === 'qr_scanner') styles.applyBoxShadow('sub-fc');
+      if (type === 'qr_scanner') styles.applyBorders({ target: 'sub-fc' });
       styles.applyCorners('sub-fc');
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('field');
