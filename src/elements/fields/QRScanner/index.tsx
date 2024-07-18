@@ -268,7 +268,11 @@ function QRScanner({
               </>
             )}
             <div>
-              <button type='button' onClick={() => fileInput.current?.click()}>
+              <button
+                type='button'
+                disabled={disabled}
+                onClick={() => fileInput.current?.click()}
+              >
                 Upload Image to Scan
               </button>
               <input
