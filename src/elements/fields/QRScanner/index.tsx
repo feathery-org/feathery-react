@@ -67,6 +67,12 @@ function CustomScanner({ onSuccess, disabled }: any) {
     loadQRScanner();
   }, [disabled]);
 
+  useEffect(() => {
+    return () => {
+      handleStop();
+    };
+  }, []);
+
   async function scanFile(imageFile: File) {
     // scanner must exist
     if (!scanner.current) {
@@ -189,13 +195,26 @@ function CustomScanner({ onSuccess, disabled }: any) {
                 }}
               />
               <div>
-                <button onClick={fileInput.current?.click}>Gallery</button>
+                <button
+                  type='button'
+                  onClick={() => fileInput.current?.click()}
+                >
+                  Gallery
+                </button>
                 <input
                   ref={fileInput}
                   type='file'
                   accept='image/*'
                   capture='environment'
-                  hidden
+                  style={{
+                    visibility: 'hidden',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    height: 0,
+                    width: 0,
+                    border: 0
+                  }}
                   onChange={(event) => {
                     if (event.target.files && event.target.files.length) {
                       const imageFile = event.target.files[0];
