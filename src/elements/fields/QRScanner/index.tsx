@@ -214,7 +214,7 @@ function QRScanner({
           css={{
             position: 'relative',
             overflow: 'hidden',
-
+            border: '1px solid #e7e7e7',
             ...responsiveStyles.getTarget('sub-fc')
           }}
         >
