@@ -18,24 +18,10 @@ export function loadQRScanner() {
   qrPromise = dynamicImport(QR_SCANNER_LIB_URL);
 }
 
-async function createScanner(id: string) {
+async function createScanner(cameraElementId: string) {
   await qrPromise;
   const window = featheryWindow();
-  for (let i = 0; i < 3; i++) {
-    try {
-      const scanner = new window.Html5Qrcode(id);
-      return scanner;
-    } catch (e) {
-      // TypeError because HTMLScanner object not initialized yet
-      // https://feathery-forms.sentry.io/issues/4870682565/
-      console.error(e);
-      if (!(e instanceof TypeError)) {
-        throw e;
-      }
-    }
-    // Half second delay to make sure it is loaded
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
+  return new window.Html5Qrcode(cameraElementId);
 }
 
 function QRScanner({
