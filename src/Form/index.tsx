@@ -1261,7 +1261,7 @@ function Form({
       fieldData
     );
 
-    const hasSubmitAfter = logicRules.some(
+    const hasSubmitAfter = logicRules?.some(
       (logicRule: any) =>
         logicRule.trigger_event === 'submit' &&
         isRunnableStepEventRule(logicRule, activeStep.id) &&
