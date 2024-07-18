@@ -115,6 +115,8 @@ export const getFormContext = (formUuid: string) => {
       actionIds: IntegrationActionIds,
       options: IntegrationActionOptions
     ) => formState.runIntegrationActions(actionIds, options),
+    runAIExtraction: async (extractionId: string, waitForCompletion = false) =>
+      formState.runAIExtraction(extractionId, !waitForCompletion),
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
       formState.applyAlloyJourney(journeyToken, entities),

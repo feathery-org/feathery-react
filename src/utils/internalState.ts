@@ -59,6 +59,10 @@ export interface FormInternalState {
   ) => void;
   setCalendlyUrl: (url: string) => void;
   runIntegrationActions: RunIntegrationActions;
+  runAIExtraction: (
+    extractionId: string,
+    runAsync: boolean
+  ) => Promise<Record<string, string>>;
   applyAlloyJourney: ApplyAlloyJourney;
 }
 
