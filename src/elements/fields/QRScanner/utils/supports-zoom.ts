@@ -1,5 +1,3 @@
-import { Html5Qrcode } from 'html5-qrcode';
-
 type ZoomSettings = {
   min: number;
   max: number;
@@ -7,7 +5,8 @@ type ZoomSettings = {
   step: number;
 };
 
-export function getZoomSettings(scanner: Html5Qrcode): ZoomSettings | null {
+// TODO: figure out how to type scanner
+export function getZoomSettings(scanner: any): ZoomSettings | null {
   if (!scanner) {
     return null;
   }
