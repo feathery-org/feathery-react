@@ -50,7 +50,7 @@ function QRScanner({
   children
 }: any) {
   const servar = element.servar ?? {};
-  const id = React.useId();
+  const cameraElementId = React.useId();
   const scanner = React.useRef<any>();
   const zoomInput = React.useRef<HTMLInputElement>(null);
   const fileInput = React.useRef<HTMLInputElement>(null);
@@ -76,7 +76,7 @@ function QRScanner({
   async function scanFile(imageFile: File) {
     if (disabled) return;
     if (!scanner.current) {
-      scanner.current = await createScanner(id);
+      scanner.current = await createScanner(cameraElementId);
     }
 
     setMessage('');
@@ -127,7 +127,7 @@ function QRScanner({
   const handleStart = useCallback(async () => {
     if (disabled) return;
     if (!scanner.current) {
-      scanner.current = await createScanner(id);
+      scanner.current = await createScanner(cameraElementId);
     }
     setScanningState(Html5QrcodeScannerState.SCANNING);
     setMessage('');
@@ -232,7 +232,7 @@ function QRScanner({
               paddingBottom: 16
             }}
           >
-            <div id={id} style={{ width: '100%' }} />
+            <div id={cameraElementId} style={{ width: '100%' }} />
 
             {scanningState === Html5QrcodeScannerState.NOT_STARTED && (
               <>
