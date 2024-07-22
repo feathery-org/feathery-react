@@ -1,27 +1,28 @@
-import React, { useEffect, useState } from 'react';
-import { FORM_Z_INDEX } from '../../../utils/styles';
+import React, { useCallback, useEffect } from 'react';
 import { dynamicImport } from '../../../integrations/utils';
-import { featheryDoc, featheryWindow } from '../../../utils/browser';
-import { v4 as uuidv4 } from 'uuid';
+import { FORM_Z_INDEX } from '../../../utils/styles';
 
-const QR_SCANNER_URL = 'https://unpkg.com/html5-qrcode';
+import { selectCamera } from './utils/select-camera';
+import { getZoomSettings } from './utils/supports-zoom';
+import { useDeviceRotation } from './hooks/use-device-rotation';
+import { featheryWindow } from '../../../utils/browser';
+import {
+  Html5QrcodeScannerState,
+  PLACEHOLDER_IMAGE,
+  QR_SCANNER_LIB_URL,
+  SCAN_CONFIG
+} from './constants';
 
 let qrPromise = Promise.resolve();
 export function loadQRScanner() {
-  qrPromise = dynamicImport(QR_SCANNER_URL);
+  qrPromise = dynamicImport(QR_SCANNER_LIB_URL);
 }
 
-const onQRError = (qrDivId: string, onChange: any) => () => {
-  const errorEl = featheryDoc().getElementById(`${qrDivId}__header_message`);
-  if (
-    errorEl?.textContent?.trim() ===
-    'D: No MultiFormat Readers were able to detect the code.'
-  ) {
-    errorEl.textContent =
-      'No QR code detected. Please try with a different image.';
-  }
-  onChange('');
-};
+async function createScanner(cameraElementId: string) {
+  await qrPromise;
+  const window = featheryWindow();
+  return new window.Html5Qrcode(cameraElementId);
+}
 
 function QRScanner({
   element,
@@ -34,95 +35,151 @@ function QRScanner({
   fieldVal = '',
   children
 }: any) {
-  let scanner: any = null;
   const servar = element.servar ?? {};
-  const [qrDivId] = useState(`qr-reader-${uuidv4()}`);
+  const cameraElementId = React.useId();
+  const scanner = React.useRef<any>();
+  const zoomInput = React.useRef<HTMLInputElement>(null);
+  const fileInput = React.useRef<HTMLInputElement>(null);
+  const [message, setMessage] = React.useState('');
+  const [zoomEnabled, setZoomEnabled] = React.useState(false);
+  const selectedCamera = React.useRef<MediaDeviceInfo>();
+  const [scanningState, setScanningState] =
+    React.useState<Html5QrcodeScannerState>(
+      Html5QrcodeScannerState.NOT_STARTED
+    );
 
   useEffect(() => {
     if (disabled) return;
-
     loadQRScanner();
-    qrPromise.then(async () => {
-      if (!scanner) {
-        const window = featheryWindow();
-        for (let i = 0; i < 3; i++) {
-          try {
-            scanner = new window.Html5QrcodeScanner(qrDivId, {
-              fps: 10
-            });
-            break;
-          } catch (e) {
-            // TypeError because HTMLScanner object not initialized yet
-            // https://feathery-forms.sentry.io/issues/4870682565/
-            console.error(e);
-            if (!(e instanceof TypeError)) {
-              throw e;
-            }
-          }
-          // Half second delay to make sure it is loaded
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
-      }
+  }, [disabled]);
 
-      const onSuccess = (decodedText: string) => {
-        if (editMode || !decodedText) return;
-        if (decodedText !== fieldVal) onChange(decodedText);
-      };
-
-      scanner.render(onSuccess, onQRError(qrDivId, onChange));
-    });
-
-    // Creating the variables outside of the setTimeout for the return function to have access to them
-    let scanTypeChangeButton: Element | null, handleClick: () => void;
-    let dropZone: Element | null | undefined, handleDrop: () => void;
-
-    setTimeout(() => {
-      // Had to go this route to ensure we are able to modify the text of the DnD element too.
-      scanTypeChangeButton = featheryDoc().querySelector(
-        `#${qrDivId} #html5-qrcode-anchor-scan-type-change`
-      );
-
-      handleDrop = () => {
-        const dropTextDiv = dropZone
-          ? dropZone.querySelector('div:last-child')
-          : null;
-        if (dropTextDiv) {
-          dropTextDiv.textContent = 'Drop an image to scan';
-        }
-      };
-
-      handleClick = () => {
-        const labelToHide: HTMLLabelElement | null =
-          featheryDoc().querySelector(
-            `#${qrDivId} label[for='html5-qrcode-private-filescan-input']`
-          );
-        const dropZoneParent = featheryDoc().getElementById(
-          `${qrDivId}__dashboard_section_csr`
-        ).parentNode;
-        dropZone = dropZoneParent?.children[1];
-
-        if (dropZone) {
-          dropZone.addEventListener('drop', handleDrop);
-          const dropTextDiv = dropZone.querySelector('div:last-child');
-          if (dropTextDiv) {
-            dropTextDiv.textContent = 'Drop an image to scan';
-          }
-        }
-
-        if (labelToHide) {
-          if (labelToHide?.style) labelToHide.style.display = 'none';
-        }
-      };
-
-      scanTypeChangeButton?.addEventListener('click', handleClick);
-    }, 1000);
-
-    // Clean up the event listener when the component unmounts
+  useEffect(() => {
     return () => {
-      scanTypeChangeButton?.removeEventListener('click', handleClick);
-      dropZone?.removeEventListener('drop', handleDrop);
+      handleStop(true);
     };
   }, []);
+
+  async function scanFile(imageFile: File) {
+    if (disabled) return;
+    if (!scanner.current) {
+      scanner.current = await createScanner(cameraElementId);
+    }
+
+    setMessage('');
+    let cameraId = '';
+    if (scanner.current.getState() === Html5QrcodeScannerState.SCANNING) {
+      const settings = scanner.current.getRunningTrackSettings();
+      cameraId = settings.deviceId;
+      await scanner.current.stop();
+    }
+    scanner.current
+      .scanFileV2(imageFile, false)
+      .then(({ decodedText }: any) => onScanSuccess(decodedText))
+      .catch((err: any) => {
+        console.error(err);
+        setMessage('No QR code detected. Please try with a different image.');
+        if (cameraId) {
+          scanner.current?.start(
+            cameraId,
+            SCAN_CONFIG,
+            onScanSuccess,
+            undefined
+          );
+        }
+      });
+  }
+
+  function applyZoom(value: number) {
+    // scanner must exist
+    if (!scanner.current) {
+      return;
+    }
+    // scanner must be running
+    if (scanner.current.getState() !== 2) {
+      return;
+    }
+    // TODO: figure out how to type this properly
+    scanner.current?.applyVideoConstraints({
+      zoom: value
+    } as any);
+  }
+
+  function onScanSuccess(decodedText: string) {
+    handleStop();
+    if (editMode || !decodedText) return;
+    if (decodedText !== fieldVal) onChange(decodedText);
+  }
+
+  const handleStart = useCallback(async () => {
+    if (disabled) return;
+    if (!scanner.current) {
+      scanner.current = await createScanner(cameraElementId);
+    }
+    setScanningState(Html5QrcodeScannerState.SCANNING);
+    setMessage('');
+    if (scanner.current?.getState() === Html5QrcodeScannerState.NOT_STARTED) {
+      let camera = selectedCamera.current;
+      if (!camera) {
+        camera = await selectCamera();
+        selectedCamera.current = camera;
+        if (!camera) {
+          setMessage('No camera found');
+          return;
+        }
+      }
+      await scanner.current.start(
+        camera.deviceId,
+        SCAN_CONFIG,
+        onScanSuccess,
+        undefined
+      );
+      const zoomSettings = getZoomSettings(scanner.current);
+
+      if (zoomSettings && zoomInput.current) {
+        zoomInput.current.min = zoomSettings.min.toString();
+        zoomInput.current.max = zoomSettings.max.toString();
+        zoomInput.current.step = zoomSettings.step.toString();
+        zoomInput.current.value = zoomSettings.current.toString();
+        setZoomEnabled(true);
+      } else {
+        setZoomEnabled(false);
+      }
+    }
+  }, []);
+
+  const handleStop = useCallback(async (clearScanner = false) => {
+    if (scanner.current) {
+      if (scanner.current?.getState() === Html5QrcodeScannerState.SCANNING) {
+        scanner.current
+          .stop()
+          .catch((e: any) => {
+            console.error('Error stopping scanner:', e);
+          })
+          .finally(() => {
+            if (clearScanner) {
+              scanner.current = null;
+            }
+          });
+      } else if (clearScanner) {
+        scanner.current = null;
+      }
+    }
+
+    if (zoomInput.current) {
+      setZoomEnabled(false);
+      zoomInput.current.value = '1';
+    }
+
+    if (fileInput.current) {
+      fileInput.current.value = '';
+    }
+    setMessage('');
+    setScanningState(Html5QrcodeScannerState.NOT_STARTED);
+  }, []);
+
+  useDeviceRotation(handleStop, {
+    enabled: scanningState === Html5QrcodeScannerState.SCANNING
+  });
 
   return (
     <>
@@ -138,14 +195,96 @@ function QRScanner({
         {...elementProps}
       >
         {children}
-        {fieldLabel}
+        <span style={{ pointerEvents: 'none' }}>{fieldLabel}</span>
         <div
           css={{
             position: 'relative',
+            overflow: 'hidden',
+            border: '1px solid #e7e7e7',
             ...responsiveStyles.getTarget('sub-fc')
           }}
         >
-          <div id={qrDivId} css={{ width: '100%' }} />
+          <div
+            style={{
+              width: '100%',
+              minHeight: 150,
+              textAlign: 'center',
+              position: 'relative',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: 10,
+              paddingBottom: 16
+            }}
+          >
+            <div id={cameraElementId} style={{ width: '100%' }} />
+
+            {scanningState === Html5QrcodeScannerState.NOT_STARTED && (
+              <>
+                <img
+                  width='64'
+                  src={PLACEHOLDER_IMAGE}
+                  alt='Camera based scan'
+                  style={{ opacity: '0.8', marginBottom: 10, marginTop: 16 }}
+                />
+                <button
+                  disabled={disabled}
+                  type='button'
+                  onClick={() => handleStart()}
+                >
+                  {fieldVal ? 'Scan Again' : 'Start Scanning'}
+                </button>
+              </>
+            )}
+            {scanningState === Html5QrcodeScannerState.SCANNING && (
+              <>
+                <input
+                  ref={zoomInput}
+                  style={{ alignSelf: 'stretch', margin: 10 }}
+                  type='range'
+                  hidden={!zoomEnabled}
+                  onChange={(event) => {
+                    applyZoom(Number(event.target.value));
+                  }}
+                />
+                <button type='button' onClick={() => handleStop()}>
+                  Stop Scanning
+                </button>
+              </>
+            )}
+            <div>
+              <button
+                type='button'
+                disabled={disabled}
+                onClick={() => fileInput.current?.click()}
+              >
+                Upload Image to Scan
+              </button>
+              <input
+                ref={fileInput}
+                type='file'
+                accept='image/*'
+                capture='environment'
+                style={{
+                  visibility: 'hidden',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  height: 0,
+                  width: 0,
+                  border: 0
+                }}
+                onChange={(event) => {
+                  if (event.target.files && event.target.files.length) {
+                    const imageFile = event.target.files[0];
+                    scanFile(imageFile);
+                  }
+                }}
+              />
+            </div>
+            {message && <div style={{ paddingTop: 16 }}>{message}</div>}
+          </div>
           {/* This input must always be rendered so we can set field errors */}
           <input
             id={servar.key}

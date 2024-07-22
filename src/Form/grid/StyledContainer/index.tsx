@@ -94,6 +94,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
               zIndex: FORM_Z_INDEX + 1
             }}
             ref={fixedContainerRef}
+            data-feathery-id={node.key}
           >
             <div className='inner-container' css={innerStyles}>
               {children}
@@ -106,6 +107,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           css={isFixed ? { ...styles, visibility: 'hidden' } : styles}
           className={classNames('styled-container', type, className)}
           data-id={node.id}
+          data-feathery-id={node.key}
           {...props}
         >
           {/* An inner container is required to properly size px-height

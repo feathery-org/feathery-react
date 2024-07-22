@@ -419,6 +419,12 @@ function applyFieldStyles(field: any, styles: any) {
         borderRight: `1px solid #${a}`
       }));
       break;
+    case 'qr_scanner':
+      styles.applyBoxShadow('sub-fc');
+      styles.applyBorders({ target: 'sub-fc' });
+      styles.applyCorners('sub-fc');
+      styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
+      break;
     default:
       styles.addTargets('dropdown');
       styles.applyFontStyles('dropdown');
@@ -428,7 +434,7 @@ function applyFieldStyles(field: any, styles: any) {
         return { backgroundColor: `#${color}` };
       });
 
-      if (type !== 'qr_scanner') styles.applyHeight('sub-fc');
+      styles.applyHeight('sub-fc');
       styles.applyCorners('sub-fc');
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('field');
