@@ -123,7 +123,7 @@ const getValuesAsArray = (
       // TODO: this only gets the types for fields on the current form. We need
       //  a solution that will robustly get either the repeatability or type of
       //  ALL fields.
-      isRepeat = Array.isArray(values[0]);
+      isRepeat = isRepeat && Array.isArray(values[0]);
     }
   }
 
