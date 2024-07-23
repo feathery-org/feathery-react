@@ -905,6 +905,16 @@ function Form({
             }));
           }
         },
+        runAIExtraction: async (extractionId: string, runAsync: boolean) => {
+          try {
+            const data = await client.extractAIDocument(extractionId, runAsync);
+            updateFieldValues(data);
+            return data;
+          } catch (err) {
+            console.error(err);
+            return {};
+          }
+        },
         runIntegrationActions,
         applyAlloyJourney
       },
