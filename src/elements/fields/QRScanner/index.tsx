@@ -60,36 +60,6 @@ function QRScanner({
     };
   }, []);
 
-  async function scanFile(imageFile: File) {
-    if (disabled) return;
-    if (!scanner.current) {
-      scanner.current = await createScanner(cameraElementId);
-    }
-
-    setMessage('');
-    let cameraId = '';
-    if (scanner.current.getState() === Html5QrcodeScannerState.SCANNING) {
-      const settings = scanner.current.getRunningTrackSettings();
-      cameraId = settings.deviceId;
-      await scanner.current.stop();
-    }
-    scanner.current
-      .scanFileV2(imageFile, false)
-      .then(({ decodedText }: any) => onScanSuccess(decodedText))
-      .catch((err: any) => {
-        console.error(err);
-        setMessage('No QR code detected. Please try with a different image.');
-        if (cameraId) {
-          scanner.current?.start(
-            cameraId,
-            SCAN_CONFIG,
-            onScanSuccess,
-            undefined
-          );
-        }
-      });
-  }
-
   function applyZoom(value: number) {
     // scanner must exist
     if (!scanner.current) {
@@ -265,35 +235,6 @@ function QRScanner({
                 </button>
               </>
             )}
-            <div>
-              <button
-                type='button'
-                disabled={disabled}
-                onClick={() => fileInput.current?.click()}
-              >
-                Upload Image to Scan
-              </button>
-              <input
-                ref={fileInput}
-                type='file'
-                accept='image/*'
-                style={{
-                  visibility: 'hidden',
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  height: 0,
-                  width: 0,
-                  border: 0
-                }}
-                onChange={(event) => {
-                  if (event.target.files && event.target.files.length) {
-                    const imageFile = event.target.files[0];
-                    scanFile(imageFile);
-                  }
-                }}
-              />
-            </div>
             {scanningState === Html5QrcodeScannerState.SCANNING &&
               cameraList.length > 1 && (
                 <select
