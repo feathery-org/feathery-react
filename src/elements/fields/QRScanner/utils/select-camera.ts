@@ -1,14 +1,9 @@
-/*
- * selects the best camera available on the device to scan QR code
- * currently the way it does this is by taking the last camera in the list of video devices
- * every devices has the 'normal' back camera as the last device in the list
- * this is the most reliable to pick the back camera, and not secondary back cameras like the wide angle one
- */
-export async function selectCamera(): Promise<any> {
-  const devices = await fetchDeviceList();
-  const cameras = devices.filter((device) => device.kind === 'videoinput');
-  return cameras.length ? cameras[cameras.length - 1] : null;
-}
+type CameraDetails = {
+  label: string;
+  deviceId: string;
+  selected?: boolean;
+  capabilities: MediaTrackCapabilities;
+};
 
 // fetch device list, getting permissions if needed
 async function fetchDeviceList(): Promise<MediaDeviceInfo[]> {
@@ -36,4 +31,95 @@ async function fetchDeviceList(): Promise<MediaDeviceInfo[]> {
   }
 
   return devices;
+}
+
+export async function selectCamera(): Promise<any> {
+  const allCameras = await getVideoCamerasAndCapabilities();
+  let possibleCameras = [...allCameras];
+  if (possibleCameras.length === 0) {
+    console.error('No cameras found!');
+    return null;
+  }
+
+  if (possibleCameras.length === 1) {
+    return {
+      bestCamera: possibleCameras[0],
+      allCameras
+    };
+  }
+
+  if (possibleCameras.some(backFacingCamera)) {
+    possibleCameras = possibleCameras.filter(backFacingCamera);
+  }
+
+  if (possibleCameras.some(zoomCamera)) {
+    possibleCameras = possibleCameras.filter(zoomCamera);
+  }
+
+  if (possibleCameras.some(torchCamera)) {
+    possibleCameras = possibleCameras.filter(torchCamera);
+  }
+
+  possibleCameras.sort(sortByFocusDistance);
+
+  return {
+    bestCamera: possibleCameras[0],
+    allCameras
+  };
+}
+
+const backFacingCamera = (camera: CameraDetails) =>
+  camera.capabilities.facingMode?.includes('enviroment');
+const torchCamera = (camera: CameraDetails) =>
+  (camera.capabilities as any).torch;
+const zoomCamera = (camera: CameraDetails) =>
+  (camera.capabilities as any).zoom?.min != null &&
+  (camera.capabilities as any).zoom?.max != null;
+
+const sortByFocusDistance = (a: CameraDetails, b: CameraDetails) => {
+  const aFocus = (a.capabilities as any).focusDistance?.min;
+  const bFocus = (b.capabilities as any).focusDistance?.min;
+
+  if (typeof aFocus === 'number' && typeof bFocus !== 'number') return -1;
+  if (typeof aFocus !== 'number' && typeof bFocus === 'number') return 1;
+  if (typeof aFocus !== 'number' && typeof bFocus !== 'number') return 0;
+  return aFocus - bFocus;
+};
+
+export async function getVideoCamerasAndCapabilities() {
+  try {
+    // Get the list of media devices
+    const devices = await fetchDeviceList();
+
+    // Filter the devices to get only video input devices
+    const videoDevices = devices.filter(
+      (device) => device.kind === 'videoinput'
+    );
+
+    // Create a list to hold the camera details
+    const cameraList: CameraDetails[] = [];
+
+    for (const device of videoDevices) {
+      // Get a stream from the device to access its capabilities
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: device.deviceId }
+      });
+      const track = stream.getVideoTracks()[0];
+      const capabilities = track.getCapabilities();
+      // Add the camera and its capabilities to the list
+      cameraList.push({
+        label: device.label,
+        deviceId: device.deviceId,
+        capabilities: capabilities
+      });
+
+      // Stop the track to release the camera
+      track.stop();
+    }
+
+    return cameraList;
+  } catch (error) {
+    console.error('Error accessing video devices:', error);
+    return [];
+  }
 }

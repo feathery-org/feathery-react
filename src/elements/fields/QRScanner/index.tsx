@@ -42,7 +42,8 @@ function QRScanner({
   const fileInput = React.useRef<HTMLInputElement>(null);
   const [message, setMessage] = React.useState('');
   const [zoomEnabled, setZoomEnabled] = React.useState(false);
-  const selectedCamera = React.useRef<MediaDeviceInfo>();
+  const [cameraList, setCameraList] = React.useState<any>([]);
+  const [selectedCamera, setSelectedCamera] = React.useState<string>('');
   const [scanningState, setScanningState] =
     React.useState<Html5QrcodeScannerState>(
       Html5QrcodeScannerState.NOT_STARTED
@@ -110,7 +111,7 @@ function QRScanner({
     if (decodedText !== fieldVal) onChange(decodedText);
   }
 
-  const handleStart = useCallback(async () => {
+  const handleStart = useCallback(async (cameraId?: string) => {
     if (disabled) return;
     if (!scanner.current) {
       scanner.current = await createScanner(cameraElementId);
@@ -118,17 +119,22 @@ function QRScanner({
     setScanningState(Html5QrcodeScannerState.SCANNING);
     setMessage('');
     if (scanner.current?.getState() === Html5QrcodeScannerState.NOT_STARTED) {
-      let camera = selectedCamera.current;
+      let camera = cameraId ?? selectedCamera;
       if (!camera) {
-        camera = await selectCamera();
-        selectedCamera.current = camera;
+        const result = await selectCamera();
+        if (result) {
+          const { bestCamera, allCameras } = result;
+          setCameraList(allCameras);
+          camera = bestCamera.deviceId;
+          setSelectedCamera(camera);
+        }
         if (!camera) {
           setMessage('No camera found');
           return;
         }
       }
       await scanner.current.start(
-        camera.deviceId,
+        camera,
         SCAN_CONFIG,
         onScanSuccess,
         undefined
@@ -180,6 +186,12 @@ function QRScanner({
   useDeviceRotation(handleStop, {
     enabled: scanningState === Html5QrcodeScannerState.SCANNING
   });
+
+  async function changeCamera(newCameraId: string) {
+    setSelectedCamera(newCameraId);
+    await handleStop();
+    await handleStart(newCameraId);
+  }
 
   return (
     <>
@@ -265,7 +277,6 @@ function QRScanner({
                 ref={fileInput}
                 type='file'
                 accept='image/*'
-                capture='environment'
                 style={{
                   visibility: 'hidden',
                   position: 'absolute',
@@ -283,6 +294,19 @@ function QRScanner({
                 }}
               />
             </div>
+            {scanningState === Html5QrcodeScannerState.SCANNING &&
+              cameraList.length > 1 && (
+                <select
+                  value={selectedCamera}
+                  onChange={(event) => changeCamera(event.target.value)}
+                >
+                  {cameraList.map((camera: any) => (
+                    <option key={camera.deviceId} value={camera.deviceId}>
+                      {camera.label}
+                    </option>
+                  ))}
+                </select>
+              )}
             {message && <div style={{ paddingTop: 16 }}>{message}</div>}
           </div>
           {/* This input must always be rendered so we can set field errors */}
