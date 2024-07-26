@@ -81,47 +81,50 @@ function QRScanner({
     if (decodedText !== fieldVal) onChange(decodedText);
   }
 
-  const handleStart = useCallback(async (cameraId?: string) => {
-    if (disabled) return;
-    if (!scanner.current) {
-      scanner.current = await createScanner(cameraElementId);
-    }
-    setScanningState(Html5QrcodeScannerState.SCANNING);
-    setMessage('');
-    if (scanner.current?.getState() === Html5QrcodeScannerState.NOT_STARTED) {
-      let camera = cameraId ?? selectedCamera;
-      if (!camera) {
-        const result = await selectCamera();
-        if (result) {
-          const { bestCamera, allCameras } = result;
-          setCameraList(allCameras);
-          camera = bestCamera.deviceId;
-          setSelectedCamera(camera);
-        }
+  const handleStart = useCallback(
+    async (cameraId?: string) => {
+      if (disabled) return;
+      if (!scanner.current) {
+        scanner.current = await createScanner(cameraElementId);
+      }
+      setScanningState(Html5QrcodeScannerState.SCANNING);
+      setMessage('');
+      if (scanner.current?.getState() === Html5QrcodeScannerState.NOT_STARTED) {
+        let camera = cameraId ?? selectedCamera;
         if (!camera) {
-          setMessage('No camera found');
-          return;
+          const result = await selectCamera();
+          if (result) {
+            const { bestCamera, allCameras } = result;
+            setCameraList(allCameras);
+            camera = bestCamera.deviceId;
+            setSelectedCamera(camera);
+          }
+          if (!camera) {
+            setMessage('No camera found');
+            return;
+          }
+        }
+        await scanner.current.start(
+          camera,
+          SCAN_CONFIG,
+          onScanSuccess,
+          undefined
+        );
+        const zoomSettings = getZoomSettings(scanner.current);
+
+        if (zoomSettings && zoomInput.current) {
+          zoomInput.current.min = zoomSettings.min.toString();
+          zoomInput.current.max = zoomSettings.max.toString();
+          zoomInput.current.step = zoomSettings.step.toString();
+          zoomInput.current.value = zoomSettings.current.toString();
+          setZoomEnabled(true);
+        } else {
+          setZoomEnabled(false);
         }
       }
-      await scanner.current.start(
-        camera,
-        SCAN_CONFIG,
-        onScanSuccess,
-        undefined
-      );
-      const zoomSettings = getZoomSettings(scanner.current);
-
-      if (zoomSettings && zoomInput.current) {
-        zoomInput.current.min = zoomSettings.min.toString();
-        zoomInput.current.max = zoomSettings.max.toString();
-        zoomInput.current.step = zoomSettings.step.toString();
-        zoomInput.current.value = zoomSettings.current.toString();
-        setZoomEnabled(true);
-      } else {
-        setZoomEnabled(false);
-      }
-    }
-  }, []);
+    },
+    [selectedCamera]
+  );
 
   const handleStop = useCallback(async (clearScanner = false) => {
     if (scanner.current) {
