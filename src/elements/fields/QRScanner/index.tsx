@@ -42,7 +42,8 @@ function QRScanner({
   const fileInput = React.useRef<HTMLInputElement>(null);
   const [message, setMessage] = React.useState('');
   const [zoomEnabled, setZoomEnabled] = React.useState(false);
-  const selectedCamera = React.useRef<MediaDeviceInfo>();
+  const [cameraList, setCameraList] = React.useState<any>([]);
+  const [selectedCamera, setSelectedCamera] = React.useState<string>('');
   const [scanningState, setScanningState] =
     React.useState<Html5QrcodeScannerState>(
       Html5QrcodeScannerState.NOT_STARTED
@@ -58,36 +59,6 @@ function QRScanner({
       handleStop(true);
     };
   }, []);
-
-  async function scanFile(imageFile: File) {
-    if (disabled) return;
-    if (!scanner.current) {
-      scanner.current = await createScanner(cameraElementId);
-    }
-
-    setMessage('');
-    let cameraId = '';
-    if (scanner.current.getState() === Html5QrcodeScannerState.SCANNING) {
-      const settings = scanner.current.getRunningTrackSettings();
-      cameraId = settings.deviceId;
-      await scanner.current.stop();
-    }
-    scanner.current
-      .scanFileV2(imageFile, false)
-      .then(({ decodedText }: any) => onScanSuccess(decodedText))
-      .catch((err: any) => {
-        console.error(err);
-        setMessage('No QR code detected. Please try with a different image.');
-        if (cameraId) {
-          scanner.current?.start(
-            cameraId,
-            SCAN_CONFIG,
-            onScanSuccess,
-            undefined
-          );
-        }
-      });
-  }
 
   function applyZoom(value: number) {
     // scanner must exist
@@ -110,42 +81,50 @@ function QRScanner({
     if (decodedText !== fieldVal) onChange(decodedText);
   }
 
-  const handleStart = useCallback(async () => {
-    if (disabled) return;
-    if (!scanner.current) {
-      scanner.current = await createScanner(cameraElementId);
-    }
-    setScanningState(Html5QrcodeScannerState.SCANNING);
-    setMessage('');
-    if (scanner.current?.getState() === Html5QrcodeScannerState.NOT_STARTED) {
-      let camera = selectedCamera.current;
-      if (!camera) {
-        camera = await selectCamera();
-        selectedCamera.current = camera;
+  const handleStart = useCallback(
+    async (cameraId?: string) => {
+      if (disabled) return;
+      if (!scanner.current) {
+        scanner.current = await createScanner(cameraElementId);
+      }
+      setScanningState(Html5QrcodeScannerState.SCANNING);
+      setMessage('');
+      if (scanner.current?.getState() === Html5QrcodeScannerState.NOT_STARTED) {
+        let camera = cameraId ?? selectedCamera;
         if (!camera) {
-          setMessage('No camera found');
-          return;
+          const result = await selectCamera();
+          if (result) {
+            const { bestCamera, allCameras } = result;
+            setCameraList(allCameras);
+            camera = bestCamera.deviceId;
+            setSelectedCamera(camera);
+          }
+          if (!camera) {
+            setMessage('No camera found');
+            return;
+          }
+        }
+        await scanner.current.start(
+          camera,
+          SCAN_CONFIG,
+          onScanSuccess,
+          undefined
+        );
+        const zoomSettings = getZoomSettings(scanner.current);
+
+        if (zoomSettings && zoomInput.current) {
+          zoomInput.current.min = zoomSettings.min.toString();
+          zoomInput.current.max = zoomSettings.max.toString();
+          zoomInput.current.step = zoomSettings.step.toString();
+          zoomInput.current.value = zoomSettings.current.toString();
+          setZoomEnabled(true);
+        } else {
+          setZoomEnabled(false);
         }
       }
-      await scanner.current.start(
-        camera.deviceId,
-        SCAN_CONFIG,
-        onScanSuccess,
-        undefined
-      );
-      const zoomSettings = getZoomSettings(scanner.current);
-
-      if (zoomSettings && zoomInput.current) {
-        zoomInput.current.min = zoomSettings.min.toString();
-        zoomInput.current.max = zoomSettings.max.toString();
-        zoomInput.current.step = zoomSettings.step.toString();
-        zoomInput.current.value = zoomSettings.current.toString();
-        setZoomEnabled(true);
-      } else {
-        setZoomEnabled(false);
-      }
-    }
-  }, []);
+    },
+    [selectedCamera]
+  );
 
   const handleStop = useCallback(async (clearScanner = false) => {
     if (scanner.current) {
@@ -180,6 +159,12 @@ function QRScanner({
   useDeviceRotation(handleStop, {
     enabled: scanningState === Html5QrcodeScannerState.SCANNING
   });
+
+  async function changeCamera(newCameraId: string) {
+    setSelectedCamera(newCameraId);
+    await handleStop();
+    await handleStart(newCameraId);
+  }
 
   return (
     <>
@@ -253,36 +238,19 @@ function QRScanner({
                 </button>
               </>
             )}
-            <div>
-              <button
-                type='button'
-                disabled={disabled}
-                onClick={() => fileInput.current?.click()}
-              >
-                Upload Image to Scan
-              </button>
-              <input
-                ref={fileInput}
-                type='file'
-                accept='image/*'
-                capture='environment'
-                style={{
-                  visibility: 'hidden',
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  height: 0,
-                  width: 0,
-                  border: 0
-                }}
-                onChange={(event) => {
-                  if (event.target.files && event.target.files.length) {
-                    const imageFile = event.target.files[0];
-                    scanFile(imageFile);
-                  }
-                }}
-              />
-            </div>
+            {scanningState === Html5QrcodeScannerState.SCANNING &&
+              cameraList.length > 1 && (
+                <select
+                  value={selectedCamera}
+                  onChange={(event) => changeCamera(event.target.value)}
+                >
+                  {cameraList.map((camera: any) => (
+                    <option key={camera.deviceId} value={camera.deviceId}>
+                      {camera.label}
+                    </option>
+                  ))}
+                </select>
+              )}
             {message && <div style={{ paddingTop: 16 }}>{message}</div>}
           </div>
           {/* This input must always be rendered so we can set field errors */}
