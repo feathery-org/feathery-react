@@ -132,10 +132,12 @@ import {
   ACTION_REMOVE_PRODUCT_FROM_PURCHASE,
   ACTION_SEND_MAGIC_LINK,
   ACTION_SEND_SMS_CODE,
+  ACTION_SEND_EMAIL_CODE,
   ACTION_STORE_FIELD,
   ACTION_TRIGGER_PLAID,
   ACTION_URL,
   ACTION_VERIFY_SMS,
+  ACTION_VERIFY_EMAIL,
   ACTION_TRIGGER_ARGYLE,
   REQUIRED_FLOW_ACTIONS,
   hasFlowActions,
@@ -1751,12 +1753,29 @@ function Form({
           setElementError('Your phone number is invalid or requested too much');
           break;
         }
-      } else if (type === ACTION_VERIFY_SMS) {
+      } else if (type === ACTION_SEND_EMAIL_CODE) {
+        const emailAddress = fieldValues[action.email_field_key] as string;
+        if (validators.email(emailAddress)) {
+          try {
+            await client.sendEmailOTP(emailAddress);
+          } catch (e) {
+            setElementError((e as Error).message);
+            break;
+          }
+        } else {
+          setElementError('Your email address is invalid');
+          break;
+        }
+      } else if ([ACTION_VERIFY_EMAIL, ACTION_VERIFY_SMS].includes(type)) {
         const pinKey = action.auth_target_field_key;
         const pin = fieldValues[pinKey] as string;
         const params = { fieldVal: pin, featheryClient: client };
         let hasErr = false;
-        await Auth.verifySms(params).catch((e: Error) => {
+        const prom =
+          type === ACTION_VERIFY_EMAIL
+            ? client.verifyOTP(pin, 'email-otp')
+            : Auth.verifySMSOTP(params);
+        await prom.catch((e: Error) => {
           let message = '';
           if (e.message === 'Please try again')
             message = 'Your code is invalid';
