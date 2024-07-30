@@ -97,13 +97,15 @@ export default class Field {
   _getFormSpecificProps(): {
     type: string;
     displayText: string;
+    required: boolean;
     onThisForm: boolean;
   } {
     const field = this._getSourceField();
     const type = field ? field.servar.type : '';
     const displayText = field ? field.servar.name : '';
+    const required = field ? field.servar.required : false;
     const onThisForm = !!field;
-    return { type, displayText, onThisForm };
+    return { type, displayText, required, onThisForm };
   }
 
   _getSourceField(): any {
@@ -166,8 +168,12 @@ export default class Field {
   }
 
   get required(): boolean {
-    const field = this._getSourceField();
-    return field.servar.required;
+    const { required, onThisForm } = this._getFormSpecificProps();
+    if (!onThisForm)
+      console.warn(
+        'The required property is only available for fields in this form'
+      );
+    return required;
   }
 
   set required(flag: boolean) {
