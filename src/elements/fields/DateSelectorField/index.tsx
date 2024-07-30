@@ -248,6 +248,7 @@ function DateSelectorField({
           dropdownMode='select'
           // Open up calendar as a modal in mobile
           withPortal={isTouchDevice()}
+          portalId={isTouchDevice() ? 'feathery-portal' : undefined}
           aria-label={element.properties.aria_label}
           css={{
             height: '100%',
