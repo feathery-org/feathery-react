@@ -291,7 +291,6 @@ function Form({
   const formOffReason = useRef('');
   const [formSettings, setFormSettings] = useState({
     readOnly,
-
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
