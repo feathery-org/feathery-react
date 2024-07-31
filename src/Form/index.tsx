@@ -178,6 +178,7 @@ import {
 import { verifyAlloyId } from '../integrations/alloy';
 import { openFlinksConnect } from '../integrations/flinks';
 import { isNum } from '../utils/primitives';
+import { getSignUrl } from '../utils/document';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -1849,9 +1850,7 @@ function Form({
         await client.generateEnvelopes(action);
         // waiting 4 seconds for documents to generate before redirect
         setTimeout(() => {
-          openTab(
-            `https://document.feathery.io/to/${initState._internalUserId}`
-          );
+          openTab(getSignUrl());
         }, 4000);
       } else if (type === ACTION_STORE_FIELD) {
         const key = action.custom_store_field_key;

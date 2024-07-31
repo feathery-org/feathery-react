@@ -53,6 +53,7 @@ type InitState = {
   defaultErrors: Record<string, string>;
   isTestEnv: boolean;
   theme: string;
+  region: string;
   initNoSave: boolean;
   _internalUserId: string;
 } & InitOptions;
@@ -79,7 +80,8 @@ const initState: InitState = {
   remountCallbacks: {},
   isTestEnv: false,
   initNoSave: false,
-  theme: ''
+  theme: '',
+  region: ''
 };
 let fieldValues: FieldValues = {};
 let filePathMap: Record<string, null | string | (string | null)[]> = {};
@@ -102,7 +104,9 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   initState.initialized = true;
 
   initState.sdkKey = sdkKey;
-  updateRegionApiUrls(options._enterpriseRegion ?? '');
+  if (options._enterpriseRegion)
+    initState.region = options._enterpriseRegion.toLowerCase();
+  updateRegionApiUrls(initState.region);
 
   if (options.userId) {
     initState.userId = options.userId;
