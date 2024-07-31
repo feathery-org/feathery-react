@@ -345,12 +345,13 @@ export default class IntegrationClient {
     const { userId } = initInfo();
     const signer = fieldValues[action.envelope_signer_field_key];
     const payload: Record<string, any> = {
+      form_key: this.formKey,
       fuser_key: userId,
       documents: action.documents ?? [],
-      signer_email: signer
+      signer_email: signer,
+      use_quik: action.quik_documents
     };
-    if (action.quik_documents)
-      payload.quik = fieldValues[action.quik_json_field_key];
+
     const url = `${API_URL}document/form/generate/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
