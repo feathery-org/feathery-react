@@ -163,7 +163,6 @@ function _fetchFormData(formIds: string[]) {
     formClient.fetchCacheForm().then((stepsResponse: any) => {
       initState.formSchemas[key] = stepsResponse;
     });
-    formClient.fetchSession();
   });
 }
 
