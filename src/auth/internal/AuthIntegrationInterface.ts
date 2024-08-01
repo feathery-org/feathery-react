@@ -82,13 +82,13 @@ function sendSms(phoneNum: string, featheryClient: any) {
   }
 }
 
-function verifySms(params: {
+function verifySMSOTP(params: {
   fieldVal: string;
   featheryClient: any;
 }): Promise<any> {
   if (authState.authType === 'stytch') return stytchVerifySms(params);
   else if (authState.authType === 'firebase') return firebaseVerifySms(params);
-  else return params.featheryClient.verifySMSOTP(params.fieldVal);
+  else return params.featheryClient.verifyOTP(params.fieldVal, 'sms-otp');
 }
 
 function sendMagicLink(email: string) {
@@ -160,7 +160,7 @@ export default {
   isThereAnExistingSession,
   inferAuthLogout,
   sendSms,
-  verifySms,
+  verifySMSOTP,
   sendMagicLink,
   oauthRedirect,
   initializeAuthClientListeners,

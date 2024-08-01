@@ -26,6 +26,10 @@ export const getPrivateActions = (formUuid: string) => {
     _sendEmail: (templateId: string) => {
       const { client } = internalState[formUuid];
       return client.sendEmail(templateId);
+    },
+    _sendEmailOTP: (emailAddress: string) => {
+      const { client } = internalState[formUuid];
+      return client.sendEmailOTP(emailAddress);
     }
   };
 };

@@ -277,6 +277,27 @@ export default class IntegrationClient {
     );
   }
 
+  async sendEmailOTP(receiverEmail: string) {
+    const { userId } = initInfo();
+    const url = `${API_URL}otp/send/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        email_address: receiverEmail,
+        form_key: this.formKey,
+        fuser_key: userId,
+        type: 'email-otp'
+      })
+    };
+    return this._fetch(url, options, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseError(await response.json()));
+      }
+    });
+  }
+
   async sendSMSMessage(phoneNumber: string, message: any) {
     const { userId } = initInfo();
     const url = `${API_URL}otp/send/`;
@@ -299,13 +320,18 @@ export default class IntegrationClient {
     });
   }
 
-  async verifySMSOTP(otp: string) {
+  async verifyOTP(otp: string, type: string) {
     const { userId } = initInfo();
     const url = `${API_URL}otp/verify/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
-      body: JSON.stringify({ otp, fuser_key: userId, form_key: this.formKey })
+      body: JSON.stringify({
+        otp,
+        fuser_key: userId,
+        form_key: this.formKey,
+        otp_type: type
+      })
     };
     return this._fetch(url, options, false).then(async (response) => {
       if (response) {
