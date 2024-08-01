@@ -352,6 +352,10 @@ export default class IntegrationClient {
       use_quik: action.quik_documents
     };
 
+    if (action.quik_tags_field_key) {
+      payload.quik_tags = fieldValues[action.quik_tags_field_key];
+    }
+
     const url = `${API_URL}document/form/generate/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
