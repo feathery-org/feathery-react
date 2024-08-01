@@ -353,7 +353,13 @@ export default class IntegrationClient {
     };
 
     if (action.quik_tags_field_key) {
-      payload.quik_tags = fieldValues[action.quik_tags_field_key];
+      if (typeof fieldValues[action.quik_tags_field_key] === 'string') {
+        payload.quik_tags = (fieldValues[action.quik_tags_field_key] as string)
+          .split(',')
+          .map((tag) => tag.trim());
+      } else {
+        payload.quik_tags = fieldValues[action.quik_tags_field_key];
+      }
     }
 
     const url = `${API_URL}document/form/generate/`;
