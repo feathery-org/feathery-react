@@ -88,6 +88,7 @@ import { featheryWindow, openTab, runningInClient } from '../utils/browser';
 import FormOff, {
   CLOSED,
   COLLAB_COMPLETED,
+  COLLAB_DIRECT_DISABLED,
   FILLED_OUT,
   NO_BUSINESS_EMAIL
 } from '../elements/components/FormOff';
@@ -1043,6 +1044,8 @@ function Form({
           formOffReason.current = CLOSED;
         else if (session.collaborator?.completed)
           formOffReason.current = COLLAB_COMPLETED;
+        else if (session.collaborator?.direct_submission_disabled)
+          formOffReason.current = COLLAB_DIRECT_DISABLED;
         else if (session.no_business_email)
           formOffReason.current = NO_BUSINESS_EMAIL;
         if (formOffReason.current) {
@@ -2119,7 +2122,9 @@ function Form({
   if (formOffReason.current === CLOSED)
     return <FormOff showCTA={formSettings.showBrand} />;
   else if (
-    [COLLAB_COMPLETED, NO_BUSINESS_EMAIL].includes(formOffReason.current)
+    [COLLAB_COMPLETED, COLLAB_DIRECT_DISABLED, NO_BUSINESS_EMAIL].includes(
+      formOffReason.current
+    )
   )
     return <FormOff reason={formOffReason.current} showCTA={false} />;
   else if (anyFinished) {

@@ -392,9 +392,10 @@ export default class FeatheryClient extends IntegrationClient {
     });
 
     // Turn form off if invalid collaborator for submission
-    if (session.collaborator?.invalid || session.collaborator?.completed)
+    const collab = session.collaborator ?? {};
+    if (collab.invalid || collab.completed || collab.direct_submission_disabled)
       // will cause form to be disabled
-      return [{ collaborator: session.collaborator }];
+      return [{ collaborator: collab }];
 
     // If tracking disabled or ID overridden, update user id from backend
     if (!noData && session.new_user_id) initState.userId = session.new_user_id;
