@@ -352,13 +352,17 @@ export default class IntegrationClient {
       use_quik: action.quik_documents
     };
 
+    const fieldVal = fieldValues[action.quik_tags_field_key];
+
     if (action.quik_tags_field_key) {
-      if (typeof fieldValues[action.quik_tags_field_key] === 'string') {
-        payload.quik_tags = (fieldValues[action.quik_tags_field_key] as string)
+      if (typeof fieldVal === 'string') {
+        payload.quik_tags = (fieldVal as string)
           .split(',')
           .map((tag) => tag.trim());
+      } else if (fieldVal instanceof Array) {
+        payload.quik_tags = fieldVal;
       } else {
-        payload.quik_tags = fieldValues[action.quik_tags_field_key];
+        payload.quik_tags = [JSON.stringify(fieldVal)];
       }
     }
 
