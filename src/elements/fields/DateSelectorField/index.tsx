@@ -297,7 +297,7 @@ const CustomMaskedInput = React.forwardRef((props: any, ref) => {
       blocks: {
         dd: { mask: IMask.MaskedRange, from: 1, to: 31, maxLength: 2 },
         MM: { mask: IMask.MaskedRange, from: 1, to: 12, maxLength: 2 },
-        yyyy: { mask: IMask.MaskedRange, from: 1900, to: 2099 },
+        yyyy: { mask: IMask.MaskedRange, from: 1, to: 9999, maxLength: 4 },
         HH: { mask: IMask.MaskedRange, from: 0, to: 23, maxLength: 2 },
         hh: { mask: IMask.MaskedRange, from: 1, to: 12, maxLength: 2 },
         mm: { mask: IMask.MaskedRange, from: 0, to: 59, maxLength: 2 },
