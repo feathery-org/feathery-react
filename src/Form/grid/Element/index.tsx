@@ -274,16 +274,10 @@ const Element = ({ node: el, form }: any) => {
           <Elements.DateSelectorField
             {...fieldProps}
             value={fieldVal}
-            onChange={(val: any) => {
-              // this value is inferred/incomplete so we dont trigger errors or logic
-              changeValue(val, el, index, false, false);
-            }}
             onComplete={(val: any) => {
-              // this value is complete so we trigger errors and logic
-              // onChange is unconditional because onChange is sometimes called first
-              // so the value could be unchanged
-              changeValue(val, el, index);
-              onChange();
+              const change = changeValue(val, el, index);
+
+              if (change) onChange();
             }}
             setRef={(ref: any) => {
               if (focusRef.current === el.id) focusRef.current = ref;
