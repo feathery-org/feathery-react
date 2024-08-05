@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
@@ -289,36 +289,31 @@ function DateSelectorField({
 
 export default memo(DateSelectorField);
 
-const CustomMaskedInput = React.forwardRef((props: any, ref) => {
-  const { onChange, dateMask, ...rest } = props;
-  const maskOptions = useMemo(
-    () => ({
-      mask: dateMask,
-      blocks: {
-        dd: { mask: IMask.MaskedRange, from: 1, to: 31, maxLength: 2 },
-        MM: { mask: IMask.MaskedRange, from: 1, to: 12, maxLength: 2 },
-        yyyy: { mask: IMask.MaskedRange, from: 1, to: 9999, maxLength: 4 },
-        HH: { mask: IMask.MaskedRange, from: 0, to: 23, maxLength: 2 },
-        hh: { mask: IMask.MaskedRange, from: 1, to: 12, maxLength: 2 },
-        mm: { mask: IMask.MaskedRange, from: 0, to: 59, maxLength: 2 },
-        aa: { mask: IMask.MaskedEnum, enum: ['AM', 'PM'] }
-      }
-    }),
-    [dateMask]
-  );
+const dateBlocks = {
+  dd: { mask: IMask.MaskedRange, from: 1, to: 31, maxLength: 2 },
+  MM: { mask: IMask.MaskedRange, from: 1, to: 12, maxLength: 2 },
+  yyyy: { mask: IMask.MaskedRange, from: 1, to: 9999, maxLength: 4 },
+  HH: { mask: IMask.MaskedRange, from: 0, to: 23, maxLength: 2 },
+  hh: { mask: IMask.MaskedRange, from: 1, to: 12, maxLength: 2 },
+  mm: { mask: IMask.MaskedRange, from: 0, to: 59, maxLength: 2 },
+  aa: { mask: IMask.MaskedEnum, enum: ['AM', 'PM'] }
+} as const;
 
-  return (
-    <IMaskInput
-      {...rest}
-      onChange={undefined}
-      ref={ref}
-      mask={maskOptions.mask}
-      blocks={maskOptions.blocks}
-      onAccept={(value) => {
-        onChange({ target: { value } });
-      }}
-    />
-  );
-});
+const CustomMaskedInput = React.forwardRef(
+  ({ onChange, dateMask, ...rest }: any, ref) => {
+    return (
+      <IMaskInput
+        {...rest}
+        onChange={undefined}
+        ref={ref}
+        mask={dateMask}
+        blocks={dateBlocks}
+        onAccept={(value) => {
+          onChange({ target: { value } });
+        }}
+      />
+    );
+  }
+);
 
 export { CustomMaskedInput };
