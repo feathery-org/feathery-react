@@ -4,9 +4,10 @@
 function justInsert(list: any, element: any, index: any, replace = true) {
   const newList = [...list];
 
-  // Add padding if the index is beyond the current length of the list
+  // Add null values if the index is beyond the current length of the list
   if (index >= newList.length) {
     newList.length = index;
+    newList.fill(null, list.length, index);
   }
 
   return [
