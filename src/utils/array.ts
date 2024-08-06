@@ -2,10 +2,17 @@
  * Inserts an element into a list without side effects.
  */
 function justInsert(list: any, element: any, index: any, replace = true) {
+  const newList = [...list];
+
+  // Add padding if the index is beyond the current length of the list
+  if (index >= newList.length) {
+    newList.length = index;
+  }
+
   return [
-    ...list.slice(0, index),
+    ...newList.slice(0, index),
     element,
-    ...list.slice(replace ? index + 1 : index)
+    ...newList.slice(replace ? index + 1 : index)
   ];
 }
 
