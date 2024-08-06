@@ -353,28 +353,17 @@ export default class IntegrationClient {
     };
 
     if (action.quik_documents) {
-      payload.quik_props = {
-        form_fill_type: action.form_fill_type
-      };
-
-      if (action.form_fill_type === 'html') {
-        payload.quik_props.html_url_field = {
-          id: action.quik_html_url_field,
-          type: action.quik_html_url_field_type
-        };
-      }
-
       const fieldVal = fieldValues[action.quik_tags_field_key];
 
       if (action.quik_tags_field_key) {
         if (typeof fieldVal === 'string') {
-          payload.quik_props.tags = (fieldVal as string)
+          payload.quik_tags = (fieldVal as string)
             .split(',')
             .map((tag) => tag.trim());
         } else if (fieldVal instanceof Array) {
-          payload.quik_props.tags = fieldVal;
+          payload.quik_tags = fieldVal;
         } else {
-          payload.quik_props.tags = [JSON.stringify(fieldVal)];
+          payload.quik_tags = [JSON.stringify(fieldVal)];
         }
       }
     }
