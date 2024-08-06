@@ -73,7 +73,6 @@ function QRScanner({
     if (scanner.current.getState() !== Html5QrcodeScannerState.SCANNING) {
       return;
     }
-    alert(`applyZoom: ${value}`);
     // TODO: figure out how to type this properly
     scanner.current?.applyVideoConstraints({
       zoom: value
@@ -89,6 +88,7 @@ function QRScanner({
   const handleStart = useCallback(
     async (cameraId?: string) => {
       if (disabled) return;
+      let shouldUseZoomPreference = false;
       if (!scanner.current) {
         scanner.current = await createScanner(cameraElementId);
       }
@@ -103,7 +103,16 @@ function QRScanner({
           if (result) {
             const { bestCamera, allCameras } = result;
             setCameraList(allCameras);
-            camera = cameraPreference?.device_id ?? bestCamera.deviceId;
+            camera = bestCamera.deviceId;
+            if (
+              cameraPreference?.device_id &&
+              allCameras.some(
+                (cam: any) => cam.deviceId === cameraPreference?.device_id
+              )
+            ) {
+              camera = cameraPreference?.device_id;
+              shouldUseZoomPreference = true;
+            }
             setSelectedCamera(camera);
           }
           if (!camera) {
@@ -124,15 +133,13 @@ function QRScanner({
           zoomInput.current.max = zoomSettings.max.toString();
           zoomInput.current.step = zoomSettings.step.toString();
           const currentZoom =
-            cameraPreference?.zoom != null
+            shouldUseZoomPreference && cameraPreference?.zoom != null
               ? Math.min(
                   Math.max(cameraPreference.zoom, zoomSettings.min),
                   zoomSettings.max
                 )
               : zoomSettings.current;
-          alert('currentZoom: ' + currentZoom);
           zoomInput.current.value = currentZoom.toString();
-          alert('currValue: ' + zoomInput.current.value);
           applyZoom(currentZoom);
           setZoomEnabled(true);
         } else {
@@ -146,7 +153,6 @@ function QRScanner({
   const handleStop = useCallback(async (clearScanner = false) => {
     if (scanner.current) {
       if (scanner.current?.getState() === Html5QrcodeScannerState.SCANNING) {
-        alert(zoomInput.current ? Number(zoomInput.current.value) : undefined);
         setCameraPreferences({
           device_id: scanner.current.getRunningTrackSettings().deviceId,
           zoom: zoomInput.current ? Number(zoomInput.current.value) : undefined
@@ -168,6 +174,7 @@ function QRScanner({
 
     if (zoomInput.current) {
       setZoomEnabled(false);
+      zoomInput.current.value = '1';
     }
 
     if (fileInput.current) {
