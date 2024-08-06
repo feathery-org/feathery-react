@@ -1870,13 +1870,11 @@ function Form({
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
         await client.generateEnvelopes(action);
         // waiting 4 seconds for documents to generate before redirect
-        setTimeout(() => {
-          openTab(
-            action.form_fill_type === 'pdf'
-              ? getSignUrl()
-              : fieldValues[action.quik_html_url_field_key]
-          );
-        }, 4000);
+        if (integrations?.quik?.metadata.form_fill_type === 'pdf') {
+          setTimeout(() => {
+            openTab(getSignUrl());
+          }, 4000);
+        }
       } else if (type === ACTION_STORE_FIELD) {
         const key = action.custom_store_field_key;
         if (!key) continue;
