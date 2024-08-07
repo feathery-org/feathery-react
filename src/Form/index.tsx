@@ -1868,12 +1868,19 @@ function Form({
           break;
         }
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
-        await client.generateEnvelopes(action);
-        // waiting 4 seconds for documents to generate before redirect
-        if (integrations?.quik?.metadata.form_fill_type === 'pdf') {
-          setTimeout(() => {
-            openTab(getSignUrl());
-          }, 4000);
+        try {
+          const newValues = await client.generateEnvelopes(action);
+          // waiting 4 seconds for documents to generate before redirect
+          if (integrations?.quik?.metadata.form_fill_type === 'pdf') {
+            setTimeout(() => {
+              openTab(getSignUrl());
+            }, 4000);
+          } else {
+            updateFieldValues(newValues);
+          }
+        } catch (e: any) {
+          setElementError((e as Error).message);
+          break;
         }
       } else if (type === ACTION_STORE_FIELD) {
         const key = action.custom_store_field_key;
