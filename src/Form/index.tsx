@@ -1869,10 +1869,7 @@ function Form({
         }
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
         await client.generateEnvelopes(action);
-        // waiting 4 seconds for documents to generate before redirect
-        setTimeout(() => {
-          openTab(getSignUrl());
-        }, 4000);
+        openTab(getSignUrl());
       } else if (type === ACTION_STORE_FIELD) {
         const key = action.custom_store_field_key;
         if (!key) continue;
