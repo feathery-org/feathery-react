@@ -385,15 +385,15 @@ export default class IntegrationClient {
 
     if (action.quik_tags_field_key) {
       if (typeof fieldVal === 'string') {
-        payload.quik_tags = (fieldVal as string)
-          .split(',')
-          .map((tag) => tag.trim());
+        payload.tags = (fieldVal as string).split(',').map((tag) => tag.trim());
       } else if (fieldVal instanceof Array) {
-        payload.quik_tags = fieldVal;
+        payload.tags = fieldVal;
       } else {
-        payload.quik_tags = [JSON.stringify(fieldVal)];
+        payload.tags = [JSON.stringify(fieldVal)];
       }
     }
+
+    console.log(payload);
 
     const url = `${API_URL}quik/document/`;
     const options = {
