@@ -76,7 +76,6 @@ function DateSelectorField({
   repeatIndex = null,
   editMode,
   rightToLeft,
-  onChange = () => {},
   onComplete = () => {},
   onEnter = () => {},
   setRef = () => {},
@@ -142,14 +141,13 @@ function DateSelectorField({
   };
 
   // Updates the date value on change, if the calendar is closed,
-  // picking date is complete and onComplete is ran
+  // picking date is complete and onComplete is run
   // onSelect cannot run onComplete because it runs on day click and
   // not when time is selected if enabled
-  const onDateChange = (newDate: any, isComplete = false) => {
-    const callback = isComplete ? onComplete : onChange;
+  const onDateComplete = (newDate: any) => {
     newDate = newDate ?? '';
     setInternalDate(newDate);
-    callback(formatDateString(newDate, servarMeta));
+    onComplete(formatDateString(newDate, servarMeta));
   };
 
   const { borderStyles, customBorder } = useBorder({
@@ -216,10 +214,8 @@ function DateSelectorField({
             handleCalendarClose();
             // the calendar closes on blur, select, or modal close on mobile
             // this ensures the date is updated on close and triggers logic rules
-            onDateChange(internalDate, true);
+            onDateComplete(internalDate);
           }}
-          onSelect={(date: any) => onDateChange(date)} // when day is clicked
-          onChange={(date: any) => onDateChange(date)} // only when value has changed
           onFocus={(e: any) => {
             if (isTouchDevice()) {
               // hide keyboard on mobile focus
@@ -300,18 +296,9 @@ const dateBlocks = {
 } as const;
 
 const CustomMaskedInput = React.forwardRef(
-  ({ onChange, dateMask, ...rest }: any, ref) => {
+  ({ dateMask, ...rest }: any, ref) => {
     return (
-      <IMaskInput
-        {...rest}
-        onChange={undefined}
-        ref={ref}
-        mask={dateMask}
-        blocks={dateBlocks}
-        onAccept={(value) => {
-          onChange({ target: { value } });
-        }}
-      />
+      <IMaskInput {...rest} ref={ref} mask={dateMask} blocks={dateBlocks} />
     );
   }
 );
