@@ -1049,8 +1049,8 @@ function Form({
           formOffReason.current = COLLAB_COMPLETED;
         else if (session.collaborator?.direct_submission_disabled)
           formOffReason.current = COLLAB_DIRECT_DISABLED;
-        else if (session.no_business_email)
-          formOffReason.current = NO_BUSINESS_EMAIL;
+        // else if (session.no_business_email)
+        //   formOffReason.current = NO_BUSINESS_EMAIL;
         if (formOffReason.current) {
           setRender((render) => ({ ...render }));
           return;
@@ -1870,6 +1870,7 @@ function Form({
         }
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
         try {
+          await client.generateEnvelopes(action);
           openTab(getSignUrl());
         } catch (e: any) {
           setElementError((e as Error).message);
