@@ -150,7 +150,7 @@ import {
   ACTION_REWIND_COLLABORATION,
   ACTION_AI_DOCUMENT_EXTRACT,
   ACTION_OPEN_FUSER_ENVELOPES,
-  ACTION_GENERATE_QUIK_ENVELOPES,
+  ACTION_GENERATE_QUIK_DOCUMENTS,
   ACTION_TELESIGN_SILENT_VERIFICATION,
   ACTION_TELESIGN_PHONE_TYPE,
   ACTION_TELESIGN_VOICE_OTP,
@@ -1049,8 +1049,8 @@ function Form({
           formOffReason.current = COLLAB_COMPLETED;
         else if (session.collaborator?.direct_submission_disabled)
           formOffReason.current = COLLAB_DIRECT_DISABLED;
-        // else if (session.no_business_email)
-        //   formOffReason.current = NO_BUSINESS_EMAIL;
+        else if (session.no_business_email)
+          formOffReason.current = NO_BUSINESS_EMAIL;
         if (formOffReason.current) {
           setRender((render) => ({ ...render }));
           return;
@@ -1876,7 +1876,7 @@ function Form({
           setElementError((e as Error).message);
           break;
         }
-      } else if (type === ACTION_GENERATE_QUIK_ENVELOPES) {
+      } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {
         try {
           const newValues = await client.generateQuikEnvelopes(action);
           updateFieldValues(newValues);
