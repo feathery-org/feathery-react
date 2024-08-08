@@ -366,16 +366,12 @@ export default class IntegrationClient {
   }
 
   generateQuikEnvelopes(action: Record<string, string>) {
-    console.log('action');
-    console.log(action);
     const { userId } = initInfo();
     const payload: Record<string, any> = {
       form_key: this.formKey,
       fuser_key: userId,
       form_fill_type: action.form_fill_type
     };
-
-    console.log('HELLO FROM NEW QUIK ENV ACTION');
 
     if (action.form_fill_type === 'html') {
       if (!action.html_url_field)
