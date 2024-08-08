@@ -2,6 +2,7 @@ export const SCAN_CONFIG = {
   fps: 8,
   rememberLastUsedCamera: true,
   disableFlip: true,
+  aspectRatio: 4 / 3,
   useBarCodeDetectorIfSupported: true
 } as const;
 

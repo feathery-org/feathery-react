@@ -12,10 +12,10 @@ import {
   QR_SCANNER_LIB_URL,
   SCAN_CONFIG
 } from './constants';
-import {
-  getCameraPreferences,
-  setCameraPreferences
-} from './utils/local-storage';
+import { setCameraPreferences } from './utils/local-storage';
+import Slider from 'rc-slider';
+import SliderStyles from '../SliderField/styles';
+import throttle from 'lodash.throttle';
 
 let qrPromise = Promise.resolve();
 export function loadQRScanner() {
@@ -42,10 +42,10 @@ function QRScanner({
   const servar = element.servar ?? {};
   const cameraElementId = React.useId();
   const scanner = React.useRef<any>();
-  const zoomInput = React.useRef<HTMLInputElement>(null);
   const fileInput = React.useRef<HTMLInputElement>(null);
   const [message, setMessage] = React.useState('');
-  const [zoomEnabled, setZoomEnabled] = React.useState(false);
+  const [zoomSettings, setZoomSettings] = React.useState<any>(false);
+  const [zoom, setZoom] = React.useState(1);
   const [cameraList, setCameraList] = React.useState<any>([]);
   const [selectedCamera, setSelectedCamera] = React.useState<string>('');
   const [scanningState, setScanningState] =
@@ -80,7 +80,9 @@ function QRScanner({
   }
 
   function onScanSuccess(decodedText: string) {
-    handleStop();
+    if (servar.metadata?.close_on_scan) {
+      handleStop();
+    }
     if (editMode || !decodedText) return;
     if (decodedText !== fieldVal) onChange(decodedText);
   }
@@ -88,12 +90,9 @@ function QRScanner({
   const handleStart = useCallback(
     async (cameraId?: string) => {
       if (disabled) return;
-      let shouldUseZoomPreference = false;
       if (!scanner.current) {
         scanner.current = await createScanner(cameraElementId);
       }
-      const cameraPreference = getCameraPreferences();
-
       setScanningState(Html5QrcodeScannerState.SCANNING);
       setMessage('');
       if (scanner.current?.getState() === Html5QrcodeScannerState.NOT_STARTED) {
@@ -101,18 +100,9 @@ function QRScanner({
         if (!camera) {
           const result = await selectCamera();
           if (result) {
-            const { bestCamera, allCameras } = result;
+            const { bestCameraId, allCameras } = result;
             setCameraList(allCameras);
-            camera = bestCamera.deviceId;
-            if (
-              cameraPreference?.device_id &&
-              allCameras.some(
-                (cam: any) => cam.deviceId === cameraPreference?.device_id
-              )
-            ) {
-              camera = cameraPreference?.device_id;
-              shouldUseZoomPreference = true;
-            }
+            camera = bestCameraId;
             setSelectedCamera(camera);
           }
           if (!camera) {
@@ -126,24 +116,15 @@ function QRScanner({
           onScanSuccess,
           undefined
         );
-        const zoomSettings = getZoomSettings(scanner.current);
+        const zoomCapabilities = getZoomSettings(scanner.current);
 
-        if (zoomSettings && zoomInput.current) {
-          zoomInput.current.min = zoomSettings.min.toString();
-          zoomInput.current.max = zoomSettings.max.toString();
-          zoomInput.current.step = zoomSettings.step.toString();
-          const currentZoom =
-            shouldUseZoomPreference && cameraPreference?.zoom != null
-              ? Math.min(
-                  Math.max(cameraPreference.zoom, zoomSettings.min),
-                  zoomSettings.max
-                )
-              : zoomSettings.current;
-          zoomInput.current.value = currentZoom.toString();
-          applyZoom(currentZoom);
-          setZoomEnabled(true);
+        if (zoomCapabilities) {
+          setZoomSettings(zoomCapabilities);
+          setZoom(zoomCapabilities.current);
+          applyZoom(zoomCapabilities.current);
         } else {
-          setZoomEnabled(false);
+          setZoomSettings(false);
+          setZoom(1);
         }
       }
     },
@@ -154,8 +135,7 @@ function QRScanner({
     if (scanner.current) {
       if (scanner.current?.getState() === Html5QrcodeScannerState.SCANNING) {
         setCameraPreferences({
-          device_id: scanner.current.getRunningTrackSettings().deviceId,
-          zoom: zoomInput.current ? Number(zoomInput.current.value) : undefined
+          device_id: scanner.current.getRunningTrackSettings().deviceId
         });
         scanner.current
           .stop()
@@ -172,10 +152,8 @@ function QRScanner({
       }
     }
 
-    if (zoomInput.current) {
-      setZoomEnabled(false);
-      zoomInput.current.value = '1';
-    }
+    setZoomSettings(false);
+    setZoom(1);
 
     if (fileInput.current) {
       fileInput.current.value = '';
@@ -193,6 +171,14 @@ function QRScanner({
     await handleStop();
     await handleStart(newCameraId);
   }
+
+  const handleZoom = useCallback(
+    throttle((value: number) => {
+      applyZoom(value);
+      setZoom(value);
+    }, 10),
+    []
+  );
 
   return (
     <>
@@ -231,7 +217,19 @@ function QRScanner({
               paddingBottom: 16
             }}
           >
-            <div id={cameraElementId} style={{ width: '100%' }} />
+            <div
+              id={cameraElementId}
+              style={{
+                width: '100%',
+                aspectRatio: SCAN_CONFIG.aspectRatio.toString(),
+                display:
+                  scanningState !== Html5QrcodeScannerState.SCANNING
+                    ? 'none'
+                    : 'grid',
+                overflow: 'hidden',
+                placeContent: 'center'
+              }}
+            />
 
             {scanningState === Html5QrcodeScannerState.NOT_STARTED && (
               <>
@@ -252,33 +250,76 @@ function QRScanner({
             )}
             {scanningState === Html5QrcodeScannerState.SCANNING && (
               <>
-                <input
-                  ref={zoomInput}
-                  style={{ alignSelf: 'stretch', margin: 10 }}
-                  type='range'
-                  hidden={!zoomEnabled}
-                  onChange={(event) => {
-                    applyZoom(Number(event.target.value));
+                <SliderStyles
+                  customStyles={{
+                    ['.rc-slider-handle'.repeat(2)]: {
+                      height: 30,
+                      width: 30,
+                      marginTop: -9,
+                      opacity: 1,
+                      userSelect: 'none'
+                    },
+                    ['.rc-slider-track'.repeat(3)]: {
+                      height: 12
+                    },
+                    ['.rc-slider-rail'.repeat(3)]: {
+                      height: 12
+                    },
+                    ['.rc-slider'.repeat(3)]: {
+                      height: 12,
+                      padding: '10px 0'
+                    }
                   }}
                 />
-                <button type='button' onClick={() => handleStop()}>
-                  Stop Scanning
-                </button>
+                {Boolean(zoomSettings) && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignSelf: 'stretch',
+                      marginInline: 30,
+                      marginBottom: 20
+                    }}
+                  >
+                    <Slider
+                      value={zoom}
+                      min={zoomSettings?.min ?? 0}
+                      max={zoomSettings?.max ?? 100}
+                      step={zoomSettings?.step ?? 0.1}
+                      onChange={handleZoom as any}
+                      style={{
+                        flex: 1,
+                        paddingBlock: 10
+                      }}
+                    />
+                  </div>
+                )}
+                <div
+                  style={{
+                    alignSelf: 'stretch',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginInline: 15
+                  }}
+                >
+                  <button type='button' onClick={() => handleStop()}>
+                    Stop Scanning
+                  </button>
+                  {cameraList.length > 1 && (
+                    <select
+                      value={selectedCamera}
+                      onChange={(event) => changeCamera(event.target.value)}
+                    >
+                      {cameraList.map((camera: any) => (
+                        <option key={camera.deviceId} value={camera.deviceId}>
+                          {camera.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               </>
             )}
-            {scanningState === Html5QrcodeScannerState.SCANNING &&
-              cameraList.length > 1 && (
-                <select
-                  value={selectedCamera}
-                  onChange={(event) => changeCamera(event.target.value)}
-                >
-                  {cameraList.map((camera: any) => (
-                    <option key={camera.deviceId} value={camera.deviceId}>
-                      {camera.label}
-                    </option>
-                  ))}
-                </select>
-              )}
             {message && <div style={{ paddingTop: 16 }}>{message}</div>}
           </div>
           {/* This input must always be rendered so we can set field errors */}

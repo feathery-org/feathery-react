@@ -29,7 +29,7 @@ export function getZoomSettings(scanner: any): ZoomSettings | null {
   const zoomCapabilities = cameraCapabilities.zoom as any;
 
   const current = (
-    'zoom' in cameraSettings ? cameraSettings.zoom : 1
+    'zoom' in cameraSettings ? cameraSettings.zoom : zoomCapabilities.min
   ) as number;
 
   const zoomSettings = {
