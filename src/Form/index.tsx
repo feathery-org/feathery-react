@@ -1870,10 +1870,7 @@ function Form({
         }
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
         try {
-          // waiting 4 seconds for documents to generate before redirect
-          setTimeout(() => {
-            openTab(getSignUrl());
-          }, 4000);
+          openTab(getSignUrl());
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
@@ -1881,14 +1878,7 @@ function Form({
       } else if (type === ACTION_GENERATE_QUIK_ENVELOPES) {
         try {
           const newValues = await client.generateQuikEnvelopes(action);
-          // waiting 4 seconds for documents to generate before redirect
-          if (action.form_fill_type === 'pdf') {
-            setTimeout(() => {
-              openTab(getSignUrl());
-            }, 4000);
-          } else {
-            updateFieldValues(newValues);
-          }
+          updateFieldValues(newValues);
         } catch (e: any) {
           setElementError((e as Error).message);
           break;

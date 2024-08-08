@@ -395,7 +395,7 @@ export default class IntegrationClient {
       }
     }
 
-    const url = `${API_URL}quik/form/generate/`;
+    const url = `${API_URL}quik/document/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
