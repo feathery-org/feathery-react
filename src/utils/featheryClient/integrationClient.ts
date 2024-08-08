@@ -393,8 +393,6 @@ export default class IntegrationClient {
       }
     }
 
-    console.log(payload);
-
     const url = `${API_URL}quik/document/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
