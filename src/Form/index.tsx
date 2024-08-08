@@ -150,6 +150,7 @@ import {
   ACTION_REWIND_COLLABORATION,
   ACTION_AI_DOCUMENT_EXTRACT,
   ACTION_OPEN_FUSER_ENVELOPES,
+  ACTION_GENERATE_QUIK_ENVELOPES,
   ACTION_TELESIGN_SILENT_VERIFICATION,
   ACTION_TELESIGN_PHONE_TYPE,
   ACTION_TELESIGN_VOICE_OTP,
@@ -1869,9 +1870,19 @@ function Form({
         }
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
         try {
-          const newValues = await client.generateEnvelopes(action);
           // waiting 4 seconds for documents to generate before redirect
-          if (integrations?.quik?.metadata.form_fill_type === 'pdf') {
+          setTimeout(() => {
+            openTab(getSignUrl());
+          }, 4000);
+        } catch (e: any) {
+          setElementError((e as Error).message);
+          break;
+        }
+      } else if (type === ACTION_GENERATE_QUIK_ENVELOPES) {
+        try {
+          const newValues = await client.generateQuikEnvelopes(action);
+          // waiting 4 seconds for documents to generate before redirect
+          if (action.form_fill_type === 'pdf') {
             setTimeout(() => {
               openTab(getSignUrl());
             }, 4000);

@@ -348,27 +348,58 @@ export default class IntegrationClient {
       form_key: this.formKey,
       fuser_key: userId,
       documents: action.documents ?? [],
-      signer_email: signer,
-      use_quik: action.quik_documents
+      signer_email: signer
     };
 
-    if (action.quik_documents) {
-      const fieldVal = fieldValues[action.quik_tags_field_key];
+    const url = `${API_URL}document/form/generate/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(payload)
+    };
+    return this._fetch(url, options, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseError(await response.json()));
+      }
+    });
+  }
 
-      if (action.quik_tags_field_key) {
-        if (typeof fieldVal === 'string') {
-          payload.quik_tags = (fieldVal as string)
-            .split(',')
-            .map((tag) => tag.trim());
-        } else if (fieldVal instanceof Array) {
-          payload.quik_tags = fieldVal;
-        } else {
-          payload.quik_tags = [JSON.stringify(fieldVal)];
-        }
+  generateQuikEnvelopes(action: Record<string, string>) {
+    console.log('action');
+    console.log(action);
+    const { userId } = initInfo();
+    const payload: Record<string, any> = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      form_fill_type: action.form_fill_type
+    };
+
+    console.log('HELLO FROM NEW QUIK ENV ACTION');
+
+    if (action.form_fill_type === 'html') {
+      if (!action.html_url_field)
+        throw Error('No field selected for storing HTML URL returned by Quik!');
+
+      payload.html_url_field = action.html_url_field;
+      payload.html_url_field_type = action.html_url_field_type;
+    }
+
+    const fieldVal = fieldValues[action.quik_tags_field_key];
+
+    if (action.quik_tags_field_key) {
+      if (typeof fieldVal === 'string') {
+        payload.quik_tags = (fieldVal as string)
+          .split(',')
+          .map((tag) => tag.trim());
+      } else if (fieldVal instanceof Array) {
+        payload.quik_tags = fieldVal;
+      } else {
+        payload.quik_tags = [JSON.stringify(fieldVal)];
       }
     }
 
-    const url = `${API_URL}document/form/generate/`;
+    const url = `${API_URL}quik/form/generate/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
