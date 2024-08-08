@@ -150,6 +150,7 @@ import {
   ACTION_REWIND_COLLABORATION,
   ACTION_AI_DOCUMENT_EXTRACT,
   ACTION_OPEN_FUSER_ENVELOPES,
+  ACTION_GENERATE_QUIK_DOCUMENTS,
   ACTION_TELESIGN_SILENT_VERIFICATION,
   ACTION_TELESIGN_PHONE_TYPE,
   ACTION_TELESIGN_VOICE_OTP,
@@ -1868,8 +1869,21 @@ function Form({
           break;
         }
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
-        await client.generateEnvelopes(action);
-        openTab(getSignUrl());
+        try {
+          await client.generateEnvelopes(action);
+          openTab(getSignUrl());
+        } catch (e: any) {
+          setElementError((e as Error).message);
+          break;
+        }
+      } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {
+        try {
+          const newValues = await client.generateQuikEnvelopes(action);
+          updateFieldValues(newValues);
+        } catch (e: any) {
+          setElementError((e as Error).message);
+          break;
+        }
       } else if (type === ACTION_STORE_FIELD) {
         const key = action.custom_store_field_key;
         if (!key) continue;
