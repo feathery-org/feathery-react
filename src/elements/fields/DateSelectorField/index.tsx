@@ -76,6 +76,7 @@ function DateSelectorField({
   repeatIndex = null,
   editMode,
   rightToLeft,
+  onChange = () => {},
   onComplete = () => {},
   onEnter = () => {},
   setRef = () => {},
@@ -141,13 +142,14 @@ function DateSelectorField({
   };
 
   // Updates the date value on change, if the calendar is closed,
-  // picking date is complete and onComplete is run
+  // picking date is complete and onComplete is ran
   // onSelect cannot run onComplete because it runs on day click and
   // not when time is selected if enabled
-  const onDateComplete = (newDate: any) => {
+  const onDateChange = (newDate: any, isComplete = false) => {
+    const callback = isComplete ? onComplete : onChange;
     newDate = newDate ?? '';
     setInternalDate(newDate);
-    onComplete(formatDateString(newDate, servarMeta));
+    callback(formatDateString(newDate, servarMeta));
   };
 
   const { borderStyles, customBorder } = useBorder({
@@ -214,8 +216,10 @@ function DateSelectorField({
             handleCalendarClose();
             // the calendar closes on blur, select, or modal close on mobile
             // this ensures the date is updated on close and triggers logic rules
-            onDateComplete(internalDate);
+            onDateChange(internalDate, true);
           }}
+          onSelect={(date: any) => onDateChange(date)} // when day is clicked
+          onChange={(date: any) => onDateChange(date)} // only when value has changed
           onFocus={(e: any) => {
             if (isTouchDevice()) {
               // hide keyboard on mobile focus
@@ -296,9 +300,18 @@ const dateBlocks = {
 } as const;
 
 const CustomMaskedInput = React.forwardRef(
-  ({ dateMask, ...rest }: any, ref) => {
+  ({ onChange, dateMask, ...rest }: any, ref) => {
     return (
-      <IMaskInput {...rest} ref={ref} mask={dateMask} blocks={dateBlocks} />
+      <IMaskInput
+        {...rest}
+        onChange={undefined}
+        ref={ref}
+        mask={dateMask}
+        blocks={dateBlocks}
+        onAccept={(value) => {
+          onChange({ target: { value } });
+        }}
+      />
     );
   }
 );

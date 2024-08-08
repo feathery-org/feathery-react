@@ -34,6 +34,7 @@ function PhoneField({
   repeatIndex = null,
   autoComplete,
   editMode,
+  onChange = () => {},
   onComplete = () => {},
   setRef = () => {},
   inlineError,
@@ -73,6 +74,7 @@ function PhoneField({
   const phoneCode = countryMap[curCountryCode].phoneCode;
   // The raw number entered by the user, including phone code
   const [rawNumber, setRawNumber] = useState('');
+  const [triggerOnChange, setTriggerOnChange] = useState<boolean | null>(null);
   const [placeholder, setPlaceholder] = useState<string>(
     element.properties.placeholder
   );
@@ -150,13 +152,16 @@ function PhoneField({
     });
   }, [curCountryCode, element]);
 
-  const handleOnComplete = (curRawNumber: string) => {
-    if ((fullNumber || curRawNumber) && curRawNumber !== fullNumber) {
-      setCurFullNumber(curRawNumber);
-      onComplete(curRawNumber);
-    }
-  };
+  useEffect(() => {
+    if (triggerOnChange === null) return;
 
+    if ((fullNumber || rawNumber) && rawNumber !== fullNumber) {
+      setCurFullNumber(rawNumber);
+      onComplete(rawNumber);
+    }
+  }, [triggerOnChange]);
+
+  const triggerChange = () => setTriggerOnChange((prev) => !prev);
   const countriesEnabled = !servar.metadata.disable_other_countries;
   const enabledCountryStyles = countriesEnabled
     ? {
@@ -247,7 +252,7 @@ function PhoneField({
                   setRawNumber(phoneCode);
                   resetToPhoneCode(phoneCode);
                   setShow(false);
-                  handleOnComplete(phoneCode);
+                  triggerChange();
                   inputRef.current.focus();
                 }}
                 responsiveStyles={responsiveStyles}
@@ -307,18 +312,21 @@ function PhoneField({
               setFocused(true);
             }}
             onBlur={() => {
-              let newRawNumber = rawNumber;
-              if (phoneCode.startsWith(rawNumber)) {
-                setCursor(null);
-                newRawNumber = '';
-                setRawNumber(newRawNumber);
-              }
-              handleOnComplete(newRawNumber);
+              setRawNumber((prevNum) => {
+                // Clear a full or partial country code when the user clicks
+                // away, if that's all that is present in the field
+                if (phoneCode.startsWith(prevNum)) {
+                  setCursor(null);
+                  return '';
+                }
+                return prevNum;
+              });
+              triggerChange();
               setFocused(false);
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                handleOnComplete(rawNumber);
+                triggerChange();
                 onEnter(e);
               } else if (e.key === '+') setShow(true);
             }}
@@ -373,6 +381,7 @@ function PhoneField({
                   )
                     start++;
                 }
+                onChange(onlyDigits);
               } else {
                 setRawNumber(phoneCode);
                 const delta = phoneCode.length > 3 ? 2 : 1;
