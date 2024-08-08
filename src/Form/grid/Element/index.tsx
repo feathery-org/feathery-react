@@ -276,7 +276,6 @@ const Element = ({ node: el, form }: any) => {
             value={fieldVal}
             onComplete={(val: any) => {
               const change = changeValue(val, el, index);
-
               if (change) onChange();
             }}
             setRef={(ref: any) => {
@@ -555,13 +554,9 @@ const Element = ({ node: el, form }: any) => {
           <Elements.PhoneField
             {...fieldProps}
             fullNumber={stringifyWithNull(fieldVal)}
-            // Set values as they change since hide if dependencies need to update
-            onChange={(val: string) =>
-              changeValue(val, el, index, false, false)
-            }
             onComplete={(val: string) => {
               const change = changeValue(val, el, index);
-              if (change) debouncedOnChange();
+              if (change) onChange();
             }}
             setRef={(ref: any) => {
               if (focusRef.current === el.id) focusRef.current = ref;
