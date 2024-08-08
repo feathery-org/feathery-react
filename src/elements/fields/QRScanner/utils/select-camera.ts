@@ -1,3 +1,5 @@
+import { getCameraPreferences } from './local-storage';
+
 type CameraDetails = {
   label: string;
   deviceId: string;
@@ -41,9 +43,20 @@ export async function selectCamera(): Promise<any> {
     return null;
   }
 
+  const cameraPreference = getCameraPreferences();
+  if (
+    cameraPreference?.device_id &&
+    allCameras.some((cam: any) => cam.deviceId === cameraPreference?.device_id)
+  ) {
+    return {
+      bestCameraId: cameraPreference?.device_id,
+      allCameras
+    };
+  }
+
   if (possibleCameras.length === 1) {
     return {
-      bestCamera: possibleCameras[0],
+      bestCameraId: possibleCameras[0].deviceId,
       allCameras
     };
   }
@@ -63,7 +76,7 @@ export async function selectCamera(): Promise<any> {
   possibleCameras.sort(sortByFocusDistance);
 
   return {
-    bestCamera: possibleCameras[0],
+    bestCameraId: possibleCameras[0].deviceId,
     allCameras
   };
 }

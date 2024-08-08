@@ -2,7 +2,6 @@ const CAMERA_PREFERENCE_KEY = 'feathery-camera';
 
 export type Camera_Preference = {
   device_id: string;
-  zoom?: number;
 };
 
 export function getCameraPreferences(): Camera_Preference | null {
