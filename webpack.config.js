@@ -1,6 +1,4 @@
-const path = require('path');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
-const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
 module.exports = {
   entry: './src/index.tsx',
@@ -12,7 +10,7 @@ module.exports = {
       type: 'umd'
     }
   },
-  plugins: [new CleanWebpackPlugin(), new MiniCssExtractPlugin()],
+  plugins: [new CleanWebpackPlugin()],
   module: {
     rules: [
       {
@@ -25,11 +23,6 @@ module.exports = {
         test: /\.(js|jsx)$/,
         exclude: /node_modules/,
         use: ['babel-loader']
-      },
-      {
-        test: /\.(scss|css)$/,
-        use: [MiniCssExtractPlugin.loader, 'css-loader', 'sass-loader'],
-        include: path.resolve(__dirname, './src')
       }
     ]
   },
