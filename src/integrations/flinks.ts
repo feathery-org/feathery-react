@@ -1,7 +1,7 @@
 import { featheryWindow } from '../utils/browser';
 import IntegrationClient from '../utils/featheryClient/integrationClient';
 
-const FLINKS_MAX_POLL_RETRIES = 5;
+const FLINKS_MAX_POLL_RETRIES = 20;
 const FLINKS_REQUEST_RETRY_DELAY_MS = 5 * 1000;
 
 type UpdateFieldValuesCallback = (fieldValues: any) => void;
