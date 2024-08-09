@@ -151,12 +151,13 @@ export default class IntegrationClient {
     );
   }
 
-  async triggerFlinksLoginId(loginId?: string) {
+  async triggerFlinksLoginId(accountId: string, loginId?: string) {
     await initFormsPromise;
     const { userId } = initInfo();
     const params: Record<string, any> = {
       form_key: this.formKey,
-      fuser_key: userId
+      fuser_key: userId,
+      account_id: accountId
     };
     if (loginId) params.login_id = loginId;
     const url = `${API_URL}flinks/login-id/?${encodeGetParams(params)}`;

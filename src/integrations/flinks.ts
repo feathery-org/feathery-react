@@ -24,16 +24,20 @@ export async function openFlinksConnect(
       : flinksConfig.metadata.instance;
 
   let flinksUrl = `https://${instance}-iframe.private.fin.ag/v2/?accountSelectorEnable=true&showAllOperationsAccounts=true`;
+  let accountId: string;
 
   if (flinksConfig.metadata.environment === 'sandbox')
     flinksUrl += '&demo=true';
 
   featheryWindow().addEventListener('message', async (e: any) => {
+    if (e.data.step === 'ACCOUNT_SELECTED') {
+      accountId = e.data.accountId;
+    }
     if (e.data.step === 'REDIRECT') {
       childWindow.close();
       const loginId = new URLSearchParams(e.data.url).get('loginId');
       if (!loginId) return;
-      const data = await setupFlinks(client, loginId);
+      const data = await setupFlinks(client, loginId, accountId);
       if (!data.err) updateFieldValues(data.fieldValues);
       return onSuccess();
     }
@@ -60,14 +64,18 @@ export async function openFlinksConnect(
   childWindow.document.close();
 }
 
-async function setupFlinks(client: IntegrationClient, loginId: string) {
+async function setupFlinks(
+  client: IntegrationClient,
+  loginId: string,
+  accountId: string
+) {
   const toReturn = { err: '', fieldValues: {} };
   const setError = () => {
     toReturn.err = 'Unable to set up Flinks';
     return toReturn;
   };
 
-  let res = await client.triggerFlinksLoginId(loginId);
+  let res = await client.triggerFlinksLoginId(accountId, loginId);
   if (!res) return setError();
 
   let tries = 0;
@@ -78,7 +86,7 @@ async function setupFlinks(client: IntegrationClient, loginId: string) {
     await new Promise((resolve) =>
       setTimeout(resolve, FLINKS_REQUEST_RETRY_DELAY_MS)
     );
-    res = await client.triggerFlinksLoginId();
+    res = await client.triggerFlinksLoginId(accountId);
 
     if (!res) return setError();
   }
