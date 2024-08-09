@@ -909,9 +909,17 @@ function Form({
             }));
           }
         },
-        runAIExtraction: async (extractionId: string, runAsync: boolean) => {
+        runAIExtraction: async (
+          extractionId: string,
+          runAsync: boolean,
+          pages?: number[]
+        ) => {
           try {
-            const data = await client.extractAIDocument(extractionId, runAsync);
+            const data = await client.extractAIDocument(
+              extractionId,
+              runAsync,
+              pages
+            );
             updateFieldValues(data);
             return data;
           } catch (err) {
