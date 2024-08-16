@@ -378,8 +378,27 @@ export default class IntegrationClient {
       if (!action.html_url_field)
         throw Error('No field selected for storing HTML URL returned by Quik!');
 
-      payload.html_url_field = action.html_url_field;
-      payload.html_url_field_type = action.html_url_field_type;
+      Object.assign(payload, {
+        html_url_field: action.html_url_field,
+        html_url_field_type: action.html_url_field_type,
+        use_docusign: action.use_docusign
+      });
+
+      if (action.use_docusign) {
+        if (!action.auth_user_id || !action.sign_callback_url) {
+          throw new Error(
+            !action.auth_user_id
+              ? 'No connection name provided for Quik! DocuSign config'
+              : 'No sign callback URL specified for Quik! DocuSign config'
+          );
+        }
+
+        Object.assign(payload, {
+          auth_user_id: action.auth_user_id,
+          sign_callback_url: action.sign_callback_url,
+          joint_agreements: action.joint_agreements
+        });
+      }
     }
 
     const fieldVal = fieldValues[action.quik_tags_field_key];
