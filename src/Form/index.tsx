@@ -1415,7 +1415,9 @@ function Form({
           eventData.completed = true;
           // Form completion must run after since logic may depend on
           // presence of fully submitted data
-          client.registerEvent(eventData).then(() => handleFormComplete());
+          await client
+            .registerEvent(eventData)
+            .then(() => handleFormComplete());
         }
       }
       if (!eventData.completed) client.registerEvent(eventData);
