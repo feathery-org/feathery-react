@@ -371,18 +371,12 @@ export default class IntegrationClient {
     const payload: Record<string, any> = {
       form_key: this.formKey,
       fuser_key: userId,
-      form_fill_type: action.form_fill_type
+      ...action
     };
 
     if (action.form_fill_type === 'html') {
       if (!action.html_url_field)
         throw Error('No field selected for storing HTML URL returned by Quik!');
-
-      Object.assign(payload, {
-        html_url_field: action.html_url_field,
-        html_url_field_type: action.html_url_field_type,
-        use_docusign: action.use_docusign
-      });
 
       if (action.use_docusign) {
         if (!action.auth_user_id || !action.sign_callback_url) {
@@ -392,12 +386,6 @@ export default class IntegrationClient {
               : 'No sign callback URL specified for Quik! DocuSign config'
           );
         }
-
-        Object.assign(payload, {
-          auth_user_id: action.auth_user_id,
-          sign_callback_url: action.sign_callback_url,
-          joint_agreements: action.joint_agreements
-        });
       }
     }
 
