@@ -741,11 +741,12 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   // AI
-  extractAIDocument(extractionId: string, runAsync: boolean) {
+  extractAIDocument(extractionId: string, runAsync: boolean, pages?: number[]) {
     const { userId } = initInfo();
     const data = {
       fuser_key: userId,
-      extraction_id: extractionId
+      extraction_id: extractionId,
+      pages
     };
 
     this._fetch(`${STATIC_URL}ai/vision/`, {
