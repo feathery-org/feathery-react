@@ -55,8 +55,8 @@ const STATIC_URL_OPTIONS = {
   productionCA: 'https://api-ca.feathery.io/api/'
 };
 
-const AWS_REGION_OPTIONS = {
-  local: 'user-files-dev.s3.us-west-1.amazonaws.com',
+const S3_URL_OPTIONS = {
+  local: 'http://localhost:8006',
   staging: 'user-files-dev.s3.us-west-1.amazonaws.com',
   production: 'user-files-1.s3.us-west-1.amazonaws.com',
   productionAU: 'user-files-au.s3.ap-southeast-2.amazonaws.com',
@@ -73,24 +73,24 @@ try {
 export let API_URL = API_URL_OPTIONS[environment];
 export let CDN_URL = CDN_URL_OPTIONS[environment];
 export let STATIC_URL = STATIC_URL_OPTIONS[environment];
-export let AWS_REGION = AWS_REGION_OPTIONS[environment];
+export let S3_URL = S3_URL_OPTIONS[environment];
 
 export const updateRegionApiUrls = (region: string) => {
   if (region === 'au') {
     CDN_URL = CDN_URL_OPTIONS.productionAU;
     API_URL = API_URL_OPTIONS.productionAU;
     STATIC_URL = STATIC_URL_OPTIONS.productionAU;
-    AWS_REGION = AWS_REGION_OPTIONS.productionAU;
+    S3_URL = S3_URL_OPTIONS.productionAU;
   } else if (region === 'eu') {
     CDN_URL = CDN_URL_OPTIONS.productionEU;
     API_URL = API_URL_OPTIONS.productionEU;
     STATIC_URL = STATIC_URL_OPTIONS.productionEU;
-    AWS_REGION = AWS_REGION_OPTIONS.productionEU;
+    S3_URL = S3_URL_OPTIONS.productionEU;
   } else if (region === 'ca') {
     CDN_URL = CDN_URL_OPTIONS.productionCA;
     API_URL = API_URL_OPTIONS.productionCA;
     STATIC_URL = STATIC_URL_OPTIONS.productionCA;
-    AWS_REGION = AWS_REGION_OPTIONS.productionCA;
+    S3_URL = S3_URL_OPTIONS.productionCA;
   }
 };
 
@@ -275,7 +275,7 @@ export default class FeatheryClient extends IntegrationClient {
           // Cloudfront might run into CORS issues so fall back to
           // S3 directly if needed
           const fallback = new URL(source);
-          fallback.hostname = AWS_REGION;
+          fallback.hostname = S3_URL;
           loadFont(fallback.toString()).catch((e) =>
             console.warn(`Font load issue: ${e}`)
           );
