@@ -56,12 +56,12 @@ const STATIC_URL_OPTIONS = {
 };
 
 const AWS_REGION_OPTIONS = {
-  local: 'us-west-1',
-  staging: 'us-west-1',
-  production: 'us-west-1',
-  productionAU: 'ap-southeast-2',
-  productionEU: 'eu-west-1',
-  productionCA: 'ca-central-1'
+  local: 'user-files-dev.s3.us-west-1.amazonaws.com',
+  staging: 'user-files-dev.s3.us-west-1.amazonaws.com',
+  production: 'user-files-1.s3.us-west-1.amazonaws.com',
+  productionAU: 'user-files-au.s3.ap-southeast-2.amazonaws.com',
+  productionEU: 'user-files-eu.s3.eu-west-1.amazonaws.com',
+  productionCA: 'user-files-ca.s3.ca-central-1.amazonaws.com'
 };
 
 type URL_ENUM = keyof typeof API_URL_OPTIONS;
@@ -275,7 +275,7 @@ export default class FeatheryClient extends IntegrationClient {
           // Cloudfront might run into CORS issues so fall back to
           // S3 directly if needed
           const fallback = new URL(source);
-          fallback.hostname = `user-files-1.s3.${AWS_REGION}.amazonaws.com`;
+          fallback.hostname = AWS_REGION;
           loadFont(fallback.toString()).catch((e) =>
             console.warn(`Font load issue: ${e}`)
           );
