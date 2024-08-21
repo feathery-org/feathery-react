@@ -172,7 +172,10 @@ function SignatureModal(props: SignatureModalProps) {
                 <h3>Type your signature</h3>
                 <input
                   onChange={(e) => {
-                    setFullName(e.target.value);
+                    const val = e.target.value.trim();
+                    if (!val) return;
+
+                    setFullName(val);
                     setLoading(true);
                     debounceGenerateSignature();
                   }}
