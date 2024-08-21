@@ -184,7 +184,7 @@ export default function DropdownField({
             position: 'relative'
           }}
           id={servar.key}
-          value={fieldVal}
+          value={fieldVal ?? ''}
           required={required}
           disabled={disabled}
           aria-label={element.properties.aria_label}
