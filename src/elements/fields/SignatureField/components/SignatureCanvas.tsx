@@ -122,8 +122,21 @@ function SignatureCanvas(props: SignatureCanvasProps) {
           const imgData = trimmedCanvas.toDataURL('image/png');
           const imgFile = dataURLToFile(imgData, `${fieldKey}.png`);
 
-          onEnd(imgFile);
-          setIsClearVisible(!signatureRef.current.isEmpty());
+          const fileSize = imgFile.size;
+
+          if (fileSize > 0) {
+            onEnd(imgFile);
+            setIsClearVisible(!signatureRef.current.isEmpty());
+          } else {
+            signatureRef.current.clear();
+            onClear();
+            setIsClearVisible(false);
+            console.error('Signature file is empty', {
+              imgFile,
+              imgData,
+              fieldKey
+            });
+          }
         }}
       />
     </>
