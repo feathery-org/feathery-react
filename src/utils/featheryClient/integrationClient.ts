@@ -409,7 +409,7 @@ export default class IntegrationClient {
     };
     return this._fetch(url, options, false).then(async (response) => {
       if (response) {
-        if (response.ok) return await response.json();
+        if (response.ok) return (await response.json()).field_values;
         else throw Error(parseError(await response.json()));
       }
     });
