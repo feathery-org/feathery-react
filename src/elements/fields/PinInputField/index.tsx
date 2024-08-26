@@ -145,6 +145,7 @@ const convertValueToRaw = (value: any) => value.toString().split('');
 function OtpInput({
   element,
   responsiveStyles,
+  shouldFocus,
   onChange,
   onEnter,
   value,
@@ -152,7 +153,7 @@ function OtpInput({
   autoComplete,
   inlineError
 }: any) {
-  const [activeInput, setActiveInput] = useState(-1);
+  const [activeInput, setActiveInput] = useState(shouldFocus ? 0 : -1);
   const [pasted, setPasted] = useState(false);
   const [rawValue, setRawValue] = useState(convertValueToRaw(value));
 
@@ -279,7 +280,7 @@ function OtpInput({
           changeCodeAtFocus={changeCodeAtFocus}
           focusPrevInput={focusPrevInput}
           focusNextInput={focusNextInput}
-          shouldFocus={activeInput > -1}
+          shouldFocus={shouldFocus && activeInput > -1}
           disabled={disabled}
           autoComplete={autoComplete}
         />
@@ -307,6 +308,7 @@ function PinInputField({
   responsiveStyles,
   fieldLabel,
   inlineError,
+  shouldFocus = false,
   fieldVal = '',
   editMode,
   onChange = () => {},
@@ -328,6 +330,7 @@ function PinInputField({
       {children}
       {fieldLabel}
       <OtpInput
+        shouldFocus={shouldFocus}
         value={fieldVal}
         responsiveStyles={responsiveStyles}
         element={element}

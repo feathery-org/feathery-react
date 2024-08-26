@@ -441,6 +441,7 @@ const Element = ({ node: el, form }: any) => {
                   submitData: autosubmit && val.length === el.servar.max_length
                 });
             }}
+            shouldFocus={focusRef.current === el.id && formSettings.autofocus}
           />
         );
       case 'multiselect':
