@@ -22,7 +22,7 @@ function SingleOtpInput({
   changeCodeAtFocus,
   focusPrevInput,
   focusNextInput,
-  shouldFocus,
+  isFocused,
   disabled,
   autoComplete
 }: any) {
@@ -50,7 +50,7 @@ function SingleOtpInput({
   useHotkeys(
     'enter, backspace, delete, left, right, space',
     (e, handler) => {
-      if (!shouldFocus) return;
+      if (!isFocused) return;
       switch (handler.key) {
         case 'enter':
           e.preventDefault();
@@ -145,7 +145,7 @@ const convertValueToRaw = (value: any) => value.toString().split('');
 function OtpInput({
   element,
   responsiveStyles,
-  shouldFocus,
+  autoFocus,
   onChange,
   onEnter,
   value,
@@ -153,7 +153,7 @@ function OtpInput({
   autoComplete,
   inlineError
 }: any) {
-  const [activeInput, setActiveInput] = useState(shouldFocus ? 0 : -1);
+  const [activeInput, setActiveInput] = useState(autoFocus ? 0 : -1);
   const [pasted, setPasted] = useState(false);
   const [rawValue, setRawValue] = useState(convertValueToRaw(value));
 
@@ -280,7 +280,7 @@ function OtpInput({
           changeCodeAtFocus={changeCodeAtFocus}
           focusPrevInput={focusPrevInput}
           focusNextInput={focusNextInput}
-          shouldFocus={shouldFocus && activeInput > -1}
+          isFocused={activeInput > -1}
           disabled={disabled}
           autoComplete={autoComplete}
         />
@@ -308,7 +308,7 @@ function PinInputField({
   responsiveStyles,
   fieldLabel,
   inlineError,
-  shouldFocus = false,
+  autoFocus = false,
   fieldVal = '',
   editMode,
   onChange = () => {},
@@ -330,7 +330,7 @@ function PinInputField({
       {children}
       {fieldLabel}
       <OtpInput
-        shouldFocus={shouldFocus}
+        autoFocus={autoFocus}
         value={fieldVal}
         responsiveStyles={responsiveStyles}
         element={element}
