@@ -627,11 +627,17 @@ export function changeStep(
   oldKey: string,
   steps: any,
   setStepKey: any,
-  history: any
+  history: any,
+  client: any
 ) {
   const sameKey = oldKey === newKey;
   if (!sameKey && newKey) {
     if (newKey in steps) {
+      client.registerEvent({
+        step_key: oldKey,
+        next_step_key: newKey,
+        event: 'complete'
+      });
       history.replace(location.pathname + location.search + `#${newKey}`);
       setStepKey(newKey);
       return true;

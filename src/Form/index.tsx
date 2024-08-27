@@ -755,7 +755,14 @@ function Form({
   }
 
   const changeFormStep = (newKey: string, oldKey: string, load: boolean) => {
-    const changed = changeStep(newKey, oldKey, steps, setStepKey, history);
+    const changed = changeStep(
+      newKey,
+      oldKey,
+      steps,
+      setStepKey,
+      history,
+      client
+    );
     if (changed) {
       const backKey = load ? backNavMap[oldKey] : oldKey;
       updateBackNavMap({ [newKey]: backKey });
