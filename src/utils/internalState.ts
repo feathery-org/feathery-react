@@ -61,7 +61,8 @@ export interface FormInternalState {
   runIntegrationActions: RunIntegrationActions;
   runAIExtraction: (
     extractionId: string,
-    runAsync: boolean
+    runAsync: boolean,
+    pages?: number[]
   ) => Promise<Record<string, string>>;
   applyAlloyJourney: ApplyAlloyJourney;
 }
