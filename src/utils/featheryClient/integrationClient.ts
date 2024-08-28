@@ -374,18 +374,13 @@ export default class IntegrationClient {
       ...action
     };
 
-    if (action.form_fill_type === 'html') {
-      if (!action.html_url_field)
-        throw Error('No field selected for storing HTML URL returned by Quik!');
-
-      if (action.use_docusign) {
-        if (!action.auth_user_id || !action.sign_callback_url) {
-          throw new Error(
-            !action.auth_user_id
-              ? 'No connection name provided for Quik! DocuSign config'
-              : 'No sign callback URL specified for Quik! DocuSign config'
-          );
-        }
+    if (action.form_fill_type === 'html' && action.use_docusign) {
+      if (!action.auth_user_id || !action.sign_callback_url) {
+        throw new Error(
+          !action.auth_user_id
+            ? 'No connection name provided for Quik! DocuSign config'
+            : 'No sign callback URL specified for Quik! DocuSign config'
+        );
       }
     }
 
@@ -409,7 +404,7 @@ export default class IntegrationClient {
     };
     return this._fetch(url, options, false).then(async (response) => {
       if (response) {
-        if (response.ok) return (await response.json()).field_values;
+        if (response.ok) return (await response.json()).html;
         else throw Error(parseError(await response.json()));
       }
     });

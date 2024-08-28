@@ -1895,8 +1895,11 @@ function Form({
         }
       } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {
         try {
-          const newValues = await client.generateQuikEnvelopes(action);
-          updateFieldValues(newValues);
+          const htmlPayload = await client.generateQuikEnvelopes(action);
+          if (htmlPayload) {
+            const childWindow = featheryWindow().open('', '_blank');
+            childWindow.document.write(htmlPayload);
+          }
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
