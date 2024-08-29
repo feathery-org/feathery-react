@@ -237,6 +237,7 @@ function DateSelectorField({
           filterDate={filterPassedDate}
           filterTime={filterPassedTime}
           showTimeSelect={servarMeta.choose_time ?? false}
+          timeIntervals={servarMeta.time_interval || 30}
           dateFormat={dateMask}
           timeFormat={timeMask}
           maxDate={servarMeta.no_future ? new Date() : undefined}
