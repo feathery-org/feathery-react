@@ -378,20 +378,6 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyHeight('sub-fc');
       styles.applyBoxShadow('sub-fc');
       styles.applyCorners('sub-fc');
-      styles.apply(
-        'sub-fc',
-        [
-          ...borderWidthProps,
-          ...borderWidthProps.map((prop) => `hover_${prop}`),
-          ...borderWidthProps.map((prop) => `selected_${prop}`)
-        ],
-        (...props: any) => ({
-          paddingTop: Math.max(props[0], props[4], props[8]),
-          paddingRight: Math.max(props[1], props[5], props[9]),
-          paddingBottom: Math.max(props[2], props[6], props[10]),
-          paddingLeft: Math.max(props[3], props[7], props[11])
-        })
-      );
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       // Corners must also be applied to input even if not visible since it could cover
       // up the visible container corners
