@@ -290,6 +290,7 @@ const Element = ({ node: el, form }: any) => {
             {...fieldProps}
             defaultValue={fieldVal}
             onEnd={(newFile: any) => {
+              if (newFile.size === 0) return;
               clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
               updateFieldValues({ [servar.key]: Promise.resolve(newFile) });
               onChange();
