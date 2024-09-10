@@ -375,11 +375,9 @@ export default class IntegrationClient {
     };
 
     if (action.form_fill_type === 'html' && action.use_docusign) {
-      if (!action.auth_user_id || !action.sign_callback_url) {
+      if (!action.auth_user_id) {
         throw new Error(
-          !action.auth_user_id
-            ? 'No connection name provided for Quik! DocuSign config'
-            : 'No sign callback URL specified for Quik! DocuSign config'
+          'No connection name provided for Quik! DocuSign config'
         );
       }
     }
