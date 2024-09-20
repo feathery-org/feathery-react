@@ -1743,7 +1743,8 @@ function Form({
             event: submit ? 'complete' : 'skip',
             completed: true
           };
-          client.registerEvent(eventData).then(() => (location.href = url));
+          await client.registerEvent(eventData);
+          location.href = url;
         }
       } else if (type === ACTION_SEND_SMS_MESSAGE) {
         const phoneNum = fieldValues[action.phone_target_field_key] as string;
@@ -1896,7 +1897,8 @@ function Form({
               event: submit ? 'complete' : 'skip',
               completed: true
             };
-            client.registerEvent(eventData).then(() => (location.href = url));
+            await client.registerEvent(eventData);
+            location.href = url;
           } else openTab(url);
         } catch (e: any) {
           setElementError((e as Error).message);
