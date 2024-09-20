@@ -1888,7 +1888,16 @@ function Form({
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
         try {
           await client.generateEnvelopes(action);
-          openTab(getSignUrl(action.redirect_url));
+          const url = getSignUrl(action.redirect_url);
+          if (action.redirect_url) {
+            const eventData: Record<string, any> = {
+              step_key: activeStep.key,
+              next_step_key: '',
+              event: submit ? 'complete' : 'skip',
+              completed: true
+            };
+            client.registerEvent(eventData).then(() => (location.href = url));
+          } else openTab(url);
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
