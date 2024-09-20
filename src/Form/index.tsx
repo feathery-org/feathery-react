@@ -1888,7 +1888,7 @@ function Form({
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
         try {
           await client.generateEnvelopes(action);
-          openTab(getSignUrl());
+          openTab(getSignUrl(action.redirect_url));
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
