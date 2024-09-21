@@ -1889,8 +1889,8 @@ function Form({
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
         try {
           await client.generateEnvelopes(action);
-          const url = getSignUrl(action.redirect_url);
-          if (action.redirect_url) {
+          const url = getSignUrl(action.redirect);
+          if (action.redirect) {
             const eventData: Record<string, any> = {
               step_key: activeStep.key,
               next_step_key: '',
