@@ -138,10 +138,12 @@ export const getParentFitContainers = (ref: any) => {
     }
 
     if (div.parentNode?.parentNode) {
-      const parentClasses = Array.from(div.parentNode.parentNode.classList);
+      if (div.parentNode.parentNode.classList) {
+        const parentClasses = Array.from(div.parentNode.parentNode.classList);
 
-      if (parentClasses.includes('styled-container')) {
-        _getParentFitContainers(div.parentNode.parentNode);
+        if (parentClasses.includes('styled-container')) {
+          _getParentFitContainers(div.parentNode.parentNode);
+        }
       }
     }
   };
