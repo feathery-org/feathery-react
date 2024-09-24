@@ -101,13 +101,15 @@ export const getFormContext = (formUuid: string) => {
     },
     openUrl: async (url: string, target = '_blank') => {
       if (target !== '_blank') {
+        const formClient = formState.client;
         await Promise.all([
-          formState.client.flushCustomFields(),
           defaultClient.flushCustomFields(),
-          formState.client.submitQueue
+          formClient.flushCustomFields(),
+          formClient.submitQueue,
+          formClient.eventQueue
         ]);
         // submitQueue may have updated when awaiting the first time
-        await formState.client.submitQueue;
+        await formClient.submitQueue;
       }
       featheryWindow()?.open(url, target, 'noopener');
     },

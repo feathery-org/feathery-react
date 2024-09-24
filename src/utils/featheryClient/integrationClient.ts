@@ -53,6 +53,7 @@ export default class IntegrationClient {
   draft: boolean;
   bypassCDN: boolean;
   submitQueue: Promise<any>;
+  eventQueue: Promise<any>;
   offlineRequestHandler: OfflineRequestHandler;
 
   constructor(
@@ -66,6 +67,7 @@ export default class IntegrationClient {
     this.draft = draft;
     this.bypassCDN = bypassCDN;
     this.submitQueue = Promise.resolve();
+    this.eventQueue = Promise.resolve();
     this.offlineRequestHandler = new OfflineRequestHandler(formKey);
   }
 

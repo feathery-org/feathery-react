@@ -685,7 +685,7 @@ export default class FeatheryClient extends IntegrationClient {
       stepKey = eventData.step_key;
       prom = this.flushCustomFields();
     }
-    return Promise.all([
+    const eventPromise = Promise.all([
       prom,
       this.offlineRequestHandler.runOrSaveRequest(
         // Ensure events complete before user exits page. Submit and load event of
@@ -698,6 +698,8 @@ export default class FeatheryClient extends IntegrationClient {
         stepKey
       )
     ]);
+    this.eventQueue = this.eventQueue.then(() => eventPromise);
+    return eventPromise;
   }
 
   // Logic custom APIs
