@@ -7,7 +7,7 @@ import html2canvas from 'html2canvas';
 import debounce from 'lodash.debounce';
 import { trimCanvas } from './utils';
 
-const SIGNER_NAME_KEY = 'signer-email';
+const SIGNER_NAME_KEY = 'feathery-signer-name';
 
 type SignatureModalProps = SignatureCanvasProps & {
   show: boolean;
