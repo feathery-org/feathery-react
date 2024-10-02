@@ -7,6 +7,8 @@ import html2canvas from 'html2canvas';
 import debounce from 'lodash.debounce';
 import { trimCanvas } from './utils';
 
+const SIGNER_NAME_KEY = 'feathery-signer-name';
+
 type SignatureModalProps = SignatureCanvasProps & {
   show: boolean;
   setShow: (val: boolean) => void;
@@ -36,8 +38,28 @@ function SignatureModal(props: SignatureModalProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const fullNameRef = useRef<string>(fullName);
 
+  const getSignerNameFromLocalStorage = (): string => {
+    const signerName = localStorage.getItem(SIGNER_NAME_KEY);
+    return signerName || '';
+  };
+
+  useEffect(() => {
+    if (show) {
+      const storedName = getSignerNameFromLocalStorage();
+      setFullName(storedName);
+    }
+  }, [show]);
+
   useEffect(() => {
     fullNameRef.current = fullName;
+    if (fullName !== '') {
+      setLoading(true);
+      debounceGenerateSignature();
+    } else {
+      setSignatureImgData('');
+      setSignatureFile(undefined);
+      setLoading(false);
+    }
   }, [fullName]);
   const getFullName = () => fullNameRef.current;
 
@@ -88,6 +110,7 @@ function SignatureModal(props: SignatureModalProps) {
 
   const handleSubmit = () => {
     onEnd(signatureFile);
+    localStorage.setItem(SIGNER_NAME_KEY, fullName);
     setShow(false);
     resetState();
   };
@@ -171,13 +194,10 @@ function SignatureModal(props: SignatureModalProps) {
               >
                 <h3>Type your signature</h3>
                 <input
+                  defaultValue={getSignerNameFromLocalStorage()}
                   onChange={(e) => {
                     const val = e.target.value.trim();
-                    if (!val) return;
-
                     setFullName(val);
-                    setLoading(true);
-                    debounceGenerateSignature();
                   }}
                   placeholder='Your full name'
                   css={{
