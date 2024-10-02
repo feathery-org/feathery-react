@@ -67,7 +67,6 @@ function SignatureModal(props: SignatureModalProps) {
     setSignatureFile(undefined);
     setSignatureImgData('');
     setFullName('');
-    setDrawSignature(false);
   };
 
   const generateSignature = () => {
@@ -182,7 +181,7 @@ function SignatureModal(props: SignatureModalProps) {
             }
           }}
         >
-          {!drawSignature && (
+          {!drawSignature && !drawOnly && (
             <>
               <div
                 css={{
