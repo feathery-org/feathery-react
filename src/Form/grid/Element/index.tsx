@@ -26,6 +26,7 @@ import {
 import { getVisibleElements } from '../../../utils/hideAndRepeats';
 import debounce from 'lodash.debounce';
 import { findCountryByID } from '../../../elements/components/data/countries';
+import { FaceLivenessField } from '../../../elements/fields/FaceLivenessField';
 
 const MAP_FIELD_TYPES = new Set([
   'gmap_line_1',
@@ -662,32 +663,7 @@ const Element = ({ node: el, form }: any) => {
           />
         );
       default:
-        return (
-          <Elements.TextField
-            {...fieldProps}
-            onAccept={(val: any, mask: any) => {
-              // This logic should be here and not inside the text field component
-              // It was causing issues with typing in embedded forms on Android
-              // PR (#1225)
-              const newVal = mask._unmaskedValue === '' ? '' : val;
-              if (newVal === stringifyWithNull(fieldVal)) return;
-
-              const isOrWasEmpty = !newVal || !fieldVal;
-              const rerender =
-                isOrWasEmpty || (servar.metadata.options ?? []).length > 0;
-              const change = changeValue(val, el, index, rerender, false);
-              if (change) {
-                const submitData =
-                  autosubmit && textFieldShouldSubmit(servar, val);
-                debouncedOnChange({ submitData });
-              }
-            }}
-            setRef={(ref: any) => {
-              if (focusRef.current === el.id) focusRef.current = ref;
-            }}
-            repeatIndex={index}
-          />
-        );
+        return <FaceLivenessField changeStep={form.changeStep} />;
     }
   }
 

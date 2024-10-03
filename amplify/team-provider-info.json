@@ -1,0 +1,20 @@
+{
+  "dev": {
+    "awscloudformation": {
+      "AuthRoleName": "amplify-featheryreact-dev-1acff-authRole",
+      "UnauthRoleArn": "arn:aws:iam::737208625848:role/amplify-featheryreact-dev-1acff-unauthRole",
+      "AuthRoleArn": "arn:aws:iam::737208625848:role/amplify-featheryreact-dev-1acff-authRole",
+      "Region": "us-west-1",
+      "DeploymentBucketName": "amplify-featheryreact-dev-1acff-deployment",
+      "UnauthRoleName": "amplify-featheryreact-dev-1acff-unauthRole",
+      "StackName": "amplify-featheryreact-dev-1acff",
+      "StackId": "arn:aws:cloudformation:us-west-1:737208625848:stack/amplify-featheryreact-dev-1acff/802c1580-8380-11ef-ad58-065910dc8195",
+      "AmplifyAppId": "d2m0y846906pa8"
+    },
+    "categories": {
+      "auth": {
+        "featheryreact359924cb359924cb": {}
+      }
+    }
+  }
+}

@@ -584,4 +584,27 @@ export default class IntegrationClient {
       return { ok: true, payload: await res.json() };
     else return { ok: false, error: (await res?.text()) ?? '' };
   }
+
+  async rekognitionSessionCreate() {
+    const url = `${API_URL}rekognition/session/`;
+    const reqOptions = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST'
+    };
+    const res = await this._fetch(url, reqOptions);
+    if (!res) return '';
+    return (await res.json()).session_id;
+  }
+
+  async rekognitionSessionResults(sessionId: string) {
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      session_id: sessionId,
+      fuser_key: userId
+    });
+    const url = `${API_URL}rekognition/session/?${params}`;
+    return this._fetch(url).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
+  }
 }

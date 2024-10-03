@@ -80,6 +80,7 @@
     "umd"
   ],
   "dependencies": {
+    "@aws-amplify/ui-react-liveness": "^3.1.12",
     "@emotion/babel-preset-css-prop": "^11.2.0",
     "@emotion/react": "^11.9.3",
     "@emotion/styled": "^11.9.3",
@@ -87,6 +88,7 @@
     "@stripe/react-stripe-js": "^1.10.0",
     "@stripe/stripe-js": "^1.35.0",
     "@stytch/vanilla-js": "3.1.1",
+    "aws-amplify": "^6.6.3",
     "flat-map-polyfill": "^0.3.8",
     "html2canvas": "^1.4.1",
     "is-url": "^1.2.4",
