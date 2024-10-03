@@ -38,14 +38,14 @@ function SignatureModal(props: SignatureModalProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const fullNameRef = useRef<string>(fullName);
 
-  const getSignerNameFromLocalStorage = (): string => {
-    const signerName = localStorage.getItem(SIGNER_NAME_KEY);
+  const getSignerNameFromSessionStorage = (): string => {
+    const signerName = sessionStorage.getItem(SIGNER_NAME_KEY);
     return signerName || '';
   };
 
   useEffect(() => {
     if (show) {
-      const storedName = getSignerNameFromLocalStorage();
+      const storedName = getSignerNameFromSessionStorage();
       setFullName(storedName);
     }
   }, [show]);
@@ -110,7 +110,7 @@ function SignatureModal(props: SignatureModalProps) {
 
   const handleSubmit = () => {
     onEnd(signatureFile);
-    localStorage.setItem(SIGNER_NAME_KEY, fullName);
+    sessionStorage.setItem(SIGNER_NAME_KEY, fullName);
     setShow(false);
     resetState();
   };
@@ -194,7 +194,7 @@ function SignatureModal(props: SignatureModalProps) {
               >
                 <h3>Type your signature</h3>
                 <input
-                  defaultValue={getSignerNameFromLocalStorage()}
+                  defaultValue={getSignerNameFromSessionStorage()}
                   onChange={(e) => {
                     const val = e.target.value.trim();
                     setFullName(val);
