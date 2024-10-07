@@ -147,8 +147,7 @@ export default class IntegrationClient {
       fuser_key: userId
     });
     const url = `${API_URL}argyle/user_token/?${params}`;
-    const options = { headers: { 'Content-Type': 'application/json' } };
-    return this._fetch(url, options).then((response) =>
+    return this._fetch(url).then((response) =>
       response ? response.json() : Promise.resolve()
     );
   }
@@ -169,8 +168,7 @@ export default class IntegrationClient {
   addressSearchResults(searchTerm: any, country: any) {
     const params = encodeGetParams({ search_term: searchTerm, country });
     const url = `${API_URL}integration/address/search/?${params}`;
-    const options = { headers: { 'Content-Type': 'application/json' } };
-    return this._fetch(url, options).then((response) =>
+    return this._fetch(url).then((response) =>
       response ? response.json() : Promise.resolve()
     );
   }
@@ -178,8 +176,7 @@ export default class IntegrationClient {
   addressDetail(addressId: any) {
     const params = encodeGetParams({ address_id: addressId });
     const url = `${API_URL}integration/address/detail/?${params}`;
-    const options = { headers: { 'Content-Type': 'application/json' } };
-    return this._fetch(url, options).then((response) =>
+    return this._fetch(url).then((response) =>
       response ? response.json() : Promise.resolve()
     );
   }
@@ -230,8 +227,7 @@ export default class IntegrationClient {
       stripe_payment_method_id: stripePaymentMethodId
     });
     const url = `${API_URL}stripe/payment_method/card/?${params}`;
-    const options = { headers: { 'Content-Type': 'application/json' } };
-    return this._fetch(url, options).then((response) =>
+    return this._fetch(url).then((response) =>
       response ? response.json() : Promise.resolve()
     );
   }
