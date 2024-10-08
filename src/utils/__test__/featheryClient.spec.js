@@ -475,7 +475,7 @@ describe('stripe', () => {
     );
     expect(response).toEqual(intentSecret);
   });
-  it('retrievePaymentMethodData retrieves the payment method  info', async () => {
+  it('retrievePaymentMethodData retrieves the payment method info', async () => {
     // Arrange
     const stripePaymentMethodId = 'stripe_payment_method_id';
     const paymentMethodFieldId = 'payment_method_field_id';
@@ -505,10 +505,7 @@ describe('stripe', () => {
       {
         cache: 'no-store',
         keepalive: false,
-        headers: {
-          Authorization: 'Token sdkKey',
-          'Content-Type': 'application/json'
-        }
+        headers: { Authorization: 'Token sdkKey' }
       }
     );
     expect(result).toEqual(paymentMethodData);
