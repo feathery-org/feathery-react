@@ -921,6 +921,11 @@ function Form({
           runAsync: boolean,
           pages?: number[]
         ) => {
+          if (!extractionId) {
+            console.error('No extraction ID was passed');
+            return;
+          }
+
           try {
             const data = await client.extractAIDocument(
               extractionId,
