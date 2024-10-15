@@ -57,11 +57,11 @@ const STATIC_URL_OPTIONS = {
 
 const S3_URL_OPTIONS = {
   local: 'http://localhost:8006',
-  staging: 'user-files-dev.s3.us-west-1.amazonaws.com',
-  production: 'user-files-1.s3.us-west-1.amazonaws.com',
-  productionAU: 'user-files-au.s3.ap-southeast-2.amazonaws.com',
-  productionEU: 'user-files-eu.s3.eu-west-1.amazonaws.com',
-  productionCA: 'user-files-ca.s3.ca-central-1.amazonaws.com'
+  staging: 's3.us-west-1.amazonaws.com',
+  production: 's3.us-west-1.amazonaws.com',
+  productionAU: 's3.ap-southeast-2.amazonaws.com',
+  productionEU: 's3.eu-west-1.amazonaws.com',
+  productionCA: 's3.ca-central-1.amazonaws.com'
 };
 
 type URL_ENUM = keyof typeof API_URL_OPTIONS;
