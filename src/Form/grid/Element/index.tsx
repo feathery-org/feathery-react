@@ -26,6 +26,7 @@ import {
 import { getVisibleElements } from '../../../utils/hideAndRepeats';
 import debounce from 'lodash.debounce';
 import { findCountryByID } from '../../../elements/components/data/countries';
+import { isMobile } from '../../../utils/browser';
 
 const MAP_FIELD_TYPES = new Set([
   'gmap_line_1',
@@ -412,7 +413,8 @@ const Element = ({ node: el, form }: any) => {
             }}
             countryCode={countryCode}
             setRef={(ref: any) => {
-              if (focusRef.current === el.id) focusRef.current = ref;
+              if (focusRef.current === el.id && !isMobile())
+                focusRef.current = ref;
             }}
             repeatIndex={index}
           />
