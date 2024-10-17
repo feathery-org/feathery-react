@@ -36,6 +36,12 @@ export const isIOS = () => {
   return /iPad|iPhone|iPod/.test(userAgentString);
 };
 
+export const isAndroid = () => {
+  return /(android)/i.test(navigator.userAgent);
+};
+
+export const isMobile = () => isIOS() || isAndroid();
+
 export const hoverStylesGuard = (styles: any) =>
   isHoverDevice() ? styles : {};
 
