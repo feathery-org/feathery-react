@@ -89,41 +89,42 @@ function RadioButtonGroupField({
               ...styles.getTarget('row')
             }}
           >
-            <input
-              type='radio'
-              id={`${servar.key}-${i}`}
-              name={
-                repeatIndex !== null
-                  ? `${servar.key}-${repeatIndex}`
-                  : servar.key
-              }
-              checked={fieldVal === value}
-              required={required}
-              disabled={disabled}
-              onChange={onChange}
-              onFocus={iosScrollOnFocus}
-              aria-label={element.properties.aria_label}
-              value={value}
-              style={{
-                padding: 0,
-                lineHeight: 'normal'
-              }}
-              css={{
-                ...composeCheckableInputStyle(styles, disabled, true),
-                ...styles.getTarget('radioGroup'),
-                ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-                '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
-              }}
-            />
-            <label
-              htmlFor={`${servar.key}-${i}`}
-              css={{
-                whiteSpace: 'pre-wrap',
-                overflowWrap: 'anywhere',
-                ...styles.getTarget('checkboxLabel')
-              }}
-            >
-              {label}
+            <label style={{ display: 'contents' }}>
+              <input
+                type='radio'
+                id={`${servar.key}-${i}`}
+                name={
+                  repeatIndex !== null
+                    ? `${servar.key}-${repeatIndex}`
+                    : servar.key
+                }
+                checked={fieldVal === value}
+                required={required}
+                disabled={disabled}
+                onChange={onChange}
+                onFocus={iosScrollOnFocus}
+                aria-label={element.properties.aria_label}
+                value={value}
+                style={{
+                  padding: 0,
+                  lineHeight: 'normal'
+                }}
+                css={{
+                  ...composeCheckableInputStyle(styles, disabled, true),
+                  ...styles.getTarget('radioGroup'),
+                  ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
+                  '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
+                }}
+              />
+              <span
+                css={{
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  ...styles.getTarget('checkboxLabel')
+                }}
+              >
+                {label}
+              </span>
             </label>
             <InlineTooltip
               id={`${element.id}-${value}`}
