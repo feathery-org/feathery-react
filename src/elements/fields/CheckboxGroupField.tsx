@@ -96,34 +96,35 @@ function CheckboxGroupField({
               ...styles.getTarget('row')
             }}
           >
-            <input
-              type='checkbox'
-              id={`${servar.key}-${i}`}
-              name={value}
-              checked={checked}
-              onChange={onChange}
-              onFocus={iosScrollOnFocus}
-              style={{ padding: 0, lineHeight: 'normal' }}
-              css={{
-                ...composeCheckableInputStyle(styles, optionDisabled),
-                ...styles.getTarget('checkboxGroup'),
-                ...(optionDisabled
-                  ? responsiveStyles.getTarget('disabled')
-                  : {}),
-                '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
-              }}
-              disabled={optionDisabled}
-              aria-label={element.properties.aria_label}
-            />
-            <label
-              htmlFor={`${servar.key}-${i}`}
-              css={{
-                whiteSpace: 'pre-wrap',
-                overflowWrap: 'anywhere',
-                ...styles.getTarget('checkboxLabel')
-              }}
-            >
-              {label}
+            <label style={{ display: 'contents' }}>
+              <input
+                type='checkbox'
+                id={`${servar.key}-${i}`}
+                name={value}
+                checked={checked}
+                onChange={onChange}
+                onFocus={iosScrollOnFocus}
+                style={{ padding: 0, lineHeight: 'normal' }}
+                css={{
+                  ...composeCheckableInputStyle(styles, optionDisabled),
+                  ...styles.getTarget('checkboxGroup'),
+                  ...(optionDisabled
+                    ? responsiveStyles.getTarget('disabled')
+                    : {}),
+                  '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
+                }}
+                disabled={optionDisabled}
+                aria-label={element.properties.aria_label}
+              />
+              <span
+                css={{
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  ...styles.getTarget('checkboxLabel')
+                }}
+              >
+                {label}
+              </span>
             </label>
             <InlineTooltip
               id={`${element.id}-${value}`}
