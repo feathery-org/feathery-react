@@ -21,6 +21,7 @@
     "analyze-prod-bundle": "webpack --mode production --config webpack.development.js --env analyze",
     "prepublishOnly": "yarn build",
     "test": "jest --coverage",
+    "test:ci": "jest --silent --maxWorkers=50% --ci",
     "lint": "eslint ./src",
     "release": "standard-version",
     "prepare": "husky"
