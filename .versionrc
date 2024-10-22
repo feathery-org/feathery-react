@@ -1,0 +1,9 @@
+{
+  "releaseCommitMessageFormat": "chore(release): v{{currentTag}} - [skip ci]",
+  "tagPrefix": "v",
+  "commitAll": true,
+  "noVerify": true,
+  "skip": {
+    "changelog": true
+  }
+}
