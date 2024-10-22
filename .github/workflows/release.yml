@@ -106,7 +106,7 @@ jobs:
         run: yarn install --frozen-lockfile
 
       - name: Test
-        run: yarn test
+        run: yarn test:ci
 
   release:
     runs-on: ubuntu-latest
