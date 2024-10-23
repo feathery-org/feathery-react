@@ -1917,22 +1917,19 @@ function Form({
             const childDocument = childWindow.document;
 
             childDocument.write(htmlPayload);
-
             childWindow.scrollTo(0, 0);
 
             // If set to show file attach modal automatically, need to reorder overlay to ensure it is placed behind modal
             const dialog = childDocument.querySelector('div[role="dialog"]');
             const overlay = childDocument.querySelector('.ui-widget-overlay');
 
-            // Remove existing overlay if present
             overlay?.remove();
 
-            // Adjust dialog positioning if dialog exists
             if (dialog) {
               dialog.style.left = '0px';
               dialog.style.top = '40%';
 
-              // Add a new overlay for the dialog
+              // Add a new overlay behind the dialog
               const newOverlay = childDocument.createElement('div');
               newOverlay.classList.add('ui-widget-overlay', 'ui-front');
               dialog.parentNode.insertBefore(newOverlay, dialog);
