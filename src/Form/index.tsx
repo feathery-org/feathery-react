@@ -1919,7 +1919,7 @@ function Form({
             childDocument.write(htmlPayload);
             childWindow.scrollTo(0, 0);
 
-            // If set to show file attach modal automatically, need to reorder overlay to ensure it is placed behind modal
+            // If set to show quik file attach modal automatically, need to reorder overlay to ensure it's placed behind modal
             const dialog = childDocument.querySelector('div[role="dialog"]');
             const overlay = childDocument.querySelector('.ui-widget-overlay');
 
