@@ -183,6 +183,8 @@ import { verifyAlloyId } from '../integrations/alloy';
 import { openFlinksConnect } from '../integrations/flinks';
 import { isNum } from '../utils/primitives';
 import { getSignUrl } from '../utils/document';
+import Modal from '../elements/components/Modal';
+import Frame from '../elements/components/Frame';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -340,6 +342,9 @@ function Form({
 
   // Set to trigger conditional renders on field value updates, no need to use the value itself
   const [render, setRender] = useState({ v: 1 });
+
+  const [showQuikDocModal, setShowQuikDocModal] = useState(false);
+  const [quikHTMLPayload, setQuikHTMLPayload] = useState('');
 
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
@@ -1911,9 +1916,14 @@ function Form({
       } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {
         try {
           const htmlPayload = await client.generateQuikEnvelopes(action);
+          console.log('html payload rec');
           if (htmlPayload) {
-            const childWindow = featheryWindow().open('', '_blank');
-            childWindow.document.write(htmlPayload);
+            // const childWindow = featheryWindow().open('', '_blank');
+            // childWindow.document.write(htmlPayload);
+            setQuikHTMLPayload(htmlPayload);
+            setShowQuikDocModal(true);
+            console.log('SET HTML PAYLOAD');
+            console.log(htmlPayload);
           }
         } catch (e: any) {
           setElementError((e as Error).message);
@@ -2221,6 +2231,14 @@ function Form({
       >
         {stepLoader}
         {children}
+        {showQuikDocModal && (
+          <Modal
+            modalCSS={{ width: '80%', height: '80%', maxWidth: '80%' }}
+            onClose={() => setShowQuikDocModal(false)}
+          >
+            <Frame html={quikHTMLPayload} />
+          </Modal>
+        )}
         <Grid step={activeStep} form={form} viewport={viewport} />
         {popupOptions && (
           <CloseIcon
