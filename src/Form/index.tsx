@@ -1926,7 +1926,7 @@ function Form({
             overlay?.remove();
 
             if (dialog) {
-              dialog.style.left = '0px';
+              dialog.style.left = '36px';
               dialog.style.top = '40%';
 
               // Add a new overlay behind the dialog
