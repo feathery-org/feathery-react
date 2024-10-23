@@ -710,7 +710,6 @@ function Form({
             await fn(
               { ...props, http: httpHelpers(client, connectorFields) },
               ...Object.values(injectableFields)
-              // );
             ).catch((e: any) => {
               // catch unhandled rejections in async user code (if a promise is returned)
               // handle any errors in async code that actually returns a promise
