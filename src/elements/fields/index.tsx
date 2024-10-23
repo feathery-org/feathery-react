@@ -20,7 +20,6 @@ import AddressLine1 from './AddressLine1';
 import PasswordField from './PasswordField';
 import PaymentMethodField from './PaymentMethodField';
 import MatrixField from './MatrixField';
-import { borderWidthProps } from '../styles';
 import { DEFAULT_MIN_SIZE } from '../../Form/grid/StyledContainer/styles';
 import QRScanner from './QRScanner';
 
