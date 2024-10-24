@@ -1916,7 +1916,6 @@ function Form({
       } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {
         try {
           const htmlPayload = await client.generateQuikEnvelopes(action);
-          console.log('html payload rec');
           if (htmlPayload) {
             setQuikHTMLPayload(htmlPayload);
             setShowQuikDocModal(true);
