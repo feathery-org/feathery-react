@@ -1918,12 +1918,8 @@ function Form({
           const htmlPayload = await client.generateQuikEnvelopes(action);
           console.log('html payload rec');
           if (htmlPayload) {
-            // const childWindow = featheryWindow().open('', '_blank');
-            // childWindow.document.write(htmlPayload);
             setQuikHTMLPayload(htmlPayload);
             setShowQuikDocModal(true);
-            console.log('SET HTML PAYLOAD');
-            console.log(htmlPayload);
           }
         } catch (e: any) {
           setElementError((e as Error).message);
@@ -2233,7 +2229,13 @@ function Form({
         {children}
         {showQuikDocModal && (
           <Modal
-            modalCSS={{ width: '80%', height: '80%', maxWidth: '80%' }}
+            modalCSS={{
+              width: '80vw',
+              height: '90vh',
+              maxWidth: '80vw',
+              minHeight: '90vh',
+              overflow: 'hidden'
+            }}
             onClose={() => setShowQuikDocModal(false)}
           >
             <Frame html={quikHTMLPayload} />

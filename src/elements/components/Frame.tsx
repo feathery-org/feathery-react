@@ -1,23 +1,41 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 
 function Frame({ html = '' }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const handleLoad = (iframe: HTMLIFrameElement | null) => {
+    if (iframe) {
+      const childDocument = iframe.contentWindow?.document;
+      if (childDocument) {
+        iframe.contentWindow?.scrollTo(0, 0);
 
-  useEffect(() => {
-    if (iframeRef.current && html) {
-      iframeRef.current.contentWindow?.document.open();
-      iframeRef.current.contentWindow?.document.write(html);
-      iframeRef.current.contentWindow?.document.close();
+        // Manipulate dialog and overlay
+        const dialog = childDocument.querySelector('div[role="dialog"]');
+        const overlay = childDocument.querySelector('.ui-widget-overlay');
+
+        // Remove existing overlay
+        overlay?.remove();
+
+        if (dialog) {
+          // Adjust dialog position
+          (dialog as HTMLElement).style.left = '36px';
+          (dialog as HTMLElement).style.top = '40%';
+
+          // Create and insert new overlay behind the dialog
+          const newOverlay = childDocument.createElement('div');
+          newOverlay.classList.add('ui-widget-overlay', 'ui-front');
+          dialog.parentNode?.insertBefore(newOverlay, dialog);
+        }
+      }
     }
-  }, [html]);
+  };
 
   return (
     <iframe
       src='about:blank'
-      ref={iframeRef}
+      srcDoc={html}
+      onLoad={(e) => handleLoad(e.currentTarget)}
       css={{
-        width: '800px',
-        height: '800px',
+        width: '100%',
+        height: '80vh',
         border: 'none',
         outline: 'none',
         margin: 0,
