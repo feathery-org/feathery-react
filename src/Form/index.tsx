@@ -1911,9 +1911,29 @@ function Form({
       } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {
         try {
           const htmlPayload = await client.generateQuikEnvelopes(action);
+
           if (htmlPayload) {
             const childWindow = featheryWindow().open('', '_blank');
-            childWindow.document.write(htmlPayload);
+            const childDocument = childWindow.document;
+
+            childDocument.write(htmlPayload);
+            childWindow.scrollTo(0, 0);
+
+            // If set to show quik file attach modal automatically, need to reorder overlay to ensure it's placed behind modal
+            const dialog = childDocument.querySelector('div[role="dialog"]');
+            const overlay = childDocument.querySelector('.ui-widget-overlay');
+
+            overlay?.remove();
+
+            if (dialog) {
+              dialog.style.left = '36px';
+              dialog.style.top = '40%';
+
+              // Add a new overlay behind the dialog
+              const newOverlay = childDocument.createElement('div');
+              newOverlay.classList.add('ui-widget-overlay', 'ui-front');
+              dialog.parentNode.insertBefore(newOverlay, dialog);
+            }
           }
         } catch (e: any) {
           setElementError((e as Error).message);
