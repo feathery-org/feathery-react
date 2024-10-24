@@ -1,11 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CloseIcon } from '../../../components/icons';
 import { dataURLToFile } from '../../../../utils/image';
-import { MODAL_Z_INDEX } from '../../../../utils/styles';
 import SignatureCanvas, { SignatureCanvasProps } from './SignatureCanvas';
 import html2canvas from 'html2canvas';
 import debounce from 'lodash.debounce';
 import { trimCanvas } from './utils';
+import Modal from '../../../components/Modal';
 
 const SIGNER_NAME_KEY = 'feathery-signer-name';
 
@@ -120,325 +119,265 @@ function SignatureModal(props: SignatureModalProps) {
   }
 
   return (
-    <div
+    <Modal
       css={{
-        position: 'fixed',
-        display: 'flex',
-        top: 0,
-        left: 0,
-        width: '100vw',
-        height: '100vh',
-        background: 'rgba(0, 0, 0, 0.2)',
-        zIndex: MODAL_Z_INDEX,
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '16px',
         fontFamily:
           responsiveStyles?.getTarget('fc')?.fontFamily ?? 'sans-serif'
       }}
+      title='Add your signature'
+      onClose={handleCancel}
     >
-      <div
-        onClick={() => handleCancel()}
-        css={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%'
-        }}
-      />
-      <div
-        className='feathery-modal'
-        css={{
-          position: 'relative',
-          backgroundColor: '#fff',
-          borderRadius: '14px',
-          width: '100%',
-          maxWidth: '600px'
-        }}
-      >
-        <div
-          css={{
-            position: 'relative',
-            display: 'flex',
-            padding: '20px',
-            borderBottom: '1px solid #e9e9e9'
-          }}
-        >
-          <h3 css={{ padding: 0, margin: 0, flex: '1' }}>Add your signature</h3>
-          <CloseIcon
-            onClick={() => handleCancel()}
-            css={{ '&:hover': { cursor: 'pointer' } }}
-          />
-        </div>
-        <div
-          css={{
-            position: 'relative',
-            padding: '20px 20px 30px 20px',
-            '& h3': {
-              fontSize: '1em',
-              margin: 0,
-              padding: 0
-            }
-          }}
-        >
-          {!drawSignature && (
-            <>
-              <div
-                css={{
-                  display: 'flex',
-                  gap: '15px',
-                  flexDirection: 'column',
-                  paddingBottom: '30px'
-                }}
-              >
-                <h3>Type your signature</h3>
-                <input
-                  defaultValue={getSignerNameFromSessionStorage()}
-                  onChange={(e) => {
-                    const val = e.target.value.trim();
-                    setFullName(val);
-                  }}
-                  placeholder='Your full name'
-                  css={{
-                    padding: '8px 10px',
-                    borderRadius: '4px',
-                    border: '1px solid #e9e9e9',
-                    '&:focus,&:focus-visible': {
-                      border: '1px solid #5e5e5e',
-                      outline: 'none'
-                    }
-                  }}
-                />
+      {!drawSignature && (
+        <>
+          <div
+            css={{
+              display: 'flex',
+              gap: '15px',
+              flexDirection: 'column',
+              paddingBottom: '30px'
+            }}
+          >
+            <h3>Type your signature</h3>
+            <input
+              defaultValue={getSignerNameFromSessionStorage()}
+              onChange={(e) => {
+                const val = e.target.value.trim();
+                setFullName(val);
+              }}
+              placeholder='Your full name'
+              css={{
+                padding: '8px 10px',
+                borderRadius: '4px',
+                border: '1px solid #e9e9e9',
+                '&:focus,&:focus-visible': {
+                  border: '1px solid #5e5e5e',
+                  outline: 'none'
+                }
+              }}
+            />
+            <div
+              css={{
+                position: 'relative',
+                width: '100%',
+                height: '100px',
+                backgroundColor: '#f6f6f6',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '2em',
+                fontFamily: 'La Belle Aurore'
+              }}
+            >
+              {isLoading && (
                 <div
                   css={{
-                    position: 'relative',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
                     width: '100%',
-                    height: '100px',
+                    height: '100%',
                     backgroundColor: '#f6f6f6',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '2em',
-                    fontFamily: 'La Belle Aurore'
+                    fontFamily: 'sans-serif',
+                    fontSize: '.9rem',
+                    borderRadius: '4px'
                   }}
                 >
-                  {isLoading && (
-                    <div
-                      css={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        height: '100%',
-                        backgroundColor: '#f6f6f6',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontFamily: 'sans-serif',
-                        fontSize: '.9rem',
-                        borderRadius: '4px'
-                      }}
-                    >
-                      Generating signature...
-                    </div>
-                  )}
-                  <div
-                    css={{
-                      position: 'fixed',
-                      top: '-1500px',
-                      left: 0
-                    }}
-                  >
-                    <div
-                      ref={previewRef}
-                      css={{
-                        fontSize: '1.5em',
-                        fontFamily: 'La Belle Aurore',
-                        color: '#000'
-                      }}
-                      className='previewText'
-                    >
-                      {fullName}
-                    </div>
-                  </div>
-                  {!signatureImgData ? (
-                    'Full Name'
-                  ) : (
-                    <img
-                      src={signatureImgData}
-                      alt='Signature Image'
-                      css={{ maxHeight: '100%', maxWidth: '100%' }}
-                    />
-                  )}
+                  Generating signature...
                 </div>
-              </div>
-              {!typeOnly && (
-                <>
-                  <div
-                    css={{
-                      height: '1px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderBottom: '1px solid #e9e9e9'
-                    }}
-                  >
-                    <div
-                      css={{
-                        backgroundColor: '#fff',
-                        padding: '10px',
-                        color: '#5e5e5e'
-                      }}
-                    >
-                      or
-                    </div>
-                  </div>
-                  <div
-                    css={{
-                      paddingTop: '30px'
-                    }}
-                  >
-                    <div
-                      onClick={() => setDrawSignature(true)}
-                      css={{
-                        padding: '20px',
-                        borderRadius: '4px',
-                        border: '1px solid #e9e9e9',
-                        '& h3': {
-                          padding: 0,
-                          margin: 0,
-                          marginBottom: '10px'
-                        },
-                        '& p': {
-                          margin: 0,
-                          padding: 0
-                        },
-                        '&:hover': {
-                          border: '1px solid #5e5e5e',
-                          cursor: 'pointer'
-                        }
-                      }}
-                    >
-                      <h3>Draw your signature</h3>
-                      <p>
-                        Draw your signature here using your mouse or trackpad.
-                      </p>
-                    </div>
-                  </div>
-                </>
               )}
-            </>
-          )}
-          {drawSignature && (
-            <div
-              css={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '15px'
-              }}
-            >
-              <p
+              <div
                 css={{
-                  margin: 0,
-                  padding: 0
+                  position: 'fixed',
+                  top: '-1500px',
+                  left: 0
                 }}
               >
-                Draw your signature in the box below.
-              </p>
-              <div
-                css={{ position: 'relative', width: '100%', height: '200px' }}
-              >
-                <SignatureCanvas
-                  fieldKey={fieldKey}
-                  responsiveStyles={responsiveStyles}
-                  onClear={onClear}
-                  onEnd={(file) => setSignatureFile(file)}
-                  showClear={false}
-                />
+                <div
+                  ref={previewRef}
+                  css={{
+                    fontSize: '1.5em',
+                    fontFamily: 'La Belle Aurore',
+                    color: '#000'
+                  }}
+                  className='previewText'
+                >
+                  {fullName}
+                </div>
               </div>
+              {!signatureImgData ? (
+                'Full Name'
+              ) : (
+                <img
+                  src={signatureImgData}
+                  alt='Signature Image'
+                  css={{ maxHeight: '100%', maxWidth: '100%' }}
+                />
+              )}
             </div>
+          </div>
+          {!typeOnly && (
+            <>
+              <div
+                css={{
+                  height: '1px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderBottom: '1px solid #e9e9e9'
+                }}
+              >
+                <div
+                  css={{
+                    backgroundColor: '#fff',
+                    padding: '10px',
+                    color: '#5e5e5e'
+                  }}
+                >
+                  or
+                </div>
+              </div>
+              <div
+                css={{
+                  paddingTop: '30px'
+                }}
+              >
+                <div
+                  onClick={() => setDrawSignature(true)}
+                  css={{
+                    padding: '20px',
+                    borderRadius: '4px',
+                    border: '1px solid #e9e9e9',
+                    '& h3': {
+                      padding: 0,
+                      margin: 0,
+                      marginBottom: '10px'
+                    },
+                    '& p': {
+                      margin: 0,
+                      padding: 0
+                    },
+                    '&:hover': {
+                      border: '1px solid #5e5e5e',
+                      cursor: 'pointer'
+                    }
+                  }}
+                >
+                  <h3>Draw your signature</h3>
+                  <p>Draw your signature here using your mouse or trackpad.</p>
+                </div>
+              </div>
+            </>
           )}
-        </div>
+        </>
+      )}
+      {drawSignature && (
         <div
           css={{
-            position: 'relative',
             display: 'flex',
-            padding: '20px 20px',
-            borderTop: '1px solid #e9e9e9',
-            justifyContent: 'space-between',
-            '& button': {
-              padding: '12px 0px',
-              width: '120px',
-              borderRadius: '4px',
-              outline: 'none',
-              border: 'none',
-              fontSize: '1rem',
-              transition: 'background-color ease-in-out 0.1s',
-              '&:hover': {
-                cursor: 'pointer'
-              }
-            }
+            flexDirection: 'column',
+            gap: '15px'
           }}
         >
-          {drawOnly || !drawSignature ? (
-            <button
-              onClick={() => handleCancel()}
-              css={{ '&:hover': { backgroundColor: '#e1e1e1' } }}
-            >
-              Cancel
-            </button>
-          ) : (
+          <p
+            css={{
+              margin: 0,
+              padding: 0
+            }}
+          >
+            Draw your signature in the box below.
+          </p>
+          <div css={{ position: 'relative', width: '100%', height: '200px' }}>
+            <SignatureCanvas
+              fieldKey={fieldKey}
+              responsiveStyles={responsiveStyles}
+              onClear={onClear}
+              onEnd={(file) => setSignatureFile(file)}
+              showClear={false}
+            />
+          </div>
+        </div>
+      )}
+      <div
+        css={{
+          position: 'relative',
+          display: 'flex',
+          padding: '20px 20px',
+          borderTop: '1px solid #e9e9e9',
+          justifyContent: 'space-between',
+          '& button': {
+            padding: '12px 0px',
+            width: '120px',
+            borderRadius: '4px',
+            outline: 'none',
+            border: 'none',
+            fontSize: '1rem',
+            transition: 'background-color ease-in-out 0.1s',
+            '&:hover': {
+              cursor: 'pointer'
+            }
+          }
+        }}
+      >
+        {drawOnly || !drawSignature ? (
+          <button
+            onClick={() => handleCancel()}
+            css={{ '&:hover': { backgroundColor: '#e1e1e1' } }}
+          >
+            Cancel
+          </button>
+        ) : (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              setDrawSignature(false);
+              setSignatureFile(undefined);
+            }}
+            css={{ '&:hover': { backgroundColor: '#e1e1e1' } }}
+          >
+            Back
+          </button>
+        )}
+        <div>
+          {defaultValue && (
             <button
               onClick={(e) => {
                 e.preventDefault();
-                setDrawSignature(false);
-                setSignatureFile(undefined);
+                onClear();
               }}
-              css={{ '&:hover': { backgroundColor: '#e1e1e1' } }}
+              css={{
+                marginRight: '10px',
+                '&:hover': { backgroundColor: '#e1e1e1' }
+              }}
             >
-              Back
+              Clear
             </button>
           )}
-          <div>
-            {defaultValue && (
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  onClear();
-                }}
-                css={{
-                  marginRight: '10px',
-                  '&:hover': { backgroundColor: '#e1e1e1' }
-                }}
-              >
-                Clear
-              </button>
-            )}
-            <button
-              onClick={() => {
-                if (!isLoading) handleSubmit();
-              }}
-              disabled={isLoading || !signatureFile}
-              css={{
-                backgroundColor: '#535353',
-                color: '#fff',
+          <button
+            onClick={() => {
+              if (!isLoading) handleSubmit();
+            }}
+            disabled={isLoading || !signatureFile}
+            css={{
+              backgroundColor: '#535353',
+              color: '#fff',
+              '&:hover': {
+                backgroundColor: '#3a3a3a'
+              },
+              '&:disabled': {
                 '&:hover': {
-                  backgroundColor: '#3a3a3a'
-                },
-                '&:disabled': {
-                  '&:hover': {
-                    cursor: 'not-allowed'
-                  }
+                  cursor: 'not-allowed'
                 }
-              }}
-            >
-              Sign
-            </button>
-          </div>
+              }
+            }}
+          >
+            Sign
+          </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

@@ -183,6 +183,8 @@ import { verifyAlloyId } from '../integrations/alloy';
 import { openFlinksConnect } from '../integrations/flinks';
 import { isNum } from '../utils/primitives';
 import { getSignUrl } from '../utils/document';
+import Modal from '../elements/components/Modal';
+import Frame from '../elements/components/Frame';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -340,6 +342,9 @@ function Form({
 
   // Set to trigger conditional renders on field value updates, no need to use the value itself
   const [render, setRender] = useState({ v: 1 });
+
+  const [showQuikDocModal, setShowQuikDocModal] = useState(false);
+  const [quikHTMLPayload, setQuikHTMLPayload] = useState('');
 
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
@@ -1911,29 +1916,9 @@ function Form({
       } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {
         try {
           const htmlPayload = await client.generateQuikEnvelopes(action);
-
           if (htmlPayload) {
-            const childWindow = featheryWindow().open('', '_blank');
-            const childDocument = childWindow.document;
-
-            childDocument.write(htmlPayload);
-            childWindow.scrollTo(0, 0);
-
-            // If set to show quik file attach modal automatically, need to reorder overlay to ensure it's placed behind modal
-            const dialog = childDocument.querySelector('div[role="dialog"]');
-            const overlay = childDocument.querySelector('.ui-widget-overlay');
-
-            overlay?.remove();
-
-            if (dialog) {
-              dialog.style.left = '36px';
-              dialog.style.top = '40%';
-
-              // Add a new overlay behind the dialog
-              const newOverlay = childDocument.createElement('div');
-              newOverlay.classList.add('ui-widget-overlay', 'ui-front');
-              dialog.parentNode.insertBefore(newOverlay, dialog);
-            }
+            setQuikHTMLPayload(htmlPayload);
+            setShowQuikDocModal(true);
           }
         } catch (e: any) {
           setElementError((e as Error).message);
@@ -2241,6 +2226,20 @@ function Form({
       >
         {stepLoader}
         {children}
+        {showQuikDocModal && (
+          <Modal
+            modalCSS={{
+              width: '80vw',
+              height: '90vh',
+              maxWidth: '80vw',
+              minHeight: '90vh',
+              overflow: 'hidden'
+            }}
+            onClose={() => setShowQuikDocModal(false)}
+          >
+            <Frame html={quikHTMLPayload} />
+          </Modal>
+        )}
         <Grid step={activeStep} form={form} viewport={viewport} />
         {popupOptions && (
           <CloseIcon
