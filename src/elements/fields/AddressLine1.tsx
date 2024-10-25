@@ -36,12 +36,7 @@ function AddressLine1({
   ...props
 }: any) {
   const servar = element.servar;
-  const meta = servar.metadata;
-  const options = useAddressSearch(
-    value,
-    meta.address_autocomplete,
-    meta.autocomplete_country
-  );
+  const options = useAddressSearch(value, servar);
   const [showOptions, setShowOptions] = useState(false);
   const [focused, setFocused] = useState(false);
   const { borderStyles, customBorder } = useBorder({
@@ -188,7 +183,11 @@ function AddressLine1({
   );
 }
 
-function useAddressSearch(searchTerm: any, active: any, country: any) {
+function useAddressSearch(searchTerm: any, servar: any) {
+  const meta = servar.metadata;
+  const active = meta.address_autocomplete;
+  const country = meta.autocomplete_country ?? '';
+
   const mounted = useMounted();
   const [term, setTerm] = useState(searchTerm);
   const [results, setResults] = React.useState([]);
@@ -197,7 +196,7 @@ function useAddressSearch(searchTerm: any, active: any, country: any) {
     debounce(
       (newTerm: any) =>
         new FeatheryClient()
-          .addressSearchResults(newTerm, country ?? '')
+          .addressSearchResults(newTerm, country, servar.type === 'gmap_city')
           .then((addresses) => {
             if (mounted.current) {
               setResults(addresses);
