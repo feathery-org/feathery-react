@@ -568,6 +568,7 @@ const Element = ({ node: el, form }: any) => {
           />
         );
       case 'gmap_line_1':
+      case 'gmap_city':
         return (
           <Elements.AddressLine1
             {...fieldProps}
