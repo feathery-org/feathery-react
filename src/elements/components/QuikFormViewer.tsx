@@ -16,7 +16,6 @@ function QuikFormViewer(props: FrameProps) {
   }, [html]);
 
   const processHtml = (rawHtml: string): string => {
-    console.log('processing HTML');
     const parser = new DOMParser();
     const doc = parser.parseFromString(rawHtml, 'text/html');
 
