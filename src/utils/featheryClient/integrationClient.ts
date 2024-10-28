@@ -165,8 +165,12 @@ export default class IntegrationClient {
     return this._fetch(url);
   }
 
-  addressSearchResults(searchTerm: any, country: any) {
-    const params = encodeGetParams({ search_term: searchTerm, country });
+  addressSearchResults(searchTerm: any, country: any, city: boolean) {
+    const params = encodeGetParams({
+      search_term: searchTerm,
+      country,
+      city_search: city ? 'true' : ''
+    });
     const url = `${API_URL}integration/address/search/?${params}`;
     return this._fetch(url).then((response) =>
       response ? response.json() : Promise.resolve()
