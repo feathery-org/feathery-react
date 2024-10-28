@@ -1,5 +1,4 @@
-import React, { useEffect, useState } from 'react';
-import { featheryDoc } from '../../utils/browser';
+import React, { useEffect, useMemo, useState } from 'react';
 
 interface FrameProps {
   html: string;
@@ -9,44 +8,40 @@ interface FrameProps {
 
 function QuikFormViewer(props: FrameProps) {
   const { html, css, setShow = () => {} } = props;
-  const [modifiedHtml, setModifiedHtml] = useState('');
+  const [processedHtml, setProcessedHtml] = useState('');
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    if (html) {
-      const document = featheryDoc();
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = html;
-
-      // Remove Logo for back button
-      tempDiv.querySelector('#headerlogo')?.remove();
-      tempDiv.querySelector('.ui-widget-overlay')?.remove();
-
-      // disable scrolling on iframe <html> which is causing floating 'Back' button on scroll
-      const styleTag = document.createElement('style');
-      styleTag.type = 'text/css';
-      styleTag.innerHTML = `
-         html {
-           overflow: hidden !important;
-         }
-       `;
-      tempDiv.prepend(styleTag);
-
-      const dialog = tempDiv.querySelector('div[role="dialog"]');
-      if (dialog) {
-        const dialogElement = dialog as HTMLElement;
-        const newOverlay = document.createElement('div');
-
-        dialogElement.style.left = '36px';
-        dialogElement.style.top = '40%';
-
-        newOverlay.classList.add('ui-widget-overlay', 'ui-front');
-        dialog.parentNode?.insertBefore(newOverlay, dialog);
-      }
-
-      if (modifiedHtml !== tempDiv.innerHTML)
-        setModifiedHtml(tempDiv.innerHTML);
-    }
+    setIsReady(false);
   }, [html]);
+
+  const processHtml = (rawHtml: string): string => {
+    console.log('processing HTML');
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(rawHtml, 'text/html');
+
+    // Remove Logo for back button
+    const headerLogo = doc.querySelector('#headerlogo');
+    if (headerLogo) headerLogo.remove();
+
+    // Disable scrolling on iframe <html> to fix floating back button UI issue
+    const styleTag = doc.createElement('style');
+    styleTag.innerHTML = `
+      html {
+        overflow: hidden !important;
+      }
+    `;
+    doc.head.prepend(styleTag);
+
+    return doc.documentElement.outerHTML;
+  };
+
+  const memoizedProcessedHtml = useMemo(() => processHtml(html), [html]);
+
+  useEffect(() => {
+    setProcessedHtml(memoizedProcessedHtml);
+    setIsReady(true);
+  }, [memoizedProcessedHtml]);
 
   return (
     <div
@@ -75,16 +70,15 @@ function QuikFormViewer(props: FrameProps) {
       >
         Back
       </button>
-      {modifiedHtml && (
+      {processedHtml && isReady && (
         <iframe
           src='about:blank'
-          srcDoc={modifiedHtml}
+          srcDoc={processedHtml}
           css={{
             width: '100%',
             height: '100vh',
             border: 'none',
             outline: 'none',
-            overflow: 'hidden',
             margin: 0,
             padding: 0,
             ...css
