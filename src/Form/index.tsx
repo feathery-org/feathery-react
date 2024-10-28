@@ -183,8 +183,7 @@ import { verifyAlloyId } from '../integrations/alloy';
 import { openFlinksConnect } from '../integrations/flinks';
 import { isNum } from '../utils/primitives';
 import { getSignUrl } from '../utils/document';
-import Modal from '../elements/components/Modal';
-import Frame from '../elements/components/Frame';
+import QuikFormViewer from '../elements/components/QuikFormViewer';
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -343,7 +342,7 @@ function Form({
   // Set to trigger conditional renders on field value updates, no need to use the value itself
   const [render, setRender] = useState({ v: 1 });
 
-  const [showQuikDocModal, setShowQuikDocModal] = useState(false);
+  const [showQuikFormViewer, setShowQuikFormViewer] = useState(false);
   const [quikHTMLPayload, setQuikHTMLPayload] = useState('');
 
   // When the active step changes, recalculate the dimensions of the new step
@@ -1918,7 +1917,7 @@ function Form({
           const htmlPayload = await client.generateQuikEnvelopes(action);
           if (htmlPayload) {
             setQuikHTMLPayload(htmlPayload);
-            setShowQuikDocModal(true);
+            setShowQuikFormViewer(true);
           }
         } catch (e: any) {
           setElementError((e as Error).message);
@@ -2226,19 +2225,11 @@ function Form({
       >
         {stepLoader}
         {children}
-        {showQuikDocModal && (
-          <Modal
-            modalCSS={{
-              width: '80vw',
-              height: '90vh',
-              maxWidth: '80vw',
-              minHeight: '90vh',
-              overflow: 'hidden'
-            }}
-            onClose={() => setShowQuikDocModal(false)}
-          >
-            <Frame html={quikHTMLPayload} />
-          </Modal>
+        {showQuikFormViewer && (
+          <QuikFormViewer
+            html={quikHTMLPayload}
+            setShow={setShowQuikFormViewer}
+          />
         )}
         <Grid step={activeStep} form={form} viewport={viewport} />
         {popupOptions && (
