@@ -9,11 +9,6 @@ interface FrameProps {
 function QuikFormViewer(props: FrameProps) {
   const { html, css, setShow = () => {} } = props;
   const [processedHtml, setProcessedHtml] = useState('');
-  const [isReady, setIsReady] = useState(false);
-
-  useEffect(() => {
-    setIsReady(false);
-  }, [html]);
 
   const processHtml = (rawHtml: string): string => {
     const parser = new DOMParser();
@@ -39,7 +34,6 @@ function QuikFormViewer(props: FrameProps) {
 
   useEffect(() => {
     setProcessedHtml(memoizedProcessedHtml);
-    setIsReady(true);
   }, [memoizedProcessedHtml]);
 
   return (
@@ -69,7 +63,7 @@ function QuikFormViewer(props: FrameProps) {
       >
         Back
       </button>
-      {processedHtml && isReady && (
+      {processedHtml && (
         <iframe
           src='about:blank'
           srcDoc={processedHtml}
