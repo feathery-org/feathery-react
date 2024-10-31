@@ -142,7 +142,7 @@ jobs:
       - name: Create Release
         env:
           GITHUB_TOKEN: ${{ secrets.FEATHERY_BOT_TOKEN }}
-        run: yarn release
+        run: yarn release -- --release-as patch
 
       - name: Push Changes
         env:
