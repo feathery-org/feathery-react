@@ -823,7 +823,7 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
-  async inviteCollaborator(usersGroups: string, templateId: string) {
+  async inviteCollaborator(usersGroups: string[], templateId: string) {
     const { userId, collaboratorId } = initInfo();
     const data: Record<string, any> = {
       form_key: this.formKey,
