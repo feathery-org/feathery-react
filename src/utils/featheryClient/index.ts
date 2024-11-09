@@ -2,6 +2,7 @@ import IntegrationClient from './integrationClient';
 import {
   fieldValues,
   filePathMap,
+  fileSubmittedMap,
   initFormsPromise,
   initInfo,
   initState,
@@ -182,6 +183,9 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   async _submitFileData(servar: any, stepKey: string) {
+    if (fileSubmittedMap[servar.key]) return;
+    fileSubmittedMap[servar.key] = true;
+
     const { userId } = initInfo();
     const url = `${API_URL}panel/step/submit/file/${userId}/`;
 
