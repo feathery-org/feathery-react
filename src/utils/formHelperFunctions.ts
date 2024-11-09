@@ -2,6 +2,7 @@ import getRandomBoolean from './random';
 import {
   fieldValues,
   filePathMap,
+  fileSubmittedMap,
   initInfo,
   initState,
   setFieldValues
@@ -669,6 +670,7 @@ export function clearFilePathMapEntry(key: any, index = null) {
   } else {
     filePathMap[key] = null;
   }
+  delete fileSubmittedMap[key];
 }
 
 export function setUrlStepHash(history: any, steps: any, stepName: string) {
