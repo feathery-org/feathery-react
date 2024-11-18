@@ -110,7 +110,14 @@ function FileUploadField({
   const icon = element.properties.icon ? (
     <Image src={element.properties.icon} fluid style={imgStyles} />
   ) : (
-    <FileUploadIcon width={imgStyles.width} style={{ maxHeight: '100%' }} />
+    <FileUploadIcon
+      width={
+        imgStyles.width && imgStyles.width !== 'px'
+          ? imgStyles.width
+          : undefined
+      }
+      style={{ 'max-height': '100%' }}
+    />
   );
 
   const fileTypes = [...servar.metadata.file_types];
