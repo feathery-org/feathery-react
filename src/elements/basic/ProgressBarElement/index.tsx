@@ -3,7 +3,7 @@ import { isNum } from '../../../utils/primitives';
 import SmoothBar from './components/SmoothBar';
 import SegmentBar from './components/SegmentBar';
 
-function applyProgressBarStyles(element: any, responsiveStyles: any) {
+function applyProgressBarStyles(responsiveStyles: any) {
   responsiveStyles.addTargets('barContainer', 'bar', 'barWrapper');
 
   responsiveStyles.applyFontStyles('barContainer');
@@ -32,7 +32,7 @@ function ProgressBarElement({
   children
 }: any) {
   const styles = useMemo(
-    () => applyProgressBarStyles(element, responsiveStyles),
+    () => applyProgressBarStyles(responsiveStyles),
     [responsiveStyles]
   );
 
