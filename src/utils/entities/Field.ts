@@ -70,18 +70,20 @@ export default class Field {
   // raw field value
   get value(): FeatheryFieldTypes {
     // need to track changes via a proxy to any field value that is an Object or Array
+    const fieldVal = fieldValues[this._fieldKey];
     if (
-      fieldValues[this._fieldKey] !== null &&
-      fieldValues[this._fieldKey] instanceof Object
+      fieldVal !== null &&
+      fieldVal instanceof Object &&
+      !(fieldVal instanceof Promise)
     )
-      return new Proxy(fieldValues[this._fieldKey] as object, {
+      return new Proxy(fieldVal as object, {
         set: (target: any, property: any, value) => {
           target[property] = parseUserVal(value, this._fieldKey);
           this._runFieldUpdate();
           return true;
         }
       });
-    return fieldValues[this._fieldKey];
+    return fieldVal;
   }
 
   // set raw field value
