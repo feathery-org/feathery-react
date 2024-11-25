@@ -26,6 +26,14 @@ export function getRepeatedContainers(step: Step) {
   return step.subgrids.filter((subgrid) => subgrid.repeated);
 }
 
+function isParentPosition(parentPos: number[], childPos: number[]) {
+  // children position must be longer
+  if (parentPos.length >= childPos.length) return false;
+
+  // the child position must contain every element of the parent
+  return parentPos.every((value, index) => childPos[index] === value);
+}
+
 /**
  * Gets all of the server field descendants of a repeating container
  * @param step
@@ -36,9 +44,9 @@ export function getFieldsInRepeat(
   step: { servar_fields: any[] },
   repeatContainer: PositionedElement
 ) {
-  return step.servar_fields.filter((field) =>
-    field.position.join(',').startsWith(repeatContainer.position.join(','))
-  );
+  return step.servar_fields.filter((field) => {
+    return isParentPosition(repeatContainer.position, field.position);
+  });
 }
 
 /**
