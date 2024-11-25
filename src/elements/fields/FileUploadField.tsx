@@ -41,6 +41,25 @@ function FileUploadField({
   const fileExists = thumbnailData.length > 0;
   const hidePreview = element.styles.hide_file_preview;
 
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const { files } = e.dataTransfer;
+    if (allowMoreFiles) handleFiles(files);
+  };
+
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && allowMoreFiles) {
+      handleFiles(files);
+    }
+  };
+
   const onClick = () => {
     if (!allowMoreFiles && !hidePreview) return;
     fileInput.current.click();
@@ -51,8 +70,11 @@ function FileUploadField({
     : DEFAULT_FILE_SIZE_LIMIT;
   // When the user uploads files to the multi-file upload, we just append to the existing set
   // By default the input element would just replace all the uploaded files (we don't want that)
-  const onChange = async (event: any) => {
-    const files = Array.from(event.target.files);
+  const handleFiles = async (filelist: FileList) => {
+    let files = Array.from(filelist);
+    if (!isMultiple) {
+      files = [files[0]];
+    }
     if (files.some((file: any) => file.size > fileSizeLimit)) {
       let sizeLabel = '';
       if (fileSizeLimit < 1024) sizeLabel = `${fileSizeLimit} bytes`;
@@ -131,6 +153,8 @@ function FileUploadField({
         ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
     >
       {children}
       {!hidePreview &&
@@ -262,7 +286,7 @@ function FileUploadField({
         name={servar.key}
         ref={fileInput}
         type='file'
-        onChange={onChange}
+        onChange={handleChange}
         required={required && !fileExists}
         // @ts-ignore
         accept={fileTypes}
