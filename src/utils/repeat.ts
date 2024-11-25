@@ -1,4 +1,5 @@
 import { PositionedElement, Subgrid } from '../types/Form';
+import { getPositionKey } from './hideAndRepeats';
 
 interface Step {
   subgrids: Subgrid[];
@@ -12,9 +13,11 @@ interface Step {
  * @returns
  */
 export function getRepeatedContainer(step: Step, element: PositionedElement) {
-  return getRepeatedContainers(step).find((subgrid) =>
-    isParentPosition(subgrid.position, element.position)
-  );
+  return getRepeatedContainers(step).find((subgrid) => {
+    const elKey = getPositionKey(element);
+    const subgridKey = getPositionKey(subgrid);
+    return elKey.startsWith(subgridKey + ',');
+  });
 }
 
 /**
@@ -24,29 +27,6 @@ export function getRepeatedContainer(step: Step, element: PositionedElement) {
  */
 export function getRepeatedContainers(step: Step) {
   return step.subgrids.filter((subgrid) => subgrid.repeated);
-}
-
-const keyToPosition = (positionKey: string): number[] => {
-  if (positionKey === 'root') return [];
-  return positionKey.split(',').map(Number);
-};
-
-export function isParentPosition(
-  parentPos: number[] | string,
-  childPos: number[] | string
-) {
-  if (typeof parentPos === 'string') {
-    parentPos = keyToPosition(parentPos);
-  }
-  if (typeof childPos === 'string') {
-    childPos = keyToPosition(childPos);
-  }
-
-  // children position must be longer
-  if (parentPos.length >= childPos.length) return false;
-
-  // the child position must contain every element of the parent
-  return parentPos.every((value, index) => childPos[index] === value);
 }
 
 /**
@@ -60,7 +40,9 @@ export function getFieldsInRepeat(
   repeatContainer: PositionedElement
 ) {
   return step.servar_fields.filter((field) => {
-    return isParentPosition(repeatContainer.position, field.position);
+    const positionKey = getPositionKey(field);
+    const repeatKey = getPositionKey(repeatContainer);
+    return positionKey.startsWith(repeatKey + ',');
   });
 }
 
