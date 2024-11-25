@@ -26,7 +26,22 @@ export function getRepeatedContainers(step: Step) {
   return step.subgrids.filter((subgrid) => subgrid.repeated);
 }
 
-export function isParentPosition(parentPos: number[], childPos: number[]) {
+const keyToPosition = (positionKey: string): number[] => {
+  if (positionKey === 'root') return [];
+  return positionKey.split(',').map(Number);
+};
+
+export function isParentPosition(
+  parentPos: number[] | string,
+  childPos: number[] | string
+) {
+  if (typeof parentPos === 'string') {
+    parentPos = keyToPosition(parentPos);
+  }
+  if (typeof childPos === 'string') {
+    childPos = keyToPosition(childPos);
+  }
+
   // children position must be longer
   if (parentPos.length >= childPos.length) return false;
 

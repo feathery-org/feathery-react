@@ -93,10 +93,7 @@ const repeatCountByTextVariables = (
 ) => {
   let textVariables: string[] = [];
   [...step.buttons, ...step.texts]
-    .filter(
-      (el: any) =>
-        repeatKey && isParentPosition(keyToPosition(repeatKey), el.position)
-    )
+    .filter((el: any) => repeatKey && isParentPosition(repeatKey, el.position))
     .forEach((el: any) => {
       textVariables = [...textVariables, ...getTextVariables(el)];
     });
@@ -115,7 +112,7 @@ const repeatCountByFields = (step: any, repeatKey: string | undefined) => {
     (field: any) =>
       field.servar.repeated &&
       repeatKey &&
-      isParentPosition(keyToPosition(repeatKey), field.position)
+      isParentPosition(repeatKey, field.position)
   );
   let count = 0;
   repeatableServars.forEach((servar) => {
@@ -153,11 +150,6 @@ const getPositionKey = (node: any) => {
   return node.position.join(',') || 'root';
 };
 
-const keyToPosition = (positionKey: string): number[] => {
-  if (positionKey === 'root') return [];
-  return positionKey.split(',').map(Number);
-};
-
 export type VisiblePositions = Record<string, boolean[]>;
 
 function _collectHideFlags(
@@ -170,7 +162,7 @@ function _collectHideFlags(
 ) {
   const elementPosition = element.position;
   const repeatKey = repeatKeys.find((key) =>
-    isParentPosition(keyToPosition(key), elementPosition)
+    isParentPosition(key, elementPosition)
   );
 
   const numRepeats = Math.max(
@@ -196,14 +188,11 @@ function _collectHideFlags(
     shouldHide =
       shouldHide ||
       Object.entries(hiddenPositions).some(([key, indices]) => {
-        const parentPosition = keyToPosition(key);
         const repeatParentHidden =
-          repeatKey &&
-          key !== repeatKey &&
-          isParentPosition(parentPosition, keyToPosition(repeatKey));
+          repeatKey && key !== repeatKey && isParentPosition(key, repeatKey);
 
         return (
-          isParentPosition(parentPosition, elementPosition) &&
+          isParentPosition(key, elementPosition) &&
           (indices.includes(i) || repeatParentHidden)
         );
       });
