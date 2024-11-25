@@ -1,4 +1,5 @@
 import { PositionedElement, Subgrid } from '../types/Form';
+import { getPositionKey } from './hideAndRepeats';
 
 interface Step {
   subgrids: Subgrid[];
@@ -12,9 +13,11 @@ interface Step {
  * @returns
  */
 export function getRepeatedContainer(step: Step, element: PositionedElement) {
-  return getRepeatedContainers(step).find((subgrid) =>
-    element.position.join(',').startsWith(subgrid.position.join(','))
-  );
+  return getRepeatedContainers(step).find((subgrid) => {
+    const elKey = getPositionKey(element);
+    const subgridKey = getPositionKey(subgrid);
+    return elKey.startsWith(subgridKey + ',');
+  });
 }
 
 /**
@@ -36,9 +39,11 @@ export function getFieldsInRepeat(
   step: { servar_fields: any[] },
   repeatContainer: PositionedElement
 ) {
-  return step.servar_fields.filter((field) =>
-    field.position.join(',').startsWith(repeatContainer.position.join(','))
-  );
+  return step.servar_fields.filter((field) => {
+    const positionKey = getPositionKey(field);
+    const repeatKey = getPositionKey(repeatContainer);
+    return positionKey.startsWith(repeatKey + ',');
+  });
 }
 
 /**
