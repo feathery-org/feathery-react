@@ -50,12 +50,12 @@ function FileUploadField({
     e.preventDefault();
     e.stopPropagation();
     const { files } = e.dataTransfer;
-    handleFiles(files);
+    if (allowMoreFiles) handleFiles(files);
   };
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
-    if (files) {
+    if (files && allowMoreFiles) {
       handleFiles(files);
     }
   };
@@ -71,7 +71,10 @@ function FileUploadField({
   // When the user uploads files to the multi-file upload, we just append to the existing set
   // By default the input element would just replace all the uploaded files (we don't want that)
   const handleFiles = async (filelist: FileList) => {
-    const files = Array.from(filelist);
+    let files = Array.from(filelist);
+    if (!isMultiple) {
+      files = [files[0]];
+    }
     if (files.some((file: any) => file.size > fileSizeLimit)) {
       let sizeLabel = '';
       if (fileSizeLimit < 1024) sizeLabel = `${fileSizeLimit} bytes`;
