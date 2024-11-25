@@ -13,7 +13,7 @@ interface Step {
  */
 export function getRepeatedContainer(step: Step, element: PositionedElement) {
   return getRepeatedContainers(step).find((subgrid) =>
-    element.position.join(',').startsWith(subgrid.position.join(','))
+    isParentPosition(subgrid.position, element.position)
   );
 }
 
@@ -26,7 +26,7 @@ export function getRepeatedContainers(step: Step) {
   return step.subgrids.filter((subgrid) => subgrid.repeated);
 }
 
-function isParentPosition(parentPos: number[], childPos: number[]) {
+export function isParentPosition(parentPos: number[], childPos: number[]) {
   // children position must be longer
   if (parentPos.length >= childPos.length) return false;
 
