@@ -522,7 +522,7 @@ function Form({
     if (isNaN(index) && !repeatContainer) return;
 
     const curRepeatContainer =
-      repeatContainer || getRepeatedContainer(activeStep, element);
+      getRepeatedContainer(activeStep, element) || repeatContainer;
     const getNewVal = (field: any) => {
       const vals = fieldValues[field.servar.key] as any[];
       const curIndex = repeatContainer ? vals.length - 1 : index;
@@ -1698,9 +1698,8 @@ function Form({
         const container = getContainerById(activeStep, action.repeat_container);
         addRepeatedRow(container, action.max_repeats);
       } else if (type === ACTION_REMOVE_REPEATED_ROW) {
-        // user cannot configure repeat_container for remove action
-        // passing undefined, forces the action to look for the nearest container
-        removeRepeatedRow(element, undefined);
+        const container = getContainerById(activeStep, action.repeat_container);
+        removeRepeatedRow(element, container);
       } else if (type === ACTION_TRIGGER_PERSONA) {
         const persona = integrations?.persona.metadata ?? {};
         await submitPromise;
