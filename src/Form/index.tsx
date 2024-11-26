@@ -521,11 +521,13 @@ function Form({
     const index = element.repeat;
     if (isNaN(index) && !repeatContainer) return;
 
-    const curRepeatContainer =
-      repeatContainer || getRepeatedContainer(activeStep, element);
+    const insideContainer = getRepeatedContainer(activeStep, element);
+    const isInsideContainer = Boolean(insideContainer);
+    const curRepeatContainer = insideContainer || repeatContainer;
+
     const getNewVal = (field: any) => {
       const vals = fieldValues[field.servar.key] as any[];
-      const curIndex = repeatContainer ? vals.length - 1 : index;
+      const curIndex = !isInsideContainer ? vals.length - 1 : index;
       const newRepeatedValues = justRemove(vals, curIndex);
       const defaultValue = [getDefaultFieldValue(field)];
       return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
