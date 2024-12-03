@@ -2,7 +2,8 @@ import { featheryWindow } from './browser';
 import {
   changeStep,
   FieldOptions,
-  formatAllFormFields
+  formatAllFormFields,
+  getAllElements
 } from './formHelperFunctions';
 import {
   setFieldValues,
@@ -70,12 +71,26 @@ export const getFormContext = (formUuid: string) => {
       const rootStyles = step
         ? step.subgrids.find((grid: any) => grid.position.length === 0).styles
         : {};
+      const hideIfMap: Record<string, any> = {};
+      getAllElements(step).forEach(([el, type]) => {
+        if (!el.hide_ifs.length) return;
+        const id = type === 'field' ? el.servar.key : el.id;
+        hideIfMap[id] = {
+          elementType: type,
+          rules: el.hide_ifs.map((hideIf: any) => ({
+            comparisonField: hideIf.field_key,
+            comparator: hideIf.comparison,
+            comparisonValues: hideIf.values
+          }))
+        };
+      });
       return {
         totalSteps: Object.keys(state.steps).length,
         stepName: step.key ?? '',
         previousStepName: state.previousStepName,
         backgroundColor: rootStyles?.background_color ?? 'FFFFFF',
-        language: state.language
+        language: state.language,
+        hideRules: hideIfMap
       };
     },
     validateStep: (showErrors = true) => {
