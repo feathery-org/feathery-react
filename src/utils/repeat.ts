@@ -6,6 +6,18 @@ interface Step {
   servar_fields: any[];
 }
 
+export function inRepeat(
+  elementKey: string,
+  parentKey: string,
+  addCommaToElement = false
+) {
+  if (addCommaToElement) {
+    elementKey += ',';
+  }
+  parentKey += ',';
+
+  return elementKey.startsWith(parentKey);
+}
 /**
  * Gets the repeating container ancestor of an element
  * @param step
@@ -16,7 +28,7 @@ export function getRepeatedContainer(step: Step, element: PositionedElement) {
   return getRepeatedContainers(step).find((subgrid) => {
     const elKey = getPositionKey(element);
     const subgridKey = getPositionKey(subgrid);
-    return elKey.startsWith(subgridKey + ',');
+    return inRepeat(elKey, subgridKey);
   });
 }
 
@@ -42,7 +54,7 @@ export function getFieldsInRepeat(
   return step.servar_fields.filter((field) => {
     const positionKey = getPositionKey(field);
     const repeatKey = getPositionKey(repeatContainer);
-    return positionKey.startsWith(repeatKey + ',');
+    return inRepeat(positionKey, repeatKey);
   });
 }
 
