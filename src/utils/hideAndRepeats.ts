@@ -89,7 +89,7 @@ const repeatCountByTextVariables = (
 ) => {
   let textVariables: string[] = [];
   [...step.buttons, ...step.texts]
-    .filter((el: any) => getPositionKey(el).startsWith(repeatKey))
+    .filter((el: any) => (getPositionKey(el) + ',').startsWith(repeatKey + ','))
     .forEach((el: any) => {
       textVariables = [...textVariables, ...getTextVariables(el)];
     });
@@ -106,7 +106,8 @@ const repeatCountByTextVariables = (
 const repeatCountByFields = (step: any, repeatKey: string | undefined) => {
   const repeatableServars: Array<any> = step.servar_fields.filter(
     (field: any) =>
-      field.servar.repeated && getPositionKey(field).startsWith(repeatKey)
+      field.servar.repeated &&
+      (getPositionKey(field) + ',').startsWith(repeatKey + ',')
   );
   let count = 0;
   repeatableServars.forEach((servar) => {
@@ -183,12 +184,12 @@ function _collectHideFlags(
       Object.entries(hiddenPositions).some(([key, indices]) => {
         const parentKey = key + ','; // make sure 1,1,23,1 is not a parent of 1,1,23,10 etc
         const repeatParentHidden =
-          (repeatKey + ',').startsWith(parentKey) && repeatKey !== key;
+          (repeatKey + ',').startsWith(parentKey + ',') && repeatKey !== key;
         // Parent container is hidden AND (
         // it's the current repetition OR
         // it's a parent of the repeatable block)
         return (
-          (elKey + ',').startsWith(parentKey) &&
+          (elKey + ',').startsWith(parentKey + ',') &&
           (indices.includes(i) || repeatParentHidden)
         );
       });
