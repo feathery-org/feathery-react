@@ -2,7 +2,11 @@ import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { TEXT_VARIABLE_PATTERN } from '../elements/components/TextNodes';
 import { fieldValues } from './init';
 import { getDefaultFieldValue } from './formHelperFunctions';
-import { getRepeatedContainer, getRepeatedContainers } from './repeat';
+import {
+  getRepeatedContainer,
+  getRepeatedContainers,
+  inRepeat
+} from './repeat';
 
 interface FlatHideRule extends ResolvedComparisonRule {
   index: number;
@@ -89,7 +93,9 @@ const repeatCountByTextVariables = (
 ) => {
   let textVariables: string[] = [];
   [...step.buttons, ...step.texts]
-    .filter((el: any) => getPositionKey(el).startsWith(repeatKey))
+    .filter(
+      (el: any) => repeatKey && inRepeat(getPositionKey(el), repeatKey, true)
+    )
     .forEach((el: any) => {
       textVariables = [...textVariables, ...getTextVariables(el)];
     });
@@ -106,7 +112,9 @@ const repeatCountByTextVariables = (
 const repeatCountByFields = (step: any, repeatKey: string | undefined) => {
   const repeatableServars: Array<any> = step.servar_fields.filter(
     (field: any) =>
-      field.servar.repeated && getPositionKey(field).startsWith(repeatKey)
+      field.servar.repeated &&
+      repeatKey &&
+      inRepeat(getPositionKey(field), repeatKey, true)
   );
   let count = 0;
   repeatableServars.forEach((servar) => {
@@ -155,9 +163,7 @@ function _collectHideFlags(
   internalId: string
 ) {
   const elKey = getPositionKey(element);
-  const repeatKey = repeatKeys.find((key) =>
-    (elKey + ',').startsWith(key + ',')
-  );
+  const repeatKey = repeatKeys.find((key) => inRepeat(elKey, key, true));
   const numRepeats = Math.max(
     repeatCountByFields(step, repeatKey),
     repeatCountByTextVariables(step, repeatKey),
@@ -180,15 +186,16 @@ function _collectHideFlags(
     shouldHide =
       shouldHide ||
       // Is a parent container hidden
-      Object.entries(hiddenPositions).some(([key, indices]) => {
-        const parentKey = key + ','; // make sure 1,1,23,1 is not a parent of 1,1,23,10 etc
+      Object.entries(hiddenPositions).some(([parentKey, indices]) => {
         const repeatParentHidden =
-          (repeatKey + ',').startsWith(parentKey) && repeatKey !== key;
+          repeatKey &&
+          inRepeat(repeatKey, parentKey, true) &&
+          repeatKey !== parentKey;
         // Parent container is hidden AND (
         // it's the current repetition OR
         // it's a parent of the repeatable block)
         return (
-          (elKey + ',').startsWith(parentKey) &&
+          inRepeat(elKey, parentKey, true) &&
           (indices.includes(i) || repeatParentHidden)
         );
       });
