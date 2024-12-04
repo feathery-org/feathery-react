@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { featheryDoc } from '../../utils/browser';
 
 interface FrameProps {
   html: string;
@@ -36,14 +37,24 @@ function QuikFormViewer(props: FrameProps) {
     setProcessedHtml(memoizedProcessedHtml);
   }, [memoizedProcessedHtml]);
 
+  // Disable scrolling on form iframe is displayed
+  useEffect(() => {
+    featheryDoc().body.style.overflow = 'hidden';
+
+    return () => {
+      featheryDoc().body.style.removeProperty('overflow');
+    };
+  }, []);
+
   return (
     <div
       css={{
-        position: 'relative',
+        position: 'fixed',
         backgroundColor: '#fff',
         minWidth: '100vw',
         height: '100%',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        zIndex: 1
       }}
     >
       <button
