@@ -54,7 +54,7 @@ function QuikFormViewer(props: FrameProps) {
         minWidth: '100vw',
         height: '100%',
         overflow: 'hidden',
-        zIndex: 1
+        zIndex: 9999
       }}
     >
       <button
