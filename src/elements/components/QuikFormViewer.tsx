@@ -37,7 +37,7 @@ function QuikFormViewer(props: FrameProps) {
     setProcessedHtml(memoizedProcessedHtml);
   }, [memoizedProcessedHtml]);
 
-  // Disable scrolling on form iframe is displayed
+  // Disable scrolling on form when iframe is displayed
   useEffect(() => {
     featheryDoc().body.style.overflow = 'hidden';
 
