@@ -1912,6 +1912,7 @@ function Form({
           break;
         }
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
+        await submitPromise;
         try {
           const data = await client.generateEnvelopes(action);
           if (!action.envelope_action) {
