@@ -1,10 +1,10 @@
 import { BrowserRouter, Route, useHistory } from 'react-router-dom';
 import React, {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
-  useState,
-  useCallback
+  useState
 } from 'react';
 
 import BootstrapForm from 'react-bootstrap/Form';
@@ -16,6 +16,8 @@ import {
   changeStep,
   clearBrowserErrors,
   FieldOptions,
+  FieldProperties,
+  FieldStyles,
   formatStepFields,
   getAllElements,
   getAllFields,
@@ -26,26 +28,24 @@ import {
   getOrigin,
   getPrevStepKey,
   getUrlHash,
+  httpHelpers,
+  isElementInViewport,
   isStepTerminal,
   isValidFieldIdentifier,
   lookUpTrigger,
+  mapFormSettingsResponse,
   nextStepKey,
   prioritizeActions,
   recurseProgressDepth,
   registerRenderCallback,
   rerenderAllForms,
+  saveInitialValuesAndUrlParams,
   setFormElementError,
   setUrlStepHash,
-  updateStepFieldOptions,
-  mapFormSettingsResponse,
-  saveInitialValuesAndUrlParams,
-  httpHelpers,
-  FieldProperties,
-  FieldStyles,
-  updateStepFieldProperties,
-  updateStepFieldStyles,
   updateCustomHead,
-  isElementInViewport
+  updateStepFieldOptions,
+  updateStepFieldProperties,
+  updateStepFieldStyles
 } from '../utils/formHelperFunctions';
 import {
   getContainerById,
@@ -56,13 +56,13 @@ import {
   getHideIfReferences,
   getVisiblePositions
 } from '../utils/hideAndRepeats';
-import { validators, validateElements } from '../utils/validation';
+import { validateElements, validators } from '../utils/validation';
 import {
-  initState,
-  fieldValues,
+  defaultClient,
   FieldValues,
-  updateUserId,
-  defaultClient
+  fieldValues,
+  initState,
+  updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
 import FeatheryClient from '../utils/featheryClient';
@@ -72,19 +72,24 @@ import {
   addToCart,
   checkForPaymentCheckoutCompletion,
   getCart,
+  getLiveOrTestProduct,
   getSimplifiedProducts,
   isProductInPurchaseSelections,
-  usePayments,
+  purchaseCart,
   removeFromCart,
   setupPaymentMethod,
-  purchaseCart,
-  getLiveOrTestProduct
+  usePayments
 } from '../integrations/stripe';
 import { ActionData, trackEvent } from '../integrations/utils';
 import DevNavBar from './components/DevNavBar';
 import FeatherySpinner from '../elements/components/Spinner';
 import CallbackQueue from '../utils/callbackQueue';
-import { featheryWindow, openTab, runningInClient } from '../utils/browser';
+import {
+  featheryDoc,
+  featheryWindow,
+  openTab,
+  runningInClient
+} from '../utils/browser';
 import FormOff, {
   CLOSED,
   COLLAB_COMPLETED,
@@ -97,16 +102,16 @@ import Watermark from '../elements/components/Watermark';
 import Grid from './grid';
 import { getViewport } from '../elements/styles';
 import {
+  ContextOnAction,
   ContextOnChange,
-  FormContext,
-  ContextOnSubmit,
   ContextOnError,
+  ContextOnSubmit,
   ContextOnView,
   ElementProps,
+  FormContext,
   PopupOptions,
-  ContextOnAction,
-  Trigger,
-  Subgrid
+  Subgrid,
+  Trigger
 } from '../types/Form';
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
@@ -122,43 +127,43 @@ import internalState, {
 import useFormAuth from '../auth/internal/useFormAuth';
 import {
   ACTION_ADD_REPEATED_ROW,
+  ACTION_AI_DOCUMENT_EXTRACT,
+  ACTION_ALLOY_VERIFY_ID,
   ACTION_BACK,
-  ACTION_OAUTH_LOGIN,
+  ACTION_GENERATE_QUIK_DOCUMENTS,
+  ACTION_INVITE_COLLABORATOR,
   ACTION_LOGOUT,
+  ACTION_NEW_SUBMISSION,
   ACTION_NEXT,
-  ACTION_REMOVE_REPEATED_ROW,
+  ACTION_OAUTH_LOGIN,
+  ACTION_OPEN_FUSER_ENVELOPES,
   ACTION_PURCHASE_PRODUCTS,
-  ACTION_SELECT_PRODUCT_TO_PURCHASE,
   ACTION_REMOVE_PRODUCT_FROM_PURCHASE,
+  ACTION_REMOVE_REPEATED_ROW,
+  ACTION_REWIND_COLLABORATION,
+  ACTION_SELECT_PRODUCT_TO_PURCHASE,
+  ACTION_SEND_EMAIL_CODE,
   ACTION_SEND_MAGIC_LINK,
   ACTION_SEND_SMS_CODE,
-  ACTION_SEND_EMAIL_CODE,
-  ACTION_STORE_FIELD,
-  ACTION_TRIGGER_PLAID,
-  ACTION_URL,
-  ACTION_VERIFY_SMS,
-  ACTION_VERIFY_EMAIL,
-  ACTION_TRIGGER_ARGYLE,
-  REQUIRED_FLOW_ACTIONS,
-  hasFlowActions,
-  canRunAction,
-  ACTION_NEW_SUBMISSION,
-  ACTION_VERIFY_COLLABORATOR,
-  ACTION_INVITE_COLLABORATOR,
-  ACTION_TRIGGER_PERSONA,
   ACTION_SEND_SMS_MESSAGE,
-  ACTION_REWIND_COLLABORATION,
-  ACTION_AI_DOCUMENT_EXTRACT,
-  ACTION_OPEN_FUSER_ENVELOPES,
-  ACTION_GENERATE_QUIK_DOCUMENTS,
-  ACTION_TELESIGN_SILENT_VERIFICATION,
+  ACTION_STORE_FIELD,
   ACTION_TELESIGN_PHONE_TYPE,
-  ACTION_TELESIGN_VOICE_OTP,
+  ACTION_TELESIGN_SILENT_VERIFICATION,
   ACTION_TELESIGN_SMS_OTP,
   ACTION_TELESIGN_VERIFY_OTP,
-  ACTION_ALLOY_VERIFY_ID,
+  ACTION_TELESIGN_VOICE_OTP,
+  ACTION_TRIGGER_ARGYLE,
   ACTION_TRIGGER_FLINKS,
-  isRunnableStepEventRule
+  ACTION_TRIGGER_PERSONA,
+  ACTION_TRIGGER_PLAID,
+  ACTION_URL,
+  ACTION_VERIFY_COLLABORATOR,
+  ACTION_VERIFY_EMAIL,
+  ACTION_VERIFY_SMS,
+  canRunAction,
+  hasFlowActions,
+  isRunnableStepEventRule,
+  REQUIRED_FLOW_ACTIONS
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
 import { authState } from '../auth/LoginForm';
@@ -184,6 +189,7 @@ import { openFlinksConnect } from '../integrations/flinks';
 import { isNum } from '../utils/primitives';
 import { getSignUrl } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
+
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -1907,18 +1913,30 @@ function Form({
         }
       } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
         try {
-          await client.generateEnvelopes(action);
-          const url = getSignUrl(action.redirect);
-          if (action.redirect) {
-            const eventData: Record<string, any> = {
-              step_key: activeStep.key,
-              next_step_key: '',
-              event: submit ? 'complete' : 'skip',
-              completed: true
-            };
-            await client.registerEvent(eventData);
-            location.href = url;
-          } else openTab(url);
+          const data = await client.generateEnvelopes(action);
+          if (!action.envelope_action) {
+            // Sign files
+            const url = getSignUrl(action.redirect);
+            if (action.redirect) {
+              const eventData: Record<string, any> = {
+                step_key: activeStep.key,
+                next_step_key: '',
+                event: submit ? 'complete' : 'skip',
+                completed: true
+              };
+              await client.registerEvent(eventData);
+              location.href = url;
+            } else openTab(url);
+          } else {
+            // Download files directly
+            data.files.forEach((url: string) => {
+              const link = featheryDoc().createElement('a');
+              link.href = url;
+              featheryDoc().body.appendChild(link);
+              link.click();
+              featheryDoc().body.removeChild(link);
+            });
+          }
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
