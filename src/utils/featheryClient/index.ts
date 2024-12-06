@@ -760,7 +760,15 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   // AI
-  extractAIDocument(extractionId: string, runAsync: boolean, pages?: number[]) {
+  extractAIDocument({
+    extractionId,
+    runAsync,
+    pages
+  }: {
+    extractionId: string;
+    runAsync: boolean;
+    pages?: number[];
+  }) {
     const { userId } = initInfo();
     const data = {
       fuser_key: userId,
@@ -794,7 +802,7 @@ export default class FeatheryClient extends IntegrationClient {
           const data = await response.json();
 
           if (data.status === 'complete') {
-            return resolve(data.data);
+            return resolve(data);
           } else {
             attempts += 1;
 

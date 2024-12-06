@@ -932,13 +932,14 @@ function Form({
           }
 
           try {
-            const data = await client.extractAIDocument(
+            const data = await client.extractAIDocument({
               extractionId,
               runAsync,
               pages
-            );
-            updateFieldValues(data);
-            return data;
+            });
+            const vals = data.data ?? {};
+            updateFieldValues(vals);
+            return vals;
           } catch (err) {
             console.error(err);
             return {};
@@ -1887,11 +1888,19 @@ function Form({
       } else if (type === ACTION_AI_DOCUMENT_EXTRACT) {
         try {
           await submitPromise;
-          const data = await client.extractAIDocument(
-            action.extraction_id,
-            action.run_async
-          );
-          updateFieldValues(data);
+          const data = await client.extractAIDocument({
+            extractionId: action.extraction_id,
+            runAsync: action.run_async
+          });
+          const vals = data.data ?? {};
+          const runField = action.extraction_run_field_key;
+          if (runField && data.runs?.length) {
+            let runs = data.runs;
+            if (runs.length === 1) runs = runs[0];
+            vals[runField] = runs;
+            await client.submitCustom({ runField: runs });
+          }
+          updateFieldValues(vals);
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
