@@ -85,7 +85,7 @@ import DevNavBar from './components/DevNavBar';
 import FeatherySpinner from '../elements/components/Spinner';
 import CallbackQueue from '../utils/callbackQueue';
 import {
-  featheryDoc,
+  downloadFile,
   featheryWindow,
   openTab,
   runningInClient
@@ -130,13 +130,13 @@ import {
   ACTION_AI_DOCUMENT_EXTRACT,
   ACTION_ALLOY_VERIFY_ID,
   ACTION_BACK,
+  ACTION_GENERATE_ENVELOPES,
   ACTION_GENERATE_QUIK_DOCUMENTS,
   ACTION_INVITE_COLLABORATOR,
   ACTION_LOGOUT,
   ACTION_NEW_SUBMISSION,
   ACTION_NEXT,
   ACTION_OAUTH_LOGIN,
-  ACTION_OPEN_FUSER_ENVELOPES,
   ACTION_PURCHASE_PRODUCTS,
   ACTION_REMOVE_PRODUCT_FROM_PURCHASE,
   ACTION_REMOVE_REPEATED_ROW,
@@ -1911,7 +1911,7 @@ function Form({
           setElementError((e as Error).message);
           break;
         }
-      } else if (type === ACTION_OPEN_FUSER_ENVELOPES) {
+      } else if (type === ACTION_GENERATE_ENVELOPES) {
         await submitPromise;
         try {
           const data = await client.generateEnvelopes(action);
@@ -1930,13 +1930,15 @@ function Form({
             } else openTab(url);
           } else {
             // Download files directly
-            data.files.forEach((url: string) => {
-              const link = featheryDoc().createElement('a');
-              link.href = url;
-              featheryDoc().body.appendChild(link);
-              link.click();
-              featheryDoc().body.removeChild(link);
-            });
+            await Promise.all(
+              data.files.map(async (url: string) => {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                const fileName = new URL(url).pathname.split('/').at(-1) ?? '';
+                const file = new File([blob], fileName, { type: blob.type });
+                downloadFile(file);
+              })
+            );
           }
         } catch (e: any) {
           setElementError((e as Error).message);
