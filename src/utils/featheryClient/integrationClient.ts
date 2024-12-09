@@ -1,7 +1,7 @@
 import * as errors from '../error';
+import { parseError } from '../error';
 import { fieldValues, initFormsPromise, initInfo } from '../init';
 import { encodeGetParams } from '../primitives';
-import { parseError } from '../error';
 import { API_URL } from '.';
 import { OfflineRequestHandler, untrackUnload } from '../offlineRequestHandler';
 import {
@@ -351,7 +351,8 @@ export default class IntegrationClient {
       form_key: this.formKey,
       fuser_key: userId,
       documents: action.documents ?? [],
-      signer_email: signer
+      signer_email: signer,
+      repeatable: action.repeatable ?? false
     };
 
     const url = `${API_URL}document/form/generate/`;
