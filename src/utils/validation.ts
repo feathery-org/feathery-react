@@ -173,7 +173,7 @@ const emailPatternStr =
 const emailPattern = new RegExp(emailPatternStr);
 
 const LIB_PHONE_NUMBER_URL =
-  'https://cdn.jsdelivr.net/npm/libphonenumber-js@1.10.12/bundle/libphonenumber-js.min.js';
+  'https://cdn.jsdelivr.net/npm/libphonenumber-js@1.11.16/bundle/libphonenumber-js.min.js';
 
 let phoneLibPromise = Promise.resolve();
 const loadPhoneValidator = () =>
