@@ -6,12 +6,12 @@ import {
   getAllElements
 } from './formHelperFunctions';
 import {
-  setFieldValues,
-  getFieldValues,
+  defaultClient,
   FieldValues,
-  updateUserId,
+  getFieldValues,
   initState,
-  defaultClient
+  setFieldValues,
+  updateUserId
 } from './init';
 import internalState, {
   AlloyEntities,
@@ -57,8 +57,17 @@ export const getFormContext = (formUuid: string) => {
     setProgress: (val: any) => formState.setUserProgress(val),
     updateUserId,
     goToStep: (stepKey: any) => {
-      const { currentStep, history, steps, setStepKey, client } = formState;
-      changeStep(stepKey, currentStep.key, steps, setStepKey, history, client);
+      const { currentStep, history, steps, setStepKey, client, trackHashes } =
+        formState;
+      changeStep(
+        stepKey,
+        currentStep.key,
+        steps,
+        setStepKey,
+        history,
+        client,
+        trackHashes
+      );
     },
     isTestForm: () => initState.isTestEnv,
     isLastStep: () => {

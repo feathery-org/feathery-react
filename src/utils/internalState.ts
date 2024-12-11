@@ -34,6 +34,7 @@ export interface FormInternalState {
   products: Record<string, SimplifiedProduct>;
   cart: Cart;
   collaborator: Collaborator;
+  trackHashes?: boolean;
   formRef: React.MutableRefObject<any>;
   formSettings: any;
   getErrorCallback: (

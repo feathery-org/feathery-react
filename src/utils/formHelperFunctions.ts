@@ -12,10 +12,10 @@ import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { getVisibleElements } from './hideAndRepeats';
 import throttle from 'lodash.throttle';
 import {
-  ACTION_NEXT,
-  ACTION_URL,
   ACTION_EXECUTION_ORDER,
-  ACTION_STORE_FIELD
+  ACTION_NEXT,
+  ACTION_STORE_FIELD,
+  ACTION_URL
 } from './elementActions';
 import { featheryDoc, featheryWindow } from './browser';
 import FeatheryClient from './featheryClient';
@@ -176,6 +176,7 @@ function isRuntimeReservedWord(str: string) {
   const otherGlobals = ['feathery', 'console'];
   return browserGlobals.includes(str) || otherGlobals.includes(str);
 }
+
 // Helper function to check if a string is a Javascript reserved word
 function isJsReservedWord(str: string) {
   const reservedWords = [
@@ -369,6 +370,7 @@ export function updateStepFieldStyles(
 }
 
 export type FieldProperties = Record<string, any>;
+
 export function updateStepFieldProperties(
   step: any,
   fieldKey: string,
@@ -629,7 +631,8 @@ export function changeStep(
   steps: any,
   setStepKey: any,
   history: any,
-  client: any
+  client: any,
+  trackHashes?: boolean
 ) {
   const sameKey = oldKey === newKey;
   if (!sameKey && newKey) {
@@ -639,7 +642,8 @@ export function changeStep(
         next_step_key: newKey,
         event: 'complete'
       });
-      history.replace(location.pathname + location.search + `#${newKey}`);
+      if (trackHashes)
+        history.replace(location.pathname + location.search + `#${newKey}`);
       setStepKey(newKey);
       return true;
     } else console.warn(`${newKey} is not a valid step to navigate to`);
@@ -777,6 +781,7 @@ export function getServarAttrMap(steps: any) {
   }
   return servarKeyToTypeMap;
 }
+
 // Reorders by leaving non-execution order actions in place and moving actons with specific
 // exceution orders to the end.  Non-priority order actions are
 // essenially order 0 (before others).

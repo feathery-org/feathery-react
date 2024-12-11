@@ -772,7 +772,8 @@ function Form({
       steps,
       setStepKey,
       history,
-      client
+      client,
+      trackHashes.current
     );
     if (changed) {
       const backKey = load ? backNavMap[oldKey] : oldKey;
@@ -844,6 +845,7 @@ function Form({
             session?.collaborator?.whitelist ?? []
           )
         ),
+        trackHashes: trackHashes.current,
         formRef,
         formSettings,
         getErrorCallback,
