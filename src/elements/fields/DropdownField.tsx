@@ -5,8 +5,8 @@ import InlineTooltip from '../components/InlineTooltip';
 import useBorder from '../components/useBorder';
 import countryData from '../components/data/countries';
 import { getStateOptions, hasState } from '../components/data/states';
-import { Global, css } from '@emotion/react';
-import { hoverStylesGuard } from '../../utils/browser';
+import { css, Global } from '@emotion/react';
+import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
 import { fieldValues } from '../../utils/init';
 
 export default function DropdownField({
@@ -189,7 +189,10 @@ export default function DropdownField({
           disabled={disabled}
           aria-label={element.properties.aria_label}
           onChange={onChange}
-          onFocus={() => setFocused(true)}
+          onFocus={(event) => {
+            setFocused(true);
+            iosScrollOnFocus(event);
+          }}
           onBlur={() => setFocused(false)}
           ref={setRef}
         >

@@ -11,7 +11,7 @@ import BorderlessEyeIcon from '../../components/icons/BorderlessEyeIcon';
 import { getFieldValue } from '../../../utils/formHelperFunctions';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { FORM_Z_INDEX } from '../../../utils/styles';
-import { hoverStylesGuard } from '../../../utils/browser';
+import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 
 const DEFAULT_LENGTH = 1024; // Default limit on backend
 const MAX_FIELD_LENGTHS: Record<string, number> = {
@@ -308,6 +308,8 @@ function TextField({
                 setTimeout(() => setShowAutocomplete(false), EXIT_DELAY_TIME);
               }
             }}
+            /* @ts-ignore */
+            onFocus={iosScrollOnFocus}
             inputRef={setRef}
             {...getInputProps(servar, options, autoComplete, showPassword)}
             {...getMaskProps(servar, rawValue, showPassword)}
