@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { getStepDepthMap } from '../../utils/formHelperFunctions';
 import {
+  DiagonalArrowIcon,
   LeftChevronIcon,
-  RightChevronIcon,
-  DiagonalArrowIcon
+  RightChevronIcon
 } from '../../elements/components/icons';
 import { noTextSelectStyles } from '../../elements/styles';
 import { DEV_NAV_BAR_Z_INDEX } from '../../utils/styles';
@@ -106,11 +106,11 @@ export default function DevNavBar({
             // @ts-expect-error TS(2322): Type 'unknown' is not assignable to type 'Key | nu... Remove this comment to see the full error message
             key={key}
             css={{
-              height: '38px',
+              minHeight: '38px',
               borderBottom: `1px solid ${lightGrey}`,
               display: 'flex',
               alignItems: 'center',
-              paddingLeft: '15px',
+              padding: '5px 15px',
               cursor: 'pointer',
               '&:hover': { backgroundColor: lightGrey }
             }}
