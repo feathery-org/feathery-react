@@ -1947,6 +1947,7 @@ function Form({
           break;
         }
       } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {
+        await submitPromise;
         try {
           const htmlPayload = await client.generateQuikEnvelopes(action);
           if (htmlPayload) {
