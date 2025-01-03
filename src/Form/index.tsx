@@ -1731,8 +1731,7 @@ function Form({
           flowOnSuccess(i),
           () => onAsyncEnd(),
           updateFieldValues,
-          action.include_liabilities,
-          action.wait_for_completion ?? true,
+          action,
           () => setElementError('Plaid was unable to fetch your data')
         );
         break;
