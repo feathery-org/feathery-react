@@ -7,11 +7,11 @@ import { bootstrapStyles } from '../../styles';
 import { emailPatternStr } from '../../../utils/validation';
 import useBorder from '../../components/useBorder';
 import TextAutocomplete from './TextAutocomplete';
-import BorderlessEyeIcon from '../../components/icons/BorderlessEyeIcon';
 import { getFieldValue } from '../../../utils/formHelperFunctions';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
+import { HideEyeIcon, ShowEyeIcon } from '../../components/icons';
 
 const DEFAULT_LENGTH = 1024; // Default limit on backend
 const MAX_FIELD_LENGTHS: Record<string, number> = {
@@ -326,12 +326,10 @@ function TextField({
               top: 'calc(50% - 12px)',
               zIndex: FORM_Z_INDEX
             }}
+            onClick={() => setShowPassword((prev) => !prev)}
+            aria-label='Toggle password visibility'
           >
-            <BorderlessEyeIcon
-              open={showPassword}
-              onClick={() => setShowPassword((prev) => !prev)}
-              aria-label='Toggle password visibility'
-            />
+            {showPassword ? <ShowEyeIcon /> : <HideEyeIcon />}
           </div>
         )}
         {customBorder}
