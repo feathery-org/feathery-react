@@ -106,15 +106,29 @@ export default class IntegrationClient {
       });
   }
 
-  async fetchPlaidLinkToken(includeLiabilities: boolean) {
+  async fetchPlaidLinkToken(kwargs: Record<string, any>) {
     await initFormsPromise;
     const { userId } = initInfo();
     const params = encodeGetParams({
       form_key: this.formKey,
       fuser_key: userId,
-      liabilities: includeLiabilities ? 'true' : 'false'
+      ...kwargs
     });
     const url = `${API_URL}plaid/link_token/?${params}`;
+    return this._fetch(url).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
+  }
+
+  async fetchPlaidVerificationStatus(sessionId: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      session_id: sessionId,
+      form_key: this.formKey,
+      fuser_key: userId
+    });
+    const url = `${API_URL}plaid/verification_status/?${params}`;
     return this._fetch(url).then((response) =>
       response ? response.json() : Promise.resolve()
     );
