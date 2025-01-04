@@ -1732,7 +1732,8 @@ function Form({
           () => onAsyncEnd(),
           updateFieldValues,
           action,
-          () => setElementError('Plaid was unable to fetch your data')
+          (err?: string) =>
+            setElementError(err || 'Plaid was unable to fetch your data')
         );
         break;
       } else if (type === ACTION_TRIGGER_ARGYLE) {

@@ -114,10 +114,14 @@ export default class IntegrationClient {
       fuser_key: userId,
       ...kwargs
     });
-    const url = `${API_URL}plaid/link_token/?${params}`;
-    return this._fetch(url).then((response) =>
-      response ? response.json() : Promise.resolve()
-    );
+
+    const res = await this._fetch(`${API_URL}plaid/link_token/?${params}`);
+    if (!res) return { err: 'Ran into an error' };
+
+    const payload = await res.json();
+    console.log(payload);
+    if (res?.status === 200) return { token: payload.link_token };
+    return { err: parseError(payload) || 'Ran into an error' };
   }
 
   async fetchPlaidVerificationStatus(sessionId: string) {

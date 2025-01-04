@@ -33,9 +33,14 @@ export async function openPlaidLink(
     kwargs = { liabilities: action.include_liabilities ? 'true' : 'false' };
   }
 
-  const linkToken = (await client.fetchPlaidLinkToken(kwargs)).link_token;
+  const res = await client.fetchPlaidLinkToken(kwargs);
+  if (res.err) {
+    handleError(res.err);
+    return;
+  }
+
   const handler = global.Plaid.create({
-    token: linkToken,
+    token: res.token,
     onExit,
     onSuccess: async (publicToken: string, metadata: Record<string, any>) => {
       try {
