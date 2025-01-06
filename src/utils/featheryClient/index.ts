@@ -682,15 +682,15 @@ export default class FeatheryClient extends IntegrationClient {
     };
 
     let prom = null;
-    let stepKey;
+    let stepKey = '';
     if (eventData.event === 'load') {
       stepKey = eventData.previous_step_key;
     } else {
       stepKey = eventData.step_key;
       prom = this.flushCustomFields();
     }
-    const eventPromise = Promise.all([
-      prom,
+
+    const triggerEvent = () =>
       this.offlineRequestHandler.runOrSaveRequest(
         // Ensure events complete before user exits page. Submit and load event of
         // next step must happen after the previous step is done submitting
@@ -700,8 +700,13 @@ export default class FeatheryClient extends IntegrationClient {
         options,
         'registerEvent',
         stepKey
-      )
-    ]);
+      );
+
+    let eventPromise: Promise<any>;
+    if (eventData.completed && prom)
+      eventPromise = prom.then(() => triggerEvent());
+    else eventPromise = Promise.all([prom, triggerEvent()]);
+
     this.eventQueue = this.eventQueue.then(() => eventPromise);
     return eventPromise;
   }
