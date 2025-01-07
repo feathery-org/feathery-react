@@ -431,7 +431,7 @@ export default class ResponsiveStyles {
     if (this.handleMobile) {
       fontStyles[mobileBreakpointKey] = this._getRichFontScreenStyles(
         attrs,
-        'mobile_'
+        true
       );
     }
     if (!('letterSpacing' in fontStyles))
@@ -442,9 +442,10 @@ export default class ResponsiveStyles {
     return fontStyles;
   }
 
-  _getRichFontScreenStyles(attrs: any, p = '') {
+  _getRichFontScreenStyles(attrs: any, isMobile = false) {
     const styles: Record<string, any> = {};
 
+    const p = isMobile ? 'mobile_' : '';
     let attr = attrs[`${p}font_size`];
     if (attr) styles.fontSize = `${attr}px`;
     attr = attrs[`${p}font_family`];
@@ -463,7 +464,7 @@ export default class ResponsiveStyles {
     if (attrs[`${p}font_strike`]) lines.push('line-through');
     if (attrs[`${p}font_underline`]) lines.push('underline');
     if (lines.length > 0) styles.textDecoration = lines.join(' ');
-    else styles.textDecoration = 'none';
+    else if (!isMobile) styles.textDecoration = 'none';
 
     return styles;
   }
