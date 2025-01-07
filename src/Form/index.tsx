@@ -1914,7 +1914,7 @@ function Form({
           break;
         }
       } else if (type === ACTION_GENERATE_ENVELOPES) {
-        await submitPromise;
+        await Promise.all([submitPromise, client.flushCustomFields()]);
         try {
           const data = await client.generateEnvelopes(action);
           if (!action.envelope_action) {
