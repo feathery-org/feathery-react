@@ -45,12 +45,19 @@ export async function openPlaidLink(
     onSuccess: async (publicToken: string, metadata: Record<string, any>) => {
       try {
         if (action.plaid_action === 'identity') {
-          const res = client.fetchPlaidVerificationStatus(
+          const res = await client.fetchPlaidVerificationStatus(
             metadata.link_session_id
           );
           const statusKey = action.plaid_identity_field_key;
           if (statusKey) {
-            updateFieldValues({ [statusKey]: (await res).status });
+            const newValues = { [statusKey]: res.status };
+            updateFieldValues(newValues);
+            client.submitCustom(newValues, { shouldFlush: true });
+          }
+          if (res.status !== 'success') {
+            handleError('Identity verification was not successful');
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            return;
           }
         } else {
           const res = client.submitPlaidUserData(publicToken);
