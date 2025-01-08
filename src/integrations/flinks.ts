@@ -12,6 +12,16 @@ export async function openFlinksConnect(
   flinksConfig: any,
   updateFieldValues: UpdateFieldValuesCallback
 ) {
+  // authorizing Flinks iframe
+  let token;
+  let getToken = await getIframeAuthorizationToken(client);
+  if (getToken.err) {
+    return { err: getToken.err, fieldValues: {} };
+  } else {
+    token = getToken.token;
+  }
+
+  // opening the iframe
   const childWindow = featheryWindow().open(
     '',
     'Flinks Connect',
@@ -24,6 +34,10 @@ export async function openFlinksConnect(
       : flinksConfig.metadata.instance;
 
   let flinksUrl = `https://${instance}-iframe.private.fin.ag/v2/?accountSelectorEnable=true&showAllOperationsAccounts=true`;
+  if (token) {
+    flinksUrl += `&authorizeToken=${token}`;
+  }
+
   let accountId: string;
 
   if (flinksConfig.metadata.environment === 'sandbox')
@@ -37,7 +51,16 @@ export async function openFlinksConnect(
       childWindow.close();
       const loginId = new URLSearchParams(e.data.url).get('loginId');
       if (!loginId) return;
-      const data = await setupFlinks(client, loginId, accountId);
+
+      // call the iframe authorization endpoint again, as required by Flinks
+      getToken = await getIframeAuthorizationToken(client);
+      if (getToken.err) {
+        return { err: getToken.err, fieldValues: {} };
+      } else {
+        token = getToken.token;
+      }
+
+      const data = await setupFlinks(client, loginId, accountId, token);
       if (!data.err) updateFieldValues(data.fieldValues);
       return onSuccess();
     }
@@ -64,10 +87,21 @@ export async function openFlinksConnect(
   childWindow.document.close();
 }
 
+async function getIframeAuthorizationToken(client: IntegrationClient) {
+  const authorizeIframeRes = await client.triggerFlinksIframeAuthorization();
+  if (!authorizeIframeRes) return { err: 'Unable to authorize Flinks iframe' };
+  const authorizeIframeData = await authorizeIframeRes.json();
+  if (authorizeIframeRes.status === 200) {
+    return { token: authorizeIframeData.token };
+  }
+  return { err: authorizeIframeData.message };
+}
+
 async function setupFlinks(
   client: IntegrationClient,
   loginId: string,
-  accountId: string
+  accountId: string,
+  token: string
 ) {
   const toReturn = { err: '', fieldValues: {} };
   const setError = () => {
@@ -75,7 +109,7 @@ async function setupFlinks(
     return toReturn;
   };
 
-  let res = await client.triggerFlinksLoginId(accountId, loginId);
+  let res = await client.triggerFlinksLoginId(accountId, token, loginId);
   if (!res) return setError();
 
   let tries = 0;
@@ -86,7 +120,7 @@ async function setupFlinks(
     await new Promise((resolve) =>
       setTimeout(resolve, FLINKS_REQUEST_RETRY_DELAY_MS)
     );
-    res = await client.triggerFlinksLoginId(accountId);
+    res = await client.triggerFlinksLoginId(accountId, token);
 
     if (!res) return setError();
   }

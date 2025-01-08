@@ -170,7 +170,22 @@ export default class IntegrationClient {
     );
   }
 
-  async triggerFlinksLoginId(accountId: string, loginId?: string) {
+  async triggerFlinksIframeAuthorization() {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const params: Record<string, any> = {
+      form_key: this.formKey,
+      fuser_key: userId
+    };
+    const url = `${API_URL}flinks/authorize-iframe/?${encodeGetParams(params)}`;
+    return this._fetch(url);
+  }
+
+  async triggerFlinksLoginId(
+    accountId: string,
+    token: string,
+    loginId?: string
+  ) {
     await initFormsPromise;
     const { userId } = initInfo();
     const params: Record<string, any> = {
@@ -179,6 +194,7 @@ export default class IntegrationClient {
       account_id: accountId
     };
     if (loginId) params.login_id = loginId;
+    if (token) params.token = token;
     const url = `${API_URL}flinks/login-id/?${encodeGetParams(params)}`;
     return this._fetch(url);
   }
