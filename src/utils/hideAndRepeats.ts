@@ -65,7 +65,6 @@ function shouldElementHide(
     mobile_styles: mobileStyles,
     styles
   }: any,
-  element: any,
   repeat?: number,
   internalId?: string
 ) {
