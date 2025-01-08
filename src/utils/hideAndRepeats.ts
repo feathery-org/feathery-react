@@ -59,11 +59,19 @@ function reshapeHideIfs(hideIfs: any): ResolvedComparisonRule[][] {
  * Determines if the provided element should be hidden based on its "hide-if" rules.
  */
 function shouldElementHide(
-  { hide_ifs: hideIfs, show_logic: show, styles }: any,
+  {
+    hide_ifs: hideIfs,
+    show_logic: show,
+    mobile_styles: mobileStyles,
+    styles
+  }: any,
   repeat?: number,
   internalId?: string
 ) {
-  if (styles?.visibility === 'hidden') return true;
+  // Check both desktop visibilty and mobile visibilty of element to determine if element
+  // should be hidden
+  if (styles?.visibility === 'hidden' && mobileStyles?.visibility !== 'visible')
+    return true;
   // The show behavior can be either show (true) or hide (false).
   // If there are no hide_if rules, then the default is to show.
   // Otherwise, the rules are evaluated and if true then the show behavior is followed.
