@@ -1900,15 +1900,7 @@ function Form({
             extractionId: action.extraction_id,
             runAsync: action.run_async
           });
-          const vals = data.data ?? {};
-          const runField = action.extraction_run_field_key;
-          if (runField && data.runs?.length) {
-            let runs = data.runs;
-            if (runs.length === 1) runs = runs[0];
-            vals[runField] = runs;
-            await client.submitCustom({ runField: runs });
-          }
-          updateFieldValues(vals);
+          updateFieldValues(data.data ?? {});
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
