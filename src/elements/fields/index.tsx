@@ -4,6 +4,7 @@ import ButtonGroupField from './ButtonGroupField';
 import CheckboxField from './CheckboxField';
 import CheckboxGroupField from './CheckboxGroupField';
 import ColorPickerField from './ColorPickerField';
+import CustomField from './CustomField';
 import DateSelectorField from './DateSelectorField';
 import DropdownField from './DropdownField';
 import DropdownMultiField from './DropdownMultiField';
@@ -29,6 +30,7 @@ const Fields = {
   CheckboxField,
   CheckboxGroupField,
   ColorPickerField,
+  CustomField,
   DateSelectorField,
   DropdownField,
   DropdownMultiField,
