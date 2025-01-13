@@ -33,7 +33,7 @@ export async function openFlinksConnect(
       ? 'toolbox'
       : flinksConfig.metadata.instance;
 
-  let flinksUrl = `https://${instance}-iframe.private.fin.ag/v2/?accountSelectorEnable=true&showAllOperationsAccounts=true`;
+  let flinksUrl = `https://${instance}-iframe.private.fin.ag/v2/?accountSelectorEnable=true&showAllOperationsAccounts=true&detailsAndStatementEnable=true&monthsOfStatements=MostRecent`;
   if (token) {
     flinksUrl += `&authorizeToken=${token}`;
   }
