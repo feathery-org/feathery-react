@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - master
-    types: [opened, edited, synchronize]
+    types: [ opened, edited, synchronize ]
 
 jobs:
   validate:
@@ -16,7 +16,7 @@ jobs:
       - name: Setup Node.js and Cache
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
@@ -34,7 +34,7 @@ jobs:
     needs: validate
     strategy:
       matrix:
-        build-type: [umd, node]
+        build-type: [ umd, node ]
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -42,7 +42,7 @@ jobs:
       - name: Setup Node.js and Cache
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
@@ -62,7 +62,7 @@ jobs:
       - name: Setup Node.js and Cache
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
@@ -82,7 +82,7 @@ jobs:
       - name: Setup Node.js and Cache
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 

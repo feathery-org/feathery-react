@@ -1,4 +1,10 @@
-import { BrowserRouter, Route, useHistory } from 'react-router-dom';
+import {
+  BrowserRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate
+} from 'react-router-dom';
 import React, {
   useCallback,
   useEffect,
@@ -285,7 +291,8 @@ function Form({
   const formKey = formId || formName; // prioritize formID but fall back to name
   const clientRef = useRef<any>();
   const client = clientRef.current;
-  const history = useHistory();
+  const navigate = useNavigate();
+  const location = useLocation();
   const session = initState.formSessions[formKey];
 
   const [autoValidate, setAutoValidate] = useState(false);
@@ -771,7 +778,7 @@ function Form({
       oldKey,
       steps,
       setStepKey,
-      history,
+      navigate,
       client,
       trackHashes.current
     );
@@ -849,7 +856,7 @@ function Form({
         formRef,
         formSettings,
         getErrorCallback,
-        history,
+        navigate,
         inlineErrors,
         setInlineErrors,
         setUserProgress,
@@ -1092,7 +1099,13 @@ function Form({
 
         if (!session.track_location && trackHashes.current) {
           // Clear URL hash on new session if not tracking location
-          history.replace(location.pathname + location.search);
+          navigate(
+            featheryWindow().location.pathname +
+              featheryWindow().location.search,
+            {
+              replace: true
+            }
+          );
         }
         updateBackNavMap(session.back_nav_map);
         setIntegrations(session.integrations);
@@ -1120,7 +1133,7 @@ function Form({
           steps,
           sessionCurrentStep: session.current_step_key
         });
-        if (trackHashes.current) setUrlStepHash(history, steps, newKey);
+        if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
         setStepKey(newKey);
       })
       .catch(async (error: any) => {
@@ -1128,7 +1141,7 @@ function Form({
         // Go to first step if origin fails
         const [data] = await formPromise;
         const newKey = (getOrigin as any)(data).key;
-        if (trackHashes.current) setUrlStepHash(history, steps, newKey);
+        if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
         else setStepKey(newKey);
       });
   }, [activeStep, setSteps, updateFieldValues]);
@@ -1136,12 +1149,10 @@ function Form({
   useOfflineRequestHandler(client);
 
   useEffect(() => {
-    return history.listen(async () => {
-      if (!trackHashes.current) return;
-      const hashKey = getUrlHash();
-      if (hashKey in steps) setStepKey(hashKey);
-    });
-  }, [steps]);
+    if (!trackHashes.current) return;
+    const hashKey = getUrlHash();
+    if (hashKey in steps) setStepKey(hashKey);
+  }, [location]);
 
   useEffect(() => {
     // We set render to re-evaluate auth nav rules - but should only getNewStep if either the step or authId has changed.
@@ -1460,8 +1471,8 @@ function Form({
 
       if (trackHashes.current) {
         const newURL = getNewStepUrl(redirectKey);
-        if (explicitNav) history.push(newURL);
-        else history.replace(newURL);
+        if (explicitNav) navigate(newURL);
+        else navigate(newURL, { replace: true });
       } else setStepKey(redirectKey);
     }
   }
@@ -1470,7 +1481,7 @@ function Form({
     await callbackRef.current.all();
     const prevStepKey = getPrevStepKey(activeStep, backNavMap);
     if (prevStepKey) {
-      if (trackHashes.current) history.push(getNewStepUrl(prevStepKey));
+      if (trackHashes.current) navigate(getNewStepUrl(prevStepKey));
       else setStepKey(prevStepKey);
     }
   };
@@ -1763,7 +1774,7 @@ function Form({
             completed: true
           };
           await client.registerEvent(eventData);
-          location.href = url;
+          featheryWindow().location.href = url;
         }
       } else if (type === ACTION_SEND_SMS_MESSAGE) {
         const phoneNum = fieldValues[action.phone_target_field_key] as string;
@@ -1920,7 +1931,7 @@ function Form({
                 completed: true
               };
               await client.registerEvent(eventData);
-              location.href = url;
+              featheryWindow().location.href = url;
             } else openTab(url);
           } else {
             // Download files directly
@@ -2205,7 +2216,10 @@ function Form({
     if (!anyFinished) return;
     const redirectForm = () => {
       if (trackHashes.current)
-        history.replace(location.pathname + location.search);
+        navigate(
+          featheryWindow().location.pathname + featheryWindow().location.search,
+          { replace: true }
+        );
       if (initState.redirectCallbacks[_internalId]) {
         hasRedirected.current = true;
         initState.redirectCallbacks[_internalId]();
@@ -2276,7 +2290,7 @@ function Form({
             allSteps={steps}
             curStep={activeStep}
             changeStep={(stepKey: string) => {
-              if (trackHashes.current) history.push(getNewStepUrl(stepKey));
+              if (trackHashes.current) navigate(getNewStepUrl(stepKey));
               else setStepKey(stepKey);
             }}
             formName={formName}
@@ -2322,19 +2336,22 @@ export function JSForm({
   // Check client for NextJS support
   if ((formId || formName) && runningInClient())
     return (
-      /* @ts-ignore */
       <BrowserRouter>
-        {/* @ts-ignore */}
-        <Route path='/'>
-          <Form
-            {...props}
-            formId={formId}
-            formName={formName}
-            key={`${formId || formName}_${remount}`}
-            _internalId={_internalId}
-            _isAuthLoading={_isAuthLoading}
+        <Routes>
+          <Route
+            path='/*'
+            element={
+              <Form
+                {...props}
+                formId={formId}
+                formName={formName}
+                key={`${formId || formName}_${remount}`}
+                _internalId={_internalId}
+                _isAuthLoading={_isAuthLoading}
+              />
+            }
           />
-        </Route>
+        </Routes>
       </BrowserRouter>
     );
   else return null;

@@ -57,14 +57,14 @@ export const getFormContext = (formUuid: string) => {
     setProgress: (val: any) => formState.setUserProgress(val),
     updateUserId,
     goToStep: (stepKey: any) => {
-      const { currentStep, history, steps, setStepKey, client, trackHashes } =
+      const { currentStep, navigate, steps, setStepKey, client, trackHashes } =
         formState;
       changeStep(
         stepKey,
         currentStep.key,
         steps,
         setStepKey,
-        history,
+        navigate,
         client,
         trackHashes
       );
