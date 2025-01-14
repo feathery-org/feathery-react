@@ -313,6 +313,17 @@ const Element = ({ node: el, form }: any) => {
             }}
           />
         );
+      case 'custom':
+        return (
+          <Elements.CustomField
+            {...fieldProps}
+            rawValue={fieldVal}
+            onChange={(value: any) => {
+              const change = changeValue(value, el, index, true, false);
+              if (change) debouncedOnChange();
+            }}
+          />
+        );
       case 'file_upload':
         return (
           <Elements.FileUploadField
