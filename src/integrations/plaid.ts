@@ -59,7 +59,7 @@ export async function openPlaidLink(
             await new Promise((resolve) => setTimeout(resolve, 2000));
             return;
           }
-        } else {
+        } else if (publicToken) {
           const res = client.submitPlaidUserData(publicToken);
           if (action.wait_for_completion ?? true) {
             const fieldVals = await res;
