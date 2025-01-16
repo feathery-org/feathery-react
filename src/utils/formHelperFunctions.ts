@@ -630,7 +630,7 @@ export function changeStep(
   oldKey: string,
   steps: any,
   setStepKey: any,
-  history: any,
+  navigate: any,
   client: any,
   trackHashes?: boolean
 ) {
@@ -643,7 +643,9 @@ export function changeStep(
         event: 'complete'
       });
       if (trackHashes)
-        history.replace(location.pathname + location.search + `#${newKey}`);
+        navigate(location.pathname + location.search + `#${newKey}`, {
+          replace: true
+        });
       setStepKey(newKey);
       return true;
     } else console.warn(`${newKey} is not a valid step to navigate to`);
@@ -677,10 +679,12 @@ export function clearFilePathMapEntry(key: any, index = null) {
   delete fileSubmittedMap[key];
 }
 
-export function setUrlStepHash(history: any, steps: any, stepName: string) {
+export function setUrlStepHash(navigate: any, steps: any, stepName: string) {
   // No hash necessary if form only has one step
   if (Object.keys(steps).length > 1) {
-    history.replace(location.pathname + location.search + `#${stepName}`);
+    navigate(location.pathname + location.search + `#${stepName}`, {
+      replace: true
+    });
   }
 }
 

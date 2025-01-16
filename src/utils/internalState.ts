@@ -40,7 +40,7 @@ export interface FormInternalState {
   getErrorCallback: (
     props1?: Record<string, unknown>
   ) => (props2?: Record<string, unknown>) => Promise<boolean>;
-  history: any;
+  navigate: any;
   inlineErrors: Record<string, { message: string; index: number }>;
   setInlineErrors: React.Dispatch<
     React.SetStateAction<Record<string, { message: string; index: number }>>

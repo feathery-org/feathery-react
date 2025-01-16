@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
-import { useHistory } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { authState } from '../LoginForm';
 import { getUrlHash, setUrlStepHash } from '../../utils/formHelperFunctions';
-import { hasAuthGatedSteps, getAuthIntegrationMetadata } from './utils';
+import { getAuthIntegrationMetadata, hasAuthGatedSteps } from './utils';
 import { initState } from '../../utils/init';
 
 const useFormAuth = ({
@@ -20,7 +20,7 @@ const useFormAuth = ({
   client: any;
   _internalId: string;
 }) => {
-  const history = useHistory();
+  const navigate = useNavigate();
 
   // This hook sets the step key & hash once auth has been completed
   useEffect(() => {
@@ -34,7 +34,7 @@ const useFormAuth = ({
       if (hasAuthGatedSteps(integrations)) {
         const stepName = getNextAuthStep();
         setStepKey(stepName);
-        setUrlStepHash(history, steps, stepName);
+        setUrlStepHash(navigate, steps, stepName);
         authState.redirectAfterLogin = false;
         authState.hasRedirected = true;
       } else {
@@ -69,7 +69,7 @@ const useFormAuth = ({
       // blocked by the `if (authState.redirectAfterLogin) return;` early
       // return in Form's fetchSession.then fn call
       setStepKey(initialStep);
-      setUrlStepHash(history, steps, initialStep);
+      setUrlStepHash(navigate, steps, initialStep);
     }
   }, [integrations]);
 
