@@ -330,6 +330,14 @@ function PhoneField({
                 if (!LPN) return;
                 const validateLength = LPN.validatePhoneNumberLength;
 
+                // Handle pasted numbers:
+                // If there are multiple plus symbols, take everything after the last one
+                const plusCount = (newNum.match(/\+/g) || []).length;
+                if (plusCount > 1) {
+                  const lastPlusIndex = newNum.lastIndexOf('+');
+                  newNum = newNum.slice(lastPlusIndex);
+                }
+
                 // Phone codes with >3 characters will have a whitespace
                 newNum = newNum.replace(/\s/g, '');
 
