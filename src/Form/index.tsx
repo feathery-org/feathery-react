@@ -954,7 +954,7 @@ function Form({
             });
             const vals = data.data ?? {};
             updateFieldValues(vals);
-            return vals;
+            return data;
           } catch (err) {
             console.error(err);
             return {};

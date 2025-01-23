@@ -119,7 +119,6 @@ export default class IntegrationClient {
     if (!res) return { err: 'Ran into an error' };
 
     const payload = await res.json();
-    console.log(payload);
     if (res?.status === 200) return { token: payload.link_token };
     return { err: parseError(payload) || 'Ran into an error' };
   }

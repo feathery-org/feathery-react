@@ -764,6 +764,9 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
+  CHECK_INTERVAL = 2000;
+  MAX_TIME = 3 * 60 * 1000;
+
   // AI
   extractAIDocument({
     extractionId,
@@ -788,14 +791,10 @@ export default class FeatheryClient extends IntegrationClient {
     });
 
     return new Promise((resolve) => {
-      const CHECK_INTERVAL = 2000;
-      const MAX_TIME = 3 * 60 * 1000;
-      const MAX_ATTEMPTS = MAX_TIME / CHECK_INTERVAL;
-      let attempts = 0;
+      if (runAsync) return resolve({});
 
-      if (runAsync) {
-        return resolve({});
-      }
+      let attempts = 0;
+      const maxAttempts = this.MAX_TIME / this.CHECK_INTERVAL;
 
       const checkCompletion = async () => {
         const response = await this._fetch(
@@ -811,8 +810,8 @@ export default class FeatheryClient extends IntegrationClient {
           } else {
             attempts += 1;
 
-            if (attempts < MAX_ATTEMPTS) {
-              setTimeout(checkCompletion, CHECK_INTERVAL);
+            if (attempts < maxAttempts) {
+              setTimeout(checkCompletion, this.CHECK_INTERVAL);
             } else {
               console.warn('Extraction took too long...');
               return resolve({});
@@ -821,7 +820,7 @@ export default class FeatheryClient extends IntegrationClient {
         }
       };
 
-      setTimeout(checkCompletion, CHECK_INTERVAL); // Check every 2 seconds for a response
+      setTimeout(checkCompletion, this.CHECK_INTERVAL); // Check every 2 seconds for a response
     });
   }
 
