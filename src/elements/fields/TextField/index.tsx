@@ -132,12 +132,7 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
   };
 }
 
-function getInputProps(
-  servar: any,
-  options: any[],
-  autoComplete: boolean,
-  showPassword: boolean
-) {
+function getInputProps(servar: any, options: any[], autoComplete: boolean) {
   const constraints: Record<string, any> = {
     minLength: servar.min_length
   };
@@ -315,7 +310,7 @@ function TextField({
             /* @ts-ignore */
             onFocus={iosScrollOnFocus}
             inputRef={setRef}
-            {...getInputProps(servar, options, autoComplete, showPassword)}
+            {...getInputProps(servar, options, autoComplete)}
             {...getMaskProps(servar, rawValue, showPassword)}
             onAccept={onAccept}
           />
