@@ -16,8 +16,10 @@ export function getInlineError(field: any, inlineErrors: any) {
 
 export function textFieldShouldSubmit(servar: any, value: any) {
   switch (servar.type) {
-    case 'ssn':
-      return value.length === 9;
+    case 'ssn': {
+      const ssnLength = servar.metadata.last_four_digits ? 4 : 9;
+      return value.length === ssnLength;
+    }
     default:
       return false;
   }

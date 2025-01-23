@@ -295,7 +295,10 @@ function getStandardFieldError(value: any, servar: any, repeat: any) {
       return '';
     }
     return defaultErr;
-  } else if (servar.type === 'ssn' && value.length !== 9) {
+  } else if (
+    servar.type === 'ssn' &&
+    value.length !== (servar.metadata.last_four_digits ? 4 : 9)
+  ) {
     return defaultErr;
   } else if (
     servar.type === 'pin_input' &&
