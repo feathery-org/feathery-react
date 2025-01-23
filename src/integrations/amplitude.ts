@@ -8,14 +8,21 @@ export async function installAmplitude(amplitudeConfig: any) {
   if (!amplitudeConfig || amplitudeInstalled) return;
 
   amplitudeInstalled = true;
+  const meta = amplitudeConfig.metadata;
 
-  const apiKey = amplitudeConfig.metadata.api_key;
+  const apiKey = meta.api_key;
   await dynamicImport(`https://cdn.amplitude.com/script/${apiKey}.js`);
+
+  if (meta.session_replay) {
+    const sessionReplayTracking = featheryWindow().sessionReplay.plugin();
+    featheryWindow().amplitude.add(sessionReplayTracking);
+  }
+
   featheryWindow().amplitude.init(apiKey, {
     fetchRemoteConfig: true,
     autocapture: true
   });
 
-  if (amplitudeConfig.metadata.identify_user)
+  if (meta.identify_user)
     featheryWindow().amplitude.setUserId(initInfo().userId);
 }
