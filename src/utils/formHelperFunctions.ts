@@ -919,6 +919,14 @@ export async function updateCustomHead(headCode: string) {
   await Promise.all(scriptWait);
 }
 
+export function updateCustomCSS(cssCode: string) {
+  if (!cssCode) return;
+
+  const style = featheryDoc().createElement('style');
+  style.textContent = cssCode;
+  featheryDoc().head.appendChild(style);
+}
+
 export function httpHelpers(client: any, connectorFields: string[] = []) {
   const helpers: Record<string, any> = {};
   [

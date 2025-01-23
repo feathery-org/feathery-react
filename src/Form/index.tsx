@@ -48,6 +48,7 @@ import {
   saveInitialValuesAndUrlParams,
   setFormElementError,
   setUrlStepHash,
+  updateCustomCSS,
   updateCustomHead,
   updateStepFieldOptions,
   updateStepFieldProperties,
@@ -1029,6 +1030,7 @@ function Form({
       .fetchForm(initialValues, language)
       .then(async (data: any) => {
         setCustomErrorHandler();
+        updateCustomCSS(data.custom_css ?? '');
         await updateCustomHead(data.custom_head ?? '');
         removeCustomErrorHandler();
         return data;
