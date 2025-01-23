@@ -86,7 +86,7 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
             scale: 2,
             // Larger numbers get converted to scientific notation when sent to backend
             max: servar.max_length ?? Number.MAX_SAFE_INTEGER,
-            min: servar.min_length ?? Number.MIN_SAFE_INTEGER
+            min: Math.max(0, servar.min_length ?? 0)
           }
         },
         value: value.toString()
