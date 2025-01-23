@@ -83,7 +83,6 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
             mask: Number,
             radix: '.',
             thousandsSeparator: ',',
-            signed: false,
             scale: 2,
             // Larger numbers get converted to scientific notation when sent to backend
             max: servar.max_length ?? Number.MAX_SAFE_INTEGER,
@@ -98,8 +97,15 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
       break;
     case 'ssn':
       maskProps = {
-        mask: showPassword ? '000 - 00 - 0000' : '000000000',
-        lazy: true
+        // mask uses ∗ character which is like * but centered in inputs
+        mask: servar.metadata.last_four_digits
+          ? '∗∗∗ - ∗∗ - 0000'
+          : '000 - 00 - 0000',
+        // displayChar allows for secure entry without using password input
+        // this prevents browser password manager from triggering on SSN fields
+        displayChar: showPassword ? undefined : '∗',
+        placeholderChar: servar.metadata.last_four_digits ? ' ' : undefined,
+        lazy: !servar.metadata.last_four_digits
       };
       break;
     case 'email':
@@ -175,7 +181,6 @@ function getInputProps(
     case 'ssn':
       return {
         inputMode: 'numeric' as any,
-        type: showPassword ? 'text' : 'password',
         ...constraints
       };
     default:
@@ -265,7 +270,6 @@ function TextField({
           }}
           responsiveStyles={responsiveStyles}
         >
-          {/* @ts-ignore */}
           <IMaskInput
             id={servar.key}
             name={servar.key}
