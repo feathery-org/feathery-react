@@ -13,6 +13,11 @@ export async function installAmplitude(amplitudeConfig: any) {
   const apiKey = meta.api_key;
   await dynamicImport(`https://cdn.amplitude.com/script/${apiKey}.js`);
 
+  if (!featheryWindow().amplitude) {
+    console.warn('Failed to load Amplitude.');
+    return;
+  }
+
   if (meta.session_replay) {
     const sessionReplayTracking = featheryWindow().sessionReplay.plugin();
     featheryWindow().amplitude.add(sessionReplayTracking);
