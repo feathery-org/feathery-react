@@ -666,7 +666,8 @@ function Form({
   const runUserLogic = async (
     event: string,
     getProps: () => Record<string, any> = () => ({}),
-    containerId?: string | undefined
+    containerId?: string | undefined,
+    toAwait?: Promise<any>
   ) => {
     const props = {
       ...getFormContext(_internalId),
@@ -695,6 +696,8 @@ function Form({
 
         if (canRunAction(logicRule, currentStepId, props, containerId)) {
           logicRan = true;
+
+          if (toAwait) await toAwait;
 
           // Note:
           // AsyncFunction is nice and tidy but was throwing an error when trying to use await at
@@ -1708,7 +1711,8 @@ function Form({
           beforeClickActions,
           actions: actionTypes
         }),
-        elementType === 'container' ? element.id : undefined
+        elementType === 'container' ? element.id : undefined,
+        submitPromise
       );
 
     await runAction(true);
