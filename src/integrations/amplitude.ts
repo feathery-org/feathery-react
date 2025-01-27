@@ -23,10 +23,12 @@ export async function installAmplitude(amplitudeConfig: any) {
     featheryWindow().amplitude.add(sessionReplayTracking);
   }
 
-  featheryWindow().amplitude.init(apiKey, {
+  const options: Record<string, any> = {
     fetchRemoteConfig: true,
     autocapture: true
-  });
+  };
+  if (meta.eu_server) options.serverZone = 'EU';
+  featheryWindow().amplitude.init(apiKey, options);
 
   if (meta.identify_user)
     featheryWindow().amplitude.setUserId(initInfo().userId);
