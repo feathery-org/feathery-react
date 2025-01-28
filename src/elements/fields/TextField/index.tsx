@@ -220,6 +220,7 @@ function TextField({
 
   const servar = element.servar;
   const options = (servar.metadata.options ?? []).filter((opt: string) => opt);
+  const spacing = element.properties.tooltipText ? 30 : 8;
   return (
     <div
       css={{
@@ -320,7 +321,7 @@ function TextField({
             css={{
               position: 'absolute',
               cursor: 'pointer',
-              right: '8px',
+              [rightToLeft ? 'left' : 'right']: `${spacing}px`,
               // We need to subtract half the height of the icon to center it
               top: 'calc(50% - 12px)',
               zIndex: FORM_Z_INDEX
@@ -344,6 +345,7 @@ function TextField({
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
           repeat={element.repeat}
+          rightToLeft={rightToLeft}
         />
       </div>
     </div>

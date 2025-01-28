@@ -177,6 +177,7 @@ function AddressLine1({
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
           repeat={element.repeat}
+          rightToLeft={rightToLeft}
         />
       </div>
     </div>

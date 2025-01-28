@@ -106,7 +106,7 @@ function PasswordField({
             css={{
               position: 'absolute',
               cursor: 'pointer',
-              right: `${spacing}px`,
+              [rightToLeft ? 'left' : 'right']: `${spacing}px`,
               // We need to subtract half the height of the icon to center it
               top: 'calc(50% - 12px)',
               zIndex: FORM_Z_INDEX
@@ -130,6 +130,7 @@ function PasswordField({
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
           repeat={element.repeat}
+          rightToLeft={rightToLeft}
         />
       </div>
     </div>

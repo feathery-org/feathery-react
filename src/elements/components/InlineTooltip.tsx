@@ -9,6 +9,7 @@ export default function InlineTooltip({
   text,
   responsiveStyles,
   absolute = true,
+  rightToLeft,
   repeat
 }: any) {
   // Explicitly managing popover state prevents a bug on mobile where
@@ -52,19 +53,19 @@ export default function InlineTooltip({
           absolute
             ? {
                 position: 'absolute',
-                right: '10px',
                 top: 0,
                 bottom: 0,
                 zIndex: FORM_Z_INDEX,
                 margin: 'auto',
                 cursor: 'pointer',
-                height: '100%'
+                height: '100%',
+                [rightToLeft ? 'left' : 'right']: '10px'
               }
             : {
                 position: 'relative',
-                marginLeft: '8px',
                 display: 'flex',
-                alignItems: 'center'
+                alignItems: 'center',
+                [rightToLeft ? 'marginRight' : 'marginLeft']: '8px'
               }
         }
       >

@@ -221,6 +221,7 @@ export default function DropdownField({
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
           repeat={element.repeat}
+          rightToLeft={rightToLeft}
         />
       </div>
     </div>
