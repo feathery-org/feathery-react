@@ -305,6 +305,10 @@ export default function SelectorStyles() {
           outline: none;
           grid-area: select;
         }
+        :where([dir="rtl"]) .react-datepicker__month-select,
+        :where([dir="rtl"]) .react-datepicker__year-select {
+          padding: 0 0 0 1em;
+        }
 
         .react-datepicker__current-month,
         .react-datepicker-time__header,
