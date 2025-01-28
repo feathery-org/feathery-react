@@ -24,7 +24,6 @@ function AddressLine1({
   disabled = false,
   autoComplete,
   editMode,
-  rightToLeft,
   repeatIndex = null,
   onSelect = () => {},
   onBlur = () => {},
@@ -169,7 +168,6 @@ function AddressLine1({
           value={value}
           element={element}
           responsiveStyles={responsiveStyles}
-          rightToLeft={rightToLeft}
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
@@ -177,7 +175,6 @@ function AddressLine1({
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
           repeat={element.repeat}
-          rightToLeft={rightToLeft}
         />
       </div>
     </div>

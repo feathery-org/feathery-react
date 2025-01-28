@@ -75,7 +75,6 @@ function DateSelectorField({
   disabled = false,
   repeatIndex = null,
   editMode,
-  rightToLeft,
   onComplete = () => {},
   onEnter = () => {},
   setRef = () => {},
@@ -272,7 +271,6 @@ function DateSelectorField({
           element={element}
           responsiveStyles={responsiveStyles}
           inputFocused={focused}
-          rightToLeft={rightToLeft}
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
@@ -280,7 +278,6 @@ function DateSelectorField({
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
           repeat={element.repeat}
-          rightToLeft={rightToLeft}
         />
       </div>
     </div>

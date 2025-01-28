@@ -6,7 +6,6 @@ export default function Placeholder({
   responsiveStyles,
   type = 'input',
   inputFocused = false,
-  rightToLeft = false,
   repeatIndex = null
 }: any) {
   const props = element.properties;
@@ -23,7 +22,7 @@ export default function Placeholder({
       css={{
         position: 'absolute',
         pointerEvents: 'none',
-        [rightToLeft ? 'right' : 'left']: '0.75rem',
+        insetInlineStart: '0.75rem',
         transition: '0.2s ease all',
         top: type === 'input' ? '50%' : '0.6rem',
         ...responsiveStyles.getTarget('placeholder'),

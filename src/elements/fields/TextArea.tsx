@@ -14,7 +14,6 @@ function TextArea({
   required = false,
   disabled = false,
   editMode,
-  rightToLeft,
   onChange = () => {},
   setRef = () => {},
   rawValue = '',
@@ -100,7 +99,6 @@ function TextArea({
           element={element}
           responsiveStyles={responsiveStyles}
           type='textarea'
-          rightToLeft={rightToLeft}
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
@@ -108,7 +106,6 @@ function TextArea({
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
           repeat={element.repeat}
-          rightToLeft={rightToLeft}
         />
       </div>
     </div>

@@ -295,7 +295,8 @@ export default function SelectorStyles() {
           // Additional resets for further consistency
           background-color: transparent;
           border: none;
-          padding: 0 1em 0 0;
+          padding: 0;
+          paddingInlineEnd: 1em;
           margin: 0;
           width: 100%;
           font-family: inherit;
@@ -304,10 +305,6 @@ export default function SelectorStyles() {
           line-height: inherit;
           outline: none;
           grid-area: select;
-        }
-        :where([dir='rtl']) .react-datepicker__month-select,
-        :where([dir='rtl']) .react-datepicker__year-select {
-          padding: 0 0 0 1em;
         }
 
         .react-datepicker__current-month,

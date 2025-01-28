@@ -395,7 +395,6 @@ function PhoneField({
             value={formattedNumber}
             element={{ properties: { placeholder } }}
             responsiveStyles={responsiveStyles}
-            rightToLeft={rightToLeft}
             repeatIndex={repeatIndex}
           />
           <InlineTooltip
@@ -403,7 +402,6 @@ function PhoneField({
             text={element.properties.tooltipText}
             responsiveStyles={responsiveStyles}
             repeat={element.repeat}
-            rightToLeft={rightToLeft}
           />
         </div>
       </div>

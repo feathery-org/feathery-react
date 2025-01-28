@@ -182,7 +182,7 @@ export default function DropdownMultiField({
             }),
             valueContainer: (baseStyles) => ({
               ...baseStyles,
-              [rightToLeft ? 'paddingLeft' : 'paddingRight']: 28
+              paddingInlineEnd: 28
             }),
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
@@ -221,7 +221,6 @@ export default function DropdownMultiField({
           aria-label={element.properties.aria_label}
         />
         <Placeholder
-          rightToLeft={rightToLeft}
           value={selectVal.length || focused}
           element={element}
           responsiveStyles={responsiveStyles}
@@ -232,7 +231,6 @@ export default function DropdownMultiField({
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
           repeat={element.repeat}
-          rightToLeft={rightToLeft}
         />
       </div>
     </div>

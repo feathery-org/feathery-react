@@ -200,7 +200,6 @@ function TextField({
   disabled = false,
   autoComplete,
   editMode,
-  rightToLeft,
   onAccept = () => {},
   onEnter = () => {},
   setRef = () => {},
@@ -321,7 +320,7 @@ function TextField({
             css={{
               position: 'absolute',
               cursor: 'pointer',
-              [rightToLeft ? 'left' : 'right']: `${spacing}px`,
+              insetInlineEnd: `${spacing}px`,
               // We need to subtract half the height of the icon to center it
               top: 'calc(50% - 12px)',
               zIndex: FORM_Z_INDEX
@@ -334,7 +333,6 @@ function TextField({
         )}
         {customBorder}
         <Placeholder
-          rightToLeft={rightToLeft}
           value={rawValue}
           element={element}
           responsiveStyles={responsiveStyles}
@@ -345,7 +343,6 @@ function TextField({
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
           repeat={element.repeat}
-          rightToLeft={rightToLeft}
         />
       </div>
     </div>
