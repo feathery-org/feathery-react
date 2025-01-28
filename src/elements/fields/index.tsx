@@ -402,8 +402,13 @@ function applyFieldStyles(field: any, styles: any) {
           borderBottomLeftRadius: `${b}px`
         })
       );
-      styles.apply('fieldToggle', 'border_bottom_color', (a: any) => ({
-        borderRight: `1px solid #${a}`
+      styles.apply('fieldToggle', 'border_bottom_color', (a: any) => (
+        {
+        borderRight: `1px solid #${a}`,
+        [`:where([dir='rtl'] &)`]: {
+          borderLeft: `1px solid #${a}`,
+          borderRight: 'none'
+        }
       }));
       break;
     case 'qr_scanner':
