@@ -229,7 +229,7 @@ function PhoneField({
           target={triggerRef.current}
           show={show}
           onHide={() => setShow(false)}
-          placement='bottom-start'
+          placement={rightToLeft ? 'bottom-end' : 'bottom-start'}
           // CONTEXT: The container prop of the overlay lets us specify which element will hold the overlay.
           // If we do not specify the container, there are chances that the page's body is taken as the container.
           // This can cause the auto-scrolling issue that we observed.

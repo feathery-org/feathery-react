@@ -17,7 +17,6 @@ function PasswordField({
   disabled = false,
   repeatIndex = null,
   editMode,
-  rightToLeft,
   onChange = () => {},
   onEnter = () => {},
   setRef = () => {},
@@ -106,7 +105,7 @@ function PasswordField({
             css={{
               position: 'absolute',
               cursor: 'pointer',
-              right: `${spacing}px`,
+              insetInlineEnd: `${spacing}px`,
               // We need to subtract half the height of the icon to center it
               top: 'calc(50% - 12px)',
               zIndex: FORM_Z_INDEX
@@ -122,7 +121,6 @@ function PasswordField({
           value={rawValue}
           element={element}
           responsiveStyles={responsiveStyles}
-          rightToLeft={rightToLeft}
           repeatIndex={repeatIndex}
         />
         <InlineTooltip

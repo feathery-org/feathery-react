@@ -11,6 +11,7 @@ export default function SliderField({
   disabled = false,
   fieldVal = 0,
   editMode,
+  rightToLeft,
   onChange = () => {},
   elementProps = {},
   children
@@ -68,6 +69,7 @@ export default function SliderField({
           min={minVal}
           max={maxVal}
           step={stepSize}
+          reverse={rightToLeft}
           onChange={(val) => {
             setInternalValue(val);
             onChange(val);

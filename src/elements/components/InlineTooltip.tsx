@@ -52,7 +52,7 @@ export default function InlineTooltip({
           absolute
             ? {
                 position: 'absolute',
-                right: '10px',
+                insetInlineEnd: '10px',
                 top: 0,
                 bottom: 0,
                 zIndex: FORM_Z_INDEX,
@@ -62,7 +62,7 @@ export default function InlineTooltip({
               }
             : {
                 position: 'relative',
-                marginLeft: '8px',
+                marginInlineStart: '8px',
                 display: 'flex',
                 alignItems: 'center'
               }

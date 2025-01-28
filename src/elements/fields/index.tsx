@@ -398,12 +398,12 @@ function applyFieldStyles(field: any, styles: any) {
         'fieldToggle',
         ['corner_top_left_radius', 'corner_bottom_left_radius'],
         (a: any, b: any) => ({
-          borderTopLeftRadius: `${a}px`,
-          borderBottomLeftRadius: `${b}px`
+          borderStartStartRadius: `${a}px`,
+          borderEndStartRadius: `${b}px`
         })
       );
       styles.apply('fieldToggle', 'border_bottom_color', (a: any) => ({
-        borderRight: `1px solid #${a}`
+        borderInlineEnd: `1px solid #${a}`
       }));
       break;
     case 'qr_scanner':

@@ -295,7 +295,8 @@ export default function SelectorStyles() {
           // Additional resets for further consistency
           background-color: transparent;
           border: none;
-          padding: 0 1em 0 0;
+          padding: 0;
+          padding-inline-end: 1em;
           margin: 0;
           width: 100%;
           font-family: inherit;
