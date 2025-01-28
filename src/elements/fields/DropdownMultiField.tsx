@@ -179,7 +179,7 @@ export default function DropdownMultiField({
             }),
             valueContainer: (baseStyles) => ({
               ...baseStyles,
-              paddingRight: 28
+              [rightToLeft ? 'paddingLeft' : 'paddingRight']: 28
             }),
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
