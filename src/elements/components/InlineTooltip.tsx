@@ -64,7 +64,7 @@ export default function InlineTooltip({
                 position: 'relative',
                 marginInlineStart: '8px',
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'center'
               }
         }
       >
