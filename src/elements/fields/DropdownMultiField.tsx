@@ -7,6 +7,7 @@ import InlineTooltip from '../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from './index';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { FORM_Z_INDEX } from '../../utils/styles';
+import Placeholder from '../components/Placeholder';
 
 const TooltipOption = ({ children, ...props }: any) => {
   let optComponent = (
@@ -169,7 +170,9 @@ export default function DropdownMultiField({
               backgroundColor: 'transparent',
               backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='%23${element.styles.font_color}'/></svg>")`,
               backgroundRepeat: 'no-repeat',
-              backgroundPosition: `${rightToLeft ? 'left': 'right'} ${chevronPosition}px center`,
+              backgroundPosition: `${
+                rightToLeft ? 'left' : 'right'
+              } ${chevronPosition}px center`,
               position: 'relative'
             }),
             container: (baseStyles) => ({
@@ -217,22 +220,13 @@ export default function DropdownMultiField({
           placeholder=''
           aria-label={element.properties.aria_label}
         />
-        <span
-          css={{
-            position: 'absolute',
-            pointerEvents: 'none',
-            left: '0.75rem',
-            transition: '0.2s ease all',
-            top: '50%',
-            ...responsiveStyles.getTarget('placeholder'),
-            ...(fieldVal.length > 0 || focused
-              ? responsiveStyles.getTarget('placeholderFocus')
-              : {}),
-            ...(focused ? responsiveStyles.getTarget('placeholderActive') : {})
-          }}
-        >
-          {element.properties.placeholder || ''}
-        </span>
+        <Placeholder
+          rightToLeft={rightToLeft}
+          value={selectVal.length || focused}
+          element={element}
+          responsiveStyles={responsiveStyles}
+          repeatIndex={repeatIndex}
+        />
         <InlineTooltip
           id={element.id}
           text={element.properties.tooltipText}
