@@ -15,6 +15,7 @@ import {
   hoverStylesGuard,
   featheryDoc
 } from '../../../utils/browser';
+import { useCustomDateLocale } from './useDateLocale';
 
 // Helper function to parse time limits
 const parseTimeThreshold = (timeThreshold: string) =>
@@ -86,6 +87,12 @@ function DateSelectorField({
 
   const pickerRef = useRef<any>();
   const [internalDate, setInternalDate] = useState('');
+
+  const translation = element.properties.translate || {};
+  const locale = useCustomDateLocale({
+    monthNames: translation.months,
+    shortDayNames: translation.weekdays
+  });
 
   // disables mobile devices from focusing inputs through a portal
   // https://github.com/Hacker0x01/react-datepicker/issues/2524
@@ -207,6 +214,8 @@ function DateSelectorField({
           id={element.servar.key}
           selected={internalDate}
           autoComplete='off'
+          locale={locale}
+          timeCaption={translation.time_label}
           preventOpenOnFocus={isTouchDevice()}
           onCalendarOpen={handleCalendarOpen}
           onCalendarClose={() => {

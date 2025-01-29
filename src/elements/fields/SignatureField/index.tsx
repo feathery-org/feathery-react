@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import SignatureCanvas from './components/SignatureCanvas';
 import SignatureModal from './components/SignatureModal';
 import { FORM_Z_INDEX } from '../../../utils/styles';
+import { defaultTranslations, SignatureTranslations } from './translation';
 
 function SignatureField({
   element,
@@ -20,6 +21,11 @@ function SignatureField({
   const Portal = ReactPortal ?? (({ children }: any) => <>{children}</>);
   const servar = element.servar ?? {};
   const fieldKey = servar.key ?? element.key;
+
+  const t = {
+    ...defaultTranslations,
+    ...(element.properties.translate as Partial<SignatureTranslations>)
+  };
 
   useEffect(() => {
     if (!global.webfontloaderPromise)
@@ -41,6 +47,7 @@ function SignatureField({
           onClear={onClear}
           onEnd={onEnd}
           signMethods={servar.metadata?.sign_methods ?? ''}
+          translation={t}
         />
       </Portal>
       <div
@@ -82,7 +89,7 @@ function SignatureField({
               }
             }}
           >
-            {!defaultValue && !disabled && <>Sign here</>}
+            {!defaultValue && !disabled && t.label}
           </div>
           <SignatureCanvas
             fieldKey={fieldKey}
@@ -90,6 +97,7 @@ function SignatureField({
             defaultValue={defaultValue}
             disabled={disabled}
             showClear={false}
+            translation={t}
           />
           {/* This input must always be rendered so we can set field errors */}
           <input
