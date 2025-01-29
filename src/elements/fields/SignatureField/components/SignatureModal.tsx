@@ -6,6 +6,7 @@ import SignatureCanvas, { SignatureCanvasProps } from './SignatureCanvas';
 import html2canvas from 'html2canvas';
 import debounce from 'lodash.debounce';
 import { trimCanvas } from './utils';
+import { SignatureTranslations } from '../translation';
 
 const SIGNER_NAME_KEY = 'feathery-signer-name';
 
@@ -14,6 +15,7 @@ type SignatureModalProps = SignatureCanvasProps & {
   setShow: (val: boolean) => void;
   returnFile?: boolean;
   signMethods: '' | 'draw' | 'type';
+  translation: SignatureTranslations;
 };
 
 function SignatureModal(props: SignatureModalProps) {
@@ -25,7 +27,8 @@ function SignatureModal(props: SignatureModalProps) {
     responsiveStyles,
     onClear = () => {},
     onEnd = () => {},
-    signMethods = ''
+    signMethods = '',
+    translation: t
   } = props;
 
   const typeOnly = signMethods === 'type';
@@ -168,7 +171,7 @@ function SignatureModal(props: SignatureModalProps) {
             borderBottom: '1px solid #e9e9e9'
           }}
         >
-          <h3 css={{ padding: 0, margin: 0, flex: '1' }}>Add your signature</h3>
+          <h3 css={{ padding: 0, margin: 0, flex: '1' }}>{t.title}</h3>
           <CloseIcon
             onClick={() => handleCancel()}
             css={{ '&:hover': { cursor: 'pointer' } }}
@@ -195,14 +198,14 @@ function SignatureModal(props: SignatureModalProps) {
                   paddingBottom: '30px'
                 }}
               >
-                <h3>Type your signature</h3>
+                <h3>{t.type_option}</h3>
                 <input
                   defaultValue={getSignerNameFromSessionStorage()}
                   onChange={(e) => {
                     const val = e.target.value.trim();
                     setFullName(val);
                   }}
-                  placeholder='Your full name'
+                  placeholder={t.type_placeholder}
                   css={{
                     padding: '8px 10px',
                     borderRadius: '4px',
@@ -243,7 +246,7 @@ function SignatureModal(props: SignatureModalProps) {
                         borderRadius: '4px'
                       }}
                     >
-                      Generating signature...
+                      {t.type_loading}
                     </div>
                   )}
                   <div
@@ -266,7 +269,7 @@ function SignatureModal(props: SignatureModalProps) {
                     </div>
                   </div>
                   {!signatureImgData ? (
-                    'Full Name'
+                    t.type_example
                   ) : (
                     <img
                       src={signatureImgData}
@@ -294,7 +297,7 @@ function SignatureModal(props: SignatureModalProps) {
                         color: '#5e5e5e'
                       }}
                     >
-                      or
+                      {t.or_label}
                     </div>
                   </div>
                   <div
@@ -323,10 +326,8 @@ function SignatureModal(props: SignatureModalProps) {
                         }
                       }}
                     >
-                      <h3>Draw your signature</h3>
-                      <p>
-                        Draw your signature here using your mouse or trackpad.
-                      </p>
+                      <h3>{t.draw_option}</h3>
+                      <p>{t.draw_subtitle}</p>
                     </div>
                   </div>
                 </>
@@ -347,7 +348,7 @@ function SignatureModal(props: SignatureModalProps) {
                   padding: 0
                 }}
               >
-                Draw your signature in the box below.
+                {t.draw_instructions}
               </p>
               <div
                 css={{ position: 'relative', width: '100%', height: '200px' }}
@@ -358,6 +359,7 @@ function SignatureModal(props: SignatureModalProps) {
                   onClear={onClear}
                   onEnd={(file) => setSignatureFile(file)}
                   showClear={false}
+                  translation={t}
                 />
               </div>
             </div>
@@ -389,7 +391,7 @@ function SignatureModal(props: SignatureModalProps) {
               onClick={() => handleCancel()}
               css={{ '&:hover': { backgroundColor: '#e1e1e1' } }}
             >
-              Cancel
+              {t.cancel}
             </button>
           ) : (
             <button
@@ -400,7 +402,7 @@ function SignatureModal(props: SignatureModalProps) {
               }}
               css={{ '&:hover': { backgroundColor: '#e1e1e1' } }}
             >
-              Back
+              {t.back}
             </button>
           )}
           <div>
@@ -415,7 +417,7 @@ function SignatureModal(props: SignatureModalProps) {
                   '&:hover': { backgroundColor: '#e1e1e1' }
                 }}
               >
-                Clear
+                {t.clear}
               </button>
             )}
             <button
@@ -436,7 +438,7 @@ function SignatureModal(props: SignatureModalProps) {
                 }
               }}
             >
-              Sign
+              {t.confirm}
             </button>
           </div>
         </div>

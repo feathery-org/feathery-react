@@ -3,6 +3,7 @@ import { dataURLToFile, toBase64 } from '../../../../utils/image';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
 import Signature from 'react-signature-canvas';
 import { fromDataURL } from './utils';
+import { SignatureTranslations } from '../translation';
 
 export type SignatureCanvasProps = {
   fieldKey?: string;
@@ -12,6 +13,7 @@ export type SignatureCanvasProps = {
   onClear?: () => void;
   onEnd?: (file: any) => void;
   showClear?: boolean;
+  translation: SignatureTranslations;
 };
 
 function SignatureCanvas(props: SignatureCanvasProps) {
@@ -22,7 +24,8 @@ function SignatureCanvas(props: SignatureCanvasProps) {
     disabled = false,
     showClear = true,
     onClear = () => {},
-    onEnd = () => {}
+    onEnd = () => {},
+    translation: t
   } = props;
 
   const [isClearVisible, setIsClearVisible] = useState(defaultValue !== null);
@@ -99,7 +102,7 @@ function SignatureCanvas(props: SignatureCanvasProps) {
             setIsClearVisible(false);
           }}
         >
-          clear
+          {t.clear}
         </div>
       )}
       <Signature
