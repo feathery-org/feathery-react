@@ -92,7 +92,7 @@ import DevNavBar from './components/DevNavBar';
 import FeatherySpinner from '../elements/components/Spinner';
 import CallbackQueue from '../utils/callbackQueue';
 import {
-  downloadFile,
+  downloadAllFileUrls,
   featheryWindow,
   openTab,
   runningInClient
@@ -1941,15 +1941,7 @@ function Form({
             } else openTab(url);
           } else {
             // Download files directly
-            await Promise.all(
-              data.files.map(async (url: string) => {
-                const response = await fetch(url);
-                const blob = await response.blob();
-                const fileName = new URL(url).pathname.split('/').at(-1) ?? '';
-                const file = new File([blob], fileName, { type: blob.type });
-                downloadFile(file);
-              })
-            );
+            await downloadAllFileUrls(data.files);
           }
         } catch (e: any) {
           setElementError((e as Error).message);
@@ -1958,10 +1950,12 @@ function Form({
       } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {
         await submitPromise;
         try {
-          const htmlPayload = await client.generateQuikEnvelopes(action);
-          if (htmlPayload) {
-            setQuikHTMLPayload(htmlPayload);
+          const payload = await client.generateQuikEnvelopes(action);
+          if (action.form_fill_type === 'html' && payload.html) {
+            setQuikHTMLPayload(payload.html);
             setShowQuikFormViewer(true);
+          } else if (action.form_fill_type === 'pdf' && payload.files) {
+            await downloadAllFileUrls(payload.files);
           }
         } catch (e: any) {
           setElementError((e as Error).message);

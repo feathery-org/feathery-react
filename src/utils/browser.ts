@@ -84,6 +84,19 @@ export function downloadFile(file: File) {
   featheryWindow().URL.revokeObjectURL(href);
   featheryDoc().body.removeChild(element);
 }
+
+export function downloadAllFileUrls(urls: string[]) {
+  return Promise.all(
+    urls.map(async (url: string) => {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const fileName = new URL(url).pathname.split('/').at(-1) ?? '';
+      const file = new File([blob], fileName, { type: blob.type });
+      downloadFile(file);
+    })
+  );
+}
+
 // iOS devices do not scroll to focused radio buttons
 // and checkboxes so we manually scroll to maintain a
 // consistent user experience.

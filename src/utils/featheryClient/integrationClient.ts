@@ -438,7 +438,7 @@ export default class IntegrationClient {
     };
     return this._fetch(url, options, false).then(async (response) => {
       if (response) {
-        if (response.ok) return (await response.json()).html;
+        if (response.ok) return await response.json();
         else throw Error(parseError(await response.json()));
       }
     });
