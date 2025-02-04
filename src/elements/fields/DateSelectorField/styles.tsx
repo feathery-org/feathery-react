@@ -288,10 +288,14 @@ export default function SelectorStyles() {
           grid-area: select;
           justify-self: end;
         }
-        .react-datepicker__month-select,
-        .react-datepicker__year-select {
+        .react-datepicker__header__dropdown--select
+          .react-datepicker__month-dropdown-container--select
+          .react-datepicker__month-select,
+        .react-datepicker__header__dropdown--select
+          .react-datepicker__year-dropdown-container--select
+          .react-datepicker__year-select {
           // A reset of styles, including removing the default dropdown arrow
-          appearance: none;
+          appearance: none !important;
           // Additional resets for further consistency
           background-color: transparent;
           border: none;
