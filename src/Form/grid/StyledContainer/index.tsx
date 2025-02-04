@@ -1,4 +1,9 @@
-import React, { PropsWithChildren, forwardRef } from 'react';
+import React, {
+  forwardRef,
+  PropsWithChildren,
+  useEffect,
+  useState
+} from 'react';
 import {
   useContainerEngine,
   useContainerStyles,
@@ -9,6 +14,8 @@ import { FORM_Z_INDEX } from '../../../utils/styles';
 import { getCellStyle } from './styles';
 import { useFixedContainer } from './hooks/useFixedContainer';
 import classNames from 'classnames';
+import { fieldValues } from '../../../utils/init';
+import { getRenderData } from '../../../utils/image';
 
 export type StyledContainerProps = PropsWithChildren & {
   key?: string;
@@ -45,12 +52,32 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
     const { node, rawNode } = useFormattedNode(_node, raw);
     const type = useNodeType(node, rawNode, viewport);
 
+    const [backgroundImage, setBackgroundImage] = useState('');
+
+    const imageUrlFieldKey = node.styles.uploaded_image_file_field_key;
+    let file: any;
+    if (imageUrlFieldKey) {
+      file = fieldValues[imageUrlFieldKey];
+      if (Array.isArray(file)) file = file[node.repeat ?? 0];
+    }
+
+    useEffect(() => {
+      if (typeof file === 'string') {
+        setBackgroundImage(`url(${file})`);
+      } else {
+        getRenderData(file).then((data) => {
+          setBackgroundImage(`url(${data.url})`);
+        });
+      }
+    }, [file]);
+
     const { styles, innerStyles } = useContainerStyles(
       node,
       rawNode,
       css,
       viewportOnly ? viewport : undefined
     );
+    if (backgroundImage) styles.backgroundImage = backgroundImage;
 
     const [isFixed, fixedContainerRef] = useFixedContainer(
       node,

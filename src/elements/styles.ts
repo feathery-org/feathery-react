@@ -550,10 +550,6 @@ export default class ResponsiveStyles {
         imageRepeat
       ] = styles;
 
-      if (!imageUrl) {
-        return {};
-      }
-
       const formattedStyles: Record<string, string> = {
         backgroundImage: `url(${imageUrl})`,
         backgroundRepeat: imageRepeat,
