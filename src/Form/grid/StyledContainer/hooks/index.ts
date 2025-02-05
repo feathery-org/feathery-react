@@ -56,9 +56,9 @@ export const useContainerStyles = (
   viewport?: any
 ) => {
   const styles = useMemo(() => {
-    const [cellStyle = {}] = node.isElement
-      ? [{}]
-      : getCellStyle(rawNode ?? node, viewport);
+    let cellStyle = {};
+    if (!node.isElement) cellStyle = getCellStyle(node, viewport)[0];
+
     const containerStyles = getContainerStyles(node, rawNode, viewport);
     const mobileStyles = mergeMobileStyles(cellStyle, containerStyles);
 
