@@ -667,7 +667,8 @@ function Form({
     event: string,
     getProps: () => Record<string, any> = () => ({}),
     containerId?: string | undefined,
-    toAwait?: Promise<any>
+    toAwait?: Promise<any>,
+    flush = true
   ) => {
     const props = {
       ...getFormContext(_internalId),
@@ -739,7 +740,8 @@ function Form({
               handleRuleError(e.message, logicRule);
             });
             // Change event can happen too frequently to flush every time
-            if (event !== 'change') await defaultClient.flushCustomFields();
+            if (event !== 'change' && flush)
+              await defaultClient.flushCustomFields();
           } catch (e: any) {
             const errorMessage = e.reason?.message ?? e.error?.message;
             handleRuleError(errorMessage, logicRule);
@@ -1714,7 +1716,10 @@ function Form({
           actions: actionTypes
         }),
         elementType === 'container' ? element.id : undefined,
-        submitPromise
+        submitPromise,
+        // Only need to flush data if might race against
+        // click actions
+        !!(beforeClickActions && actions.length)
       );
 
     await runAction(true);
