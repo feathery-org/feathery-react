@@ -65,16 +65,43 @@ function FileUploadField({
     fileInput.current.click();
   };
 
+  const allowedFileTypes = [...servar.metadata.file_types];
+  if (servar.metadata.custom_file_types)
+    allowedFileTypes.push(
+      servar.metadata.custom_file_types.map((type: string) => `.${type}`)
+    );
+
+  const isFileTypeMatch = (file: File, allowedType: string) => {
+    // handle image/* or video/* etc.
+    if (allowedType.endsWith('/*')) {
+      const typeCategory = allowedType.split('/')[0];
+      return file.type.startsWith(typeCategory + '/');
+    }
+    // handle specific file types like application/pdf
+    if (allowedType.includes('/')) {
+      return file.type === allowedType;
+    }
+    const extension = '.' + file.name.split('.').pop()?.toLowerCase();
+    return allowedType.toLowerCase() === extension;
+  };
+
+  const validateFileTypes = (files: File[]) => {
+    const invalidFiles = files.filter(
+      (file) => !allowedFileTypes.some((type) => isFileTypeMatch(file, type))
+    );
+
+    if (invalidFiles.length > 0) {
+      throw new Error(
+        `Invalid file type. Allowed types: ${allowedFileTypes.join(', ')}`
+      );
+    }
+  };
+
   const fileSizeLimit = servar.max_length
     ? servar.max_length * 1024
     : DEFAULT_FILE_SIZE_LIMIT;
-  // When the user uploads files to the multi-file upload, we just append to the existing set
-  // By default the input element would just replace all the uploaded files (we don't want that)
-  const handleFiles = async (filelist: FileList) => {
-    let files = Array.from(filelist);
-    if (!isMultiple) {
-      files = [files[0]];
-    }
+
+  const validateFileSizes = (files: File[]) => {
     if (files.some((file: any) => file.size > fileSizeLimit)) {
       let sizeLabel = '';
       if (fileSizeLimit < 1024) sizeLabel = `${fileSizeLimit} bytes`;
@@ -85,36 +112,49 @@ function FileUploadField({
         const mbSize = Math.floor(fileSizeLimit / (1024 * 1024));
         sizeLabel = `${mbSize} mb`;
       }
-      fileInput.current.setCustomValidity(
-        `File exceeds max size of ${sizeLabel}`
-      );
+      throw new Error(`File exceeds max size of ${sizeLabel}`);
+    }
+  };
+
+  // When the user uploads files to the multi-file upload, we just append to the existing set
+  // By default the input element would just replace all the uploaded files (we don't want that)
+  const handleFiles = async (filelist: FileList) => {
+    let files = Array.from(filelist);
+    if (!isMultiple) {
+      files = [files[0]];
+    }
+
+    try {
+      validateFileTypes(files);
+      validateFileSizes(files);
+
+      const originalLength = hidePreview ? 0 : rawFiles.length;
+      if (files.length + originalLength > NUM_FILES_LIMIT) {
+        // Splice off the uploaded files past the upload count
+        files.splice(NUM_FILES_LIMIT - originalLength);
+      }
+
+      const uploadedFiles = files.map((file) => Promise.resolve(file));
+      // If the value is [null] (initial state of repeating rows), we want to replace the null with the file
+      const isRawFilesNull = rawFiles.length === 1 && rawFiles[0] === null;
+      let newRawFiles, length;
+      if (isRawFilesNull || hidePreview) {
+        newRawFiles = uploadedFiles;
+        length = 0;
+      } else {
+        newRawFiles = [...rawFiles, ...uploadedFiles];
+        length = rawFiles.length;
+      }
+      setRawFiles(newRawFiles);
+      customOnChange(newRawFiles, length);
+
+      // Wipe the value of the upload element so we can upload multiple copies of the same file
+      // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
+      fileInput.current.value = [];
+    } catch (error: any) {
+      fileInput.current.setCustomValidity(error.message);
       fileInput.current.reportValidity();
-      return;
     }
-
-    const originalLength = hidePreview ? 0 : rawFiles.length;
-    if (files.length + originalLength > NUM_FILES_LIMIT) {
-      // Splice off the uploaded files past the upload count
-      files.splice(NUM_FILES_LIMIT - originalLength);
-    }
-
-    const uploadedFiles = files.map((file) => Promise.resolve(file));
-    // If the value is [null] (initial state of repeating rows), we want to replace the null with the file
-    const isRawFilesNull = rawFiles.length === 1 && rawFiles[0] === null;
-    let newRawFiles, length;
-    if (isRawFilesNull || hidePreview) {
-      newRawFiles = uploadedFiles;
-      length = 0;
-    } else {
-      newRawFiles = [...rawFiles, ...uploadedFiles];
-      length = rawFiles.length;
-    }
-    setRawFiles(newRawFiles);
-    customOnChange(newRawFiles, length);
-
-    // Wipe the value of the upload element so we can upload multiple copies of the same file
-    // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
-    fileInput.current.value = [];
   };
 
   function onClear(index: any) {
@@ -134,12 +174,6 @@ function FileUploadField({
   ) : (
     <FileUploadIcon width={imgStyles.width} style={{ maxHeight: '100%' }} />
   );
-
-  const fileTypes = [...servar.metadata.file_types];
-  if (servar.metadata.custom_file_types)
-    fileTypes.push(
-      servar.metadata.custom_file_types.map((type: string) => `.${type}`)
-    );
 
   return (
     <div
@@ -289,7 +323,7 @@ function FileUploadField({
         onChange={handleChange}
         required={required && !fileExists}
         // @ts-ignore
-        accept={fileTypes}
+        accept={allowedFileTypes}
         disabled={element.properties.disabled ?? false}
         aria-label={element.properties.aria_label}
         multiple={isMultiple}
