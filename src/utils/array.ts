@@ -1,16 +1,22 @@
-import { getDefaultFieldValue } from "./formHelperFunctions";
+import { getDefaultFieldValue } from './formHelperFunctions';
 
 /**
  * Inserts an element into a list without side effects.
  */
-function justInsert(list: any, element: any, index: any, field: any = undefined, replace = true) {
+function justInsert(
+  list: any,
+  element: any,
+  index: any,
+  field: any = undefined,
+  replace = true
+) {
   const newList = [...list];
 
   // Add null values if the index is beyond the current length of the list
   if (index >= newList.length) {
     newList.length = index;
-    const fill_value = field ? getDefaultFieldValue(field) : ""
-    newList.fill(fill_value, list.length, index);
+    const fillValue = field ? getDefaultFieldValue(field) : '';
+    newList.fill(fillValue, list.length, index);
   }
 
   return [
