@@ -1316,13 +1316,11 @@ function Form({
     if (invalid) return;
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
-      const fieldType = val.type;
       let newVal = val.value as any;
-
       newVal = Array.isArray(newVal)
         ? newVal.filter((v) => ![null, undefined].includes(v))
         : newVal;
-      return { key, [fieldType]: newVal };
+      return { key, [val.type]: newVal };
     });
 
     const stepPromise = client.submitStep(featheryFields, activeStep, hasNext);
