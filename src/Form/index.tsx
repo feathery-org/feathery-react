@@ -1221,7 +1221,7 @@ function Form({
     updateValues[servar.key] =
       index === null
         ? value
-        : justInsert(fieldValues[servar.key] || [], value, index);
+        : justInsert(fieldValues[servar.key] || [], value, index, field);
 
     const change = updateFieldValues(updateValues, { rerender, triggerErrors });
     if (repeatRowOperation === 'add' && repeatContainer)
