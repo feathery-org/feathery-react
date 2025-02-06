@@ -68,7 +68,7 @@ function FileUploadField({
   const allowedFileTypes = [...servar.metadata.file_types];
   if (servar.metadata.custom_file_types)
     allowedFileTypes.push(
-      servar.metadata.custom_file_types.map((type: string) => `.${type}`)
+      ...servar.metadata.custom_file_types.map((type: string) => `.${type}`)
     );
 
   const isFileTypeMatch = (file: File, allowedType: string) => {
