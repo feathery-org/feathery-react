@@ -3,7 +3,7 @@ import { useThumbnailData } from '../../utils/image';
 import { isEmptyArray, justRemove, toList } from '../../utils/array';
 
 import { Image } from 'react-bootstrap';
-import { CloseIcon, FileUploadIcon, DownloadIcon } from '../components/icons';
+import { CloseIcon, DownloadIcon, FileUploadIcon } from '../components/icons';
 import { imgMaxSizeStyles } from '../styles';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import { downloadFile } from '../../utils/browser';
@@ -86,6 +86,8 @@ function FileUploadField({
   };
 
   const validateFileTypes = (files: File[]) => {
+    if (allowedFileTypes.length === 0) return;
+
     const invalidFiles = files.filter(
       (file) => !allowedFileTypes.some((type) => isFileTypeMatch(file, type))
     );
