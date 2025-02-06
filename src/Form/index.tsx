@@ -597,7 +597,22 @@ function Form({
       ([key, val]) => fieldValues[key] !== val && hideIfFieldReferences.has(key)
     );
 
-    Object.assign(fieldValues, newFieldValues);
+    const fields = internalState[_internalId]?.fields;
+
+    const transformedFieldValues = Object.entries(newFieldValues).reduce(
+      (acc, [key, value]) => {
+        const field = fields?.[key];
+        if (Array.isArray(value) && field && !field.isHiddenField) {
+          acc[key] = value.map((item) => (item === null ? '' : item));
+        } else {
+          acc[key] = value;
+        }
+        return acc;
+      },
+      {} as Record<string, any>
+    );
+
+    Object.assign(fieldValues, transformedFieldValues);
 
     // Always rerender from empty state for display purposes
     // If any fields involved in a hideIf have changed, then rerender if
@@ -1301,11 +1316,13 @@ function Form({
     if (invalid) return;
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
+      const fieldType = val.type;
       let newVal = val.value as any;
+
       newVal = Array.isArray(newVal)
         ? newVal.filter((v) => ![null, undefined].includes(v))
         : newVal;
-      return { key, [val.type]: newVal };
+      return { key, [fieldType]: newVal };
     });
 
     const stepPromise = client.submitStep(featheryFields, activeStep, hasNext);

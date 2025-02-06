@@ -524,7 +524,24 @@ export function updateSessionValues(session: any) {
       : fileOrFiles.path
   );
 
-  Object.assign(fieldValues, { ...session.field_values, ...filePromises });
+  const replaceNullInServarArrays = (
+    acc: Record<string, any>,
+    [key, value]: [string, any]
+  ) => {
+    if (Array.isArray(value) && session.servars.includes(key)) {
+      acc[key] = value.map((item) => (item === null ? '' : item));
+    } else {
+      acc[key] = value;
+    }
+    return acc;
+  };
+
+  const transformedFieldValues = Object.entries(session.field_values).reduce(
+    replaceNullInServarArrays,
+    {}
+  );
+
+  Object.assign(fieldValues, { ...transformedFieldValues, ...filePromises });
   Object.assign(filePathMap, newFilePathMap);
 }
 
