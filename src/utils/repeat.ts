@@ -1,3 +1,4 @@
+import { extractTextVariables } from '../elements/components/TextNodes';
 import { PositionedElement, Subgrid } from '../types/Form';
 import { getPositionKey } from './hideAndRepeats';
 
@@ -48,14 +49,29 @@ export function getRepeatedContainers(step: Step) {
  * @returns
  */
 export function getFieldsInRepeat(
-  step: { servar_fields: any[] },
+  step: { servar_fields: any[]; texts: any[] },
   repeatContainer: PositionedElement
 ) {
-  return step.servar_fields.filter((field) => {
+  const repeatKey = getPositionKey(repeatContainer);
+  const servars = step.servar_fields.filter((field) => {
     const positionKey = getPositionKey(field);
-    const repeatKey = getPositionKey(repeatContainer);
     return inRepeat(positionKey, repeatKey);
   });
+
+  // also include field keys in text elements
+  const texts = new Set();
+  step.texts.forEach((text) => {
+    const positionKey = getPositionKey(text);
+    if (inRepeat(positionKey, repeatKey)) {
+      const text_value = text.properties.text;
+      const text_vars = extractTextVariables(text_value);
+      text_vars.forEach((text_var) => {
+        texts.add(text_var);
+      });
+    }
+  });
+
+  return { servars, texts };
 }
 
 /**

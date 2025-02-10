@@ -7,6 +7,23 @@ import { ACTION_NEXT } from '../../utils/elementActions';
 
 export const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 
+export function extractTextVariables(text: string): string[] {
+  if (!text) return [];
+
+  const variables: string[] = [];
+  let match;
+
+  while ((match = TEXT_VARIABLE_PATTERN.exec(text)) !== null) {
+    const var_str = match[0].slice(2, -2).trim();
+    if (var_str.startsWith('feathery')) {
+      continue;
+    }
+    variables.push(var_str);
+  }
+
+  return variables;
+}
+
 export function replaceTextVariables(text: string, repeat?: any) {
   if (!text) return '';
 

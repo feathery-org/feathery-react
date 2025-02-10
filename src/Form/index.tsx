@@ -503,12 +503,28 @@ function Form({
     if (!repeatContainer) return;
 
     // Collect a list of all relevant repeated elements.
-    const repeatedServarFields = getFieldsInRepeat(activeStep, repeatContainer);
+    const { servars: repeatedServarFields, texts } = getFieldsInRepeat(
+      activeStep,
+      repeatContainer
+    );
 
     // Update the values by appending a default value for each field
     const updatedValues: Record<string, any> = {};
     repeatedServarFields.forEach((field: any) => {
       updatedValues[field.servar.key] = getNewVal(field);
+    });
+
+    // Servars ref'd in text elements also need to be updated
+    texts.forEach((text: any) => {
+      if (!updatedValues[text]) {
+        updatedValues[text] = getNewVal({
+          servar: {
+            key: text,
+            metadata: {},
+            type: ''
+          }
+        });
+      }
     });
 
     setRepeatChanged((repeatChanged) => !repeatChanged);
