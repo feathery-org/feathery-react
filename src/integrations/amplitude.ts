@@ -11,7 +11,9 @@ export async function installAmplitude(amplitudeConfig: any) {
   const meta = amplitudeConfig.metadata;
 
   const apiKey = meta.api_key;
-  await dynamicImport(`https://cdn.amplitude.com/script/${apiKey}.js`);
+  let cdn = 'cdn';
+  if (meta.eu_server) cdn = 'cdn.eu';
+  await dynamicImport(`https://${cdn}.amplitude.com/script/${apiKey}.js`);
 
   if (!featheryWindow().amplitude) {
     console.warn('Failed to load Amplitude.');
