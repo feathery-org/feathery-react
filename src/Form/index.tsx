@@ -1961,7 +1961,7 @@ function Form({
               await client.registerEvent(eventData);
               featheryWindow().location.href = url;
             } else openTab(url);
-          } else {
+          } else if (action.envelope_action === 'download') {
             // Download files directly
             await downloadAllFileUrls(data.files);
           }
