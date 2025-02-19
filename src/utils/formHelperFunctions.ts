@@ -921,10 +921,10 @@ export async function updateCustomHead(headCode: string) {
       // Parsed script cannot be added directly, must be transferred to a
       // created element
       const el = featheryDoc().createElement(customScript.tagName);
-      el.type = customScript.type;
-      if (customScript.text) el.text = customScript.text;
-      if (customScript.src) {
-        el.src = customScript.src;
+      Array.from(customScript.attributes).forEach((attr) => {
+        el.setAttribute(attr.name, attr.value);
+      });
+      if (el.src) {
         scriptWait.push(
           new Promise((resolve) => (el.onload = () => resolve(custom)))
         );
