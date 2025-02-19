@@ -248,13 +248,27 @@ function isJsReservedWord(str: string) {
 }
 
 export const getABVariant = (stepRes: any) => {
-  if (!stepRes.variant) return stepRes.data;
+  stepRes.steps = stepRes.data;
+  delete stepRes.data;
+  if (!stepRes.variant) {
+    return stepRes;
+  }
   const { sdkKey, userId } = initInfo();
   // If userId was not passed in, sdkKey is assumed to be a user admin key
   // and thus a unique user ID
-  return getRandomBoolean(userId || sdkKey, stepRes.form_name)
-    ? stepRes.data
-    : stepRes.variant;
+
+  const useVariant = !getRandomBoolean(userId || sdkKey, stepRes.form_name);
+
+  if (useVariant) {
+    stepRes.steps = stepRes.variant;
+    stepRes.logic_rules = stepRes.variant_logic_rules;
+    stepRes.connector_fields = stepRes.variant_connector_fields;
+  }
+
+  delete stepRes.variant;
+  delete stepRes.variant_logic_rules;
+  delete stepRes.variant_connector_fields;
+  return stepRes;
 };
 
 export function getDefaultFieldValue(field: any) {

@@ -346,10 +346,9 @@ export default class FeatheryClient extends IntegrationClient {
     return this._fetch(url, options).then(async (response) => {
       if (!response) return {};
 
-      const res = await response.json();
+      let res = await response.json();
       if (res.data) {
-        res.steps = getABVariant(res);
-        delete res.data;
+        res = getABVariant(res);
         this._loadFormPackages(res);
       }
       initState.defaultErrors = res.default_errors;
