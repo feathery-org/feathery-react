@@ -594,25 +594,16 @@ export async function setFormElementError({
       elements = elements.filter((e) => e);
 
       if (index !== null && elements.length) elements = [elements[index]];
-      elements.forEach((e) => {
-        if (e.tagName === 'BUTTON' && e.type !== 'submit') {
-          // Find hidden input with specific ID format
-          const errorInputId = `${e.id}_error`;
-          const hiddenInput: any = featheryDoc().getElementById(errorInputId);
 
-          if (hiddenInput) {
-            hiddenInput.setCustomValidity(message);
-            if (triggerErrors) {
-              hiddenInput.reportValidity();
-              errorTriggered = true;
-            }
-          }
-        } else {
-          e.setCustomValidity(message);
-          if (triggerErrors) {
-            e.reportValidity();
-            errorTriggered = true;
-          }
+      elements.forEach((element) => {
+        // If we are targeting a non-submit button, we instead target its hidden input child
+        if (element.tagName === 'BUTTON' && element.type !== 'submit') {
+          element = element.getElementById(`${element.id}_error`);
+        }
+        element.setCustomValidity(message);
+        if (triggerErrors) {
+          element.reportValidity();
+          errorTriggered = true;
         }
       });
     }
