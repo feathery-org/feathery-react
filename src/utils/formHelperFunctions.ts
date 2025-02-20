@@ -598,12 +598,14 @@ export async function setFormElementError({
       elements.forEach((element) => {
         // If we are targeting a non-submit button, we instead target its hidden input child
         if (element.tagName === 'BUTTON' && element.type !== 'submit') {
-          element = element.getElementById(`${element.id}_error`);
+          element = element.querySelector(`#${element.id}_error`);
         }
-        element.setCustomValidity(message);
-        if (triggerErrors) {
-          element.reportValidity();
-          errorTriggered = true;
+        if (element) {
+          element.setCustomValidity(message);
+          if (triggerErrors) {
+            element.reportValidity();
+            errorTriggered = true;
+          }
         }
       });
     }
