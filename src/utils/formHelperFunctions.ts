@@ -598,7 +598,7 @@ export async function setFormElementError({
         if (e.tagName === 'BUTTON' && e.type !== 'submit') {
           // Find hidden input with specific ID format
           const errorInputId = `${e.id}_error`;
-          const hiddenInput: any = document.getElementById(errorInputId);
+          const hiddenInput: any = featheryDoc().getElementById(errorInputId);
 
           if (hiddenInput) {
             hiddenInput.setCustomValidity(message);
