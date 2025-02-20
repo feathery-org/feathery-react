@@ -595,10 +595,21 @@ export async function setFormElementError({
 
       if (index !== null && elements.length) elements = [elements[index]];
       elements.forEach((e) => {
-        if (e) {
+        if (e.tagName === 'BUTTON' && e.type !== 'submit') {
+          // Find hidden input with specific ID format
+          const errorInputId = `${e.id}_error`;
+          const hiddenInput: any = document.getElementById(errorInputId);
+
+          if (hiddenInput) {
+            hiddenInput.setCustomValidity(message);
+            if (triggerErrors) {
+              hiddenInput.reportValidity();
+              errorTriggered = true;
+            }
+          }
+        } else {
           e.setCustomValidity(message);
           if (triggerErrors) {
-            // Trigger manually-set errors first before other form errors
             e.reportValidity();
             errorTriggered = true;
           }

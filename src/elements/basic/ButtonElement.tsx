@@ -3,7 +3,7 @@ import React, { useMemo } from 'react';
 import ReactButton from 'react-bootstrap/Button';
 import TextNodes from '../components/TextNodes';
 import { imgMaxSizeStyles } from '../styles';
-import { adjustColor } from '../../utils/styles';
+import { adjustColor, FORM_Z_INDEX } from '../../utils/styles';
 import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
 
@@ -197,8 +197,6 @@ function ButtonElement({
       id={element.id}
       key={element.id}
       active={active}
-      // type=submit on submit & validate buttons is
-      // important for HTML5 type validation messages
       type={element.properties.submit ? 'submit' : 'button'}
       style={{
         display: 'flex',
@@ -260,6 +258,26 @@ function ButtonElement({
             />
           )}
         </>
+      )}
+      {/* Hidden input so we can set field errors */}
+      {!element.properties.submit && (
+        <input
+          id={`${element.id}_error`}
+          name={`${element.id}_error`}
+          // Set to file type so keyboard doesn't pop up on mobile
+          // when field error appears
+          type='file'
+          aria-label={element.properties.aria_label}
+          style={{
+            position: 'absolute',
+            opacity: 0,
+            bottom: 0,
+            left: '50%',
+            width: '1px',
+            height: '1px',
+            zIndex: FORM_Z_INDEX - 2
+          }}
+        />
       )}
     </ReactButton>
   );
