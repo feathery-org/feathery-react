@@ -607,6 +607,7 @@ export async function setFormElementError({
         if (element) {
           element.setCustomValidity(message);
           if (triggerErrors) {
+            // Trigger manually-set errors first before other form errors
             element.reportValidity();
             errorTriggered = true;
           }
