@@ -197,8 +197,9 @@ function ButtonElement({
       id={element.id}
       key={element.id}
       active={active}
-      // type=submit is important for HTML5 type validation messages
-      type='submit'
+      // type=submit on submit & validate buttons is
+      // important for HTML5 type validation messages
+      type={element.properties.submit ? 'submit' : 'button'}
       style={{
         display: 'flex',
         cursor: editMode || noActions ? 'default' : 'pointer',
