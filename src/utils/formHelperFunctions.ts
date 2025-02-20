@@ -594,14 +594,19 @@ export async function setFormElementError({
       elements = elements.filter((e) => e);
 
       if (index !== null && elements.length) elements = [elements[index]];
-      elements.forEach((e) => {
-        if (e) {
-          e.setCustomValidity(message);
-          if (triggerErrors) {
-            // Trigger manually-set errors first before other form errors
-            e.reportValidity();
-            errorTriggered = true;
-          }
+
+      elements.forEach((element) => {
+        if (!element) return;
+
+        // If we are targeting a non-submit button, we instead target its hidden input child
+        if (element.tagName === 'BUTTON' && element.type !== 'submit') {
+          element = element.querySelector(`#${element.id}_error`);
+        }
+        element.setCustomValidity(message);
+        if (triggerErrors) {
+          // Trigger manually-set errors first before other form errors
+          element.reportValidity();
+          errorTriggered = true;
         }
       });
     }
