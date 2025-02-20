@@ -597,7 +597,11 @@ export async function setFormElementError({
 
       elements.forEach((element) => {
         // If we are targeting a non-submit button, we instead target its hidden input child
-        if (element.tagName === 'BUTTON' && element.type !== 'submit') {
+        if (
+          element &&
+          element.tagName === 'BUTTON' &&
+          element.type !== 'submit'
+        ) {
           element = element.querySelector(`#${element.id}_error`);
         }
         if (element) {
