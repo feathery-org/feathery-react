@@ -963,6 +963,20 @@ export function updateCustomCSS(cssCode: string) {
   featheryDoc().head.appendChild(style);
 }
 
+function getConnectorFieldValues(connectorFields: string[]) {
+  const _fieldValues: { [key: string]: any } = connectorFields
+    .filter((fieldKey) => !(fieldKey in filePathMap))
+    .reduce(
+      (acc, fieldKey) => ({
+        ...acc,
+        [fieldKey]: fieldValues[fieldKey]
+      }),
+      {}
+    );
+  _fieldValues.feathery_user_id = initState.userId;
+  return _fieldValues;
+}
+
 export function httpHelpers(client: any, connectorFields: string[] = []) {
   const helpers: Record<string, any> = {};
   [
@@ -985,18 +999,9 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
       ) => {
         if (!url) return;
 
-        const _fieldValues: { [key: string]: any } = connectorFields.reduce(
-          (acc, fieldKey) => ({
-            ...acc,
-            [fieldKey]: fieldValues[fieldKey]
-          }),
-          {}
-        );
-        _fieldValues.feathery_user_id = initState.userId;
-
         return client.runCustomRequest(
           { method: method.toUpperCase(), url, data, headers },
-          _fieldValues
+          getConnectorFieldValues(connectorFields)
         );
       })
   );
@@ -1004,16 +1009,10 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
   helpers.connect = async (name: string) => {
     if (!name) return {};
 
-    const _fieldValues: { [key: string]: any } = connectorFields.reduce(
-      (acc, fieldKey) => ({
-        ...acc,
-        [fieldKey]: fieldValues[fieldKey]
-      }),
-      {}
+    const response = await client.runCustomRequest(
+      name,
+      getConnectorFieldValues(connectorFields)
     );
-    _fieldValues.feathery_user_id = initState.userId;
-
-    const response = await client.runCustomRequest(name, _fieldValues);
 
     if (response?.field_values) setFieldValues(response?.field_values);
 
