@@ -262,8 +262,8 @@ function ButtonElement({
       {/* Hidden input so we can set field errors */}
       {!element.properties.submit && (
         <input
-          id={`${element.id}_error`}
-          name={`${element.id}_error`}
+          id={`error_${element.id}`}
+          name={`error_${element.id}`}
           // Set to file type so keyboard doesn't pop up on mobile
           // when field error appears
           type='file'
