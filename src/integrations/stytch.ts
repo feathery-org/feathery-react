@@ -257,7 +257,8 @@ function handleLoginOrCreateErrors(e: any) {
     errorMsg =
       'Your auth session length exceeds the max allowed by Stytch. Either increase the max from your Stytch dashboard or reduce the session length from your Feathery integration config.';
   } else if (type === 'bad_domain_for_stytch_sdk') {
-    errorMsg = 'Please register this domain with Stytch.';
+    errorMsg =
+      'Please enable this domain for the Stytch SDK in the Stytch console.';
   } else if (type === 'billing_not_verified_for_email') {
     errorMsg =
       "You can only send magic links to emails matching your project's domain until credit card details are added to your Stytch account";
