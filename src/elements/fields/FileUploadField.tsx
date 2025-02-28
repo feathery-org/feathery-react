@@ -88,8 +88,11 @@ function FileUploadField({
   const validateFileTypes = (files: File[]) => {
     if (allowedFileTypes.length === 0) return;
 
+    const individualTypes = allowedFileTypes.flatMap((str: string) =>
+      str.split(',').map((item) => item.trim())
+    );
     const invalidFiles = files.filter(
-      (file) => !allowedFileTypes.some((type) => isFileTypeMatch(file, type))
+      (file) => !individualTypes.some((type) => isFileTypeMatch(file, type))
     );
 
     if (invalidFiles.length > 0) {
