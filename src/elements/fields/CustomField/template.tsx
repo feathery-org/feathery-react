@@ -15,7 +15,7 @@ const extractImports = (code: string) => {
   return Array.from(imports);
 };
 
-// Build an inportmap script based on the list of packages imported
+// Build an importmap script based on the list of packages imported
 const createImportMap = (imports: string[]) => {
   const importMap = imports
     .map((i) => `"${i}": "https://esm.sh/${i}?external=react"`)
@@ -87,7 +87,6 @@ export const createTemplate = (
 
           // Import the component
           const { default: UserComponent } = await import(moduleUrl);
-          URL.revokeObjectURL(moduleUrl);
 
           // Set up the root and store it
           const container = document.getElementById('root');
@@ -139,7 +138,7 @@ export const createTemplate = (
           console.error('Error:', err);
           window.parent.postMessage({ 
             type: 'error',
-            error: err.message,
+            error: \`\${err.name}: \${err.message}\`,
             elementId: window.elementId
           }, '*');
         }
