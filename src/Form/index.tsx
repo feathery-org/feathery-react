@@ -148,6 +148,7 @@ import {
   ACTION_REMOVE_PRODUCT_FROM_PURCHASE,
   ACTION_REMOVE_REPEATED_ROW,
   ACTION_REWIND_COLLABORATION,
+  ACTION_SCHWAB_CREATE_CONTACT,
   ACTION_SELECT_PRODUCT_TO_PURCHASE,
   ACTION_SEND_EMAIL_CODE,
   ACTION_SEND_MAGIC_LINK,
@@ -196,6 +197,7 @@ import { openFlinksConnect } from '../integrations/flinks';
 import { isNum } from '../utils/primitives';
 import { getSignUrl } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
+import { createSchwabContact } from '../integrations/schwab';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -1762,6 +1764,9 @@ function Form({
         break;
       } else if (type === ACTION_ALLOY_VERIFY_ID) {
         await verifyAlloyId(action, integrations?.alloy, flowOnSuccess(i));
+        break;
+      } else if (type === ACTION_SCHWAB_CREATE_CONTACT) {
+        await createSchwabContact(client, setElementError);
         break;
       } else if (type === ACTION_TRIGGER_PLAID) {
         await submitPromise;
