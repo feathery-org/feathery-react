@@ -23,6 +23,7 @@ export const ACTION_TRIGGER_FLINKS = 'trigger_flinks';
 export const ACTION_TRIGGER_PLAID = 'trigger_plaid';
 export const ACTION_TRIGGER_PERSONA = 'trigger_persona';
 export const ACTION_ALLOY_VERIFY_ID = 'alloy_verify_id';
+export const ACTION_SCHWAB_CREATE_CONTACT = 'schwab_create_contact';
 export const ACTION_URL = 'url';
 export const ACTION_VERIFY_EMAIL = 'verify_email';
 export const ACTION_VERIFY_SMS = 'verify_sms';
