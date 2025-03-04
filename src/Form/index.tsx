@@ -1450,7 +1450,11 @@ function Form({
     return true;
   }
 
-  async function goToNewStep({ metadata, submitData = false }: any) {
+  async function goToNewStep({
+    metadata,
+    submitPromise,
+    submitData = false
+  }: any) {
     let eventData: Record<string, any> = {
       step_key: activeStep.key,
       event: submitData ? 'complete' : 'skip'
@@ -1465,6 +1469,7 @@ function Form({
       ['button', 'text', 'container'].includes(metadata.elementType);
     if (!redirectKey) {
       if (explicitNav) {
+        if (submitPromise) await submitPromise;
         eventData.completed = true;
         await client.registerEvent(eventData).then(() => {
           setFinished(true);
@@ -1483,6 +1488,7 @@ function Form({
           steps[stepKey].id
         );
         if (complete) {
+          if (submitPromise) await submitPromise;
           eventData.completed = true;
           // Form completion must run after since logic may depend on
           // presence of fully submitted data
@@ -1891,7 +1897,8 @@ function Form({
       else if (type === ACTION_NEXT) {
         await goToNewStep({
           metadata,
-          submitData: submit
+          submitData: submit,
+          submitPromise
         });
       } else if (type === ACTION_BACK) await goToPreviousStep();
       else if (type === ACTION_PURCHASE_PRODUCTS) {
