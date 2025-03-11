@@ -3,9 +3,10 @@ import React, { useMemo } from 'react';
 import ReactButton from 'react-bootstrap/Button';
 import TextNodes from '../components/TextNodes';
 import { imgMaxSizeStyles } from '../styles';
-import { adjustColor, FORM_Z_INDEX } from '../../utils/styles';
+import { adjustColor } from '../../utils/styles';
 import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
+import ErrorInput from '../components/ErrorInput';
 
 function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets(
@@ -261,22 +262,10 @@ function ButtonElement({
       )}
       {/* Hidden input so we can set field errors */}
       {!element.properties.submit && (
-        <input
+        <ErrorInput
           id={`error_${element.id}`}
           name={`error_${element.id}`}
-          // Set to file type so keyboard doesn't pop up on mobile
-          // when field error appears
-          type='file'
           aria-label={element.properties.aria_label}
-          style={{
-            position: 'absolute',
-            opacity: 0,
-            bottom: 0,
-            left: '50%',
-            width: '1px',
-            height: '1px',
-            zIndex: FORM_Z_INDEX - 2
-          }}
         />
       )}
     </ReactButton>

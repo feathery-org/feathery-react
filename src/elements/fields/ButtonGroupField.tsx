@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react';
 import { imgMaxSizeStyles, noTextSelectStyles } from '../styles';
 import useBorder from '../components/useBorder';
-import { FORM_Z_INDEX } from '../../utils/styles';
 import { hoverStylesGuard } from '../../utils/browser';
 import InlineTooltip from '../components/InlineTooltip';
+import ErrorInput from '../components/ErrorInput';
 
 function ButtonGroupField({
   element,
@@ -144,22 +144,10 @@ function ButtonGroupField({
           );
         })}
         {/* This input must always be rendered so we can set field errors */}
-        <input
+        <ErrorInput
           id={servar.key}
           name={servar.key}
-          // Set to file type so keyboard doesn't pop up on mobile
-          // when field error appears
-          type='file'
           aria-label={element.properties.aria_label}
-          style={{
-            position: 'absolute',
-            opacity: 0,
-            bottom: 0,
-            left: '50%',
-            width: '1px',
-            height: '1px',
-            zIndex: FORM_Z_INDEX - 2
-          }}
         />
       </div>
     </div>

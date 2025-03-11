@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect } from 'react';
 import { dynamicImport } from '../../../integrations/utils';
-import { FORM_Z_INDEX } from '../../../utils/styles';
 
 import { selectCamera } from './utils/select-camera';
 import { getZoomSettings } from './utils/supports-zoom';
@@ -16,6 +15,7 @@ import { setCameraPreferences } from './utils/local-storage';
 import Slider from 'rc-slider';
 import SliderStyles from '../SliderField/styles';
 import throttle from 'lodash.throttle';
+import ErrorInput from '../../components/ErrorInput';
 
 let qrPromise = Promise.resolve();
 export function loadQRScanner() {
@@ -323,21 +323,9 @@ function QRScanner({
             {message && <div style={{ paddingTop: 16 }}>{message}</div>}
           </div>
           {/* This input must always be rendered so we can set field errors */}
-          <input
+          <ErrorInput
             id={servar.key}
             aria-label={element.properties.aria_label}
-            // Set to file type so keyboard doesn't pop up on mobile
-            // when field error appears
-            type='file'
-            style={{
-              position: 'absolute',
-              opacity: 0,
-              bottom: 0,
-              left: '50%',
-              width: '1px',
-              height: '1px',
-              zIndex: FORM_Z_INDEX - 2
-            }}
           />
         </div>
       </div>

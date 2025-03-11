@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import RatingStar from '../components/icons/RatingStar';
 import Heart from '../components/icons/Heart';
-import { FORM_Z_INDEX } from '../../utils/styles';
+import ErrorInput from '../components/ErrorInput';
 
 export default function RatingField({
   element,
@@ -65,22 +65,10 @@ export default function RatingField({
             );
           })}
         {/* This input must always be rendered so we can set field errors */}
-        <input
+        <ErrorInput
           id={servar.key}
           name={servar.key}
           aria-label={element.properties.aria_label}
-          // Set to file type so keyboard doesn't pop up on mobile
-          // when field error appears
-          type='file'
-          style={{
-            position: 'absolute',
-            opacity: 0,
-            bottom: 0,
-            left: '50%',
-            width: '1px',
-            height: '1px',
-            zIndex: FORM_Z_INDEX - 2
-          }}
         />
       </div>
     </div>
