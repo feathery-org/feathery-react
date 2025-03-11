@@ -1,5 +1,4 @@
-import React from 'react';
-import { ComponentProps } from 'react';
+import React, { ComponentProps } from 'react';
 import { FORM_Z_INDEX } from '../../utils/styles';
 
 export default function ErrorInput(props: ComponentProps<'input'>) {
