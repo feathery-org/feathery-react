@@ -208,8 +208,13 @@ function useAddressSearch(searchTerm: any, servar: any) {
 
   useEffect(() => {
     const trimmedTerm = searchTerm.trim();
-    if (active && trimmedTerm !== '' && searchTerm !== term) {
+    if (!active || trimmedTerm === term) return;
+
+    if (trimmedTerm.length > 3) {
       fetchAddresses(trimmedTerm);
+    } else {
+      if (results.length) setResults([]);
+      setTerm(trimmedTerm);
     }
   }, [searchTerm]);
 
