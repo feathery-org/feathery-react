@@ -769,10 +769,12 @@ export default class FeatheryClient extends IntegrationClient {
   // AI
   extractAIDocument({
     extractionId,
+    extractionOverrideId,
     runAsync,
     pages
   }: {
     extractionId: string;
+    extractionOverrideId?: string;
     runAsync: boolean;
     pages?: number[];
   }) {
@@ -780,6 +782,7 @@ export default class FeatheryClient extends IntegrationClient {
     const data = {
       fuser_key: userId,
       extraction_id: extractionId,
+      extraction_override_id: extractionOverrideId,
       pages
     };
 
