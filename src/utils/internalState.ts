@@ -62,7 +62,13 @@ export interface FormInternalState {
   runIntegrationActions: RunIntegrationActions;
   runAIExtraction: (
     extractionId: string,
-    options: Record<string, any> | boolean,
+    options:
+      | {
+          waitForCompletion: boolean;
+          pages?: number[];
+          variantId?: string; // uuid
+        }
+      | boolean,
     pages?: number[]
   ) => Promise<Record<string, string>>;
   applyAlloyJourney: ApplyAlloyJourney;
