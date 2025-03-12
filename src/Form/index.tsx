@@ -128,6 +128,7 @@ import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
   ApplyAlloyJourney,
+  ExtractionActionOptions,
   RunIntegrationActions,
   setFormInternalState
 } from '../utils/internalState';
@@ -963,13 +964,7 @@ function Form({
         },
         runAIExtraction: async (
           extractionId: string,
-          options:
-            | {
-                waitForCompletion?: boolean;
-                pages?: number[];
-                variantId?: string; // uuid
-              }
-            | boolean,
+          options: ExtractionActionOptions | boolean,
           // deprecated, pages should be in options
           pages?: number[]
         ) => {

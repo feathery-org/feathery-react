@@ -28,6 +28,7 @@ import { RequestOptions } from '../offlineRequestHandler';
 import debounce from 'lodash.debounce';
 import { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
+import { ExtractionActionOptions } from '../internalState';
 
 export const API_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
@@ -773,13 +774,7 @@ export default class FeatheryClient extends IntegrationClient {
     pages
   }: {
     extractionId: string;
-    options:
-      | {
-          waitForCompletion?: boolean;
-          pages?: number[];
-          variantId?: string; // uuid
-        }
-      | boolean;
+    options: ExtractionActionOptions | boolean;
     pages?: number[];
   }) {
     let runAsync: boolean;
