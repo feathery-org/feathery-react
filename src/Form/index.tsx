@@ -965,7 +965,7 @@ function Form({
           extractionId: string,
           options:
             | {
-                waitForCompletion: boolean;
+                waitForCompletion?: boolean;
                 pages?: number[];
                 variantId?: string; // uuid
               }
@@ -1956,8 +1956,10 @@ function Form({
           await submitPromise;
           const data = await client.extractAIDocument({
             extractionId: action.extraction_id,
-            extractionVariantId: action.variant_id,
-            runAsync: action.run_async
+            options: {
+              waitForCompletion: !action.run_async,
+              variantId: action.variant_id
+            }
           });
           updateFieldValues(data.data ?? {});
         } catch (e: any) {

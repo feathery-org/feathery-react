@@ -64,7 +64,7 @@ export interface FormInternalState {
     extractionId: string,
     options:
       | {
-          waitForCompletion: boolean;
+          waitForCompletion?: boolean;
           pages?: number[];
           variantId?: string; // uuid
         }

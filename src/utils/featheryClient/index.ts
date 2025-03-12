@@ -775,15 +775,15 @@ export default class FeatheryClient extends IntegrationClient {
     extractionId: string;
     options:
       | {
-          waitForCompletion: boolean;
+          waitForCompletion?: boolean;
           pages?: number[];
           variantId?: string; // uuid
         }
       | boolean;
     pages?: number[];
   }) {
-    let runAsync;
-    let variantId;
+    let runAsync: boolean;
+    let variantId: string | undefined;
     if (typeof options === 'object') {
       runAsync = !options.waitForCompletion;
       pages = options.pages;
