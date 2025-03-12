@@ -769,20 +769,35 @@ export default class FeatheryClient extends IntegrationClient {
   // AI
   extractAIDocument({
     extractionId,
-    extractionOverrideId,
-    runAsync,
+    options,
     pages
   }: {
     extractionId: string;
-    extractionOverrideId?: string;
-    runAsync: boolean;
+    options:
+      | {
+          waitForCompletion: boolean;
+          pages?: number[];
+          variantId?: string; // uuid
+        }
+      | boolean;
     pages?: number[];
   }) {
+    let runAsync;
+    let variantId;
+    if (typeof options === 'object') {
+      runAsync = !options.waitForCompletion;
+      pages = options.pages;
+      variantId = options.variantId;
+    } else {
+      // deprecated usage, options is waitForCompletion
+      runAsync = !options;
+    }
+
     const { userId } = initInfo();
     const data = {
       fuser_key: userId,
       extraction_id: extractionId,
-      extraction_override_id: extractionOverrideId,
+      extraction_variant_id: variantId,
       pages
     };
 

@@ -967,22 +967,12 @@ function Form({
             | {
                 waitForCompletion: boolean;
                 pages?: number[];
-                overrideId?: string; // uuid
+                variantId?: string; // uuid
               }
             | boolean,
           // deprecated, pages should be in options
           pages?: number[]
         ) => {
-          let runAsync = false;
-          let overrideId;
-          if (typeof options === 'object') {
-            runAsync = !options.waitForCompletion;
-            pages = options.pages;
-            overrideId = options.overrideId;
-          } else {
-            // deprecated usage, options is waitForCompletion
-            runAsync = !options;
-          }
           if (!extractionId) {
             console.error('No extraction ID was passed');
             return;
@@ -991,9 +981,8 @@ function Form({
           try {
             const data = await client.extractAIDocument({
               extractionId,
-              runAsync,
-              pages,
-              extractionOverrideId: overrideId
+              options,
+              pages
             });
             const vals = data.data ?? {};
             updateFieldValues(vals);
@@ -1967,7 +1956,7 @@ function Form({
           await submitPromise;
           const data = await client.extractAIDocument({
             extractionId: action.extraction_id,
-            extractionOverrideId: action.override_id,
+            extractionVariantId: action.variant_id,
             runAsync: action.run_async
           });
           updateFieldValues(data.data ?? {});

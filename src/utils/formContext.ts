@@ -143,7 +143,7 @@ export const getFormContext = (formUuid: string) => {
     ) => formState.runIntegrationActions(actionIds, options),
     runAIExtraction: async (
       extractionId: string,
-      options = { waitForCompletion: true },
+      options = { waitForCompletion: false },
       pages?: number[]
     ) => formState.runAIExtraction(extractionId, options, pages),
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
