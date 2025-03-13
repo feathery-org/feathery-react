@@ -1774,6 +1774,7 @@ function Form({
         await verifyAlloyId(action, integrations?.alloy, flowOnSuccess(i));
         break;
       } else if (type === ACTION_SCHWAB_CREATE_CONTACT) {
+        await Promise.all([submitPromise, client.flushCustomFields()]);
         await createSchwabContact(client, setElementError);
         break;
       } else if (type === ACTION_TRIGGER_PLAID) {
