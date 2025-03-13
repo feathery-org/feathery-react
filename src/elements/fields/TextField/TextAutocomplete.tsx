@@ -8,6 +8,7 @@ function TextAutocomplete({
   showOptions,
   onSelect = () => {},
   value = '',
+  container,
   responsiveStyles,
   children
 }: {
@@ -15,6 +16,8 @@ function TextAutocomplete({
   showOptions: boolean;
   onSelect: (a: string) => void;
   value: string;
+  container?: any;
+
   responsiveStyles: any;
   children: any;
 }) {
@@ -29,6 +32,7 @@ function TextAutocomplete({
         placement='bottom-start'
         delay={{ show: 250, hide: 250 }}
         show={options.length > 0 && showOptions}
+        container={() => container?.current}
         overlay={
           <ul
             css={{

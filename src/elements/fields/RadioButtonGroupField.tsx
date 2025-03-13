@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import ReactForm from 'react-bootstrap/Form';
 import { bootstrapStyles } from '../styles';
 import {
@@ -31,6 +31,8 @@ function RadioButtonGroupField({
   children
 }: any) {
   const servar = element.servar;
+  const containerRef = useRef(null);
+
   const [otherSelect, setOtherSelect] = useState({});
   const otherChecked =
     // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
@@ -66,6 +68,7 @@ function RadioButtonGroupField({
 
   return (
     <div
+      ref={containerRef}
       css={{
         width: '100%',
         height: '100%',
@@ -127,6 +130,7 @@ function RadioButtonGroupField({
               </span>
             </label>
             <InlineTooltip
+              container={containerRef}
               id={`${element.id}-${value}`}
               text={tooltip}
               responsiveStyles={responsiveStyles}
@@ -198,6 +202,7 @@ function RadioButtonGroupField({
             disabled={otherTextDisabled}
           />
           <InlineTooltip
+            container={containerRef}
             id={`${element.id}-`}
             text={servar.metadata.other_tooltip}
             responsiveStyles={responsiveStyles}

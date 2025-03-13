@@ -9,6 +9,7 @@ export default function InlineTooltip({
   text,
   responsiveStyles,
   absolute = true,
+  container,
   repeat
 }: any) {
   // Explicitly managing popover state prevents a bug on mobile where
@@ -16,7 +17,6 @@ export default function InlineTooltip({
   const [show, setShow] = useState(false);
 
   text = replaceTextVariables(text, repeat);
-
   return text ? (
     <OverlayTrigger
       placement='auto'
@@ -25,6 +25,7 @@ export default function InlineTooltip({
       onToggle={() => setShow(!show)}
       trigger={['hover', 'click', 'focus']}
       rootClose
+      container={() => container?.current}
       overlay={
         <Tooltip
           id={`tooltip-${id}`}

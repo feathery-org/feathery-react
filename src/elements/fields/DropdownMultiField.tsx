@@ -1,15 +1,21 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import useBorder from '../components/useBorder';
-import Select, { components } from 'react-select';
+import Select, { components, OptionProps } from 'react-select';
 import CreatableSelect from 'react-select/creatable';
-import { featheryDoc, hoverStylesGuard } from '../../utils/browser';
+import { hoverStylesGuard } from '../../utils/browser';
 import InlineTooltip from '../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from './index';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import Placeholder from '../components/Placeholder';
 
-const TooltipOption = ({ children, ...props }: any) => {
+type OptionData = {
+  tooltip?: string;
+  value: string;
+  label: string;
+};
+
+const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
   let optComponent = (
     <components.Option {...props}>{children}</components.Option>
   );
@@ -18,6 +24,8 @@ const TooltipOption = ({ children, ...props }: any) => {
     optComponent = (
       <OverlayTrigger
         placement='right'
+        // @ts-ignore
+        container={() => props.selectProps.container?.current}
         overlay={
           <Tooltip
             id={`tooltip-${props.data.value}`}
@@ -67,6 +75,8 @@ export default function DropdownMultiField({
     element,
     error: inlineError
   });
+  const containerRef = useRef(null);
+
   const [focused, setFocused] = useState(false);
 
   const addFieldValOptions = (options: string[]) => {
@@ -121,6 +131,9 @@ export default function DropdownMultiField({
   responsiveStyles.applyFontStyles('field');
   return (
     <div
+      // react-select doesn't support changing refs well,
+      // so instead we save ref in state so changes cause rerenders
+      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -203,6 +216,8 @@ export default function DropdownMultiField({
             })
           }}
           components={{ Option: TooltipOption }}
+          // @ts-ignore
+          container={containerRef}
           id={servar.key}
           value={selectVal}
           required={required}
@@ -216,7 +231,6 @@ export default function DropdownMultiField({
             servar.max_length && selectVal.length >= servar.max_length
           }
           isMulti
-          menuPortalTarget={featheryDoc().body}
           placeholder=''
           aria-label={element.properties.aria_label}
         />
@@ -227,6 +241,7 @@ export default function DropdownMultiField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
+          container={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
