@@ -28,6 +28,7 @@ import { RequestOptions } from '../offlineRequestHandler';
 import debounce from 'lodash.debounce';
 import { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
+import { ExtractionActionOptions } from '../internalState';
 
 export const API_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
@@ -769,17 +770,29 @@ export default class FeatheryClient extends IntegrationClient {
   // AI
   extractAIDocument({
     extractionId,
-    runAsync,
+    options,
     pages
   }: {
     extractionId: string;
-    runAsync: boolean;
+    options: ExtractionActionOptions | boolean;
     pages?: number[];
   }) {
+    let runAsync: boolean;
+    let variantId: string | undefined;
+    if (typeof options === 'object') {
+      runAsync = !options.waitForCompletion;
+      pages = options.pages;
+      variantId = options.variantId;
+    } else {
+      // deprecated usage, options is waitForCompletion
+      runAsync = !options;
+    }
+
     const { userId } = initInfo();
     const data = {
       fuser_key: userId,
       extraction_id: extractionId,
+      extraction_variant_id: variantId,
       pages
     };
 

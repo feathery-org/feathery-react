@@ -128,6 +128,7 @@ import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
   ApplyAlloyJourney,
+  ExtractionActionOptions,
   RunIntegrationActions,
   setFormInternalState
 } from '../utils/internalState';
@@ -963,7 +964,8 @@ function Form({
         },
         runAIExtraction: async (
           extractionId: string,
-          runAsync: boolean,
+          options: ExtractionActionOptions | boolean,
+          // deprecated, pages should be in options
           pages?: number[]
         ) => {
           if (!extractionId) {
@@ -974,7 +976,7 @@ function Form({
           try {
             const data = await client.extractAIDocument({
               extractionId,
-              runAsync,
+              options,
               pages
             });
             const vals = data.data ?? {};
@@ -1949,7 +1951,10 @@ function Form({
           await submitPromise;
           const data = await client.extractAIDocument({
             extractionId: action.extraction_id,
-            runAsync: action.run_async
+            options: {
+              waitForCompletion: !action.run_async,
+              variantId: action.variant_id
+            }
           });
           updateFieldValues(data.data ?? {});
         } catch (e: any) {

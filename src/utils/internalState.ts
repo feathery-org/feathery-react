@@ -18,6 +18,12 @@ export type RunIntegrationActions = (
   options: IntegrationActionOptions
 ) => Promise<{ ok: boolean; error?: string; payload?: any }>;
 
+export type ExtractionActionOptions = {
+  waitForCompletion?: boolean;
+  pages?: number[];
+  variantId?: string;
+};
+
 export type AlloyEntities = Record<string, any>[];
 export type ApplyAlloyJourney = (
   journeyToken: string,
@@ -62,7 +68,7 @@ export interface FormInternalState {
   runIntegrationActions: RunIntegrationActions;
   runAIExtraction: (
     extractionId: string,
-    runAsync: boolean,
+    options: ExtractionActionOptions | boolean,
     pages?: number[]
   ) => Promise<Record<string, string>>;
   applyAlloyJourney: ApplyAlloyJourney;
