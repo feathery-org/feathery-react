@@ -48,6 +48,7 @@ function PhoneField({
   // Track cursorChange since cursor may stay in same place but need to be
   // re-applied (e.g. delete)
   const [cursorChange, setCursorChange] = useState(false);
+  const containerRef = useRef(null);
 
   const [show, setShow] = useState(false);
   // The number parsed from the fullNumber prop, updated via triggerOnChange to rawNumber
@@ -169,6 +170,7 @@ function PhoneField({
 
   return (
     <div
+      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -398,6 +400,7 @@ function PhoneField({
             repeatIndex={repeatIndex}
           />
           <InlineTooltip
+            container={containerRef}
             id={element.id}
             text={element.properties.tooltipText}
             responsiveStyles={responsiveStyles}

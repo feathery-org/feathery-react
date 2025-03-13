@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/InlineTooltip';
@@ -38,6 +38,8 @@ function AddressLine1({
   const options = useAddressSearch(value, servar);
   const [showOptions, setShowOptions] = useState(false);
   const [focused, setFocused] = useState(false);
+  const containerRef = useRef(null);
+
   const { borderStyles, customBorder } = useBorder({
     element,
     error: inlineError
@@ -45,6 +47,7 @@ function AddressLine1({
 
   return (
     <div
+      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -83,6 +86,7 @@ function AddressLine1({
         <OverlayTrigger
           placement='bottom-start'
           delay={{ show: 250, hide: 250 }}
+          container={() => containerRef?.current}
           show={options.length > 0 && showOptions}
           overlay={
             <ul
@@ -171,6 +175,7 @@ function AddressLine1({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
+          container={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

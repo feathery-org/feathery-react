@@ -1,5 +1,5 @@
 import { IMaskInput } from 'react-imask';
-import React, { memo, useState } from 'react';
+import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
@@ -213,7 +213,7 @@ function TextField({
     element,
     error: inlineError
   });
-
+  const containerRef = useRef(null);
   const { value: fieldVal } = getFieldValue(element);
   const rawValue = stringifyWithNull(fieldVal);
 
@@ -222,6 +222,7 @@ function TextField({
   const spacing = element.properties.tooltipText ? 30 : 8;
   return (
     <div
+      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -264,6 +265,7 @@ function TextField({
             setShowAutocomplete(false);
           }}
           responsiveStyles={responsiveStyles}
+          container={containerRef}
         >
           <IMaskInput
             id={servar.key}
@@ -339,6 +341,7 @@ function TextField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
+          container={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

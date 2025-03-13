@@ -87,6 +87,7 @@ function DateSelectorField({
 
   const pickerRef = useRef<any>();
   const [internalDate, setInternalDate] = useState('');
+  const containerRef = useRef(null);
 
   const translation = element.properties.translate || {};
   const locale = useCustomDateLocale({
@@ -168,6 +169,7 @@ function DateSelectorField({
 
   return (
     <div
+      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -283,6 +285,7 @@ function DateSelectorField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
+          container={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { imgMaxSizeStyles, noTextSelectStyles } from '../styles';
 import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
@@ -18,6 +18,8 @@ function ButtonGroupField({
   disabled = false,
   children
 }: any) {
+  const containerRef = useRef(null);
+
   const selectedOptMap = useMemo(
     () =>
       Array.isArray(fieldVal)
@@ -53,6 +55,7 @@ function ButtonGroupField({
 
   return (
     <div
+      ref={containerRef}
       css={{
         position: 'relative',
         width: '100%',
@@ -133,6 +136,7 @@ function ButtonGroupField({
               )}
               {tooltip && (
                 <InlineTooltip
+                  container={containerRef}
                   id={`${element.id}-${label}`}
                   text={tooltip}
                   responsiveStyles={responsiveStyles}
