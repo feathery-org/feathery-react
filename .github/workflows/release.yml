@@ -160,4 +160,4 @@ jobs:
     steps:
       - name: Trigger Netlify Redeploy
         run: |
-          curl -X POST -d {} ${{ secrets.NETLIFY_BUILD_HOOK }}
+          curl -X POST -d '{}' ${{ secrets.NETLIFY_BUILD_HOOK }}
