@@ -29,6 +29,16 @@ export type ApplyAlloyJourney = (
   journeyToken: string,
   entities: AlloyEntities
 ) => Promise<{ ok: boolean; error?: string; payload?: any }>;
+export type GetConfigParams = {
+  filter?: Record<string, any>;
+  keys?: string[];
+  unique?: boolean;
+};
+export type GetConfig = ({
+  filter,
+  keys,
+  unique
+}: GetConfigParams) => Promise<Record<string, any>[]>;
 
 export interface FormInternalState {
   language: string | undefined;
@@ -72,6 +82,7 @@ export interface FormInternalState {
     pages?: number[]
   ) => Promise<Record<string, string>>;
   applyAlloyJourney: ApplyAlloyJourney;
+  getConfig: GetConfig;
 }
 
 type InternalState = {

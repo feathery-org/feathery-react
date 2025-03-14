@@ -28,7 +28,7 @@ import { RequestOptions } from '../offlineRequestHandler';
 import debounce from 'lodash.debounce';
 import { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
-import { ExtractionActionOptions } from '../internalState';
+import { ExtractionActionOptions, GetConfigParams } from '../internalState';
 
 export const API_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
@@ -834,6 +834,18 @@ export default class FeatheryClient extends IntegrationClient {
 
       setTimeout(checkCompletion, this.CHECK_INTERVAL); // Check every 2 seconds for a response
     });
+  }
+
+  async getConfig(configParams: GetConfigParams) {
+    const url = `${API_URL}account/config/`;
+    const reqOptions = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(configParams)
+    };
+    const res = await this._fetch(url, reqOptions, false);
+    if (res && res.status === 200) return await res.json();
+    else return [];
   }
 
   // Collaboration
