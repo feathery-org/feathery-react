@@ -879,9 +879,9 @@ function Form({
           )
         ),
         trackHashes: trackHashes.current,
-        formRef,
         formId,
         formName,
+        formRef,
         formSettings,
         getErrorCallback,
         navigate,
