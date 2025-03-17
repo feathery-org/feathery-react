@@ -46,6 +46,8 @@ export interface FormInternalState {
   previousStepName: string;
   visiblePositions: any;
   client: any;
+  formName: string;
+  formId: string;
   fields: Record<string, Field>;
   products: Record<string, SimplifiedProduct>;
   cart: Cart;

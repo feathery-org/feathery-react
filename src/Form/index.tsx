@@ -887,6 +887,8 @@ function Form({
         setInlineErrors,
         setUserProgress,
         steps,
+        formName: formName,
+        formId: formId,
         setStepKey,
         updateFieldOptions: (
           newOptions: FieldOptions,
