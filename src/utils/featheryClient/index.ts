@@ -352,6 +352,7 @@ export default class FeatheryClient extends IntegrationClient {
         res = getABVariant(res);
         this._loadFormPackages(res);
       }
+      initState.formName = res.form_name;
       initState.defaultErrors = res.default_errors;
       initState.isTestEnv = !res.production;
       return res;

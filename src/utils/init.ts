@@ -51,6 +51,7 @@ type InitState = {
   renderCallbacks: Record<string, Record<string, any>>;
   remountCallbacks: Record<string, any>;
   defaultErrors: Record<string, string>;
+  formName: string;
   isTestEnv: boolean;
   theme: string;
   region: string;
@@ -72,6 +73,7 @@ const initState: InitState = {
   formSchemas: {},
   formSessions: {},
   defaultErrors: {},
+  formName: '',
   // Since all field values are fetched with each session, only fetch field
   // values on the first session request
   fieldValuesInitialized: false,
