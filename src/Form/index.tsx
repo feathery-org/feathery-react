@@ -880,6 +880,8 @@ function Form({
         ),
         trackHashes: trackHashes.current,
         formRef,
+        formId,
+        formName,
         formSettings,
         getErrorCallback,
         navigate,
@@ -887,8 +889,6 @@ function Form({
         setInlineErrors,
         setUserProgress,
         steps,
-        formName: formName,
-        formId: formId,
         setStepKey,
         updateFieldOptions: (
           newOptions: FieldOptions,
