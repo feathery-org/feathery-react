@@ -41,6 +41,8 @@ export const getFormContext = (formUuid: string) => {
 
   return {
     userId: initState.userId,
+    formName: formState.formName,
+    formId: formState.formId,
     _getInternalUserId: () => initState._internalUserId,
     fields: formState.fields,
     products: formState.products,
