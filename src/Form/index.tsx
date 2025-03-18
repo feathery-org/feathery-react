@@ -15,6 +15,7 @@ import React, {
 
 import BootstrapForm from 'react-bootstrap/Form';
 import debounce from 'lodash.debounce';
+import classNames from 'classNames';
 
 import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
 import {
@@ -2294,7 +2295,7 @@ function Form({
       <BootstrapForm
         {...formProps}
         autoComplete={formSettings.autocomplete}
-        className={className}
+        className={classNames('feathery', className)}
         ref={formRef}
         css={{
           ...globalCSS.getTarget('form'),

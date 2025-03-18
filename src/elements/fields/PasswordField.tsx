@@ -69,20 +69,22 @@ function PasswordField({
           id={servar.key}
           name={servar.key}
           css={{
-            position: 'relative',
-            // Position input above the border div
-            zIndex: FORM_Z_INDEX,
-            height: '100%',
-            width: '100%',
-            border: 'none',
-            backgroundColor: 'transparent',
-            ...bootstrapStyles,
-            ...responsiveStyles.getTarget('field'),
-            [`&:focus ~ #${borderId}`]: Object.values(borderStyles.active)[0],
-            '&:not(:focus)':
-              rawValue || !element.properties.placeholder
-                ? {}
-                : { color: 'transparent !important' }
+            '.feathery &': {
+              position: 'relative',
+              // Position input above the border div
+              zIndex: FORM_Z_INDEX,
+              height: '100%',
+              width: '100%',
+              border: 'none',
+              backgroundColor: 'transparent',
+              ...bootstrapStyles,
+              ...responsiveStyles.getTarget('field'),
+              [`&:focus ~ #${borderId}`]: Object.values(borderStyles.active)[0],
+              '&:not(:focus)':
+                rawValue || !element.properties.placeholder
+                  ? {}
+                  : { color: 'transparent !important' }
+            }
           }}
           aria-label={element.properties.aria_label}
           maxLength={servar.max_length}
