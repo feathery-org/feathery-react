@@ -2294,7 +2294,7 @@ function Form({
       <BootstrapForm
         {...formProps}
         autoComplete={formSettings.autocomplete}
-        className={className}
+        className={`feathery ${className || ''}`}
         ref={formRef}
         css={{
           ...globalCSS.getTarget('form'),
