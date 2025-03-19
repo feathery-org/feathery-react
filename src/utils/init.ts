@@ -4,10 +4,10 @@ import { v4 as uuidv4 } from 'uuid';
 import FeatheryClient, { updateRegionApiUrls } from './featheryClient';
 import * as errors from './error';
 import {
-  runningInClient,
-  setCookie,
+  featheryWindow,
   getCookie,
-  featheryWindow
+  runningInClient,
+  setCookie
 } from './browser';
 import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
 import { parseUserVal } from './entities/Field';
@@ -32,6 +32,7 @@ type InitOptions = {
   userId?: string;
   cacheUserId?: boolean;
   collaboratorId?: string;
+  collaboratorReview?: boolean;
   preloadForms?: string[];
   userTracking?: 'cookie' | 'fingerprint';
   language?: string;
@@ -67,6 +68,7 @@ const initState: InitState = {
   sdkKey: '',
   userId: '',
   collaboratorId: '',
+  collaboratorReview: false,
   overrideUserId: false,
   language: '',
   formSchemas: {},
@@ -118,6 +120,8 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (options.userTracking) initState.userTracking = options.userTracking;
   if (options.theme) initState.theme = options.theme;
   if (options.collaboratorId) initState.collaboratorId = options.collaboratorId;
+  if (options.collaboratorReview)
+    initState.collaboratorReview = options.collaboratorReview;
   if (options.language) {
     const langPieces = options.language.split(',');
     initState.language = langPieces.map((piece) => piece.trim()).join(',');
