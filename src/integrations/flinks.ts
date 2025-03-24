@@ -70,7 +70,7 @@ export async function openFlinksConnect(
     <!DOCTYPE html>
     <html>
       <head>
-        <title>Child Window</title>
+        <title>Connect to Flinks</title>
       </head>
       <body style="height: 100vh; width: 100vw; margin: 0;">
         <iframe src="${flinksUrl}" width="100%" height="100%" style="border: none;"></iframe>
