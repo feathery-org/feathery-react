@@ -194,7 +194,7 @@ import {
   setCustomErrorHandler
 } from '../utils/error';
 import { verifyAlloyId } from '../integrations/alloy';
-import { openFlinksConnect } from '../integrations/flinks';
+import { useFlinksConnect } from '../integrations/flinks';
 import { isNum } from '../utils/primitives';
 import { getSignUrl } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
@@ -361,6 +361,7 @@ function Form({
 
   const [showQuikFormViewer, setShowQuikFormViewer] = useState(false);
   const [quikHTMLPayload, setQuikHTMLPayload] = useState('');
+  const { openFlinksConnect, flinksFrame } = useFlinksConnect();
 
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
@@ -1800,6 +1801,7 @@ function Form({
         await openFlinksConnect(
           client,
           flowOnSuccess(i),
+          (err?: string) => setElementError(err || 'Please connect Flinks'),
           integrations?.flinks,
           updateFieldValues
         );
@@ -2314,6 +2316,7 @@ function Form({
             setShow={setShowQuikFormViewer}
           />
         )}
+        {flinksFrame}
         <Grid step={activeStep} form={form} viewport={viewport} />
         {popupOptions && (
           <CloseIcon
