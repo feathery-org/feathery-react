@@ -1,5 +1,5 @@
 import { dynamicImport } from './utils';
-import { initInfo } from '../utils/init';
+import { fieldValues, initInfo } from '../utils/init';
 
 export async function installPersona(personaConfig: any) {
   if (personaConfig)
@@ -7,19 +7,46 @@ export async function installPersona(personaConfig: any) {
 }
 
 export function triggerPersona(
-  templateId: string,
-  environmentId: string,
+  config: any,
   onComplete: any,
-  setErr: any
+  setErr: any,
+  updateFieldValues: any,
+  featheryClient: any
 ) {
-  const { userId } = initInfo();
+  let { userId: referenceId } = initInfo();
+
+  const personaPrefill: Record<string, any> = {};
+  (config.prefill_map ?? []).forEach((prefillEntry: any) => {
+    const val = fieldValues[prefillEntry.feathery_field_key];
+    if (!val) return;
+    if (prefillEntry.persona_attribute === 'referenceId') {
+      referenceId = val as string;
+    } else {
+      personaPrefill[prefillEntry.persona_attribute] = val;
+    }
+  });
+
+  let statusKey = '';
+  (config.save_map ?? []).forEach((saveEntry: any) => {
+    if (saveEntry.persona_attribute === 'verificationStatus')
+      statusKey = saveEntry.feathery_field_key;
+  });
+
   const client = new global.Persona.Client({
-    templateId,
-    environmentId,
-    referenceId: userId,
+    templateId: config.template_id,
+    environmentId: config.environment_id,
+    referenceId,
+    fields: personaPrefill,
     onCancel: () => setErr('The verification was cancelled'),
     onError: (error: string) => setErr(`Verification error: ${error}`),
-    onComplete
+    onComplete: ({ status }: any) => {
+      if (statusKey) {
+        const submitStatus = { [statusKey]: status };
+        updateFieldValues(submitStatus);
+        featheryClient.submitCustom(submitStatus, { shouldFlush: true });
+      }
+      onComplete();
+    }
   });
   client.open();
 }
