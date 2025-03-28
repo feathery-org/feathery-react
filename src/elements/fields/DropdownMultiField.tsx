@@ -209,10 +209,9 @@ export default function DropdownMultiField({
             }),
             indicatorSeparator: () => ({ display: 'none' }),
             indicatorsContainer: () => ({ display: 'none' }),
-            menuPortal: (baseStyles) => ({
+            menu: (baseStyles) => ({
               ...baseStyles,
-              zIndex: DROPDOWN_Z_INDEX,
-              textAlign: rightToLeft ? 'right' : 'left'
+              zIndex: DROPDOWN_Z_INDEX
             })
           }}
           components={{ Option: TooltipOption }}
