@@ -1764,13 +1764,14 @@ function Form({
         const container = getContainerById(activeStep, action.repeat_container);
         removeRepeatedRow(element, container);
       } else if (type === ACTION_TRIGGER_PERSONA) {
-        const persona = integrations?.persona.metadata ?? {};
-        await submitPromise;
+        await Promise.all([submitPromise, client.flushCustomFields()]);
+        const personaMeta = integrations?.persona.metadata ?? {};
         triggerPersona(
-          persona.template_id,
-          persona.environment_id,
+          personaMeta,
           flowOnSuccess(i),
-          setElementError
+          setElementError,
+          updateFieldValues,
+          client
         );
         break;
       } else if (type === ACTION_ALLOY_VERIFY_ID) {
