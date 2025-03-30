@@ -322,6 +322,9 @@ const Element = ({ node: el, form }: any) => {
               const change = changeValue(value, el, index, true, false);
               if (change) debouncedOnChange();
             }}
+            required={required}
+            disabled={el.properties.disabled || formSettings.readOnly}
+            fieldStyles={el.properties.style}
           />
         );
       case 'file_upload':

@@ -7,6 +7,7 @@ interface Props {
   elementId: string;
   value: string;
   onChange?: (value: string) => void;
+  customProps?: Record<string, any>;
 }
 
 interface Result {
@@ -19,7 +20,8 @@ export function useCustomComponentIframe({
   componentCode,
   elementId,
   value,
-  onChange
+  onChange,
+  customProps
 }: Props): Result {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const rootRef = useRef<any>(null);
@@ -69,7 +71,7 @@ export function useCustomComponentIframe({
     };
 
     setupIframe();
-  }, [componentCode]);
+  }, [componentCode, customProps]);
 
   // Update component props when value changes
   useEffect(() => {
@@ -99,7 +101,7 @@ export function useCustomComponentIframe({
           React.createElement(UserComponent, {
             value,
             onChange: handleChange,
-            elementId
+            ...customProps
           })
         )
       );
