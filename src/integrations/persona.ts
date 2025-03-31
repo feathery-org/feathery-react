@@ -1,5 +1,6 @@
 import { dynamicImport } from './utils';
 import { fieldValues, initInfo } from '../utils/init';
+import { TEXT_VARIABLE_PATTERN } from '../elements/components/TextNodes';
 
 export async function installPersona(personaConfig: any) {
   if (personaConfig)
@@ -33,8 +34,8 @@ export function triggerPersona(
   });
 
   const client = new global.Persona.Client({
-    templateId: config.template_id,
-    environmentId: config.environment_id,
+    templateId: getPersonaAttrVal(config, 'template_id'),
+    environmentId: getPersonaAttrVal(config, 'environment_id'),
     referenceId,
     fields: personaPrefill,
     onCancel: () => setErr('The verification was cancelled'),
@@ -49,4 +50,15 @@ export function triggerPersona(
     }
   });
   client.open();
+}
+
+function getPersonaAttrVal(config: any, key: string) {
+  let varId = config[key];
+  const matches = varId.match(TEXT_VARIABLE_PATTERN);
+  if (matches) {
+    const varField = matches[0].slice(2, -2);
+    const val = fieldValues[varField];
+    if (val) varId = val;
+  }
+  return varId;
 }
