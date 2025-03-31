@@ -1,24 +1,45 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import Status from './Status';
 import { useCustomComponentIframe } from './useCustomComponentIframe';
 
 const CustomField = ({
   element,
-  responsiveStyles,
   elementProps = {},
-  editMode,
+  responsiveStyles,
   onChange,
-  rawValue
+  rawValue,
+  required,
+  disabled,
+  fieldStyles,
+  editMode,
+  rightToLeft
 }: any) => {
   const componentCode = element.servar.metadata.code;
   const isCodeEmpty = !componentCode || componentCode.trim() === '';
   const showPlaceholder = isCodeEmpty && editMode;
 
+  const customFieldProps = useMemo(
+    () => ({
+      fieldProperties: {
+        required,
+        disabled,
+        custom: element.servar.metadata.custom || {}
+      },
+      fieldStyles: fieldStyles || {},
+      formContext: {
+        rightToLeft: rightToLeft || false,
+        editMode: editMode || false
+      }
+    }),
+    []
+  );
+
   const { iframeRef, error, loading } = useCustomComponentIframe({
     componentCode: element.servar.metadata.code,
     elementId: element.id,
     value: rawValue,
-    onChange
+    onChange,
+    customProps: customFieldProps
   });
 
   return (
