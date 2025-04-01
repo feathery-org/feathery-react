@@ -93,29 +93,8 @@ export const createTemplate = (
           const root = createRoot(container);
           window.rootRef = root;
 
-          // Handle value changes
-          const handleChange = (newValue) => {
-            window.parent.postMessage({ 
-              type: 'valueChange', 
-              value: newValue,
-              elementId: window.elementId
-            }, '*');
-          };
-
-          // Initial render
-          root.render(
-            React.createElement(
-              React.StrictMode,
-              null,
-              React.createElement(UserComponent, {
-                value: '${initialValue}',
-                onChange: handleChange
-              })
-            )
-          );
-
           window.parent.postMessage({ 
-            type: 'RENDER_COMPLETE',
+            type: 'LOADING_COMPLETE',
             elementId: window.elementId
           }, '*');
 
