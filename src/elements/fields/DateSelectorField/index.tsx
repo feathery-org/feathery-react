@@ -5,7 +5,8 @@ import InlineTooltip from '../../components/InlineTooltip';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
 import DatePicker from 'react-datepicker';
 import DateSelectorStyles from './styles';
-import { IMask, IMaskInput } from 'react-imask';
+import { IMaskInput } from 'react-imask';
+import { MaskedRange, MaskedEnum } from 'imask';
 
 import { bootstrapStyles } from '../../styles';
 import { parseISO } from 'date-fns';
@@ -299,13 +300,13 @@ function DateSelectorField({
 export default memo(DateSelectorField);
 
 const dateBlocks = {
-  dd: { mask: IMask.MaskedRange, from: 1, to: 31, maxLength: 2 },
-  MM: { mask: IMask.MaskedRange, from: 1, to: 12, maxLength: 2 },
-  yyyy: { mask: IMask.MaskedRange, from: 1, to: 9999, maxLength: 4 },
-  HH: { mask: IMask.MaskedRange, from: 0, to: 23, maxLength: 2 },
-  hh: { mask: IMask.MaskedRange, from: 1, to: 12, maxLength: 2 },
-  mm: { mask: IMask.MaskedRange, from: 0, to: 59, maxLength: 2 },
-  aa: { mask: IMask.MaskedEnum, enum: ['AM', 'PM'] }
+  dd: { mask: MaskedRange, from: 1, to: 31, maxLength: 2 },
+  MM: { mask: MaskedRange, from: 1, to: 12, maxLength: 2 },
+  yyyy: { mask: MaskedRange, from: 1, to: 9999, maxLength: 4 },
+  HH: { mask: MaskedRange, from: 0, to: 23, maxLength: 2 },
+  hh: { mask: MaskedRange, from: 1, to: 12, maxLength: 2 },
+  mm: { mask: MaskedRange, from: 0, to: 59, maxLength: 2 },
+  aa: { mask: MaskedEnum, enum: ['AM', 'PM'] }
 } as const;
 
 const CustomMaskedInput = React.forwardRef(
