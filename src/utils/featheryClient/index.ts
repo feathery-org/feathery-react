@@ -812,7 +812,9 @@ export default class FeatheryClient extends IntegrationClient {
 
       const checkCompletion = async () => {
         const response = await this._fetch(
-          `${STATIC_URL}ai/vision/completion/?fid=${userId}&eid=${extractionId}`,
+          `${STATIC_URL}ai/vision/completion/?fid=${userId}&eid=${extractionId}&evid=${
+            variantId ?? ''
+          }`,
           { method: 'GET' }
         );
 

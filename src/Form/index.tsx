@@ -1955,14 +1955,30 @@ function Form({
       } else if (type === ACTION_AI_DOCUMENT_EXTRACT) {
         try {
           await submitPromise;
-          const data = await client.extractAIDocument({
-            extractionId: action.extraction_id,
-            options: {
-              waitForCompletion: !action.run_async,
-              variantId: action.variant_id
+
+          const extractions = [];
+          while (i < actions.length) {
+            const curAction = actions[i];
+            if (curAction.type === ACTION_AI_DOCUMENT_EXTRACT) {
+              extractions.push(
+                client.extractAIDocument({
+                  extractionId: curAction.extraction_id,
+                  options: {
+                    waitForCompletion: !curAction.run_async,
+                    variantId: curAction.variant_id
+                  }
+                })
+              );
+              i++;
+            } else {
+              i--;
+              break;
             }
+          }
+          const data = await Promise.all(extractions);
+          data.forEach((entry) => {
+            if (entry.data) updateFieldValues(entry.data);
           });
-          updateFieldValues(data.data ?? {});
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
