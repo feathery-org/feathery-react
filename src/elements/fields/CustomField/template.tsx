@@ -42,7 +42,7 @@ export const createTemplate = (
 <!DOCTYPE html>
 <html>
   <head>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
     <style>
       * {
         margin: 0;
