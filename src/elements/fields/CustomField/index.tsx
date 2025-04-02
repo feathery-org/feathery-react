@@ -23,7 +23,7 @@ const CustomField = ({
       fieldProperties: {
         required,
         disabled,
-        custom: element.servar.metadata.custom || {}
+        custom: element.servar.metadata?.custom || {}
       },
       fieldStyles: fieldStyles || {},
       formContext: {
@@ -31,7 +31,14 @@ const CustomField = ({
         editMode: editMode || false
       }
     }),
-    []
+    [
+      required,
+      disabled,
+      fieldStyles,
+      rightToLeft,
+      editMode,
+      element.servar.metadata?.custom
+    ]
   );
 
   const { iframeRef, error, loading } = useCustomComponentIframe({
