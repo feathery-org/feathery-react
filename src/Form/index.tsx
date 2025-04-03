@@ -1987,7 +1987,8 @@ function Form({
         await Promise.all([submitPromise, client.flushCustomFields()]);
         try {
           const data = await client.generateEnvelopes(action);
-          if (!action.envelope_action) {
+          const envAction = action.envelope_action;
+          if (!envAction) {
             // Sign files
             const url = getSignUrl(action.redirect);
             if (action.redirect) {
@@ -2000,9 +2001,15 @@ function Form({
               await client.registerEvent(eventData);
               featheryWindow().location.href = url;
             } else openTab(url);
-          } else if (action.envelope_action === 'download') {
+          } else if (envAction === 'download') {
             // Download files directly
             await downloadAllFileUrls(data.files);
+          } else if (envAction === 'save') {
+            let files = data.files;
+            if (files.length === 1) files = files[0];
+            const newValues = { [action.save_document_field_key]: files };
+            updateFieldValues(newValues);
+            client.submitCustom(newValues);
           }
         } catch (e: any) {
           setElementError((e as Error).message);

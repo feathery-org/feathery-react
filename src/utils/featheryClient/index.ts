@@ -751,7 +751,8 @@ export default class FeatheryClient extends IntegrationClient {
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      keepalive: false
     };
 
     const run = () =>
