@@ -4,7 +4,7 @@ import { TEXT_VARIABLE_PATTERN } from '../elements/components/TextNodes';
 
 export async function installPersona(personaConfig: any) {
   if (personaConfig)
-    await dynamicImport('https://cdn.withpersona.com/dist/persona-v4.8.0.js');
+    await dynamicImport('https://cdn.withpersona.com/dist/persona-v5.1.2.js');
 }
 
 export function triggerPersona(
