@@ -542,7 +542,10 @@ export default class FeatheryClient extends IntegrationClient {
 
     const options: RequestOptions = {
       method: 'POST',
-      body: formData
+      body: formData,
+      // Ran into a situation with Baldwin where request would not go through
+      // with keepalive = true
+      keepalive: false
     };
 
     // Here we can safely remove the listener because offlineRequestHandler has its own beforeunload
