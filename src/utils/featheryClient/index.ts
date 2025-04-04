@@ -718,14 +718,13 @@ export default class FeatheryClient extends IntegrationClient {
 
   // Logic custom APIs
   runCustomRequest(
-    payload:
-      | string
-      | {
-          method: string;
-          url: string;
-          data: Record<string, any> | any[];
-          headers: Record<string, string>;
-        },
+    payload: {
+      name?: string;
+      method?: string;
+      url?: string;
+      data: Record<string, any> | any[];
+      headers: Record<string, string>;
+    },
     fieldValues: { [key: string]: any } | null = null
   ) {
     const { userId } = initInfo();
@@ -734,14 +733,11 @@ export default class FeatheryClient extends IntegrationClient {
       form_key: this.formKey
     };
 
-    if (typeof payload === 'string') {
-      data.name = payload;
-    } else {
-      data.method = payload.method;
-      data.url = payload.url;
-      data.user_data = payload.data;
-      data.headers = payload.headers;
-    }
+    data.name = payload.name;
+    data.method = payload.method;
+    data.url = payload.url;
+    data.user_data = payload.data;
+    data.headers = payload.headers;
 
     if (fieldValues) {
       data.field_values = fieldValues;
@@ -759,9 +755,7 @@ export default class FeatheryClient extends IntegrationClient {
       this._fetch(url, options).then((response) =>
         response ? response.json() : Promise.resolve()
       );
-    if (typeof payload !== 'string' && payload.method === 'GET') {
-      return run();
-    }
+    if (payload.method === 'GET') return run();
     return this.offlineRequestHandler.runOrSaveRequest(
       run,
       url,

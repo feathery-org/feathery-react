@@ -999,25 +999,36 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
     'delete'
   ].forEach(
     (method) =>
-      (helpers[method] = (
+      (helpers[method] = async (
         url: string,
         data: Record<string, any> | any[],
         headers: Record<string, string>
       ) => {
-        if (!url) return;
+        if (!url) return {};
 
-        return client.runCustomRequest(
+        const response = await client.runCustomRequest(
           { method: method.toUpperCase(), url, data, headers },
           getConnectorFieldValues(connectorFields)
         );
+
+        return {
+          data: response.data,
+          statusCode: response.status_code,
+          // status_code for backwards compatibility
+          status_code: response.statusCode
+        };
       })
   );
 
-  helpers.connect = async (name: string) => {
+  helpers.connect = async (
+    name: string,
+    data: Record<string, any> | any[],
+    headers: Record<string, string>
+  ) => {
     if (!name) return {};
 
     const response = await client.runCustomRequest(
-      name,
+      { name, data, headers },
       getConnectorFieldValues(connectorFields)
     );
 
