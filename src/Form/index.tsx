@@ -2016,7 +2016,7 @@ function Form({
           break;
         }
       } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {
-        await submitPromise;
+        await Promise.all([submitPromise, client.flushCustomFields()]);
         try {
           const payload = await client.generateQuikEnvelopes(action);
           if (action.form_fill_type === 'html' && payload.html) {
