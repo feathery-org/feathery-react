@@ -77,11 +77,7 @@ export default function DropdownField({
   } else {
     const labels = servar.metadata.option_labels;
     const tooltips = servar.metadata.option_tooltips;
-    if (
-      repeatIndex !== null &&
-      servar.metadata.repeat_options !== undefined &&
-      servar.metadata.repeat_options[repeatIndex] !== undefined
-    ) {
+    if (repeatIndex !== null && servar.metadata.repeat_options?.[repeatIndex]) {
       const repeatOptions = servar.metadata.repeat_options[repeatIndex];
       options = repeatOptions.map((option: any) => {
         const value = option.value ?? option;

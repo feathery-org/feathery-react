@@ -543,14 +543,20 @@ function Form({
     const isInsideContainer = Boolean(insideContainer);
     const curRepeatContainer = insideContainer || repeatContainer;
 
+    const removeServars: Record<string, null> = {};
+    let curIndex = index;
     const getNewVal = (field: any) => {
       const vals = fieldValues[field.servar.key] as any[];
-      const curIndex = !isInsideContainer ? vals.length - 1 : index;
+      curIndex = !isInsideContainer ? vals.length - 1 : index;
+
+      removeServars[field.servar.key] = null;
+
       const newRepeatedValues = justRemove(vals, curIndex);
       const defaultValue = [getDefaultFieldValue(field)];
       return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
     };
     updateRepeatValues(curRepeatContainer, getNewVal);
+    internalState[_internalId].updateFieldOptions(removeServars, curIndex);
   }
 
   // Debouncing the validateElements call to rate limit calls

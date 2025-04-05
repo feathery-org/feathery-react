@@ -1,10 +1,10 @@
 import { defaultClient, FeatheryFieldTypes, fieldValues } from '../init';
 import debounce from 'lodash.debounce';
 import {
-  rerenderAllForms,
-  OptionType,
+  FieldStyles,
   getDefaultFormFieldValue,
-  FieldStyles
+  OptionType,
+  rerenderAllForms
 } from '../formHelperFunctions';
 import {
   evalComparisonRule,

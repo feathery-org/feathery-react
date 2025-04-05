@@ -345,7 +345,7 @@ export type OptionType =
   | string
   | { value: string; label?: string; image?: string };
 // TODO: remove string[] for backcompat
-export type FieldOptions = Record<string, OptionType[]>;
+export type FieldOptions = Record<string, OptionType[] | null>;
 
 export function updateStepFieldOptions(
   step: any,
@@ -357,6 +357,7 @@ export function updateStepFieldOptions(
     if (servar.key in newOptions) {
       const options = newOptions[servar.key];
       if (repeatIndex === null || repeatIndex === undefined) {
+        if (!options) return;
         servar.metadata.options = options.map((option) =>
           typeof option === 'object' ? option.value : option
         );
@@ -369,9 +370,12 @@ export function updateStepFieldOptions(
       } else {
         if (!servar.metadata.repeat_options)
           servar.metadata.repeat_options = [];
-        servar.metadata.repeat_options[repeatIndex] = options.map((option) =>
-          typeof option === 'object' ? option.value : option
-        );
+        if (!options) servar.metadata.repeat_options.splice(repeatIndex, 1);
+        else {
+          servar.metadata.repeat_options[repeatIndex] = options.map((option) =>
+            typeof option === 'object' ? option.value : option
+          );
+        }
       }
     }
   });
