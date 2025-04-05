@@ -3,7 +3,7 @@ import FeatheryClient, {
   CDN_URL,
   STATIC_URL
 } from '../featheryClient';
-import { initInfo, initFormsPromise } from '../init';
+import { initFormsPromise, initInfo } from '../init';
 
 jest.mock('../init', () => ({
   initInfo: jest.fn(),
@@ -114,7 +114,7 @@ describe('featheryClient', () => {
           method: 'POST',
           body: expect.any(FormData),
           cache: 'no-store',
-          keepalive: true,
+          keepalive: false,
           headers: {
             Authorization: 'Token sdkKey'
           }
@@ -328,7 +328,7 @@ describe('featheryClient', () => {
             headers: payload.headers
           }),
           cache: 'no-store',
-          keepalive: true
+          keepalive: false
         }
       );
       expect(response).toEqual(expectedResponse);
@@ -366,7 +366,7 @@ describe('featheryClient', () => {
             headers: payload.headers
           }),
           cache: 'no-store',
-          keepalive: true
+          keepalive: false
         }
       );
       expect(response).toEqual(expectedResponse);
@@ -374,7 +374,7 @@ describe('featheryClient', () => {
 
     it('should make a custom request with a payload string', async () => {
       // Arrange
-      const payload = 'connectionName';
+      const payload = { name: 'connectionName' };
       const fieldValues = { field1: 'value1', field2: 'value2' };
       const expectedResponse = { data: 'response data' };
       mockFetch(expectedResponse);
@@ -397,11 +397,11 @@ describe('featheryClient', () => {
           body: JSON.stringify({
             fuser_key: userId,
             form_key: formKey,
-            name: payload,
+            name: 'connectionName',
             field_values: fieldValues
           }),
           cache: 'no-store',
-          keepalive: true
+          keepalive: false
         }
       );
       expect(response).toEqual(expectedResponse);
