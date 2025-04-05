@@ -217,7 +217,7 @@ export default function DropdownMultiField({
           components={{ Option: TooltipOption }}
           // @ts-ignore
           container={containerRef}
-          id={servar.key}
+          inputId={servar.key}
           value={selectVal}
           required={required}
           isDisabled={disabled}
