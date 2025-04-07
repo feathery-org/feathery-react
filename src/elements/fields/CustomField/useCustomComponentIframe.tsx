@@ -106,12 +106,12 @@ export function useCustomComponentIframe({
     };
 
     setupIframe();
-  }, [componentCode, customProps]);
+  }, [componentCode]);
 
   // Update component props when value changes
   useEffect(() => {
     renderComponent();
-  }, [value, loading]);
+  }, [value, loading, customProps]);
 
   return {
     iframeRef,
