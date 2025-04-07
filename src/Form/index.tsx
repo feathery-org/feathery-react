@@ -233,7 +233,7 @@ export interface Props {
   children?: JSX.Element;
   _draft?: boolean;
   readOnly?: boolean;
-  trackHashes?: boolean;
+  hashNavigation?: boolean;
 }
 
 interface InternalProps {
@@ -291,7 +291,7 @@ function Form({
   children,
   _draft = false,
   readOnly = false,
-  trackHashes: _trackHashes
+  hashNavigation
 }: InternalProps & Props) {
   const [formName, setFormName] = useState(formNameProp || ''); // TODO: remove support for formName (deprecated)
   const formKey = formId || formName; // prioritize formID but fall back to name
@@ -1093,7 +1093,7 @@ function Form({
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);
         trackHashes.current =
-          _trackHashes !== undefined ? _trackHashes : res.track_hashes;
+          hashNavigation !== undefined ? hashNavigation : res.track_hashes;
 
         // Add any logic_rule.elements to viewElements so that onView called for then too.
         // Make sure there are no duplicate entries.
