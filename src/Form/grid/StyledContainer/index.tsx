@@ -62,8 +62,9 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
     }
 
     useEffect(() => {
-      if (!file) return;
-      if (typeof file === 'string') {
+      if (!backgroundImage && !file) return;
+      if (!file) setBackgroundImage('');
+      else if (typeof file === 'string') {
         setBackgroundImage(`url(${file})`);
       } else {
         getRenderData(file).then((data) => {
