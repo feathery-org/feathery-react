@@ -1946,7 +1946,18 @@ function Form({
         const invitees = toList(val, true);
         // BE validates emails and user groups
         try {
-          await client.inviteCollaborator(invitees, action.template_id);
+          const res = await client.inviteCollaborator(
+            invitees,
+            action.template_id
+          );
+          const collabKey = action.collaborator_field_key;
+          if (res && collabKey) {
+            const newVals = {
+              [collabKey]: res.collaborators.map((c: any) => c.id)
+            };
+            updateFieldValues(newVals);
+            await client.submitCustom(newVals);
+          }
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
