@@ -17,10 +17,11 @@ function ImageElement({
   element,
   responsiveStyles,
   elementProps = {},
+  editMode,
   children
 }: any) {
   const [documentUrl, setDocumentUrl] = useState(
-    element.properties.source_image
+    editMode ? PLACEHOLDER_IMAGE : ''
   );
   const [documentType, setDocumentType] = useState<string | undefined>('');
   const [applyWidth, setApplyWidth] = useState(true);
@@ -45,7 +46,7 @@ function ImageElement({
         });
       }
     } else {
-      setDocumentUrl(element.properties.source_image);
+      setDocumentUrl(element.properties.source_image || PLACEHOLDER_IMAGE);
       setDocumentType('');
     }
   }, [imageFieldSource, element.properties.source_image]);
@@ -87,7 +88,7 @@ function ImageElement({
         />
       ) : (
         <img
-          src={documentUrl || PLACEHOLDER_IMAGE}
+          src={documentUrl}
           alt=''
           aria-label={element.properties.aria_label}
           css={{
