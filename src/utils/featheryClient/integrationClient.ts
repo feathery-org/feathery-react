@@ -2,7 +2,7 @@ import * as errors from '../error';
 import { parseError } from '../error';
 import { fieldValues, initFormsPromise, initInfo } from '../init';
 import { encodeGetParams } from '../primitives';
-import { API_URL } from '.';
+import { API_URL, STATIC_URL } from '.';
 import { OfflineRequestHandler, untrackUnload } from '../offlineRequestHandler';
 import {
   AlloyEntities,
@@ -430,7 +430,7 @@ export default class IntegrationClient {
       }
     }
 
-    const url = `${API_URL}quik/document/`;
+    const url = `${STATIC_URL}quik/document/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
