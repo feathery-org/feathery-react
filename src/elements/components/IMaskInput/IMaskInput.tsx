@@ -1,4 +1,9 @@
-import { forwardRef, useRef, useEffect, InputHTMLAttributes } from 'react';
+import React, {
+  forwardRef,
+  useRef,
+  useEffect,
+  InputHTMLAttributes
+} from 'react';
 import { useIMask } from './useIMask';
 import IMask from 'imask';
 
@@ -138,7 +143,7 @@ function useHandleInputRefs(ref: any, innerRef: any, inputRef: any) {
     if (inputRef) {
       if (typeof inputRef === 'function') {
         inputRef(innerRef.current);
-      } else if (inputRef.hasOwnProperty('current')) {
+      } else if (inputRef.current) {
         (inputRef as React.MutableRefObject<HTMLInputElement | null>).current =
           innerRef.current;
       }
