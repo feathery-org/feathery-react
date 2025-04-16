@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 
 import { OverlayTrigger } from 'react-bootstrap';
-import { FORM_Z_INDEX } from '../../../utils/styles';
+import { DROPDOWN_Z_INDEX } from '..';
 
 function TextAutocomplete({
   allOptions = [],
@@ -36,7 +36,7 @@ function TextAutocomplete({
         overlay={
           <ul
             css={{
-              zIndex: FORM_Z_INDEX,
+              zIndex: DROPDOWN_Z_INDEX,
               listStyleType: 'none',
               padding: 0,
               margin: 0,
