@@ -1,4 +1,4 @@
-import { IMaskInput } from 'react-imask';
+import { IMaskInput } from '../../components/IMaskInput';
 import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
