@@ -1,4 +1,3 @@
-import { IMaskInput } from 'react-imask';
 import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
@@ -12,6 +11,12 @@ import { stringifyWithNull } from '../../../utils/primitives';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { HideEyeIcon, ShowEyeIcon } from '../../components/icons';
+
+// Due to issues with imask and react-imask package exports, we need
+// to bundle the packages and import them using this format
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { IMaskInput } = require('react-imask');
 
 const DEFAULT_LENGTH = 1024; // Default limit on backend
 const MAX_FIELD_LENGTHS: Record<string, number> = {
@@ -294,7 +299,7 @@ function TextField({
             aria-label={element.properties.aria_label}
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
-            onKeyDown={(e) => {
+            onKeyDown={(e: any) => {
               if (e.key === 'Enter') onEnter(e);
               else if (options.length) {
                 if (!rawValue && ['Backspace', 'Delete'].includes(e.key))

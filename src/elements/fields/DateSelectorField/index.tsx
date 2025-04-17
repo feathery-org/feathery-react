@@ -5,8 +5,6 @@ import InlineTooltip from '../../components/InlineTooltip';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
 import DatePicker from 'react-datepicker';
 import DateSelectorStyles from './styles';
-import { IMaskInput } from 'react-imask';
-import { MaskedRange, MaskedEnum } from 'imask';
 
 import { bootstrapStyles } from '../../styles';
 import { parseISO } from 'date-fns';
@@ -17,6 +15,14 @@ import {
   featheryDoc
 } from '../../../utils/browser';
 import { useCustomDateLocale } from './useDateLocale';
+
+// Due to issues with imask and react-imask package exports, we need
+// to bundle the packages and import them using this format
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { IMaskInput } = require('react-imask');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { MaskedRange, MaskedEnum } = require('imask');
 
 // Helper function to parse time limits
 const parseTimeThreshold = (timeThreshold: string) =>
