@@ -5,8 +5,8 @@ import InlineTooltip from '../../components/InlineTooltip';
 // @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
 import DatePicker from 'react-datepicker';
 import DateSelectorStyles from './styles';
-import { IMaskInput } from 'react-imask';
-import { MaskedRange, MaskedEnum } from 'imask';
+const { IMaskInput } = require('react-imask');
+const { MaskedRange, MaskedEnum } = require('imask');
 
 import { bootstrapStyles } from '../../styles';
 import { parseISO } from 'date-fns';

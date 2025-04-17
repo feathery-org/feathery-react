@@ -1,4 +1,4 @@
-import { IMaskInput } from 'react-imask';
+const { IMaskInput } = require('react-imask');
 import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
@@ -294,7 +294,7 @@ function TextField({
             aria-label={element.properties.aria_label}
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
-            onKeyDown={(e) => {
+            onKeyDown={(e: any) => {
               if (e.key === 'Enter') onEnter(e);
               else if (options.length) {
                 if (!rawValue && ['Backspace', 'Delete'].includes(e.key))
