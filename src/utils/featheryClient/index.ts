@@ -764,8 +764,8 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
-  CHECK_INTERVAL = 2000;
-  MAX_TIME = 3 * 60 * 1000;
+  AI_CHECK_INTERVAL = 2000;
+  AI_MAX_TIME = 3 * 60 * 1000;
 
   // AI
   extractAIDocument({
@@ -806,15 +806,13 @@ export default class FeatheryClient extends IntegrationClient {
       if (runAsync) return resolve({});
 
       let attempts = 0;
-      const maxAttempts = this.MAX_TIME / this.CHECK_INTERVAL;
+      const maxAttempts = this.AI_MAX_TIME / this.AI_CHECK_INTERVAL;
+      const pollUrl = `${STATIC_URL}ai/vision/completion/?fid=${userId}&eid=${extractionId}&evid=${
+        variantId ?? ''
+      }`;
 
       const checkCompletion = async () => {
-        const response = await this._fetch(
-          `${STATIC_URL}ai/vision/completion/?fid=${userId}&eid=${extractionId}&evid=${
-            variantId ?? ''
-          }`,
-          { method: 'GET' }
-        );
+        const response = await this._fetch(pollUrl);
 
         if (response && response.ok) {
           const data = await response.json();
@@ -825,7 +823,7 @@ export default class FeatheryClient extends IntegrationClient {
             attempts += 1;
 
             if (attempts < maxAttempts) {
-              setTimeout(checkCompletion, this.CHECK_INTERVAL);
+              setTimeout(checkCompletion, this.AI_CHECK_INTERVAL);
             } else {
               console.warn('Extraction took too long...');
               return resolve({});
@@ -834,7 +832,7 @@ export default class FeatheryClient extends IntegrationClient {
         }
       };
 
-      setTimeout(checkCompletion, this.CHECK_INTERVAL); // Check every 2 seconds for a response
+      setTimeout(checkCompletion, this.AI_CHECK_INTERVAL); // Check every 2 seconds for a response
     });
   }
 
