@@ -402,11 +402,15 @@ export default class IntegrationClient {
     });
   }
 
+  QUIK_CHECK_INTERVAL = 2000;
+  QUIK_MAX_TIME = 2 * 60 * 1000;
+
   generateQuikEnvelopes(action: Record<string, string>) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
       form_key: this.formKey,
       fuser_key: userId,
+      run_async: true,
       ...action
     };
 
@@ -436,11 +440,42 @@ export default class IntegrationClient {
       method: 'POST',
       body: JSON.stringify(payload)
     };
-    return this._fetch(url, options, false).then(async (response) => {
+    this._fetch(url, options, false).then(async (response) => {
       if (response) {
         if (response.ok) return await response.json();
         else throw Error(parseError(await response.json()));
       }
+    });
+
+    return new Promise((resolve) => {
+      let attempts = 0;
+      const maxAttempts = this.QUIK_MAX_TIME / this.QUIK_CHECK_INTERVAL;
+      const pollUrl = `${STATIC_URL}quik/document/poll/?fuser_key=${userId}`;
+
+      const checkCompletion = async () => {
+        const response = await this._fetch(pollUrl);
+
+        if (response?.status === 400) {
+          return resolve({});
+        } else if (response?.status === 200) {
+          const data = await response.json();
+
+          if (data.status === 'complete') {
+            return resolve(data);
+          } else {
+            attempts += 1;
+
+            if (attempts < maxAttempts) {
+              setTimeout(checkCompletion, this.QUIK_CHECK_INTERVAL);
+            } else {
+              console.warn('Quik document generation took too long...');
+              return resolve({});
+            }
+          }
+        }
+      };
+
+      setTimeout(checkCompletion, this.QUIK_CHECK_INTERVAL); // Check every 2 seconds for a response
     });
   }
 
