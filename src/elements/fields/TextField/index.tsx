@@ -1,4 +1,3 @@
-const { IMaskInput } = require('react-imask');
 import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
@@ -12,6 +11,9 @@ import { stringifyWithNull } from '../../../utils/primitives';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { HideEyeIcon, ShowEyeIcon } from '../../components/icons';
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { IMaskInput } = require('react-imask');
 
 const DEFAULT_LENGTH = 1024; // Default limit on backend
 const MAX_FIELD_LENGTHS: Record<string, number> = {
