@@ -456,7 +456,7 @@ export default class IntegrationClient {
         const response = await this._fetch(pollUrl);
 
         if (response?.status === 400) {
-          return resolve({});
+          return resolve({ error: parseError(await response.json()) });
         } else if (response?.status === 200) {
           const data = await response.json();
 

@@ -2039,7 +2039,8 @@ function Form({
         await Promise.all([submitPromise, client.flushCustomFields()]);
         try {
           const payload = await client.generateQuikEnvelopes(action);
-          if (action.form_fill_type === 'html' && payload.html) {
+          if (payload.error) setElementError(payload.error);
+          else if (action.form_fill_type === 'html' && payload.html) {
             setQuikHTMLPayload(payload.html);
             setShowQuikFormViewer(true);
           } else if (action.form_fill_type === 'pdf' && payload.files) {
