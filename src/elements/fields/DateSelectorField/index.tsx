@@ -16,6 +16,9 @@ import {
 } from '../../../utils/browser';
 import { useCustomDateLocale } from './useDateLocale';
 
+// Due to issues with imask and react-imask package exports, we need
+// to bundle the packages and import them using this format
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { IMaskInput } = require('react-imask');
 // eslint-disable-next-line @typescript-eslint/no-var-requires

@@ -12,6 +12,9 @@ import { FORM_Z_INDEX } from '../../../utils/styles';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { HideEyeIcon, ShowEyeIcon } from '../../components/icons';
 
+// Due to issues with imask and react-imask package exports, we need
+// to bundle the packages and import them using this format
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { IMaskInput } = require('react-imask');
 
