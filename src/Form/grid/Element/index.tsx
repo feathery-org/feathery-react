@@ -1,9 +1,9 @@
 import React, { useCallback } from 'react';
 import Elements from '../../../elements';
 import {
+  clearFilePathMapEntry,
   getFieldValue,
-  setFormElementError,
-  clearFilePathMapEntry
+  setFormElementError
 } from '../../../utils/formHelperFunctions';
 import {
   isObjectEmpty,
@@ -12,14 +12,14 @@ import {
 } from '../../../utils/primitives';
 import { isFieldValueEmpty } from '../../../utils/validation';
 import { justInsert, justRemove } from '../../../utils/array';
-import { fieldValues } from '../../../utils/init';
+import { fieldValues, initState } from '../../../utils/init';
 import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 import {
   getInlineError,
   handleCheckboxGroupChange,
+  isFieldActuallyRequired,
   otherChangeCheckboxGroup,
   otherChangeRadioButtonGroup,
-  isFieldActuallyRequired,
   pickCloserElement,
   textFieldShouldSubmit
 } from './utils';
@@ -229,7 +229,10 @@ const Element = ({ node: el, form }: any) => {
       elementProps: elementProps[servar.key],
       autoComplete: formSettings.autocomplete,
       rightToLeft: formSettings.rightToLeft,
-      disabled: el.properties.disabled || formSettings.readOnly,
+      disabled:
+        el.properties.disabled ||
+        formSettings.readOnly ||
+        initState.collaboratorReview === 'readOnly',
       onEnter,
       required
     };
@@ -322,8 +325,6 @@ const Element = ({ node: el, form }: any) => {
               const change = changeValue(value, el, index, true, false);
               if (change) debouncedOnChange();
             }}
-            required={required}
-            disabled={el.properties.disabled || formSettings.readOnly}
             fieldStyles={el.properties.style}
           />
         );

@@ -393,7 +393,7 @@ export default class FeatheryClient extends IntegrationClient {
     };
     if (userId) params.fuser_key = userId;
     if (collaboratorId) params.collaborator_user = collaboratorId;
-    if (collaboratorReview) params.collaborator_review = collaboratorReview;
+    if (collaboratorReview) params.collaborator_review = !!collaboratorReview;
     if (authState.authId) params.auth_id = authState.authId;
     if (noData) params.no_data = 'true';
     // @ts-expect-error TS(2322): Type 'string' is not assignable to type '{ form_ke... Remove this comment to see the full error message

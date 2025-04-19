@@ -32,7 +32,7 @@ type InitOptions = {
   userId?: string;
   cacheUserId?: boolean;
   collaboratorId?: string;
-  collaboratorReview?: boolean;
+  collaboratorReview?: '' | 'readOnly' | 'editable';
   preloadForms?: string[];
   userTracking?: 'cookie' | 'fingerprint';
   language?: string;
@@ -68,7 +68,7 @@ const initState: InitState = {
   sdkKey: '',
   userId: '',
   collaboratorId: '',
-  collaboratorReview: false,
+  collaboratorReview: '',
   overrideUserId: false,
   language: '',
   formSchemas: {},
