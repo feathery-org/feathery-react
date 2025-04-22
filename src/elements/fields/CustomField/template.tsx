@@ -1,16 +1,17 @@
 // Extract package names imported in the custom component
 const extractImports = (code: string) => {
-  const importRegex =
-    /import\s+(?:(?:[^{}]*?\{[^{}]*?\}|[^{}{'"\n]+)\s+from\s+)?['"]([^'"]+)['"]/g;
+  const lines = code.split('\n');
   const imports = new Set<string>();
 
-  let match;
-  while ((match = importRegex.exec(code))) {
-    // React is already imported in the template
-    if (match[1] !== 'react') {
-      imports.add(match[1]);
+  lines.forEach((line) => {
+    line = line.trim();
+    if (line.startsWith('import')) {
+      const match = line.match(/from\s+['"]([^'"]+)['"]/);
+      if (match && match[1] !== 'react') {
+        imports.add(match[1]);
+      }
     }
-  }
+  });
 
   return Array.from(imports);
 };
