@@ -291,10 +291,9 @@ function Form({
   const formKey = formId || formName; // prioritize formID but fall back to name
   const clientRef = useRef<any>();
   const client = clientRef.current;
-  const session = initState.formSessions[formKey];
-
-  const location = useLocation();
   const navigate = useNavigate();
+  const location = useLocation();
+  const session = initState.formSessions[formKey];
 
   const [autoValidate, setAutoValidate] = useState(false);
 
@@ -1183,9 +1182,7 @@ function Form({
 
   useOfflineRequestHandler(client);
 
-  console.log(location);
   useEffect(() => {
-    console.log('location change');
     if (!trackHashes.current) return;
     const hashKey = getUrlHash();
     if (hashKey in steps) setStepKey(hashKey);

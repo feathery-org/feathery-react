@@ -7,6 +7,7 @@ import React, {
   type ReactNode,
   useEffect
 } from 'react';
+import { featheryWindow } from '../utils/browser';
 
 type NavigateOptions = {
   replace?: boolean;
@@ -33,18 +34,19 @@ const RouterContext = createContext<RouterData>({
 
 export function RouterProvider({
   children,
-  initialPath = window.location.pathname
+  initialPath = featheryWindow().location.pathname
 }: RouterProviderProps) {
   const [location, setLocation] = useState({ pathname: initialPath });
 
   const navigate = useCallback((to: string, options: NavigateOptions = {}) => {
     const historyMethod = options.replace ? 'replaceState' : 'pushState';
-    window.history[historyMethod](null, '', to);
+    featheryWindow().history[historyMethod](null, '', to);
     setLocation({ pathname: to });
   }, []);
 
   // listen to browser back/forward navigation
   useEffect(() => {
+    const window = featheryWindow();
     const handlePopState = () => {
       setLocation({ pathname: window.location.pathname });
     };
