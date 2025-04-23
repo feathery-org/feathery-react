@@ -57,7 +57,8 @@ export const useContainerStyles = (
 ) => {
   const styles = useMemo(() => {
     let cellStyle = {};
-    if (!node.isElement) cellStyle = getCellStyle(node, viewport)[0];
+    // need to consider rawNode here in order to handle background color styles
+    if (!node.isElement) cellStyle = getCellStyle(rawNode ?? node, viewport)[0];
 
     const containerStyles = getContainerStyles(node, rawNode, viewport);
     const mobileStyles = mergeMobileStyles(cellStyle, containerStyles);
