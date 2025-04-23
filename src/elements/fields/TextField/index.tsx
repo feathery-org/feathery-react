@@ -218,7 +218,9 @@ function TextField({
     element,
     error: inlineError
   });
-  const containerRef = useRef(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const listItemRef = useRef<any[]>([]);
+  const inputRef = containerRef.current?.getElementsByTagName('input')[0];
   const { value: fieldVal } = getFieldValue(element);
   const rawValue = stringifyWithNull(fieldVal);
 
@@ -268,9 +270,13 @@ function TextField({
           onSelect={(option) => {
             onAccept(option, {});
             setShowAutocomplete(false);
+            inputRef?.focus();
           }}
           responsiveStyles={responsiveStyles}
           container={containerRef}
+          listItemRef={listItemRef}
+          onHide={() => setShowAutocomplete(false)}
+          onInputFocus={() => inputRef?.focus()}
         >
           <IMaskInput
             id={servar.key}
@@ -304,10 +310,28 @@ function TextField({
               else if (options.length) {
                 if (!rawValue && ['Backspace', 'Delete'].includes(e.key))
                   return;
+                if (['ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key))
+                  return;
                 setShowAutocomplete(e.key !== 'Escape');
+                if (e.key === 'ArrowDown') {
+                  setTimeout(
+                    () =>
+                      listItemRef.current[0]?.focus({
+                        preventScroll: true
+                      }),
+                    0
+                  );
+                }
               }
             }}
-            onBlur={() => {
+            onBlur={(e: any) => {
+              if (
+                e.relatedTarget &&
+                listItemRef.current.some(
+                  (item: any) => item === e.relatedTarget
+                )
+              )
+                return;
               if (options.length > 0) {
                 // Blur may be triggered by option selection, and option
                 // click logic may need to be run first. So delay option removal.
