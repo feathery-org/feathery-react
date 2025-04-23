@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from '../../hooks/router';
 import { authState } from '../LoginForm';
 import { getUrlHash, setUrlStepHash } from '../../utils/formHelperFunctions';
 import { getAuthIntegrationMetadata, hasAuthGatedSteps } from './utils';

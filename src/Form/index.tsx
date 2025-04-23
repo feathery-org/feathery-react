@@ -1,10 +1,4 @@
-import {
-  BrowserRouter,
-  Route,
-  Routes,
-  useLocation,
-  useNavigate
-} from 'react-router-dom';
+import { RouterProvider, useLocation, useNavigate } from '../hooks/router';
 import React, {
   useCallback,
   useEffect,
@@ -2426,23 +2420,16 @@ export function JSForm({
   // Check client for NextJS support
   if ((formId || formName) && runningInClient())
     return (
-      <BrowserRouter>
-        <Routes>
-          <Route
-            path='/*'
-            element={
-              <Form
-                {...props}
-                formId={formId}
-                formName={formName}
-                key={`${formId || formName}_${remount}`}
-                _internalId={_internalId}
-                _isAuthLoading={_isAuthLoading}
-              />
-            }
-          />
-        </Routes>
-      </BrowserRouter>
+      <RouterProvider>
+        <Form
+          {...props}
+          formId={formId}
+          formName={formName}
+          key={`${formId || formName}_${remount}`}
+          _internalId={_internalId}
+          _isAuthLoading={_isAuthLoading}
+        />
+      </RouterProvider>
     );
   else return null;
 }
