@@ -551,11 +551,11 @@ export default class ResponsiveStyles {
       ] = styles;
 
       const formattedStyles: Record<string, string> = {
-        backgroundImage: `url(${imageUrl})`,
         backgroundRepeat: imageRepeat,
         backgroundPositionX: imageLayout,
         backgroundPositionY: imageVerticalLayout
       };
+      if (imageUrl) formattedStyles.backgroundImage = `url(${imageUrl})`;
 
       switch (imageDisplay) {
         case 'fill':

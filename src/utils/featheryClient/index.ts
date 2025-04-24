@@ -103,7 +103,7 @@ const SUBMIT_CUSTOM_DEBOUNCE_WINDOW = 1000;
 
 export default class FeatheryClient extends IntegrationClient {
   /**
-   * Used to aggregate field value updates for sucessive calls to
+   * Used to aggregate field value updates for successive calls to
    * submitCustom within the debounce window
    */
   pendingCustomFieldUpdates: { [key: string]: any };
