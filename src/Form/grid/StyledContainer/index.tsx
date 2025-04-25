@@ -54,7 +54,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
 
     const [backgroundImage, setBackgroundImage] = useState('');
 
-    const imageUrlFieldKey = node.styles.uploaded_image_file_field_key;
+    const imageUrlFieldKey = node.styles?.uploaded_image_file_field_key;
     let file: any;
     if (imageUrlFieldKey) {
       file = fieldValues[imageUrlFieldKey];
