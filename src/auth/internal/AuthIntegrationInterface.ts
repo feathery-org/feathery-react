@@ -1,19 +1,19 @@
 import { authState } from '../LoginForm';
 import {
   firebaseLoginOnLoad,
-  isHrefFirebaseMagicLink,
+  firebaseOauthRedirect,
   firebaseSendMagicLink,
   firebaseSendSms,
   firebaseVerifySms,
-  firebaseOauthRedirect
+  isHrefFirebaseMagicLink
 } from '../../integrations/firebase';
 import {
+  setStytchDomainCookie,
   stytchLoginOnLoad,
   stytchOauthRedirect,
   stytchSendMagicLink,
   stytchSendSms,
-  stytchVerifySms,
-  setStytchDomainCookie
+  stytchVerifySms
 } from '../../integrations/stytch';
 import FeatheryClient from '../../utils/featheryClient';
 import { isAuthStytch } from './utils';

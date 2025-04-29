@@ -22,8 +22,8 @@ export function installFirebase(firebaseConfig: any) {
         // Bring in Firebase dependencies dynamically if this form uses Firebase
         return dynamicImport(
           [
-            'https://www.gstatic.com/firebasejs/8.7.1/firebase-app.js',
-            'https://www.gstatic.com/firebasejs/8.7.1/firebase-auth.js'
+            'https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js',
+            'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth-compat.js'
           ],
           false
         ).then(() => {
