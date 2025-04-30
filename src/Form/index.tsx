@@ -1526,6 +1526,22 @@ function Form({
     }
   };
 
+  const goToLoginStep = async () => {
+    const authIntegration = getAuthIntegrationMetadata(integrations);
+    const loginStep = Object.values(steps).find(
+      (step: any) => step.id === authIntegration.login_step
+    );
+    if (!loginStep) return;
+    const redirectKey = loginStep.key;
+    updateBackNavMap({ [redirectKey]: activeStep.key });
+    setShouldScrollToTop(true);
+
+    if (trackHashes.current) {
+      const newURL = getNewStepUrl(redirectKey);
+      navigate(newURL);
+    } else setStepKey(redirectKey);
+  };
+
   const setButtonLoader = async (button: any) => {
     const bp = button.properties;
     let loader: any = null;
@@ -1901,9 +1917,12 @@ function Form({
           setElementError('A valid email is needed to send your magic link.');
           break;
         }
-      } else if (type === ACTION_OAUTH_LOGIN)
-        Auth.oauthRedirect(action.oauth_type, client);
-      else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
+      } else if (type === ACTION_OAUTH_LOGIN) {
+        const auth = await Auth.oauthRedirect(action.oauth_type, client);
+        if (auth && auth.result) {
+          goToLoginStep();
+        }
+      } else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {
         await goToNewStep({

@@ -207,7 +207,6 @@ export async function firebaseSignInPopup(
     })
     .then((result: any) => {
       const user = result.user;
-      console.log('User signed in successfully.', result);
       return featheryClient.submitAuthInfo({
         authId: user.uid,
         authData: {
@@ -217,10 +216,11 @@ export async function firebaseSignInPopup(
         }
       });
     })
-    .then((session: any) => {
-      console.log({ session });
-      updateSessionValues(session);
-      return { loggedIn: true };
+    .then(() => {
+      return { result: true };
+    })
+    .catch((error: any) => {
+      return { result: false };
     });
 }
 

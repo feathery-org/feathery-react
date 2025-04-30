@@ -103,7 +103,7 @@ function sendMagicLink(email: string) {
 
 function oauthRedirect(oauthType: string, client?: any) {
   if (isAuthStytch()) stytchOauthRedirect(oauthType);
-  else firebaseSignInPopup(oauthType as any, client);
+  else return firebaseSignInPopup(oauthType as any, client);
 }
 
 function initializeAuthClientListeners() {

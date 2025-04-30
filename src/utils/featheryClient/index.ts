@@ -443,7 +443,6 @@ export default class FeatheryClient extends IntegrationClient {
     authData = {},
     isStytchTemplateKey = false
   }: any) {
-    console.log('submit authinfo', authId, authData);
     const { userId } = initInfo();
     await authState.onLogin();
 
