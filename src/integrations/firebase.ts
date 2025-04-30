@@ -219,7 +219,7 @@ export async function firebaseSignInPopup(
     .then(() => {
       return { result: true };
     })
-    .catch((error: any) => {
+    .catch(() => {
       return { result: false };
     });
 }

@@ -193,6 +193,7 @@ import { isNum } from '../utils/primitives';
 import { getSignUrl } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
 import { createSchwabContact } from '../integrations/schwab';
+import { getLoginStep } from '../auth/utils';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -1459,7 +1460,8 @@ function Form({
   }
 
   async function goToNewStep({
-    metadata,
+    redirectKey,
+    elementType,
     submitPromise,
     submitData = false
   }: any) {
@@ -1468,13 +1470,11 @@ function Form({
       event: submitData ? 'complete' : 'skip'
     };
 
-    const redirectKey = getNextStepKey(metadata);
     eventData = { ...eventData, next_step_key: redirectKey };
 
     await callbackRef.current.all();
     const explicitNav =
-      submitData ||
-      ['button', 'text', 'container'].includes(metadata.elementType);
+      submitData || ['button', 'text', 'container'].includes(elementType);
     if (!redirectKey) {
       if (explicitNav) {
         if (submitPromise) await submitPromise;
@@ -1524,22 +1524,6 @@ function Form({
       if (trackHashes.current) navigate(getNewStepUrl(prevStepKey));
       else setStepKey(prevStepKey);
     }
-  };
-
-  const goToLoginStep = async () => {
-    const authIntegration = getAuthIntegrationMetadata(integrations);
-    const loginStep = Object.values(steps).find(
-      (step: any) => step.id === authIntegration.login_step
-    );
-    if (!loginStep) return;
-    const redirectKey = loginStep.key;
-    updateBackNavMap({ [redirectKey]: activeStep.key });
-    setShouldScrollToTop(true);
-
-    if (trackHashes.current) {
-      const newURL = getNewStepUrl(redirectKey);
-      navigate(newURL);
-    } else setStepKey(redirectKey);
   };
 
   const setButtonLoader = async (button: any) => {
@@ -1920,13 +1904,19 @@ function Form({
       } else if (type === ACTION_OAUTH_LOGIN) {
         const auth = await Auth.oauthRedirect(action.oauth_type, client);
         if (auth && auth.result) {
-          goToLoginStep();
+          const loginStep: any = getLoginStep(steps, integrations);
+          if (loginStep) {
+            await goToNewStep({
+              redirectKey: loginStep.key
+            });
+          }
         }
       } else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {
         await goToNewStep({
-          metadata,
+          redirectKey: getNextStepKey(metadata),
+          elementType: metadata.elementType,
           submitData: submit,
           submitPromise
         });
