@@ -1902,7 +1902,7 @@ function Form({
           break;
         }
       } else if (type === ACTION_OAUTH_LOGIN)
-        Auth.oauthRedirect(action.oauth_type);
+        Auth.oauthRedirect(action.oauth_type, client);
       else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {

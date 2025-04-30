@@ -184,6 +184,46 @@ export async function firebaseVerifySms({ fieldVal, featheryClient }: any) {
   }
 }
 
+export async function firebaseSignInPopup(
+  oauthType: keyof typeof OAUTH_PROVIDER_MAP,
+  featheryClient: any
+) {
+  const firebaseClient = authState.client;
+  if (!firebaseClient) return;
+
+  const providerInfo = OAUTH_PROVIDER_MAP[oauthType];
+  if (!providerInfo) return;
+
+  return firebaseClient
+    .auth()
+    .setPersistence(firebaseClient.auth.Auth.Persistence.LOCAL)
+    .then(() => {
+      const Provider = firebaseClient.auth[providerInfo.provider];
+      const instance = providerInfo.id
+        ? new Provider(providerInfo.id)
+        : new Provider();
+
+      return firebaseClient.auth().signInWithPopup(instance);
+    })
+    .then((result: any) => {
+      const user = result.user;
+      console.log('User signed in successfully.', result);
+      return featheryClient.submitAuthInfo({
+        authId: user.uid,
+        authData: {
+          email: user.email,
+          phone: user.phoneNumber,
+          first_name: user.displayName
+        }
+      });
+    })
+    .then((session: any) => {
+      console.log({ session });
+      updateSessionValues(session);
+      return { loggedIn: true };
+    });
+}
+
 export function isHrefFirebaseMagicLink(): boolean {
   if (!authState.client?.auth) return false;
   return authState.client
@@ -223,20 +263,3 @@ const OAUTH_PROVIDER_MAP = {
   github: { provider: 'GithubAuthProvider', id: '' },
   microsoft: { provider: 'OAuthProvider', id: 'microsoft.com' }
 };
-
-export function firebaseOauthRedirect(
-  oauthType: keyof typeof OAUTH_PROVIDER_MAP
-) {
-  const firebaseClient = authState.client;
-  if (!firebaseClient) return;
-
-  const providerInfo = OAUTH_PROVIDER_MAP[oauthType];
-  if (!providerInfo) return;
-
-  setCookie('featheryFirebaseRedirect', 'true');
-  const Provider = firebaseClient.auth[providerInfo.provider];
-  const instance = providerInfo.id
-    ? new Provider(providerInfo.id)
-    : new Provider();
-  firebaseClient.auth().signInWithRedirect(instance);
-}
