@@ -1,15 +1,13 @@
 import { dynamicImport } from './utils';
 import { fieldValues, initInfo } from '../utils/init';
 import { TEXT_VARIABLE_PATTERN } from '../elements/components/TextNodes';
-import {  STATIC_URL } from '../utils/featheryClient';
+import { STATIC_URL } from '../utils/featheryClient';
 import { parseError } from '../utils/error';
 
 export async function installPersona(personaConfig: any) {
   if (personaConfig)
     await dynamicImport('https://cdn.withpersona.com/dist/persona-v5.1.2.js');
 }
-
-
 
 export function triggerPersona(
   config: any,
@@ -18,8 +16,6 @@ export function triggerPersona(
   updateFieldValues: any,
   featheryClient: any
 ) {
-
-  
   let { userId: referenceId } = initInfo();
 
   const personaPrefill: Record<string, any> = {};
@@ -52,21 +48,27 @@ export function triggerPersona(
         updateFieldValues(submitStatus);
         featheryClient.submitCustom(submitStatus, { shouldFlush: true });
       }
-      const pollForResponse = (): Promise<{ status?: string; error?: string; [key: string]: any }> => {
+      const pollForResponse = (): Promise<{
+        status?: string;
+        error?: string;
+        [key: string]: any;
+      }> => {
         return new Promise((resolve) => {
           let attempts = 0;
-          const PERSONA_CHECK_INTERVAL = 2000; 
-          const PERSONA_MAX_TIME = 60 * 2000; 
+          const PERSONA_CHECK_INTERVAL = 2000;
+          const PERSONA_MAX_TIME = 60 * 2000;
           const maxAttempts = PERSONA_MAX_TIME / PERSONA_CHECK_INTERVAL;
           const pollUrl = `${STATIC_URL}persona/webhook/poll/${featheryClient.formKey}/${referenceId}/`;
           const { sdkKey } = initInfo();
-          
+
           const checkCompletion = async (): Promise<void> => {
             try {
-              const response = await fetch(pollUrl, {headers: {
-                Authorization: 'Token ' + sdkKey
-              }});
-              
+              const response = await fetch(pollUrl, {
+                headers: {
+                  Authorization: 'Token ' + sdkKey
+                }
+              });
+
               if (response?.status === 400) {
                 const errorData = await response.json();
                 resolve({ error: parseError(errorData) });
@@ -76,7 +78,9 @@ export function triggerPersona(
                   resolve(data);
                   const submitStatus = { [statusKey]: data.value };
                   updateFieldValues(submitStatus);
-                  featheryClient.submitCustom(submitStatus, { shouldFlush: true });
+                  featheryClient.submitCustom(submitStatus, {
+                    shouldFlush: true
+                  });
                   onComplete();
                 } else {
                   attempts += 1;
@@ -93,12 +97,12 @@ export function triggerPersona(
               return resolve({ error: 'Failed to poll for document' });
             }
           };
-          
+
           setTimeout(checkCompletion, PERSONA_CHECK_INTERVAL);
         });
       };
-      
-      pollForResponse()
+
+      pollForResponse();
     }
   });
   client.open();
