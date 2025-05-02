@@ -482,7 +482,7 @@ export default class IntegrationClient {
   PERSONA_CHECK_INTERVAL = 2000;
   PERSONA_MAX_TIME = 60 * 2000;
 
-  pollPersonaResponse(){
+  pollPersonaResponse() {
     return new Promise((resolve) => {
       let attempts = 0;
       const MAX_ATTEMPTS = this.PERSONA_MAX_TIME / this.PERSONA_CHECK_INTERVAL;
@@ -506,7 +506,10 @@ export default class IntegrationClient {
                 setTimeout(checkCompletion, this.PERSONA_CHECK_INTERVAL);
               } else {
                 console.warn('Persona response took too long...');
-                return resolve({ status: 'timeout', error: 'Polling timed out' });
+                return resolve({
+                  status: 'timeout',
+                  error: 'Polling timed out'
+                });
               }
             }
           }

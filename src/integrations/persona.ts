@@ -4,8 +4,6 @@ import { TEXT_VARIABLE_PATTERN } from '../elements/components/TextNodes';
 import { STATIC_URL } from '../utils/featheryClient';
 import { parseError } from '../utils/error';
 
-
-
 export async function installPersona(personaConfig: any) {
   if (personaConfig)
     await dynamicImport('https://cdn.withpersona.com/dist/persona-v5.1.2.js');
@@ -51,7 +49,7 @@ export function triggerPersona(
         featheryClient.submitCustom(submitStatus, { shouldFlush: true });
       }
 
-      let result = await featheryClient.pollPersonaResponse();
+      const result = await featheryClient.pollPersonaResponse();
       if (result?.status === 'complete') {
         console.log('Persona polling complete:', result.value);
         const submitStatus = { [statusKey]: result.value };
@@ -60,14 +58,11 @@ export function triggerPersona(
           shouldFlush: true
         });
         onComplete();
-      }
-      else if (result?.error){
+      } else if (result?.error) {
         console.error('Error in persona response:', result.error);
-      }
-      else {
+      } else {
         console.warn('Unexpected response format:', result);
       }
-
     }
   });
   client.open();
@@ -86,4 +81,3 @@ function getPersonaAttrVal(config: any, key: string) {
 function pollPersonaResponse() {
   throw new Error('Function not implemented.');
 }
-
