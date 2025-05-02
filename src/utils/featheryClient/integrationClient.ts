@@ -486,7 +486,7 @@ export default class IntegrationClient {
     return new Promise((resolve) => {
       let attempts = 0;
       const MAX_ATTEMPTS = this.PERSONA_MAX_TIME / this.PERSONA_CHECK_INTERVAL;
-      const { sdkKey, userId } = initInfo();
+      const { userId } = initInfo();
       const pollUrl = `${STATIC_URL}persona/poll/?fuser_key=${userId}`;
 
       const checkCompletion = async (): Promise<void> => {

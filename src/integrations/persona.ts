@@ -50,8 +50,8 @@ export function triggerPersona(
         updateFieldValues(submitStatus);
         featheryClient.submitCustom(submitStatus, { shouldFlush: true });
       }
-      
-      let result = await client.pollPersonaResponse();
+
+      let result = await featheryClient.pollPersonaResponse();
       if (result?.status === 'complete') {
         console.log('Persona polling complete:', result.value);
         const submitStatus = { [statusKey]: result.value };
