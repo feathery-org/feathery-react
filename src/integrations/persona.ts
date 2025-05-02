@@ -58,8 +58,8 @@ export function triggerPersona(
           const PERSONA_CHECK_INTERVAL = 2000;
           const PERSONA_MAX_TIME = 60 * 2000;
           const maxAttempts = PERSONA_MAX_TIME / PERSONA_CHECK_INTERVAL;
-          const pollUrl = `${STATIC_URL}persona/webhook/poll/${featheryClient.formKey}/${referenceId}/`;
-          const { sdkKey } = initInfo();
+          const { sdkKey, userId } = initInfo();
+          const pollUrl = `${STATIC_URL}persona/poll/?fuser_key=${userId}`;
 
           const checkCompletion = async (): Promise<void> => {
             try {
