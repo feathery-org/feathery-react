@@ -5,7 +5,7 @@ import {
   firebaseSendMagicLink,
   firebaseSendSms,
   firebaseVerifySms,
-  firebaseOauthRedirect
+  firebaseSignInPopup
 } from '../../integrations/firebase';
 import {
   stytchLoginOnLoad,
@@ -101,9 +101,9 @@ function sendMagicLink(email: string) {
     });
 }
 
-function oauthRedirect(oauthType: string) {
+function oauthRedirect(oauthType: string, client?: any) {
   if (isAuthStytch()) stytchOauthRedirect(oauthType);
-  else firebaseOauthRedirect(oauthType as any);
+  else return firebaseSignInPopup(oauthType as any, client);
 }
 
 function initializeAuthClientListeners() {
