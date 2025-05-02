@@ -4,6 +4,8 @@ import { TEXT_VARIABLE_PATTERN } from '../elements/components/TextNodes';
 import { STATIC_URL } from '../utils/featheryClient';
 import { parseError } from '../utils/error';
 
+
+
 export async function installPersona(personaConfig: any) {
   if (personaConfig)
     await dynamicImport('https://cdn.withpersona.com/dist/persona-v5.1.2.js');
@@ -42,67 +44,30 @@ export function triggerPersona(
     fields: personaPrefill,
     onCancel: () => setErr('The verification was cancelled'),
     onError: (error: string) => setErr(`Verification error: ${error}`),
-    onComplete: ({ status }: any) => {
+    onComplete: async ({ status }: any) => {
       if (statusKey) {
         const submitStatus = { [statusKey]: status };
         updateFieldValues(submitStatus);
         featheryClient.submitCustom(submitStatus, { shouldFlush: true });
       }
-      const pollForResponse = (): Promise<{
-        status?: string;
-        error?: string;
-        [key: string]: any;
-      }> => {
-        return new Promise((resolve) => {
-          let attempts = 0;
-          const PERSONA_CHECK_INTERVAL = 2000;
-          const PERSONA_MAX_TIME = 60 * 2000;
-          const maxAttempts = PERSONA_MAX_TIME / PERSONA_CHECK_INTERVAL;
-          const { sdkKey, userId } = initInfo();
-          const pollUrl = `${STATIC_URL}persona/poll/?fuser_key=${userId}`;
-
-          const checkCompletion = async (): Promise<void> => {
-            try {
-              const response = await fetch(pollUrl, {
-                headers: {
-                  Authorization: 'Token ' + sdkKey
-                }
-              });
-
-              if (response?.status === 400) {
-                const errorData = await response.json();
-                resolve({ error: parseError(errorData) });
-              } else if (response?.status === 200) {
-                const data = await response.json();
-                if (data.status === 'complete') {
-                  resolve(data);
-                  const submitStatus = { [statusKey]: data.value };
-                  updateFieldValues(submitStatus);
-                  featheryClient.submitCustom(submitStatus, {
-                    shouldFlush: true
-                  });
-                  onComplete();
-                } else {
-                  attempts += 1;
-                  if (attempts < maxAttempts) {
-                    setTimeout(checkCompletion, PERSONA_CHECK_INTERVAL);
-                  } else {
-                    console.warn('Persona response took too long...');
-                    resolve({ status: 'timeout', error: 'Polling timed out' });
-                  }
-                }
-              }
-            } catch (error) {
-              console.error('Error polling for document:', error);
-              return resolve({ error: 'Failed to poll for document' });
-            }
-          };
-
-          setTimeout(checkCompletion, PERSONA_CHECK_INTERVAL);
+      
+      let result = await client.pollPersonaResponse();
+      if (result?.status === 'complete') {
+        console.log('Persona polling complete:', result.value);
+        const submitStatus = { [statusKey]: result.value };
+        updateFieldValues(submitStatus);
+        featheryClient.submitCustom(submitStatus, {
+          shouldFlush: true
         });
-      };
+        onComplete();
+      }
+      else if (result?.error){
+        console.error('Error in persona response:', result.error);
+      }
+      else {
+        console.warn('Unexpected response format:', result);
+      }
 
-      pollForResponse();
     }
   });
   client.open();
@@ -118,3 +83,7 @@ function getPersonaAttrVal(config: any, key: string) {
   }
   return varId;
 }
+function pollPersonaResponse() {
+  throw new Error('Function not implemented.');
+}
+

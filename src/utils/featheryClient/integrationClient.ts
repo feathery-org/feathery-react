@@ -479,6 +479,47 @@ export default class IntegrationClient {
     });
   }
 
+  PERSONA_CHECK_INTERVAL = 2000;
+  PERSONA_MAX_TIME = 60 * 2000;
+
+  pollPersonaResponse(){
+    return new Promise((resolve) => {
+      let attempts = 0;
+      const MAX_ATTEMPTS = this.PERSONA_MAX_TIME / this.PERSONA_CHECK_INTERVAL;
+      const { sdkKey, userId } = initInfo();
+      const pollUrl = `${STATIC_URL}persona/poll/?fuser_key=${userId}`;
+
+      const checkCompletion = async (): Promise<void> => {
+        try {
+          const response = await this._fetch(pollUrl);
+
+          if (response?.status === 400) {
+            const errorData = await response.json();
+            return resolve({ error: parseError(errorData) });
+          } else if (response?.status === 200) {
+            const data = await response.json();
+            if (data.status === 'complete') {
+              return resolve(data);
+            } else {
+              attempts += 1;
+              if (attempts < MAX_ATTEMPTS) {
+                setTimeout(checkCompletion, this.PERSONA_CHECK_INTERVAL);
+              } else {
+                console.warn('Persona response took too long...');
+                return resolve({ status: 'timeout', error: 'Polling timed out' });
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error polling for document:', error);
+          return resolve({ error: 'Failed to poll for document' });
+        }
+      };
+
+      setTimeout(checkCompletion, this.PERSONA_CHECK_INTERVAL);
+    });
+  }
+
   // Telesign
   async telesignSilentVerification(phoneNumber: string) {
     const { userId } = initInfo();
