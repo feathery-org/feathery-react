@@ -78,6 +78,3 @@ function getPersonaAttrVal(config: any, key: string) {
   }
   return varId;
 }
-function pollPersonaResponse() {
-  throw new Error('Function not implemented.');
-}
