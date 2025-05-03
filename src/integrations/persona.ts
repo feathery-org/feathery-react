@@ -1,8 +1,6 @@
 import { dynamicImport } from './utils';
 import { fieldValues, initInfo } from '../utils/init';
 import { TEXT_VARIABLE_PATTERN } from '../elements/components/TextNodes';
-import { STATIC_URL } from '../utils/featheryClient';
-import { parseError } from '../utils/error';
 
 export async function installPersona(personaConfig: any) {
   if (personaConfig)
