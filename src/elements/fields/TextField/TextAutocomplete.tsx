@@ -33,11 +33,13 @@ function TextAutocomplete({
   if (allOptions.length === 0) return children;
   else
     return (
+      // @ts-ignore
       <OverlayTrigger
         placement='bottom-start'
         delay={{ show: 250, hide: 250 }}
         show={options.length > 0 && showOptions}
         container={() => container?.current}
+        // @ts-ignore
         overlay={
           <ul
             css={{

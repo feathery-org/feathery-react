@@ -22,11 +22,14 @@ const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
 
   if (props.data.tooltip) {
     optComponent = (
+      // @ts-ignore
       <OverlayTrigger
         placement='right'
         // @ts-ignore
         container={() => props.selectProps.container?.current}
+        // @ts-ignore
         overlay={
+          // @ts-ignore
           <Tooltip
             id={`tooltip-${props.data.value}`}
             css={{
@@ -48,6 +51,7 @@ const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
           </Tooltip>
         }
       >
+        {/* @ts-ignore */}
         <div>{optComponent}</div>
       </OverlayTrigger>
     );
@@ -188,15 +192,18 @@ export default function DropdownMultiField({
               } ${chevronPosition}px center`,
               position: 'relative'
             }),
+            // @ts-ignore
             container: (baseStyles) => ({
               ...baseStyles,
               height: '100%',
               minHeight: 'inherit'
             }),
+            // @ts-ignore
             valueContainer: (baseStyles) => ({
               ...baseStyles,
               paddingInlineEnd: 28
             }),
+            // @ts-ignore
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
               // allow word wrap
@@ -209,6 +216,7 @@ export default function DropdownMultiField({
             }),
             indicatorSeparator: () => ({ display: 'none' }),
             indicatorsContainer: () => ({ display: 'none' }),
+            // @ts-ignore
             menu: (baseStyles) => ({
               ...baseStyles,
               zIndex: DROPDOWN_Z_INDEX

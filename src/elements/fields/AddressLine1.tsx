@@ -83,11 +83,13 @@ function AddressLine1({
         }}
       >
         {customBorder}
+        {/* @ts-ignore */}
         <OverlayTrigger
           placement='bottom-start'
           delay={{ show: 250, hide: 250 }}
           container={() => containerRef?.current}
           show={options.length > 0 && showOptions}
+          // @ts-ignore
           overlay={
             <ul
               css={{
@@ -128,6 +130,7 @@ function AddressLine1({
             </ul>
           }
         >
+          {/* @ts-ignore */}
           <input
             id={servar.key}
             name={servar.key}
