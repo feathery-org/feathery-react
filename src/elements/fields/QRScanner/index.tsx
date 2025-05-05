@@ -41,7 +41,7 @@ function QRScanner({
 }: any) {
   const servar = element.servar ?? {};
   const cameraElementId = React.useId();
-  const scanner = React.useRef<any>();
+  const scanner = React.useRef<any>(undefined);
   const fileInput = React.useRef<HTMLInputElement>(null);
   const [message, setMessage] = React.useState('');
   const [zoomSettings, setZoomSettings] = React.useState<any>(false);

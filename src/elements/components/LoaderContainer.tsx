@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { ReactNode } from 'react';
 import { MODAL_Z_INDEX } from '../../utils/styles';
 
 const LoaderContainer = ({
@@ -14,7 +14,7 @@ const LoaderContainer = ({
   showLoader: boolean;
   height: string;
   width: string;
-  children: JSX.Element;
+  children: ReactNode;
 }) => {
   if (!showLoader) return <></>;
 

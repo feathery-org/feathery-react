@@ -338,7 +338,6 @@ function TextField({
                 setTimeout(() => setShowAutocomplete(false), EXIT_DELAY_TIME);
               }
             }}
-            /* @ts-ignore */
             onFocus={iosScrollOnFocus}
             inputRef={setRef}
             {...getInputProps(servar, options, autoComplete)}

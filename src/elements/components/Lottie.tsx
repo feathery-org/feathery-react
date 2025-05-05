@@ -12,7 +12,7 @@ export function loadLottieLight() {
 }
 
 export default function Lottie({ animationData }: any) {
-  const lottieRef = useRef();
+  const lottieRef = useRef(undefined);
 
   useEffect(() => {
     LOTTIE_PROMISE.then(() =>
