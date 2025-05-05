@@ -100,7 +100,7 @@
     "lodash.debounce": "^4.0.8",
     "lodash.throttle": "^4.1.1",
     "quill-delta": "^4.2.2",
-    "rc-slider": "10.1.0",
+    "rc-slider": "11.1.8",
     "react-bootstrap": "2.10.6",
     "react-datepicker": "8.3.0",
     "react-ga4": "^1.4.1",

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Slider from 'rc-slider';
 import { hoverStylesGuard } from '../../../utils/browser';
 
@@ -38,7 +38,11 @@ export default function SliderField({
         height: '100%',
         position: 'relative',
         pointerEvents: editMode || disabled ? 'none' : 'auto',
-        ...responsiveStyles.getTarget('fc')
+        ...responsiveStyles.getTarget('fc'),
+        '&:hover .current-value': {
+          opacity: 1,
+          transitionDelay: '0ms'
+        }
       }}
       {...elementProps}
     >
@@ -48,11 +52,14 @@ export default function SliderField({
         customStyles={{
           ['.rc-slider'.repeat(2)]: {
             width: 'calc(100% - 8px)',
+            userSelect: 'none',
             ...responsiveStyles.getTarget('field')
           },
           ['.rc-slider-handle'.repeat(2)]: {
             opacity: 1,
             ...responsiveStyles.getTarget('handle'),
+            transitionProperty:
+              'color, background-color, border-color !important',
             '&:hover': hoverStylesGuard(responsiveStyles.getTarget('hover'))
           },
           // Override default css that repeats 3 times
@@ -76,11 +83,7 @@ export default function SliderField({
             setShowValue(true);
           }}
           aria-label={element.properties.aria_label}
-          // onAfterChange is marked for deprecation, but there is no suitable
-          // alternative... I tried using a debounced timer but it has issues.
-          // see https://github.com/react-component/slider/issues/849 for
-          // details
-          onAfterChange={() => setTimeout(() => setShowValue(false), 300)}
+          onChangeComplete={() => setTimeout(() => setShowValue(false), 300)}
         />
       </div>
       <div
@@ -91,7 +94,12 @@ export default function SliderField({
         }}
       >
         <span>{minLabel}</span>
-        {showValue && <span>{internalValue}</span>}
+        <span
+          css={{ opacity: 0, transition: '0.2s ease opacity 0.3s' }}
+          className='current-value'
+        >
+          {internalValue}
+        </span>
         <span>{maxLabel}</span>
       </div>
     </div>
