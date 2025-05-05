@@ -150,8 +150,10 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
     } else if (initState.userTracking === 'fingerprint') {
       if (!initState.userId) {
         initFormsPromise = FingerprintJS.load()
-          .then((fp: any) => fp.get())
-          .then((result: any) => (initState.userId = result.visitorId));
+          .then((fingerprintAgent) => fingerprintAgent.get())
+          .then((result) => {
+            initState.userId = result.visitorId;
+          });
       }
     }
   }
