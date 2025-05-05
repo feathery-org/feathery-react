@@ -40,13 +40,23 @@ export function triggerPersona(
     fields: personaPrefill,
     onCancel: () => setErr('The verification was cancelled'),
     onError: (error: string) => setErr(`Verification error: ${error}`),
-    onComplete: ({ status }: any) => {
+    onComplete: async ({ status }: any) => {
       if (statusKey) {
         const submitStatus = { [statusKey]: status };
         updateFieldValues(submitStatus);
         featheryClient.submitCustom(submitStatus, { shouldFlush: true });
       }
-      onComplete();
+
+      const result = await featheryClient.pollPersonaResponse();
+      if (result?.status === 'complete') {
+        const submitStatus = { [statusKey]: result.value };
+        updateFieldValues(submitStatus);
+        onComplete();
+      } else if (result?.error) {
+        console.error('Error in persona response:', result.error);
+      } else {
+        console.warn('Unexpected response format:', result);
+      }
     }
   });
   client.open();
