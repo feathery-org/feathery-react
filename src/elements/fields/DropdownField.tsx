@@ -178,6 +178,7 @@ export default function DropdownField({
             backgroundPosition: `${
               rightToLeft ? 'left' : 'right'
             } ${chevronPosition}px center`,
+            [rightToLeft ? 'paddingLeft' : 'paddingRight']: 30,
             position: 'relative'
           }}
           id={servar.key}
