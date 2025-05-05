@@ -309,6 +309,7 @@ export default function SelectorStyles() {
           line-height: inherit;
           outline: none;
           grid-area: select;
+          color: black;
         }
 
         .react-datepicker__current-month,
