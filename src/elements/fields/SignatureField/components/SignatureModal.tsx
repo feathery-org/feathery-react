@@ -3,9 +3,8 @@ import { CloseIcon } from '../../../components/icons';
 import { dataURLToFile } from '../../../../utils/image';
 import { MODAL_Z_INDEX } from '../../../../utils/styles';
 import SignatureCanvas, { SignatureCanvasProps } from './SignatureCanvas';
-import html2canvas from 'html2canvas';
 import debounce from 'lodash.debounce';
-import { trimCanvas } from './utils';
+import { generateSignatureImage, trimCanvas } from './utils';
 import { SignatureTranslations } from '../translation';
 
 const SIGNER_NAME_KEY = 'feathery-signer-name';
@@ -38,7 +37,6 @@ function SignatureModal(props: SignatureModalProps) {
   const [isLoading, setLoading] = useState(false);
   const [signatureFile, setSignatureFile] = useState<File>();
   const [signatureImgData, setSignatureImgData] = useState('');
-  const previewRef = useRef<HTMLDivElement>(null);
   const fullNameRef = useRef<string>(fullName);
 
   const getSignerNameFromSessionStorage = (): string => {
@@ -86,20 +84,20 @@ function SignatureModal(props: SignatureModalProps) {
       return;
     }
 
-    if (previewRef.current) {
-      html2canvas(previewRef.current, { backgroundColor: null }).then(
-        (canvas) => {
-          const trimmedCanvas = trimCanvas(canvas);
+    try {
+      const canvas = generateSignatureImage(_fullName);
+      if (!canvas) {
+        throw new Error('Could not find signature canvas');
+      }
+      const trimmedCanvas = trimCanvas(canvas);
+      const imgData = trimmedCanvas.toDataURL('image/png', 1.0);
+      const imgFile = dataURLToFile(imgData, `${fieldKey}.png`);
 
-          const imgData = trimmedCanvas.toDataURL('image/png');
-          const imgFile = dataURLToFile(imgData, `${fieldKey}.png`);
-
-          setSignatureImgData(imgData);
-          setSignatureFile(imgFile);
-          setLoading(false);
-        }
-      );
-    } else {
+      setSignatureImgData(imgData);
+      setSignatureFile(imgFile);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error generating signature:', error);
       setLoading(false);
     }
   };
@@ -249,31 +247,12 @@ function SignatureModal(props: SignatureModalProps) {
                       {t.type_loading}
                     </div>
                   )}
-                  <div
-                    css={{
-                      position: 'fixed',
-                      top: '-1500px',
-                      left: 0
-                    }}
-                  >
-                    <div
-                      ref={previewRef}
-                      css={{
-                        fontSize: '1.5em',
-                        fontFamily: 'La Belle Aurore',
-                        color: '#000'
-                      }}
-                      className='previewText'
-                    >
-                      {fullName}
-                    </div>
-                  </div>
                   {!signatureImgData ? (
                     t.type_example
                   ) : (
                     <img
                       src={signatureImgData}
-                      alt='Signature Image'
+                      alt='Signature'
                       css={{ maxHeight: '100%', maxWidth: '100%' }}
                     />
                   )}

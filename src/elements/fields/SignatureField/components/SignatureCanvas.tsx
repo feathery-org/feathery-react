@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { dataURLToFile, toBase64 } from '../../../../utils/image';
-// @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
 import Signature from 'react-signature-canvas';
 import { fromDataURL } from './utils';
 import { SignatureTranslations } from '../translation';
@@ -107,6 +106,9 @@ function SignatureCanvas(props: SignatureCanvasProps) {
       )}
       <Signature
         penColor='black'
+        dotSize={4}
+        minWidth={1.5}
+        maxWidth={3}
         clearOnResize={false}
         canvasProps={{
           id: fieldKey,
