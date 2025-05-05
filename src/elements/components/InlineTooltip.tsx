@@ -18,7 +18,6 @@ export default function InlineTooltip({
 
   text = replaceTextVariables(text, repeat);
   return text ? (
-    /* @ts-ignore */
     <OverlayTrigger
       placement='auto'
       flip
@@ -27,9 +26,7 @@ export default function InlineTooltip({
       trigger={['hover', 'click', 'focus']}
       rootClose
       container={() => container?.current}
-      /* @ts-ignore */
       overlay={
-        /* @ts-ignore */
         <Tooltip
           id={`tooltip-${id}`}
           css={{
@@ -51,7 +48,6 @@ export default function InlineTooltip({
         </Tooltip>
       }
     >
-      {/* @ts-ignore */}
       <div
         css={
           absolute

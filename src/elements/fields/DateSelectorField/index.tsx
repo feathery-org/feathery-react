@@ -113,7 +113,7 @@ function DateSelectorField({
 }: DateSelectorProps) {
   const servarMeta = element.servar.metadata;
 
-  const pickerRef = useRef<any>();
+  const pickerRef = useRef<any>(undefined);
   const [internalDate, setInternalDate] = useState<InternalDate>(null);
   const containerRef = useRef(null);
 

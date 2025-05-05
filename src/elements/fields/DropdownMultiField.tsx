@@ -1,6 +1,9 @@
 import React, { useRef, useState } from 'react';
 import useBorder from '../components/useBorder';
-import Select, { components, OptionProps } from 'react-select';
+import Select, {
+  components as SelectComponents,
+  OptionProps
+} from 'react-select';
 import CreatableSelect from 'react-select/creatable';
 import { hoverStylesGuard } from '../../utils/browser';
 import InlineTooltip from '../components/InlineTooltip';
@@ -17,19 +20,17 @@ type OptionData = {
 
 const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
   let optComponent = (
-    <components.Option {...props}>{children}</components.Option>
+    // @ts-expect-error
+    <SelectComponents.Option {...props}>{children}</SelectComponents.Option>
   );
 
   if (props.data.tooltip) {
     optComponent = (
-      // @ts-ignore
       <OverlayTrigger
         placement='right'
-        // @ts-ignore
+        // @ts-expect-error
         container={() => props.selectProps.container?.current}
-        // @ts-ignore
         overlay={
-          // @ts-ignore
           <Tooltip
             id={`tooltip-${props.data.value}`}
             css={{
@@ -51,7 +52,6 @@ const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
           </Tooltip>
         }
       >
-        {/* @ts-ignore */}
         <div>{optComponent}</div>
       </OverlayTrigger>
     );
@@ -176,7 +176,6 @@ export default function DropdownMultiField({
         {customBorder}
         <Component
           styles={{
-            // @ts-ignore
             control: (baseStyles) => ({
               ...baseStyles,
               ...responsiveStyles.getTarget('field'),
@@ -193,18 +192,18 @@ export default function DropdownMultiField({
               } ${chevronPosition}px center`,
               position: 'relative'
             }),
-            // @ts-ignore
+            // @ts-expect-error
             container: (baseStyles) => ({
               ...baseStyles,
               height: '100%',
               minHeight: 'inherit'
             }),
-            // @ts-ignore
+            // @ts-expect-error
             valueContainer: (baseStyles) => ({
               ...baseStyles,
               paddingInlineEnd: 28
             }),
-            // @ts-ignore
+            // @ts-expect-error
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
               // allow word wrap
@@ -217,7 +216,7 @@ export default function DropdownMultiField({
             }),
             indicatorSeparator: () => ({ display: 'none' }),
             indicatorsContainer: () => ({ display: 'none' }),
-            // @ts-ignore
+            // @ts-expect-error
             menu: (baseStyles) => ({
               ...baseStyles,
               zIndex: DROPDOWN_Z_INDEX,

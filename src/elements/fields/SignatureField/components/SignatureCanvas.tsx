@@ -28,7 +28,7 @@ function SignatureCanvas(props: SignatureCanvasProps) {
   } = props;
 
   const [isClearVisible, setIsClearVisible] = useState(defaultValue !== null);
-  const signatureRef = useRef<any>();
+  const signatureRef = useRef<any>(undefined);
   const signatureCanvasStyles = responsiveStyles.getTarget('field', true);
 
   useEffect(() => {

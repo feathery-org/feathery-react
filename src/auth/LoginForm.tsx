@@ -1,5 +1,6 @@
 import React, {
   createContext,
+  ReactNode,
   useCallback,
   useEffect,
   useRef,
@@ -67,7 +68,7 @@ const LoginForm = ({
   onLogout?: () => void;
   onClientReady?: (authClient: any) => void;
   _featheryHosted?: boolean;
-  children?: JSX.Element;
+  children?: ReactNode;
 }) => {
   const [_internalId] = useState(uuidv4());
   const formCompleted =

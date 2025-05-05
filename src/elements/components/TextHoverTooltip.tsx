@@ -4,14 +4,11 @@ import { FORM_Z_INDEX } from '../../utils/styles';
 
 export default function TextHoverTooltip({ text, children, container }: any) {
   return text ? (
-    /* @ts-ignore */
     <OverlayTrigger
       placement='auto'
       flip
       container={() => container?.current}
-      /* @ts-ignore */
       overlay={
-        /* @ts-ignore */
         <Tooltip
           id={`tooltip-${text}`}
           css={{
