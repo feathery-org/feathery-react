@@ -223,6 +223,7 @@ function PhoneField({
         >
           {countryMap[curCountryCode].flag}
         </div>
+        {/* @ts-ignore */}
         <Overlay
           // CONTEXT: The key prop will force React to remount the component if the container changes.
           // This is helpful when react is dealing with left over components.
@@ -237,6 +238,7 @@ function PhoneField({
           // This can cause the auto-scrolling issue that we observed.
           container={triggerRef.current}
         >
+          {/* @ts-ignore */}
           {(props) => {
             ['placement', 'arrowProps', 'show', 'popper'].forEach(
               (prop) => delete props[prop]
