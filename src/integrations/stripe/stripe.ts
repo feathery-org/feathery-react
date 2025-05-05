@@ -14,12 +14,15 @@ import BigDecimal from 'js-big-decimal';
 
 const stripePromise = new Promise((resolve) => {
   if (runningInClient())
-    featheryDoc().addEventListener('stripe_key_loaded', (e: any) => {
-      const promise = loadStripe((e as any).detail.key);
-      promise.then((stripe) => {
-        resolve(stripe);
-      });
-    });
+    featheryDoc().addEventListener(
+      'stripe_key_loaded',
+      (event: { detail: { key: string } }) => {
+        const promise = loadStripe(event.detail.key);
+        promise.then((stripe) => {
+          resolve(stripe);
+        });
+      }
+    );
 });
 
 export const getStripe = () => stripePromise;
@@ -44,23 +47,24 @@ export function getFlatStripeCustomerFieldValues(stripeConfig: any) {
   if (!stripeConfig?.metadata?.customer_field_mappings) return {};
   return getObjectMappingValues(stripeConfig.metadata.customer_field_mappings);
 }
-function getObjectMappingValues(mappingObj: any) {
-  return Object.values(mappingObj).reduce((result: any, mappingInfo) => {
-    if (typeof mappingInfo === 'string') {
-      const key = mappingInfo;
-      if (key in fieldValues) result[key] = fieldValues[key];
-    }
-    // sub-object
-    else if (typeof mappingInfo === 'object') {
-      result = {
-        ...result,
-        ...(getObjectMappingValues(mappingInfo) as {
-          [key: string]: any;
-        })
-      };
-    }
-    return result;
-  }, {} as { [key: string]: any });
+function getObjectMappingValues(mappingObj: Record<string, any>) {
+  return Object.values(mappingObj).reduce(
+    (result: Record<string, any>, mappingInfo) => {
+      if (typeof mappingInfo === 'string') {
+        const key = mappingInfo;
+        if (key in fieldValues) result[key] = fieldValues[key];
+      }
+      // sub-object
+      else if (typeof mappingInfo === 'object') {
+        result = {
+          ...result,
+          ...(getObjectMappingValues(mappingInfo) as Record<string, any>)
+        };
+      }
+      return result;
+    },
+    {} as Record<string, any>
+  );
 }
 
 export const FEATHERY_CART = 'feathery.cart';
@@ -72,7 +76,7 @@ export function getPaymentsReservedFieldValues() {
       result[key] = value;
     }
     return result;
-  }, {} as { [key: string]: any });
+  }, {} as Record<string, any>);
 }
 
 async function syncStripeFieldChanges(client: any, integrationData: any) {
@@ -109,7 +113,7 @@ export async function setupPaymentMethod(
   const { servar } = pmField;
   if ((fieldValues[servar.key] as any)?.complete) {
     try {
-      const stripe: any = await (stripePromise ?? getStripe());
+      const stripe = await (stripePromise ?? getStripe());
 
       // sync fields to BE
       if (syncFields) await syncStripeFieldChanges(client, integrationData);
@@ -230,7 +234,7 @@ export interface Product {
 }
 
 export interface ProductPriceCacheConfig {
-  product_price_cache: { [key: string]: Product };
+  product_price_cache: Record<string, Product>;
 }
 
 export interface StripeConfig {
@@ -586,7 +590,7 @@ export function usePayments(): [
 
 export function calculateSelectedProductsTotal(
   stripeConfig: StripeConfig,
-  updateFieldValues: (fv: { [key: string]: any }) => void,
+  updateFieldValues: (fv: Record<string, any>) => void,
   client: any
 ): string {
   // Each key in feathery.cart is a product id.
