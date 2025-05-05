@@ -176,6 +176,7 @@ export default function DropdownMultiField({
         {customBorder}
         <Component
           styles={{
+            // @ts-ignore
             control: (baseStyles) => ({
               ...baseStyles,
               ...responsiveStyles.getTarget('field'),
@@ -219,11 +220,11 @@ export default function DropdownMultiField({
             // @ts-ignore
             menu: (baseStyles) => ({
               ...baseStyles,
-              zIndex: DROPDOWN_Z_INDEX
+              zIndex: DROPDOWN_Z_INDEX,
+              textAlign: 'start'
             })
           }}
           components={{ Option: TooltipOption }}
-          // @ts-ignore
           container={containerRef}
           inputId={servar.key}
           value={selectVal}
