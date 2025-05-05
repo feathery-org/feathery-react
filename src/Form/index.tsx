@@ -1,5 +1,6 @@
 import { RouterProvider, useLocation, useNavigate } from '../hooks/router';
 import React, {
+  ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -225,7 +226,7 @@ export interface Props {
   customComponents?: Record<string, any>;
   style?: { [cssProperty: string]: string };
   className?: string;
-  children?: JSX.Element;
+  children?: ReactNode;
   _draft?: boolean;
   readOnly?: boolean;
   hashNavigation?: boolean;
@@ -2442,7 +2443,7 @@ export function JSForm({
   else return null;
 }
 
-export default function ReactForm(props: Props): JSX.Element | null {
+export default function ReactForm(props: Props): ReactNode | null {
   let [internalId, setInternalId] = useState('');
   // Cannot use uuidv4 on server-side
   if (!internalId && runningInClient()) {
