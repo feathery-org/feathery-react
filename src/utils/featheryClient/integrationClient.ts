@@ -508,14 +508,14 @@ export default class IntegrationClient {
                 console.warn('Persona response took too long...');
                 return resolve({
                   status: 'timeout',
-                  error: 'Polling timed out'
+                  error: 'Persona response timed out'
                 });
               }
             }
           }
         } catch (error) {
-          console.error('Error polling for document:', error);
-          return resolve({ error: 'Failed to poll for document' });
+          console.error('Failed to fetch Persona data:', error);
+          return resolve({ error: 'Failed to fetch Persona data' });
         }
       };
 

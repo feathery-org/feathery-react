@@ -49,12 +49,8 @@ export function triggerPersona(
 
       const result = await featheryClient.pollPersonaResponse();
       if (result?.status === 'complete') {
-        console.log('Persona polling complete:', result.value);
         const submitStatus = { [statusKey]: result.value };
         updateFieldValues(submitStatus);
-        featheryClient.submitCustom(submitStatus, {
-          shouldFlush: true
-        });
         onComplete();
       } else if (result?.error) {
         console.error('Error in persona response:', result.error);
