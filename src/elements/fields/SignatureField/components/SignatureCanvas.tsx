@@ -1,11 +1,11 @@
-import {
+import React, {
   forwardRef,
   useEffect,
   useImperativeHandle,
   useRef,
   useState
 } from 'react';
-import { dataURLToFile, toBase64 } from '../../../../utils/image';
+import { toBase64 } from '../../../../utils/image';
 import Signature from 'react-signature-canvas';
 import { fromDataURL } from './utils';
 import { SignatureTranslations } from '../translation';
