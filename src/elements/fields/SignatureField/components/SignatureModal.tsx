@@ -4,7 +4,7 @@ import { dataURLToFile } from '../../../../utils/image';
 import { MODAL_Z_INDEX } from '../../../../utils/styles';
 import SignatureCanvas, { SignatureCanvasProps } from './SignatureCanvas';
 import debounce from 'lodash.debounce';
-import { generateSignatureImage, trimCanvas } from './utils';
+import { cloneCanvas, generateSignatureImage, trimCanvas } from './utils';
 import { SignatureTranslations } from '../translation';
 
 const SIGNER_NAME_KEY = 'feathery-signer-name';
@@ -15,6 +15,7 @@ type SignatureModalProps = SignatureCanvasProps & {
   returnFile?: boolean;
   signMethods: '' | 'draw' | 'type';
   translation: SignatureTranslations;
+  onEnd: (file: File) => void;
 };
 
 function SignatureModal(props: SignatureModalProps) {
@@ -38,6 +39,7 @@ function SignatureModal(props: SignatureModalProps) {
   const [signatureFile, setSignatureFile] = useState<File>();
   const [signatureImgData, setSignatureImgData] = useState('');
   const fullNameRef = useRef<string>(fullName);
+  const signatureCanvasRef = useRef<any>(null);
 
   const getSignerNameFromSessionStorage = (): string => {
     const signerName = sessionStorage.getItem(SIGNER_NAME_KEY);
@@ -74,7 +76,24 @@ function SignatureModal(props: SignatureModalProps) {
     }
   };
 
-  const generateSignature = () => {
+  const generateDrawnSignature = () => {
+    try {
+      const canvas = cloneCanvas(signatureCanvasRef.current.getCanvas());
+      if (!canvas) {
+        throw new Error('Could not find signature canvas');
+      }
+      const trimmedCanvas = trimCanvas(canvas);
+      const imgData = trimmedCanvas.toDataURL('image/png', 1.0);
+      const imgFile = dataURLToFile(imgData, `${fieldKey}.png`);
+
+      setSignatureImgData(imgData);
+      setSignatureFile(imgFile);
+    } catch (error) {
+      console.error('Error generating signature:', error);
+    }
+  };
+
+  const generateTextSignature = () => {
     const _fullName = getFullName();
 
     if (!_fullName) {
@@ -103,7 +122,7 @@ function SignatureModal(props: SignatureModalProps) {
   };
 
   const debounceGenerateSignature = useCallback(
-    debounce(generateSignature, 1000),
+    debounce(generateTextSignature, 1000),
     []
   );
 
@@ -113,10 +132,12 @@ function SignatureModal(props: SignatureModalProps) {
   };
 
   const handleSubmit = () => {
-    onEnd(signatureFile);
-    sessionStorage.setItem(SIGNER_NAME_KEY, fullName);
-    setShow(false);
-    resetState();
+    if (signatureFile) {
+      onEnd(signatureFile);
+      sessionStorage.setItem(SIGNER_NAME_KEY, fullName);
+      setShow(false);
+      resetState();
+    }
   };
 
   if (!show) {
@@ -333,10 +354,11 @@ function SignatureModal(props: SignatureModalProps) {
                 css={{ position: 'relative', width: '100%', height: '200px' }}
               >
                 <SignatureCanvas
+                  ref={signatureCanvasRef}
                   fieldKey={fieldKey}
                   responsiveStyles={responsiveStyles}
                   onClear={onClear}
-                  onEnd={(file) => setSignatureFile(file)}
+                  onEnd={generateDrawnSignature}
                   showClear={false}
                   translation={t}
                 />
