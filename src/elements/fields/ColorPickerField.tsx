@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { FORM_Z_INDEX } from '../../utils/styles';
-import { Sketch } from '@uiw/react-color';
+import Sketch from '@uiw/react-color-sketch';
 
 function alphaToHex(alpha: number): string {
   const clampedAlpha = Math.max(0, Math.min(1, alpha));
