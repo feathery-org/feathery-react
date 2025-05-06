@@ -7,7 +7,7 @@
  *
  */
 
-import { devicePixelRatio } from '../../../../utils/browser';
+import { devicePixelRatio, featheryDoc } from '../../../../utils/browser';
 
 export function trimCanvas(canvas: HTMLCanvasElement) {
   const context = canvas.getContext('2d');
@@ -171,7 +171,7 @@ export const generateSignatureImage = (
   fontFamily = 'La Belle Aurore',
   fontSize = '1.5em'
 ) => {
-  const canvas = document.createElement('canvas');
+  const canvas = featheryDoc().createElement('canvas');
   const ctx = canvas.getContext('2d');
 
   if (!ctx) {
@@ -214,7 +214,7 @@ export const generateSignatureImage = (
 };
 
 export function cloneCanvas(oldCanvas: HTMLCanvasElement): HTMLCanvasElement {
-  const newCanvas: HTMLCanvasElement = document.createElement('canvas');
+  const newCanvas: HTMLCanvasElement = featheryDoc().createElement('canvas');
   const context: CanvasRenderingContext2D | null = newCanvas.getContext('2d');
 
   newCanvas.width = oldCanvas.width;

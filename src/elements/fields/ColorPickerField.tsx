@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import { Sketch } from '@uiw/react-color';
 

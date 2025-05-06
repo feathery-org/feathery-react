@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Slider from 'rc-slider';
 import { hoverStylesGuard } from '../../../utils/browser';
 
@@ -17,7 +17,6 @@ export default function SliderField({
   children
 }: any) {
   const [internalValue, setInternalValue] = useState(fieldVal);
-  const [showValue, setShowValue] = useState(false);
 
   useEffect(() => {
     if (fieldVal !== internalValue) setInternalValue(fieldVal);
@@ -80,10 +79,8 @@ export default function SliderField({
           onChange={(val) => {
             setInternalValue(val);
             onChange(val);
-            setShowValue(true);
           }}
           aria-label={element.properties.aria_label}
-          onChangeComplete={() => setTimeout(() => setShowValue(false), 300)}
         />
       </div>
       <div
