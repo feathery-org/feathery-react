@@ -32,6 +32,8 @@ function AddressLine1({
   value = '',
   inlineError,
   children,
+  rightToLeft: _rightToLeft,
+  featheryContext: _featheryContext,
   ...props
 }: any) {
   const servar = element.servar;
