@@ -7,6 +7,7 @@ import Field from './entities/Field';
 import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
+import FeatheryClient from './featheryClient';
 
 export type IntegrationActionIds = string[] | string;
 export type IntegrationActionOptions = {
@@ -45,7 +46,7 @@ export interface FormInternalState {
   currentStep: any;
   previousStepName: string;
   visiblePositions: any;
-  client: any;
+  client: FeatheryClient;
   formName: string;
   formId: string;
   fields: Record<string, Field>;

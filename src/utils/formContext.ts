@@ -152,7 +152,7 @@ export const getFormContext = (formUuid: string) => {
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
       formState.applyAlloyJourney(journeyToken, entities),
-    getConfig: (params: GetConfigParams) => defaultClient.getConfig(params),
+    getConfig: (params: GetConfigParams) => formState.client.getConfig(params),
     // deprecated
     setFieldValues: (userVals: FieldValues): void => {
       console.warn(

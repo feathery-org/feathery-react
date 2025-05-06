@@ -841,7 +841,7 @@ export default class FeatheryClient extends IntegrationClient {
     const reqOptions = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
-      body: JSON.stringify(configParams)
+      body: JSON.stringify({ ...configParams, form_key: this.formKey })
     };
     const res = await this._fetch(url, reqOptions, false);
     if (res && res.status === 200) return await res.json();
