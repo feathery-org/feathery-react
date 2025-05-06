@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState
+} from 'react';
 import { dataURLToFile, toBase64 } from '../../../../utils/image';
 import Signature from 'react-signature-canvas';
 import { fromDataURL } from './utils';
@@ -10,12 +16,23 @@ export type SignatureCanvasProps = {
   defaultValue?: any;
   disabled?: boolean;
   onClear?: () => void;
-  onEnd?: (file: any) => void;
+  onEnd?: () => void;
   showClear?: boolean;
   translation: SignatureTranslations;
 };
 
-function SignatureCanvas(props: SignatureCanvasProps) {
+export type SignatureCanvasRefType = {
+  clear: () => void;
+  isEmpty: () => boolean;
+  getTrimmedCanvas: () => HTMLCanvasElement;
+  getCanvas: () => HTMLCanvasElement;
+  fromDataURL: (dataURL: string, options: any) => void;
+};
+
+const SignatureCanvas = forwardRef<
+  SignatureCanvasRefType,
+  SignatureCanvasProps
+>((props, ref) => {
   const {
     fieldKey,
     responsiveStyles,
@@ -30,6 +47,24 @@ function SignatureCanvas(props: SignatureCanvasProps) {
   const [isClearVisible, setIsClearVisible] = useState(defaultValue !== null);
   const signatureRef = useRef<any>(undefined);
   const signatureCanvasStyles = responsiveStyles.getTarget('field', true);
+
+  useImperativeHandle(ref, () => ({
+    clear: () => {
+      signatureRef.current?.clear();
+    },
+    isEmpty: () => {
+      return signatureRef.current?.isEmpty();
+    },
+    getTrimmedCanvas: () => {
+      return signatureRef.current?.getTrimmedCanvas();
+    },
+    getCanvas: () => {
+      return signatureRef.current?.getCanvas();
+    },
+    fromDataURL: (dataURL: string, options: any) => {
+      return signatureRef.current?.fromDataURL(dataURL, options);
+    }
+  }));
 
   useEffect(() => {
     async function setSignatureCanvas() {
@@ -122,30 +157,12 @@ function SignatureCanvas(props: SignatureCanvasProps) {
         }}
         ref={signatureRef}
         onEnd={() => {
-          const trimmedCanvas = signatureRef.current.getTrimmedCanvas();
-
-          const imgData = trimmedCanvas.toDataURL('image/png');
-          const imgFile = dataURLToFile(imgData, `${fieldKey}.png`);
-
-          const fileSize = imgFile.size;
-
-          if (fileSize > 0) {
-            onEnd(imgFile);
-            setIsClearVisible(!signatureRef.current.isEmpty());
-          } else {
-            signatureRef.current.clear();
-            onClear();
-            setIsClearVisible(false);
-            console.error('Signature file is empty', {
-              imgFile,
-              imgData,
-              fieldKey
-            });
-          }
+          onEnd();
+          setIsClearVisible(!signatureRef.current.isEmpty());
         }}
       />
     </>
   );
-}
+});
 
 export default SignatureCanvas;

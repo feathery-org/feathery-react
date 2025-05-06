@@ -212,3 +212,17 @@ export const generateSignatureImage = (
 
   return canvas;
 };
+
+export function cloneCanvas(oldCanvas: HTMLCanvasElement): HTMLCanvasElement {
+  const newCanvas: HTMLCanvasElement = document.createElement('canvas');
+  const context: CanvasRenderingContext2D | null = newCanvas.getContext('2d');
+
+  newCanvas.width = oldCanvas.width;
+  newCanvas.height = oldCanvas.height;
+
+  if (context) {
+    context.drawImage(oldCanvas, 0, 0);
+  }
+
+  return newCanvas;
+}
