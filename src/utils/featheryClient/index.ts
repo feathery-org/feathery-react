@@ -207,15 +207,28 @@ export default class FeatheryClient extends IntegrationClient {
     formData.set('__feathery_step_key', stepKey);
     if (this.version) formData.set('__feathery_version', this.version);
 
+    const controller = new AbortController();
+    // Time out after a minute
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
     const options: RequestOptions = {
       method: 'POST',
       body: formData,
       // In Safari, request fails with keepalive = true if over 64kb payload.
-      keepalive: false
+      keepalive: false,
+      // Avoid indefinite hanging of request
+      signal: controller.signal
     };
 
     return this.offlineRequestHandler.runOrSaveRequest(
-      () => this._fetch(url, options, true, true),
+      () =>
+        this._fetch(url, options, true, true)
+          .then(() => {
+            clearTimeout(timeoutId);
+          })
+          .catch((err) => {
+            if (err.name === 'AbortError')
+              console.warn('File submission timed out after a minute');
+          }),
       url,
       options,
       'submit',

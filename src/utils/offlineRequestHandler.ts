@@ -23,6 +23,7 @@ export interface RequestOptions {
   method: string;
   body: any;
   keepalive?: boolean;
+  signal?: any;
 }
 
 interface SerializedRequestBody {
