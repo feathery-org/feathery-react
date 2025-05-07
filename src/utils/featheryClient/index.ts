@@ -214,20 +214,14 @@ export default class FeatheryClient extends IntegrationClient {
       keepalive: false
     };
 
-    console.log('File submission started at ' + Date.now().toString());
-    console.log(formData);
     return this.offlineRequestHandler.runOrSaveRequest(
       () =>
-        this._fetch(url, options, true, true)
-          .then(() => {
-            console.log(
-              'File submission completed at ' + Date.now().toString()
-            );
-          })
-          .catch((e) => {
-            console.log('File submission errored at ' + Date.now().toString());
-            console.log(e);
-          }),
+        this._fetch(url, options, true, true).catch((e) => {
+          if (e instanceof TypeError)
+            // Wait 5 seconds since file may have actually been submitted
+            // and just needs to be processed
+            return new Promise((resolve) => setTimeout(resolve, 5000));
+        }),
       url,
       options,
       'submit',
