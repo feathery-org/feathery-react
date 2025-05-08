@@ -309,6 +309,7 @@ export default function SelectorStyles() {
           line-height: inherit;
           outline: none;
           grid-area: select;
+          color: black;
         }
 
         .react-datepicker__current-month,
@@ -805,7 +806,7 @@ export default function SelectorStyles() {
           margin-left: auto;
           margin-right: auto;
         }
-        .react-datepicker__year-option:first-child::before {
+        .react-datepicker__year-option:first-of-type::before {
           content: '\\2303';
           position: absolute;
           font-size: 30px;
@@ -813,7 +814,7 @@ export default function SelectorStyles() {
           left: 40%;
           margin: auto;
         }
-        .react-datepicker__year-option:last-child::after {
+        .react-datepicker__year-option:last-of-type::after {
           content: '\\2303';
           position: absolute;
           font-size: 30px;

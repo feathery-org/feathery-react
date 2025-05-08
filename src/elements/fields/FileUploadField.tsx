@@ -25,7 +25,7 @@ function FileUploadField({
   const servar = element.servar;
   const showLabel = servar.name !== '';
   const isMultiple = servar.metadata.multiple;
-  const fileInput = useRef<any>();
+  const fileInput = useRef<any>(undefined);
 
   const [rawFiles, setRawFiles] = useState<any[]>([]);
   const [hoverDownload, setHoverDownload] = useState(-1);
@@ -65,7 +65,7 @@ function FileUploadField({
     fileInput.current.click();
   };
 
-  const allowedFileTypes = [...servar.metadata.file_types];
+  const allowedFileTypes: string[] = [...servar.metadata.file_types];
   if (servar.metadata.custom_file_types)
     allowedFileTypes.push(
       ...servar.metadata.custom_file_types.map((type: string) => `.${type}`)
@@ -177,7 +177,14 @@ function FileUploadField({
   const icon = element.properties.icon ? (
     <Image src={element.properties.icon} fluid style={imgStyles} />
   ) : (
-    <FileUploadIcon width={imgStyles.width} style={{ maxHeight: '100%' }} />
+    <FileUploadIcon
+      width={
+        imgStyles.width && imgStyles.width !== 'px'
+          ? imgStyles.width
+          : undefined
+      }
+      style={{ maxHeight: '100%' }}
+    />
   );
 
   return (
@@ -327,8 +334,7 @@ function FileUploadField({
         type='file'
         onChange={handleChange}
         required={required && !fileExists}
-        // @ts-ignore
-        accept={allowedFileTypes}
+        accept={allowedFileTypes.join(',') || undefined}
         disabled={element.properties.disabled ?? false}
         aria-label={element.properties.aria_label}
         multiple={isMultiple}

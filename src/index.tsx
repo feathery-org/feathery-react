@@ -1,5 +1,5 @@
 import React from 'react';
-import ReactDOM, { unmountComponentAtNode } from 'react-dom';
+import { createRoot } from 'react-dom/client';
 import Elements from './elements';
 import Form, { JSForm, Props as FormProps, StyledContainer } from './Form';
 import {
@@ -25,7 +25,8 @@ const mountedForms: Record<string, boolean> = {};
  */
 function renderAt(elementId: any, props: FormProps, loginEnabled = false) {
   const container = featheryDoc().getElementById(elementId);
-  const destroy = () => unmountComponentAtNode(container);
+  const root = createRoot(container);
+  const destroy = () => root.unmount();
   if (mountedForms[elementId]) destroy();
   else mountedForms[elementId] = true;
 
@@ -39,7 +40,7 @@ function renderAt(elementId: any, props: FormProps, loginEnabled = false) {
     <JSForm {...formProps} />
   );
 
-  ReactDOM.render(component, container);
+  root.render(component);
 
   return {
     ...getFormContext(uuid),

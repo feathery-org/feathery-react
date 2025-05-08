@@ -88,7 +88,7 @@ function ImageElement({
         />
       ) : (
         <img
-          src={documentUrl}
+          src={documentUrl || undefined}
           alt=''
           aria-label={element.properties.aria_label}
           css={{

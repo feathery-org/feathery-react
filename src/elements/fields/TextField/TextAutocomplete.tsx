@@ -95,7 +95,9 @@ function TextAutocomplete({
                   )
                     onHide();
                 }}
-                ref={(ref) => (listItemRef.current[index] = ref)}
+                ref={(ref) => {
+                  listItemRef.current[index] = ref;
+                }}
               >
                 {opt}
               </li>

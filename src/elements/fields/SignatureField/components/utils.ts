@@ -7,7 +7,7 @@
  *
  */
 
-import { devicePixelRatio } from '../../../../utils/browser';
+import { devicePixelRatio, featheryDoc } from '../../../../utils/browser';
 
 export function trimCanvas(canvas: HTMLCanvasElement) {
   const context = canvas.getContext('2d');
@@ -164,4 +164,65 @@ export function fromDataURL(
     image.crossOrigin = 'anonymous';
     image.src = dataUrl;
   });
+}
+
+export const generateSignatureImage = (
+  text: string,
+  fontFamily = 'La Belle Aurore',
+  fontSize = '1.5em'
+) => {
+  const canvas = featheryDoc().createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx) {
+    return;
+  }
+
+  const scaleFactor = 4;
+
+  canvas.width = 560 * scaleFactor;
+  canvas.height = 100 * scaleFactor;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.scale(scaleFactor, scaleFactor);
+
+  ctx.font = `${fontSize} ${fontFamily}`;
+  ctx.fillStyle = '#000';
+  ctx.textBaseline = 'middle';
+
+  const textMetrics = ctx.measureText(text);
+  const textWidth = textMetrics.width;
+  const textHeight = parseInt(fontSize) * 1.5;
+
+  ctx.scale(1 / scaleFactor, 1 / scaleFactor);
+
+  const padding = 20 * scaleFactor;
+  canvas.width = textWidth * scaleFactor + padding * 2;
+  canvas.height = textHeight * scaleFactor + padding * 2;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.scale(scaleFactor, scaleFactor);
+
+  ctx.font = `${fontSize} ${fontFamily}`;
+  ctx.fillStyle = '#000';
+  ctx.textBaseline = 'middle';
+
+  ctx.fillText(text, padding / scaleFactor, canvas.height / 2 / scaleFactor);
+
+  return canvas;
+};
+
+export function cloneCanvas(oldCanvas: HTMLCanvasElement): HTMLCanvasElement {
+  const newCanvas: HTMLCanvasElement = featheryDoc().createElement('canvas');
+  const context: CanvasRenderingContext2D | null = newCanvas.getContext('2d');
+
+  newCanvas.width = oldCanvas.width;
+  newCanvas.height = oldCanvas.height;
+
+  if (context) {
+    context.drawImage(oldCanvas, 0, 0);
+  }
+
+  return newCanvas;
 }

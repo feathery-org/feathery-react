@@ -1,6 +1,9 @@
 import React, { useRef, useState } from 'react';
 import useBorder from '../components/useBorder';
-import Select, { components, OptionProps } from 'react-select';
+import Select, {
+  components as SelectComponents,
+  OptionProps
+} from 'react-select';
 import CreatableSelect from 'react-select/creatable';
 import { hoverStylesGuard } from '../../utils/browser';
 import InlineTooltip from '../components/InlineTooltip';
@@ -17,14 +20,15 @@ type OptionData = {
 
 const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
   let optComponent = (
-    <components.Option {...props}>{children}</components.Option>
+    // @ts-expect-error
+    <SelectComponents.Option {...props}>{children}</SelectComponents.Option>
   );
 
   if (props.data.tooltip) {
     optComponent = (
       <OverlayTrigger
         placement='right'
-        // @ts-ignore
+        // @ts-expect-error
         container={() => props.selectProps.container?.current}
         overlay={
           <Tooltip
@@ -188,15 +192,18 @@ export default function DropdownMultiField({
               } ${chevronPosition}px center`,
               position: 'relative'
             }),
+            // @ts-expect-error
             container: (baseStyles) => ({
               ...baseStyles,
               height: '100%',
               minHeight: 'inherit'
             }),
+            // @ts-expect-error
             valueContainer: (baseStyles) => ({
               ...baseStyles,
               paddingInlineEnd: 28
             }),
+            // @ts-expect-error
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
               // allow word wrap
@@ -209,13 +216,14 @@ export default function DropdownMultiField({
             }),
             indicatorSeparator: () => ({ display: 'none' }),
             indicatorsContainer: () => ({ display: 'none' }),
+            // @ts-expect-error
             menu: (baseStyles) => ({
               ...baseStyles,
-              zIndex: DROPDOWN_Z_INDEX
+              zIndex: DROPDOWN_Z_INDEX,
+              textAlign: 'start'
             })
           }}
           components={{ Option: TooltipOption }}
-          // @ts-ignore
           container={containerRef}
           inputId={servar.key}
           value={selectVal}

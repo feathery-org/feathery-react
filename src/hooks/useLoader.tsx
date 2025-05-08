@@ -1,11 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { ReactNode, useMemo, useState } from 'react';
 import { validate as uuidValidate } from 'uuid';
 import LoaderContainer from '../elements/components/LoaderContainer';
 import FeatherySpinner from '../elements/components/Spinner';
 
 export interface InitialLoader {
   show?: boolean;
-  loader?: string | JSX.Element;
+  loader?: string | ReactNode;
   initialContainerHeight?: string;
   initialContainerWidth?: string;
 }

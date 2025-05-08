@@ -31,8 +31,7 @@ function AddressLine1({
   setRef = () => {},
   value = '',
   inlineError,
-  children,
-  ...props
+  children
 }: any) {
   const servar = element.servar;
   const options = useAddressSearch(value, servar);
@@ -165,7 +164,6 @@ function AddressLine1({
               onBlur(e);
               setFocused(false);
             }}
-            {...props}
           />
         </OverlayTrigger>
         <Placeholder
