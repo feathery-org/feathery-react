@@ -761,15 +761,14 @@ function Form({
               // handle any errors in async code that actually returns a promise
               handleRuleError(e.message, logicRule);
             });
-            // Change event can happen too frequently to flush every time
-            if (event !== 'change' && flush)
-              await defaultClient.flushCustomFields();
           } catch (e: any) {
             const errorMessage = e.reason?.message ?? e.error?.message;
             handleRuleError(errorMessage, logicRule);
           }
         }
       }
+      // Change event can happen too frequently to flush every time
+      if (event !== 'change' && flush) await defaultClient.flushCustomFields();
     }
 
     // Flush field updates to backend before form completes
