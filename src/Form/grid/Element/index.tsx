@@ -13,7 +13,10 @@ import {
 import { isFieldValueEmpty } from '../../../utils/validation';
 import { justInsert, justRemove } from '../../../utils/array';
 import { fieldValues, initState } from '../../../utils/init';
-import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
+import {
+  ACTION_STORE_FIELD,
+  NAVIGATION_ACTIONS
+} from '../../../utils/elementActions';
 import {
   getInlineError,
   handleCheckboxGroupChange,
@@ -65,6 +68,8 @@ const Element = ({ node: el, form }: any) => {
     featheryContext
   } = form;
 
+  const readOnly =
+    formSettings.readOnly || initState.collaboratorReview === 'readOnly';
   const basicProps: Record<string, any> = {
     componentOnly: false,
     element: el,
@@ -151,6 +156,14 @@ const Element = ({ node: el, form }: any) => {
         );
       disabled = fieldsMissingValue || !elementsHaveValues;
     }
+    if (!disabled && readOnly) {
+      const actions = el.properties.actions ?? [];
+      const hasNav = actions.some((action: any) =>
+        NAVIGATION_ACTIONS.includes(action.type)
+      );
+      // Disable buttons not used for navigation
+      disabled = !hasNav;
+    }
     return (
       <Elements.ButtonElement
         active={customClickSelectionState(el)}
@@ -229,10 +242,7 @@ const Element = ({ node: el, form }: any) => {
       elementProps: elementProps[servar.key],
       autoComplete: formSettings.autocomplete,
       rightToLeft: formSettings.rightToLeft,
-      disabled:
-        el.properties.disabled ||
-        formSettings.readOnly ||
-        initState.collaboratorReview === 'readOnly',
+      disabled: el.properties.disabled || readOnly,
       onEnter,
       required
     };
