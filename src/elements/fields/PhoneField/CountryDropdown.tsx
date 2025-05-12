@@ -101,7 +101,15 @@ function CountryDropdown(
               }}
               onClick={() => itemOnClick(countryCode, phoneCode)}
             >
-              <span css={{ fontSize: '24px', marginRight: '7px' }}>{flag}</span>
+              <span
+                css={{
+                  fontSize: '24px',
+                  marginRight: '7px',
+                  lineHeight: '33px'
+                }}
+              >
+                {flag}
+              </span>
               {countryName}
               <span css={{ marginLeft: '7px', color: 'grey' }}>
                 +{phoneCode}
