@@ -956,7 +956,10 @@ export async function updateCustomHead(headCode: string) {
       });
       if (el.src) {
         scriptWait.push(
-          new Promise((resolve) => (el.onload = () => resolve(custom)))
+          new Promise((resolve) => {
+            el.onload = () => resolve(custom);
+            el.onerror = () => resolve(custom);
+          })
         );
       }
       custom = el;
