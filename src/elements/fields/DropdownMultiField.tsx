@@ -20,6 +20,7 @@ type OptionData = {
 
 const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
   let optComponent = (
+    // @ts-ignore
     <SelectComponents.Option {...props}>{children}</SelectComponents.Option>
   );
 
@@ -191,15 +192,18 @@ export default function DropdownMultiField({
               } ${chevronPosition}px center`,
               position: 'relative'
             }),
+            // @ts-ignore
             container: (baseStyles) => ({
               ...baseStyles,
               height: '100%',
               minHeight: 'inherit'
             }),
+            // @ts-ignore
             valueContainer: (baseStyles) => ({
               ...baseStyles,
               paddingInlineEnd: 28
             }),
+            // @ts-ignore
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
               // allow word wrap
@@ -212,6 +216,7 @@ export default function DropdownMultiField({
             }),
             indicatorSeparator: () => ({ display: 'none' }),
             indicatorsContainer: () => ({ display: 'none' }),
+            // @ts-ignore
             menu: (baseStyles) => ({
               ...baseStyles,
               zIndex: DROPDOWN_Z_INDEX,
