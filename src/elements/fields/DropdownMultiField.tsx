@@ -20,7 +20,6 @@ type OptionData = {
 
 const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
   let optComponent = (
-    // @ts-expect-error
     <SelectComponents.Option {...props}>{children}</SelectComponents.Option>
   );
 
@@ -192,18 +191,15 @@ export default function DropdownMultiField({
               } ${chevronPosition}px center`,
               position: 'relative'
             }),
-            // @ts-expect-error
             container: (baseStyles) => ({
               ...baseStyles,
               height: '100%',
               minHeight: 'inherit'
             }),
-            // @ts-expect-error
             valueContainer: (baseStyles) => ({
               ...baseStyles,
               paddingInlineEnd: 28
             }),
-            // @ts-expect-error
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
               // allow word wrap
@@ -216,7 +212,6 @@ export default function DropdownMultiField({
             }),
             indicatorSeparator: () => ({ display: 'none' }),
             indicatorsContainer: () => ({ display: 'none' }),
-            // @ts-expect-error
             menu: (baseStyles) => ({
               ...baseStyles,
               zIndex: DROPDOWN_Z_INDEX,
@@ -224,6 +219,7 @@ export default function DropdownMultiField({
             })
           }}
           components={{ Option: TooltipOption }}
+          // @ts-ignore
           container={containerRef}
           inputId={servar.key}
           value={selectVal}
