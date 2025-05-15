@@ -329,8 +329,11 @@ export default class FeatheryClient extends IntegrationClient {
 
   fetchCacheForm(formLanguage?: string) {
     const { formSchemas, language: globalLanguage, theme } = initInfo();
-    if (!formLanguage && this.formKey in formSchemas)
-      return Promise.resolve(formSchemas[this.formKey]);
+    if (!formLanguage && this.formKey in formSchemas) {
+      const cacheForm = formSchemas[this.formKey];
+      this._loadFormPackages(cacheForm);
+      return Promise.resolve(cacheForm);
+    }
 
     const params = encodeGetParams({
       form_key: this.formKey,
@@ -368,6 +371,9 @@ export default class FeatheryClient extends IntegrationClient {
     const res = await this.fetchCacheForm(language);
     // If form is disabled, data will equal `null`
     if (!res.steps) return { steps: [], formOff: true };
+
+    // Update form ID & version if using AB test variant
+    if (res.new_form_id) this.formKey = res.new_form_id;
     this.version = res.version;
     this._noSave = res.no_save_data;
     this.setDefaultFormValues({ steps: res.steps, additionalValues: initVals });
