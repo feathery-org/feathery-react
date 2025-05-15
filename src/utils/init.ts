@@ -12,7 +12,6 @@ import {
 import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
 import { parseUserVal } from './entities/Field';
 import { authState } from '../auth/LoginForm';
-import { version } from '../../package.json';
 
 export type FeatheryFieldTypes =
   | null
@@ -92,7 +91,6 @@ let filePathMap: Record<string, null | string | (string | null)[]> = {};
 export const fileSubmittedMap: Record<string, boolean> = {};
 
 function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
-  console.log(`Feathery v${version}`);
   if (!sdkKey || typeof sdkKey !== 'string') {
     throw new errors.SDKKeyError();
   }
