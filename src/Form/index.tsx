@@ -1,5 +1,6 @@
 import { RouterProvider, useLocation, useNavigate } from '../hooks/router';
 import React, {
+  ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -225,7 +226,7 @@ export interface Props {
   customComponents?: Record<string, any>;
   style?: { [cssProperty: string]: string };
   className?: string;
-  children?: JSX.Element;
+  children?: ReactNode;
   _draft?: boolean;
   readOnly?: boolean;
   hashNavigation?: boolean;
@@ -290,7 +291,7 @@ function Form({
 }: InternalProps & Props) {
   const [formName, setFormName] = useState(formNameProp || ''); // TODO: remove support for formName (deprecated)
   const formKey = formId || formName; // prioritize formID but fall back to name
-  const clientRef = useRef<any>();
+  const clientRef = useRef<any>(undefined);
   const client = clientRef.current;
   const navigate = useNavigate();
   const location = useLocation();
@@ -324,7 +325,7 @@ function Form({
     globalStyles: {}
   });
   const trackHashes = useRef(false);
-  const curLanguage = useRef<undefined | string>();
+  const curLanguage = useRef<undefined | string>(undefined);
 
   const [fieldKeys, setFieldKeys] = useState<string[]>([]);
   const [hiddenFieldKeys, setHiddenFieldKeys] = useState<string[]>([]);
@@ -391,7 +392,7 @@ function Form({
   });
 
   // Tracks element to focus
-  const focusRef = useRef<any>();
+  const focusRef = useRef<any>(undefined);
   // Tracks the execution of user-provided callback functions
   const callbackRef = useRef<any>(new CallbackQueue(null, setLoaders));
   // Tracks if the form has redirected
@@ -701,7 +702,7 @@ function Form({
     let logicRan = false;
     if (typeof eventCallbackMap[event] === 'function') {
       // Don't run submit function twice
-      // @ts-ignore
+      // @ts-expect-error
       if (event !== 'submit' || props.beforeSubmit) {
         logicRan = true;
         await eventCallbackMap[event](props);
@@ -2442,7 +2443,7 @@ export function JSForm({
   else return null;
 }
 
-export default function ReactForm(props: Props): JSX.Element | null {
+export default function ReactForm(props: Props): ReactNode | null {
   let [internalId, setInternalId] = useState('');
   // Cannot use uuidv4 on server-side
   if (!internalId && runningInClient()) {

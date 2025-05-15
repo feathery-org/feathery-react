@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import baseLocale from 'date-fns/locale/en-US';
-import { Locale } from 'date-fns';
+import { enUS as baseLocale } from 'date-fns/locale';
+import type { Day, Locale, Month } from 'date-fns';
 
 interface UseCustomDateLocaleProps {
   monthNames?: string[] | null;
@@ -43,7 +43,7 @@ export const useCustomDateLocale = ({
         ...baseLocale,
         localize: {
           ...baseLocale.localize,
-          month: (n: number, options: LocalizeOptions = {}) => {
+          month: (n: Month, options: LocalizeOptions = {}) => {
             if (!monthNames) {
               return baseLocale.localize?.month(n, options);
             }
@@ -55,7 +55,7 @@ export const useCustomDateLocale = ({
 
             return baseLocale.localize?.month(n, options);
           },
-          day: (n: number, options: LocalizeOptions = {}) => {
+          day: (n: Day, options: LocalizeOptions = {}) => {
             if (!shortDayNames) {
               return baseLocale.localize?.day(n, options);
             }

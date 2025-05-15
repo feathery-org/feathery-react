@@ -2,7 +2,6 @@ import React, { memo, useEffect, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
-// @ts-expect-error TS(7016): Could not find a declaration file for module 'reac... Remove this comment to see the full error message
 import DatePicker from 'react-datepicker';
 import DateSelectorStyles from './styles';
 
@@ -24,11 +23,33 @@ const { IMaskInput } = require('react-imask');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { MaskedRange, MaskedEnum } = require('imask');
 
+type InternalDate = Date | null;
+
+export interface DateSelectorProps {
+  element?: any;
+  responsiveStyles?: any;
+  fieldLabel?: string;
+  elementProps?: any;
+  required?: boolean;
+  disabled?: boolean;
+  repeatIndex?: number;
+  editMode?: boolean;
+  onComplete: (value: string) => void;
+  onEnter: any;
+  setRef: any;
+  value: string;
+  inlineError?: any;
+  children?: any;
+}
+
 // Helper function to parse time limits
 const parseTimeThreshold = (timeThreshold: string) =>
   timeThreshold.split(':').map(Number);
 
-export function formatDateString(date: any, meta: Record<string, any>) {
+export function formatDateString(
+  date: InternalDate,
+  meta: Record<string, any>
+): string {
   if (!date) return '';
 
   const chooseTime: boolean = meta.choose_time;
@@ -81,7 +102,7 @@ function DateSelectorField({
   elementProps = {},
   required = false,
   disabled = false,
-  repeatIndex = null,
+  repeatIndex,
   editMode,
   onComplete = () => {},
   onEnter = () => {},
@@ -89,11 +110,11 @@ function DateSelectorField({
   value = '',
   inlineError,
   children
-}: any) {
+}: DateSelectorProps) {
   const servarMeta = element.servar.metadata;
 
-  const pickerRef = useRef<any>();
-  const [internalDate, setInternalDate] = useState('');
+  const pickerRef = useRef<any>(undefined);
+  const [internalDate, setInternalDate] = useState<InternalDate>(null);
   const containerRef = useRef(null);
 
   const translation = element.properties.translate || {};
@@ -119,16 +140,16 @@ function DateSelectorField({
   }, [pickerRef]);
 
   useEffect(() => {
-    let internalVal: any = '';
+    let internalVal = null;
     if (value) {
       internalVal = parseISO(value);
-      if (internalVal.toString() === 'Invalid Date') internalVal = '';
+      if (internalVal.toString() === 'Invalid Date') internalVal = null;
       else if (!servarMeta.choose_time) internalVal.setHours(0, 0, 0);
     }
     setInternalDate(internalVal);
   }, [value]);
 
-  const filterPassedTime = (time: any) => {
+  const filterPassedTime = (time: Date) => {
     const hour = time.getHours();
     const minutes = time.getMinutes();
 
@@ -147,7 +168,7 @@ function DateSelectorField({
     return true;
   };
 
-  const filterPassedDate = (date: any) => {
+  const filterPassedDate = (date: Date) => {
     if (servarMeta.no_weekends && [0, 6].includes(date.getDay())) return false;
 
     const disabledDates = servarMeta.disabled_dates ?? [];
@@ -158,8 +179,8 @@ function DateSelectorField({
   // picking date is complete and onComplete is run
   // onSelect cannot run onComplete because it runs on day click and
   // not when time is selected if enabled
-  const onDateChange = (newDate: any, isComplete = false) => {
-    newDate = newDate ?? '';
+  const onDateChange = (newDate: InternalDate, isComplete = false) => {
+    newDate = newDate ?? null;
     setInternalDate(newDate);
     if (isComplete) onComplete(formatDateString(newDate, servarMeta));
   };
@@ -233,8 +254,8 @@ function DateSelectorField({
             // this ensures the date is updated on close and triggers logic rules
             onDateChange(internalDate, true);
           }}
-          onSelect={(date: any) => onDateChange(date)} // when day is clicked
-          onChange={(date: any) => onDateChange(date)} // only when value has changed
+          onSelect={(date) => onDateChange(date)} // when day is clicked
+          onChange={(date) => onDateChange(date)} // only when value has changed
           onFocus={(e: any) => {
             if (isTouchDevice()) {
               // hide keyboard on mobile focus
@@ -245,11 +266,10 @@ function DateSelectorField({
             setFocused(true);
           }}
           onBlur={() => setFocused(false)}
-          onKeyDown={(e: any) => {
+          onKeyDown={(e) => {
             if (e.key === 'Enter') onEnter(e);
           }}
           required={required}
-          placeholder=''
           readOnly={disabled}
           filterDate={filterPassedDate}
           filterTime={filterPassedTime}
@@ -278,7 +298,7 @@ function DateSelectorField({
               ? {}
               : { color: 'transparent !important' })
           }}
-          ref={(ref: any) => {
+          ref={(ref) => {
             pickerRef.current = ref;
             setRef(ref);
           }}

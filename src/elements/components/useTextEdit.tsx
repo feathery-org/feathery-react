@@ -9,7 +9,7 @@ function useTextEdit({
   onTextBlur = null,
   onEditModeChange = null
 }: any) {
-  const spanRef = useRef();
+  const spanRef = useRef(undefined);
   const [editMode, setEditMode] = useState('hover');
 
   const updateEditMode = (newMode: 'edit' | 'hover') => {

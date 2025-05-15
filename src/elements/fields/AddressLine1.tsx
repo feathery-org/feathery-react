@@ -12,9 +12,8 @@ import useBorder from '../components/useBorder';
 import { DROPDOWN_Z_INDEX } from './index';
 import { hoverStylesGuard } from '../../utils/browser';
 
-// Milliseconds
-const SEARCH_DELAY_TIME = 500;
-const EXIT_DELAY_TIME = 200;
+const SEARCH_DELAY_TIME_MS = 500;
+const EXIT_DELAY_TIME_MS = 200;
 
 function AddressLine1({
   element,
@@ -26,13 +25,14 @@ function AddressLine1({
   editMode,
   repeatIndex = null,
   onSelect = () => {},
+  onChange = () => {},
+  required,
   onBlur = () => {},
   onEnter = () => {},
   setRef = () => {},
   value = '',
   inlineError,
-  children,
-  ...props
+  children
 }: any) {
   const servar = element.servar;
   const options = useAddressSearch(value, servar);
@@ -161,11 +161,12 @@ function AddressLine1({
             onBlur={(e) => {
               // Blur may be triggered by option selection, and option
               // click logic may need to be run first. So delay option removal.
-              setTimeout(() => setShowOptions(false), EXIT_DELAY_TIME);
+              setTimeout(() => setShowOptions(false), EXIT_DELAY_TIME_MS);
               onBlur(e);
               setFocused(false);
             }}
-            {...props}
+            onChange={onChange}
+            required={required}
           />
         </OverlayTrigger>
         <Placeholder
@@ -206,7 +207,7 @@ function useAddressSearch(searchTerm: any, servar: any) {
               setTerm(newTerm);
             }
           }),
-      SEARCH_DELAY_TIME
+      SEARCH_DELAY_TIME_MS
     ),
     [setResults, setTerm]
   );

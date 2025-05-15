@@ -69,7 +69,9 @@ function CountryDropdown(
           return (
             <li
               key={countryCode}
-              ref={(ref) => (listItemRef.current[countryCode] = ref)}
+              ref={(ref) => {
+                listItemRef.current[countryCode] = ref;
+              }}
               css={{
                 padding: '2px 10px',
                 display: 'flex',
