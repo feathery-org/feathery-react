@@ -41,6 +41,7 @@ export const getFormContext = (formUuid: string) => {
 
   return {
     userId: initState.userId,
+    sdkKey: initState.sdkKey,
     formName: formState.formName,
     formId: formState.formId,
     _getInternalUserId: () => initState._internalUserId,
