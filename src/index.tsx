@@ -1,5 +1,5 @@
 import React from 'react';
-import { createRoot } from 'react-dom/client';
+import { createRoot, Root } from 'react-dom/client';
 import Elements from './elements';
 import Form, { JSForm, Props as FormProps, StyledContainer } from './Form';
 import {
@@ -17,7 +17,7 @@ import LoginForm from './auth/LoginForm';
 import useAuthClient from './auth/useAuthClient';
 import './utils/polyfills';
 
-const mountedForms: Record<string, boolean> = {};
+const mountedForms: Record<string, Root> = {};
 /**
  * Utility function which renders a form with the provided props in the DOM element with the provided ID.
  * @param {string} elementId The ID of the DOM element to hold the form
@@ -25,10 +25,19 @@ const mountedForms: Record<string, boolean> = {};
  */
 function renderAt(elementId: any, props: FormProps, loginEnabled = false) {
   const container = featheryDoc().getElementById(elementId);
+
+  if (mountedForms[elementId]) {
+    mountedForms[elementId].unmount();
+  }
+
   const root = createRoot(container);
-  const destroy = () => root.unmount();
-  if (mountedForms[elementId]) destroy();
-  else mountedForms[elementId] = true;
+  const destroy = () => {
+    if (mountedForms[elementId]) {
+      mountedForms[elementId].unmount();
+      delete mountedForms[elementId];
+    }
+  };
+  mountedForms[elementId] = root;
 
   const uuid = uuidv4();
 
