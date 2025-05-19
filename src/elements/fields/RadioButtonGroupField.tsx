@@ -43,8 +43,12 @@ function RadioButtonGroupField({
   const styles = useMemo(() => {
     applyCheckableInputStyles(element, responsiveStyles);
     applyRadioGroupStyles(element, responsiveStyles);
-    responsiveStyles.apply('row', 'row_separation', (a: number) => {
-      return { marginBottom: `${a || 5}px` };
+    responsiveStyles.addTargets('row-container');
+    responsiveStyles.apply('row-container', 'row_separation', (a: number) => {
+      return { gap: `${a || 5}px` };
+    });
+    responsiveStyles.apply('row-container', 'option_direction', (a: string) => {
+      return { flexDirection: a || 'column' };
     });
     return responsiveStyles;
   }, [responsiveStyles]);
@@ -79,138 +83,148 @@ function RadioButtonGroupField({
     >
       {children}
       {fieldLabel}
-      {options.map((option: any, i: number) => {
-        const value = option.value ?? option;
-        const label = option.label ?? option;
-        const tooltip = option.tooltip ?? '';
+      <div
+        css={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          width: '100%',
+          ...styles.getTarget('row-container')
+        }}
+      >
+        {options.map((option: any, i: number) => {
+          const value = option.value ?? option;
+          const label = option.label ?? option;
+          const tooltip = option.tooltip ?? '';
 
-        return (
-          <div
-            key={`${servar.key}-${i}`}
-            css={{
-              display: 'flex',
-              ...styles.getTarget('row')
-            }}
-          >
-            <label style={{ display: 'contents' }}>
-              <input
-                type='radio'
-                id={`${servar.key}-${i}`}
-                name={
-                  repeatIndex !== null
-                    ? `${servar.key}-${repeatIndex}`
-                    : servar.key
-                }
-                checked={fieldVal === value}
-                required={required}
-                disabled={disabled}
-                onChange={onChange}
-                onFocus={iosScrollOnFocus}
-                aria-label={element.properties.aria_label}
-                value={value}
-                style={{
-                  padding: 0,
-                  lineHeight: 'normal'
-                }}
-                css={{
-                  ...composeCheckableInputStyle(styles, disabled, true),
-                  ...styles.getTarget('radioGroup'),
-                  ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-                  '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
-                }}
+          return (
+            <div
+              key={`${servar.key}-${i}`}
+              css={{
+                display: 'flex'
+              }}
+            >
+              <label style={{ display: 'contents' }}>
+                <input
+                  type='radio'
+                  id={`${servar.key}-${i}`}
+                  name={
+                    repeatIndex !== null
+                      ? `${servar.key}-${repeatIndex}`
+                      : servar.key
+                  }
+                  checked={fieldVal === value}
+                  required={required}
+                  disabled={disabled}
+                  onChange={onChange}
+                  onFocus={iosScrollOnFocus}
+                  aria-label={element.properties.aria_label}
+                  value={value}
+                  style={{
+                    padding: 0,
+                    lineHeight: 'normal'
+                  }}
+                  css={{
+                    ...composeCheckableInputStyle(styles, disabled, true),
+                    ...styles.getTarget('radioGroup'),
+                    ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
+                    '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
+                  }}
+                />
+                <span
+                  css={{
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                    ...styles.getTarget('checkboxLabel')
+                  }}
+                >
+                  {label}
+                </span>
+              </label>
+              <InlineTooltip
+                container={containerRef}
+                id={`${element.id}-${value}`}
+                text={tooltip}
+                responsiveStyles={responsiveStyles}
+                absolute={false}
+                repeat={element.repeat}
               />
-              <span
-                css={{
-                  whiteSpace: 'pre-wrap',
-                  overflowWrap: 'anywhere',
-                  ...styles.getTarget('checkboxLabel')
-                }}
-              >
-                {label}
-              </span>
+            </div>
+          );
+        })}
+        {servar.metadata.other && (
+          <div style={{ display: 'flex' }}>
+            <input
+              type='radio'
+              id={`${servar.key}-`}
+              key={`${servar.key}-`}
+              name={
+                repeatIndex !== null
+                  ? `${servar.key}-${repeatIndex}`
+                  : servar.key
+              }
+              checked={otherChecked}
+              disabled={disabled}
+              onChange={(e) => {
+                setOtherSelect({
+                  ...otherSelect,
+                  [servar.key]: true
+                });
+                onChange(e);
+              }}
+              onFocus={iosScrollOnFocus}
+              value={otherVal || ''}
+              style={{
+                padding: 0,
+                lineHeight: 'normal'
+              }}
+              css={{
+                ...composeCheckableInputStyle(styles, disabled, true),
+                ...styles.getTarget('radioGroup'),
+                ...(disabled ? responsiveStyles.getTarget('disabled') : {})
+              }}
+            />
+            <label
+              htmlFor={`${servar.key}-`}
+              css={styles.getTarget('checkboxLabel')}
+            >
+              {otherLabel}
             </label>
+            <ReactForm.Control
+              type='text'
+              // Paired with flex grow, will not expand parent width
+              htmlSize={1}
+              css={{
+                marginLeft: '5px',
+                ...bootstrapStyles,
+                paddingLeft: '0.4rem',
+                flexGrow: 1,
+                ...responsiveStyles.getTarget('field'),
+                ...(otherTextDisabled
+                  ? responsiveStyles.getTarget('disabled')
+                  : {})
+              }}
+              id={servar.key}
+              value={otherVal || ''}
+              onChange={onOtherChange}
+              onKeyDown={(e: any) => {
+                if (e.key === 'Enter') onEnter(e);
+              }}
+              maxLength={servar.max_length}
+              minLength={servar.min_length}
+              required={otherChecked}
+              disabled={otherTextDisabled}
+            />
             <InlineTooltip
               container={containerRef}
-              id={`${element.id}-${value}`}
-              text={tooltip}
+              id={`${element.id}-`}
+              text={servar.metadata.other_tooltip}
               responsiveStyles={responsiveStyles}
               absolute={false}
               repeat={element.repeat}
             />
           </div>
-        );
-      })}
-      {servar.metadata.other && (
-        <div style={{ display: 'flex' }}>
-          <input
-            type='radio'
-            id={`${servar.key}-`}
-            key={`${servar.key}-`}
-            name={
-              repeatIndex !== null ? `${servar.key}-${repeatIndex}` : servar.key
-            }
-            checked={otherChecked}
-            disabled={disabled}
-            onChange={(e) => {
-              setOtherSelect({
-                ...otherSelect,
-                [servar.key]: true
-              });
-              onChange(e);
-            }}
-            onFocus={iosScrollOnFocus}
-            value={otherVal || ''}
-            style={{
-              padding: 0,
-              lineHeight: 'normal'
-            }}
-            css={{
-              ...composeCheckableInputStyle(styles, disabled, true),
-              ...styles.getTarget('radioGroup'),
-              ...(disabled ? responsiveStyles.getTarget('disabled') : {})
-            }}
-          />
-          <label
-            htmlFor={`${servar.key}-`}
-            css={styles.getTarget('checkboxLabel')}
-          >
-            {otherLabel}
-          </label>
-          <ReactForm.Control
-            type='text'
-            // Paired with flex grow, will not expand parent width
-            htmlSize={1}
-            css={{
-              marginLeft: '5px',
-              ...bootstrapStyles,
-              paddingLeft: '0.4rem',
-              flexGrow: 1,
-              ...responsiveStyles.getTarget('field'),
-              ...(otherTextDisabled
-                ? responsiveStyles.getTarget('disabled')
-                : {})
-            }}
-            id={servar.key}
-            value={otherVal || ''}
-            onChange={onOtherChange}
-            onKeyDown={(e: any) => {
-              if (e.key === 'Enter') onEnter(e);
-            }}
-            maxLength={servar.max_length}
-            minLength={servar.min_length}
-            required={otherChecked}
-            disabled={otherTextDisabled}
-          />
-          <InlineTooltip
-            container={containerRef}
-            id={`${element.id}-`}
-            text={servar.metadata.other_tooltip}
-            responsiveStyles={responsiveStyles}
-            absolute={false}
-            repeat={element.repeat}
-          />
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
