@@ -302,15 +302,16 @@ const Element = ({ node: el, form }: any) => {
         return (
           <Elements.SignatureField
             {...fieldProps}
+            repeatIndex={index}
             defaultValue={fieldVal}
             onEnd={(newFile: any) => {
               if (newFile.size === 0) return;
               clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
-              updateFieldValues({ [servar.key]: Promise.resolve(newFile) });
+              changeValue(Promise.resolve(newFile), el, index);
               onChange();
             }}
             onClear={() => {
-              updateFieldValues({ [servar.key]: null });
+              changeValue(null, el, index);
               onChange();
             }}
           />

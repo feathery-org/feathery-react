@@ -15,6 +15,7 @@ export type SignatureCanvasProps = {
   responsiveStyles: any;
   defaultValue?: any;
   disabled?: boolean;
+  repeatIndex: any;
   onClear?: () => void;
   onEnd?: () => void;
   showClear?: boolean;
@@ -35,6 +36,7 @@ const SignatureCanvas = forwardRef<
 >((props, ref) => {
   const {
     fieldKey,
+    repeatIndex,
     responsiveStyles,
     defaultValue = null,
     disabled = false,
@@ -76,7 +78,7 @@ const SignatureCanvas = forwardRef<
       }
 
       const signatureFile = await defaultValue;
-      const base64 = await toBase64(signatureFile);
+      const base64 = signatureFile ? await toBase64(signatureFile) : '';
 
       const img = new Image();
       img.onload = () => {
@@ -146,7 +148,7 @@ const SignatureCanvas = forwardRef<
         maxWidth={3}
         clearOnResize={false}
         canvasProps={{
-          id: fieldKey,
+          id: fieldKey + repeatIndex,
           style: {
             ...signatureCanvasStyles,
             width: '100%',
