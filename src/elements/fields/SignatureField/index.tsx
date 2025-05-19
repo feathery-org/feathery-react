@@ -11,6 +11,7 @@ function SignatureField({
   responsiveStyles,
   defaultValue = null,
   editMode,
+  repeatIndex,
   elementProps = {},
   disabled = false,
   onEnd = () => {},
@@ -44,6 +45,7 @@ function SignatureField({
           setShow={setShowSignatureModal}
           defaultValue={defaultValue}
           fieldKey={fieldKey}
+          repeatIndex={repeatIndex}
           responsiveStyles={responsiveStyles}
           onClear={onClear}
           onEnd={onEnd}
@@ -94,6 +96,7 @@ function SignatureField({
           </div>
           <SignatureCanvas
             fieldKey={fieldKey}
+            repeatIndex={repeatIndex}
             responsiveStyles={responsiveStyles}
             defaultValue={defaultValue}
             disabled={disabled}

@@ -23,6 +23,7 @@ function SignatureModal(props: SignatureModalProps) {
     show = false,
     setShow = () => {},
     fieldKey,
+    repeatIndex,
     defaultValue,
     responsiveStyles,
     onClear = () => {},
@@ -356,6 +357,7 @@ function SignatureModal(props: SignatureModalProps) {
                 <SignatureCanvas
                   ref={signatureCanvasRef}
                   fieldKey={fieldKey}
+                  repeatIndex={repeatIndex}
                   responsiveStyles={responsiveStyles}
                   onClear={onClear}
                   onEnd={generateDrawnSignature}
