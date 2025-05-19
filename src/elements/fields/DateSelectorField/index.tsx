@@ -250,6 +250,7 @@ function DateSelectorField({
           onCalendarOpen={handleCalendarOpen}
           onCalendarClose={() => {
             handleCalendarClose();
+            setFocused(false);
             // the calendar closes on blur, select, or modal close on mobile
             // this ensures the date is updated on close and triggers logic rules
             onDateChange(internalDate, true);
