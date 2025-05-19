@@ -10,7 +10,8 @@ import { CSSProperties } from 'react';
 
 export const mobileBreakpointValue = 478;
 
-export const mobileBreakpointKey = `@media (maxWidth: ${mobileBreakpointValue}px)`;
+// This NEEDS to be max-width not maxWidth
+export const mobileBreakpointKey = `@media (max-width: ${mobileBreakpointValue}px)`;
 
 export const getViewport = () => {
   return featheryWindow().innerWidth > mobileBreakpointValue
