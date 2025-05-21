@@ -483,14 +483,13 @@ function Form({
   useEffect(() => {
     const autoscroll = formSettings.autoscroll;
     if (shouldScrollToTop && autoscroll !== 'none') {
-      const top =
-        autoscroll === 'top_of_form' ? formRef?.current?.offsetTop : 0;
+      const scroll =
+        autoscroll === 'top_of_form'
+          ? () => formRef.current?.scrollIntoView({ behavior: 'smooth' })
+          : () => featheryWindow().scrollTo({ top: 0, behavior: 'smooth' });
       try {
         // Needs to be async to scroll up in Safari sometimes
-        setTimeout(
-          () => featheryWindow().scrollTo({ top, behavior: 'smooth' }),
-          100
-        );
+        setTimeout(scroll, 100);
       } catch (e) {
         // Some browsers may not have support for scrollTo
         console.warn(e);
