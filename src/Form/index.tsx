@@ -1982,7 +1982,11 @@ function Form({
           const extractions = [];
           while (i < actions.length) {
             const curAction = actions[i];
-            if (curAction.type === ACTION_AI_DOCUMENT_EXTRACT) {
+            if (
+              curAction.type === ACTION_AI_DOCUMENT_EXTRACT &&
+              // process the first extraction and any after if not run_sequential
+              (extractions.length === 0 || !curAction.run_sequential)
+            ) {
               extractions.push(
                 client.extractAIDocument({
                   extractionId: curAction.extraction_id,
