@@ -777,7 +777,7 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   AI_CHECK_INTERVAL = 2000;
-  AI_MAX_TIME = 3 * 60 * 1000;
+  AI_MAX_TIME = 10 * 60 * 1000;
 
   // AI
   extractAIDocument({
