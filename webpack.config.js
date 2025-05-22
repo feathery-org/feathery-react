@@ -1,3 +1,4 @@
+const webpack = require('webpack');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
 
 module.exports = {
@@ -10,7 +11,12 @@ module.exports = {
       type: 'umd'
     }
   },
-  plugins: [new CleanWebpackPlugin()],
+  plugins: [
+    new webpack.DefinePlugin({
+      VERSION: JSON.stringify(require('./package.json').version)
+    }),
+    new CleanWebpackPlugin()
+  ],
   module: {
     rules: [
       {

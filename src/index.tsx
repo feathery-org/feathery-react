@@ -1,3 +1,5 @@
+declare const VERSION: string;
+
 import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import Elements from './elements';
@@ -68,6 +70,8 @@ const Feathery = {
   renderAt
 };
 
+const version = VERSION;
+
 export {
   Form,
   Elements,
@@ -79,7 +83,8 @@ export {
   LoginForm,
   useAuthClient,
   Feathery,
-  StyledContainer
+  StyledContainer,
+  version
 };
 
 export type { OPERATOR_CODE, FormContext };
