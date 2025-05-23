@@ -362,6 +362,10 @@ function PhoneField({
                 if (validateLength(onlyDigits, curCountryCode) === 'TOO_LONG')
                   return;
 
+                // Added extra validation for India to restrict to 10-digit numbers
+                // India's 13-digit numbers are restricted to machine to machine communication
+                if (curCountryCode === 'IN' && onlyDigits.length > 12) return;
+
                 const asYouType = new LPN.AsYouType(curCountryCode);
                 const newFormatted = asYouType.input(`+${onlyDigits}`);
                 const prevNumDigits = LPN.parseDigits(
