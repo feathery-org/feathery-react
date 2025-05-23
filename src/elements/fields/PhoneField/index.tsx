@@ -12,6 +12,7 @@ import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
 import { featheryDoc, hoverStylesGuard } from '../../../utils/browser';
+import { isValidPhoneLength } from './validation';
 
 const DEFAULT_COUNTRY = 'US';
 
@@ -330,8 +331,6 @@ function PhoneField({
               if (newNum) {
                 const LPN = global.libphonenumber;
                 if (!LPN) return;
-                const validateLength = LPN.validatePhoneNumberLength;
-
                 // Handle pasted numbers:
                 // If there are multiple plus symbols, take everything after the last one
                 const plusCount = (newNum.match(/\+/g) || []).length;
@@ -347,7 +346,7 @@ function PhoneField({
                 // if the number is valid but missing the country code, add it
                 if (
                   !newNum.includes('+') &&
-                  !validateLength(newNum, curCountryCode) // undefined = valid
+                  !LPN.validatePhoneNumberLength(newNum, curCountryCode) // undefined = valid
                 ) {
                   newNum = `+${phoneCode}${newNum}`;
                 }
@@ -359,12 +358,13 @@ function PhoneField({
 
                 const onlyDigits = LPN.parseDigits(newNum, curCountryCode);
 
-                if (validateLength(onlyDigits, curCountryCode) === 'TOO_LONG')
+                // check google validation for phone length and our country overrides
+                if (
+                  LPN.validatePhoneNumberLength(onlyDigits, curCountryCode) ===
+                    'TOO_LONG' ||
+                  !isValidPhoneLength(onlyDigits, curCountryCode)
+                )
                   return;
-
-                // Added extra validation for India to restrict to 10-digit numbers
-                // India's 13-digit numbers are restricted to machine to machine communication
-                if (curCountryCode === 'IN' && onlyDigits.length > 12) return;
 
                 const asYouType = new LPN.AsYouType(curCountryCode);
                 const newFormatted = asYouType.input(`+${onlyDigits}`);
