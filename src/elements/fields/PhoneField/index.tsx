@@ -362,9 +362,11 @@ function PhoneField({
                 if (validateLength(onlyDigits, curCountryCode) === 'TOO_LONG')
                   return;
 
-                // Added extra validation for India to restrict to 10-digit numbers
+                // Added extra validation for India to restrict to 10-digit numbers (+91)
                 // India's 13-digit numbers are restricted to machine to machine communication
                 if (curCountryCode === 'IN' && onlyDigits.length > 12) return;
+                // Singapore numbers are 8 digits except for special service numbers (+65)
+                if (curCountryCode === 'SG' && onlyDigits.length > 10) return;
 
                 const asYouType = new LPN.AsYouType(curCountryCode);
                 const newFormatted = asYouType.input(`+${onlyDigits}`);
