@@ -180,6 +180,36 @@ function initInfo() {
   return initState;
 }
 
+function handleNewUserSearchParams(newUserId: string) {
+  // removes any search params starting with '_'
+  // if _id is present, replace it with new user id
+  const searchParams = new URLSearchParams(location.search);
+  const paramsToDelete: string[] = [];
+
+  let hadIdParam = false;
+  searchParams.forEach(function (value, key) {
+    if (key === '_id') {
+      hadIdParam = true;
+    }
+    if (key.indexOf('_') === 0) {
+      paramsToDelete.push(key);
+    }
+  });
+
+  for (let i = 0; i < paramsToDelete.length; i++) {
+    searchParams.delete(paramsToDelete[i]);
+  }
+
+  if (hadIdParam) {
+    searchParams.set('_id', newUserId);
+  }
+
+  const newSearch = searchParams.toString();
+  const newUrl = location.pathname + (newSearch ? '?' + newSearch : '');
+
+  featheryWindow().history.replaceState({}, '', newUrl);
+}
+
 async function updateUserId(newUserId?: string, merge = false): Promise<void> {
   if (!newUserId) newUserId = uuidv4();
   if (merge) await defaultClient.updateUserId(newUserId, true);
@@ -193,11 +223,7 @@ async function updateUserId(newUserId?: string, merge = false): Promise<void> {
     initState.formSessions = {};
     initState.fieldValuesInitialized = false;
     // Clear URL hash on new session if not tracking location
-    featheryWindow().history.replaceState(
-      {},
-      '',
-      location.pathname + location.search
-    );
+    handleNewUserSearchParams(newUserId);
     // Need to fully reload page if auth since LoginForm isn't yet accounted
     // for by rerenderAllForms
     if (authState.authId) location.reload();
