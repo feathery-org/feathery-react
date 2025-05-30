@@ -5,7 +5,8 @@ import {
   firebaseSendMagicLink,
   firebaseSendSms,
   firebaseVerifySms,
-  firebaseSignInPopup
+  firebaseSignInPopup,
+  getCurrentSession
 } from '../../integrations/firebase';
 import {
   stytchLoginOnLoad,
@@ -141,13 +142,13 @@ function initializeAuthClientListeners() {
  * This function fires when the idle timer goes off. It either extends the auth
  * session or performs logout actions
  */
-function idleTimerAction(hasAuthed: boolean, logoutActions: () => void) {
-  // No block for firebase because extending the session manually requires issuing a token from the BE
-
+async function idleTimerAction(hasAuthed: boolean, logoutActions: () => void) {
   if (isAuthStytch() && authState.client.session.getSync()) {
     authState.client.session.authenticate({
       session_duration_minutes: 1440
     });
+  } else if (global.firebase && (await getCurrentSession())) {
+    // firebase session is active, no action needed.
   } else if (hasAuthed) {
     // There is no session, so need to revoke it
     logoutActions();

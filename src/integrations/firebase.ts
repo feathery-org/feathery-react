@@ -89,6 +89,32 @@ export function firebaseLoginOnLoad(featheryClient: any): Promise<any> {
   });
 }
 
+export function getCurrentSession(): Promise<any> {
+  return new Promise((resolve) => {
+    if (!authState.client?.auth) {
+      return resolve(null);
+    }
+
+    const unsubscribe = authState.client
+      .auth()
+      .onAuthStateChanged((user: any) => {
+        unsubscribe();
+        if (user) {
+          resolve({
+            authId: user.uid,
+            authData: {
+              email: user.email,
+              phone: user.phoneNumber,
+              first_name: user.displayName
+            }
+          });
+        } else {
+          resolve(null);
+        }
+      });
+  });
+}
+
 export async function firebaseSendMagicLink({
   fieldVal,
   servar
