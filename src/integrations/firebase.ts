@@ -2,12 +2,7 @@ import { dynamicImport } from './utils';
 import { updateSessionValues } from '../utils/formHelperFunctions';
 import { authState } from '../auth/LoginForm';
 import { useEffect } from 'react';
-import {
-  deleteCookie,
-  featheryWindow,
-  getCookie,
-  setCookie
-} from '../utils/browser';
+import { featheryWindow, getCookie, setCookie } from '../utils/browser';
 
 let firebasePromise: any = null;
 
@@ -46,46 +41,52 @@ export function installFirebase(firebaseConfig: any) {
 }
 
 export function firebaseLoginOnLoad(featheryClient: any): Promise<any> {
-  if (isHrefFirebaseMagicLink()) {
-    const authEmail = getCookie('featheryFirebaseEmail');
-    if (authEmail) {
-      return authState.client
-        .auth()
-        .signInWithEmailLink(authEmail, featheryWindow().location.href)
-        .then((result: any) => {
-          const user = result.user;
-          return featheryClient
-            .submitAuthInfo({
+  return new Promise((resolve) => {
+    const unsubscribe = authState.client
+      .auth()
+      .onAuthStateChanged(async (user: any) => {
+        unsubscribe();
+
+        try {
+          if (isHrefFirebaseMagicLink()) {
+            const authEmail = getCookie('featheryFirebaseEmail');
+            if (authEmail) {
+              const result = await authState.client
+                .auth()
+                .signInWithEmailLink(authEmail, featheryWindow().location.href);
+              const magicLinkUser = result.user;
+              const session = await featheryClient.submitAuthInfo({
+                authId: magicLinkUser.uid,
+                authData: {
+                  email: magicLinkUser.email,
+                  phone: magicLinkUser.phoneNumber,
+                  first_name: magicLinkUser.displayName
+                }
+              });
+              return resolve(session);
+            }
+          }
+
+          if (user) {
+            const session = await featheryClient.submitAuthInfo({
               authId: user.uid,
               authData: {
                 email: user.email,
                 phone: user.phoneNumber,
                 first_name: user.displayName
               }
-            })
-            .then((session: any) => session);
-        });
-    }
-  } else {
-    const oauthRedirect = getCookie('featheryFirebaseRedirect');
-    if (oauthRedirect) {
-      deleteCookie('featheryFirebaseRedirect');
-      return authState.client
-        .auth()
-        .getRedirectResult()
-        .then((result: any) => {
-          return featheryClient
-            .submitAuthInfo({
-              authId: result.user.uid,
-              authData: { email: result.user.email }
-            })
-            .then((session: any) => session);
-        });
-    }
-  }
+            });
+            return resolve(session);
+          }
 
-  authState.setAuthId('');
-  return Promise.resolve();
+          authState.setAuthId('');
+          resolve(null);
+        } catch (error) {
+          authState.setAuthId('');
+          resolve(null);
+        }
+      });
+  });
 }
 
 export async function firebaseSendMagicLink({
