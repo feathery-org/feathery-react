@@ -191,7 +191,7 @@ function handleNewUserSearchParams(newUserId: string) {
     if (key === '_id') {
       hadIdParam = true;
     }
-    if (key.indexOf('_') === 0) {
+    if (key.indexOf('_') === 0 && key !== '_slug') {
       paramsToDelete.push(key);
     }
   });
