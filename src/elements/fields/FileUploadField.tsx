@@ -193,7 +193,7 @@ function FileUploadField({
         display: 'flex',
         flexWrap: 'wrap',
         position: 'relative',
-        pointerEvents: editMode || disabled ? 'none' : 'auto',
+        pointerEvents: editMode ? 'none' : 'auto',
         width: '100%',
         height: '100%',
         ...responsiveStyles.getTarget('fc')
@@ -283,6 +283,7 @@ function FileUploadField({
                 height: '16px',
                 width: '16px',
                 borderRadius: '50%',
+                pointerEvents: disabled ? 'none' : 'auto',
                 cursor: 'pointer',
                 display: 'flex',
                 justifyContent: 'center',
@@ -306,6 +307,7 @@ function FileUploadField({
           onClick={onClick}
           css={{
             position: 'relative',
+            pointerEvents: disabled ? 'none' : 'auto',
             cursor: 'pointer',
             maxHeight: '100%',
             display: 'flex',
@@ -335,7 +337,7 @@ function FileUploadField({
         onChange={handleChange}
         required={required && !fileExists}
         accept={allowedFileTypes.join(',') || undefined}
-        disabled={element.properties.disabled ?? false}
+        disabled={disabled}
         aria-label={element.properties.aria_label}
         multiple={isMultiple}
         style={{
