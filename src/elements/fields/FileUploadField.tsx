@@ -55,9 +55,7 @@ function FileUploadField({
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
-    if (files && allowMoreFiles) {
-      handleFiles(files);
-    }
+    if (files && allowMoreFiles) handleFiles(files);
   };
 
   const onClick = () => {
@@ -200,7 +198,7 @@ function FileUploadField({
       }}
       {...elementProps}
       onDragOver={handleDragOver}
-      onDrop={handleDrop}
+      onDrop={disabled ? undefined : handleDrop}
     >
       {children}
       {!hidePreview &&
