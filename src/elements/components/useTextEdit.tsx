@@ -28,6 +28,7 @@ function useTextEdit({
     const css = {
       outline: 'none',
       minWidth: '5px',
+      width: '100%',
       display: 'inline-block',
       cursor: 'inherit',
       position: 'relative',
@@ -40,7 +41,7 @@ function useTextEdit({
       // Unfocused text can't be selected or edited, but we need to keep
       // contenteditable = true so when losing focus, blur event is still propagated
       editableProps = {
-        contentEditable: true,
+        contentEditable: 'plaintext-only',
         suppressContentEditableWarning: true,
         onMouseDown: (e: MouseEvent) => {
           if (!focused) e.preventDefault();
