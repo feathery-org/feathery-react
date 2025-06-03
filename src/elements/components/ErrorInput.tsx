@@ -23,10 +23,10 @@ export default function ErrorInput(props: ComponentProps<'input'>) {
         pointerEvents: 'none',
         position: 'absolute',
         opacity: 0,
-        bottom: 0,
-        left: '50%',
-        width: '1px',
-        height: '1px',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
         zIndex: FORM_Z_INDEX - 2
       }}
       {...props}
