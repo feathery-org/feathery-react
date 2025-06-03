@@ -1,5 +1,6 @@
 import React, { ComponentProps } from 'react';
 import { FORM_Z_INDEX } from '../../utils/styles';
+import { iosScrollOnFocus } from '../../utils/browser';
 
 export default function ErrorInput(props: ComponentProps<'input'>) {
   return (
@@ -12,17 +13,20 @@ export default function ErrorInput(props: ComponentProps<'input'>) {
       // onFocus and onClick are cancelled for a similar reason
       type='text'
       inputMode='none'
-      onFocus={(e) => e.preventDefault()}
+      onFocus={(e) => {
+        iosScrollOnFocus(e);
+        e.preventDefault();
+      }}
       onClick={(e) => e.preventDefault()}
       tabIndex={-1}
       style={{
         pointerEvents: 'none',
         position: 'absolute',
         opacity: 0,
-        bottom: 0,
-        left: '50%',
-        width: '1px',
-        height: '1px',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
         zIndex: FORM_Z_INDEX - 2
       }}
       {...props}

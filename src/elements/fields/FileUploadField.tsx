@@ -6,7 +6,7 @@ import { Image } from 'react-bootstrap';
 import { CloseIcon, DownloadIcon, FileUploadIcon } from '../components/icons';
 import { imgMaxSizeStyles } from '../styles';
 import { FORM_Z_INDEX } from '../../utils/styles';
-import { downloadFile } from '../../utils/browser';
+import { downloadFile, iosScrollOnFocus } from '../../utils/browser';
 
 const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 const NUM_FILES_LIMIT = 20;
@@ -338,13 +338,15 @@ function FileUploadField({
         disabled={disabled}
         aria-label={element.properties.aria_label}
         multiple={isMultiple}
+        onFocus={iosScrollOnFocus}
         style={{
           position: 'absolute',
+          pointerEvents: 'none',
           opacity: 0,
-          bottom: 0,
-          left: '50%',
-          width: '1px',
-          height: '1px',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
           zIndex: FORM_Z_INDEX - 2
         }}
       />
