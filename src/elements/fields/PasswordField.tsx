@@ -5,7 +5,7 @@ import InlineTooltip from '../components/InlineTooltip';
 import { bootstrapStyles } from '../styles';
 import useBorder from '../components/useBorder';
 import { FORM_Z_INDEX } from '../../utils/styles';
-import { hoverStylesGuard } from '../../utils/browser';
+import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
 import { HideEyeIcon, ShowEyeIcon } from '../components/icons';
 
 function PasswordField({
@@ -104,6 +104,7 @@ function PasswordField({
           ref={setRef}
           autoComplete='off'
           type={showPassword ? 'text' : 'password'}
+          onFocus={iosScrollOnFocus}
         />
         {rawValue && (
           <div
