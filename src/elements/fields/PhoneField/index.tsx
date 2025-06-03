@@ -11,7 +11,11 @@ import { isNum } from '../../../utils/primitives';
 import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
-import { featheryDoc, hoverStylesGuard } from '../../../utils/browser';
+import {
+  featheryDoc,
+  hoverStylesGuard,
+  iosScrollOnFocus
+} from '../../../utils/browser';
 import { isValidPhoneLength } from './validation';
 
 const DEFAULT_COUNTRY = 'US';
@@ -298,7 +302,8 @@ function PhoneField({
             type='tel'
             autoComplete={autoComplete ? 'tel' : 'off'}
             dir='ltr' // always left-to-right numbers but will be right justified in RTL
-            onFocus={() => {
+            onFocus={(e) => {
+              iosScrollOnFocus(e);
               setRawNumber((prevNum) => {
                 // We only want to set the country code if the field is empty
                 if (prevNum === '') {

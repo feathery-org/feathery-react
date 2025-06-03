@@ -10,7 +10,7 @@ import debounce from 'lodash.debounce';
 import { OverlayTrigger } from 'react-bootstrap';
 import useBorder from '../components/useBorder';
 import { DROPDOWN_Z_INDEX } from './index';
-import { hoverStylesGuard } from '../../utils/browser';
+import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
 
 const SEARCH_DELAY_TIME_MS = 500;
 const EXIT_DELAY_TIME_MS = 200;
@@ -157,7 +157,10 @@ function AddressLine1({
               if (e.key === 'Enter') onEnter(e);
               else setShowOptions(e.key !== 'Escape');
             }}
-            onFocus={() => setFocused(true)}
+            onFocus={(event) => {
+              setFocused(true);
+              iosScrollOnFocus(event);
+            }}
             onBlur={(e) => {
               // Blur may be triggered by option selection, and option
               // click logic may need to be run first. So delay option removal.
