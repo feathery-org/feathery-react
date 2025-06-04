@@ -20,7 +20,7 @@ export async function installAmplitude(amplitudeConfig: any) {
     return;
   }
 
-  if (meta.session_replay) {
+  if (meta.session_replay && featheryWindow().sessionReplay) {
     const sessionReplayTracking = featheryWindow().sessionReplay.plugin();
     featheryWindow().amplitude.add(sessionReplayTracking);
   }
