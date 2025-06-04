@@ -80,7 +80,7 @@ describe('featheryClient', () => {
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}panel/session/v2/?form_key=formKey&draft=false&override=true&fuser_key=userId`,
+        `${API_URL}panel/session/v3/?form_key=formKey&draft=false&override=true&fuser_key=userId`,
         {
           cache: 'no-store',
           keepalive: false,

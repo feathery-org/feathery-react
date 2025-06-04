@@ -785,24 +785,19 @@ export function getInitialStep({
   return initialStepId || sessionCurrentStep || (getOrigin as any)(steps).key;
 }
 
-export function castVal(
-  servarType: string | undefined,
-  val: any,
-  repeated = false
-): any {
+export function castVal(fieldType: string, val: any, repeated = false): any {
   if (Array.isArray(val)) {
-    if (ARRAY_FIELD_TYPES.includes(servarType ?? '')) return val;
-    else return val.map((entry) => castVal(servarType, entry));
+    if (ARRAY_FIELD_TYPES.includes(fieldType ?? '')) return val;
+    else return val.map((entry) => castVal(fieldType, entry));
   }
 
-  // If there is no type, it is a hidden field and we will treat it as a string
-  if (servarType === undefined) return String(val);
-  else if (ARRAY_FIELD_TYPES.includes(servarType) || repeated) return [val];
+  if (ARRAY_FIELD_TYPES.includes(fieldType) || repeated) return [val];
 
   let newVal;
-  switch (servarType) {
+  switch (fieldType) {
     case 'currency':
     case 'integer_field':
+    case 'number_value':
     case 'rating':
     case 'slider':
       newVal = Number(val);
@@ -818,22 +813,31 @@ export function castVal(
   return newVal;
 }
 
-export function getServarAttrMap(steps: any) {
-  const servarKeyToTypeMap: Record<
-    string,
-    { type: string; repeated: boolean }
-  > = {};
+export function getAllFieldAttrMap(
+  steps: any,
+  hiddenFields: Record<string, string>
+) {
+  const fieldKeyToTypeMap: Record<string, { type: string; repeated: boolean }> =
+    {};
   if (steps) {
     Object.values(steps).forEach((step: any) => {
       step.servar_fields.forEach(({ servar }: any) => {
-        servarKeyToTypeMap[servar.key] = {
+        fieldKeyToTypeMap[servar.key] = {
           type: servar.type,
           repeated: servar.repeated
         };
       });
     });
   }
-  return servarKeyToTypeMap;
+
+  Object.entries(hiddenFields).forEach(([key, type]) => {
+    fieldKeyToTypeMap[key] = {
+      type,
+      repeated: false
+    };
+  });
+
+  return fieldKeyToTypeMap;
 }
 
 // Reorders by leaving non-execution order actions in place and moving actons with specific
@@ -889,23 +893,25 @@ export function saveInitialValuesAndUrlParams({
   client,
   saveUrlParams,
   initialValues,
-  steps
+  steps,
+  hiddenFields
 }: {
   updateFieldValues: any;
   client: FeatheryClient;
   saveUrlParams: boolean;
   initialValues: any;
   steps: any;
+  hiddenFields: Record<string, string>;
 }) {
   let rerenderRequired = false;
   // Submit initial values & URL params
   let valuesToSubmit: Record<string, any> = {};
   if (!isObjectEmpty(initialValues)) {
     rerenderRequired = true;
-    const servarAttrMap = getServarAttrMap(steps);
+    const fieldAttrMap = getAllFieldAttrMap(steps, hiddenFields);
     valuesToSubmit = { ...initialValues };
     Object.entries(valuesToSubmit).map(([key, val]) => {
-      const attrs = servarAttrMap[key] ?? {};
+      const attrs = fieldAttrMap[key];
       valuesToSubmit[key] = castVal(attrs.type, val, attrs.repeated);
     });
   }
