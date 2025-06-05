@@ -13,7 +13,8 @@ import debounce from 'lodash.debounce';
 
 import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
 import {
-  castVal,
+  castServarVal,
+  castHiddenVal,
   changeStep,
   clearBrowserErrors,
   FieldOptions,
@@ -2079,13 +2080,13 @@ function Form({
           }
         });
 
-        let valType: string | undefined = servar?.type;
-        if (!valType) valType = hiddenFields[key];
-
         if (isNum(element.repeat) && Array.isArray(val))
           val = val[element.repeat] ?? '';
 
-        val = castVal(valType, val);
+        const hiddenFieldType = hiddenFields[key];
+        val = hiddenFieldType
+          ? castHiddenVal(hiddenFieldType, val)
+          : castServarVal(servar?.type, val);
 
         let destVal = fieldValues[key] as any[];
         if (servar?.repeated) destVal = destVal[element.repeat ?? 0];

@@ -785,19 +785,24 @@ export function getInitialStep({
   return initialStepId || sessionCurrentStep || (getOrigin as any)(steps).key;
 }
 
-export function castVal(fieldType: string, val: any, repeated = false): any {
+export function castServarVal(
+  servarType: string | undefined,
+  val: any,
+  repeated = false
+): any {
   if (Array.isArray(val)) {
-    if (ARRAY_FIELD_TYPES.includes(fieldType ?? '')) return val;
-    else return val.map((entry) => castVal(fieldType, entry));
+    if (ARRAY_FIELD_TYPES.includes(servarType ?? '')) return val;
+    else return val.map((entry) => castServarVal(servarType, entry));
   }
 
-  if (ARRAY_FIELD_TYPES.includes(fieldType) || repeated) return [val];
+  // If there is no type, we will treat it as a string
+  if (servarType === undefined) return String(val);
+  else if (ARRAY_FIELD_TYPES.includes(servarType) || repeated) return [val];
 
   let newVal;
-  switch (fieldType) {
+  switch (servarType) {
     case 'currency':
     case 'integer_field':
-    case 'number_value':
     case 'rating':
     case 'slider':
       newVal = Number(val);
@@ -813,31 +818,36 @@ export function castVal(fieldType: string, val: any, repeated = false): any {
   return newVal;
 }
 
-export function getAllFieldAttrMap(
-  steps: any,
-  hiddenFields: Record<string, string>
-) {
-  const fieldKeyToTypeMap: Record<string, { type: string; repeated: boolean }> =
-    {};
+export function castHiddenVal(hfType: string, val: any) {
+  let newVal;
+  switch (hfType) {
+    case 'number_value':
+      newVal = Number(val);
+      break;
+    default:
+      newVal = String(val);
+      break;
+  }
+
+  return newVal;
+}
+
+export function getServarAttrMap(steps: any) {
+  const servarKeyToTypeMap: Record<
+    string,
+    { type: string; repeated: boolean }
+  > = {};
   if (steps) {
     Object.values(steps).forEach((step: any) => {
       step.servar_fields.forEach(({ servar }: any) => {
-        fieldKeyToTypeMap[servar.key] = {
+        servarKeyToTypeMap[servar.key] = {
           type: servar.type,
           repeated: servar.repeated
         };
       });
     });
   }
-
-  Object.entries(hiddenFields).forEach(([key, type]) => {
-    fieldKeyToTypeMap[key] = {
-      type,
-      repeated: false
-    };
-  });
-
-  return fieldKeyToTypeMap;
+  return servarKeyToTypeMap;
 }
 
 // Reorders by leaving non-execution order actions in place and moving actons with specific
@@ -908,11 +918,14 @@ export function saveInitialValuesAndUrlParams({
   let valuesToSubmit: Record<string, any> = {};
   if (!isObjectEmpty(initialValues)) {
     rerenderRequired = true;
-    const fieldAttrMap = getAllFieldAttrMap(steps, hiddenFields);
+    const servarAttrMap = getServarAttrMap(steps);
     valuesToSubmit = { ...initialValues };
     Object.entries(valuesToSubmit).map(([key, val]) => {
-      const attrs = fieldAttrMap[key];
-      valuesToSubmit[key] = castVal(attrs.type, val, attrs.repeated);
+      const attrs = servarAttrMap[key] ?? {};
+      const hiddenFieldType = hiddenFields[key];
+      valuesToSubmit[key] = hiddenFieldType
+        ? castHiddenVal(hiddenFieldType, val)
+        : castServarVal(attrs.type, val, attrs.repeated);
     });
   }
   const params = new URLSearchParams(featheryWindow().location.search);
