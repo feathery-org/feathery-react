@@ -278,8 +278,8 @@ function DateSelectorField({
           timeIntervals={servarMeta.time_interval || 30}
           dateFormat={dateMask}
           timeFormat={timeMask}
-          maxDate={servarMeta.no_future ? new Date() : undefined}
-          minDate={servarMeta.no_past ? new Date() : undefined}
+          maxDate={servarMeta.no_future && !editMode ? new Date() : undefined}
+          minDate={servarMeta.no_past && !editMode ? new Date() : undefined}
           showMonthDropdown
           showYearDropdown
           forceShowMonthNavigation={false}

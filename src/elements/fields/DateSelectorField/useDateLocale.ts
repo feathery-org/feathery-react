@@ -23,18 +23,22 @@ export const useCustomDateLocale = ({
 }: UseCustomDateLocaleProps = {}): Locale => {
   const customLocale = useMemo(() => {
     try {
+      if (!baseLocale || !baseLocale.localize) {
+        console.warn(
+          'Could not load translation: Base locale could not be loaded'
+        );
+        return undefined;
+      }
       // Validate month and weekday names if provided
       if (monthNames && monthNames.length !== 12) {
-        console.error(
-          'Could not load translation:',
-          'Month translation must contain exactly 12 months'
+        console.warn(
+          'Could not load translation: Month translation must contain exactly 12 months'
         );
         return baseLocale;
       }
       if (shortDayNames && shortDayNames.length !== 7) {
-        console.error(
-          'Could not load translation:',
-          'Weekday translation must contain exactly 7 days'
+        console.warn(
+          'Could not load translation: Weekday translation must contain exactly 7 days'
         );
         return baseLocale;
       }
@@ -71,7 +75,7 @@ export const useCustomDateLocale = ({
       };
     } catch (err) {
       console.error('Could not load translation:', err);
-      return baseLocale;
+      return undefined;
     }
   }, [monthNames, shortDayNames]);
 
