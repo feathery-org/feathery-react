@@ -238,6 +238,7 @@ interface InternalProps {
   _internalId: string; // Used to uniquely identify forms when the same form is rendered multiple times
   _isAuthLoading?: boolean; // Flag to show the loader for auth purposes
   _bypassCDN?: boolean; // Fetch form directly from API if true
+  _pollFuserData?: boolean; // Poll for updated fuser data on BE. Used by audio AI.
 }
 
 interface ClickActionElement {
@@ -263,6 +264,8 @@ function Form({
   _internalId,
   _isAuthLoading = false,
   _bypassCDN = false,
+  _draft = false,
+  _pollFuserData = false,
   formName: formNameProp,
   formId, // The 'live' env slug
   onChange = null,
@@ -287,7 +290,6 @@ function Form({
   style = {},
   className = '',
   children,
-  _draft = false,
   readOnly = false,
   hashNavigation
 }: InternalProps & Props) {
@@ -637,7 +639,7 @@ function Form({
   };
 
   // For audio AI only right now
-  usePollFuserData(client, updateFieldValues);
+  usePollFuserData(_pollFuserData, client, updateFieldValues);
 
   const eventCallbackMap: Record<string, any> = {
     change: onChange,
