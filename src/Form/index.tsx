@@ -2457,7 +2457,7 @@ export function JSForm({
   else return null;
 }
 
-export default function ReactForm(props: Props): ReactNode | null {
+export default function ReactForm(props: Props) {
   let [internalId, setInternalId] = useState('');
   // Cannot use uuidv4 on server-side
   if (!internalId && runningInClient()) {
