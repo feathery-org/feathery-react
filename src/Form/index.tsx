@@ -13,8 +13,8 @@ import debounce from 'lodash.debounce';
 
 import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
 import {
-  castServarVal,
   castHiddenVal,
+  castServarVal,
   changeStep,
   clearBrowserErrors,
   FieldOptions,
@@ -196,6 +196,7 @@ import { getSignUrl } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
 import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
+import usePollFuserData from '../hooks/usePollFuserData';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -634,6 +635,9 @@ function Form({
 
     return true;
   };
+
+  // For audio AI only right now
+  usePollFuserData(client, updateFieldValues);
 
   const eventCallbackMap: Record<string, any> = {
     change: onChange,

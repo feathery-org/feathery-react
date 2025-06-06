@@ -245,6 +245,12 @@ export default class FeatheryClient extends IntegrationClient {
     return this._fetch(url, options);
   }
 
+  pollUserData() {
+    const { userId } = initInfo();
+    const url = `${API_URL}fuser/poll/?fuser_key=${userId}`;
+    return this._fetch(url);
+  }
+
   setDefaultFormValues({ steps, additionalValues }: any) {
     const values: Record<string, any> = {};
     steps.forEach((step: any) => {
