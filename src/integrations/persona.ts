@@ -49,8 +49,9 @@ export function triggerPersona(
 
       const result = await featheryClient.pollPersonaResponse();
       if (result?.status === 'complete') {
-        const submitStatus = { [statusKey]: result.value };
-        updateFieldValues(submitStatus);
+        (config.save_map ?? []).forEach((saveEntry: any) => {
+          updateFieldValues({[saveEntry.feathery_field_key] : result.value[saveEntry.persona_attribute]});
+        });
         onComplete();
       } else if (result?.error) {
         console.error('Error in persona response:', result.error);
