@@ -13,7 +13,8 @@ import debounce from 'lodash.debounce';
 
 import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
 import {
-  castVal,
+  castServarVal,
+  castHiddenVal,
   changeStep,
   clearBrowserErrors,
   FieldOptions,
@@ -328,7 +329,7 @@ function Form({
   const curLanguage = useRef<undefined | string>(undefined);
 
   const [fieldKeys, setFieldKeys] = useState<string[]>([]);
-  const [hiddenFieldKeys, setHiddenFieldKeys] = useState<string[]>([]);
+  const [hiddenFields, setHiddenFields] = useState<Record<string, string>>({});
 
   // Array of 2 elements. First is field whitelist, second is field blacklist
   const [allowLists, setAllowLists] = useState<any[]>([null, null]);
@@ -851,7 +852,7 @@ function Form({
     let fields = internalState[_internalId]?.fields;
     if (!fields || !Object.isSealed(fields))
       fields = Object.seal(
-        getAllFields(fieldKeys, hiddenFieldKeys, _internalId)
+        getAllFields(fieldKeys, Object.keys(hiddenFields), _internalId)
       );
 
     const runIntegrationActions: RunIntegrationActions = (actionIds, options) =>
@@ -1145,7 +1146,7 @@ function Form({
         setIntegrations(session.integrations);
 
         setFieldKeys(session.servars);
-        setHiddenFieldKeys(session.hidden_fields);
+        setHiddenFields(session.hidden_fields);
         setAllowLists([
           session.collaborator?.whitelist,
           session.collaborator?.blacklist
@@ -1155,7 +1156,8 @@ function Form({
           client: newClient,
           saveUrlParams: saveUrlParams || saveUrlParamsFormSetting,
           initialValues,
-          steps
+          steps,
+          hiddenFields: session.hidden_fields
         });
 
         // User is authenticating. auth hook will set the initial stepKey once auth has finished
@@ -2081,7 +2083,10 @@ function Form({
         if (isNum(element.repeat) && Array.isArray(val))
           val = val[element.repeat] ?? '';
 
-        val = castVal(servar?.type, val);
+        const hiddenFieldType = hiddenFields[key];
+        val = hiddenFieldType
+          ? castHiddenVal(hiddenFieldType, val)
+          : castServarVal(servar?.type, val);
 
         let destVal = fieldValues[key] as any[];
         if (servar?.repeated) destVal = destVal[element.repeat ?? 0];

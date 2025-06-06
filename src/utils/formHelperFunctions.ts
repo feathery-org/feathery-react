@@ -785,17 +785,17 @@ export function getInitialStep({
   return initialStepId || sessionCurrentStep || (getOrigin as any)(steps).key;
 }
 
-export function castVal(
+export function castServarVal(
   servarType: string | undefined,
   val: any,
   repeated = false
 ): any {
   if (Array.isArray(val)) {
     if (ARRAY_FIELD_TYPES.includes(servarType ?? '')) return val;
-    else return val.map((entry) => castVal(servarType, entry));
+    else return val.map((entry) => castServarVal(servarType, entry));
   }
 
-  // If there is no type, it is a hidden field and we will treat it as a string
+  // If there is no type, we will treat it as a string
   if (servarType === undefined) return String(val);
   else if (ARRAY_FIELD_TYPES.includes(servarType) || repeated) return [val];
 
@@ -809,6 +809,20 @@ export function castVal(
       break;
     case 'checkbox':
       newVal = !['False', 'false', false].includes(val);
+      break;
+    default:
+      newVal = String(val);
+      break;
+  }
+
+  return newVal;
+}
+
+export function castHiddenVal(hfType: string, val: any) {
+  let newVal;
+  switch (hfType) {
+    case 'number_value':
+      newVal = Number(val);
       break;
     default:
       newVal = String(val);
@@ -889,13 +903,15 @@ export function saveInitialValuesAndUrlParams({
   client,
   saveUrlParams,
   initialValues,
-  steps
+  steps,
+  hiddenFields
 }: {
   updateFieldValues: any;
   client: FeatheryClient;
   saveUrlParams: boolean;
   initialValues: any;
   steps: any;
+  hiddenFields: Record<string, string>;
 }) {
   let rerenderRequired = false;
   // Submit initial values & URL params
@@ -906,7 +922,10 @@ export function saveInitialValuesAndUrlParams({
     valuesToSubmit = { ...initialValues };
     Object.entries(valuesToSubmit).map(([key, val]) => {
       const attrs = servarAttrMap[key] ?? {};
-      valuesToSubmit[key] = castVal(attrs.type, val, attrs.repeated);
+      const hiddenFieldType = hiddenFields[key];
+      valuesToSubmit[key] = hiddenFieldType
+        ? castHiddenVal(hiddenFieldType, val)
+        : castServarVal(attrs.type, val, attrs.repeated);
     });
   }
   const params = new URLSearchParams(featheryWindow().location.search);

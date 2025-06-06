@@ -410,7 +410,7 @@ export default class FeatheryClient extends IntegrationClient {
     if (noData) params.no_data = 'true';
     // @ts-expect-error TS(2322): Type 'string' is not assignable to type '{ form_ke... Remove this comment to see the full error message
     params = encodeGetParams(params);
-    const url = `${API_URL}panel/session/v2/?${params}`;
+    const url = `${API_URL}panel/session/v3/?${params}`;
     const options = { importance: 'high' };
 
     const response = await this._fetch(url, options);
