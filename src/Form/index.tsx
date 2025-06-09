@@ -131,7 +131,7 @@ import internalState, {
 import useFormAuth from '../auth/internal/useFormAuth';
 import {
   ACTION_ADD_REPEATED_ROW,
-  ACTION_AI_DOCUMENT_EXTRACT,
+  ACTION_AI_EXTRACTION,
   ACTION_ALLOY_VERIFY_ID,
   ACTION_BACK,
   ACTION_GENERATE_ENVELOPES,
@@ -639,7 +639,8 @@ function Form({
   };
 
   // For audio AI only right now
-  usePollFuserData(_pollFuserData, client, updateFieldValues);
+  const [pollFuserData, setPollFuserData] = useState(_pollFuserData);
+  usePollFuserData(pollFuserData, client, updateFieldValues);
 
   const eventCallbackMap: Record<string, any> = {
     change: onChange,
@@ -986,10 +987,11 @@ function Form({
           }
 
           try {
-            const data = await client.extractAIDocument({
+            const data = await client.runAIExtraction({
               extractionId,
               options,
-              pages
+              pages,
+              setPollFuserData
             });
             const vals = data.data ?? {};
             updateFieldValues(vals);
@@ -1982,7 +1984,7 @@ function Form({
           setElementError((e as Error).message);
           break;
         }
-      } else if (type === ACTION_AI_DOCUMENT_EXTRACT) {
+      } else if (type === ACTION_AI_EXTRACTION) {
         try {
           await submitPromise;
 
@@ -1990,17 +1992,20 @@ function Form({
           while (i < actions.length) {
             const curAction = actions[i];
             if (
-              curAction.type === ACTION_AI_DOCUMENT_EXTRACT &&
+              curAction.type === ACTION_AI_EXTRACTION &&
               // process the first extraction and any after if not run_sequential
               (extractions.length === 0 || !curAction.run_sequential)
             ) {
               extractions.push(
-                client.extractAIDocument({
+                client.runAIExtraction({
                   extractionId: curAction.extraction_id,
                   options: {
                     waitForCompletion: !curAction.run_async,
-                    variantId: curAction.variant_id
-                  }
+                    variantId: curAction.variant_id,
+                    meetingUrl: fieldValues[curAction.meeting_url_field_key]
+                  },
+                  undefined,
+                  setPollFuserData
                 })
               );
               i++;

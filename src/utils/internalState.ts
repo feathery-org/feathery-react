@@ -23,6 +23,7 @@ export type ExtractionActionOptions = {
   waitForCompletion?: boolean;
   pages?: number[];
   variantId?: string;
+  meetingUrl?: string;
 };
 
 export type AlloyEntities = Record<string, any>[];
