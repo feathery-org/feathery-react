@@ -47,7 +47,7 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
 
     if (props.embed_calendly && form.calendly?.api_key) {
       children.push(
-        <CalendlyEmbed form={form} success_step={props.calendly_success_step} />
+        <CalendlyEmbed form={form} successStep={props.calendly_success_step} />
       );
     }
 
