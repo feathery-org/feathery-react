@@ -786,21 +786,25 @@ export default class FeatheryClient extends IntegrationClient {
   AI_MAX_TIME = 10 * 60 * 1000;
 
   // AI
-  extractAIDocument({
+  async runAIExtraction({
     extractionId,
     options,
-    pages
+    pages,
+    setPollFuserData
   }: {
     extractionId: string;
     options: ExtractionActionOptions | boolean;
     pages?: number[];
+    setPollFuserData?: any;
   }) {
     let runAsync: boolean;
     let variantId: string | undefined;
+    let meetingUrl: string | undefined;
     if (typeof options === 'object') {
       runAsync = !options.waitForCompletion;
       pages = options.pages;
       variantId = options.variantId;
+      meetingUrl = options.meetingUrl || undefined;
     } else {
       // deprecated usage, options is waitForCompletion
       runAsync = !options;
@@ -811,18 +815,23 @@ export default class FeatheryClient extends IntegrationClient {
       fuser_key: userId,
       extraction_id: extractionId,
       extraction_variant_id: variantId,
-      pages
+      pages,
+      meeting_url: meetingUrl
     };
 
-    this._fetch(`${STATIC_URL}ai/vision/`, {
+    const res = await this._fetch(`${STATIC_URL}ai/vision/`, {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
     });
+    const response = await res?.json();
+    if (runAsync) return {};
+    if (response.meeting_info) {
+      setPollFuserData(true);
+      return {};
+    }
 
-    return new Promise((resolve) => {
-      if (runAsync) return resolve({});
-
+    return await new Promise((resolve) => {
       let attempts = 0;
       const maxAttempts = this.AI_MAX_TIME / this.AI_CHECK_INTERVAL;
       const pollUrl = `${STATIC_URL}ai/vision/completion/?fid=${userId}&eid=${extractionId}&evid=${

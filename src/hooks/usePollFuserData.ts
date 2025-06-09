@@ -16,5 +16,5 @@ export default function usePollFuserData(
         if (Object.keys(data).length) updateFieldValues(data);
       });
     }, 1000);
-  }, [client]);
+  }, [client, poll]);
 }

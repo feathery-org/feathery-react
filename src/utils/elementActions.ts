@@ -30,7 +30,7 @@ export const ACTION_VERIFY_SMS = 'verify_sms';
 export const ACTION_VERIFY_COLLABORATOR = 'verify_collaborator';
 export const ACTION_INVITE_COLLABORATOR = 'invite_collaborator';
 export const ACTION_REWIND_COLLABORATION = 'rewind_collaboration';
-export const ACTION_AI_DOCUMENT_EXTRACT = 'ai_document_extract';
+export const ACTION_AI_EXTRACTION = 'ai_document_extract';
 export const ACTION_TELESIGN_SILENT_VERIFICATION =
   'telesign_silent_verification';
 export const ACTION_TELESIGN_PHONE_TYPE = 'telesign_phone_type';
