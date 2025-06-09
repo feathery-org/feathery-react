@@ -1,20 +1,13 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import Element from './Element';
 import {
   getPositionKey,
   stepElementTypes,
   VisiblePositions
 } from '../../utils/hideAndRepeats';
-import DangerouslySetHTMLContent from '../../utils/DangerouslySetHTMLContent';
 import { Container } from './Container';
-import { dynamicImport } from '../../integrations/utils';
-import {
-  isCalendlyWindowEvent,
-  transformCalendlyParams
-} from '../../integrations/calendly';
-import { featheryWindow } from '../../utils/browser';
 import { getRepeatedContainers } from '../../utils/repeat';
-import { replaceTextVariables } from '../../elements/components/TextNodes';
+import CalendlyEmbed from './CalendlyEmbed';
 
 const Grid = ({ step, form, viewport }: any) => {
   if (!step || !form.visiblePositions) return null;
@@ -30,36 +23,6 @@ const Grid = ({ step, form, viewport }: any) => {
 
 const Subgrid = ({ tree: node, form, viewport }: any) => {
   const props = node.properties ?? {};
-
-  useEffect(() => {
-    // Script must be installed *after* Calendly div is rendered
-    if (props.embed_calendly && form.calendly) {
-      dynamicImport(
-        'https://assets.calendly.com/assets/external/widget.js',
-        true,
-        true
-      );
-
-      const calendlyRedirect = (e: any) => {
-        if (
-          isCalendlyWindowEvent(e) &&
-          e.data.event === 'calendly.event_scheduled'
-        ) {
-          if (props.calendly_success_step) {
-            const nextStep: any = Object.values(form.steps).find(
-              (step: any) => step.id === props.calendly_success_step
-            );
-            if (nextStep) form.changeStep(nextStep.key);
-          }
-        }
-      };
-
-      featheryWindow().addEventListener('message', calendlyRedirect);
-      return () =>
-        featheryWindow().removeEventListener('message', calendlyRedirect);
-    }
-  }, []);
-
   if (node.isElement) {
     return (
       <Container node={node} viewport={viewport}>
@@ -83,49 +46,13 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
     });
 
     if (props.embed_calendly && form.calendly?.api_key) {
-      let url = form.calendly.api_key;
-      if (!url.endsWith('/')) url += '/';
-
-      const params = transformCalendlyParams(form.calendly);
-      if (params) {
-        url += url.includes('?') ? '&' : '?';
-        url += params;
-      }
-
       children.push(
-        <div
-          key='calendly-component'
-          className='calendly-inline-widget'
-          data-url={url}
-          style={{ width: '100%', height: '100%' }}
-        />
+        <CalendlyEmbed form={form} success_step={props.calendly_success_step} />
       );
     }
 
     const customComponent = form.customComponents[node.key ?? ''];
     if (customComponent) children.push(customComponent);
-
-    if (props.iframe_url) {
-      children.push(
-        <iframe
-          key='iframe-component'
-          width='100%'
-          height='100%'
-          src={replaceTextVariables(props.iframe_url)}
-          css={{ border: 'none' }}
-        />
-      );
-    }
-
-    if (props.custom_html) {
-      children.push(
-        <DangerouslySetHTMLContent
-          key='custom-html-component'
-          html={replaceTextVariables(props.custom_html)}
-          css={children.length === 0 ? { height: '100%', width: '100%' } : {}}
-        />
-      );
-    }
 
     return (
       <Container
