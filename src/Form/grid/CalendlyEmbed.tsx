@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { dynamicImport } from '../../integrations/utils';
 import {
   isCalendlyWindowEvent,
@@ -6,7 +6,7 @@ import {
 } from '../../integrations/calendly';
 import { featheryWindow } from '../../utils/browser';
 
-export default function CalendlyEmbed({ form, success_step }: any) {
+export default function CalendlyEmbed({ form, successStep }: any) {
   useEffect(() => {
     // Script must be installed *after* Calendly div is rendered
     dynamicImport(
@@ -20,9 +20,9 @@ export default function CalendlyEmbed({ form, success_step }: any) {
         isCalendlyWindowEvent(e) &&
         e.data.event === 'calendly.event_scheduled'
       ) {
-        if (success_step) {
+        if (successStep) {
           const nextStep: any = Object.values(form.steps).find(
-            (step: any) => step.id === success_step
+            (step: any) => step.id === successStep
           );
           if (nextStep) form.changeStep(nextStep.key);
         }
