@@ -118,7 +118,9 @@ function PhoneField({
 
   const formattedNumber = useMemo(() => {
     const LPN = global.libphonenumber;
-    if (rawNumber === '' || !LPN) return '';
+    if (!LPN) return `+${rawNumber}`;
+    // handle blurred and empty input
+    if (rawNumber === '') return '';
 
     const asYouType = new LPN.AsYouType(curCountryCode);
     const onlyDigits = LPN.parseDigits(rawNumber, curCountryCode);
@@ -347,13 +349,19 @@ function PhoneField({
                 // Phone codes with >3 characters will have a whitespace
                 newNum = newNum.replace(/\s/g, '');
 
-                // Number is being pasted in (iphone autofill)...
-                // if the number is valid but missing the country code, add it
-                if (
-                  !newNum.includes('+') &&
-                  !LPN.validatePhoneNumberLength(newNum, curCountryCode) // undefined = valid
-                ) {
-                  newNum = `+${phoneCode}${newNum}`;
+                // if there are no plus symbols, add one as well as the country code if it's missing
+                if (!newNum.includes('+')) {
+                  // Number is being pasted in (iphone autofill)...
+                  // if the number is valid but missing the country code, add it
+                  if (
+                    !LPN.validatePhoneNumberLength(newNum, curCountryCode) // undefined = valid
+                  ) {
+                    newNum = `+${phoneCode}${newNum}`;
+                  } else if (newNum.startsWith(phoneCode)) {
+                    newNum = `+${newNum}`;
+                  } else {
+                    newNum = `+${phoneCode}${newNum}`;
+                  }
                 }
 
                 // Don't let user delete the country code
