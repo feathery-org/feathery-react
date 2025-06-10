@@ -7,7 +7,37 @@
 Use this library to embed and extend Feathery forms in your codebase
 
 ## Documentation
+
 For details on how to use this library, check out our [documentation](https://docs.feathery.io/develop/react).
 
+## FAQ
+
+### Q: How do I use the Feathery React library with Vite?
+
+**A:** Remember to add a `global` definition in your Vite config. For example, the following config could be used:
+
+```aiignore
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  resolve: {
+    alias: {},
+  },
+  plugins: [react()],
+  server: {
+    port: 3000,
+  },
+  preview: {
+    port: 3000,
+  },
+  define: {
+    // By default, Vite doesn't include shims for NodeJS
+    global: "window",
+  },
+});
+```
+
 ## License
+
 [BSL](https://github.com/feathery-org/feathery-react/blob/master/LICENSE)
