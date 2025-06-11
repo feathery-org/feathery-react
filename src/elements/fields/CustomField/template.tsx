@@ -38,8 +38,6 @@ const createImportMap = (imports: string[]) => {
     return `"${importPath}": "https://esm.sh/${importPath}/?external=react"`;
   });
 
-  const importMap = importEntries.join(',\n    ');
-
   return `{
   "imports": {
     "react": "https://esm.sh/react@18.2.0",
@@ -48,7 +46,7 @@ const createImportMap = (imports: string[]) => {
     "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime"${
       imports.length ? ',' : ''
     }
-    ${importMap}
+    ${importEntries.join(',\n')}
   }
 }`;
 };
