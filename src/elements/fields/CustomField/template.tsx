@@ -1,4 +1,4 @@
-// Extract package names imported in the custom component
+// Extract package names and URLs imported in the custom component
 const extractImports = (code: string) => {
   const lines = code.split('\n');
   const imports = new Set<string>();
@@ -16,11 +16,27 @@ const extractImports = (code: string) => {
   return Array.from(imports);
 };
 
+const isValidUrl = (str: string): boolean => {
+  try {
+    // eslint-disable-next-line no-new
+    new URL(str);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 // Build an importmap script based on the list of packages imported
 const createImportMap = (imports: string[]) => {
-  const importMap = imports
-    .map((i) => `"${i}": "https://esm.sh/${i}?external=react"`)
-    .join(',\n');
+  const importEntries = imports.map((importPath) => {
+    // Already a full URL, import directly
+    if (isValidUrl(importPath)) {
+      return `"${importPath}": "${importPath}"`;
+    }
+
+    // Default to esm.sh for npm packages
+    return `"${importPath}": "https://esm.sh/${importPath}/?external=react"`;
+  });
 
   return `{
   "imports": {
@@ -30,7 +46,7 @@ const createImportMap = (imports: string[]) => {
     "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime"${
       imports.length ? ',' : ''
     }
-    ${importMap}
+    ${importEntries.join(',\n')}
   }
 }`;
 };
