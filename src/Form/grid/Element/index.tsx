@@ -11,7 +11,7 @@ import {
   stringifyWithNull
 } from '../../../utils/primitives';
 import { isFieldValueEmpty } from '../../../utils/validation';
-import { justInsert, justRemove } from '../../../utils/array';
+import { justRemove } from '../../../utils/array';
 import { fieldValues, initState } from '../../../utils/init';
 import {
   ACTION_STORE_FIELD,
