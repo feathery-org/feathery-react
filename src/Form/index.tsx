@@ -181,7 +181,7 @@ import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
 import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
-import { fieldAllowedFromList } from './grid/Element/utils';
+import { fieldAllowedFromList } from './grid/Element/utils/utils';
 import { triggerPersona } from '../integrations/persona';
 import Collaborator from '../utils/entities/Collaborator';
 import { useOfflineRequestHandler } from '../utils/offlineRequestHandler';
