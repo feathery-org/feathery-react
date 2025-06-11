@@ -11,7 +11,7 @@ import {
   stringifyWithNull
 } from '../../../utils/primitives';
 import { isFieldValueEmpty } from '../../../utils/validation';
-import { justInsert, justRemove } from '../../../utils/array';
+import { justRemove } from '../../../utils/array';
 import { fieldValues, initState } from '../../../utils/init';
 import {
   ACTION_STORE_FIELD,
@@ -23,22 +23,16 @@ import {
   isFieldActuallyRequired,
   otherChangeCheckboxGroup,
   otherChangeRadioButtonGroup,
-  pickCloserElement,
   textFieldShouldSubmit
-} from './utils';
+} from './utils/utils';
 import { getVisibleElements } from '../../../utils/hideAndRepeats';
 import debounce from 'lodash.debounce';
 import { findCountryByID } from '../../../elements/components/data/countries';
 import { isMobile } from '../../../utils/browser';
-
-const MAP_FIELD_TYPES = new Set([
-  'gmap_line_1',
-  'gmap_line_2',
-  'gmap_city',
-  'gmap_state',
-  'gmap_country',
-  'gmap_zip'
-]);
+import {
+  clearNonCountryAddressFields,
+  getRelatedAddressValues
+} from './utils/address';
 
 const Element = ({ node: el, form }: any) => {
   const { type } = el;
@@ -434,7 +428,25 @@ const Element = ({ node: el, form }: any) => {
             fieldVal={fieldVal}
             onChange={(e: any) => {
               const val = e.target.value;
+              const previousVal = fieldVal;
+
               changeValue(val, el, index);
+
+              // Clear related address fields when country changes
+              if (
+                servar.type === 'gmap_country' &&
+                servar.metadata.clear_address_on_change &&
+                val !== previousVal
+              ) {
+                clearNonCountryAddressFields(
+                  el,
+                  activeStep,
+                  fieldValues,
+                  updateFieldValues,
+                  index
+                );
+              }
+
               onChange({ submitData: autosubmit && val });
             }}
             countryCode={countryCode}
@@ -606,48 +618,14 @@ const Element = ({ node: el, form }: any) => {
               if (change) debouncedOnChange();
             }}
             onSelect={(address: any, addressId: string) => {
-              const addrValues: Record<string, any> = {};
-              if (el.servar.metadata.save_address === 'all_line_1') {
-                const val = address.formatted_address;
-                addrValues[el.servar.key] =
-                  index === null
-                    ? val
-                    : justInsert(fieldValues[servar.key] || [], val, index);
-              } else {
-                const addrFields: Record<string, any> = {};
-                activeStep.servar_fields.forEach((field: any) => {
-                  const servar = field.servar;
-                  if (MAP_FIELD_TYPES.has(servar.type))
-                    addrFields[servar.type] = pickCloserElement(
-                      el,
-                      addrFields[servar.type],
-                      field
-                    );
-                });
-                Object.entries(addrFields).forEach(([, field]) => {
-                  const servar = field.servar;
-                  let val;
-                  if (
-                    servar.type === 'gmap_state' &&
-                    servar.metadata.store_abbreviation
-                  )
-                    val = address.gmap_state_short;
-                  else if (
-                    servar.type === 'gmap_country' &&
-                    !servar.metadata.store_abbreviation
-                  ) {
-                    const countryObject = findCountryByID(address.gmap_country);
-                    val = countryObject
-                      ? countryObject.countryName
-                      : address.gmap_country;
-                  } else val = address[servar.type];
-                  val = val ?? '';
-                  addrValues[servar.key] =
-                    index === null
-                      ? val
-                      : justInsert(fieldValues[servar.key] || [], val, index);
-                });
-              }
+              const addrValues: Record<string, any> = getRelatedAddressValues(
+                el,
+                activeStep,
+                fieldValues,
+                address,
+                index,
+                servar
+              );
 
               if (!isObjectEmpty(addrValues)) {
                 updateFieldValues(addrValues);
