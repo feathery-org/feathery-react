@@ -331,6 +331,7 @@ const Element = ({ node: el, form }: any) => {
               if (change) debouncedOnChange();
             }}
             fieldStyles={el.properties.style}
+            index={index}
           />
         );
       case 'file_upload':
