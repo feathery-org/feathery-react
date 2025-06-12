@@ -1,6 +1,7 @@
 import React, { memo, useMemo } from 'react';
 import Status from './Status';
 import { useCustomComponentIframe } from './useCustomComponentIframe';
+import ErrorInput from '../../components/ErrorInput';
 
 const CustomField = ({
   element,
@@ -12,7 +13,8 @@ const CustomField = ({
   disabled,
   fieldStyles,
   editMode,
-  rightToLeft
+  rightToLeft,
+  index
 }: any) => {
   const componentCode = element.servar.metadata.code;
   const isCodeEmpty = !componentCode || componentCode.trim() === '';
@@ -21,9 +23,11 @@ const CustomField = ({
   const customFieldProps = useMemo(
     () => ({
       fieldProperties: {
+        description: element.servar.name,
         required,
         disabled,
-        custom: element.servar.metadata?.custom || {}
+        custom: element.servar.metadata?.custom || {},
+        aria_label: element.properties.aria_label
       },
       fieldStyles: fieldStyles || {},
       formContext: {
@@ -43,7 +47,7 @@ const CustomField = ({
 
   const { iframeRef, error, loading } = useCustomComponentIframe({
     componentCode: element.servar.metadata.code,
-    elementId: element.id,
+    elementId: index != null ? `${element.id}[${index}]` : element.id,
     value: rawValue,
     onChange,
     customProps: customFieldProps
@@ -81,6 +85,12 @@ const CustomField = ({
           />
         </>
       )}
+      {/* This input must always be rendered so we can set field errors */}
+      <ErrorInput
+        id={element.servar.key}
+        name={element.servar.key}
+        aria-label={element.properties.aria_label}
+      />
     </div>
   );
 };
