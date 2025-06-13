@@ -8,6 +8,7 @@ import { getStateOptions, hasState } from '../components/data/states';
 import { css, Global } from '@emotion/react';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
 import { fieldValues } from '../../utils/init';
+import FeatheryClient from '../../utils/featheryClient';
 
 export default function DropdownField({
   element,
@@ -35,6 +36,8 @@ export default function DropdownField({
   const containerRef = useRef(null);
   const servar = element.servar;
   const short = servar.metadata.store_abbreviation;
+  const [dynamicOptions, setDynamicOptions] = useState<string[]>([]);
+  const [loadingDynamicOptions, setLoadingDynamicOptions] = useState(false);
 
   useEffect(() => {
     if (servar.type === 'gmap_state') {
@@ -47,8 +50,35 @@ export default function DropdownField({
     }
   }, [countryCode, setCurCountry]);
 
+  useEffect(() => {
+    const salesforceSync = servar.metadata.salesforce_sync;
+    if (!salesforceSync) return;
+
+    const fetchSalesforceOptions = async () => {
+      setLoadingDynamicOptions(true);
+      try {
+        const client = new FeatheryClient();
+        const data = await client.fetchSalesforceFieldValues(salesforceSync);
+        setDynamicOptions(data.options || []);
+      } catch (error) {
+        console.error('Failed to fetch Salesforce options:', error);
+        setDynamicOptions([]);
+      } finally {
+        setLoadingDynamicOptions(false);
+      }
+    };
+
+    fetchSalesforceOptions();
+  }, [servar.metadata.salesforce_sync]);
+
   let options;
-  if (servar.type === 'gmap_state') {
+  if (dynamicOptions.length > 0) {
+    options = dynamicOptions.map((option) => (
+      <option key={option} value={option}>
+        {option}
+      </option>
+    ));
+  } else if (servar.type === 'gmap_state') {
     if (curCountry === null) options = [];
     else if (fieldVal && !hasState(curCountry, fieldVal, short)) {
       // If user selected a country without states defined
@@ -184,7 +214,7 @@ export default function DropdownField({
           id={servar.key}
           value={fieldVal ?? ''}
           required={required}
-          disabled={disabled}
+          disabled={disabled || loadingDynamicOptions}
           aria-label={element.properties.aria_label}
           onChange={onChange}
           onFocus={(event) => {
