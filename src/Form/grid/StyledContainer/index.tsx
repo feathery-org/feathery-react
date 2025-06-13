@@ -16,6 +16,8 @@ import { useFixedContainer } from './hooks/useFixedContainer';
 import classNames from 'classnames';
 import { fieldValues } from '../../../utils/init';
 import { getRenderData } from '../../../utils/image';
+import DangerouslySetHtmlContent from '../../../utils/DangerouslySetHTMLContent';
+import { replaceTextVariables } from '../../../elements/components/TextNodes';
 
 export type StyledContainerProps = PropsWithChildren & {
   key?: string;
@@ -42,14 +44,17 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       css = {},
       viewport,
       component,
-      children,
+      children: _children,
       className,
       viewportOnly = false,
+      editMode = false,
       ...props
     },
     ref
   ) => {
     const { node, rawNode } = useFormattedNode(_node, raw);
+    const children = React.Children.toArray(_children);
+
     const type = useNodeType(node, rawNode, viewport);
 
     const [backgroundImage, setBackgroundImage] = useState('');
@@ -86,6 +91,45 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       rawNode,
       viewport
     );
+
+    if (node.properties.iframe_url) {
+      const url = replaceTextVariables(node.properties.iframe_url);
+      children.push(
+        <iframe
+          key={`iframe:${url}`}
+          width='100%'
+          height='100%'
+          src={url}
+          css={{ border: 'none' }}
+        />
+      );
+    }
+
+    if (node.properties.custom_html) {
+      const html = replaceTextVariables(node.properties.custom_html);
+
+      const baseStyles =
+        children.length === 0 ? { height: '100%', width: '100%' } : {};
+      const revertStyles = editMode
+        ? {
+            '& *': {
+              all: 'revert',
+              boxSizing: 'border-box'
+            }
+          }
+        : {};
+
+      children.push(
+        <DangerouslySetHtmlContent
+          key={`html:${html}`}
+          html={html}
+          css={{
+            ...baseStyles,
+            ...revertStyles
+          }}
+        />
+      );
+    }
 
     useContainerEngine(node, rawNode, ref);
 
