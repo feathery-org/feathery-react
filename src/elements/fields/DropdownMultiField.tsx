@@ -11,7 +11,7 @@ import { DROPDOWN_Z_INDEX } from './index';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import Placeholder from '../components/Placeholder';
-import FeatheryClient from '../../utils/featheryClient';
+import useSalesforceSync from '../../hooks/useSalesforceSync';
 
 type OptionData = {
   tooltip?: string;
@@ -83,31 +83,10 @@ export default function DropdownMultiField({
   const containerRef = useRef(null);
 
   const [focused, setFocused] = useState(false);
-  const [dynamicOptions, setDynamicOptions] = useState<string[]>([]);
-  const [loadingDynamicOptions, setLoadingDynamicOptions] = useState(false);
-
   const servar = element.servar;
-
-  useEffect(() => {
-    const salesforceSync = servar.metadata.salesforce_sync;
-    if (!salesforceSync) return;
-
-    const fetchSalesforceOptions = async () => {
-      setLoadingDynamicOptions(true);
-      try {
-        const client = new FeatheryClient();
-        const data = await client.fetchSalesforceFieldValues(salesforceSync);
-        setDynamicOptions(data.options || []);
-      } catch (error) {
-        console.error('Failed to fetch Salesforce options:', error);
-        setDynamicOptions([]);
-      } finally {
-        setLoadingDynamicOptions(false);
-      }
-    };
-
-    fetchSalesforceOptions();
-  }, [servar.metadata.salesforce_sync]);
+  const { dynamicOptions, loadingDynamicOptions } = useSalesforceSync(
+    servar.metadata.salesforce_sync
+  );
 
   const addFieldValOptions = (options: string[]) => {
     const newOptions = [...options];
