@@ -102,9 +102,9 @@ export default function DropdownMultiField({
   let options;
 
   if (dynamicOptions.length > 0) {
-    options = addFieldValOptions(dynamicOptions).map((option: string) => {
-      labelMap[option] = option;
-      return { value: option, label: option, tooltip: '' };
+    options = dynamicOptions.map((option) => {
+      labelMap[option.value] = option.label;
+      return { value: option.value, label: option.label, tooltip: '' };
     });
   } else if (
     repeatIndex !== null &&
