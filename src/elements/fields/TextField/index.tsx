@@ -213,7 +213,8 @@ function TextField({
   children
 }: any) {
   const [showAutocomplete, setShowAutocomplete] = useState(false);
-  const [showPassword, setShowPassword] = useState(true);
+  // Hide SSNs by default
+  const [showPassword, setShowPassword] = useState(false);
   const { borderStyles, customBorder, borderId } = useBorder({
     element,
     error: inlineError
@@ -356,7 +357,7 @@ function TextField({
               zIndex: FORM_Z_INDEX
             }}
             onClick={() => setShowPassword((prev) => !prev)}
-            aria-label='Toggle password visibility'
+            aria-label='Toggle SSN visibility'
           >
             {showPassword ? <ShowEyeIcon /> : <HideEyeIcon />}
           </div>
