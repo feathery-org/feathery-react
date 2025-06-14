@@ -718,4 +718,25 @@ export default class IntegrationClient {
       return { ok: true, payload: await res.json() };
     else return { ok: false, error: (await res?.text()) ?? '' };
   }
+
+  async fetchSalesforceFieldValues(salesforceSync: {
+    object_name: string;
+    field_name: string;
+    credential_key: string;
+  }) {
+    const url = `${API_URL}integration/salesforce/field/values/`;
+    const params = new URLSearchParams({
+      object_name: salesforceSync.object_name,
+      field_name: salesforceSync.field_name,
+      credential_key: salesforceSync.credential_key
+    }).toString();
+    const response = await this._fetch(`${url}?${params}`, { method: 'GET' });
+    if (response && response.ok) {
+      const data = await response.json();
+      return {
+        options: data
+      };
+    }
+    return { options: [] };
+  }
 }
