@@ -719,7 +719,7 @@ export default class IntegrationClient {
     else return { ok: false, error: (await res?.text()) ?? '' };
   }
 
-  async fetchSalesforceFieldValues(salesforceSync: {
+  async fetchSalesforcePicklistOptions(salesforceSync: {
     object_name: string;
     field_name: string;
     credential_key: string;
@@ -730,7 +730,7 @@ export default class IntegrationClient {
       field_name: salesforceSync.field_name,
       credential_key: salesforceSync.credential_key
     }).toString();
-    const response = await this._fetch(`${url}?${params}`, { method: 'GET' });
+    const response = await this._fetch(`${url}?${params}`);
     if (response && response.ok) {
       const data = await response.json();
       return {

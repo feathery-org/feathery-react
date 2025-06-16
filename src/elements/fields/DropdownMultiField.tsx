@@ -104,7 +104,7 @@ export default function DropdownMultiField({
   if (dynamicOptions.length > 0) {
     options = dynamicOptions.map((option) => {
       labelMap[option.value] = option.label;
-      return { value: option.value, label: option.label, tooltip: '' };
+      return { value: option.value, label: option.label };
     });
   } else if (
     repeatIndex !== null &&
