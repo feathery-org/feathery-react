@@ -17,7 +17,9 @@ export default function useSalesforceSync(salesforceSync: any) {
       setLoadingDynamicOptions(true);
       try {
         const client = new FeatheryClient();
-        const data = await client.fetchSalesforcePicklistOptions(salesforceSync);
+        const data = await client.fetchSalesforcePicklistOptions(
+          salesforceSync
+        );
         setDynamicOptions(data.options || []);
       } catch (error) {
         console.error('Failed to fetch Salesforce options:', error);

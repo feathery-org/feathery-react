@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import useBorder from '../components/useBorder';
 import Select, {
   components as SelectComponents,
