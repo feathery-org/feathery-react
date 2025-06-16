@@ -732,10 +732,7 @@ export default class IntegrationClient {
     }).toString();
     const response = await this._fetch(`${url}?${params}`);
     if (response && response.ok) {
-      const data = await response.json();
-      return {
-        options: data.options
-      };
+      return await response.json();
     }
     return { options: [] };
   }
