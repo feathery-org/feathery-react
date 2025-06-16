@@ -18,7 +18,9 @@ export default function useSalesforceSync(salesforceSync: any) {
       try {
         const client = new FeatheryClient();
         const data = await client.fetchSalesforcePicklistOptions(
-          salesforceSync
+          salesforceSync.object_name,
+          salesforceSync.field_name,
+          salesforceSync.credential_key
         );
         setDynamicOptions(data.options || []);
       } catch (error) {
