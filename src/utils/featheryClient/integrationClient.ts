@@ -724,7 +724,7 @@ export default class IntegrationClient {
     field_name: string;
     credential_key: string;
   }) {
-    const url = `${API_URL}integration/salesforce/field/values/`;
+    const url = `${API_URL}salesforce/field/values/`;
     const params = new URLSearchParams({
       object_name: salesforceSync.object_name,
       field_name: salesforceSync.field_name,
@@ -734,7 +734,7 @@ export default class IntegrationClient {
     if (response && response.ok) {
       const data = await response.json();
       return {
-        options: data
+        options: data.options
       };
     }
     return { options: [] };
