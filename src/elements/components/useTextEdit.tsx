@@ -1,9 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { featheryWindow } from '../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../utils/browser';
+
+// Strip html from pasted content
+// TODO (tyler): replace with proper handling once bug (#33542) in React is fixed
+const handlePaste = (e: ClipboardEvent) => {
+  e.preventDefault();
+  const plainText = e.clipboardData?.getData('text/plain') || '';
+  featheryDoc().execCommand('insertText', false, plainText);
+};
 
 function useTextEdit({
   editable,
   focused,
+  expand,
   onTextSelect = null,
   onTextKeyDown = null,
   onTextBlur = null,
@@ -28,7 +37,7 @@ function useTextEdit({
     const css = {
       outline: 'none',
       minWidth: '5px',
-      width: '100%',
+      width: 'auto',
       display: 'inline-block',
       cursor: 'inherit',
       position: 'relative',
@@ -38,10 +47,11 @@ function useTextEdit({
 
     if (editable) {
       css.cursor = 'default';
+      if (expand) css.width = '100%';
       // Unfocused text can't be selected or edited, but we need to keep
       // contenteditable = true so when losing focus, blur event is still propagated
       editableProps = {
-        contentEditable: 'plaintext-only',
+        contentEditable: true,
         suppressContentEditableWarning: true,
         onMouseDown: (e: MouseEvent) => {
           if (!focused) e.preventDefault();
@@ -58,7 +68,8 @@ function useTextEdit({
         onBlur: (e: any) => {
           updateEditMode('hover');
           onTextBlur && onTextBlur(e);
-        }
+        },
+        onPaste: handlePaste
       };
 
       if (focused) {
