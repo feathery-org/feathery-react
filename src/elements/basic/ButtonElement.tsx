@@ -256,6 +256,7 @@ function ButtonElement({
               focused={focused}
               textCallbacks={textCallbacks}
               featheryContext={featheryContext}
+              expand={!element.properties.image}
             />
           )}
         </>
