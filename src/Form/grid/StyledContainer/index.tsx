@@ -18,6 +18,7 @@ import { fieldValues } from '../../../utils/init';
 import { getRenderData } from '../../../utils/image';
 import DangerouslySetHtmlContent from '../../../utils/DangerouslySetHTMLContent';
 import { replaceTextVariables } from '../../../elements/components/TextNodes';
+import { ShadowDomHtmlContent } from '../../../utils/ShadowDomHtmlContent';
 
 export type StyledContainerProps = PropsWithChildren & {
   key?: string;
@@ -108,26 +109,13 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
     if (node.properties.custom_html) {
       const html = replaceTextVariables(node.properties.custom_html);
 
+      const RenderComponent = editMode
+        ? ShadowDomHtmlContent // render inside shadow dom in designer
+        : DangerouslySetHtmlContent; // render directly on live form
       const baseStyles =
         children.length === 0 ? { height: '100%', width: '100%' } : {};
-      const revertStyles = editMode
-        ? {
-            '& *': {
-              all: 'revert',
-              boxSizing: 'border-box'
-            }
-          }
-        : {};
-
       children.push(
-        <DangerouslySetHtmlContent
-          key={`html:${html}`}
-          html={html}
-          css={{
-            ...baseStyles,
-            ...revertStyles
-          }}
-        />
+        <RenderComponent key={`html:${html}`} html={html} css={baseStyles} />
       );
     }
 
