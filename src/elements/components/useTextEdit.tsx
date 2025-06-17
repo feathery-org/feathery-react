@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { featheryWindow } from '../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../utils/browser';
 
 // Strip html from pasted content
 // TODO (tyler): replace with proper handling once bug (#33542) in React is fixed
 const handlePaste = (e: ClipboardEvent) => {
   e.preventDefault();
   const plainText = e.clipboardData?.getData('text/plain') || '';
-  document.execCommand('insertText', false, plainText);
+  featheryDoc().execCommand('insertText', false, plainText);
 };
 
 function useTextEdit({
