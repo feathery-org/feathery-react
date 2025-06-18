@@ -4,6 +4,7 @@ import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
 import InlineTooltip from '../components/InlineTooltip';
 import ErrorInput from '../components/ErrorInput';
+import useSalesforceSync from '../../hooks/useSalesforceSync';
 
 function ButtonGroupField({
   element,
@@ -19,6 +20,10 @@ function ButtonGroupField({
   children
 }: any) {
   const containerRef = useRef(null);
+  const servar = element.servar;
+  const { dynamicOptions, loadingDynamicOptions } = useSalesforceSync(
+    servar.metadata.salesforce_sync
+  );
 
   const selectedOptMap = useMemo(
     () =>
@@ -35,11 +40,16 @@ function ButtonGroupField({
     error: inlineError
   });
 
-  const servar = element.servar;
   const labels = servar.metadata.option_labels;
   const tooltips = servar.metadata.option_tooltips;
   let options;
-  if (
+  if (dynamicOptions.length > 0) {
+    options = dynamicOptions.map((option: any) => ({
+      value: option.value,
+      label: option.label,
+      tooltip: ''
+    }));
+  } else if (
     repeatIndex !== null &&
     servar.metadata.repeat_options !== undefined &&
     servar.metadata.repeat_options[repeatIndex] !== undefined
@@ -60,7 +70,8 @@ function ButtonGroupField({
         position: 'relative',
         width: '100%',
         height: '100%',
-        pointerEvents: editMode || disabled ? 'none' : 'auto',
+        pointerEvents:
+          editMode || disabled || loadingDynamicOptions ? 'none' : 'auto',
         ...responsiveStyles.getTarget('fc')
       }}
     >
@@ -96,7 +107,7 @@ function ButtonGroupField({
                 cursor: 'pointer',
                 ...responsiveStyles.getTarget('field'),
                 '&:hover': hoverStylesGuard(
-                  editMode || disabled
+                  editMode || disabled || loadingDynamicOptions
                     ? {}
                     : {
                         ...responsiveStyles.getTarget('hover'),
