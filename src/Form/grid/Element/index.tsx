@@ -6,6 +6,7 @@ import {
   setFormElementError
 } from '../../../utils/formHelperFunctions';
 import {
+  isNum,
   isObjectEmpty,
   numMatchingItems,
   stringifyWithNull
@@ -158,10 +159,13 @@ const Element = ({ node: el, form }: any) => {
       // Disable buttons not used for navigation
       disabled = !hasNav;
     }
+    let loaderData = buttonLoaders[el.id];
+    if (isNum(loaderData?.repeat) && loaderData.repeat !== el.repeat)
+      loaderData = null;
     return (
       <Elements.ButtonElement
         active={customClickSelectionState(el)}
-        loader={buttonLoaders[el.id]}
+        loader={loaderData?.loader}
         onClick={(e: MouseEvent) => {
           // prevent auto submission!
           e.preventDefault();
