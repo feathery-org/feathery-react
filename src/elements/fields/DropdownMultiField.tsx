@@ -91,7 +91,7 @@ export default function DropdownMultiField({
   );
 
   const addFieldValOptions = (options: Options) => {
-    let newOptions = Array.isArray(options) ? [...options] : [];
+    const newOptions = Array.isArray(options) ? [...options] : [];
     if (!fieldVal) return newOptions;
 
     fieldVal.forEach((val: string) => {
