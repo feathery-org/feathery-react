@@ -19,6 +19,8 @@ type OptionData = {
   label: string;
 };
 
+type Options = string[] | OptionData[];
+
 const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
   let optComponent = (
     // @ts-ignore
@@ -88,12 +90,20 @@ export default function DropdownMultiField({
     servar.metadata.salesforce_sync
   );
 
-  const addFieldValOptions = (options: string[]) => {
-    const newOptions = [...options];
-    if (fieldVal)
-      fieldVal.forEach((val: string) => {
+  const addFieldValOptions = (options: Options) => {
+    let newOptions = Array.isArray(options) ? [...options] : [];
+    if (!fieldVal) return newOptions;
+
+    fieldVal.forEach((val: string) => {
+      if (typeof newOptions[0] === 'string') {
+        // handle string[]
         if (!newOptions.includes(val)) newOptions.push(val);
-      });
+      } else if (!newOptions.some((option: any) => option.value === val)) {
+        // handle OptionData[]
+        newOptions.push({ value: val, label: val });
+      }
+    });
+
     return newOptions;
   };
 
