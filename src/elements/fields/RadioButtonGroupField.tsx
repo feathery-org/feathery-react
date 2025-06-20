@@ -8,6 +8,7 @@ import {
 } from './CheckboxField';
 import InlineTooltip from '../components/InlineTooltip';
 import { iosScrollOnFocus } from '../../utils/browser';
+import useSalesforceSync from '../../hooks/useSalesforceSync';
 
 const applyRadioGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('radioGroup');
@@ -32,6 +33,9 @@ function RadioButtonGroupField({
 }: any) {
   const servar = element.servar;
   const containerRef = useRef(null);
+  const { dynamicOptions, loadingDynamicOptions } = useSalesforceSync(
+    servar.metadata.salesforce_sync
+  );
 
   const [otherSelect, setOtherSelect] = useState({});
   const otherChecked =
@@ -56,7 +60,12 @@ function RadioButtonGroupField({
   const labels = servar.metadata.option_labels;
   const tooltips = servar.metadata.option_tooltips ?? [];
   let options;
-  if (
+  if (dynamicOptions.length > 0) {
+    options = dynamicOptions.map((option: any) => ({
+      value: option.value,
+      label: option.label
+    }));
+  } else if (
     repeatIndex !== null &&
     servar.metadata.repeat_options !== undefined &&
     servar.metadata.repeat_options[repeatIndex] !== undefined
@@ -114,7 +123,7 @@ function RadioButtonGroupField({
                   }
                   checked={fieldVal === value}
                   required={required}
-                  disabled={disabled}
+                  disabled={disabled || loadingDynamicOptions}
                   onChange={onChange}
                   onFocus={iosScrollOnFocus}
                   aria-label={element.properties.aria_label}
@@ -163,7 +172,7 @@ function RadioButtonGroupField({
                   : servar.key
               }
               checked={otherChecked}
-              disabled={disabled}
+              disabled={disabled || loadingDynamicOptions}
               onChange={(e) => {
                 setOtherSelect({
                   ...otherSelect,
@@ -199,7 +208,7 @@ function RadioButtonGroupField({
                 paddingLeft: '0.4rem',
                 flexGrow: 1,
                 ...responsiveStyles.getTarget('field'),
-                ...(otherTextDisabled
+                ...(otherTextDisabled || loadingDynamicOptions
                   ? responsiveStyles.getTarget('disabled')
                   : {})
               }}
@@ -212,7 +221,7 @@ function RadioButtonGroupField({
               maxLength={servar.max_length}
               minLength={servar.min_length}
               required={otherChecked}
-              disabled={otherTextDisabled}
+              disabled={otherTextDisabled || loadingDynamicOptions}
             />
             <InlineTooltip
               container={containerRef}

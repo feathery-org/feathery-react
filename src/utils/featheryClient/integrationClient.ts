@@ -718,4 +718,22 @@ export default class IntegrationClient {
       return { ok: true, payload: await res.json() };
     else return { ok: false, error: (await res?.text()) ?? '' };
   }
+
+  async fetchSalesforcePicklistOptions(
+    objectName: string,
+    fieldName: string,
+    credentialKey: string
+  ) {
+    const url = `${API_URL}salesforce/field/options/`;
+    const params = new URLSearchParams({
+      object_name: objectName,
+      field_name: fieldName,
+      credential_key: credentialKey
+    }).toString();
+    const response = await this._fetch(`${url}?${params}`);
+    if (response && response.ok) {
+      return await response.json();
+    }
+    return { options: [] };
+  }
 }

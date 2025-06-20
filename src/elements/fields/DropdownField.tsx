@@ -8,6 +8,7 @@ import { getStateOptions, hasState } from '../components/data/states';
 import { css, Global } from '@emotion/react';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
 import { fieldValues } from '../../utils/init';
+import useSalesforceSync from '../../hooks/useSalesforceSync';
 
 export default function DropdownField({
   element,
@@ -35,6 +36,9 @@ export default function DropdownField({
   const containerRef = useRef(null);
   const servar = element.servar;
   const short = servar.metadata.store_abbreviation;
+  const { dynamicOptions, loadingDynamicOptions } = useSalesforceSync(
+    servar.metadata.salesforce_sync
+  );
 
   useEffect(() => {
     if (servar.type === 'gmap_state') {
@@ -48,7 +52,13 @@ export default function DropdownField({
   }, [countryCode, setCurCountry]);
 
   let options;
-  if (servar.type === 'gmap_state') {
+  if (dynamicOptions.length > 0) {
+    options = dynamicOptions.map((option) => (
+      <option key={option.value} value={option.value}>
+        {option.label}
+      </option>
+    ));
+  } else if (servar.type === 'gmap_state') {
     if (curCountry === null) options = [];
     else if (fieldVal && !hasState(curCountry, fieldVal, short)) {
       // If user selected a country without states defined
@@ -184,7 +194,7 @@ export default function DropdownField({
           id={servar.key}
           value={fieldVal ?? ''}
           required={required}
-          disabled={disabled}
+          disabled={disabled || loadingDynamicOptions}
           aria-label={element.properties.aria_label}
           onChange={onChange}
           onFocus={(event) => {

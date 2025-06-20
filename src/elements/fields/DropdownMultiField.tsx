@@ -11,6 +11,7 @@ import { DROPDOWN_Z_INDEX } from './index';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import Placeholder from '../components/Placeholder';
+import useSalesforceSync from '../../hooks/useSalesforceSync';
 
 type OptionData = {
   tooltip?: string;
@@ -82,6 +83,10 @@ export default function DropdownMultiField({
   const containerRef = useRef(null);
 
   const [focused, setFocused] = useState(false);
+  const servar = element.servar;
+  const { dynamicOptions, loadingDynamicOptions } = useSalesforceSync(
+    servar.metadata.salesforce_sync
+  );
 
   const addFieldValOptions = (options: string[]) => {
     const newOptions = [...options];
@@ -92,11 +97,16 @@ export default function DropdownMultiField({
     return newOptions;
   };
 
-  const servar = element.servar;
   const labels = servar.metadata.option_labels;
   const labelMap: Record<string, string> = {};
   let options;
-  if (
+
+  if (dynamicOptions.length > 0) {
+    options = dynamicOptions.map((option) => {
+      labelMap[option.value] = option.label;
+      return { value: option.value, label: option.label };
+    });
+  } else if (
     repeatIndex !== null &&
     servar.metadata.repeat_options !== undefined &&
     servar.metadata.repeat_options[repeatIndex] !== undefined
@@ -236,7 +246,8 @@ export default function DropdownMultiField({
           noOptionsMessage={create ? () => null : undefined}
           options={options}
           isOptionDisabled={() =>
-            servar.max_length && selectVal.length >= servar.max_length
+            (servar.max_length && selectVal.length >= servar.max_length) ||
+            loadingDynamicOptions
           }
           isMulti
           placeholder=''

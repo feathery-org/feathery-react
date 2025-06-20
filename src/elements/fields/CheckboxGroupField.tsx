@@ -8,6 +8,7 @@ import {
 } from './CheckboxField';
 import InlineTooltip from '../components/InlineTooltip';
 import { iosScrollOnFocus } from '../../utils/browser';
+import useSalesforceSync from '../../hooks/useSalesforceSync';
 
 const applyCheckboxGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('checkboxGroup');
@@ -30,6 +31,9 @@ function CheckboxGroupField({
   children
 }: any) {
   const servar = element.servar;
+  const { dynamicOptions, loadingDynamicOptions } = useSalesforceSync(
+    servar.metadata.salesforce_sync
+  );
   const otherChecked = fieldVal.includes(otherVal);
   const otherLabel = servar.metadata.other_label ?? 'Other';
   const containerRef = useRef(null);
@@ -53,6 +57,7 @@ function CheckboxGroupField({
   const isOptionDisabled = (checked: boolean) => {
     return (
       disabled ||
+      loadingDynamicOptions ||
       (servar.max_length && servar.max_length <= fieldVal.length && !checked)
     );
   };
@@ -60,7 +65,13 @@ function CheckboxGroupField({
   const otherTextDisabled = !otherChecked || otherDisabled;
 
   let options;
-  if (
+  if (dynamicOptions.length > 0) {
+    options = dynamicOptions.map((option: any) => ({
+      value: option.value,
+      label: option.label,
+      tooltip: ''
+    }));
+  } else if (
     repeatIndex !== null &&
     servar.metadata.repeat_options !== undefined &&
     servar.metadata.repeat_options[repeatIndex] !== undefined
