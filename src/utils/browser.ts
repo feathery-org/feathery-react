@@ -57,7 +57,7 @@ export function getCookie(key: string) {
 }
 
 export function setCookie(key: string, val: string) {
-  featheryDoc().cookie = `${key}=${val}; max-age=31536000; SameSite=strict`;
+  featheryDoc().cookie = `${key}=${val}; max-age=31536000; SameSite=strict; path=/;`;
 }
 
 export function deleteCookie(key: string) {

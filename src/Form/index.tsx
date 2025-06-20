@@ -1552,7 +1552,8 @@ function Form({
       [button.id]: {
         showOn: bp.show_loading_icon,
         loader,
-        type: bp.loading_icon ? bp.loading_file_type : 'default'
+        type: bp.loading_icon ? bp.loading_file_type : 'default',
+        repeat: button.repeat
       }
     }));
   };

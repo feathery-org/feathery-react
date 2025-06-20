@@ -87,11 +87,13 @@ function TextNodes({
   focused = false,
   textSpanOnClick = () => {},
   textCallbacks = {},
-  featheryContext = {}
+  featheryContext = {},
+  expand = true
 }: any) {
   const { spanRef, editableProps } = useTextEdit({
     editable: editMode === 'editable',
     focused,
+    expand,
     ...textCallbacks
   });
 

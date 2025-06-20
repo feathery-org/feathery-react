@@ -70,7 +70,7 @@ const useLoader = ({
   const buttonLoaders = useMemo(() => {
     const buttonLoaders: Record<string, any> = {};
     Object.entries(loaders).forEach(([key, l]) => {
-      if (l.showOn === 'on_button' && l.loader) buttonLoaders[key] = l.loader;
+      if (l.showOn === 'on_button' && l.loader) buttonLoaders[key] = l;
     });
     return buttonLoaders;
   }, [loaders]);
