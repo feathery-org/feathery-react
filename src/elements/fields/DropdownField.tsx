@@ -52,12 +52,15 @@ export default function DropdownField({
   }, [countryCode, setCurCountry]);
 
   let options;
-  if (dynamicOptions.length > 0) {
-    options = dynamicOptions.map((option) => (
-      <option key={option.value} value={option.value}>
-        {option.label}
-      </option>
-    ));
+  if (servar.metadata.salesforce_sync) {
+    if (loadingDynamicOptions) options = [];
+    else {
+      options = dynamicOptions.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ));
+    }
   } else if (servar.type === 'gmap_state') {
     if (curCountry === null) options = [];
     else if (fieldVal && !hasState(curCountry, fieldVal, short)) {

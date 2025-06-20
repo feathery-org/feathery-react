@@ -60,11 +60,14 @@ function RadioButtonGroupField({
   const labels = servar.metadata.option_labels;
   const tooltips = servar.metadata.option_tooltips ?? [];
   let options;
-  if (dynamicOptions.length > 0) {
-    options = dynamicOptions.map((option: any) => ({
-      value: option.value,
-      label: option.label
-    }));
+  if (servar.metadata.salesforce_sync) {
+    if (loadingDynamicOptions) options = [];
+    else {
+      options = dynamicOptions.map((option: any) => ({
+        value: option.value,
+        label: option.label
+      }));
+    }
   } else if (
     repeatIndex !== null &&
     servar.metadata.repeat_options !== undefined &&

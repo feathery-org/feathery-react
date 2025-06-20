@@ -65,12 +65,15 @@ function CheckboxGroupField({
   const otherTextDisabled = !otherChecked || otherDisabled;
 
   let options;
-  if (dynamicOptions.length > 0) {
-    options = dynamicOptions.map((option: any) => ({
-      value: option.value,
-      label: option.label,
-      tooltip: ''
-    }));
+  if (servar.metadata.salesforce_sync) {
+    if (loadingDynamicOptions) options = [];
+    else {
+      options = dynamicOptions.map((option: any) => ({
+        value: option.value,
+        label: option.label,
+        tooltip: ''
+      }));
+    }
   } else if (
     repeatIndex !== null &&
     servar.metadata.repeat_options !== undefined &&
