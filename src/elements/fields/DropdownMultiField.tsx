@@ -109,7 +109,7 @@ export default function DropdownMultiField({
 
   const labels = servar.metadata.option_labels;
   const labelMap: Record<string, string> = {};
-  let options;
+  let options: any[] = [];
 
   if (servar.metadata.salesforce_sync) {
     if (loadingDynamicOptions) options = [];
