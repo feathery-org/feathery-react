@@ -37,7 +37,8 @@ export default function DropdownField({
   const servar = element.servar;
   const short = servar.metadata.store_abbreviation;
   const { dynamicOptions, loadingDynamicOptions } = useSalesforceSync(
-    servar.metadata.salesforce_sync
+    servar.metadata.salesforce_sync,
+    editMode
   );
 
   useEffect(() => {
@@ -52,7 +53,7 @@ export default function DropdownField({
   }, [countryCode, setCurCountry]);
 
   let options;
-  if (servar.metadata.salesforce_sync) {
+  if (servar.metadata.salesforce_sync && !editMode) {
     if (loadingDynamicOptions) options = [];
     else {
       options = dynamicOptions.map((option) => (

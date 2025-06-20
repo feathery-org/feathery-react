@@ -22,7 +22,8 @@ function ButtonGroupField({
   const containerRef = useRef(null);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions } = useSalesforceSync(
-    servar.metadata.salesforce_sync
+    servar.metadata.salesforce_sync,
+    editMode
   );
 
   const selectedOptMap = useMemo(
@@ -43,7 +44,7 @@ function ButtonGroupField({
   const labels = servar.metadata.option_labels;
   const tooltips = servar.metadata.option_tooltips;
   let options;
-  if (servar.metadata.salesforce_sync) {
+  if (servar.metadata.salesforce_sync && !editMode) {
     if (loadingDynamicOptions) options = [];
     else {
       options = dynamicOptions.map((option: any) => ({

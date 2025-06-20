@@ -25,6 +25,7 @@ function RadioButtonGroupField({
   fieldVal = '',
   otherVal = '',
   repeatIndex = null,
+  editMode,
   onChange = () => {},
   onOtherChange = () => {},
   onEnter = () => {},
@@ -34,7 +35,8 @@ function RadioButtonGroupField({
   const servar = element.servar;
   const containerRef = useRef(null);
   const { dynamicOptions, loadingDynamicOptions } = useSalesforceSync(
-    servar.metadata.salesforce_sync
+    servar.metadata.salesforce_sync,
+    editMode
   );
 
   const [otherSelect, setOtherSelect] = useState({});
@@ -60,7 +62,7 @@ function RadioButtonGroupField({
   const labels = servar.metadata.option_labels;
   const tooltips = servar.metadata.option_tooltips ?? [];
   let options;
-  if (servar.metadata.salesforce_sync) {
+  if (servar.metadata.salesforce_sync && !editMode) {
     if (loadingDynamicOptions) options = [];
     else {
       options = dynamicOptions.map((option: any) => ({

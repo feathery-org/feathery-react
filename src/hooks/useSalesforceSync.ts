@@ -6,12 +6,12 @@ type SalesforceOption = {
   label: string;
 };
 
-export default function useSalesforceSync(salesforceSync: any) {
+export default function useSalesforceSync(salesforceSync: any, editMode: boolean) {
   const [dynamicOptions, setDynamicOptions] = useState<SalesforceOption[]>([]);
   const [loadingDynamicOptions, setLoadingDynamicOptions] = useState(false);
 
   useEffect(() => {
-    if (!salesforceSync) return;
+    if (!salesforceSync || editMode) return;
 
     const fetchSalesforceOptions = async () => {
       setLoadingDynamicOptions(true);

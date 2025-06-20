@@ -87,7 +87,8 @@ export default function DropdownMultiField({
   const [focused, setFocused] = useState(false);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions } = useSalesforceSync(
-    servar.metadata.salesforce_sync
+    servar.metadata.salesforce_sync,
+    editMode
   );
 
   const addFieldValOptions = (options: Options) => {
@@ -111,7 +112,7 @@ export default function DropdownMultiField({
   const labelMap: Record<string, string> = {};
   let options: any[] = [];
 
-  if (servar.metadata.salesforce_sync) {
+  if (servar.metadata.salesforce_sync && !editMode) {
     if (loadingDynamicOptions) options = [];
     else {
       options = dynamicOptions.map((option) => {
