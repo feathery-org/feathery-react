@@ -6,9 +6,13 @@ type SalesforceOption = {
   label: string;
 };
 
-export default function useSalesforceSync(salesforceSync: any, editMode: boolean) {
+export default function useSalesforceSync(
+  salesforceSync: any,
+  editMode: boolean
+) {
   const [dynamicOptions, setDynamicOptions] = useState<SalesforceOption[]>([]);
   const [loadingDynamicOptions, setLoadingDynamicOptions] = useState(false);
+  const shouldSalesforceSync = !editMode && salesforceSync;
 
   useEffect(() => {
     if (!salesforceSync || editMode) return;
@@ -34,5 +38,5 @@ export default function useSalesforceSync(salesforceSync: any, editMode: boolean
     fetchSalesforceOptions();
   }, [salesforceSync]);
 
-  return { dynamicOptions, loadingDynamicOptions };
+  return { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync };
 }

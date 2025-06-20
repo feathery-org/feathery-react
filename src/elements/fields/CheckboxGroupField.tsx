@@ -32,10 +32,8 @@ function CheckboxGroupField({
   children
 }: any) {
   const servar = element.servar;
-  const { dynamicOptions, loadingDynamicOptions } = useSalesforceSync(
-    servar.metadata.salesforce_sync,
-    editMode
-  );
+  const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
+    useSalesforceSync(servar.metadata.salesforce_sync, editMode);
   const otherChecked = fieldVal.includes(otherVal);
   const otherLabel = servar.metadata.other_label ?? 'Other';
   const containerRef = useRef(null);
@@ -67,7 +65,7 @@ function CheckboxGroupField({
   const otherTextDisabled = !otherChecked || otherDisabled;
 
   let options;
-  if (servar.metadata.salesforce_sync && !editMode) {
+  if (shouldSalesforceSync) {
     options = dynamicOptions.map((option: any) => ({
       value: option.value,
       label: option.label,

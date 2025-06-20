@@ -34,10 +34,8 @@ function RadioButtonGroupField({
 }: any) {
   const servar = element.servar;
   const containerRef = useRef(null);
-  const { dynamicOptions, loadingDynamicOptions } = useSalesforceSync(
-    servar.metadata.salesforce_sync,
-    editMode
-  );
+  const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
+    useSalesforceSync(servar.metadata.salesforce_sync, editMode);
 
   const [otherSelect, setOtherSelect] = useState({});
   const otherChecked =
@@ -62,7 +60,7 @@ function RadioButtonGroupField({
   const labels = servar.metadata.option_labels;
   const tooltips = servar.metadata.option_tooltips ?? [];
   let options;
-  if (servar.metadata.salesforce_sync && !editMode) {
+  if (shouldSalesforceSync) {
     options = dynamicOptions.map((option: any) => ({
       value: option.value,
       label: option.label

@@ -36,10 +36,8 @@ export default function DropdownField({
   const containerRef = useRef(null);
   const servar = element.servar;
   const short = servar.metadata.store_abbreviation;
-  const { dynamicOptions, loadingDynamicOptions } = useSalesforceSync(
-    servar.metadata.salesforce_sync,
-    editMode
-  );
+  const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
+    useSalesforceSync(servar.metadata.salesforce_sync, editMode);
 
   useEffect(() => {
     if (servar.type === 'gmap_state') {
@@ -53,7 +51,7 @@ export default function DropdownField({
   }, [countryCode, setCurCountry]);
 
   let options;
-  if (servar.metadata.salesforce_sync && !editMode) {
+  if (shouldSalesforceSync) {
     options = dynamicOptions.map((option) => (
       <option key={option.value} value={option.value}>
         {option.label}
