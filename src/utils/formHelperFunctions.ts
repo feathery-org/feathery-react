@@ -375,9 +375,7 @@ export function updateStepFieldOptions(
           servar.metadata.repeat_options = [];
         if (!options) servar.metadata.repeat_options.splice(repeatIndex, 1);
         else {
-          servar.metadata.repeat_options[repeatIndex] = options.map((option) =>
-            typeof option === 'object' ? option.value : option
-          );
+          servar.metadata.repeat_options[repeatIndex] = options;
         }
       }
     }
