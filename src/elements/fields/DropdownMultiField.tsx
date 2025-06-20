@@ -113,13 +113,10 @@ export default function DropdownMultiField({
   let options: any[] = [];
 
   if (servar.metadata.salesforce_sync && !editMode) {
-    if (loadingDynamicOptions) options = [];
-    else {
-      options = dynamicOptions.map((option) => {
-        labelMap[option.value] = option.label;
-        return { value: option.value, label: option.label };
-      });
-    }
+    options = dynamicOptions.map((option) => {
+      labelMap[option.value] = option.label;
+      return { value: option.value, label: option.label };
+    });
   } else if (
     repeatIndex !== null &&
     servar.metadata.repeat_options !== undefined &&

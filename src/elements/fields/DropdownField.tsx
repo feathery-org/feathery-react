@@ -54,14 +54,11 @@ export default function DropdownField({
 
   let options;
   if (servar.metadata.salesforce_sync && !editMode) {
-    if (loadingDynamicOptions) options = [];
-    else {
-      options = dynamicOptions.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ));
-    }
+    options = dynamicOptions.map((option) => (
+      <option key={option.value} value={option.value}>
+        {option.label}
+      </option>
+    ));
   } else if (servar.type === 'gmap_state') {
     if (curCountry === null) options = [];
     else if (fieldVal && !hasState(curCountry, fieldVal, short)) {

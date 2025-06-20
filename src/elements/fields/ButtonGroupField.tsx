@@ -45,14 +45,11 @@ function ButtonGroupField({
   const tooltips = servar.metadata.option_tooltips;
   let options;
   if (servar.metadata.salesforce_sync && !editMode) {
-    if (loadingDynamicOptions) options = [];
-    else {
-      options = dynamicOptions.map((option: any) => ({
-        value: option.value,
-        label: option.label,
-        tooltip: ''
-      }));
-    }
+    options = dynamicOptions.map((option: any) => ({
+      value: option.value,
+      label: option.label,
+      tooltip: ''
+    }));
   } else if (
     repeatIndex !== null &&
     servar.metadata.repeat_options !== undefined &&
