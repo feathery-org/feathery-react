@@ -22,6 +22,8 @@ export default function Watermark({
         target='_blank'
         style={{ textDecoration: 'none' }}
         rel='noopener'
+        // Have screen readers ignore this element
+        aria-hidden='true'
       >
         {children}
       </a>
