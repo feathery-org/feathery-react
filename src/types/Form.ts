@@ -36,9 +36,13 @@ export interface ContextOnChange extends FormContext {
   valueRepeatIndex: number;
 }
 
+type ActionData = Record<string, any> & {
+  type: string;
+};
 export interface ContextOnAction extends FormContext {
   trigger: Trigger;
   actions: string[];
+  actionData: ActionData[];
 }
 
 export interface ContextOnSubmit extends FormContext {

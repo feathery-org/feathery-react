@@ -1754,7 +1754,8 @@ function Form({
         () => ({
           trigger,
           beforeClickActions,
-          actions: actionTypes
+          actions: actionTypes,
+          actionData: actions
         }),
         elementType === 'container' ? element.id : undefined,
         submitPromise,
