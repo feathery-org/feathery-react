@@ -106,7 +106,9 @@ export default function DropdownMultiField({
     return newOptions;
   };
 
-  const labels = servar.metadata.option_labels;
+  const labels = servar.metadata.option_labels || [];
+  const tooltips = servar.metadata.option_tooltips || [];
+
   const labelMap: Record<string, string> = {};
   let options: any[] = [];
 
@@ -121,21 +123,27 @@ export default function DropdownMultiField({
     servar.metadata.repeat_options[repeatIndex] !== undefined
   ) {
     const repeatOptions = servar.metadata.repeat_options[repeatIndex];
-    options = addFieldValOptions(repeatOptions).map((option: any) => {
-      const value = option.value ?? option;
-      const label = option.label ?? option;
-      labelMap[value] = label;
-      const tooltip = option.tooltip ?? '';
-
-      return { value: value, label, tooltip };
+    options = addFieldValOptions(repeatOptions).map((option) => {
+      if (typeof option === 'string') {
+        labelMap[option] = option;
+        return { value: option, label: option, tooltip: '' };
+      }
+      labelMap[option.value] = option.label;
+      return option;
     });
   } else {
     options = addFieldValOptions(servar.metadata.options).map(
-      (option: any, index: number) => {
-        const label = labels && labels[index] ? labels[index] : option;
-        labelMap[option] = label;
-        const tooltip = servar.metadata.option_tooltips?.[index];
-        return { value: option, label, tooltip };
+      (option, index) => {
+        if (typeof option === 'string') {
+          labelMap[option] = option;
+          return {
+            value: option,
+            label: labels[index] || option,
+            tooltip: tooltips[index] || ''
+          };
+        }
+        labelMap[option.value] = option.label;
+        return option;
       }
     );
   }
