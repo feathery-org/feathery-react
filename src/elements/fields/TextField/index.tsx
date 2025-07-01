@@ -116,7 +116,7 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
     case 'email':
     case 'text_area':
     case 'url':
-      maskProps = { mask: /.+/, maxLength };
+      maskProps = { mask: new RegExp(`^.{0,${maxLength}}$`), maxLength };
       break;
     default:
       if (servar.metadata.mask) maxLength = undefined;
