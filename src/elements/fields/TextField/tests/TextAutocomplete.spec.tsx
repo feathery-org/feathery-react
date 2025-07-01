@@ -60,7 +60,7 @@ describe('TextAutocomplete', () => {
 
     it('shows all options when value is empty and showOptions is true', () => {
       render(
-        <TestWrapper allOptions={options} value='' showOptions={true}>
+        <TestWrapper allOptions={options} value='' showOptions>
           <input aria-label='test input' />
         </TestWrapper>
       );
@@ -73,7 +73,7 @@ describe('TextAutocomplete', () => {
 
     it('filters options based on input value', () => {
       render(
-        <TestWrapper allOptions={options} value='a' showOptions={true}>
+        <TestWrapper allOptions={options} value='a' showOptions>
           <input aria-label='test input' />
         </TestWrapper>
       );
@@ -87,7 +87,7 @@ describe('TextAutocomplete', () => {
 
     it('performs case-insensitive filtering', () => {
       render(
-        <TestWrapper allOptions={options} value='APPLE' showOptions={true}>
+        <TestWrapper allOptions={options} value='APPLE' showOptions>
           <input aria-label='test input' />
         </TestWrapper>
       );
@@ -98,7 +98,7 @@ describe('TextAutocomplete', () => {
 
     it('shows no options when value matches nothing', () => {
       render(
-        <TestWrapper allOptions={options} value='xyz' showOptions={true}>
+        <TestWrapper allOptions={options} value='xyz' showOptions>
           <input aria-label='test input' />
         </TestWrapper>
       );
@@ -118,7 +118,7 @@ describe('TextAutocomplete', () => {
         <TestWrapper
           allOptions={['Apple', 'Banana']}
           value=''
-          showOptions={true}
+          showOptions
           onSelect={mockOnSelect}
         >
           <input aria-label='test input' />
@@ -139,7 +139,7 @@ describe('TextAutocomplete', () => {
         <TestWrapper
           allOptions={['Apple', 'Banana']}
           value=''
-          showOptions={true}
+          showOptions
           onSelect={mockOnSelect}
         >
           <input aria-label='test input' />
@@ -162,7 +162,7 @@ describe('TextAutocomplete', () => {
         <TestWrapper
           allOptions={['Apple', 'Banana']}
           value=''
-          showOptions={true}
+          showOptions
           onInputFocus={mockOnInputFocus}
         >
           <input aria-label='test input' />
@@ -182,7 +182,7 @@ describe('TextAutocomplete', () => {
         <TestWrapper
           allOptions={['Apple', 'Banana']}
           value=''
-          showOptions={true}
+          showOptions
           onInputFocus={mockOnInputFocus}
         >
           <input aria-label='test input' />
@@ -200,7 +200,7 @@ describe('TextAutocomplete', () => {
         <TestWrapper
           allOptions={['Apple', 'Banana', 'Cherry']}
           value=''
-          showOptions={true}
+          showOptions
         >
           <input aria-label='test input' />
         </TestWrapper>
@@ -220,7 +220,7 @@ describe('TextAutocomplete', () => {
         <TestWrapper
           allOptions={['Apple', 'Banana', 'Cherry']}
           value=''
-          showOptions={true}
+          showOptions
         >
           <input aria-label='test input' />
         </TestWrapper>
@@ -237,7 +237,7 @@ describe('TextAutocomplete', () => {
         <TestWrapper
           allOptions={['Apple', 'Banana', 'Cherry']}
           value=''
-          showOptions={true}
+          showOptions
         >
           <input aria-label='test input' />
         </TestWrapper>
@@ -258,7 +258,7 @@ describe('TextAutocomplete', () => {
         <TestWrapper
           allOptions={['Apple', 'Banana']}
           value=''
-          showOptions={true}
+          showOptions
           onHide={mockOnHide}
         >
           <input aria-label='test input' />
@@ -293,11 +293,7 @@ describe('TextAutocomplete', () => {
 
     it('shows options when showOptions is true and there are matching options', () => {
       render(
-        <TestWrapper
-          allOptions={['Apple', 'Banana']}
-          value=''
-          showOptions={true}
-        >
+        <TestWrapper allOptions={['Apple', 'Banana']} value='' showOptions>
           <input aria-label='test input' />
         </TestWrapper>
       );
@@ -309,11 +305,7 @@ describe('TextAutocomplete', () => {
 
     it('does not show options when there are no matching filtered options', () => {
       render(
-        <TestWrapper
-          allOptions={['Apple', 'Banana']}
-          value='xyz'
-          showOptions={true}
-        >
+        <TestWrapper allOptions={['Apple', 'Banana']} value='xyz' showOptions>
           <input aria-label='test input' />
         </TestWrapper>
       );
@@ -327,11 +319,7 @@ describe('TextAutocomplete', () => {
   describe('Accessibility', () => {
     it('renders options with proper tabIndex for keyboard navigation', () => {
       render(
-        <TestWrapper
-          allOptions={['Apple', 'Banana']}
-          value=''
-          showOptions={true}
-        >
+        <TestWrapper allOptions={['Apple', 'Banana']} value='' showOptions>
           <input aria-label='test input' />
         </TestWrapper>
       );
@@ -346,11 +334,7 @@ describe('TextAutocomplete', () => {
 
     it('renders options as list items for screen readers', () => {
       render(
-        <TestWrapper
-          allOptions={['Apple', 'Banana']}
-          value=''
-          showOptions={true}
-        >
+        <TestWrapper allOptions={['Apple', 'Banana']} value='' showOptions>
           <input aria-label='test input' />
         </TestWrapper>
       );
@@ -369,7 +353,7 @@ describe('TextAutocomplete', () => {
   describe('Edge Cases', () => {
     it('handles empty options array gracefully', () => {
       render(
-        <TestWrapper allOptions={[]} value='' showOptions={true}>
+        <TestWrapper allOptions={[]} value='' showOptions>
           <input aria-label='test input' />
         </TestWrapper>
       );
@@ -380,7 +364,7 @@ describe('TextAutocomplete', () => {
 
     it('handles undefined value gracefully', () => {
       render(
-        <TestWrapper allOptions={['Apple', 'Banana']} showOptions={true}>
+        <TestWrapper allOptions={['Apple', 'Banana']} showOptions>
           <input aria-label='test input' />
         </TestWrapper>
       );
@@ -398,7 +382,7 @@ describe('TextAutocomplete', () => {
       ];
 
       render(
-        <TestWrapper allOptions={specialOptions} value='' showOptions={true}>
+        <TestWrapper allOptions={specialOptions} value='' showOptions>
           <input aria-label='test input' />
         </TestWrapper>
       );
@@ -416,7 +400,7 @@ describe('TextAutocomplete', () => {
         <TestWrapper
           allOptions={['Apple', 'Apple', 'Banana']}
           value=''
-          showOptions={true}
+          showOptions
           onSelect={mockOnSelect}
         >
           <input aria-label='test input' />

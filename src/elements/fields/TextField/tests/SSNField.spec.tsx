@@ -1,7 +1,3 @@
-import './test-utils';
-import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
-import TextField from '../index';
 import {
   createMockElement,
   createDefaultProps,
@@ -9,6 +5,9 @@ import {
   getMockFieldValue,
   resetMockFieldValue
 } from './test-utils';
+import React from 'react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import TextField from '../index';
 
 import { debug } from 'jest-preview';
 

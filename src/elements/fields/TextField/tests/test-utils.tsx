@@ -1,4 +1,4 @@
-// Mock browser functions completely BEFORE any imports
+import React from 'react';
 jest.mock('../../../../utils/browser', () => ({
   runningInClient: jest.fn(() => false),
   featheryDoc: jest.fn(() => ({
@@ -21,8 +21,6 @@ jest.mock('../../../../utils/browser', () => ({
   hoverStylesGuard: jest.fn((styles) => styles),
   iosScrollOnFocus: jest.fn()
 }));
-
-import React from 'react';
 
 jest.mock('../../../components/useBorder', () => {
   return {
@@ -98,7 +96,7 @@ export const createMockElement = (
 export const createDefaultProps = (element: any, customProps: any = {}) => ({
   element,
   responsiveStyles: mockResponsiveStyles,
-  fieldLabel: React.createElement('label', {}, 'Test Label'),
+  fieldLabel: <label>Test Label</label>,
   elementProps: {},
   required: false,
   disabled: false,
