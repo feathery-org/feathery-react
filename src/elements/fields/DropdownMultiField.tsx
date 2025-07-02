@@ -80,7 +80,8 @@ export default function DropdownMultiField({
 }: any) {
   const { borderStyles, customBorder } = useBorder({
     element,
-    error: inlineError
+    error: inlineError,
+    breakpoint: responsiveStyles.getMobileBreakpoint()
   });
   const containerRef = useRef(null);
 

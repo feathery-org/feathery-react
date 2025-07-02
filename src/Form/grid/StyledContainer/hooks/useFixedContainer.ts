@@ -2,25 +2,26 @@ import { useEffect, useMemo, useRef } from 'react';
 import { featheryDoc, featheryWindow } from '../../../../utils/browser';
 import { getViewport } from '../../../../elements/styles';
 
-const isFixedContainer = (node: any, rawNode?: any) => {
+const isFixedContainer = (node: any, rawNode: any, breakpoint: number) => {
   const _node = rawNode ?? node;
   const styles =
-    getViewport() === 'mobile' ? _node.mobile_styles : _node.styles;
+    getViewport(breakpoint) === 'mobile' ? _node.mobile_styles : _node.styles;
 
   return styles?.position === 'fixed';
 };
 
 export const useFixedContainer = (
   node: any,
-  rawNode?: any,
-  viewport?: any
+  rawNode: any,
+  viewport: any,
+  breakpoint: number
 ): [boolean, any] => {
   const fixedContainerRef = useRef<HTMLDivElement>(null);
   const nodeRef = useRef(node || rawNode);
   const getNode = () => (nodeRef.current ? nodeRef.current : node || rawNode);
 
   const isFixed = useMemo(() => {
-    return !node.uuid && isFixedContainer(node, rawNode);
+    return !node.uuid && isFixedContainer(node, rawNode, breakpoint);
   }, [node, rawNode, viewport]);
 
   useEffect(() => {

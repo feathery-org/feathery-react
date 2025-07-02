@@ -187,7 +187,8 @@ function DateSelectorField({
 
   const { borderStyles, customBorder } = useBorder({
     element,
-    error: inlineError
+    error: inlineError,
+    breakpoint: responsiveStyles.getMobileBreakpoint()
   });
   const [focused, setFocused] = useState(false);
 

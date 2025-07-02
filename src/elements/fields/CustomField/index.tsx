@@ -55,7 +55,7 @@ const CustomField = ({
 
   return (
     <div
-      style={{
+      css={{
         maxWidth: '100%',
         width: '100%',
         height: 'auto',

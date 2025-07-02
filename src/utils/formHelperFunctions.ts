@@ -23,6 +23,7 @@ import { isObjectEmpty } from './primitives';
 import Field from './entities/Field';
 import { formatDateString } from '../elements/fields/DateSelectorField';
 import { findCountryByID } from '../elements/components/data/countries';
+import { DEFAULT_MOBILE_BREAKPOINT } from '../elements/styles';
 
 export const ARRAY_FIELD_TYPES = [
   'button_group',
@@ -953,7 +954,8 @@ export function mapFormSettingsResponse(res: any) {
     saveUrlParams: res.save_url_params,
     enterToSubmit: res.enter_submit,
     globalStyles: res.global_styles,
-    saveHideIfFields: res.save_hide_if_fields
+    saveHideIfFields: res.save_hide_if_fields,
+    mobileBreakpoint: res.mobile_breakpoint ?? DEFAULT_MOBILE_BREAKPOINT
   };
 }
 

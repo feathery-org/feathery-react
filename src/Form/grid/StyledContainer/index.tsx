@@ -29,6 +29,7 @@ export type StyledContainerProps = PropsWithChildren & {
   viewport?: 'desktop' | 'mobile';
   [key: string]: any;
   viewportOnly?: boolean;
+  breakpoint: number;
 };
 
 /**
@@ -49,6 +50,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       className,
       viewportOnly = false,
       editMode = false,
+      breakpoint,
       ...props
     },
     ref
@@ -83,14 +85,16 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       node,
       rawNode,
       css,
-      viewportOnly ? viewport : undefined
+      viewportOnly ? viewport : undefined,
+      breakpoint
     );
     if (backgroundImage) styles.backgroundImage = backgroundImage;
 
     const [isFixed, fixedContainerRef] = useFixedContainer(
       node,
       rawNode,
-      viewport
+      viewport,
+      breakpoint
     );
 
     if (node.properties.iframe_url) {

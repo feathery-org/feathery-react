@@ -1,4 +1,5 @@
 import React from 'react';
+import { DEFAULT_MOBILE_BREAKPOINT } from '../../../styles';
 jest.mock('../../../../utils/browser', () => ({
   runningInClient: jest.fn(() => false),
   featheryDoc: jest.fn(() => ({
@@ -54,7 +55,8 @@ export const resetMockFieldValue = () => {
 };
 
 export const mockResponsiveStyles = {
-  getTarget: jest.fn(() => ({}))
+  getTarget: jest.fn(() => ({})),
+  getMobileBreakpoint: jest.fn(() => DEFAULT_MOBILE_BREAKPOINT)
 };
 
 export const createMockElement = (

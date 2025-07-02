@@ -42,7 +42,8 @@ function AddressLine1({
 
   const { borderStyles, customBorder } = useBorder({
     element,
-    error: inlineError
+    error: inlineError,
+    breakpoint: responsiveStyles.getMobileBreakpoint()
   });
 
   return (

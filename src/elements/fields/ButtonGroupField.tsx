@@ -36,7 +36,8 @@ function ButtonGroupField({
   );
   const { borderStyles, customBorder } = useBorder({
     element,
-    error: inlineError
+    error: inlineError,
+    breakpoint: responsiveStyles.getMobileBreakpoint()
   });
 
   const labels = servar.metadata.option_labels;
@@ -125,7 +126,7 @@ function ButtonGroupField({
               {imageUrl && (
                 <img
                   src={imageUrl}
-                  style={{
+                  css={{
                     ...imgMaxSizeStyles,
                     ...responsiveStyles.getTargets('img')
                   }}

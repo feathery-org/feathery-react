@@ -15,7 +15,7 @@ function SmoothBar({ styles, percent }: any) {
 
   return (
     <div
-      style={{
+      css={{
         height: '0.4rem',
         width: '100%',
         borderRadius: 0,

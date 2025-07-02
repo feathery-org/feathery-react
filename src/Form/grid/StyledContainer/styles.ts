@@ -5,11 +5,16 @@ import { isNum } from '../../../utils/primitives';
 
 export const DEFAULT_MIN_SIZE = 50;
 
-export const getCellStyle = (cell: any, viewport?: 'desktop' | 'mobile') => {
+export const getCellStyle = (
+  cell: any,
+  viewport: 'desktop' | 'mobile' | undefined,
+  breakpoint: number
+) => {
   const styles = new ResponsiveStyles(
     cell,
     ['cell', 'cellHover', 'cellActive'],
-    true
+    true,
+    breakpoint
   );
   styles.applyBorders({ target: 'cell' });
   styles.applyCorners('cell');
@@ -35,11 +40,17 @@ export const getCellStyle = (cell: any, viewport?: 'desktop' | 'mobile') => {
 
 export const getContainerStyles = (
   node: any,
-  rawNode?: any,
-  viewport?: 'desktop' | 'mobile' // Passed only by the editor, not hosted forms
+  rawNode: any | undefined,
+  viewport: 'desktop' | 'mobile' | undefined, // Passed only by the editor, not hosted forms,
+  breakpoint: number
 ): ResponsiveStyles => {
   const hasChildren = node.children && node.children.length > 0;
-  const styles = new ResponsiveStyles(rawNode ?? node, ['container'], true);
+  const styles = new ResponsiveStyles(
+    rawNode ?? node,
+    ['container'],
+    true,
+    breakpoint
+  );
 
   // Apply flex basis rule
   if (node.parent) {
@@ -425,14 +436,16 @@ export const getContainerStyles = (
 
 export const getInnerContainerStyles = (
   node: any,
-  rawNode?: any,
-  viewport?: 'desktop' | 'mobile' // Passed only by the editor, not hosted forms
+  rawNode: any | undefined,
+  viewport: 'desktop' | 'mobile' | undefined, // Passed only by the editor, not hosted forms
+  breakpoint: number
 ): ResponsiveStyles => {
   const hasChildren = node.children && node.children.length > 0;
   const styles = new ResponsiveStyles(
     rawNode ?? node,
     ['inner-container'],
-    true
+    true,
+    breakpoint
   );
 
   /**

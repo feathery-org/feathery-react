@@ -52,16 +52,27 @@ export const useFormattedNode = (_node: any, raw?: any) => {
 export const useContainerStyles = (
   node: any,
   rawNode: any,
-  css?: any,
-  viewport?: any
+  css: any,
+  viewport: any,
+  breakpoint: number
 ) => {
   const styles = useMemo(() => {
     let cellStyle = {};
     // need to consider rawNode here in order to handle background color styles
-    if (!node.isElement) cellStyle = getCellStyle(rawNode ?? node, viewport)[0];
+    if (!node.isElement)
+      cellStyle = getCellStyle(rawNode ?? node, viewport, breakpoint)[0];
 
-    const containerStyles = getContainerStyles(node, rawNode, viewport);
-    const mobileStyles = mergeMobileStyles(cellStyle, containerStyles);
+    const containerStyles = getContainerStyles(
+      node,
+      rawNode,
+      viewport,
+      breakpoint
+    );
+    const mobileStyles = mergeMobileStyles(
+      cellStyle,
+      containerStyles,
+      breakpoint
+    );
 
     const _styles = {
       position: 'relative',
@@ -89,7 +100,7 @@ export const useContainerStyles = (
       width: '100%',
       height: '100%',
       boxSizing: 'border-box',
-      ...getInnerContainerStyles(node, rawNode, viewport)
+      ...getInnerContainerStyles(node, rawNode, viewport, breakpoint)
     };
 
     if (node.isElement) {

@@ -43,7 +43,8 @@ function SingleOtpInput({
 
   const { borderStyles, customBorder } = useBorder({
     element,
-    error: inlineError
+    error: inlineError,
+    breakpoint: responsiveStyles.getMobileBreakpoint()
   });
 
   // Handle cases of backspace, delete, left arrow, right arrow, space

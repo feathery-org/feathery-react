@@ -1,5 +1,7 @@
 import { isNum } from './primitives';
-import ResponsiveStyles from '../elements/styles';
+import ResponsiveStyles, {
+  DEFAULT_MOBILE_BREAKPOINT
+} from '../elements/styles';
 
 export const MIN_AXIS_SIZE = 15;
 
@@ -70,7 +72,12 @@ export function calculateStepCSS(step: any): Record<string, any> {
 }
 
 export function calculateGlobalCSS(globalStyles: any) {
-  const styles = new ResponsiveStyles({ styles: globalStyles }, ['form']);
+  const styles = new ResponsiveStyles(
+    { styles: globalStyles },
+    ['form'],
+    false,
+    DEFAULT_MOBILE_BREAKPOINT
+  );
   if (globalStyles) {
     styles.applyFontStyles('form');
   }

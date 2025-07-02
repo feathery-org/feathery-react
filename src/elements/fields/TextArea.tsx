@@ -26,7 +26,8 @@ function TextArea({
   const [focused, setFocused] = useState(false);
   const { borderStyles, customBorder } = useBorder({
     element,
-    error: inlineError
+    error: inlineError,
+    breakpoint: responsiveStyles.getMobileBreakpoint()
   });
 
   const servar = element.servar;

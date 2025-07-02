@@ -173,7 +173,8 @@ function ButtonElement({
   const { borderStyles, customBorder } = useBorder({
     element,
     error: inlineError,
-    defaultHover: true
+    defaultHover: true,
+    breakpoint: responsiveStyles.getMobileBreakpoint()
   });
 
   const activeStyles = editMode
@@ -240,7 +241,7 @@ function ButtonElement({
           {element.properties.image && (
             <img
               src={element.properties.image}
-              style={{
+              css={{
                 ...imgMaxSizeStyles,
                 ...responsiveStyles.getTargets('img')
               }}

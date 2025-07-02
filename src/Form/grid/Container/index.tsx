@@ -7,6 +7,7 @@ type ContainerProps = PropsWithChildren & {
   viewport: any;
   runElementActions?: any;
   selected?: boolean;
+  form: { formSettings: { mobileBreakpoint: number } };
 };
 
 /**
@@ -19,6 +20,7 @@ export const Container = ({
   runElementActions = () => {},
   selected,
   viewport,
+  form,
   children
 }: ContainerProps) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -28,7 +30,11 @@ export const Container = ({
   if (!node.isElement) {
     const properties = node.properties ?? {};
     const actions = properties.actions ?? [];
-    const [, cellHoverStyle = {}, cellActiveStyle = {}] = getCellStyle(node);
+    const [, cellHoverStyle = {}, cellActiveStyle = {}] = getCellStyle(
+      node,
+      undefined,
+      form.formSettings.mobileBreakpoint
+    );
 
     const selectableStyles =
       actions.length > 0
@@ -71,6 +77,7 @@ export const Container = ({
       css={additionalCss}
       onClick={handleClick}
       viewport={viewport}
+      breakpoint={form.formSettings.mobileBreakpoint}
     >
       {children}
     </StyledContainer>
