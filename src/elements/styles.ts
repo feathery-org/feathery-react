@@ -8,15 +8,10 @@ import {
 import { isDirectionColumn } from '../utils/styles';
 import { CSSProperties } from 'react';
 
-export const mobileBreakpointValue = 478;
+export const DEFAULT_MOBILE_BREAKPOINT = 478;
 
-// This NEEDS to be max-width not maxWidth
-export const mobileBreakpointKey = `@media (max-width: ${mobileBreakpointValue}px)`;
-
-export const getViewport = () => {
-  return featheryWindow().innerWidth > mobileBreakpointValue
-    ? 'desktop'
-    : 'mobile';
+export const getViewport = (breakpoint = DEFAULT_MOBILE_BREAKPOINT) => {
+  return featheryWindow().innerWidth > breakpoint ? 'desktop' : 'mobile';
 };
 
 export const borderWidthProps = [
@@ -44,18 +39,37 @@ export default class ResponsiveStyles {
   mobileTargets: any;
   styles: any;
   targets: any;
+  mobileBreakpoint: number;
+  mobileBreakpointKey: string;
 
-  constructor(element: any, targets: string[], handleMobile = false) {
+  constructor(
+    element: any,
+    targets: string[],
+    handleMobile = false,
+    mobileBreakpoint = DEFAULT_MOBILE_BREAKPOINT
+  ) {
     this.element = element;
     this.styles = element.styles;
     this.targets = objectFromEntries(targets.map((t: string) => [t, {}]));
     this.handleMobile = handleMobile;
+    this.mobileBreakpoint = mobileBreakpoint;
+    this.mobileBreakpointKey = `@media (max-width: ${mobileBreakpoint}px)`;
+
     if (handleMobile) {
       this.mobileStyles = element.mobile_styles ?? {};
       this.mobileTargets = objectFromEntries(
         targets.map((t: string) => [t, {}])
       );
     }
+  }
+
+  getMobileBreakpoint() {
+    return this.mobileBreakpoint;
+  }
+
+  setMobileBreakpoint(breakpoint: number) {
+    this.mobileBreakpoint = breakpoint;
+    this.mobileBreakpointKey = `@media (max-width: ${breakpoint}px)`;
   }
 
   addTargets(...targets: string[]) {
@@ -71,15 +85,13 @@ export default class ResponsiveStyles {
     if (!target) return {};
 
     if (!desktopOnly && this.handleMobile) {
-      target[mobileBreakpointKey] = this.mobileTargets[targetId];
+      target[this.mobileBreakpointKey] = this.mobileTargets[targetId];
     }
 
     // Merge the mobile styles onto the base styles
     if (includeMobile) {
-      const mobileStyles = target[mobileBreakpointKey];
-
-      delete target[mobileBreakpointKey];
-
+      const mobileStyles = target[this.mobileBreakpointKey];
+      delete target[this.mobileBreakpointKey];
       return {
         ...target,
         ...mobileStyles
@@ -96,9 +108,9 @@ export default class ResponsiveStyles {
       targetStyles = { ...targetStyles, ...this.targets[targetId] };
       if (this.handleMobile)
         // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-        targetStyles[mobileBreakpointKey] = {
+        targetStyles[this.mobileBreakpointKey] = {
           // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-          ...targetStyles[mobileBreakpointKey],
+          ...targetStyles[this.mobileBreakpointKey],
           ...this.mobileTargets[targetId]
         };
     });
@@ -430,7 +442,7 @@ export default class ResponsiveStyles {
   getRichFontStyles(attrs: any) {
     const fontStyles = this._getRichFontScreenStyles(attrs);
     if (this.handleMobile) {
-      fontStyles[mobileBreakpointKey] = this._getRichFontScreenStyles(
+      fontStyles[this.mobileBreakpointKey] = this._getRichFontScreenStyles(
         attrs,
         true
       );
@@ -601,7 +613,12 @@ export const imgMaxSizeStyles: CSSProperties = {
 
 export const ERROR_COLOR = '#F42525';
 
-export function mergeMobileStyles(style1: any, style2: any) {
+export function mergeMobileStyles(
+  style1: any,
+  style2: any,
+  breakpoint = DEFAULT_MOBILE_BREAKPOINT
+) {
+  const mobileBreakpointKey = `@media (max-width: ${breakpoint}px)`;
   const newMobile = {};
   Object.assign(newMobile, style1[mobileBreakpointKey]);
   Object.assign(newMobile, style2[mobileBreakpointKey]);

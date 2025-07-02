@@ -103,7 +103,7 @@ import FormOff, {
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
 import Grid from './grid';
-import { getViewport } from '../elements/styles';
+import { DEFAULT_MOBILE_BREAKPOINT, getViewport } from '../elements/styles';
 import {
   ContextOnAction,
   ContextOnChange,
@@ -326,7 +326,8 @@ function Form({
     saveUrlParams: false,
     saveHideIfFields: false,
     completionBehavior: '',
-    globalStyles: {}
+    globalStyles: {},
+    mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT
   });
   const trackHashes = useRef(false);
   const curLanguage = useRef<undefined | string>(undefined);
@@ -352,8 +353,9 @@ function Form({
     keyof typeof REQUIRED_FLOW_ACTIONS | ''
   >('');
 
-  const [viewport, setViewport] = useState(getViewport());
-  const handleResize = () => setViewport(getViewport());
+  const [viewport, setViewport] = useState(() =>
+    getViewport(formSettings.mobileBreakpoint)
+  );
 
   const prevAuthId = usePrevious(authState.authId);
   const prevStepKey = usePrevious(stepKey);
@@ -430,9 +432,12 @@ function Form({
   }, []);
 
   useEffect(() => {
+    const handleResize = () => {
+      setViewport(getViewport(formSettings.mobileBreakpoint));
+    };
     featheryWindow().addEventListener('resize', handleResize);
     return () => featheryWindow().removeEventListener('resize', handleResize);
-  }, []);
+  }, [formSettings]);
 
   useEffect(() => {
     const oldLanguage = curLanguage.current;

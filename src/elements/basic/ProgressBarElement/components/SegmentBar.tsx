@@ -8,7 +8,7 @@ function SegmentBar({ styles, percent, numSegments }: any) {
     filledSegments.push(
       <div
         key={i}
-        style={{
+        css={{
           width: `calc(${100 / numSegments}% - ${spacer}px)`,
           marginRight: `${spacer}px`,
           borderRadius: '2px',

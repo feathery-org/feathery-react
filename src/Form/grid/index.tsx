@@ -25,7 +25,7 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
   const props = node.properties ?? {};
   if (node.isElement) {
     return (
-      <Container node={node} viewport={viewport}>
+      <Container node={node} viewport={viewport} form={form}>
         <Element form={form} node={node} />
       </Container>
     );
@@ -57,6 +57,7 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
     return (
       <Container
         node={node}
+        form={form}
         viewport={viewport}
         selected={customClickSelectionState({
           ...node,

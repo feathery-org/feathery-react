@@ -1,4 +1,4 @@
-import ResponsiveStyles from '../styles';
+import ResponsiveStyles, { DEFAULT_MOBILE_BREAKPOINT } from '../styles';
 
 const TEST_COLOR_BACKGROUND = 'dddddd';
 const mockElement = {
@@ -17,7 +17,8 @@ describe('responsiveStyles', () => {
       const objectUnderTest = new ResponsiveStyles(
         mockElement,
         [TEST_STYLES_TARGET],
-        false
+        false,
+        DEFAULT_MOBILE_BREAKPOINT
       );
 
       // Act
@@ -42,7 +43,8 @@ describe('responsiveStyles', () => {
       const objectUnderTest = new ResponsiveStyles(
         mockElement,
         [TEST_STYLES_TARGET],
-        false
+        false,
+        DEFAULT_MOBILE_BREAKPOINT
       );
 
       // Act

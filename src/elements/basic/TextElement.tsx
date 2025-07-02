@@ -63,7 +63,11 @@ function TextElement({
     () => applyTextStyles(element, responsiveStyles),
     [responsiveStyles]
   );
-  const { borderStyles, customBorder } = useBorder({ element, corners: false });
+  const { borderStyles, customBorder } = useBorder({
+    element,
+    corners: false,
+    breakpoint: responsiveStyles.getMobileBreakpoint()
+  });
   return (
     <div
       css={{

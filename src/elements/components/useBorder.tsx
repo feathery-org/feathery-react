@@ -6,13 +6,21 @@ export default function useBorder({
   element,
   defaultHover = false,
   corners = true,
-  error = false
-}: any) {
+  error = false,
+  breakpoint
+}: {
+  defaultHover?: boolean;
+  corners?: boolean;
+  element: any;
+  error?: boolean;
+  breakpoint: number;
+}) {
   const styles = useMemo(() => {
     const styles = new ResponsiveStyles(
       element,
       ['border', 'borderHover', 'borderActive', 'borderDisabled'],
-      true
+      true,
+      breakpoint
     );
     if (corners) styles.applyCorners('border');
     styles.applyBorders({ target: 'border' });

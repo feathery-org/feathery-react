@@ -70,7 +70,8 @@ const Element = ({ node: el, form }: any) => {
     element: el,
     elementProps: elementProps[el.id],
     inlineError: getInlineError(el, inlineErrors),
-    featheryContext
+    featheryContext,
+    formSettings
   };
   const fieldId = el.servar?.key ?? el.id;
   if (elementOnView && onViewElements.includes(fieldId))

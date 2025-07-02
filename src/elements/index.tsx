@@ -28,11 +28,17 @@ Object.entries(Elements).map(([key, Element]) => {
       componentOnly = true,
       inlineError = '',
       onView,
+      formSettings,
       ...props
     }: any) => {
       const responsiveStyles = useMemo(() => {
-        return new ResponsiveStyles(element, ['container'], !componentOnly);
-      }, [element, componentOnly]);
+        return new ResponsiveStyles(
+          element,
+          ['container'],
+          !componentOnly,
+          formSettings.mobileBreakpoint
+        );
+      }, [element, componentOnly, formSettings]);
 
       const featheryElement = (
         <Element

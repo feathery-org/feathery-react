@@ -953,7 +953,8 @@ export function mapFormSettingsResponse(res: any) {
     saveUrlParams: res.save_url_params,
     enterToSubmit: res.enter_submit,
     globalStyles: res.global_styles,
-    saveHideIfFields: res.save_hide_if_fields
+    saveHideIfFields: res.save_hide_if_fields,
+    mobileBreakpoint: res.mobile_breakpoint
   };
 }
 

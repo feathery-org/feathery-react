@@ -26,7 +26,8 @@ function PasswordField({
 }: any) {
   const { borderStyles, customBorder, borderId } = useBorder({
     element,
-    error: inlineError
+    error: inlineError,
+    breakpoint: responsiveStyles.getMobileBreakpoint()
   });
   const [showPassword, setShowPassword] = useState(false);
   const containerRef = useRef(null);

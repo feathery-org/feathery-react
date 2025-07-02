@@ -29,7 +29,8 @@ export default function DropdownField({
 }: any) {
   const { borderStyles, customBorder } = useBorder({
     element,
-    error: inlineError
+    error: inlineError,
+    breakpoint: responsiveStyles.getMobileBreakpoint()
   });
   const [focused, setFocused] = useState(false);
   const [curCountry, setCurCountry] = useState(null);
