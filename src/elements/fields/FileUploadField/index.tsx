@@ -1,15 +1,31 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useThumbnailData } from '../../utils/image';
-import { isEmptyArray, justRemove, toList } from '../../utils/array';
 
 import { Image } from 'react-bootstrap';
-import { CloseIcon, DownloadIcon, FileUploadIcon } from '../components/icons';
-import { imgMaxSizeStyles } from '../styles';
-import { FORM_Z_INDEX } from '../../utils/styles';
-import { downloadFile, iosScrollOnFocus } from '../../utils/browser';
+import { useThumbnailData } from '../../../utils/image';
+import { isEmptyArray, justRemove, toList } from '../../../utils/array';
+import { imgMaxSizeStyles } from '../../styles';
+import {
+  CloseIcon,
+  DownloadIcon,
+  FileUploadIcon
+} from '../../components/icons';
+import { downloadFile, iosScrollOnFocus } from '../../../utils/browser';
+import { FORM_Z_INDEX } from '../../../utils/styles';
 
-const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
-const NUM_FILES_LIMIT = 20;
+export const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
+export const NUM_FILES_LIMIT = 20;
+
+interface FileUploadFieldProps {
+  element: any;
+  responsiveStyles: any;
+  required?: boolean;
+  disabled?: boolean;
+  editMode: boolean;
+  onChange?: (files: Promise<File>[], length: number) => void;
+  initialFiles?: any[];
+  elementProps?: any;
+  children?: React.ReactNode;
+}
 
 function FileUploadField({
   element,
@@ -21,13 +37,13 @@ function FileUploadField({
   initialFiles = [],
   elementProps = {},
   children
-}: any) {
+}: FileUploadFieldProps) {
   const servar = element.servar;
   const showLabel = servar.name !== '';
   const isMultiple = servar.metadata.multiple;
-  const fileInput = useRef<any>(undefined);
+  const fileInput = useRef<HTMLInputElement>(null);
 
-  const [rawFiles, setRawFiles] = useState<any[]>([]);
+  const [rawFiles, setRawFiles] = useState<Promise<File>[]>([]);
   const [hoverDownload, setHoverDownload] = useState(-1);
 
   useEffect(() => {
@@ -60,7 +76,8 @@ function FileUploadField({
 
   const onClick = () => {
     if (!allowMoreFiles && !hidePreview) return;
-    fileInput.current.click();
+    if (disabled) return;
+    fileInput.current?.click();
   };
 
   const allowedFileTypes: string[] = [...servar.metadata.file_types];
@@ -105,7 +122,7 @@ function FileUploadField({
     : DEFAULT_FILE_SIZE_LIMIT;
 
   const validateFileSizes = (files: File[]) => {
-    if (files.some((file: any) => file.size > fileSizeLimit)) {
+    if (files.some((file) => file.size > fileSizeLimit)) {
       let sizeLabel = '';
       if (fileSizeLimit < 1024) sizeLabel = `${fileSizeLimit} bytes`;
       else if (fileSizeLimit <= 1024 * 1024) {
@@ -122,6 +139,7 @@ function FileUploadField({
   // When the user uploads files to the multi-file upload, we just append to the existing set
   // By default the input element would just replace all the uploaded files (we don't want that)
   const handleFiles = async (filelist: FileList) => {
+    if (disabled) return;
     let files = Array.from(filelist);
     if (!isMultiple) {
       files = [files[0]];
@@ -151,12 +169,21 @@ function FileUploadField({
       setRawFiles(newRawFiles);
       customOnChange(newRawFiles, length);
 
+      // Clear any previous validation errors since files are now valid
+      fileInput.current?.setCustomValidity('');
+
       // Wipe the value of the upload element so we can upload multiple copies of the same file
       // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
-      fileInput.current.value = [];
+      if (fileInput.current) {
+        fileInput.current.value = ''; // Reset the input value
+      }
     } catch (error: any) {
-      fileInput.current.setCustomValidity(error.message);
-      fileInput.current.reportValidity();
+      fileInput.current?.setCustomValidity(error.message);
+      fileInput.current?.reportValidity();
+
+      // Don't update the file state if validation fails
+      // This prevents invalid files from being added to the preview
+      return;
     }
   };
 
@@ -202,104 +229,114 @@ function FileUploadField({
     >
       {children}
       {!hidePreview &&
-        thumbnailData.map(({ filename, thumbnail }: any, index: any) => (
-          <div
-            key={index}
-            css={{
-              position: 'relative',
-              width: '100%',
-              maxHeight: '100%',
-              overflow: 'hidden',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              boxSizing: 'border-box',
-              ...(thumbnail
-                ? {}
-                : { paddingLeft: '20px', paddingRight: '20px' }),
-              ...responsiveStyles.getTarget('field')
-            }}
-            onMouseEnter={() => setHoverDownload(index)}
-            onMouseLeave={() => setHoverDownload(-1)}
-          >
-            {hoverDownload === index && (
-              <div
-                css={{
-                  position: 'absolute',
-                  margin: 'auto',
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: '48px',
-                  height: '48px',
-                  borderRadius: '8px',
-                  backgroundColor: '#3E414D80',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                onClick={async () => downloadFile(await rawFiles[index])}
-              >
-                <DownloadIcon />
-              </div>
-            )}
-            {thumbnail ? (
-              <Image
-                src={thumbnail}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'contain'
-                }}
-              />
-            ) : (
-              <span
-                style={{
-                  color: 'black',
-                  height: '100%',
-                  width: '100%',
-                  wordBreak: 'break-all',
-                  fontSize: 'small',
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  textAlign: 'center'
-                }}
-              >
-                {filename || 'File'}
-              </span>
-            )}
+        thumbnailData.map(
+          (
+            {
+              filename,
+              thumbnail
+            }: { filename: string; thumbnail: string | null },
+            index: number
+          ) => (
             <div
+              key={index}
               css={{
-                position: 'absolute',
-                top: '4px',
-                right: '4px',
-                color: 'white',
-                background: '#AAA',
-                height: '16px',
-                width: '16px',
-                borderRadius: '50%',
-                pointerEvents: disabled ? 'none' : 'auto',
-                cursor: 'pointer',
+                position: 'relative',
+                width: '100%',
+                maxHeight: '100%',
+                overflow: 'hidden',
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
-                transition: '0.2s ease all',
-                '&:hover': { backgroundColor: '#BBB' }
+                boxSizing: 'border-box',
+                ...(thumbnail
+                  ? {}
+                  : { paddingLeft: '20px', paddingRight: '20px' }),
+                ...responsiveStyles.getTarget('field')
               }}
-              onClick={(event) => {
-                // Stop propagation so window doesn't open up to pick another file to upload
-                event.stopPropagation();
-                fileInput.current.setCustomValidity('');
-                onClear(index)();
-              }}
+              onMouseEnter={() => setHoverDownload(index)}
+              onMouseLeave={() => setHoverDownload(-1)}
             >
-              <CloseIcon fill='white' width={12} height={12} />
+              {hoverDownload === index && (
+                <div
+                  css={{
+                    position: 'absolute',
+                    margin: 'auto',
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '8px',
+                    backgroundColor: '#3E414D80',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  onClick={async () => downloadFile(await rawFiles[index])}
+                >
+                  <DownloadIcon />
+                </div>
+              )}
+              {thumbnail ? (
+                <Image
+                  src={thumbnail}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain'
+                  }}
+                />
+              ) : (
+                <span
+                  style={{
+                    color: 'black',
+                    height: '100%',
+                    width: '100%',
+                    wordBreak: 'break-all',
+                    fontSize: 'small',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    textAlign: 'center'
+                  }}
+                >
+                  {filename || 'File'}
+                </span>
+              )}
+              <div
+                css={{
+                  position: 'absolute',
+                  top: '4px',
+                  right: '4px',
+                  color: 'white',
+                  background: '#AAA',
+                  height: '16px',
+                  width: '16px',
+                  borderRadius: '50%',
+                  pointerEvents: disabled ? 'none' : 'auto',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  transition: '0.2s ease all',
+                  '&:hover': { backgroundColor: '#BBB' }
+                }}
+                role='button'
+                aria-label='Clear file'
+                onClick={(event) => {
+                  // Stop propagation so window doesn't open up to pick another file to upload
+                  event.stopPropagation();
+                  fileInput.current?.setCustomValidity('');
+                  onClear(index)();
+                }}
+              >
+                <CloseIcon fill='white' width={12} height={12} />
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        )}
       {(allowMoreFiles || hidePreview) && (
         <div
           onClick={onClick}

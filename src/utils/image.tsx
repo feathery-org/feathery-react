@@ -47,11 +47,11 @@ export function useFileData(initialFiles: any, onSetFiles = () => {}) {
  * Given a File (or a Promise<File>), convert the file to a filename and thumbnail.
  * Filename will be a plaintext string and thumbnail will be a base64 encoded image.
  */
-export async function getThumbnailData(filePromise: any) {
+export async function getThumbnailData(filePromise: Promise<File>) {
   const file = await filePromise;
   const thumbnailType = getThumbnailType(file);
   if (thumbnailType === THUMBNAIL_TYPE.IMAGE) {
-    const url = await new Promise((resolve) => {
+    const url: string = await new Promise((resolve) => {
       const reader = new FileReader();
 
       reader.addEventListener('load', (event) => {
@@ -62,9 +62,9 @@ export async function getThumbnailData(filePromise: any) {
       reader.readAsDataURL(file);
     });
 
-    return { filename: '', thumbnail: url };
+    return { filename: file.name, thumbnail: url };
   } else {
-    return { filename: file?.name ?? '', thumbnail: '' };
+    return { filename: file.name ?? '', thumbnail: '' };
   }
 }
 
@@ -84,7 +84,7 @@ export async function getRenderData(filePromise: any) {
 /**
  * Utility hook for converting a list of files into a list of thumbnail information.
  */
-export function useThumbnailData(files: any) {
+export function useThumbnailData(files: Promise<File>[]) {
   const [thumbnailData, setThumbnailData] = useState(
     files.map(() => ({ filename: '', thumbnail: '' }))
   );
