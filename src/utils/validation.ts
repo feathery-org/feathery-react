@@ -242,7 +242,6 @@ function isFieldValueEmpty(value: any, servar: any) {
       break;
     case 'select':
     case 'signature':
-    case 'file_upload':
       noVal = !value;
       break;
     case 'checkbox':
