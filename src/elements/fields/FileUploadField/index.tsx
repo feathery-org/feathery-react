@@ -139,7 +139,7 @@ function FileUploadField({
 
       const originalLength = hidePreview ? 0 : rawFiles.length;
       if (files.length + originalLength > NUM_FILES_LIMIT) {
-        // Splice off the uploaded files past the upload count
+        // Splice off the uploaded files past the upload limit
         files.splice(NUM_FILES_LIMIT - originalLength);
       }
 

@@ -11,7 +11,7 @@ export const THUMBNAIL_TYPE = {
 export const BASE64_REGEX =
   /(data:image\/(png|jpg|jpeg);base64,)([0-9a-zA-Z+/]{4})*(([0-9a-zA-Z+/]{2}==)|([0-9a-zA-Z+/]{3}=))?$/gm;
 
-export function getThumbnailType(file: any) {
+export function getThumbnailType(file: File) {
   let thumbnailType = THUMBNAIL_TYPE.UNKNOWN;
 
   if (file) {
@@ -47,7 +47,7 @@ export function useFileData(initialFiles: any, onSetFiles = () => {}) {
  * Given a File (or a Promise<File>), convert the file to a filename and thumbnail.
  * Filename will be a plaintext string and thumbnail will be a base64 encoded image.
  */
-export async function getThumbnailData(filePromise: Promise<File>) {
+export async function getThumbnailData(filePromise: File | Promise<File>) {
   const file = await filePromise;
   const thumbnailType = getThumbnailType(file);
   if (thumbnailType === THUMBNAIL_TYPE.IMAGE) {
@@ -62,16 +62,16 @@ export async function getThumbnailData(filePromise: Promise<File>) {
       reader.readAsDataURL(file);
     });
 
-    return { filename: file.name, thumbnail: url };
+    return { filename: file?.name ?? '', thumbnail: url };
   } else {
-    return { filename: file.name ?? '', thumbnail: '' };
+    return { filename: file?.name ?? '', thumbnail: '' };
   }
 }
 
 /**
  * Given a File (or a Promise<File>), convert the file to a source url and file type.
  */
-export async function getRenderData(filePromise: any) {
+export async function getRenderData(filePromise: File | Promise<File>) {
   const file = await filePromise;
 
   if (file) {
