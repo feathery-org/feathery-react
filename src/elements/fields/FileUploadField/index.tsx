@@ -211,114 +211,106 @@ function FileUploadField({
     >
       {children}
       {!hidePreview &&
-        thumbnailData.map(
-          (
-            {
-              filename,
-              thumbnail
-            }: { filename: string; thumbnail: string | null },
-            index: number
-          ) => (
-            <div
-              key={index}
-              css={{
-                position: 'relative',
-                width: '100%',
-                maxHeight: '100%',
-                overflow: 'hidden',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                boxSizing: 'border-box',
-                ...(thumbnail
-                  ? {}
-                  : { paddingLeft: '20px', paddingRight: '20px' }),
-                ...responsiveStyles.getTarget('field')
-              }}
-              onMouseEnter={() => setHoverDownload(index)}
-              onMouseLeave={() => setHoverDownload(-1)}
-            >
-              {hoverDownload === index && (
-                <div
-                  css={{
-                    position: 'absolute',
-                    margin: 'auto',
-                    left: 0,
-                    right: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '8px',
-                    backgroundColor: '#3E414D80',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                  onClick={async () => downloadFile(await rawFiles[index])}
-                >
-                  <DownloadIcon />
-                </div>
-              )}
-              {thumbnail ? (
-                <Image
-                  src={thumbnail}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'contain'
-                  }}
-                />
-              ) : (
-                <span
-                  style={{
-                    color: 'black',
-                    height: '100%',
-                    width: '100%',
-                    wordBreak: 'break-all',
-                    fontSize: 'small',
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    textAlign: 'center'
-                  }}
-                >
-                  {filename || 'File'}
-                </span>
-              )}
+        thumbnailData.map(({ filename, thumbnail }, index) => (
+          <div
+            key={index}
+            css={{
+              position: 'relative',
+              width: '100%',
+              maxHeight: '100%',
+              overflow: 'hidden',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              boxSizing: 'border-box',
+              ...(thumbnail
+                ? {}
+                : { paddingLeft: '20px', paddingRight: '20px' }),
+              ...responsiveStyles.getTarget('field')
+            }}
+            onMouseEnter={() => setHoverDownload(index)}
+            onMouseLeave={() => setHoverDownload(-1)}
+          >
+            {hoverDownload === index && (
               <div
                 css={{
                   position: 'absolute',
-                  top: '4px',
-                  right: '4px',
-                  color: 'white',
-                  background: '#AAA',
-                  height: '16px',
-                  width: '16px',
-                  borderRadius: '50%',
-                  pointerEvents: disabled ? 'none' : 'auto',
+                  margin: 'auto',
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '8px',
+                  backgroundColor: '#3E414D80',
                   cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                onClick={async () => downloadFile(await rawFiles[index])}
+              >
+                <DownloadIcon />
+              </div>
+            )}
+            {thumbnail ? (
+              <Image
+                src={thumbnail}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain'
+                }}
+              />
+            ) : (
+              <span
+                style={{
+                  color: 'black',
+                  height: '100%',
+                  width: '100%',
+                  wordBreak: 'break-all',
+                  fontSize: 'small',
                   display: 'flex',
                   justifyContent: 'center',
                   alignItems: 'center',
-                  transition: '0.2s ease all',
-                  '&:hover': { backgroundColor: '#BBB' }
-                }}
-                role='button'
-                aria-label='Clear file'
-                onClick={(event) => {
-                  // Stop propagation so window doesn't open up to pick another file to upload
-                  event.stopPropagation();
-                  fileInput.current?.setCustomValidity('');
-                  onClear(index)();
+                  textAlign: 'center'
                 }}
               >
-                <CloseIcon fill='white' width={12} height={12} />
-              </div>
+                {filename || 'File'}
+              </span>
+            )}
+            <div
+              css={{
+                position: 'absolute',
+                top: '4px',
+                right: '4px',
+                color: 'white',
+                background: '#AAA',
+                height: '16px',
+                width: '16px',
+                borderRadius: '50%',
+                pointerEvents: disabled ? 'none' : 'auto',
+                cursor: 'pointer',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                transition: '0.2s ease all',
+                '&:hover': { backgroundColor: '#BBB' }
+              }}
+              role='button'
+              aria-label='Clear file'
+              onClick={(event) => {
+                // Stop propagation so window doesn't open up to pick another file to upload
+                event.stopPropagation();
+                fileInput.current?.setCustomValidity('');
+                onClear(index)();
+              }}
+            >
+              <CloseIcon fill='white' width={12} height={12} />
             </div>
-          )
-        )}
+          </div>
+        ))}
       {(allowMoreFiles || hidePreview) && (
         <div
           onClick={onClick}
