@@ -15,18 +15,6 @@ import { FORM_Z_INDEX } from '../../../utils/styles';
 export const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 export const NUM_FILES_LIMIT = 20;
 
-interface FileUploadFieldProps {
-  element: any;
-  responsiveStyles: any;
-  required?: boolean;
-  disabled?: boolean;
-  editMode: boolean;
-  onChange?: (files: Promise<File>[], length: number) => void;
-  initialFiles?: any[];
-  elementProps?: any;
-  children?: React.ReactNode;
-}
-
 function FileUploadField({
   element,
   responsiveStyles,
@@ -37,7 +25,7 @@ function FileUploadField({
   initialFiles = [],
   elementProps = {},
   children
-}: FileUploadFieldProps) {
+}: any) {
   const servar = element.servar;
   const showLabel = servar.name !== '';
   const isMultiple = servar.metadata.multiple;
