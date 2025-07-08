@@ -79,13 +79,11 @@ export interface FormInternalState {
     errors: Record<string, string | { index: number; message: string }>
   ) => void;
   setCalendlyUrl: (url: string) => void;
-  runIntegrationActions: RunIntegrationActions;
   runAIExtraction: (
     extractionId: string,
     options: ExtractionActionOptions | boolean,
     pages?: number[]
   ) => Promise<Record<string, string>>;
-  applyAlloyJourney: ApplyAlloyJourney;
   getConfig: GetConfig;
 }
 
