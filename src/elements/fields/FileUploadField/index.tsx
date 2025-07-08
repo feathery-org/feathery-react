@@ -156,8 +156,6 @@ function FileUploadField({
       }
       setRawFiles(newRawFiles);
       customOnChange(newRawFiles, length);
-
-      // Clear any previous validation errors since files are now valid
       fileInput.current?.setCustomValidity('');
 
       // Wipe the value of the upload element so we can upload multiple copies of the same file
@@ -168,9 +166,6 @@ function FileUploadField({
     } catch (error: any) {
       fileInput.current?.setCustomValidity(error.message);
       fileInput.current?.reportValidity();
-
-      // Don't update the file state if validation fails
-      // This prevents invalid files from being added to the preview
       return;
     }
   };
