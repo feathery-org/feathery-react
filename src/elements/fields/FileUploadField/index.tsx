@@ -1,14 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { isEmptyArray, justRemove, toList } from '../../../utils/array';
 import { useThumbnailData } from '../../../utils/image';
-import { imgMaxSizeStyles } from '../../styles';
+import { isEmptyArray, justRemove, toList } from '../../../utils/array';
 import {
   CloseIcon,
   DownloadIcon,
   FileUploadIcon
 } from '../../components/icons';
-import { downloadFile, iosScrollOnFocus } from '../../../utils/browser';
+import { imgMaxSizeStyles } from '../../styles';
 import { FORM_Z_INDEX } from '../../../utils/styles';
+import { downloadFile, iosScrollOnFocus } from '../../../utils/browser';
 
 const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 const NUM_FILES_LIMIT = 20;
@@ -137,7 +137,7 @@ function FileUploadField({
 
       const originalLength = hidePreview ? 0 : rawFiles.length;
       if (files.length + originalLength > NUM_FILES_LIMIT) {
-        // Splice off the uploaded files past the upload count
+        // Splice off the uploaded files past the upload limit
         files.splice(NUM_FILES_LIMIT - originalLength);
       }
 
