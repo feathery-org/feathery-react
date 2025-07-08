@@ -123,9 +123,7 @@ import { getFormContext } from '../utils/formContext';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
-  ApplyAlloyJourney,
   ExtractionActionOptions,
-  RunIntegrationActions,
   setFormInternalState
 } from '../utils/internalState';
 import useFormAuth from '../auth/internal/useFormAuth';
@@ -867,10 +865,6 @@ function Form({
         getAllFields(fieldKeys, Object.keys(hiddenFields), _internalId)
       );
 
-    const runIntegrationActions: RunIntegrationActions = (actionIds, options) =>
-      client.customRolloutAction(actionIds, options);
-    const applyAlloyJourney: ApplyAlloyJourney = (journeyToken, entities) =>
-      client.alloyJourneyApplication(journeyToken, entities);
     setFormInternalState(
       _internalId,
       {
@@ -1005,9 +999,7 @@ function Form({
             console.error(err);
             return {};
           }
-        },
-        runIntegrationActions,
-        applyAlloyJourney
+        }
       },
       // Avoid all these other obj props going through Object.assign which is not necessary.
       // It turns out that not doing so caused breakage on steps after the first step.

@@ -144,7 +144,7 @@ export const getFormContext = (formUuid: string) => {
     runIntegrationActions: (
       actionIds: IntegrationActionIds,
       options: IntegrationActionOptions
-    ) => formState.runIntegrationActions(actionIds, options),
+    ) => formState.client.customRolloutAction(actionIds, options),
     runAIExtraction: async (
       extractionId: string,
       options = { waitForCompletion: false },
@@ -152,7 +152,9 @@ export const getFormContext = (formUuid: string) => {
     ) => formState.runAIExtraction(extractionId, options, pages),
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
-      formState.applyAlloyJourney(journeyToken, entities),
+      formState.client.alloyJourneyApplication(journeyToken, entities),
+    getQuikForms: (props: { dealerNames: string[] }) =>
+      formState.client.getQuikForms(props),
     getConfig: (params: GetConfigParams) => formState.client.getConfig(params),
     // deprecated
     setFieldValues: (userVals: FieldValues): void => {
