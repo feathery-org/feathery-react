@@ -8,6 +8,7 @@ import { getVisibleElements } from './hideAndRepeats';
 import { Trigger } from '../types/Form';
 // @ts-ignore
 import isUrl from 'is-url';
+import { DEFAULT_FILE_SIZE_LIMIT } from '../elements/fields/FileUploadField';
 
 export interface ResolvedCustomValidation {
   message: string;
@@ -241,7 +242,7 @@ const validators = {
 
       const fileSizeLimit = servar.max_length
         ? servar.max_length * 1024
-        : 1024 * 1024 * 10; // 10MB default
+        : DEFAULT_FILE_SIZE_LIMIT; // 10MB default
 
       return fileList.every((file: any) => {
         if (!file) {
