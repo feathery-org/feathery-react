@@ -8,7 +8,6 @@ import { getVisibleElements } from './hideAndRepeats';
 import { Trigger } from '../types/Form';
 // @ts-ignore
 import isUrl from 'is-url';
-import { DEFAULT_FILE_SIZE_LIMIT } from '../elements/fields/FileUploadField';
 
 export interface ResolvedCustomValidation {
   message: string;
@@ -223,67 +222,6 @@ const validators = {
     } catch (e) {
       return false;
     }
-  },
-  fileUpload: (files: any, servar: any) => {
-    if (!files || (Array.isArray(files) && files.length === 0)) {
-      return true;
-    }
-
-    const fileList = Array.isArray(files) ? files : [files];
-
-    // validate all file
-    try {
-      const allowedFileTypes = [...(servar.metadata?.file_types || [])];
-      if (servar.metadata?.custom_file_types) {
-        allowedFileTypes.push(
-          ...servar.metadata.custom_file_types.map((type: string) => `.${type}`)
-        );
-      }
-
-      const fileSizeLimit = servar.max_length
-        ? servar.max_length * 1024
-        : DEFAULT_FILE_SIZE_LIMIT; // 10MB default
-
-      return fileList.every((file: any) => {
-        if (!file) {
-          return true;
-        }
-
-        if (file instanceof Promise) {
-          return false;
-        }
-
-        // File type validation
-        if (allowedFileTypes.length > 0) {
-          const individualTypes = allowedFileTypes.flatMap((str: string) =>
-            str.split(',').map((item) => item.trim())
-          );
-
-          const isValidType = individualTypes.some((type) => {
-            if (type.endsWith('/*')) {
-              const typeCategory = type.split('/')[0];
-              return file.type.startsWith(typeCategory + '/');
-            }
-            if (type.includes('/')) {
-              return file.type === type;
-            }
-            const extension = '.' + file.name.split('.').pop()?.toLowerCase();
-            return type.toLowerCase() === extension;
-          });
-
-          if (!isValidType) return false;
-        }
-
-        // File size validation
-        if (file.size > fileSizeLimit) {
-          return false;
-        }
-
-        return true;
-      });
-    } catch (error) {
-      return false;
-    }
   }
 };
 
@@ -347,11 +285,6 @@ function getStandardFieldError(value: any, servar: any, repeat: any) {
   if (servar.type === 'phone_number' && !validators.phone(value)) {
     return defaultErr;
   } else if (servar.type === 'email' && !validators.email(value)) {
-    return defaultErr;
-  } else if (
-    servar.type === 'file_upload' &&
-    !validators.fileUpload(value, servar)
-  ) {
     return defaultErr;
   } else if (servar.type === 'url' && !validators.url(value)) {
     // Try appending https since user may have just omitted the protocol

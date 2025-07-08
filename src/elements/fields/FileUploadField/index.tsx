@@ -10,8 +10,8 @@ import {
 import { downloadFile, iosScrollOnFocus } from '../../../utils/browser';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 
-export const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
-export const NUM_FILES_LIMIT = 20;
+const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
+const NUM_FILES_LIMIT = 20;
 
 function FileUploadField({
   element,
@@ -159,12 +159,11 @@ function FileUploadField({
       // Wipe the value of the upload element so we can upload multiple copies of the same file
       // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
       if (fileInput.current) {
-        fileInput.current.value = ''; // Reset the input value
+        fileInput.current.value = '';
       }
     } catch (error: any) {
       fileInput.current?.setCustomValidity(error.message);
       fileInput.current?.reportValidity();
-      return;
     }
   };
 
