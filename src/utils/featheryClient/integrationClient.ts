@@ -488,6 +488,16 @@ export default class IntegrationClient {
     });
   }
 
+  getQuikFormRoles({ formIds }: { formIds: number[] }) {
+    const url = `${API_URL}quik/meta/form-roles/?form_key=${
+      this.formKey
+    }&quik_form_ids=${formIds.join(',')}`;
+    return this._fetch(url).then(async (response) => {
+      if (response?.ok) return await response.json();
+      return {};
+    });
+  }
+
   PERSONA_CHECK_INTERVAL = 2000;
   PERSONA_MAX_TIME = 60 * 2000;
 

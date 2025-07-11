@@ -155,6 +155,8 @@ export const getFormContext = (formUuid: string) => {
       formState.client.alloyJourneyApplication(journeyToken, entities),
     getQuikForms: (props: { dealerNames: string[] }) =>
       formState.client.getQuikForms(props),
+    getQuikFormRoles: (props: { formIds: number[] }) =>
+      formState.client.getQuikFormRoles(props),
     getConfig: (params: GetConfigParams) => formState.client.getConfig(params),
     // deprecated
     setFieldValues: (userVals: FieldValues): void => {
