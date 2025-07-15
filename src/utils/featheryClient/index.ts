@@ -718,7 +718,14 @@ export default class FeatheryClient extends IntegrationClient {
         // Ensure events complete before user exits page. Submit and load event of
         // next step must happen after the previous step is done submitting
         () =>
-          this.submitQueue.then(() => this._fetch(url, options, true, true)),
+          this.submitQueue.then(() =>
+            this._fetch(url, options, true, true).catch((e) => {
+              if (e instanceof TypeError)
+                // Wait 5 seconds since event may have actually been registered
+                // and just needs to be processed
+                return new Promise((resolve) => setTimeout(resolve, 5000));
+            })
+          ),
         url,
         options,
         'registerEvent',
