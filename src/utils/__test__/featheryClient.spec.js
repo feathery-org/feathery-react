@@ -280,7 +280,7 @@ describe('featheryClient', () => {
       expect(
         featheryClient.offlineRequestHandler.saveRequest
       ).toHaveBeenCalled();
-    });
+    }, 10000);
   });
 
   describe('runCustomRequest', () => {

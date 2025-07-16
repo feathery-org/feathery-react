@@ -721,9 +721,16 @@ export default class FeatheryClient extends IntegrationClient {
           this.submitQueue.then(() =>
             this._fetch(url, options, true, true).catch((e) => {
               if (e instanceof TypeError)
-                // Wait 5 seconds since event may have actually been registered
-                // and just needs to be processed
-                return new Promise((resolve) => setTimeout(resolve, 5000));
+                this.offlineRequestHandler.saveRequest(
+                  url,
+                  options,
+                  'registerEvent',
+                  stepKey
+                );
+
+              // Wait 5 seconds since event may have actually been registered
+              // and just needs to be processed
+              return new Promise((resolve) => setTimeout(resolve, 5000));
             })
           ),
         url,
