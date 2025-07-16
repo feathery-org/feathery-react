@@ -217,10 +217,12 @@ export default class FeatheryClient extends IntegrationClient {
     return this.offlineRequestHandler.runOrSaveRequest(
       () =>
         this._fetch(url, options, true, true).catch((e) => {
-          if (e instanceof TypeError)
-            // Wait 5 seconds since file may have actually been submitted
-            // and just needs to be processed
+          if (e instanceof TypeError && navigator.onLine)
+            // Wait 5 seconds since event may have actually been registered
+            // and just needs to be processed. If online, means it's not an
+            // offline error.
             return new Promise((resolve) => setTimeout(resolve, 5000));
+          throw e;
         }),
       url,
       options,
@@ -720,10 +722,12 @@ export default class FeatheryClient extends IntegrationClient {
         () =>
           this.submitQueue.then(() =>
             this._fetch(url, options, true, true).catch((e) => {
-              if (e instanceof TypeError)
+              if (e instanceof TypeError && navigator.onLine)
                 // Wait 5 seconds since event may have actually been registered
-                // and just needs to be processed
+                // and just needs to be processed. If online, means it's not an
+                // offline error.
                 return new Promise((resolve) => setTimeout(resolve, 5000));
+              throw e;
             })
           ),
         url,
