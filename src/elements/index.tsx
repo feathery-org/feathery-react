@@ -36,7 +36,7 @@ Object.entries(Elements).map(([key, Element]) => {
           element,
           ['container'],
           !componentOnly,
-          formSettings.mobileBreakpoint
+          formSettings?.mobileBreakpoint
         );
       }, [element, componentOnly, formSettings]);
 
