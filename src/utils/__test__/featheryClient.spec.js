@@ -263,9 +263,10 @@ describe('featheryClient', () => {
       const nextStepKey = '';
       const featheryClient = new FeatheryClient(formKey);
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
-      global.fetch = jest
-        .fn()
-        .mockRejectedValue(new TypeError('Network error'));
+      global.fetch = jest.fn(() => {
+        jest.spyOn(navigator, 'onLine', 'get').mockReturnValueOnce(false);
+        throw new TypeError('Network error');
+      });
       featheryClient.offlineRequestHandler.saveRequest = jest.fn();
 
       // Act
@@ -280,7 +281,8 @@ describe('featheryClient', () => {
       expect(
         featheryClient.offlineRequestHandler.saveRequest
       ).toHaveBeenCalled();
-    }, 10000);
+      jest.restoreAllMocks();
+    });
   });
 
   describe('runCustomRequest', () => {
