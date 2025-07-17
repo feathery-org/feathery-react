@@ -27,10 +27,10 @@ function ImageElement({
     imageFieldSource = imageFieldSource[element.repeat ?? 0];
   }
 
-  const hasSource = !!element.properties.source_image || !!imageFieldSource;
+  const hasSourceImage = !!element.properties.source_image && !imageFieldSource;
 
   const [documentUrl, setDocumentUrl] = useState(
-    editMode && !hasSource ? PLACEHOLDER_IMAGE : ''
+    editMode && !hasSourceImage ? PLACEHOLDER_IMAGE : ''
   );
   const [documentType, setDocumentType] = useState<string | undefined>('');
   const [applyWidth, setApplyWidth] = useState(true);
