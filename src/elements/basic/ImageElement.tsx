@@ -20,8 +20,17 @@ function ImageElement({
   editMode,
   children
 }: any) {
+  const fieldKey = element.properties.uploaded_image_file_field_key ?? '';
+  let imageFieldSource = fieldValues[fieldKey];
+
+  if (Array.isArray(imageFieldSource)) {
+    imageFieldSource = imageFieldSource[element.repeat ?? 0];
+  }
+
+  const hasSource = !!element.properties.source_image || !!imageFieldSource;
+
   const [documentUrl, setDocumentUrl] = useState(
-    editMode ? PLACEHOLDER_IMAGE : ''
+    editMode && !hasSource ? PLACEHOLDER_IMAGE : ''
   );
   const [documentType, setDocumentType] = useState<string | undefined>('');
   const [applyWidth, setApplyWidth] = useState(true);
@@ -30,10 +39,6 @@ function ImageElement({
     [responsiveStyles]
   );
 
-  const fieldKey = element.properties.uploaded_image_file_field_key ?? '';
-  let imageFieldSource = fieldValues[fieldKey];
-  if (Array.isArray(imageFieldSource))
-    imageFieldSource = imageFieldSource[element.repeat ?? 0];
   useEffect(() => {
     if (imageFieldSource) {
       if (typeof imageFieldSource === 'string') {
@@ -52,6 +57,7 @@ function ImageElement({
   }, [imageFieldSource, element.properties.source_image]);
 
   const displayPDF = documentUrl && documentType === 'application/pdf';
+
   return (
     <div
       css={{
