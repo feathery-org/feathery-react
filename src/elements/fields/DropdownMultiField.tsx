@@ -136,7 +136,7 @@ export default function DropdownMultiField({
     options = addFieldValOptions(servar.metadata.options).map(
       (option, index) => {
         if (typeof option === 'string') {
-          labelMap[option] = labels[index];
+          labelMap[option] = labels[index] || option;
 
           return {
             value: option,
