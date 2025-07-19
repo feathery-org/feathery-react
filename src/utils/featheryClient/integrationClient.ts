@@ -6,6 +6,7 @@ import { API_URL, STATIC_URL } from '.';
 import { OfflineRequestHandler, untrackUnload } from '../offlineRequestHandler';
 import {
   AlloyEntities,
+  LoanProCustomerObject,
   IntegrationActionIds,
   IntegrationActionOptions
 } from '../internalState';
@@ -693,6 +694,43 @@ export default class IntegrationClient {
     if (res && res.status === 201)
       return { ok: true, payload: await res.json() };
     else return { ok: false, error: (await res?.text()) ?? '' };
+  }
+
+  async searchLoanProCustomerByAuthorizedEmail() {
+    const { userId } = initInfo();
+    const url = `${API_URL}loanpro/search_customer/`;
+    const reqOptions = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        form_key: this.formKey,
+        fuser_key: userId
+      })
+    };
+    const res = await this._fetch(url, reqOptions, false);
+    if (res && res.status === 200) {
+      return { ok: true, payload: await res.json() };
+    }
+    return { ok: false, error: (await res?.json()) ?? '' };
+  }
+
+  async createLoanProCustomer(bodyParams: LoanProCustomerObject) {
+    const { userId } = initInfo();
+    const url = `${API_URL}loanpro/create_customer/`;
+    const reqOptions = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        body_params: bodyParams,
+        form_key: this.formKey,
+        fuser_key: userId
+      })
+    };
+    const res = await this._fetch(url, reqOptions, false);
+    if (res && res.status === 200) {
+      return { ok: true, payload: await res.json() };
+    }
+    return { ok: false, error: (await res?.json()) ?? '' };
   }
 
   async schwabCreateContact() {
