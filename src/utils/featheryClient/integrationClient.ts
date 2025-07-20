@@ -696,7 +696,9 @@ export default class IntegrationClient {
     else return { ok: false, error: (await res?.text()) ?? '' };
   }
 
-  async createLoanProCustomerWithAuthorizedEmail(bodyParams: LoanProCustomerObject) {
+  async createLoanProCustomerWithAuthorizedEmail(
+    bodyParams: LoanProCustomerObject
+  ) {
     const { userId } = initInfo();
     const url = `${API_URL}loanpro/customer/create/`;
     const reqOptions = {
