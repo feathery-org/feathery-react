@@ -37,7 +37,7 @@ export type SearchLoanProCustomerByAuthorizedEmail = () => Promise<{
   error?: any;
   payload?: any;
 }>;
-export type CreateLoanProCustomer = (
+export type CreateLoanProCustomerWithAuthorizedEmail = (
   bodyParams: LoanProCustomerObject
 ) => Promise<{ ok: boolean; error?: any; payload?: any }>;
 export type GetConfigParams = {

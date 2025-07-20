@@ -696,13 +696,14 @@ export default class IntegrationClient {
     else return { ok: false, error: (await res?.text()) ?? '' };
   }
 
-  async searchLoanProCustomerByAuthorizedEmail() {
+  async createLoanProCustomerWithAuthorizedEmail(bodyParams: LoanProCustomerObject) {
     const { userId } = initInfo();
-    const url = `${API_URL}loanpro/search_customer/`;
+    const url = `${API_URL}loanpro/customer/create/`;
     const reqOptions = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify({
+        body_params: bodyParams,
         form_key: this.formKey,
         fuser_key: userId
       })
@@ -714,14 +715,13 @@ export default class IntegrationClient {
     return { ok: false, error: (await res?.json()) ?? '' };
   }
 
-  async createLoanProCustomer(bodyParams: LoanProCustomerObject) {
+  async searchLoanProCustomerByAuthorizedEmail() {
     const { userId } = initInfo();
-    const url = `${API_URL}loanpro/create_customer/`;
+    const url = `${API_URL}loanpro/customer/search/`;
     const reqOptions = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify({
-        body_params: bodyParams,
         form_key: this.formKey,
         fuser_key: userId
       })
