@@ -41,7 +41,7 @@ describe('ImageElement', () => {
 
     await waitFor(() => {
       const img = screen.getByRole('img');
-      expect(img).toHaveAttribute('src', PLACEHOLDER_IMAGE);
+      expect(img.getAttribute('src')).toEqual(PLACEHOLDER_IMAGE);
     });
   });
 
@@ -69,14 +69,14 @@ describe('ImageElement', () => {
 
     await waitFor(() => {
       const img = screen.getByRole('img');
-      expect(img).toHaveAttribute('src', PLACEHOLDER_IMAGE);
+      expect(img.getAttribute('src')).toEqual(PLACEHOLDER_IMAGE);
     });
   });
 
   it('renders placeholder image in edit mode if field image source is empty', async () => {
     const imageKey = {
       type: 'image/jpeg blob:',
-      url: 'aaa'
+      url: ''
     };
 
     fieldValues.imageKey = imageKey;
@@ -104,7 +104,7 @@ describe('ImageElement', () => {
 
     await waitFor(() => {
       const img = screen.getByRole('img');
-      expect(img).toHaveAttribute('src', PLACEHOLDER_IMAGE);
+      expect(img.getAttribute('src')).toEqual(PLACEHOLDER_IMAGE);
     });
   });
 
@@ -138,7 +138,7 @@ describe('ImageElement', () => {
 
     await waitFor(() => {
       const img = screen.getByRole('img');
-      expect(img).toHaveAttribute('src', PLACEHOLDER_IMAGE);
+      expect(img.getAttribute('src')).toEqual(PLACEHOLDER_IMAGE);
     });
   });
 
