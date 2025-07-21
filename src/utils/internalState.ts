@@ -32,7 +32,7 @@ export type ApplyAlloyJourney = (
   entities: AlloyEntities
 ) => Promise<{ ok: boolean; error?: string; payload?: any }>;
 export type LoanProCustomerObject = Record<string, any>;
-export type SearchLoanProCustomerByAuthorizedEmail = () => Promise<{
+export type SearchLoanProCustomer = () => Promise<{
   ok: boolean;
   error?: any;
   payload?: any;

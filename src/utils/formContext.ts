@@ -154,9 +154,9 @@ export const getFormContext = (formUuid: string) => {
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
       formState.client.alloyJourneyApplication(journeyToken, entities),
-    searchLoanProCustomerByAuthorizedEmail: () =>
+    searchLoanProCustomer: () =>
       formState.client.searchLoanProCustomerByAuthorizedEmail(),
-    createLoanProCustomerWithAuthorizedEmail: (
+    createLoanProCustomer: (
       bodyParams: LoanProCustomerObject
     ) => formState.client.createLoanProCustomerWithAuthorizedEmail(bodyParams),
     getQuikForms: (props: { dealerNames: string[] }) =>
