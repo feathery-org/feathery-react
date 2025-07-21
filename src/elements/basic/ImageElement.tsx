@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { fieldValues } from '../../utils/init';
 import { getRenderData } from '../../utils/image';
 
-const PLACEHOLDER_IMAGE =
+export const PLACEHOLDER_IMAGE =
   'https://feathery.s3.us-west-1.amazonaws.com/theme-image-preview.png';
 
 function applyImageStyles(element: any, responsiveStyles: any) {
@@ -20,8 +20,17 @@ function ImageElement({
   editMode,
   children
 }: any) {
+  const fieldKey = element.properties.uploaded_image_file_field_key ?? '';
+  let imageFieldSource = fieldValues[fieldKey];
+
+  if (Array.isArray(imageFieldSource)) {
+    imageFieldSource = imageFieldSource[element.repeat ?? 0];
+  }
+
+  const hasSourceImage = !!element.properties.source_image && !imageFieldSource;
+
   const [documentUrl, setDocumentUrl] = useState(
-    editMode ? PLACEHOLDER_IMAGE : ''
+    editMode && !hasSourceImage ? PLACEHOLDER_IMAGE : ''
   );
   const [documentType, setDocumentType] = useState<string | undefined>('');
   const [applyWidth, setApplyWidth] = useState(true);
@@ -30,10 +39,6 @@ function ImageElement({
     [responsiveStyles]
   );
 
-  const fieldKey = element.properties.uploaded_image_file_field_key ?? '';
-  let imageFieldSource = fieldValues[fieldKey];
-  if (Array.isArray(imageFieldSource))
-    imageFieldSource = imageFieldSource[element.repeat ?? 0];
   useEffect(() => {
     if (imageFieldSource) {
       if (typeof imageFieldSource === 'string') {
@@ -52,6 +57,7 @@ function ImageElement({
   }, [imageFieldSource, element.properties.source_image]);
 
   const displayPDF = documentUrl && documentType === 'application/pdf';
+
   return (
     <div
       css={{

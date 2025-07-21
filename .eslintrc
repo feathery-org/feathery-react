@@ -30,6 +30,7 @@
     "react/jsx-handler-names": 0,
     "react/jsx-fragments": 0,
     "react/no-unused-prop-types": 0,
+    "react/react-in-jsx-scope": 0,
     "import/export": 0,
     "@typescript-eslint/no-explicit-any": 0, // TODO(ts): Turn this back on after typing complete
     "@typescript-eslint/no-empty-function": 0,
