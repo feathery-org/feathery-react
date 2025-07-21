@@ -156,9 +156,8 @@ export const getFormContext = (formUuid: string) => {
       formState.client.alloyJourneyApplication(journeyToken, entities),
     searchLoanProCustomer: () =>
       formState.client.searchLoanProCustomerByAuthorizedEmail(),
-    createLoanProCustomer: (
-      bodyParams: LoanProCustomerObject
-    ) => formState.client.createLoanProCustomerWithAuthorizedEmail(bodyParams),
+    createLoanProCustomer: (bodyParams: LoanProCustomerObject) =>
+      formState.client.createLoanProCustomerWithAuthorizedEmail(bodyParams),
     getQuikForms: (props: { dealerNames: string[] }) =>
       formState.client.getQuikForms(props),
     getQuikFormRoles: (props: { formIds: number[] }) =>
