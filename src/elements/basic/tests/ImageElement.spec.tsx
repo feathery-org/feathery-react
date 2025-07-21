@@ -19,6 +19,7 @@ describe('ImageElement', () => {
     jest.clearAllMocks();
   });
 
+  // EMPTY SOURCE
   it('renders placeholder image in edit mode if no source image', async () => {
     const mockElement = {
       properties: {
@@ -45,7 +46,33 @@ describe('ImageElement', () => {
     });
   });
 
-  it('renders placeholder image in edit mode if field source is empty', async () => {
+  it('renders placeholder image in form mode if no source image', async () => {
+    const mockElement = {
+      properties: {
+        uploaded_image_file_field_key: 'imageKey',
+        aria_label: 'Test Image',
+        source_image: ''
+      },
+      repeat: 0
+    };
+
+    const ImageElement = (await import('../ImageElement')).default;
+
+    render(
+      <ImageElement
+        element={mockElement}
+        responsiveStyles={mockResponsiveStyles}
+      />
+    );
+
+    await waitFor(() => {
+      const img = screen.getByRole('img');
+      expect(img.getAttribute('src')).toEqual(PLACEHOLDER_IMAGE);
+    });
+  });
+
+  // MAPPED FIELD
+  it('renders placeholder image in edit mode if field is empty', async () => {
     fieldValues.imageKey = '';
 
     const mockElement = {
@@ -73,7 +100,34 @@ describe('ImageElement', () => {
     });
   });
 
-  it('renders placeholder image in edit mode if field image source is empty', async () => {
+  it('renders placeholder image in form mode if field is empty', async () => {
+    fieldValues.imageKey = '';
+
+    const mockElement = {
+      properties: {
+        uploaded_image_file_field_key: 'imageKey',
+        aria_label: 'Test Image',
+        source_image: ''
+      },
+      repeat: 0
+    };
+
+    const ImageElement = (await import('../ImageElement')).default;
+
+    render(
+      <ImageElement
+        element={mockElement}
+        responsiveStyles={mockResponsiveStyles}
+      />
+    );
+
+    await waitFor(() => {
+      const img = screen.getByRole('img');
+      expect(img.getAttribute('src')).toEqual(PLACEHOLDER_IMAGE);
+    });
+  });
+
+  it('renders placeholder image in edit mode if field is unrenderable', async () => {
     const imageKey = {
       type: 'image/jpeg blob:',
       url: ''
@@ -108,7 +162,7 @@ describe('ImageElement', () => {
     });
   });
 
-  it('renders placeholder image in edit mode if field pdf source is empty', async () => {
+  it('renders placeholder image in edit mode if field pdf is unrenderable', async () => {
     const pdfKey = {
       type: 'application/pdf',
       url: ''
@@ -142,7 +196,74 @@ describe('ImageElement', () => {
     });
   });
 
-  it('renders with provided string image field source', async () => {
+  it('renders empty image in form mode if field is unrenderable', async () => {
+    const imageKey = {
+      type: 'image/jpeg blob:',
+      url: ''
+    };
+
+    fieldValues.imageKey = imageKey;
+
+    const mockElement = {
+      properties: {
+        uploaded_image_file_field_key: 'imageKey',
+        aria_label: 'Test Image',
+        source_image: ''
+      },
+      repeat: 0
+    };
+
+    (getRenderData as jest.Mock).mockResolvedValue(imageKey);
+
+    const ImageElement = (await import('../ImageElement')).default;
+
+    render(
+      <ImageElement
+        element={mockElement}
+        responsiveStyles={mockResponsiveStyles}
+      />
+    );
+
+    await waitFor(() => {
+      const img = screen.getByRole('img');
+      expect(img.getAttribute('src')).toEqual(null);
+    });
+  });
+
+  it('renders empty image in form mode if field pdf is unrenderable', async () => {
+    const pdfKey = {
+      type: 'application/pdf',
+      url: ''
+    };
+
+    fieldValues.pdfKey = pdfKey;
+
+    const mockElement = {
+      properties: {
+        uploaded_image_file_field_key: 'pdfKey',
+        aria_label: 'Test PDF'
+      },
+      repeat: 0
+    };
+
+    (getRenderData as jest.Mock).mockResolvedValue(pdfKey);
+
+    const ImageElement = (await import('../ImageElement')).default;
+
+    render(
+      <ImageElement
+        element={mockElement}
+        responsiveStyles={mockResponsiveStyles}
+      />
+    );
+
+    await waitFor(() => {
+      const img = screen.getByRole('img');
+      expect(img.getAttribute('src')).toEqual(null);
+    });
+  });
+
+  it('renders image with source from field', async () => {
     const sourceImg = 'https://example.com/image.png';
 
     fieldValues.imageKey = sourceImg;
@@ -240,5 +361,57 @@ describe('ImageElement', () => {
       expect(embed.tagName.toLowerCase()).toBe('embed');
       expect(embed).toHaveAttribute('src', expect.stringContaining(pdfKey.url));
     });
+  });
+
+  // SOURCE IMAGE
+  it('renders source image in edit mode', async () => {
+    const sourceImg = 'https://example.com/image.png';
+
+    const mockElement = {
+      properties: {
+        uploaded_image_file_field_key: '',
+        aria_label: 'Render image',
+        source_image: sourceImg
+      },
+      repeat: 0
+    };
+
+    const ImageElement = (await import('../ImageElement')).default;
+
+    render(
+      <ImageElement
+        element={mockElement}
+        responsiveStyles={mockResponsiveStyles}
+        editMode
+      />
+    );
+
+    const img = screen.getByRole('img');
+    expect(img).toHaveAttribute('src', expect.stringContaining(sourceImg));
+  });
+
+  it('renders source image in form mode', async () => {
+    const sourceImg = 'https://example.com/image.png';
+
+    const mockElement = {
+      properties: {
+        uploaded_image_file_field_key: '',
+        aria_label: 'Render image',
+        source_image: sourceImg
+      },
+      repeat: 0
+    };
+
+    const ImageElement = (await import('../ImageElement')).default;
+
+    render(
+      <ImageElement
+        element={mockElement}
+        responsiveStyles={mockResponsiveStyles}
+      />
+    );
+
+    const img = screen.getByRole('img');
+    expect(img).toHaveAttribute('src', expect.stringContaining(sourceImg));
   });
 });
