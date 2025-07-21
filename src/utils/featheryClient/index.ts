@@ -850,11 +850,11 @@ export default class FeatheryClient extends IntegrationClient {
       }`;
 
       const checkCompletion = async () => {
-        const response = await this._fetch(pollUrl);
+        const response = await this._fetch(pollUrl, {}, false);
+        if (!response) return;
 
-        if (response && response.ok) {
-          const data = await response.json();
-
+        const data = await response.json();
+        if (response.ok) {
           if (data.status === 'complete') {
             return resolve(data);
           } else {
@@ -863,10 +863,15 @@ export default class FeatheryClient extends IntegrationClient {
             if (attempts < maxAttempts) {
               setTimeout(checkCompletion, this.AI_CHECK_INTERVAL);
             } else {
-              console.warn('Extraction took too long...');
-              return resolve({});
+              const message = 'Extraction took too long...';
+              console.error(message);
+              return resolve({ status: 'error', message });
             }
           }
+        } else {
+          const message = parseError(data);
+          console.error(message);
+          return resolve({ status: 'error', message });
         }
       };
 

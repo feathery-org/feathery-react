@@ -985,20 +985,18 @@ function Form({
             return;
           }
 
-          try {
-            const data = await client.runAIExtraction({
-              extractionId,
-              options,
-              pages,
-              setPollFuserData
-            });
-            const vals = data.data ?? {};
-            updateFieldValues(vals);
-            return data;
-          } catch (err) {
-            console.error(err);
-            return {};
+          const data = await client.runAIExtraction({
+            extractionId,
+            options,
+            pages,
+            setPollFuserData
+          });
+          if (data.status === 'error') {
+            throw new Error(data.message);
           }
+          const vals = data.data ?? {};
+          updateFieldValues(vals);
+          return data;
         }
       },
       // Avoid all these other obj props going through Object.assign which is not necessary.
@@ -2014,9 +2012,15 @@ function Form({
             }
           }
           const data = await Promise.all(extractions);
-          data.forEach((entry) => {
-            if (entry.data) updateFieldValues(entry.data);
-          });
+          const errorEntry = data.find((entry) => entry.status === 'error');
+          if (errorEntry) {
+            setElementError(errorEntry.message);
+            break;
+          } else {
+            data.forEach((entry) => {
+              if (entry.data) updateFieldValues(entry.data);
+            });
+          }
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
