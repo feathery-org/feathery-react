@@ -31,6 +31,15 @@ export type ApplyAlloyJourney = (
   journeyToken: string,
   entities: AlloyEntities
 ) => Promise<{ ok: boolean; error?: string; payload?: any }>;
+export type LoanProCustomerObject = Record<string, any>;
+export type SearchLoanProCustomerByAuthorizedEmail = () => Promise<{
+  ok: boolean;
+  error?: any;
+  payload?: any;
+}>;
+export type CreateLoanProCustomerWithAuthorizedEmail = (
+  bodyParams: LoanProCustomerObject
+) => Promise<{ ok: boolean; error?: any; payload?: any }>;
 export type GetConfigParams = {
   filter?: Record<string, any>;
   keys?: string[];
