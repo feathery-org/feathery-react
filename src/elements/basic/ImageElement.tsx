@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { fieldValues } from '../../utils/init';
 import { getRenderData } from '../../utils/image';
 
-const PLACEHOLDER_IMAGE =
+export const PLACEHOLDER_IMAGE =
   'https://feathery.s3.us-west-1.amazonaws.com/theme-image-preview.png';
 
 function applyImageStyles(element: any, responsiveStyles: any) {
