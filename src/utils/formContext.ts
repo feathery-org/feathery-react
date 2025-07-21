@@ -15,6 +15,7 @@ import {
 } from './init';
 import internalState, {
   AlloyEntities,
+  LoanProCustomerObject,
   GetConfigParams,
   IntegrationActionIds,
   IntegrationActionOptions,
@@ -153,6 +154,10 @@ export const getFormContext = (formUuid: string) => {
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
       formState.client.alloyJourneyApplication(journeyToken, entities),
+    searchLoanProCustomer: () =>
+      formState.client.searchLoanProCustomerByAuthorizedEmail(),
+    createLoanProCustomer: (bodyParams: LoanProCustomerObject) =>
+      formState.client.createLoanProCustomerWithAuthorizedEmail(bodyParams),
     getQuikForms: (props: { dealerNames: string[] }) =>
       formState.client.getQuikForms(props),
     getQuikFormRoles: (props: { formIds: number[] }) =>
