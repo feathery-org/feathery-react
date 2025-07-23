@@ -155,8 +155,17 @@ function AddressLine1({
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
             onKeyDown={(e) => {
-              if (e.key === 'Enter') onEnter(e);
-              else setShowOptions(e.key !== 'Escape');
+              if (!e.isTrusted || !e.code) {
+                // In Chrome, a keydown event is triggered when autofill populates the input field.
+                // In this case, the keydown event should be ignored.
+                return;
+              }
+
+              if (e.key === 'Enter') {
+                onEnter(e);
+              } else {
+                setShowOptions(e.key !== 'Escape');
+              }
             }}
             onFocus={(event) => {
               setFocused(true);
