@@ -2402,7 +2402,6 @@ function Form({
         }}
         dir={formSettings.rightToLeft ? 'rtl' : 'ltr'}
       >
-        <p>Hello</p>
         {stepLoader}
         {children}
         {showQuikFormViewer && (
