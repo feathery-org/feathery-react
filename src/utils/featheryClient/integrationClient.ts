@@ -3,7 +3,6 @@ import { parseError } from '../error';
 import { fieldValues, initFormsPromise, initInfo } from '../init';
 import { encodeGetParams } from '../primitives';
 import { API_URL, STATIC_URL } from '.';
-import { OfflineRequestHandler, untrackUnload } from '../offlineRequestHandler';
 import {
   AlloyEntities,
   LoanProCustomerObject,
@@ -35,7 +34,6 @@ export async function checkResponseSuccess(response: any) {
       throw new errors.FetchError("Can't find object");
     case 409:
       // Note: remove beforeunload listeners if there is a conflict
-      untrackUnload(true);
       location.reload();
       return;
     case 500:
@@ -55,7 +53,6 @@ export default class IntegrationClient {
   bypassCDN: boolean;
   submitQueue: Promise<any>;
   eventQueue: Promise<any>;
-  offlineRequestHandler: OfflineRequestHandler;
 
   constructor(
     formKey = '',
@@ -69,7 +66,6 @@ export default class IntegrationClient {
     this.bypassCDN = bypassCDN;
     this.submitQueue = Promise.resolve();
     this.eventQueue = Promise.resolve();
-    this.offlineRequestHandler = new OfflineRequestHandler(formKey);
   }
 
   _fetch(

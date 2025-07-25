@@ -24,7 +24,6 @@ import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
-import { RequestOptions } from '../offlineRequestHandler';
 import debounce from 'lodash.debounce';
 import { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
@@ -129,7 +128,7 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
-  async _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
+  _submitJSONData(servars: any, stepKey: string, noComplete: boolean) {
     if (servars.length === 0) return Promise.resolve();
 
     const { userId, collaboratorId } = initInfo();
@@ -144,19 +143,13 @@ export default class FeatheryClient extends IntegrationClient {
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
 
-    const options: RequestOptions = {
+    const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify(data)
     };
 
-    return this.offlineRequestHandler.runOrSaveRequest(
-      () => this._fetch(url, options, true, true),
-      url,
-      options,
-      'submit',
-      stepKey
-    );
+    return this._fetch(url, options, true, true); // propagateNetworkErrors = true
   }
 
   async _getFileValue(servar: any) {
@@ -207,28 +200,14 @@ export default class FeatheryClient extends IntegrationClient {
     formData.set('__feathery_step_key', stepKey);
     if (this.version) formData.set('__feathery_version', this.version);
 
-    const options: RequestOptions = {
+    const options = {
       method: 'POST',
       body: formData,
       // In Safari, request fails with keepalive = true if over 64kb payload.
       keepalive: false
     };
 
-    return this.offlineRequestHandler.runOrSaveRequest(
-      () =>
-        this._fetch(url, options, true, true).catch((e) => {
-          if (e instanceof TypeError && navigator.onLine)
-            // Wait 5 seconds since event may have actually been registered
-            // and just needs to be processed. If online, means it's not an
-            // offline error.
-            return new Promise((resolve) => setTimeout(resolve, 5000));
-          throw e;
-        }),
-      url,
-      options,
-      'submit',
-      stepKey
-    );
+    return this._fetch(url, options);
   }
 
   updateUserId(newUserId: string, merge = false) {
@@ -560,7 +539,7 @@ export default class FeatheryClient extends IntegrationClient {
     }
     if (userId) formData.set('fuser_key', userId);
 
-    const options: RequestOptions = {
+    const options = {
       method: 'POST',
       body: formData,
       // Ran into a situation with Baldwin where request would not go through
@@ -568,15 +547,8 @@ export default class FeatheryClient extends IntegrationClient {
       keepalive: false
     };
 
-    // Here we can safely remove the listener because offlineRequestHandler has its own beforeunload
-    this._removeCustomFieldListener();
     const uniqueId = uuidv4();
-    const req = this.offlineRequestHandler.runOrSaveRequest(
-      () => this._fetch(url, options, true, true),
-      url,
-      options,
-      'submit'
-    );
+    const req = this._fetch(url, options);
     this.customSubmitInFlight[uniqueId] = req.then(
       () => delete this.customSubmitInFlight[uniqueId]
     );
@@ -675,15 +647,23 @@ export default class FeatheryClient extends IntegrationClient {
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    this.submitQueue = Promise.all([
-      this.submitQueue,
-      this.submitCustom(hiddenFields, { shouldFlush: true }),
-      this._submitJSONData(jsonServars, step.key, hasNext),
-      ...fileServars.map((servar: any) =>
-        this._submitFileData(servar, step.key)
-      )
-    ]);
-    return this.submitQueue;
+    const promiseFunc = () =>
+      Promise.all([
+        this.submitCustom(hiddenFields),
+        this._submitJSONData(jsonServars, step.key, hasNext),
+        ...fileServars.map((servar: any) =>
+          this._submitFileData(servar, step.key)
+        )
+      ]);
+    // Create a new promise for this submission that doesn't affect the queue if it fails
+    const currentSubmission = wrapUnload(promiseFunc);
+    this.submitQueue = Promise.all([this.submitQueue, currentSubmission]).catch(
+      () => {
+        // Reset the queue on failure so future submissions aren't affected
+        this.submitQueue = Promise.resolve();
+      }
+    );
+    return currentSubmission;
   }
 
   async registerEvent(eventData: any) {
@@ -716,24 +696,10 @@ export default class FeatheryClient extends IntegrationClient {
     }
 
     const triggerEvent = () =>
-      this.offlineRequestHandler.runOrSaveRequest(
-        // Ensure events complete before user exits page. Submit and load event of
-        // next step must happen after the previous step is done submitting
-        () =>
-          this.submitQueue.then(() =>
-            this._fetch(url, options, true, true).catch((e) => {
-              if (e instanceof TypeError && navigator.onLine)
-                // Wait 5 seconds since event may have actually been registered
-                // and just needs to be processed. If online, means it's not an
-                // offline error.
-                return new Promise((resolve) => setTimeout(resolve, 5000));
-              throw e;
-            })
-          ),
-        url,
-        options,
-        'registerEvent',
-        stepKey
+      this.submitQueue.then(() =>
+        wrapUnload(() =>
+          this.draft ? Promise.resolve() : this._fetch(url, options)
+        )
       );
 
     let eventPromise: Promise<any>;
@@ -784,13 +750,7 @@ export default class FeatheryClient extends IntegrationClient {
       this._fetch(url, options).then((response) =>
         response ? response.json() : Promise.resolve()
       );
-    if (payload.method === 'GET') return run();
-    return this.offlineRequestHandler.runOrSaveRequest(
-      run,
-      url,
-      options,
-      'customRequest'
-    );
+    return run();
   }
 
   AI_CHECK_INTERVAL = 2000;
@@ -959,3 +919,31 @@ export default class FeatheryClient extends IntegrationClient {
     });
   }
 }
+
+let unloadCounter = 0;
+async function wrapUnload(promiseFunc: any) {
+  if (!promiseFunc) return;
+
+  if (unloadCounter === 0)
+    featheryWindow().addEventListener('beforeunload', beforeUnloadEventHandler);
+  unloadCounter++;
+
+  const res = await promiseFunc();
+
+  unloadCounter--;
+  if (unloadCounter === 0)
+    featheryWindow().removeEventListener(
+      'beforeunload',
+      beforeUnloadEventHandler
+    );
+
+  return res;
+}
+
+const beforeUnloadEventHandler = (event: any) => {
+  // Recommended
+  event.preventDefault();
+
+  // Included for legacy support, e.g. Chrome/Edge < 119
+  event.returnValue = true;
+};
