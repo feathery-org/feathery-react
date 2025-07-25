@@ -1949,6 +1949,7 @@ function Form({
             await submitPromise;
           } catch (error) {
             console.error('Step submission failed, not advancing:', error);
+            setElementError('Submit failed. Please try again.');
             break; // Stop processing actions if submission failed
           }
         }
@@ -1957,7 +1958,8 @@ function Form({
           redirectKey: getNextStepKey(metadata),
           elementType: metadata.elementType,
           submitData: submit,
-          submitPromise: submitPromise && submitPromise !== undefined ? null : submitPromise
+          submitPromise:
+            submitPromise && submitPromise !== undefined ? null : submitPromise
         });
       } else if (type === ACTION_BACK) await goToPreviousStep();
       else if (type === ACTION_PURCHASE_PRODUCTS) {
