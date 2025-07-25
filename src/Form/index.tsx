@@ -1487,13 +1487,7 @@ function Form({
     if (!redirectKey) {
       if (explicitNav) {
         if (submitPromise) {
-          try {
-            await submitPromise;
-          } catch (error) {
-            // Don't complete the form if submission failed
-            console.error('Step submission failed:', error);
-            return;
-          }
+          await submitPromise;
         }
         eventData.completed = true;
         await client.registerEvent(eventData).then(() => {
@@ -1515,12 +1509,7 @@ function Form({
         if (complete) {
           // If there's still a submit promise for terminal steps, wait for it
           if (submitPromise) {
-            try {
-              await submitPromise;
-            } catch (error) {
-              console.error('Step submission failed:', error);
-              return;
-            }
+            await submitPromise;
           }
           eventData.completed = true;
           // Form completion must run after since logic may depend on
@@ -1568,7 +1557,7 @@ function Form({
     setLoaders((loaders: Record<string, any>) => ({
       ...loaders,
       [button.id]: {
-        showOn: bp.show_loading_icon,
+        showOn: button.properties.submit ? 'on_button' : bp.show_loading_icon,
         loader,
         type: bp.loading_icon ? bp.loading_file_type : 'default',
         repeat: button.repeat
@@ -1948,8 +1937,8 @@ function Form({
           try {
             await submitPromise;
           } catch (error) {
-            console.error('Step submission failed, not advancing:', error);
             setElementError('Submit failed. Please try again.');
+            elementClicks[id] = false;
             break; // Stop processing actions if submission failed
           }
         }
