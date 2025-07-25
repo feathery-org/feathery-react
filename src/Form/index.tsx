@@ -182,7 +182,6 @@ import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
 import { fieldAllowedFromList } from './grid/Element/utils/utils';
 import { triggerPersona } from '../integrations/persona';
 import Collaborator from '../utils/entities/Collaborator';
-import { useOfflineRequestHandler } from '../utils/offlineRequestHandler';
 import {
   removeCustomErrorHandler,
   setCustomErrorHandler
@@ -1185,8 +1184,6 @@ function Form({
       });
   }, [activeStep, setSteps, updateFieldValues]);
 
-  useOfflineRequestHandler(client);
-
   useEffect(() => {
     if (!trackHashes.current) return;
     const hashKey = getUrlHash();
@@ -1370,7 +1367,15 @@ function Form({
     if (hasSubmitAfter) {
       // If running submit logic rule after, must finish
       // submit data first
-      await stepPromise;
+      try {
+        await stepPromise;
+      } catch (error) {
+        console.error(
+          'Step submission failed during after-submit logic:',
+          error
+        );
+        return;
+      }
       invalid = await customSubmitCode(false);
       if (invalid) return;
     }
@@ -1481,7 +1486,15 @@ function Form({
       submitData || ['button', 'text', 'container'].includes(elementType);
     if (!redirectKey) {
       if (explicitNav) {
-        if (submitPromise) await submitPromise;
+        if (submitPromise) {
+          try {
+            await submitPromise;
+          } catch (error) {
+            // Don't complete the form if submission failed
+            console.error('Step submission failed:', error);
+            return;
+          }
+        }
         eventData.completed = true;
         await client.registerEvent(eventData).then(() => {
           setFinished(true);
@@ -1500,7 +1513,15 @@ function Form({
           steps[stepKey].id
         );
         if (complete) {
-          if (submitPromise) await submitPromise;
+          // If there's still a submit promise for terminal steps, wait for it
+          if (submitPromise) {
+            try {
+              await submitPromise;
+            } catch (error) {
+              console.error('Step submission failed:', error);
+              return;
+            }
+          }
           eventData.completed = true;
           // Form completion must run after since logic may depend on
           // presence of fully submitted data
@@ -1510,6 +1531,8 @@ function Form({
         }
       }
       if (!eventData.completed) client.registerEvent(eventData);
+
+      // Proceed with step navigation
       updateBackNavMap({ [redirectKey]: activeStep.key });
       setShouldScrollToTop(explicitNav);
 
@@ -1920,11 +1943,21 @@ function Form({
       } else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {
+        // If there's a submit promise, wait for it and check if it succeeded
+        if (submitPromise && submitPromise !== undefined) {
+          try {
+            await submitPromise;
+          } catch (error) {
+            console.error('Step submission failed, not advancing:', error);
+            break; // Stop processing actions if submission failed
+          }
+        }
+
         await goToNewStep({
           redirectKey: getNextStepKey(metadata),
           elementType: metadata.elementType,
           submitData: submit,
-          submitPromise
+          submitPromise: submitPromise && submitPromise !== undefined ? null : submitPromise
         });
       } else if (type === ACTION_BACK) await goToPreviousStep();
       else if (type === ACTION_PURCHASE_PRODUCTS) {
@@ -2378,6 +2411,7 @@ function Form({
         }}
         dir={formSettings.rightToLeft ? 'rtl' : 'ltr'}
       >
+        <p>Hello</p>
         {stepLoader}
         {children}
         {showQuikFormViewer && (
