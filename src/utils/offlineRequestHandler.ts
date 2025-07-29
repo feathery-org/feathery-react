@@ -8,7 +8,7 @@ import { checkResponseSuccess } from './featheryClient/utils';
 const DB_NAME = 'requestsDB';
 const STORE_NAME = 'requestsStore';
 const DB_VERSION = 1;
-const MAX_RETRY_ATTEMPTS = 3;
+const MAX_RETRY_ATTEMPTS = 5;
 const RETRY_DELAY_MS = 2000;
 const INDEXEDDB_ACCESS_DENIED_ERRORS = [
   'IDBFactory.open() called in an invalid security context',
@@ -90,8 +90,10 @@ export class OfflineRequestHandler {
   private readonly retryDelayMs: number;
   private onlineSignals: Map<string, any[]>;
   private indexedDBSupported: boolean;
+  private errorCallback?: (error: string) => void;
+  private failedRequests: Set<string>;
 
-  constructor(formKey: string) {
+  constructor(formKey: string, errorCallback?: (error: string) => void) {
     this.isReplayingRequests = new Map();
     this.formKey = formKey;
     this.dbName = DB_NAME;
@@ -101,6 +103,16 @@ export class OfflineRequestHandler {
     this.retryDelayMs = RETRY_DELAY_MS;
     this.onlineSignals = new Map();
     this.indexedDBSupported = typeof indexedDB !== 'undefined';
+    this.errorCallback = errorCallback;
+    this.failedRequests = new Set();
+  }
+
+  public hasPendingFailedRequests(): boolean {
+    return this.failedRequests.size > 0;
+  }
+
+  public clearFailedRequests(): void {
+    this.failedRequests.clear();
   }
 
   // Check if any requests are stored in indexedDB
@@ -402,19 +414,28 @@ export class OfflineRequestHandler {
 
         const attemptRequest = async () => {
           let attempts = 0;
+          let lastError: any;
           while (attempts < this.maxRetryAttempts) {
             try {
               const response = await fetch(url, fetchOptions);
               await checkResponseSuccess(response);
+              this.failedRequests.delete(`${method} ${url}`);
               break;
             } catch (error: any) {
+              lastError = error;
               attempts++;
               if (navigator.onLine) {
                 // exponential backoff with jitter
                 const nextDelay = this.getDelay(attempts);
                 // do not wait for delay if already tried max attempts
                 if (attempts >= this.maxRetryAttempts) {
-                  break;
+                  this.failedRequests.add(`${method} ${url}`);
+                  if (this.errorCallback) {
+                    this.errorCallback(
+                      `Failed to submit after ${this.maxRetryAttempts} attempts. Please check your connection and try again.`
+                    );
+                  }
+                  return;
                 }
                 await this.delay(nextDelay);
               } else {

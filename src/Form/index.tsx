@@ -1052,11 +1052,18 @@ function Form({
   useEffect(() => {
     if (clientRef.current) return;
 
+    const networkErrorCallback = (error: string) => {
+      featheryWindow().alert(
+        'There was a network error while submitting the form. Please refresh the page and try again.'
+      );
+    };
+
     clientRef.current = new FeatheryClient(
       formKey,
       hasRedirected,
       _draft,
-      _bypassCDN
+      _bypassCDN,
+      networkErrorCallback
     );
     const newClient = clientRef.current;
     let saveUrlParamsFormSetting = false;
@@ -1482,6 +1489,12 @@ function Form({
     if (!redirectKey) {
       if (explicitNav) {
         if (submitPromise) await submitPromise;
+
+        // Check if there are any failed requests before completing
+        if (client.offlineRequestHandler.hasPendingFailedRequests()) {
+          return;
+        }
+
         eventData.completed = true;
         await client.registerEvent(eventData).then(() => {
           setFinished(true);
@@ -1501,6 +1514,12 @@ function Form({
         );
         if (complete) {
           if (submitPromise) await submitPromise;
+
+          // Check if there are any failed requests before completing
+          if (client.offlineRequestHandler.hasPendingFailedRequests()) {
+            return;
+          }
+
           eventData.completed = true;
           // Form completion must run after since logic may depend on
           // presence of fully submitted data

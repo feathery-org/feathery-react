@@ -34,7 +34,8 @@ export default class IntegrationClient {
     formKey = '',
     ignoreNetworkErrors?: any,
     draft = false,
-    bypassCDN = false
+    bypassCDN = false,
+    errorCallback?: (error: string) => void
   ) {
     this.formKey = formKey;
     this.ignoreNetworkErrors = ignoreNetworkErrors;
@@ -42,7 +43,10 @@ export default class IntegrationClient {
     this.bypassCDN = bypassCDN;
     this.submitQueue = Promise.resolve();
     this.eventQueue = Promise.resolve();
-    this.offlineRequestHandler = new OfflineRequestHandler(formKey);
+    this.offlineRequestHandler = new OfflineRequestHandler(
+      formKey,
+      errorCallback
+    );
   }
 
   _fetch(

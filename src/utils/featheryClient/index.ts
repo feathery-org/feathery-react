@@ -118,9 +118,10 @@ export default class FeatheryClient extends IntegrationClient {
     formKey = '',
     ignoreNetworkErrors?: any,
     draft = false,
-    bypassCDN = false
+    bypassCDN = false,
+    errorCallback?: (error: string) => void
   ) {
-    super(formKey, ignoreNetworkErrors, draft, bypassCDN);
+    super(formKey, ignoreNetworkErrors, draft, bypassCDN, errorCallback);
     this.pendingCustomFieldUpdates = {};
     this.customSubmitInFlight = {};
     this.debouncedSubmitCustom = debounce(
