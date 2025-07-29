@@ -6,9 +6,9 @@ import { API_URL, STATIC_URL } from '.';
 import { OfflineRequestHandler, untrackUnload } from '../offlineRequestHandler';
 import {
   AlloyEntities,
-  LoanProCustomerObject,
   IntegrationActionIds,
-  IntegrationActionOptions
+  IntegrationActionOptions,
+  LoanProCustomerObject
 } from '../internalState';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
@@ -415,11 +415,9 @@ export default class IntegrationClient {
       ...action
     };
 
-    if (action.form_fill_type === 'html' && action.use_docusign) {
+    if (action.form_fill_type === 'html' && action.review_action === 'sign') {
       if (!action.auth_user_id) {
-        throw new Error(
-          'No connection name provided for Quik! DocuSign config'
-        );
+        throw new Error('No connection name provided for Quik DocuSign config');
       }
     }
 
