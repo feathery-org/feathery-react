@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { featheryWindow, runningInClient } from './browser';
-import { checkResponseSuccess } from './featheryClient/integrationClient';
 import { initInfo } from './init';
-import FeatheryClient from './featheryClient';
+import type FeatheryClient from './featheryClient';
+import { checkResponseSuccess } from './featheryClient/utils';
 
 // Constants for the IndexedDB database
 const DB_NAME = 'requestsDB';
@@ -132,6 +132,7 @@ export class OfflineRequestHandler {
     }
   }
 
+  // Wait for user to be online and for any replayed requests to finish
   public onlineAndReplayed() {
     return new Promise((resolve) => {
       if (!this.onlineSignals.has(this.formKey)) {
@@ -214,12 +215,14 @@ export class OfflineRequestHandler {
         untrackUnload();
         return response;
       } catch (e) {
-        if (e instanceof TypeError)
-          this.saveRequest(url, options, type, stepKey);
+        if (e instanceof TypeError) {
+          await this.saveRequest(url, options, type, stepKey);
+          this.replayRequests();
+        }
         untrackUnload();
       }
     } else {
-      this.saveRequest(url, options, type, stepKey);
+      await this.saveRequest(url, options, type, stepKey);
     }
   }
 
@@ -406,13 +409,18 @@ export class OfflineRequestHandler {
               break;
             } catch (error: any) {
               attempts++;
-              await this.delay(this.retryDelayMs);
-            }
-
-            if (!navigator.onLine) {
-              // If offline, block until requests are replayed from online event handler
-              await this.onlineAndReplayed();
-              return;
+              if (navigator.onLine) {
+                // exponential backoff with jitter
+                const nextDelay = this.getDelay(attempts);
+                // do not wait for delay if already tried max attempts
+                if (attempts >= this.maxRetryAttempts) {
+                  break;
+                }
+                await this.delay(nextDelay);
+              } else {
+                await this.onlineAndReplayed();
+                return;
+              }
             }
           }
           await this.removeRequest(key);
@@ -430,6 +438,12 @@ export class OfflineRequestHandler {
       const { store } = dbTransaction;
       await store.delete(key);
     }
+  }
+
+  private getDelay(attemptNum: number): number {
+    const baseDelay = 1000 * Math.pow(2, attemptNum); // 1s, 2s, 4s
+    const jitter = Math.random() * 1000;
+    return baseDelay + jitter;
   }
 
   private delay(ms: number): Promise<void> {
