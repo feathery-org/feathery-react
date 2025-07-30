@@ -294,6 +294,7 @@ function Form({
   const [formName, setFormName] = useState(formNameProp || ''); // TODO: remove support for formName (deprecated)
   const formKey = formId || formName; // prioritize formID but fall back to name
   const clientRef = useRef<any>(undefined);
+  const showNetworkErrorAlert = useRef<any>(true);
   const client = clientRef.current;
   const navigate = useNavigate();
   const location = useLocation();
@@ -1053,6 +1054,8 @@ function Form({
     if (clientRef.current) return;
 
     const networkErrorCallback = (error: string) => {
+      if (!showNetworkErrorAlert.current) return;
+      showNetworkErrorAlert.current = false;
       featheryWindow().alert(
         'There was a network error while submitting the form. Please refresh the page and try again.'
       );

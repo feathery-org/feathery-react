@@ -8,7 +8,7 @@ import { checkResponseSuccess } from './featheryClient/utils';
 const DB_NAME = 'requestsDB';
 const STORE_NAME = 'requestsStore';
 const DB_VERSION = 1;
-const MAX_RETRY_ATTEMPTS = 5;
+const MAX_RETRY_ATTEMPTS = 4;
 const RETRY_DELAY_MS = 2000;
 const INDEXEDDB_ACCESS_DENIED_ERRORS = [
   'IDBFactory.open() called in an invalid security context',
@@ -419,6 +419,7 @@ export class OfflineRequestHandler {
             try {
               const response = await fetch(url, fetchOptions);
               await checkResponseSuccess(response);
+              await this.removeRequest(key);
               this.failedRequests.delete(`${method} ${url}`);
               break;
             } catch (error: any) {
@@ -444,7 +445,6 @@ export class OfflineRequestHandler {
               }
             }
           }
-          await this.removeRequest(key);
         };
 
         return attemptRequest();
