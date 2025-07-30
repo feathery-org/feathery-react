@@ -480,13 +480,15 @@ export const getOrigin = (steps: any) =>
   Object.values(steps).find((step) => (step as any).origin) ??
   NO_ORIGIN_DEFAULT;
 
-export const getStepDepthMap = (steps: any, hasProgressBar = false) => {
-  const depthMap: Record<string, any> = {};
-  const stepQueue = [[getOrigin(steps), 0]];
-
-  while (stepQueue.length > 0) {
-    // @ts-expect-error TS(2461): Type 'unknown[] | undefined' is not an array type.
-    const [step, depth] = stepQueue.shift();
+function recurseQueue(
+  depthMap: Record<string, any>,
+  steps: any,
+  hasProgressBar: boolean,
+  queue: any[],
+  altQueue?: any[]
+) {
+  while (queue.length > 0) {
+    const [step, depth] = queue.shift();
     if (step.key in depthMap) continue;
 
     // Optionally filter only for steps with progress bar
@@ -495,13 +497,24 @@ export const getStepDepthMap = (steps: any, hasProgressBar = false) => {
 
     const incr = missingBar ? 0 : 1;
     step.next_conditions.forEach((condition: any) => {
-      stepQueue.push([steps[condition.next_step_key], depth + incr]);
+      queue.push([steps[condition.next_step_key], depth + incr]);
     });
+    // For calculating progress bar depth, deprioritize previous condition
+    // depths relative to next conditions
+    const previousQueue = hasProgressBar && altQueue ? altQueue : queue;
     step.previous_conditions.forEach((condition: any) => {
-      stepQueue.push([steps[condition.previous_step_key], depth + incr]);
+      previousQueue.push([steps[condition.previous_step_key], depth + incr]);
     });
   }
+}
 
+export const getStepDepthMap = (steps: any, hasProgressBar = false) => {
+  const depthMap: Record<string, any> = {};
+  const stepQueue = [[getOrigin(steps), 0]];
+  const reverseQueue: any[] = [];
+  recurseQueue(depthMap, steps, hasProgressBar, stepQueue, reverseQueue);
+  if (hasProgressBar)
+    recurseQueue(depthMap, steps, hasProgressBar, reverseQueue);
   return depthMap;
 };
 
