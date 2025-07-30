@@ -10,6 +10,7 @@ import {
   LoanProCustomerObject
 } from '../internalState';
 import { checkResponseSuccess } from './utils';
+import { featheryWindow } from '../browser';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -29,13 +30,13 @@ export default class IntegrationClient {
   submitQueue: Promise<any>;
   eventQueue: Promise<any>;
   offlineRequestHandler: OfflineRequestHandler;
+  showNetworkErrorAlert: boolean;
 
   constructor(
     formKey = '',
     ignoreNetworkErrors?: any,
     draft = false,
-    bypassCDN = false,
-    errorCallback?: (error: string) => void
+    bypassCDN = false
   ) {
     this.formKey = formKey;
     this.ignoreNetworkErrors = ignoreNetworkErrors;
@@ -43,9 +44,17 @@ export default class IntegrationClient {
     this.bypassCDN = bypassCDN;
     this.submitQueue = Promise.resolve();
     this.eventQueue = Promise.resolve();
-    this.offlineRequestHandler = new OfflineRequestHandler(
-      formKey,
-      errorCallback
+    this.showNetworkErrorAlert = true;
+    this.offlineRequestHandler = new OfflineRequestHandler(formKey, () =>
+      this.errorCallback()
+    );
+  }
+
+  errorCallback() {
+    if (!this.showNetworkErrorAlert) return;
+    this.showNetworkErrorAlert = false;
+    featheryWindow().alert(
+      'There was a network error while submitting the form. Please refresh the page and try again.'
     );
   }
 

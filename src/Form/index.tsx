@@ -294,7 +294,6 @@ function Form({
   const [formName, setFormName] = useState(formNameProp || ''); // TODO: remove support for formName (deprecated)
   const formKey = formId || formName; // prioritize formID but fall back to name
   const clientRef = useRef<any>(undefined);
-  const showNetworkErrorAlert = useRef<any>(true);
   const client = clientRef.current;
   const navigate = useNavigate();
   const location = useLocation();
@@ -1053,20 +1052,11 @@ function Form({
   useEffect(() => {
     if (clientRef.current) return;
 
-    const networkErrorCallback = () => {
-      if (!showNetworkErrorAlert.current) return;
-      showNetworkErrorAlert.current = false;
-      featheryWindow().alert(
-        'There was a network error while submitting the form. Please refresh the page and try again.'
-      );
-    };
-
     clientRef.current = new FeatheryClient(
       formKey,
       hasRedirected,
       _draft,
-      _bypassCDN,
-      networkErrorCallback
+      _bypassCDN
     );
     const newClient = clientRef.current;
     let saveUrlParamsFormSetting = false;
@@ -1494,7 +1484,7 @@ function Form({
         if (submitPromise) await submitPromise;
 
         // Check if there are any failed requests before completing
-        if (client.offlineRequestHandler.hasPendingFailedRequests()) {
+        if (await client.offlineRequestHandler.dbHasRequest()) {
           return;
         }
 
@@ -1519,7 +1509,7 @@ function Form({
           if (submitPromise) await submitPromise;
 
           // Check if there are any failed requests before completing
-          if (client.offlineRequestHandler.hasPendingFailedRequests()) {
+          if (await client.offlineRequestHandler.dbHasRequest()) {
             return;
           }
 

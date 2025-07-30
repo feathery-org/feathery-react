@@ -91,7 +91,6 @@ export class OfflineRequestHandler {
   private onlineSignals: Map<string, any[]>;
   private indexedDBSupported: boolean;
   private errorCallback?: (error: string) => void;
-  private failedRequests: Set<string>;
 
   constructor(formKey: string, errorCallback?: (error: string) => void) {
     this.isReplayingRequests = new Map();
@@ -104,15 +103,6 @@ export class OfflineRequestHandler {
     this.onlineSignals = new Map();
     this.indexedDBSupported = typeof indexedDB !== 'undefined';
     this.errorCallback = errorCallback;
-    this.failedRequests = new Set();
-  }
-
-  public hasPendingFailedRequests(): boolean {
-    return this.failedRequests.size > 0;
-  }
-
-  public clearFailedRequests(): void {
-    this.failedRequests.clear();
   }
 
   // Check if any requests are stored in indexedDB
@@ -419,16 +409,13 @@ export class OfflineRequestHandler {
               const response = await fetch(url, fetchOptions);
               await checkResponseSuccess(response);
               await this.removeRequest(key);
-              this.failedRequests.delete(`${method} ${url}`);
               break;
             } catch (error: any) {
               attempts++;
               if (navigator.onLine) {
-                // exponential backoff with jitter
-                const nextDelay = this.getDelay(attempts);
+                const nextDelay = this.getExponentialDelay(attempts);
                 // do not wait for delay if already tried max attempts
                 if (attempts >= this.maxRetryAttempts) {
-                  this.failedRequests.add(`${method} ${url}`);
                   if (this.errorCallback) {
                     this.errorCallback(
                       `Failed to submit after ${this.maxRetryAttempts} attempts. Please check your connection and try again.`
@@ -459,7 +446,7 @@ export class OfflineRequestHandler {
     }
   }
 
-  private getDelay(attemptNum: number): number {
+  private getExponentialDelay(attemptNum: number): number {
     const baseDelay = 1000 * Math.pow(2, attemptNum); // 1s, 2s, 4s
     const jitter = Math.random() * 1000;
     return baseDelay + jitter;
