@@ -1761,7 +1761,7 @@ function Form({
 
     await runAction(true);
 
-    let i;
+    let i: number;
     for (i = 0; i < actions.length; i++) {
       const action = actions[i];
       const type = action.type;
@@ -2063,8 +2063,12 @@ function Form({
           const payload = await client.generateQuikEnvelopes(action);
           if (payload.error) setElementError(payload.error);
           else if (action.form_fill_type === 'html' && payload.html) {
+            featheryWindow().QuikFeatherySubmitAction = () => {
+              flowOnSuccess(i)().then(() => setShowQuikFormViewer(false));
+            };
             setQuikHTMLPayload(payload.html);
             setShowQuikFormViewer(true);
+            break;
           } else if (action.form_fill_type === 'pdf' && payload.files) {
             await downloadAllFileUrls(payload.files);
           }
