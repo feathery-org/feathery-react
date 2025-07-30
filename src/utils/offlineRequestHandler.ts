@@ -414,7 +414,6 @@ export class OfflineRequestHandler {
 
         const attemptRequest = async () => {
           let attempts = 0;
-          let lastError: any;
           while (attempts < this.maxRetryAttempts) {
             try {
               const response = await fetch(url, fetchOptions);
@@ -423,7 +422,6 @@ export class OfflineRequestHandler {
               this.failedRequests.delete(`${method} ${url}`);
               break;
             } catch (error: any) {
-              lastError = error;
               attempts++;
               if (navigator.onLine) {
                 // exponential backoff with jitter

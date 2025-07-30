@@ -1053,7 +1053,7 @@ function Form({
   useEffect(() => {
     if (clientRef.current) return;
 
-    const networkErrorCallback = (error: string) => {
+    const networkErrorCallback = () => {
       if (!showNetworkErrorAlert.current) return;
       showNetworkErrorAlert.current = false;
       featheryWindow().alert(
