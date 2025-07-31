@@ -276,7 +276,9 @@ function PhoneField({
           css={{
             position: 'relative',
             width: '100%',
-            whiteSpace: 'nowrap'
+            whiteSpace: 'nowrap',
+            // Prevent placeholder overflow
+            overflowX: 'hidden'
           }}
         >
           <input
