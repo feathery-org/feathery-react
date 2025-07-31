@@ -65,8 +65,6 @@ function AddressLine1({
         css={{
           position: 'relative',
           width: '100%',
-          // Prevent placeholder overflow
-          overflowX: 'hidden',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
           '&:hover': hoverStylesGuard(
