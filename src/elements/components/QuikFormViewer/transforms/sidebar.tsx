@@ -5,21 +5,34 @@ const SIDEBAR_STYLES = `
   #navWrapper {
     width: ${SIDEBAR_WIDTH};
     flex-shrink: 0;
-    height: 100%;
+    height: auto;
     position: static;
     background: #ffffff;      
     display: flex;
     flex-direction: column;
-    padding: 16px 0;
+    padding: 0;
+    padding-top: 16px;
     overflow-y: auto;
   }
 
-  .pages-header {
+  /* Consistent header styling for all sections */
+  .section-header {
+    height: auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 16px;
+    gap: 4px;
     margin-bottom: 8px;
+    padding: 0 16px;
+  }
+
+  .section-header span {
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 20px;
+    letter-spacing: 0%;
+    vertical-align: middle;
+    color: #333849;
   }
 
   .pages-nav {
@@ -100,7 +113,7 @@ const SIDEBAR_STYLES = `
     display: none !important;
   }
 
-  #navPage, #navFormHeader, #navForm, #navAttachmentsHeader {
+  #navPage, #navFormHeader, #navForm, #navAttachmentsHeader, #navAttachments {
     position: static;
   }
 
@@ -108,8 +121,9 @@ const SIDEBAR_STYLES = `
     width: unset;
     height: auto;
   }
-
-  #sidebar-footer {
+  
+  /* The footer element with only text content */
+  .sidebar-footer-text {
     padding: 10px;
     background: #fbeaea;
     color: #cb4e5a;
@@ -121,27 +135,12 @@ const SIDEBAR_STYLES = `
     line-height: 20px;
   }
 
-  /* Attachments styling */
-  #navAttachmentsHeader {
-    padding: 16px;
-  }
-
   #navFormHeader, #navForm {
     padding: 0px 16px;
   }
-
-  .attachments-title, #navFormHeader {
-    height: auto;
-    width: auto;
-    font-size: 14px !important;
-    line-height: 20px;
-    font-weight: 600;
-    color: #333849;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 4px;
-    margin-bottom: 8px;
+  
+  #navForm {
+    margin-bottom: 16px;
   }
 
   .attachments-plus-btn {
@@ -193,6 +192,7 @@ const SIDEBAR_STYLES = `
     border-bottom: 1px solid #dbdfe8;
     position: relative;
     min-height: 44px;
+    cursor: pointer;
   }
 
   #navAttachments li:last-child, #navForm li:last-child {
@@ -212,7 +212,13 @@ const SIDEBAR_STYLES = `
     flex-shrink: 0;
   }
 
-  #navForm li a {
+  #navForm li .form-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  #navForm li .form-content a {
     font-weight: 600;
     font-size: 14px;
     line-height: 20px;
@@ -220,7 +226,7 @@ const SIDEBAR_STYLES = `
     text-decoration: none;
   }
 
-  #navForm li em {
+  #navForm li .form-content em {
     font-weight: 400;
     font-size: 12px;
     line-height: 18px;
@@ -242,7 +248,6 @@ const SIDEBAR_STYLES = `
 
   /* Style the filename span */
   #navAttachments li > span {
-    font-family: 'Axiforma', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-style: normal;
     font-weight: 600;
     font-size: 14px;
@@ -261,7 +266,6 @@ const SIDEBAR_STYLES = `
     background-repeat: no-repeat;
     background-position: center;
     overflow: hidden;
-    margin-left: auto;
     cursor: pointer;
     opacity: 0.6;
     transition: opacity 0.2s ease;
@@ -273,7 +277,12 @@ const SIDEBAR_STYLES = `
   }
 `;
 
-// Helper function to extract full-size image URL from corresponding page div
+/**
+ * Helper function to extract full-size image URL from corresponding page div
+ * @param {Document} doc The document object.
+ * @param {string} thumbnailUrl The URL of the thumbnail image.
+ * @returns {string|null} The URL of the full-size image or null if not found.
+ */
 function getFullSizeImageUrl(doc, thumbnailUrl) {
   try {
     const urlMatch = thumbnailUrl.match(/t?(\d+)_(\d+)_\d+\.png/);
@@ -297,6 +306,13 @@ function getFullSizeImageUrl(doc, thumbnailUrl) {
   }
 }
 
+/**
+ * Transforms list item backgrounds into img elements for better display.
+ * @param {HTMLUListElement} ulElement The UL element to transform.
+ * @param {Document} doc The document object.
+ * @param {object} options Optional configuration for the transformation.
+ * @returns {number} The number of transformed elements.
+ */
 function transformULBackgroundToImg(ulElement, doc, options = {}) {
   const {
     imageWidth = '140px',
@@ -314,63 +330,47 @@ function transformULBackgroundToImg(ulElement, doc, options = {}) {
   let transformedCount = 0;
 
   listItems.forEach((li) => {
-    // Look for div elements within the li that have background-image
     const divsWithBg = li.querySelectorAll('div[style*="background-image"]');
 
     divsWithBg.forEach((div) => {
       const style = div.style;
       const computedStyle = window.getComputedStyle(div);
 
-      // Extract background-image URL
       let backgroundImage =
         style.backgroundImage || computedStyle.backgroundImage;
-
       if (!backgroundImage || backgroundImage === 'none') return;
 
-      // Extract URL from background-image property
       const urlMatch = backgroundImage.match(/url\(['"]?([^'"]*?)['"]?\)/);
       if (!urlMatch) return;
 
       let imageUrl = urlMatch[1];
-
-      // Decode URL if it's encoded
       try {
         imageUrl = decodeURIComponent(imageUrl);
-      } catch (e) {
-        // If decoding fails, use original URL
-      }
-
-      // Handle HTML entities like &amp;
+      } catch (e) {}
       imageUrl = imageUrl.replace(/&amp;/g, '&');
 
-      // Try to get full-size image URL
       const fullSizeUrl = getFullSizeImageUrl(doc, imageUrl);
       if (fullSizeUrl) {
         imageUrl = fullSizeUrl;
       }
 
-      // Get existing title for alt text
       const altText = div.getAttribute('title') || 'Form Image';
 
-      // Create new img element
       const img = document.createElement('img');
       img.src = imageUrl;
       img.alt = altText;
 
-      // Build image styles
       let imgStyles = `width: ${imageWidth};`;
       if (preserveAspectRatio) {
         imgStyles += ' height: auto; object-fit: contain; max-height: 100%;';
       }
       img.style.cssText = imgStyles;
 
-      // Remove background properties if requested
       if (removeBackgroundImage) {
         div.style.backgroundImage = 'none';
         div.style.backgroundRepeat = 'none';
       }
 
-      // Center image if requested
       if (centerImage) {
         const position = computedStyle.position;
         if (position === 'static') {
@@ -384,13 +384,10 @@ function transformULBackgroundToImg(ulElement, doc, options = {}) {
           div.style.justifyContent = 'center';
         }
 
-        // Handle existing content positioning (like span elements with numbers)
         const existingContent = Array.from(div.children);
         existingContent.forEach((child) => {
           if (child.tagName === 'SPAN') {
             child.style.position = 'absolute';
-
-            // Preserve existing positioning if it exists
             if (
               !child.style.top &&
               !child.style.bottom &&
@@ -406,93 +403,195 @@ function transformULBackgroundToImg(ulElement, doc, options = {}) {
           }
         });
       }
-
-      // Insert the image at the beginning of the div
       div.insertBefore(img, div.firstChild);
       transformedCount++;
     });
   });
-
   return transformedCount;
 }
 
-function transformAttachments(doc: Document): void {
-  const attachmentsHeader = doc.querySelector('#navAttachmentsHeader');
-  if (!attachmentsHeader) return;
+/**
+ * Transforms the forms list items to wrap their content in a new div for proper styling,
+ * preserving the original onclick functionality.
+ * @param {Document} doc The document object.
+ */
+function transformFormsList(doc) {
+  const formList = doc.querySelector('#navForm ul');
+  if (!formList) return;
 
-  // Get the onclick function from the existing img
-  const existingImg = attachmentsHeader.querySelector(
-    'img[onclick*="showAttachFileModal"]'
+  const formItems = formList.querySelectorAll('li');
+  formItems.forEach((item) => {
+    // Find the span containing the form content
+    const formContentSpan = item.querySelector('span[title]');
+    if (formContentSpan) {
+      // Create a new div to wrap the content
+      const contentWrapper = doc.createElement('div');
+      contentWrapper.className = 'form-content';
+
+      // Move the children of the span into the new wrapper
+      while (formContentSpan.firstChild) {
+        contentWrapper.appendChild(formContentSpan.firstChild);
+      }
+
+      // Replace the old span with the new wrapper
+      formContentSpan.replaceWith(contentWrapper);
+    }
+  });
+}
+
+/**
+ * Transforms the headers for pages, forms, and attachments, styling them correctly.
+ * @param {Document} doc The document object.
+ */
+function transformHeaders(doc) {
+  const navWrapper = doc.querySelector('#navWrapper');
+  if (!navWrapper) return;
+
+  // === 1. PAGES HEADER ===
+  const oldPagesLabel = navWrapper.querySelector(
+    'span[style*="font-weight:bold"]'
   );
-  const onclickFunction = existingImg?.getAttribute('onclick');
+  const navSpans = Array.from(navWrapper.children).filter(
+    (child) =>
+      child.tagName === 'SPAN' &&
+      (child.textContent.trim() === 'First' ||
+        child.textContent.trim() === 'Last')
+  );
 
-  // Clear existing content
-  attachmentsHeader.innerHTML = '';
-
-  // Create title container with flex layout
-  const titleContainer = doc.createElement('div');
-  titleContainer.className = 'attachments-title';
-
-  // Create title text
-  const titleText = doc.createElement('span');
-  titleText.textContent = 'Attachments';
-
-  // Create plus button
-  const plusButton = doc.createElement('button');
-  plusButton.className = 'attachments-plus-btn';
-  plusButton.innerHTML = '+';
-
-  // Add the original onclick function to the plus button
-  if (onclickFunction) {
-    plusButton.setAttribute('onclick', onclickFunction);
+  if (oldPagesLabel) {
+    const pagesHeader = doc.createElement('div');
+    pagesHeader.className = 'section-header';
+    const pagesTitle = doc.createElement('span');
+    pagesTitle.textContent = 'Pages';
+    pagesHeader.appendChild(pagesTitle);
+    const pagesNav = doc.createElement('div');
+    pagesNav.className = 'pages-nav';
+    navSpans.forEach((span) => {
+      const newSpan = doc.createElement('span');
+      newSpan.textContent = span.textContent;
+      newSpan.setAttribute('onclick', span.getAttribute('onclick'));
+      pagesNav.appendChild(newSpan);
+      span.remove();
+    });
+    pagesHeader.appendChild(pagesNav);
+    oldPagesLabel.replaceWith(pagesHeader);
   }
 
-  titleContainer.appendChild(titleText);
-  titleContainer.appendChild(plusButton);
-  attachmentsHeader.appendChild(titleContainer);
-
-  // Create attachments container
-  const attachmentsContainer = doc.createElement('div');
-  attachmentsContainer.id = 'navAttachments';
-  const ul = doc.createElement('ul');
-  attachmentsContainer.appendChild(ul);
-  attachmentsHeader.appendChild(attachmentsContainer);
-}
-
-function getFooterText(doc: Document): string {
-  const footer = doc.querySelector('#footer');
-  return footer?.textContent || '';
-}
-
-export function generateSidebarElement(doc: Document): HTMLElement | undefined {
-  const sidebar = doc.querySelector('#navWrapper');
-  if (!sidebar) {
-    console.warn('Sidebar element not found in the document.');
-    return undefined;
+  // === 2. FORMS HEADER ===
+  const navFormHeader = doc.querySelector('#navFormHeader');
+  if (navFormHeader) {
+    navFormHeader.className = 'section-header';
+    const brTag = navFormHeader.querySelector('br');
+    if (brTag) brTag.remove();
+    const formsSpan = navFormHeader.querySelector('span');
+    if (formsSpan) {
+      formsSpan.textContent = 'Forms';
+      formsSpan.style.cssText = '';
+    }
   }
 
+  // === 3. ATTACHMENTS HEADER ===
+  const attachmentsHeader = doc.querySelector('#navAttachmentsHeader');
+  if (attachmentsHeader) {
+    // wrap existingSpan and img in a new div
+    const attachmentsWrapper = doc.createElement('div');
+    attachmentsWrapper.className = 'section-header';
+    const existingSpan = attachmentsHeader.querySelector('span');
+    const existingImg = attachmentsHeader.querySelector(
+      'img[onclick*="showAttachFileModal"]'
+    );
+    if (existingSpan) {
+      existingSpan.remove();
+      attachmentsWrapper.appendChild(existingSpan);
+      existingSpan.textContent = 'Attachments';
+      existingSpan.style.cssText = '';
+    }
+    if (existingImg) {
+      existingImg.remove();
+      attachmentsWrapper.appendChild(existingImg);
+      const onclickFunction = existingImg.getAttribute('onclick');
+      const plusButton = doc.createElement('button');
+      plusButton.className = 'attachments-plus-btn';
+      plusButton.innerHTML = '+';
+      plusButton.setAttribute('onclick', onclickFunction);
+
+      existingImg.replaceWith(plusButton);
+    }
+    attachmentsHeader.insertBefore(
+      attachmentsWrapper,
+      attachmentsHeader.firstChild
+    );
+  }
+}
+
+/**
+ * Generates and returns a new sidebar element with all transformations applied.
+ * @param {Document} doc The document object.
+ * @returns {HTMLElement|undefined} The new sidebar element, or undefined if the original wrapper isn't found.
+ */
+export function generateSidebarElement(doc) {
+  const navWrapper = doc.querySelector('#navWrapper');
+  if (!navWrapper) return;
+
+  // Inject styles into the document head
   injectSidebarStyles(doc);
 
-  const docUlList = doc.querySelector('#navPage ul');
-  if (docUlList) {
-    transformULBackgroundToImg(docUlList, doc);
+  // === 1. TRANSFORM HEADERS ===
+  transformHeaders(doc);
+
+  // === 2. PAGES LIST ===
+  const navPage = doc.querySelector('#navPage');
+  if (navPage) {
+    const docUlList = navPage.querySelector('ul');
+    if (docUlList) {
+      transformULBackgroundToImg(docUlList, doc);
+    }
   }
 
-  // Transform attachments
-  transformAttachments(doc);
+  // === 3. FORMS LIST ===
+  const navForm = doc.querySelector('#navForm');
+  if (navForm) {
+    transformFormsList(doc);
+    const formItems = navForm.querySelectorAll('li');
+    formItems.forEach((item) => {
+      const formContentSpan = item.querySelector('span[title]');
+      if (formContentSpan) {
+        const onclickAttr = formContentSpan.getAttribute('onclick');
+        if (onclickAttr) {
+          item.setAttribute('onclick', onclickAttr);
+        }
+        formContentSpan.removeAttribute('onclick');
 
-  const footerText = getFooterText(doc);
-  if (footerText) {
-    const footer = doc.createElement('div');
-    footer.id = 'sidebar-footer';
-    footer.textContent = footerText;
-    sidebar.appendChild(footer);
+        const contentWrapper = doc.createElement('div');
+        contentWrapper.className = 'form-content';
+        while (formContentSpan.firstChild) {
+          contentWrapper.appendChild(formContentSpan.firstChild);
+        }
+        formContentSpan.replaceWith(contentWrapper);
+      }
+    });
   }
 
-  return sidebar as HTMLDivElement;
+  // === 4. ATTACHMENTS LIST AND FOOTER ===
+  const originalFooter = doc.querySelector('#footer');
+  if (originalFooter) {
+    const footerText = originalFooter.textContent;
+    const newFooter = doc.createElement('div');
+    newFooter.className = 'sidebar-footer-text';
+    newFooter.textContent = footerText;
+
+    navWrapper.appendChild(newFooter);
+    originalFooter.remove();
+  }
+
+  return navWrapper;
 }
 
-function injectSidebarStyles(doc: Document): void {
+/**
+ * Injects the custom CSS styles for the sidebar into the document head.
+ * @param {Document} doc The document object.
+ */
+function injectSidebarStyles(doc) {
   const customSidebarStyle = doc.createElement('style');
   customSidebarStyle.innerHTML = SIDEBAR_STYLES;
   doc.head.appendChild(customSidebarStyle);

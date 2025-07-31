@@ -30,6 +30,7 @@ const HEADER_STYLES = `
         z-index: 1000;
         min-height: ${MIN_HEADER_HEIGHT}px;
         position: static;
+        border: none;
     }
 
     /* Back button inside header */
