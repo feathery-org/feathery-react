@@ -59,7 +59,8 @@ export default function InlineTooltip({
                 zIndex: FORM_Z_INDEX,
                 margin: 'auto',
                 cursor: 'pointer',
-                height: '100%'
+                height: '100%',
+                display: 'flex'
               }
             : {
                 position: 'relative',
