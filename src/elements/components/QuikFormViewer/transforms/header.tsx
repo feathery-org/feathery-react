@@ -23,13 +23,13 @@ const HEADER_STYLES = `
         padding: 10px 16px;
         gap: 10px;
         width: 100%;
-        height: auto; /* Allow header height to adapt to content */
+        height: auto;
         background: ${HEADER_BACKGROUND_COLOR};
         box-sizing: border-box;
         flex-shrink: 0;
         z-index: 1000;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Subtle shadow */
         min-height: ${MIN_HEADER_HEIGHT}px;
+        position: static;
     }
 
     /* Back button inside header */
@@ -69,8 +69,8 @@ const HEADER_STYLES = `
         align-items: flex-start;
         padding: 0px;
         width: auto;
-        flex: 1; /* Allow title section to grow and take available space */
-        min-width: 0; /* Allow content to shrink */
+        flex: 1;
+        min-width: 0;
     }
 
     .title-section .title {
@@ -84,7 +84,7 @@ const HEADER_STYLES = `
         color: ${HEADER_TEXT_COLOR};
         flex-shrink: 0;
         margin: -3px 0px;
-        white-space: nowrap; /* Keep title on one line */
+        white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
@@ -95,12 +95,12 @@ const HEADER_STYLES = `
         font-weight: 400;
         font-size: 14px;
         line-height: 22px;
-        display: block; /* Allow subtitle to wrap */
+        display: block;
         color: ${SUBTITLE_COLOR};
         flex-shrink: 0;
-        word-wrap: break-word; /* Allow long words to break */
-        overflow-wrap: break-word; /* Standard property for word wrapping */
-        min-width: 0; /* Allow text to wrap within available space */
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        min-width: 0;
     }
 
     /* Action Buttons container */
@@ -110,11 +110,11 @@ const HEADER_STYLES = `
         align-items: center;
         padding: 0px;
         gap: 7px;
-        flex-shrink: 0; /* Prevent buttons from shrinking */
+        flex-shrink: 0;
     }
 
     /* Common button styling */
-    .action-buttons .button, #btnSign#btnSign {
+    .action-buttons .button, #btnSign.button {
         display: flex;
         flex-direction: row;
         justify-content: center;
@@ -133,7 +133,7 @@ const HEADER_STYLES = `
         white-space: nowrap;
     }
 
-    /* Reset and Download buttons (white background) */
+    /* Reset and Download buttons */
     .action-buttons .reset-button,
     .action-buttons .download-button {
         background: ${HEADER_TEXT_COLOR};
@@ -149,11 +149,12 @@ const HEADER_STYLES = `
     /* Sign button (green background) */
     .action-buttons .sign-button {
         background: ${SIGN_BUTTON_BACKGROUND};
-        border: none;
+        border: 1px solid ${SIGN_BUTTON_BACKGROUND};
         color: ${SIGN_BUTTON_COLOR} !important;
     }
     .action-buttons .sign-button:hover {
         background-color: #108a5a;
+        border-color: #108a5a;
     }
 
     /* Check Icon for Sign button */
@@ -293,7 +294,9 @@ function injectHeaderStyles(doc: Document): void {
   doc.head.appendChild(customHeaderStyle);
 }
 
-export function transformHeaderHtml(doc: Document): void {
+export function generateHeaderElement(
+  doc: Document
+): HTMLDivElement | undefined {
   const oldHeader = doc.querySelector('#header') as HTMLDivElement;
 
   if (!oldHeader) {
@@ -305,6 +308,7 @@ export function transformHeaderHtml(doc: Document): void {
 
   const extractedContent = extractHeaderContent(oldHeader);
   const newHeader = createNewHeaderElements(doc, extractedContent);
-  replaceHeader(oldHeader, newHeader);
+  // replaceHeader(oldHeader, newHeader);
   injectHeaderStyles(doc);
+  return newHeader;
 }

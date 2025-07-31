@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo } from 'react';
 import { featheryDoc } from '../../utils/browser';
-import { transformHeaderHtml } from './QuikFormViewer/transforms/header';
+import { generateHeaderElement } from './QuikFormViewer/transforms/header';
+import { generateFormElement } from './QuikFormViewer/transforms/form';
+import { generateSidebarElement } from './QuikFormViewer/transforms/sidebar';
 
 interface FrameProps {
   html: string;
@@ -19,10 +21,43 @@ function QuikFormViewer({ html, css, setShow = () => {} }: FrameProps) {
       html {
         overflow: hidden !important;
       }
+      
+      body > div {
+        display: flex;
+        width: 100vw;
+        height: 100vh;
+        flex-direction: column;
+      }
+
+      body > div > table {
+        display: contents;
+      }
     `;
     doc.head.prepend(styleTag);
 
-    transformHeaderHtml(doc);
+    const header = generateHeaderElement(doc);
+    const form = generateFormElement(doc);
+    const sidebar = generateSidebarElement(doc);
+
+    // remove the body div's content and append the new header
+    const bodyDiv = doc.body.querySelector('div');
+    if (bodyDiv) {
+      bodyDiv.innerHTML = '';
+      if (header) {
+        bodyDiv.appendChild(header);
+      }
+      const contentDiv = doc.createElement('div');
+      contentDiv.style.flex = '1';
+      contentDiv.style.overflow = 'auto';
+      contentDiv.style.display = 'flex';
+      bodyDiv.appendChild(contentDiv);
+      if (form) {
+        contentDiv.appendChild(form);
+      }
+      if (sidebar) {
+        contentDiv.appendChild(sidebar);
+      }
+    }
 
     return doc.documentElement.outerHTML;
   };
