@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { featheryDoc } from '../../utils/browser';
+import { transformHeaderHtml } from './QuikFormViewer/transforms/header';
 
 interface FrameProps {
   html: string;
@@ -7,17 +8,10 @@ interface FrameProps {
   setShow?: (val: boolean) => void;
 }
 
-function QuikFormViewer(props: FrameProps) {
-  const { html, css, setShow = () => {} } = props;
-  const [processedHtml, setProcessedHtml] = useState('');
-
+function QuikFormViewer({ html, css, setShow = () => {} }: FrameProps) {
   const processHtml = (rawHtml: string): string => {
     const parser = new DOMParser();
     const doc = parser.parseFromString(rawHtml, 'text/html');
-
-    // Remove Logo for back button
-    const headerLogo = doc.querySelector('#headerlogo');
-    if (headerLogo) headerLogo.remove();
 
     // Disable scrolling on iframe <html> to fix floating back button UI issue
     const styleTag = doc.createElement('style');
@@ -28,16 +22,13 @@ function QuikFormViewer(props: FrameProps) {
     `;
     doc.head.prepend(styleTag);
 
+    transformHeaderHtml(doc);
+
     return doc.documentElement.outerHTML;
   };
 
   const memoizedProcessedHtml = useMemo(() => processHtml(html), [html]);
 
-  useEffect(() => {
-    setProcessedHtml(memoizedProcessedHtml);
-  }, [memoizedProcessedHtml]);
-
-  // Disable scrolling on form when iframe is displayed
   useEffect(() => {
     featheryDoc().body.style.overflow = 'hidden';
 
@@ -45,6 +36,19 @@ function QuikFormViewer(props: FrameProps) {
       featheryDoc().body.style.removeProperty('overflow');
     };
   }, []);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'QUIK_BACK_BUTTON_CLICK') {
+        setShow(false);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [setShow]);
 
   return (
     <div
@@ -57,27 +61,10 @@ function QuikFormViewer(props: FrameProps) {
         zIndex: 9999
       }}
     >
-      <button
-        css={{
-          backgroundColor: '#e2626e',
-          color: '#fff',
-          border: '2px solid #e2626e',
-          padding: '8px 15px',
-          borderRadius: '6px',
-          position: 'absolute',
-          top: '24px',
-          left: '16px',
-          fontWeight: '600',
-          '&:hover': { cursor: 'pointer' }
-        }}
-        onClick={() => setShow(false)}
-      >
-        Back
-      </button>
-      {processedHtml && (
+      {memoizedProcessedHtml && (
         <iframe
           src='about:blank'
-          srcDoc={processedHtml}
+          srcDoc={memoizedProcessedHtml}
           css={{
             width: '100%',
             height: '100vh',
