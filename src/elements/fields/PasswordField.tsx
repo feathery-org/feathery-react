@@ -54,6 +54,8 @@ function PasswordField({
           position: 'relative',
           width: '100%',
           whiteSpace: 'nowrap',
+          // Prevent placeholder overflow
+          overflowX: 'hidden',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
           '&:hover': hoverStylesGuard(

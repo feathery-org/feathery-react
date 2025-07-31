@@ -9,9 +9,9 @@ import { bootstrapStyles } from '../../styles';
 import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';
 import {
-  isTouchDevice,
+  featheryDoc,
   hoverStylesGuard,
-  featheryDoc
+  isTouchDevice
 } from '../../../utils/browser';
 import { useCustomDateLocale } from './useDateLocale';
 
@@ -215,6 +215,8 @@ function DateSelectorField({
         css={{
           position: 'relative',
           width: '100%',
+          // Prevent placeholder overflow
+          overflowX: 'hidden',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
           '&:hover': hoverStylesGuard(

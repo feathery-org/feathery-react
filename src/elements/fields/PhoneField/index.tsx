@@ -135,6 +135,7 @@ function PhoneField({
       );
       if (!clickedWithin) setShow(false);
     }
+
     featheryDoc().addEventListener('mousedown', hideOnClickAway);
     return () =>
       featheryDoc().removeEventListener('mousedown', hideOnClickAway);
@@ -275,7 +276,9 @@ function PhoneField({
           css={{
             position: 'relative',
             width: '100%',
-            whiteSpace: 'nowrap'
+            whiteSpace: 'nowrap',
+            // Prevent placeholder overflow
+            overflowX: 'hidden'
           }}
         >
           <input
