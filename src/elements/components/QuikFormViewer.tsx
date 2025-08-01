@@ -1,16 +1,52 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { use, useEffect, useMemo } from 'react';
 import { featheryDoc } from '../../utils/browser';
 import { generateHeaderElement } from './QuikFormViewer/transforms/header';
 import { generateFormElement } from './QuikFormViewer/transforms/form';
 import { generateSidebarElement } from './QuikFormViewer/transforms/sidebar';
+import FeatheryClient from '../../utils/featheryClient';
 
 interface FrameProps {
-  html: string;
+  html?: string;
   css?: any;
+  inline?: boolean;
   setShow?: (val: boolean) => void;
+  formKey?: string;
 }
 
-function QuikFormViewer({ html, css, setShow = () => {} }: FrameProps) {
+function QuikFormViewer({
+  html,
+  css,
+  setShow = () => {},
+  inline,
+  formKey
+}: FrameProps) {
+  const [htmlContent, setHtmlContent] = React.useState<string | null>(null);
+  const fetchedRef = React.useRef(false);
+
+  useMemo(() => {
+    if (inline && formKey) {
+      if (fetchedRef.current) return; // Prevent multiple fetches
+      fetchedRef.current = true;
+      const action = {
+        type: '',
+        auth_user_id: '',
+        review_action: '',
+        form_fill_type: 'html',
+        sign_callback_url: ''
+      };
+
+      new FeatheryClient(formKey)
+        .generateQuikEnvelopes(action)
+        .then((payload: any) => {
+          if (payload.error) {
+            console.error('Error generating Quik envelopes:', payload.error);
+          } else if (action.form_fill_type === 'html' && payload.html) {
+            setHtmlContent(processHtml(payload.html));
+          }
+        });
+    }
+  }, [inline, formKey]);
+
   const processHtml = (rawHtml: string): string => {
     const parser = new DOMParser();
     const doc = parser.parseFromString(rawHtml, 'text/html');
@@ -80,7 +116,11 @@ function QuikFormViewer({ html, css, setShow = () => {} }: FrameProps) {
     return doc.documentElement.outerHTML;
   };
 
-  const memoizedProcessedHtml = useMemo(() => processHtml(html), [html]);
+  useEffect(() => {
+    if (html) {
+      setHtmlContent(processHtml(html));
+    }
+  }, [html]);
 
   useEffect(() => {
     featheryDoc().body.style.overflow = 'hidden';
@@ -103,30 +143,48 @@ function QuikFormViewer({ html, css, setShow = () => {} }: FrameProps) {
     };
   }, [setShow]);
 
+  if (!htmlContent) return <div>Loading...</div>;
+
   return (
     <div
-      css={{
-        position: 'fixed',
-        backgroundColor: '#fff',
-        minWidth: '100vw',
-        height: '100%',
-        overflow: 'hidden',
-        zIndex: 9999
-      }}
+      css={
+        inline
+          ? { width: '100%', height: '100%', overflow: 'auto' }
+          : {
+              position: 'fixed',
+              backgroundColor: '#fff',
+              minWidth: '100vw',
+              height: '100vh',
+              overflow: 'hidden',
+              zIndex: 9999
+            }
+      }
     >
-      {memoizedProcessedHtml && (
+      {htmlContent && (
         <iframe
           src='about:blank'
-          srcDoc={memoizedProcessedHtml}
-          css={{
-            width: '100%',
-            height: '100vh',
-            border: 'none',
-            outline: 'none',
-            margin: 0,
-            padding: 0,
-            ...css
-          }}
+          srcDoc={htmlContent}
+          css={
+            inline
+              ? {
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
+                  outline: 'none',
+                  margin: 0,
+                  padding: 0,
+                  ...css
+                }
+              : {
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
+                  outline: 'none',
+                  margin: 0,
+                  padding: 0,
+                  ...css
+                }
+          }
         />
       )}
     </div>

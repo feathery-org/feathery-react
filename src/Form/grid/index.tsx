@@ -8,6 +8,7 @@ import {
 import { Container } from './Container';
 import { getRepeatedContainers } from '../../utils/repeat';
 import CalendlyEmbed from './CalendlyEmbed';
+import QuikFormViewer from '../../elements/components/QuikFormViewer';
 
 const Grid = ({ step, form, viewport }: any) => {
   if (!step || !form.visiblePositions) return null;
@@ -47,7 +48,21 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
 
     if (props.embed_calendly && form.calendly?.api_key) {
       children.push(
-        <CalendlyEmbed form={form} successStep={props.calendly_success_step} />
+        <CalendlyEmbed
+          key={'calendly'}
+          form={form}
+          successStep={props.calendly_success_step}
+        />
+      );
+    }
+
+    if (props.embed_quik_viewer) {
+      children.push(
+        <QuikFormViewer
+          key={'quik'}
+          inline
+          formKey={form.featheryContext.formId}
+        />
       );
     }
 
