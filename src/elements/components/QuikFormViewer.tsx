@@ -22,6 +22,9 @@ function QuikFormViewer({ html, css, setShow = () => {} }: FrameProps) {
         overflow: hidden !important;
       }
       
+      #alt-popup {
+        flex-direction: column;
+        }
       body > div {
         display: flex;
         width: 100vw;
@@ -31,6 +34,21 @@ function QuikFormViewer({ html, css, setShow = () => {} }: FrameProps) {
 
       body > div > table {
         display: contents;
+      }
+
+      #modalBoxes #prepareToSignDialog {
+        flex-direction: column;
+            position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    max-width: 80%;
+    height: auto !important;
+    max-height: 80%;
+      }
+      #modalBoxes #mask {
+        width: 100vw;
+        height: 100vh;
+        top: 0;
       }
     `;
     doc.head.prepend(styleTag);
