@@ -23,6 +23,7 @@ const HEADER_STYLES = `
         padding: 10px 16px;
         gap: 10px;
         width: 100%;
+        min-width: 100%;
         height: auto;
         background: ${HEADER_BACKGROUND_COLOR};
         box-sizing: border-box;

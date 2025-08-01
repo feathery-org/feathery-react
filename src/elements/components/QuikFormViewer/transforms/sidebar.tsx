@@ -13,6 +13,7 @@ const SIDEBAR_STYLES = `
     padding: 0;
     padding-top: 16px;
     overflow-y: auto;
+    box-shadow: 0px 0px 4px 0px #727B9975;
   }
 
   /* Consistent header styling for all sections */
@@ -272,6 +273,10 @@ const SIDEBAR_STYLES = `
     order: 2;
   }
 
+  #navAttachments {
+    padding: 0 16px;
+    margin-bottom: 16px;
+  }
   #navAttachments li > img[src*="remove.png"]:hover {
     opacity: 1;
   }
