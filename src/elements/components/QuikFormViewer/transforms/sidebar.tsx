@@ -1,5 +1,5 @@
 // @ts-nocheck
-const SIDEBAR_WIDTH = '300px';
+const SIDEBAR_WIDTH = '200px';
 
 const SIDEBAR_STYLES = `
   #navWrapper {
@@ -73,7 +73,7 @@ const SIDEBAR_STYLES = `
   }
 
   #navPage li {
-    margin: 20px auto;
+    margin: 10px auto;
     border-radius: 10px;
     box-shadow: 0px 2.5px 12px 0px #23254340;
     width: fit-content;
@@ -134,7 +134,7 @@ const SIDEBAR_STYLES = `
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 500;
     line-height: 20px;
     position: sticky;
@@ -197,7 +197,7 @@ const SIDEBAR_STYLES = `
     display: flex;
     background: transparent;
     align-items: center;
-    padding: 12px;
+    padding-inline: 12px;
     border-bottom: 1px solid #dbdfe8;
     position: relative;
     min-height: 44px;
@@ -208,59 +208,46 @@ const SIDEBAR_STYLES = `
     border-bottom: none;
   }
 
-  /* Add document icon before each item */
-  #navForm li::before {
-    content: '';
-    width: 25px;
-    height: 25px;
-    margin-right: 8px;
-    background-image: url("data:image/svg+xml,%3Csvg width='25' height='25' viewBox='0 0 25 25' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='4.68555' y='2.6748' width='15.9657' height='19.6501' rx='2.45627' stroke='%23656A7D' stroke-width='1.8422' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M8.36914 6.97363H16.9661' stroke='%23656A7D' stroke-width='1.8422' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M8.36914 11.2715H16.9661' stroke='%23656A7D' stroke-width='1.8422' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M13.2812 17.4121H16.9657' stroke='%23656A7D' stroke-width='1.8422' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
-    flex-shrink: 0;
-  }
-
   #navForm li .form-content {
     display: flex;
     flex-direction: column;
     flex: 1;
+    padding-block: 12px;
   }
 
   #navForm li .form-content a {
     font-weight: 600;
-    font-size: 14px;
-    line-height: 20px;
+    font-size: 12px;
     color: #333849;
     text-decoration: none;
   }
 
   #navForm li .form-content em {
     font-weight: 400;
-    font-size: 12px;
-    line-height: 18px;
+    font-size: 10px;
     font-style: normal;
     color: #6C7589;
+    margin-top: 4px;
   }
 
-  #navAttachments li::before {
-    content: '';
-    width: 25px;
-    height: 25px;
-    margin-right: 8px;
-    background-image: url("data:image/svg+xml,%3Csvg width='26' height='26' viewBox='0 0 26 26' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M9.06504 8.70141V4.60032C9.06504 3.81303 9.70326 3.1748 10.4905 3.1748V3.1748C11.2778 3.1748 11.9161 3.81303 11.9161 4.60032V8.70141C11.9161 10.3971 10.5414 11.7717 8.84573 11.7717V11.7717C7.15003 11.7717 5.77539 10.3971 5.77539 8.70141V4.73788' stroke='%23656A7D' stroke-width='1.8422' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M15.4987 3.1748H19.2849C20.6414 3.1748 21.7411 4.27451 21.7411 5.63107V20.3687C21.7411 21.7252 20.6414 22.825 19.2849 22.825H8.23166C6.8751 22.825 5.77539 21.7252 5.77539 20.3687V15.5133' stroke='%23656A7D' stroke-width='1.8422' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
-    flex-shrink: 0;
+  #navForm li .form-content br {
+    display: none;
+  }
+
+  #navForm li {
+    transition: background-color 0.2s ease;
+  }
+
+  #navForm li:hover {
+    background-color: #f3f4f6;
   }
 
   /* Style the filename span */
   #navAttachments li > span {
     font-style: normal;
     font-weight: 600;
-    font-size: 14px;
-    line-height: 20px;
+    font-size: 11px;
+    line-height: 14px;
     color: #333849;
     flex: 1;
   }
@@ -288,6 +275,14 @@ const SIDEBAR_STYLES = `
   #navAttachments li > img[src*="remove.png"]:hover {
     opacity: 1;
   }
+
+  #navAttachments ul:empty::after {
+    content: 'No attachments';
+    display: block;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 11px;
+    padding: 12px;}
 `;
 
 /**
@@ -437,6 +432,11 @@ function transformFormsList(doc) {
     // Find the span containing the form content
     const formContentSpan = item.querySelector('span[title]');
     if (formContentSpan) {
+      const onclickAttr = formContentSpan.getAttribute('onclick');
+      if (onclickAttr) {
+        item.setAttribute('onclick', onclickAttr);
+      }
+
       // Create a new div to wrap the content
       const contentWrapper = doc.createElement('div');
       contentWrapper.className = 'form-content';
