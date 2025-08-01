@@ -56,7 +56,8 @@ const FORM_STYLES = `
 
   #QFVPageList .input-label > span {
     width: 100% !important;
-    height: unset !important;
+    aspect-ratio: 1 / 1;
+    height: auto !important;
     background-size: contain;
   }
 `;
@@ -133,7 +134,6 @@ function repositionFormInputs(doc: Document): void {
         let relativeTopPt = currentTopPt - pageOffsetPt;
 
         if (element.tagName === 'LABEL') {
-          relativeTopPt -= 3; // Adjust for label (radio box)'s top offset
           currentLeftPt -= 2; // Adjust for label (radio box)'s left offset
         }
 
