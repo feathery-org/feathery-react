@@ -1482,6 +1482,12 @@ function Form({
     if (!redirectKey) {
       if (explicitNav) {
         if (submitPromise) await submitPromise;
+
+        // Check if there are any failed requests before completing
+        if (await client.offlineRequestHandler.dbHasRequest()) {
+          return;
+        }
+
         eventData.completed = true;
         await client.registerEvent(eventData).then(() => {
           setFinished(true);
@@ -1501,6 +1507,12 @@ function Form({
         );
         if (complete) {
           if (submitPromise) await submitPromise;
+
+          // Check if there are any failed requests before completing
+          if (await client.offlineRequestHandler.dbHasRequest()) {
+            return;
+          }
+
           eventData.completed = true;
           // Form completion must run after since logic may depend on
           // presence of fully submitted data

@@ -132,6 +132,7 @@ describe('featheryClient', () => {
         .fn()
         .mockRejectedValue(new TypeError('Network error'));
       featheryClient.offlineRequestHandler.saveRequest = jest.fn();
+      featheryClient.offlineRequestHandler.replayRequests = jest.fn();
 
       // Act
       await featheryClient.submitCustom(customKeyValues, { shouldFlush: true });
@@ -139,6 +140,9 @@ describe('featheryClient', () => {
       // Assert
       expect(
         featheryClient.offlineRequestHandler.saveRequest
+      ).toHaveBeenCalled();
+      expect(
+        featheryClient.offlineRequestHandler.replayRequests
       ).toHaveBeenCalled();
     });
   });

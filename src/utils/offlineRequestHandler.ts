@@ -1,14 +1,14 @@
 import { useEffect } from 'react';
 import { featheryWindow, runningInClient } from './browser';
-import { checkResponseSuccess } from './featheryClient/integrationClient';
 import { initInfo } from './init';
-import FeatheryClient from './featheryClient';
+import type FeatheryClient from './featheryClient';
+import { checkResponseSuccess } from './featheryClient/utils';
 
 // Constants for the IndexedDB database
 const DB_NAME = 'requestsDB';
 const STORE_NAME = 'requestsStore';
 const DB_VERSION = 1;
-const MAX_RETRY_ATTEMPTS = 3;
+const MAX_RETRY_ATTEMPTS = 4;
 const RETRY_DELAY_MS = 2000;
 const INDEXEDDB_ACCESS_DENIED_ERRORS = [
   'IDBFactory.open() called in an invalid security context',
@@ -80,6 +80,16 @@ export function useOfflineRequestHandler(client: FeatheryClient) {
   }, [client]);
 }
 
+/**
+ * OfflineRequestHandler manages HTTP request reliability for forms.
+ * Failed requests are queued in IndexedDB and replayed when connectivity is restored.
+ *
+ * Behavior:
+ * - When online: attempts requests immediately, but queues them if network errors occur
+ * - When offline: immediately queues all requests for later replay
+ * - Prevent page unload while requests are pending
+ * - Replays requests in chronological order
+ */
 export class OfflineRequestHandler {
   private isReplayingRequests: Map<string, boolean>;
   private readonly formKey: string;
@@ -90,8 +100,9 @@ export class OfflineRequestHandler {
   private readonly retryDelayMs: number;
   private onlineSignals: Map<string, any[]>;
   private indexedDBSupported: boolean;
+  private errorCallback?: (error: string) => void;
 
-  constructor(formKey: string) {
+  constructor(formKey: string, errorCallback?: (error: string) => void) {
     this.isReplayingRequests = new Map();
     this.formKey = formKey;
     this.dbName = DB_NAME;
@@ -101,6 +112,7 @@ export class OfflineRequestHandler {
     this.retryDelayMs = RETRY_DELAY_MS;
     this.onlineSignals = new Map();
     this.indexedDBSupported = typeof indexedDB !== 'undefined';
+    this.errorCallback = errorCallback;
   }
 
   // Check if any requests are stored in indexedDB
@@ -132,6 +144,7 @@ export class OfflineRequestHandler {
     }
   }
 
+  // Wait for user to be online and for any replayed requests to finish
   public onlineAndReplayed() {
     return new Promise((resolve) => {
       if (!this.onlineSignals.has(this.formKey)) {
@@ -191,7 +204,17 @@ export class OfflineRequestHandler {
     }
   }
 
-  // Save request to IndexedDB
+  /**
+   * Core request orchestration method that decides whether to execute a request immediately
+   * or queue it for later replay. This implements the "eventual consistency" pattern for
+   * offline-first applications.
+   *
+   * Logic flow:
+   * 1. If online AND no pending requests: execute immediately
+   * 2. If online BUT requests are queued/replaying: wait for queue to clear, then execute
+   * 3. If request fails with network error: queue it and start replay process
+   * 4. If offline: immediately queue the request
+   */
   public async runOrSaveRequest(
     run: any,
     url: string,
@@ -200,13 +223,14 @@ export class OfflineRequestHandler {
     stepKey?: string
   ): Promise<void> {
     if (navigator.onLine) {
+      // Prevent page unload while processing requests to avoid data loss
       trackUnload();
       if (
         this.indexedDBSupported &&
         (this.isReplayingRequests.get(this.formKey) ||
           (await this.dbHasRequest()))
       ) {
-        // Wait if any requests in IndexedDB or if a replay is ongoing
+        // If there are pending requests, wait for them to complete first
         await this.onlineAndReplayed();
       }
       try {
@@ -214,12 +238,17 @@ export class OfflineRequestHandler {
         untrackUnload();
         return response;
       } catch (e) {
-        if (e instanceof TypeError)
-          this.saveRequest(url, options, type, stepKey);
+        // TypeError indicates network connectivity issues
+        // This catches scenarios like timeouts, resolution failures, etc.
+        if (e instanceof TypeError) {
+          await this.saveRequest(url, options, type, stepKey);
+          // Immediately attempt to replay in case connectivity was briefly restored
+          this.replayRequests();
+        }
         untrackUnload();
       }
     } else {
-      this.saveRequest(url, options, type, stepKey);
+      await this.saveRequest(url, options, type, stepKey);
     }
   }
 
@@ -308,7 +337,13 @@ export class OfflineRequestHandler {
     }
   }
 
-  // Replay requests from IndexedDB
+  /**
+   * Replay queued requests:
+   *
+   * Step 1: Submit requests (form submissions, custom requests) - executed in parallel
+   * Step 2: Event registrations - grouped by step and executed sequentially by step,
+   *          but in parallel within each step to maintain event ordering per form step
+   */
   public async replayRequests() {
     if (!this.indexedDBSupported) {
       return;
@@ -350,11 +385,13 @@ export class OfflineRequestHandler {
           };
         });
 
+        // Step 1: Process all submit/custom requests in parallel
         const submitRequests = allRequests.filter((req) =>
           ['submit', 'customRequest'].includes(req.type)
         );
         await this.replayRequestsInParallel(submitRequests);
 
+        // Step 2: Process event registrations with step-level ordering
         const registerEventRequests = allRequests.filter(
           (req) => req.type === 'registerEvent'
         );
@@ -377,6 +414,8 @@ export class OfflineRequestHandler {
       if (requestsInDB) await this.replayRequests();
 
       untrackUnload();
+      // Release all waiting promises that were blocked on onlineAndReplayed()
+      // This allows queued requests in runOrSaveRequest to proceed
       const signals = this.onlineSignals.get(this.formKey) || [];
       signals.forEach((signal) => signal());
       this.onlineSignals.delete(this.formKey);
@@ -403,19 +442,28 @@ export class OfflineRequestHandler {
             try {
               const response = await fetch(url, fetchOptions);
               await checkResponseSuccess(response);
+              await this.removeRequest(key);
               break;
             } catch (error: any) {
               attempts++;
-              await this.delay(this.retryDelayMs);
-            }
-
-            if (!navigator.onLine) {
-              // If offline, block until requests are replayed from online event handler
-              await this.onlineAndReplayed();
-              return;
+              if (navigator.onLine) {
+                const nextDelay = this.getExponentialDelay(attempts);
+                // do not wait for delay if already tried max attempts
+                if (attempts >= this.maxRetryAttempts) {
+                  if (this.errorCallback) {
+                    this.errorCallback(
+                      `Failed to submit after ${this.maxRetryAttempts} attempts. Please check your connection and try again.`
+                    );
+                  }
+                  return;
+                }
+                await this.delay(nextDelay);
+              } else {
+                await this.onlineAndReplayed();
+                return;
+              }
             }
           }
-          await this.removeRequest(key);
         };
 
         return attemptRequest();
@@ -430,6 +478,16 @@ export class OfflineRequestHandler {
       const { store } = dbTransaction;
       await store.delete(key);
     }
+  }
+
+  /**
+   * Calculates exponential backoff delay with jitter.
+   * Pattern: 1s, 2s, 4s, etc.
+   */
+  private getExponentialDelay(attemptNum: number): number {
+    const baseDelay = 1000 * Math.pow(2, attemptNum);
+    const jitter = Math.random() * 1000;
+    return baseDelay + jitter;
   }
 
   private delay(ms: number): Promise<void> {
