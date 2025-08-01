@@ -16,7 +16,7 @@ const FORM_STYLES = `
   #scroller {
     width: auto;
     position: static;
-    max-width: 620px;
+    max-width: 1000px;
     margin: 0 auto;
     background: none !important;
   }

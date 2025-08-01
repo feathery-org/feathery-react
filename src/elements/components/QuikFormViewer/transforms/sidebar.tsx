@@ -63,6 +63,7 @@ const SIDEBAR_STYLES = `
     flex-shrink: 1;
     max-height: 500px;
     overflow-y: auto;
+    min-height: 350px;
   }
 
   #navPage ul {
@@ -121,10 +122,12 @@ const SIDEBAR_STYLES = `
   #navWrapper > #navAttachmentsHeader {
     width: unset;
     height: auto;
+    overflow: unset !important;
+    flex: 1;
   }
   
   /* The footer element with only text content */
-  .sidebar-footer-text {
+  .sidebar-footer {
     padding: 10px;
     background: #fbeaea;
     color: #cb4e5a;
@@ -134,6 +137,11 @@ const SIDEBAR_STYLES = `
     font-size: 14px;
     font-weight: 500;
     line-height: 20px;
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 999;
   }
 
   #navFormHeader, #navForm {
@@ -582,7 +590,7 @@ export function generateSidebarElement(doc) {
   if (originalFooter) {
     const footerText = originalFooter.textContent;
     const newFooter = doc.createElement('div');
-    newFooter.className = 'sidebar-footer-text';
+    newFooter.className = 'sidebar-footer';
     newFooter.textContent = footerText;
 
     navWrapper.appendChild(newFooter);
