@@ -189,6 +189,7 @@ function extractHeaderContent(oldHeader: HTMLDivElement) {
   const minorInstructionsSpan = oldHeader.querySelector('#MinorInstructions');
   const btnReset = oldHeader.querySelector('#btnReset') as HTMLInputElement;
   const btnPrint = oldHeader.querySelector('#btnPrint') as HTMLInputElement;
+  const btnSave = oldHeader.querySelector('#btnSave') as HTMLInputElement;
   const btnSignContainer = oldHeader.querySelector('.ctn-sign-btn');
   const btnSign = btnSignContainer
     ? (btnSignContainer.querySelector(
@@ -203,7 +204,7 @@ function extractHeaderContent(oldHeader: HTMLDivElement) {
     ? minorInstructionsSpan.textContent
     : 'Review and complete your documents below.';
 
-  return { titleText, subtitleText, btnReset, btnPrint, btnSign };
+  return { titleText, subtitleText, btnReset, btnPrint, btnSign, btnSave };
 }
 
 function createNewHeaderElements(
@@ -278,16 +279,18 @@ function createNewHeaderElements(
     actionButtons.appendChild(signButton);
   }
 
+  // Submit Button
+  if (content.btnSave) {
+    const saveButton = doc.createElement('button');
+    saveButton.className = 'button sign-button';
+    saveButton.textContent = content.btnSave.value;
+    saveButton.id = content.btnSave.id;
+    actionButtons.appendChild(saveButton);
+  }
+
   newHeader.appendChild(actionButtons);
 
   return newHeader;
-}
-
-function replaceHeader(
-  oldHeader: HTMLDivElement,
-  newHeader: HTMLDivElement
-): void {
-  oldHeader.replaceWith(newHeader);
 }
 
 function injectHeaderStyles(doc: Document): void {
@@ -310,7 +313,6 @@ export function generateHeaderElement(
 
   const extractedContent = extractHeaderContent(oldHeader);
   const newHeader = createNewHeaderElements(doc, extractedContent);
-  // replaceHeader(oldHeader, newHeader);
   injectHeaderStyles(doc);
   return newHeader;
 }
