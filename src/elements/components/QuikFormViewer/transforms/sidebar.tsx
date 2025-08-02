@@ -1,4 +1,5 @@
-// @ts-nocheck
+import { featheryDoc, featheryWindow } from '../../../../utils/browser';
+
 const SIDEBAR_WIDTH = '200px';
 
 const SIDEBAR_STYLES = `
@@ -7,7 +8,7 @@ const SIDEBAR_STYLES = `
     flex-shrink: 0;
     height: auto;
     position: static;
-    background: #ffffff;      
+    background: #ffffff;
     display: flex;
     flex-direction: column;
     padding: 0;
@@ -125,7 +126,7 @@ const SIDEBAR_STYLES = `
     overflow: unset !important;
     flex: 1;
   }
-  
+
   /* The footer element with only text content */
   .sidebar-footer {
     padding: 10px;
@@ -147,7 +148,7 @@ const SIDEBAR_STYLES = `
   #navFormHeader, #navForm {
     padding: 0px 16px;
   }
-  
+
   #navForm {
     margin-bottom: 16px;
   }
@@ -291,7 +292,7 @@ const SIDEBAR_STYLES = `
  * @param {string} thumbnailUrl The URL of the thumbnail image.
  * @returns {string|null} The URL of the full-size image or null if not found.
  */
-function getFullSizeImageUrl(doc, thumbnailUrl) {
+function getFullSizeImageUrl(doc: any, thumbnailUrl: string) {
   try {
     const urlMatch = thumbnailUrl.match(/t?(\d+)_(\d+)_\d+\.png/);
     if (!urlMatch) return null;
@@ -321,7 +322,11 @@ function getFullSizeImageUrl(doc, thumbnailUrl) {
  * @param {object} options Optional configuration for the transformation.
  * @returns {number} The number of transformed elements.
  */
-function transformULBackgroundToImg(ulElement, doc, options = {}) {
+function transformULBackgroundToImg(
+  ulElement: any,
+  doc: any,
+  options: Record<string, any> = {}
+) {
   const {
     imageWidth = '140px',
     preserveAspectRatio = true,
@@ -337,14 +342,14 @@ function transformULBackgroundToImg(ulElement, doc, options = {}) {
   const listItems = ulElement.querySelectorAll('li');
   let transformedCount = 0;
 
-  listItems.forEach((li) => {
+  listItems.forEach((li: any) => {
     const divsWithBg = li.querySelectorAll('div[style*="background-image"]');
 
-    divsWithBg.forEach((div) => {
+    divsWithBg.forEach((div: any) => {
       const style = div.style;
-      const computedStyle = window.getComputedStyle(div);
+      const computedStyle = featheryWindow().getComputedStyle(div);
 
-      let backgroundImage =
+      const backgroundImage =
         style.backgroundImage || computedStyle.backgroundImage;
       if (!backgroundImage || backgroundImage === 'none') return;
 
@@ -364,7 +369,7 @@ function transformULBackgroundToImg(ulElement, doc, options = {}) {
 
       const altText = div.getAttribute('title') || 'Form Image';
 
-      const img = document.createElement('img');
+      const img = featheryDoc().createElement('img');
       img.src = imageUrl;
       img.alt = altText;
 
@@ -393,7 +398,7 @@ function transformULBackgroundToImg(ulElement, doc, options = {}) {
         }
 
         const existingContent = Array.from(div.children);
-        existingContent.forEach((child) => {
+        existingContent.forEach((child: any) => {
           if (child.tagName === 'SPAN') {
             child.style.position = 'absolute';
             if (
@@ -423,12 +428,12 @@ function transformULBackgroundToImg(ulElement, doc, options = {}) {
  * preserving the original onclick functionality.
  * @param {Document} doc The document object.
  */
-function transformFormsList(doc) {
+function transformFormsList(doc: any) {
   const formList = doc.querySelector('#navForm ul');
   if (!formList) return;
 
   const formItems = formList.querySelectorAll('li');
-  formItems.forEach((item) => {
+  formItems.forEach((item: any) => {
     // Find the span containing the form content
     const formContentSpan = item.querySelector('span[title]');
     if (formContentSpan) {
@@ -456,7 +461,7 @@ function transformFormsList(doc) {
  * Transforms the headers for pages, forms, and attachments, styling them correctly.
  * @param {Document} doc The document object.
  */
-function transformHeaders(doc) {
+function transformHeaders(doc: any) {
   const navWrapper = doc.querySelector('#navWrapper');
   if (!navWrapper) return;
 
@@ -465,7 +470,7 @@ function transformHeaders(doc) {
     'span[style*="font-weight:bold"]'
   );
   const navSpans = Array.from(navWrapper.children).filter(
-    (child) =>
+    (child: any) =>
       child.tagName === 'SPAN' &&
       (child.textContent.trim() === 'First' ||
         child.textContent.trim() === 'Last')
@@ -479,7 +484,7 @@ function transformHeaders(doc) {
     pagesHeader.appendChild(pagesTitle);
     const pagesNav = doc.createElement('div');
     pagesNav.className = 'pages-nav';
-    navSpans.forEach((span) => {
+    navSpans.forEach((span: any) => {
       const newSpan = doc.createElement('span');
       newSpan.textContent = span.textContent;
       newSpan.setAttribute('onclick', span.getAttribute('onclick'));
@@ -542,7 +547,7 @@ function transformHeaders(doc) {
  * @param {Document} doc The document object.
  * @returns {HTMLElement|undefined} The new sidebar element, or undefined if the original wrapper isn't found.
  */
-export function generateSidebarElement(doc) {
+export function generateSidebarElement(doc: any) {
   const navWrapper = doc.querySelector('#navWrapper');
   if (!navWrapper) return;
 
@@ -566,7 +571,7 @@ export function generateSidebarElement(doc) {
   if (navForm) {
     transformFormsList(doc);
     const formItems = navForm.querySelectorAll('li');
-    formItems.forEach((item) => {
+    formItems.forEach((item: any) => {
       const formContentSpan = item.querySelector('span[title]');
       if (formContentSpan) {
         const onclickAttr = formContentSpan.getAttribute('onclick');
@@ -604,7 +609,7 @@ export function generateSidebarElement(doc) {
  * Injects the custom CSS styles for the sidebar into the document head.
  * @param {Document} doc The document object.
  */
-function injectSidebarStyles(doc) {
+function injectSidebarStyles(doc: any) {
   const customSidebarStyle = doc.createElement('style');
   customSidebarStyle.innerHTML = SIDEBAR_STYLES;
   doc.head.appendChild(customSidebarStyle);

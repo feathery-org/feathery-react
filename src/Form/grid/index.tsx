@@ -49,7 +49,7 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
     if (props.embed_calendly && form.calendly?.api_key) {
       children.push(
         <CalendlyEmbed
-          key={'calendly'}
+          key='calendly'
           form={form}
           successStep={props.calendly_success_step}
         />
@@ -59,7 +59,7 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
     if (props.embed_quik_viewer) {
       children.push(
         <QuikFormViewer
-          key={'quik'}
+          key='quik'
           inline
           formKey={form.featheryContext.formId}
         />

@@ -1,5 +1,5 @@
-import React, { use, useEffect, useMemo } from 'react';
-import { featheryDoc } from '../../utils/browser';
+import React, { useEffect, useMemo } from 'react';
+import { featheryDoc, featheryWindow } from '../../utils/browser';
 import { generateHeaderElement } from './QuikFormViewer/transforms/header';
 import { generateFormElement } from './QuikFormViewer/transforms/form';
 import { generateSidebarElement } from './QuikFormViewer/transforms/sidebar';
@@ -57,7 +57,7 @@ function QuikFormViewer({
       html {
         overflow: hidden !important;
       }
-      
+
       #alt-popup {
         flex-direction: column;
         }
@@ -133,13 +133,14 @@ function QuikFormViewer({
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'QUIK_BACK_BUTTON_CLICK') {
+        featheryWindow().QuikFeatheryBackAction();
         setShow(false);
       }
     };
 
-    window.addEventListener('message', handleMessage);
+    featheryWindow().addEventListener('message', handleMessage);
     return () => {
-      window.removeEventListener('message', handleMessage);
+      featheryWindow().removeEventListener('message', handleMessage);
     };
   }, [setShow]);
 

@@ -218,7 +218,6 @@ function createNewHeaderElements(
   const backButton = doc.createElement('button');
   backButton.className = 'back-button';
   backButton.innerHTML = BACK_BUTTON_ICON;
-
   backButton.setAttribute(
     'onclick',
     `window.parent.postMessage({ type: 'QUIK_BACK_BUTTON_CLICK' }, '*');`

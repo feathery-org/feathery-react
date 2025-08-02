@@ -76,7 +76,8 @@ function parsePtValue(styleValue: string): number {
       // Safety check before using eval
       const safeExpression = expression
         .replace(/pt/g, '')
-        .replace(/[^\d\+\-\*\/\.]/g, '');
+        .replace(/[^\d+\-*/.]/g, '');
+      // eslint-disable-next-line no-eval
       return eval(safeExpression);
     } catch (e) {
       console.error('Failed to parse calc() expression:', expression, e);
@@ -125,13 +126,13 @@ function repositionFormInputs(doc: Document): void {
         const style = element.style;
 
         // Get original pt values for all relevant properties.
-        let currentTopPt = parsePtValue(style.top);
+        const currentTopPt = parsePtValue(style.top);
         let currentLeftPt = parsePtValue(style.left);
         const currentWidthPt = parsePtValue(style.width);
         const currentHeightPt = parsePtValue(style.height);
 
         // Recalculate relative top position in pt by subtracting the cumulative page offset.
-        let relativeTopPt = currentTopPt - pageOffsetPt;
+        const relativeTopPt = currentTopPt - pageOffsetPt;
 
         if (element.tagName === 'LABEL') {
           currentLeftPt -= 2; // Adjust for label (radio box)'s left offset
