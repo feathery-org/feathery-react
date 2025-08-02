@@ -2078,6 +2078,11 @@ function Form({
             featheryWindow().QuikFeatherySubmitAction = () => {
               flowOnSuccess(i)().then(() => setShowQuikFormViewer(false));
             };
+            featheryWindow().QuikFeatheryBackAction = () => {
+              // Turn off loaders if user leaves the Quik viewer without
+              // submitting
+              clearLoaders();
+            };
             setQuikHTMLPayload(payload.html);
             setShowQuikFormViewer(true);
             break;
