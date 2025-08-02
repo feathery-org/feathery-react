@@ -69,23 +69,7 @@ const FORM_STYLES = `
  * @returns {number} The numerical value in 'pt'.
  */
 function parsePtValue(styleValue: string): number {
-  if (!styleValue) return 0;
-  if (styleValue.includes('calc')) {
-    const expression = styleValue.replace(/calc\((.*)\)/, '$1').trim();
-    try {
-      // Safety check before using eval
-      const safeExpression = expression
-        .replace(/pt/g, '')
-        .replace(/[^\d+\-*/.]/g, '');
-      // eslint-disable-next-line no-eval
-      return eval(safeExpression);
-    } catch (e) {
-      console.error('Failed to parse calc() expression:', expression, e);
-      return 0;
-    }
-  } else {
-    return parseFloat(styleValue.replace('pt', ''));
-  }
+  return styleValue ? parseFloat(styleValue.replace('pt', '')) : 0;
 }
 
 /**

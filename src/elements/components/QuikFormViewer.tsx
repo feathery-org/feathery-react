@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import { featheryDoc, featheryWindow } from '../../utils/browser';
 import { generateHeaderElement } from './QuikFormViewer/transforms/header';
 import { generateFormElement } from './QuikFormViewer/transforms/form';
@@ -23,7 +23,7 @@ function QuikFormViewer({
   const [htmlContent, setHtmlContent] = React.useState<string | null>(null);
   const fetchedRef = React.useRef(false);
 
-  useMemo(() => {
+  useEffect(() => {
     if (inline && formKey) {
       if (fetchedRef.current) return; // Prevent multiple fetches
       fetchedRef.current = true;
@@ -41,80 +41,11 @@ function QuikFormViewer({
           if (payload.error) {
             console.error('Error generating Quik envelopes:', payload.error);
           } else if (action.form_fill_type === 'html' && payload.html) {
-            setHtmlContent(processHtml(payload.html));
+            setHtmlContent(processHtml(payload.html, true));
           }
         });
     }
   }, [inline, formKey]);
-
-  const processHtml = (rawHtml: string): string => {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(rawHtml, 'text/html');
-
-    // Disable scrolling on iframe <html> to fix floating back button UI issue
-    const styleTag = doc.createElement('style');
-    styleTag.innerHTML = `
-      html {
-        overflow: hidden !important;
-      }
-
-      #alt-popup {
-        flex-direction: column;
-        }
-      body > div {
-        display: flex;
-        width: 100vw;
-        height: 100vh;
-        flex-direction: column;
-      }
-
-      body > div > table {
-        display: contents;
-      }
-
-      #modalBoxes #prepareToSignDialog {
-        flex-direction: column;
-            position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    max-width: 80%;
-    height: auto !important;
-    max-height: 80%;
-      }
-      #modalBoxes #mask {
-        width: 100vw;
-        height: 100vh;
-        top: 0;
-      }
-    `;
-    doc.head.prepend(styleTag);
-
-    const header = generateHeaderElement(doc);
-    const form = generateFormElement(doc);
-    const sidebar = generateSidebarElement(doc);
-
-    // remove the body div's content and append the new header
-    const bodyDiv = doc.body.querySelector('div');
-    if (bodyDiv) {
-      bodyDiv.innerHTML = '';
-      if (header) {
-        bodyDiv.appendChild(header);
-      }
-      const contentDiv = doc.createElement('div');
-      contentDiv.style.flex = '1';
-      contentDiv.style.overflow = 'auto';
-      contentDiv.style.display = 'flex';
-      bodyDiv.appendChild(contentDiv);
-      if (form) {
-        contentDiv.appendChild(form);
-      }
-      if (sidebar) {
-        contentDiv.appendChild(sidebar);
-      }
-    }
-
-    return doc.documentElement.outerHTML;
-  };
 
   useEffect(() => {
     if (html) {
@@ -191,5 +122,74 @@ function QuikFormViewer({
     </div>
   );
 }
+
+const processHtml = (rawHtml: string, inline?: boolean): string => {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(rawHtml, 'text/html');
+
+  // Disable scrolling on iframe <html> to fix floating back button UI issue
+  const styleTag = doc.createElement('style');
+  styleTag.innerHTML = `
+      html {
+        overflow: hidden !important;
+      }
+
+      #alt-popup {
+        flex-direction: column;
+        }
+      body > div {
+        display: flex;
+        width: 100vw;
+        height: 100vh;
+        flex-direction: column;
+      }
+
+      body > div > table {
+        display: contents;
+      }
+
+      #modalBoxes #prepareToSignDialog {
+        flex-direction: column;
+            position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    max-width: 80%;
+    height: auto !important;
+    max-height: 80%;
+      }
+      #modalBoxes #mask {
+        width: 100vw;
+        height: 100vh;
+        top: 0;
+      }
+    `;
+  doc.head.prepend(styleTag);
+
+  const header = generateHeaderElement(doc, inline);
+  const form = generateFormElement(doc);
+  const sidebar = generateSidebarElement(doc);
+
+  // remove the body div's content and append the new header
+  const bodyDiv = doc.body.querySelector('div');
+  if (bodyDiv) {
+    bodyDiv.innerHTML = '';
+    if (header) {
+      bodyDiv.appendChild(header);
+    }
+    const contentDiv = doc.createElement('div');
+    contentDiv.style.flex = '1';
+    contentDiv.style.overflow = 'auto';
+    contentDiv.style.display = 'flex';
+    bodyDiv.appendChild(contentDiv);
+    if (form) {
+      contentDiv.appendChild(form);
+    }
+    if (sidebar) {
+      contentDiv.appendChild(sidebar);
+    }
+  }
+
+  return doc.documentElement.outerHTML;
+};
 
 export default QuikFormViewer;

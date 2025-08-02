@@ -209,21 +209,23 @@ function extractHeaderContent(oldHeader: HTMLDivElement) {
 
 function createNewHeaderElements(
   doc: Document,
-  content: ReturnType<typeof extractHeaderContent>
+  content: ReturnType<typeof extractHeaderContent>,
+  inline?: boolean
 ): HTMLDivElement {
   const newHeader = doc.createElement('div');
   newHeader.id = 'header';
 
-  // Back button (now inside the header)
-  const backButton = doc.createElement('button');
-  backButton.className = 'back-button';
-  backButton.innerHTML = BACK_BUTTON_ICON;
-  backButton.setAttribute(
-    'onclick',
-    `window.parent.postMessage({ type: 'QUIK_BACK_BUTTON_CLICK' }, '*');`
-  );
-
-  newHeader.appendChild(backButton);
+  if (!inline) {
+    // Back button (now inside the header)
+    const backButton = doc.createElement('button');
+    backButton.className = 'back-button';
+    backButton.innerHTML = BACK_BUTTON_ICON;
+    backButton.setAttribute(
+      'onclick',
+      `window.parent.postMessage({ type: 'QUIK_BACK_BUTTON_CLICK' }, '*');`
+    );
+    newHeader.appendChild(backButton);
+  }
 
   // Title Section
   const titleSection = doc.createElement('div');
@@ -299,7 +301,8 @@ function injectHeaderStyles(doc: Document): void {
 }
 
 export function generateHeaderElement(
-  doc: Document
+  doc: Document,
+  inline?: boolean
 ): HTMLDivElement | undefined {
   const oldHeader = doc.querySelector('#header') as HTMLDivElement;
 
@@ -311,7 +314,7 @@ export function generateHeaderElement(
   }
 
   const extractedContent = extractHeaderContent(oldHeader);
-  const newHeader = createNewHeaderElements(doc, extractedContent);
+  const newHeader = createNewHeaderElements(doc, extractedContent, inline);
   injectHeaderStyles(doc);
   return newHeader;
 }
