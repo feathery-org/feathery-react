@@ -289,6 +289,7 @@ function PhoneField({
               height: '100%',
               width: '100%',
               border: 'none',
+              margin: 0,
               ...(rightToLeft ? { textAlign: 'right' } : {}),
               ...bootstrapStyles,
               ...responsiveStyles.getTarget('field'),

@@ -180,6 +180,7 @@ export default function DropdownField({
             width: '100%',
             height: '100%',
             border: 'none',
+            margin: 0,
             boxShadow: 'none',
             backgroundColor: 'transparent',
             appearance: 'none',
