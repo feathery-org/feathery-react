@@ -2076,7 +2076,10 @@ function Form({
           if (payload.error) setElementError(payload.error);
           else if (action.form_fill_type === 'html' && payload.html) {
             featheryWindow().QuikFeatherySubmitAction = () => {
-              flowOnSuccess(i)().then(() => setShowQuikFormViewer(false));
+              flowOnSuccess(i)().then(() => {
+                // Avoid flicker of step before it navigates
+                setTimeout(() => setShowQuikFormViewer(false), 500);
+              });
             };
             featheryWindow().QuikFeatheryBackAction = () => {
               // Turn off loaders if user leaves the Quik viewer without

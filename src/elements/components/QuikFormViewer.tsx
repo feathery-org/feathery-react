@@ -84,6 +84,7 @@ function QuikFormViewer({
           ? { width: '100%', height: '100%', overflow: 'auto' }
           : {
               position: 'fixed',
+              left: 0,
               backgroundColor: '#fff',
               minWidth: '100vw',
               height: '100vh',
