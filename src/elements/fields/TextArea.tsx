@@ -52,6 +52,7 @@ function TextArea({
           width: '100%',
           // Prevent placeholder overflow
           overflowX: 'hidden',
+          display: 'flex',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
           '&:hover': hoverStylesGuard(
