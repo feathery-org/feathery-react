@@ -1,12 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useThumbnailData } from '../../utils/image';
-import { isEmptyArray, justRemove, toList } from '../../utils/array';
 
 import { Image } from 'react-bootstrap';
-import { CloseIcon, DownloadIcon, FileUploadIcon } from '../components/icons';
-import { imgMaxSizeStyles } from '../styles';
-import { FORM_Z_INDEX } from '../../utils/styles';
-import { downloadFile, iosScrollOnFocus } from '../../utils/browser';
+import { useThumbnailData } from '../../../utils/image';
+import { isEmptyArray, justRemove, toList } from '../../../utils/array';
+import { imgMaxSizeStyles } from '../../styles';
+import {
+  CloseIcon,
+  DownloadIcon,
+  FileUploadIcon
+} from '../../components/icons';
+import { downloadFile, iosScrollOnFocus } from '../../../utils/browser';
+import { FORM_Z_INDEX } from '../../../utils/styles';
 
 const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 const NUM_FILES_LIMIT = 20;
@@ -25,9 +29,9 @@ function FileUploadField({
   const servar = element.servar;
   const showLabel = servar.name !== '';
   const isMultiple = servar.metadata.multiple;
-  const fileInput = useRef<any>(undefined);
+  const fileInput = useRef<HTMLInputElement>(null);
 
-  const [rawFiles, setRawFiles] = useState<any[]>([]);
+  const [rawFiles, setRawFiles] = useState<Promise<File>[]>([]);
   const [hoverDownload, setHoverDownload] = useState(-1);
 
   useEffect(() => {
@@ -60,7 +64,8 @@ function FileUploadField({
 
   const onClick = () => {
     if (!allowMoreFiles && !hidePreview) return;
-    fileInput.current.click();
+    if (disabled) return;
+    fileInput.current?.click();
   };
 
   const allowedFileTypes: string[] = [...servar.metadata.file_types];
@@ -105,7 +110,7 @@ function FileUploadField({
     : DEFAULT_FILE_SIZE_LIMIT;
 
   const validateFileSizes = (files: File[]) => {
-    if (files.some((file: any) => file.size > fileSizeLimit)) {
+    if (files.some((file) => file.size > fileSizeLimit)) {
       let sizeLabel = '';
       if (fileSizeLimit < 1024) sizeLabel = `${fileSizeLimit} bytes`;
       else if (fileSizeLimit <= 1024 * 1024) {
@@ -122,6 +127,7 @@ function FileUploadField({
   // When the user uploads files to the multi-file upload, we just append to the existing set
   // By default the input element would just replace all the uploaded files (we don't want that)
   const handleFiles = async (filelist: FileList) => {
+    if (disabled) return;
     let files = Array.from(filelist);
     if (!isMultiple) {
       files = [files[0]];
@@ -133,7 +139,7 @@ function FileUploadField({
 
       const originalLength = hidePreview ? 0 : rawFiles.length;
       if (files.length + originalLength > NUM_FILES_LIMIT) {
-        // Splice off the uploaded files past the upload count
+        // Splice off the uploaded files past the upload limit
         files.splice(NUM_FILES_LIMIT - originalLength);
       }
 
@@ -150,13 +156,16 @@ function FileUploadField({
       }
       setRawFiles(newRawFiles);
       customOnChange(newRawFiles, length);
+      fileInput.current?.setCustomValidity('');
 
       // Wipe the value of the upload element so we can upload multiple copies of the same file
       // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
-      fileInput.current.value = [];
+      if (fileInput.current) {
+        fileInput.current.value = '';
+      }
     } catch (error: any) {
-      fileInput.current.setCustomValidity(error.message);
-      fileInput.current.reportValidity();
+      fileInput.current?.setCustomValidity(error.message);
+      fileInput.current?.reportValidity();
     }
   };
 
@@ -202,7 +211,7 @@ function FileUploadField({
     >
       {children}
       {!hidePreview &&
-        thumbnailData.map(({ filename, thumbnail }: any, index: any) => (
+        thumbnailData.map(({ filename, thumbnail }, index) => (
           <div
             key={index}
             css={{
@@ -289,10 +298,12 @@ function FileUploadField({
                 transition: '0.2s ease all',
                 '&:hover': { backgroundColor: '#BBB' }
               }}
+              role='button'
+              aria-label='Clear file'
               onClick={(event) => {
                 // Stop propagation so window doesn't open up to pick another file to upload
                 event.stopPropagation();
-                fileInput.current.setCustomValidity('');
+                fileInput.current?.setCustomValidity('');
                 onClear(index)();
               }}
             >
