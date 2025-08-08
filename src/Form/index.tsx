@@ -24,6 +24,7 @@ import {
   getAllElements,
   getAllFields,
   getDefaultFieldValue,
+  getDefaultFormFieldValue,
   getFieldValue,
   getInitialStep,
   getNewStepUrl,
@@ -57,6 +58,7 @@ import {
 } from '../utils/repeat';
 import {
   getHideIfReferences,
+  getPositionKey,
   getVisiblePositions
 } from '../utils/hideAndRepeats';
 import { validateElements, validators } from '../utils/validation';
@@ -323,6 +325,7 @@ function Form({
     allowEdits: true,
     saveUrlParams: false,
     saveHideIfFields: false,
+    clearHideIfFields: false,
     completionBehavior: '',
     globalStyles: {},
     mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT
@@ -1044,10 +1047,26 @@ function Form({
     });
   };
 
-  const visiblePositions = useMemo(
-    () => (activeStep ? getVisiblePositions(activeStep, _internalId) : null),
-    [activeStep, render]
-  );
+  const visiblePositions = useMemo(() => {
+    if (!activeStep) return null;
+    const visiblePositions = getVisiblePositions(activeStep, _internalId);
+
+    if (formSettings.clearHideIfFields) {
+      // Automatically clear form fields that are hidden
+      const newFieldVals: Record<string, any> = {};
+      activeStep.servar_fields.forEach((sf: any) => {
+        const key = getPositionKey(sf);
+        if (!visiblePositions[key][0])
+          newFieldVals[sf.servar.key] = getDefaultFormFieldValue(sf);
+      });
+      if (Object.keys(newFieldVals).length) {
+        updateFieldValues(newFieldVals);
+        client.submitCustom(newFieldVals);
+      }
+    }
+
+    return visiblePositions;
+  }, [activeStep, render, formSettings]);
 
   useEffect(() => {
     if (clientRef.current) return;

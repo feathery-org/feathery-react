@@ -968,6 +968,7 @@ export function mapFormSettingsResponse(res: any) {
     enterToSubmit: res.enter_submit,
     globalStyles: res.global_styles,
     saveHideIfFields: res.save_hide_if_fields,
+    clearHideIfFields: res.clear_hide_if_fields,
     mobileBreakpoint: res.mobile_breakpoint ?? DEFAULT_MOBILE_BREAKPOINT
   };
 }
