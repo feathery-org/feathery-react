@@ -280,6 +280,7 @@ export const getContainerStyles = (
         s.maxHeight = `max-content`;
 
         if (!node.uuid && overflow) {
+          if (overflow === 'scroll') overflow = 'auto';
           s.height = `${height}${heightUnit}`;
           s.maxHeight = `${height}${heightUnit}`;
           s.overflowY = overflow;
