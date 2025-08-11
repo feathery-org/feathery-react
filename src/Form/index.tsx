@@ -1056,8 +1056,14 @@ function Form({
       const newFieldVals: Record<string, any> = {};
       activeStep.servar_fields.forEach((sf: any) => {
         const key = getPositionKey(sf);
-        if (!visiblePositions[key][0])
-          newFieldVals[sf.servar.key] = getDefaultFormFieldValue(sf);
+        if (!visiblePositions[key][0]) {
+          const newVal = getDefaultFormFieldValue(sf);
+          if (
+            JSON.stringify(newVal) !== JSON.stringify(getFieldValue(sf).value)
+          ) {
+            newFieldVals[sf.servar.key] = newVal;
+          }
+        }
       });
       if (Object.keys(newFieldVals).length) {
         updateFieldValues(newFieldVals);
