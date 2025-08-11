@@ -958,4 +958,29 @@ export default class FeatheryClient extends IntegrationClient {
       }
     });
   }
+
+  async setCollaboratorAsCompleted(templateId: string) {
+    const { userId } = initInfo();
+    const data: Record<string, any> = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      template_id: templateId
+    };
+
+    const url = `${API_URL}collaborator/complete/`;
+    return this._fetch(
+      url,
+      {
+        headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH',
+        body: JSON.stringify(data)
+      },
+      false
+    ).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseError(await response.json()));
+      }
+    });
+  }
 }

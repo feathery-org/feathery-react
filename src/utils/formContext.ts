@@ -15,10 +15,10 @@ import {
 } from './init';
 import internalState, {
   AlloyEntities,
-  LoanProCustomerObject,
   GetConfigParams,
   IntegrationActionIds,
   IntegrationActionOptions,
+  LoanProCustomerObject,
   setFormInternalState
 } from './internalState';
 import { validateElements } from './validation';
@@ -158,6 +158,8 @@ export const getFormContext = (formUuid: string) => {
       formState.client.searchLoanProCustomerByAuthorizedEmail(),
     createLoanProCustomer: (bodyParams: LoanProCustomerObject) =>
       formState.client.createLoanProCustomerWithAuthorizedEmail(bodyParams),
+    setCollaboratorAsCompleted: (templateId: string) =>
+      formState.client.setCollaboratorAsCompleted(templateId),
     getQuikForms: (props: { dealerNames: string[] }) =>
       formState.client.getQuikForms(props),
     getQuikFormRoles: (props: { formIds: number[] }) =>
