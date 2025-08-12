@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { featheryDoc, featheryWindow } from '../../utils/browser';
 import { generateHeaderElement } from './QuikFormViewer/transforms/header';
 import { generateFormElement } from './QuikFormViewer/transforms/form';
 import { generateSidebarElement } from './QuikFormViewer/transforms/sidebar';
 import FeatheryClient from '../../utils/featheryClient';
 
+const MIN_DOC_SCALE = 0.4;
 interface FrameProps {
   html?: string;
   css?: any;
@@ -21,7 +22,25 @@ function QuikFormViewer({
   formKey
 }: FrameProps) {
   const [htmlContent, setHtmlContent] = React.useState<string | null>(null);
+  const [loaded, setLoaded] = React.useState(false);
   const fetchedRef = React.useRef(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // calculate the scale of the document to fit without x-scroll
+  // use transform scale to handle resizing of text and controls
+  const scaleDocument = (doc: Document) => {
+    const pageList = doc.querySelector('#QFVPageList') as HTMLUListElement;
+    if (!pageList) {
+      return;
+    }
+    const parentWidth = pageList.parentElement?.clientWidth || 0;
+    const unscaledWidth = pageList.scrollWidth;
+    const targetScale = parentWidth / unscaledWidth;
+
+    pageList.style.transformOrigin = 'top left';
+    pageList.style.transform = `scale(${Math.max(targetScale, MIN_DOC_SCALE)})`;
+  };
 
   useEffect(() => {
     if (inline && formKey) {
@@ -75,13 +94,36 @@ function QuikFormViewer({
     };
   }, [setShow]);
 
+  // resize the document pdf on load and resize
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    const scale = () => {
+      const currIframe = iframeRef.current;
+      if (currIframe && currIframe.contentDocument) {
+        scaleDocument(currIframe.contentDocument);
+        setLoaded(true);
+      }
+    };
+
+    iframe.addEventListener('load', scale);
+    window.addEventListener('resize', scale);
+
+    return () => {
+      iframe.removeEventListener('load', scale);
+      window.removeEventListener('resize', scale);
+    };
+  }, [htmlContent]);
+
   if (!htmlContent) return <div>Loading...</div>;
 
   return (
     <div
+      ref={containerRef}
       css={
         inline
-          ? { width: '100%', height: '100%', overflow: 'auto' }
+          ? { width: '100%', height: '100%', overflow: 'hidden' }
           : {
               position: 'fixed',
               left: 0,
@@ -93,10 +135,21 @@ function QuikFormViewer({
             }
       }
     >
+      {(!htmlContent || !loaded) && (
+        <div
+          css={{
+            position: 'absolute'
+          }}
+        >
+          Loading...
+        </div>
+      )}
       {htmlContent && (
         <iframe
+          ref={iframeRef}
           src='about:blank'
           srcDoc={htmlContent}
+          style={{ opacity: loaded ? 1 : 0 }}
           css={
             inline
               ? {

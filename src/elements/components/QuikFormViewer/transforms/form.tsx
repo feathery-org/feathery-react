@@ -3,8 +3,9 @@ const FORM_STYLES = `
     display: flex;
     flex: 1;
     flex-direction: column;
-    width: 100%;
     margin: 0 auto;
+    overflow: auto;
+    flex-shrink: 1;
   }
   #wrapper {
     position: static;
@@ -24,11 +25,13 @@ const FORM_STYLES = `
   #QFVPageList {
     position: relative;
     border: none !important;
+    width: fit-content !important;
+    transform-origin: top left;
   }
 
   #QFVPageList li {
     position: relative;
-    margin: 5% 15pt;
+    margin: 15pt;
     border: none !important;
     box-shadow: 0px 1.05px 5.27px 0px #23254340;
     border-radius: 8px;
@@ -36,7 +39,6 @@ const FORM_STYLES = `
   }
 
   #QFVPageList li > div {
-    width: 100% !important;
     height: auto !important;
     position: relative;
     overflow: hidden;
@@ -91,7 +93,6 @@ function repositionFormInputs(doc: Document): void {
   ) as NodeListOf<HTMLDivElement>;
 
   pages.forEach((page) => {
-    // Dynamically get the page's dimensions from its style attribute.
     const pageWidthPt = parsePtValue(page.style.width);
     const pageHeightPt = parsePtValue(page.style.height);
 
@@ -100,7 +101,7 @@ function repositionFormInputs(doc: Document): void {
         'Could not determine page dimensions from style attribute:',
         page
       );
-      return; // Skip this page if dimensions are not found.
+      return;
     }
 
     // Get all child elements of the page, not just inputs.
@@ -109,30 +110,10 @@ function repositionFormInputs(doc: Document): void {
       if (element instanceof HTMLElement) {
         const style = element.style;
 
-        // Get original pt values for all relevant properties.
         const currentTopPt = parsePtValue(style.top);
-        let currentLeftPt = parsePtValue(style.left);
-        const currentWidthPt = parsePtValue(style.width);
-        const currentHeightPt = parsePtValue(style.height);
-
-        // Recalculate relative top position in pt by subtracting the cumulative page offset.
         const relativeTopPt = currentTopPt - pageOffsetPt;
 
-        if (element.tagName === 'LABEL') {
-          currentLeftPt -= 2; // Adjust for label (radio box)'s left offset
-        }
-
-        // Convert pt values to percentages.
-        const newTopPercent = (relativeTopPt / pageHeightPt) * 100;
-        const newLeftPercent = (currentLeftPt / pageWidthPt) * 100;
-        const newWidthPercent = (currentWidthPt / pageWidthPt) * 100;
-        const newHeightPercent = (currentHeightPt / pageHeightPt) * 100;
-
-        // Update the element's style with percentage values.
-        style.top = `${newTopPercent.toFixed(2)}%`;
-        style.left = `${newLeftPercent.toFixed(2)}%`;
-        style.width = `${newWidthPercent.toFixed(2)}%`;
-        style.height = `${newHeightPercent.toFixed(2)}%`;
+        style.top = `${relativeTopPt.toFixed(2)}pt`;
 
         if (element.tagName === 'LABEL') {
           element.className = `input-label ${element.className}`;
@@ -140,7 +121,6 @@ function repositionFormInputs(doc: Document): void {
       }
     });
 
-    // Update the cumulative page offset for the next page.
     pageOffsetPt += pageHeightPt + 1.5; // Add 1.5pt for the top border of the next page
   });
 }
