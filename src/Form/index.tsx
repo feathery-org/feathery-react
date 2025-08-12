@@ -197,6 +197,11 @@ import QuikFormViewer from '../elements/components/QuikFormViewer';
 import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
 import usePollFuserData from '../hooks/usePollFuserData';
+import { ReusableLogicInfo } from './definitions';
+import {
+  extractExportedCodeInfoArray,
+  replaceImportsWithDefinitions
+} from './utils';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -341,6 +346,9 @@ function Form({
 
   const [connectorFields, setConnectorFields] = useState<any>();
   const [logicRules, setLogicRules] = useState<LogicRule[]>([]);
+  const [reusableLogicModules, setReusableLogicModules] = useState<
+    ReusableLogicInfo[]
+  >([]);
   const [inlineErrors, setInlineErrors] = useState<
     Record<string, { message: string; index: number }>
   >({});
@@ -405,6 +413,14 @@ function Form({
   // Tracks if the form has redirected
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
+
+  const extractedReusableLogicInfo = useMemo(
+    () =>
+      extractExportedCodeInfoArray(
+        Object.values(reusableLogicModules) as ReusableLogicInfo[]
+      ),
+    [reusableLogicModules]
+  );
 
   useEffect(() => {
     // TODO: remove support for formName (deprecated)
@@ -736,6 +752,15 @@ function Form({
 
           if (toAwait) await toAwait;
 
+          let logicRuleCode = logicRule.code;
+
+          if (reusableLogicModules.length > 0) {
+            logicRuleCode = replaceImportsWithDefinitions(
+              logicRule.code,
+              extractedReusableLogicInfo
+            );
+          }
+
           // Note:
           // AsyncFunction is nice and tidy but was throwing an error when trying to use await at
           // the top level of the user code.
@@ -743,7 +768,7 @@ function Form({
           // So, then tried eval instead, but had a serious issue with the webpacked published
           // lib which was just invalid. So, now wrapping the rule code
           // in an async function and calling it immediately from within an AsyncFunction.
-          const asyncWrappedCode = `return (async () => { ${logicRule.code}\n })()`;
+          const asyncWrappedCode = `return (async () => { ${logicRuleCode}\n })()`;
 
           // Do not inject field globals that are invalid js identifiers or that collide
           // with a javascript or browser reserved word. This avoids validation errors
@@ -1115,6 +1140,7 @@ function Form({
         setFormSettings({ ...formSettings, ...mapFormSettingsResponse(res) });
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);
+        setReusableLogicModules(res.reusable_logic_modules);
         trackHashes.current =
           hashNavigation !== undefined ? hashNavigation : res.track_hashes;
 
