@@ -414,13 +414,15 @@ function Form({
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
 
-  const extractedReusableLogicInfo = useMemo(
-    () =>
-      extractExportedCodeInfoArray(
-        Object.values(reusableLogicModules) as ReusableLogicInfo[]
-      ),
-    [reusableLogicModules]
-  );
+  const extractedReusableLogicInfo = useMemo(() => {
+    if (reusableLogicModules.length < 1) {
+      return [];
+    }
+
+    return extractExportedCodeInfoArray(
+      Object.values(reusableLogicModules) as ReusableLogicInfo[]
+    );
+  }, [reusableLogicModules]);
 
   useEffect(() => {
     // TODO: remove support for formName (deprecated)
@@ -754,7 +756,7 @@ function Form({
 
           let logicRuleCode = logicRule.code;
 
-          if (reusableLogicModules.length > 0) {
+          if (extractedReusableLogicInfo.length > 0) {
             logicRuleCode = replaceImportsWithDefinitions(
               logicRule.code,
               extractedReusableLogicInfo
