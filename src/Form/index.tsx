@@ -258,10 +258,18 @@ export interface LogicRule {
   valid: boolean;
 }
 
-const AsyncFunction = async function () {}.constructor;
+interface NextActionStateRef {
+  latestClickedButton: ClickActionElement | null;
+  isGettingNewStep: boolean;
+  timerIdGettingNewStep: NodeJS.Timeout | undefined;
+  isNextButtonAction: boolean;
+  timerIdNextActionFlag: NodeJS.Timeout | undefined;
+}
 
 const TIMER_CLEAR_FLAG_GET_NEW_STEP = 300;
 const TIMER_CLEAR_FLAG_NEXT_ACTION = 300;
+
+const AsyncFunction = async function () {}.constructor;
 
 function Form({
   _internalId,
@@ -409,10 +417,79 @@ function Form({
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
 
-  const timerIdNextActionFlag = useRef<NodeJS.Timeout | undefined>(undefined);
-  const latestClickedButton = useRef<ClickActionElement | null>(null);
-  const isGettingNewStep = useRef<boolean>(false);
-  const isNextAction = useRef<boolean>(false);
+  // Reference for handling the button state after navigating to the next step
+  const nextActionStateRef = useRef<NextActionStateRef>({
+    // This is for the most recently clicked Next Step button.
+    latestClickedButton: null,
+
+    // This is for the getNewStep state.
+    // isGettingNewStep = true
+    // await getNewStep()
+    // isGettingNewStep = false
+    isGettingNewStep: false,
+    timerIdGettingNewStep: undefined,
+
+    // This is for the buttonOnClick state.
+    // Since buttonOnClick is invoked externally by other components,
+    // we cannot use await for state handling like getNewStep() in this component scope.
+    // Instead, inside buttonOnClick, set isNextButtonAction to TRUE at the initial entry point
+    // and set it to FALSE just before the function returns to manage the buttonOnClick state.
+    isNextButtonAction: false,
+    timerIdNextActionFlag: undefined
+  });
+
+  const setNextButtonActionFlag = (
+    flag: boolean,
+    button?: ClickActionElement
+  ) => {
+    if (flag) {
+      nextActionStateRef.current.isNextButtonAction =
+        button?.properties.actions.some(
+          (action: any) => action.type === ACTION_NEXT
+        );
+    } else {
+      // After the Next button action finishes, there may still be other async work before the new step fully takes effect.
+      // To compensate for the timing gap between these two operations, use setTimeout to set the flag to false.
+      clearTimeout(nextActionStateRef.current.timerIdNextActionFlag);
+
+      nextActionStateRef.current.timerIdNextActionFlag = setTimeout(
+        () => (nextActionStateRef.current.isNextButtonAction = false),
+        TIMER_CLEAR_FLAG_NEXT_ACTION
+      );
+    }
+  };
+
+  const setGettingNewStepFlag = (flag: boolean) => {
+    if (flag) {
+      nextActionStateRef.current.isGettingNewStep = true;
+    } else {
+      // After the getNewStep finishes, there may still be other async work before the new step fully takes effect.
+      // To compensate for the timing gap between these two operations, use setTimeout to set the flag to false.
+      clearTimeout(nextActionStateRef.current.timerIdGettingNewStep);
+
+      nextActionStateRef.current.timerIdGettingNewStep = setTimeout(
+        () => (nextActionStateRef.current.isGettingNewStep = false),
+        TIMER_CLEAR_FLAG_GET_NEW_STEP
+      );
+    }
+  };
+
+  const setNextButtonLoading = (loading: boolean) => {
+    if (loading) {
+      if (Array.isArray(activeStep?.buttons)) {
+        const clickedButton = activeStep.buttons.find(
+          (button: any) =>
+            button.id === nextActionStateRef.current.latestClickedButton?.id
+        );
+
+        if (clickedButton) {
+          setButtonLoader(clickedButton);
+        }
+      }
+    } else {
+      clearLoaders();
+    }
+  };
 
   useEffect(() => {
     // TODO: remove support for formName (deprecated)
@@ -437,7 +514,7 @@ function Form({
     return () => {
       delete initState.renderCallbacks[_internalId];
       delete initState.redirectCallbacks[_internalId];
-      clearTimeout(timerIdNextActionFlag.current);
+      clearTimeout(nextActionStateRef.current.timerIdNextActionFlag);
     };
   }, []);
 
@@ -1228,32 +1305,20 @@ function Form({
   }, [location]);
 
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout | undefined;
-
+    // Use await to handle getNewStep’s async state
+    // and to avoid the useEffect(async () => ...) pattern,
+    // declare an async function inside useEffect and call it.
     const runGetNewStep = async () => {
       try {
-        isGettingNewStep.current = true;
-
-        if (Array.isArray(activeStep?.buttons)) {
-          const clickedButton = activeStep.buttons.find(
-            (button: any) => button.id === latestClickedButton.current?.id
-          );
-
-          if (clickedButton) {
-            setButtonLoader(clickedButton);
-          }
-        }
+        setGettingNewStepFlag(true);
+        setNextButtonLoading(true);
 
         await getNewStep(stepKey);
       } catch (e) {
         console.error(e);
       } finally {
-        clearLoaders();
-
-        timeoutId = setTimeout(
-          () => (isGettingNewStep.current = false),
-          TIMER_CLEAR_FLAG_GET_NEW_STEP
-        );
+        setNextButtonLoading(false);
+        setGettingNewStepFlag(false);
       }
     };
 
@@ -1267,7 +1332,7 @@ function Form({
     }
 
     return () => {
-      clearTimeout(timeoutId);
+      clearTimeout(nextActionStateRef.current.timerIdGettingNewStep);
     };
   }, [stepKey, render]);
 
@@ -1669,15 +1734,17 @@ function Form({
   };
 
   const buttonOnClick = async (button: ClickActionElement) => {
-    if (isGettingNewStep.current || isNextAction.current) {
+    // Return early if any button action or getNewStep related async logic is still in progress.
+    if (
+      nextActionStateRef.current.isGettingNewStep ||
+      nextActionStateRef.current.isNextButtonAction
+    ) {
       return;
     }
 
-    isNextAction.current = button.properties.actions.some(
-      (action: any) => action.type === ACTION_NEXT
-    );
+    setNextButtonActionFlag(true);
 
-    latestClickedButton.current = button;
+    nextActionStateRef.current.latestClickedButton = button;
 
     await setButtonLoader(button);
 
@@ -1706,11 +1773,7 @@ function Form({
         if (invalid) {
           setButtonError("You didn't pass CAPTCHA verification");
 
-          clearTimeout(timerIdNextActionFlag.current);
-          timerIdNextActionFlag.current = setTimeout(
-            () => (isNextAction.current = false),
-            TIMER_CLEAR_FLAG_NEXT_ACTION
-          );
+          setNextButtonActionFlag(false);
 
           return;
         }
@@ -1731,11 +1794,7 @@ function Form({
       else clearLoaders();
     }
 
-    clearTimeout(timerIdNextActionFlag.current);
-    timerIdNextActionFlag.current = setTimeout(
-      () => (isNextAction.current = false),
-      TIMER_CLEAR_FLAG_NEXT_ACTION
-    );
+    setNextButtonActionFlag(false);
   };
 
   const runElementActions = async ({
