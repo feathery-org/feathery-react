@@ -271,7 +271,7 @@ export const getABVariant = (stepRes: any) => {
     stepRes.version = stepRes.variant_version;
     stepRes.steps = stepRes.variant;
     stepRes.logic_rules = stepRes.variant_logic_rules;
-    stepRes.reusable_logic_modules = stepRes.variant_reusable_logic_modules;
+    stepRes.reusable_logics = stepRes.variant_reusable_logics;
     stepRes.connector_fields = stepRes.variant_connector_fields;
   }
 
@@ -279,7 +279,7 @@ export const getABVariant = (stepRes: any) => {
   delete stepRes.variant_version;
   delete stepRes.variant;
   delete stepRes.variant_logic_rules;
-  delete stepRes.variant_reusable_logic_modules;
+  delete stepRes.variant_reusable_logics;
   delete stepRes.variant_connector_fields;
   return stepRes;
 };

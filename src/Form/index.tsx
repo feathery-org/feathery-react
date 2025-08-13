@@ -346,9 +346,7 @@ function Form({
 
   const [connectorFields, setConnectorFields] = useState<any>();
   const [logicRules, setLogicRules] = useState<LogicRule[]>([]);
-  const [reusableLogicModules, setReusableLogicModules] = useState<
-    ReusableLogicInfo[]
-  >([]);
+  const [reusableLogics, setReusableLogics] = useState<ReusableLogicInfo[]>([]);
   const [inlineErrors, setInlineErrors] = useState<
     Record<string, { message: string; index: number }>
   >({});
@@ -415,14 +413,14 @@ function Form({
   const elementClicks = useRef<any>({}).current;
 
   const extractedReusableLogicInfo = useMemo(() => {
-    if (reusableLogicModules.length < 1) {
+    if (reusableLogics.length < 1) {
       return [];
     }
 
     return extractExportedCodeInfoArray(
-      Object.values(reusableLogicModules) as ReusableLogicInfo[]
+      Object.values(reusableLogics) as ReusableLogicInfo[]
     );
-  }, [reusableLogicModules]);
+  }, [reusableLogics]);
 
   useEffect(() => {
     // TODO: remove support for formName (deprecated)
@@ -1142,7 +1140,7 @@ function Form({
         setFormSettings({ ...formSettings, ...mapFormSettingsResponse(res) });
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);
-        setReusableLogicModules(res.reusable_logic_modules);
+        setReusableLogics(res.reusable_logics);
         trackHashes.current =
           hashNavigation !== undefined ? hashNavigation : res.track_hashes;
 
