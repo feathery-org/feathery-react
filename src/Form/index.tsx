@@ -260,6 +260,9 @@ export interface LogicRule {
 
 const AsyncFunction = async function () {}.constructor;
 
+const TIMER_CLEAR_FLAG_GET_NEW_STEP = 300;
+const TIMER_CLEAR_FLAG_NEXT_ACTION = 300;
+
 function Form({
   _internalId,
   _isAuthLoading = false,
@@ -406,6 +409,11 @@ function Form({
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
 
+  const timerIdNextActionFlag = useRef<NodeJS.Timeout | undefined>(undefined);
+  const latestClickedButton = useRef<ClickActionElement | null>(null);
+  const isGettingNewStep = useRef<boolean>(false);
+  const isNextAction = useRef<boolean>(false);
+
   useEffect(() => {
     // TODO: remove support for formName (deprecated)
     if (formNameProp) {
@@ -429,6 +437,7 @@ function Form({
     return () => {
       delete initState.renderCallbacks[_internalId];
       delete initState.redirectCallbacks[_internalId];
+      clearTimeout(timerIdNextActionFlag.current);
     };
   }, []);
 
@@ -1219,10 +1228,47 @@ function Form({
   }, [location]);
 
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout | undefined;
+
+    const runGetNewStep = async () => {
+      try {
+        isGettingNewStep.current = true;
+
+        if (Array.isArray(activeStep?.buttons)) {
+          const clickedButton = activeStep.buttons.find(
+            (button: any) => button.id === latestClickedButton.current?.id
+          );
+
+          if (clickedButton) {
+            setButtonLoader(clickedButton);
+          }
+        }
+
+        await getNewStep(stepKey);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        clearLoaders();
+
+        timeoutId = setTimeout(
+          () => (isGettingNewStep.current = false),
+          TIMER_CLEAR_FLAG_GET_NEW_STEP
+        );
+      }
+    };
+
     // We set render to re-evaluate auth nav rules - but should only getNewStep if either the step or authId has changed.
     // Should not fetch new step if render was set for another reason
-    if (stepKey && (prevStepKey !== stepKey || prevAuthId !== authState.authId))
-      getNewStep(stepKey);
+    if (
+      stepKey &&
+      (prevStepKey !== stepKey || prevAuthId !== authState.authId)
+    ) {
+      runGetNewStep();
+    }
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
   }, [stepKey, render]);
 
   // Note: If index is provided, handleChange assumes the field is a repeated field
@@ -1623,6 +1669,16 @@ function Form({
   };
 
   const buttonOnClick = async (button: ClickActionElement) => {
+    if (isGettingNewStep.current || isNextAction.current) {
+      return;
+    }
+
+    isNextAction.current = button.properties.actions.some(
+      (action: any) => action.type === ACTION_NEXT
+    );
+
+    latestClickedButton.current = button;
+
     await setButtonLoader(button);
 
     const setButtonError = (message: string) => {
@@ -1649,6 +1705,13 @@ function Form({
         const invalid = await verifyRecaptcha(client);
         if (invalid) {
           setButtonError("You didn't pass CAPTCHA verification");
+
+          clearTimeout(timerIdNextActionFlag.current);
+          timerIdNextActionFlag.current = setTimeout(
+            () => (isNextAction.current = false),
+            TIMER_CLEAR_FLAG_NEXT_ACTION
+          );
+
           return;
         }
       }
@@ -1667,6 +1730,12 @@ function Form({
       if (e) setButtonError(e.toString());
       else clearLoaders();
     }
+
+    clearTimeout(timerIdNextActionFlag.current);
+    timerIdNextActionFlag.current = setTimeout(
+      () => (isNextAction.current = false),
+      TIMER_CLEAR_FLAG_NEXT_ACTION
+    );
   };
 
   const runElementActions = async ({
