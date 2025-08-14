@@ -191,16 +191,21 @@ export default class FeatheryClient extends IntegrationClient {
     const fileValue = await this._getFileValue(servar);
 
     let numFiles = 0;
-    if (fileValue) {
+
+    if (fileValue || fileValue === '') {
       if (Array.isArray(fileValue)) {
-        fileValue
-          .filter((file) => !!file)
-          .forEach((file) => formData.append(servar.key, file));
-        numFiles = fileValue.length;
-      } else {
+        const validFiles = fileValue.filter((file) => !!file && file !== '');
+        validFiles.forEach((file) => formData.append(servar.key, file));
+        numFiles = validFiles.length;
+      } else if (fileValue !== '') {
         formData.append(servar.key, fileValue);
         numFiles = 1;
       }
+    }
+
+    // If no files, clear field
+    if (numFiles === 0) {
+      formData.append(servar.key, '');
     }
 
     // This isn't a perfect guard against duplicate, unnecessary
