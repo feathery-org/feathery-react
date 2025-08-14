@@ -197,6 +197,7 @@ import QuikFormViewer from '../elements/components/QuikFormViewer';
 import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
 import usePollFuserData from '../hooks/usePollFuserData';
+import { useNextActionState } from './hooks';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -241,7 +242,7 @@ interface InternalProps {
   _pollFuserData?: boolean; // Poll for updated fuser data on BE. Used by audio AI.
 }
 
-interface ClickActionElement {
+export interface ClickActionElement {
   id: string;
   properties: { [key: string]: any };
   repeat?: any;
@@ -257,17 +258,6 @@ export interface LogicRule {
   enabled: boolean;
   valid: boolean;
 }
-
-interface NextActionStateRef {
-  latestClickedButton: ClickActionElement | null;
-  isGettingNewStep: boolean;
-  timerIdGettingNewStep: NodeJS.Timeout | undefined;
-  isNextButtonAction: boolean;
-  timerIdNextActionFlag: NodeJS.Timeout | undefined;
-}
-
-const TIMER_CLEAR_FLAG_GET_NEW_STEP = 300;
-const TIMER_CLEAR_FLAG_NEXT_ACTION = 300;
 
 const AsyncFunction = async function () {}.constructor;
 
@@ -416,80 +406,6 @@ function Form({
   // Tracks if the form has redirected
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
-
-  // Reference for handling the button state after navigating to the next step
-  const nextActionStateRef = useRef<NextActionStateRef>({
-    // This is for the most recently clicked Next Step button.
-    latestClickedButton: null,
-
-    // This is for the getNewStep state.
-    // isGettingNewStep = true
-    // await getNewStep()
-    // isGettingNewStep = false
-    isGettingNewStep: false,
-    timerIdGettingNewStep: undefined,
-
-    // This is for the buttonOnClick state.
-    // Since buttonOnClick is invoked externally by other components,
-    // we cannot use await for state handling like getNewStep() in this component scope.
-    // Instead, inside buttonOnClick, set isNextButtonAction to TRUE at the initial entry point
-    // and set it to FALSE just before the function returns to manage the buttonOnClick state.
-    isNextButtonAction: false,
-    timerIdNextActionFlag: undefined
-  });
-
-  const setNextButtonActionFlag = (
-    flag: boolean,
-    button?: ClickActionElement
-  ) => {
-    if (flag) {
-      nextActionStateRef.current.isNextButtonAction =
-        button?.properties.actions.some(
-          (action: any) => action.type === ACTION_NEXT
-        );
-    } else {
-      // After the Next button action finishes, there may still be other async work before the new step fully takes effect.
-      // To compensate for the timing gap between these two operations, use setTimeout to set the flag to false.
-      clearTimeout(nextActionStateRef.current.timerIdNextActionFlag);
-
-      nextActionStateRef.current.timerIdNextActionFlag = setTimeout(
-        () => (nextActionStateRef.current.isNextButtonAction = false),
-        TIMER_CLEAR_FLAG_NEXT_ACTION
-      );
-    }
-  };
-
-  const setGettingNewStepFlag = (flag: boolean) => {
-    if (flag) {
-      nextActionStateRef.current.isGettingNewStep = true;
-    } else {
-      // After the getNewStep finishes, there may still be other async work before the new step fully takes effect.
-      // To compensate for the timing gap between these two operations, use setTimeout to set the flag to false.
-      clearTimeout(nextActionStateRef.current.timerIdGettingNewStep);
-
-      nextActionStateRef.current.timerIdGettingNewStep = setTimeout(
-        () => (nextActionStateRef.current.isGettingNewStep = false),
-        TIMER_CLEAR_FLAG_GET_NEW_STEP
-      );
-    }
-  };
-
-  const setNextButtonLoading = (loading: boolean) => {
-    if (loading) {
-      if (Array.isArray(activeStep?.buttons)) {
-        const clickedButton = activeStep.buttons.find(
-          (button: any) =>
-            button.id === nextActionStateRef.current.latestClickedButton?.id
-        );
-
-        if (clickedButton) {
-          setButtonLoader(clickedButton);
-        }
-      }
-    } else {
-      clearLoaders();
-    }
-  };
 
   useEffect(() => {
     // TODO: remove support for formName (deprecated)
@@ -1733,6 +1649,13 @@ function Form({
     return state;
   };
 
+  const {
+    nextActionStateRef,
+    setNextButtonActionFlag,
+    setGettingNewStepFlag,
+    setNextButtonLoading
+  } = useNextActionState(activeStep, setButtonLoader, clearLoaders);
+
   const buttonOnClick = async (button: ClickActionElement) => {
     // Return early if any button action or getNewStep related async logic is still in progress.
     if (
@@ -1742,7 +1665,7 @@ function Form({
       return;
     }
 
-    setNextButtonActionFlag(true);
+    setNextButtonActionFlag(true, button);
 
     nextActionStateRef.current.latestClickedButton = button;
 
