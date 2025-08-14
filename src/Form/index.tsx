@@ -197,6 +197,7 @@ import QuikFormViewer from '../elements/components/QuikFormViewer';
 import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
 import usePollFuserData from '../hooks/usePollFuserData';
+import { useNextActionState } from './hooks';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -241,7 +242,7 @@ interface InternalProps {
   _pollFuserData?: boolean; // Poll for updated fuser data on BE. Used by audio AI.
 }
 
-interface ClickActionElement {
+export interface ClickActionElement {
   id: string;
   properties: { [key: string]: any };
   repeat?: any;
@@ -429,6 +430,7 @@ function Form({
     return () => {
       delete initState.renderCallbacks[_internalId];
       delete initState.redirectCallbacks[_internalId];
+      clearTimeout(nextActionStateRef.current.timerIdNextActionFlag);
     };
   }, []);
 
@@ -1219,10 +1221,35 @@ function Form({
   }, [location]);
 
   useEffect(() => {
+    // Use await to handle getNewStep’s async state
+    // and to avoid the useEffect(async () => ...) pattern,
+    // declare an async function inside useEffect and call it.
+    const runGetNewStep = async () => {
+      try {
+        setGettingNewStepFlag(true);
+        setNextButtonLoading(true);
+
+        await getNewStep(stepKey);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setNextButtonLoading(false);
+        setGettingNewStepFlag(false);
+      }
+    };
+
     // We set render to re-evaluate auth nav rules - but should only getNewStep if either the step or authId has changed.
     // Should not fetch new step if render was set for another reason
-    if (stepKey && (prevStepKey !== stepKey || prevAuthId !== authState.authId))
-      getNewStep(stepKey);
+    if (
+      stepKey &&
+      (prevStepKey !== stepKey || prevAuthId !== authState.authId)
+    ) {
+      runGetNewStep();
+    }
+
+    return () => {
+      clearTimeout(nextActionStateRef.current.timerIdGettingNewStep);
+    };
   }, [stepKey, render]);
 
   // Note: If index is provided, handleChange assumes the field is a repeated field
@@ -1622,7 +1649,26 @@ function Form({
     return state;
   };
 
+  const {
+    nextActionStateRef,
+    setNextButtonActionFlag,
+    setGettingNewStepFlag,
+    setNextButtonLoading
+  } = useNextActionState(activeStep, setButtonLoader, clearLoaders);
+
   const buttonOnClick = async (button: ClickActionElement) => {
+    // Return early if any button action or getNewStep related async logic is still in progress.
+    if (
+      nextActionStateRef.current.isGettingNewStep ||
+      nextActionStateRef.current.isNextButtonAction
+    ) {
+      return;
+    }
+
+    setNextButtonActionFlag(true, button);
+
+    nextActionStateRef.current.latestClickedButton = button;
+
     await setButtonLoader(button);
 
     const setButtonError = (message: string) => {
@@ -1649,6 +1695,9 @@ function Form({
         const invalid = await verifyRecaptcha(client);
         if (invalid) {
           setButtonError("You didn't pass CAPTCHA verification");
+
+          setNextButtonActionFlag(false);
+
           return;
         }
       }
@@ -1667,6 +1716,8 @@ function Form({
       if (e) setButtonError(e.toString());
       else clearLoaders();
     }
+
+    setNextButtonActionFlag(false);
   };
 
   const runElementActions = async ({
