@@ -45,6 +45,10 @@ export function useNextActionState(
   });
 
   const setNextButtonActionFlag: SetNextButtonActionFlag = (flag, button) => {
+    // After the Next button action finishes, there may still be other async work before the new step fully takes effect.
+    // To compensate for the timing gap between these two operations, use setTimeout to set the flag to false.
+    clearTimeout(nextActionStateRef.current.timerIdNextActionFlag);
+
     if (flag) {
       if (!button) {
         throw new Error('button is required if flag is true');
@@ -58,31 +62,37 @@ export function useNextActionState(
       return;
     }
 
-    // After the Next button action finishes, there may still be other async work before the new step fully takes effect.
-    // To compensate for the timing gap between these two operations, use setTimeout to set the flag to false.
+    nextActionStateRef.current.timerIdNextActionFlag = setTimeout(() => {
+      nextActionStateRef.current.isNextButtonAction = false;
+    }, TIMER_CLEAR_FLAG_NEXT_ACTION);
+  };
+
+  const clearNextActionTimer = () => {
     clearTimeout(nextActionStateRef.current.timerIdNextActionFlag);
 
-    nextActionStateRef.current.timerIdNextActionFlag = setTimeout(
-      () => (nextActionStateRef.current.isNextButtonAction = false),
-      TIMER_CLEAR_FLAG_NEXT_ACTION
-    );
+    nextActionStateRef.current.isNextButtonAction = false;
   };
 
   const setGettingNewStepFlag = (flag: boolean) => {
+    // After the getNewStep finishes, there may still be other async work before the new step fully takes effect.
+    // To compensate for the timing gap between these two operations, use setTimeout to set the flag to false.
+    clearTimeout(nextActionStateRef.current.timerIdGettingNewStep);
+
     if (flag) {
       nextActionStateRef.current.isGettingNewStep = true;
 
       return;
     }
 
-    // After the getNewStep finishes, there may still be other async work before the new step fully takes effect.
-    // To compensate for the timing gap between these two operations, use setTimeout to set the flag to false.
+    nextActionStateRef.current.timerIdGettingNewStep = setTimeout(() => {
+      nextActionStateRef.current.isGettingNewStep = false;
+    }, TIMER_CLEAR_FLAG_GET_NEW_STEP);
+  };
+
+  const clearGettingNewStepTimer = () => {
     clearTimeout(nextActionStateRef.current.timerIdGettingNewStep);
 
-    nextActionStateRef.current.timerIdGettingNewStep = setTimeout(
-      () => (nextActionStateRef.current.isGettingNewStep = false),
-      TIMER_CLEAR_FLAG_GET_NEW_STEP
-    );
+    nextActionStateRef.current.isGettingNewStep = false;
   };
 
   const setNextButtonLoading = (loading: boolean) => {
@@ -107,7 +117,9 @@ export function useNextActionState(
   return {
     nextActionStateRef,
     setNextButtonActionFlag,
+    clearNextActionTimer,
     setGettingNewStepFlag,
+    clearGettingNewStepTimer,
     setNextButtonLoading
   };
 }
