@@ -20,7 +20,8 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": false, // This is true in feathery-frontend, but needs to be false here
-    "noImplicitAny": true
+    "noImplicitAny": true,
+    "downlevelIteration": true // This enables to iterate the string set (Form/utils)
   },
   "exclude": ["node_modules", "src/**/*.spec.ts", "src/**/*.spec.js"],
   "include": ["./src/**/*"]
