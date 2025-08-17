@@ -184,24 +184,34 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   async _submitFileData(servar: any, stepKey: string) {
-    if (fileSubmittedMap[servar.key]) return;
-    fileSubmittedMap[servar.key] = true;
-
     const { userId } = initInfo();
     const url = `${API_URL}panel/step/submit/file/${userId}/`;
 
     const formData = new FormData();
     const fileValue = await this._getFileValue(servar);
 
-    if (fileValue) {
+    let numFiles = 0;
+
+    if (fileValue || fileValue === '') {
       if (Array.isArray(fileValue)) {
-        fileValue
-          .filter((file) => !!file)
-          .forEach((file) => formData.append(servar.key, file));
-      } else {
+        const validFiles = fileValue.filter((file) => !!file && file !== '');
+        validFiles.forEach((file) => formData.append(servar.key, file));
+        numFiles = validFiles.length;
+      } else if (fileValue !== '') {
         formData.append(servar.key, fileValue);
+        numFiles = 1;
       }
     }
+
+    // If no files, clear field
+    if (numFiles === 0) {
+      formData.append(servar.key, '');
+    }
+
+    // This isn't a perfect guard against duplicate, unnecessary
+    // file submissions but reduces the frequency
+    if (fileSubmittedMap[servar.key] === numFiles) return;
+    fileSubmittedMap[servar.key] = numFiles;
 
     formData.set('__feathery_form_key', this.formKey);
     formData.set('__feathery_step_key', stepKey);

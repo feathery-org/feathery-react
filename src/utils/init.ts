@@ -88,7 +88,7 @@ const initState: InitState = {
 let fieldValues: FieldValues = {};
 let filePathMap: Record<string, null | string | (string | null)[]> = {};
 // Don't resubmit files already submitted in the same session
-export const fileSubmittedMap: Record<string, boolean> = {};
+export const fileSubmittedMap: Record<string, number> = {};
 
 function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (!sdkKey || typeof sdkKey !== 'string') {

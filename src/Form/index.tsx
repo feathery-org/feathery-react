@@ -246,7 +246,7 @@ interface InternalProps {
   _pollFuserData?: boolean; // Poll for updated fuser data on BE. Used by audio AI.
 }
 
-interface ClickActionElement {
+export interface ClickActionElement {
   id: string;
   properties: { [key: string]: any };
   repeat?: any;
@@ -1247,8 +1247,12 @@ function Form({
   useEffect(() => {
     // We set render to re-evaluate auth nav rules - but should only getNewStep if either the step or authId has changed.
     // Should not fetch new step if render was set for another reason
-    if (stepKey && (prevStepKey !== stepKey || prevAuthId !== authState.authId))
+    if (
+      stepKey &&
+      (prevStepKey !== stepKey || prevAuthId !== authState.authId)
+    ) {
       getNewStep(stepKey);
+    }
   }, [stepKey, render]);
 
   // Note: If index is provided, handleChange assumes the field is a repeated field
@@ -1675,6 +1679,7 @@ function Form({
         const invalid = await verifyRecaptcha(client);
         if (invalid) {
           setButtonError("You didn't pass CAPTCHA verification");
+
           return;
         }
       }
