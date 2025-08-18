@@ -1282,7 +1282,6 @@ function Form({
       // In such cases, the flag does not get set to false correctly.
       // Therefore, we need to cancel the timer and explicitly set the flag to false on unmount.
       clearGettingNewStepTimer();
-      clearLoaders();
     };
   }, [stepKey, render]);
 
