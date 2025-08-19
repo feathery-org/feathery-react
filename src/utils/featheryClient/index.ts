@@ -831,9 +831,10 @@ export default class FeatheryClient extends IntegrationClient {
       runAsync = !options;
     }
 
-    const { userId } = initInfo();
+    const { userId, collaboratorId } = initInfo();
     const data = {
       fuser_key: userId,
+      collaborator_user: collaboratorId,
       extraction_id: extractionId,
       extraction_variant_id: variantId,
       pages,
