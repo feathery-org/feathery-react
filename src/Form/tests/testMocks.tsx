@@ -134,7 +134,7 @@ jest.mock('../../utils/formHelperFunctions', () => ({
   isStepTerminal: () => false,
   isValidFieldIdentifier: () => true,
   lookUpTrigger: () => ({}),
-  mapFormSettingsResponse: () => ({}),
+  mapFormSettingsResponse: () => ({ reusable_logics: [] }),
   nextStepKey: () => undefined,
   prioritizeActions: (a: any) => a,
   recurseProgressDepth: () => [0, 1],
@@ -231,7 +231,7 @@ jest.mock('uuid', () => ({ v4: () => 'uuid-1' }));
 // internalState and setter
 jest.mock('../../utils/internalState', () => ({
   __esModule: true,
-  default: {},
+  default: { reusableLogics: [] },
   setFormInternalState: jest.fn()
 }));
 
@@ -358,6 +358,7 @@ jest.mock('../../utils/featheryClient', () => {
       completion_behavior: '',
       formOff: false,
       logic_rules: [],
+      reusable_logics: [],
       track_hashes: false
     });
 
