@@ -11,7 +11,7 @@ export interface ReusableLogicInfo {
 
 export interface ExtractedExportVarInfo {
   name: string;
-  value: string | number;
+  value: any;
 }
 
 export interface ExtractedExportFuncInfo {

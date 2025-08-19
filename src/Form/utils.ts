@@ -33,6 +33,122 @@ function extractReferencedIdentifiers(bodyNode: any): Set<string> {
   return identifiers;
 }
 
+function isValidIdentifierName(key: string): boolean {
+  return /^[$A-Z_a-z][$\w]*$/.test(key);
+}
+
+// Convert a limited subset of AST nodes into plain JS values.
+// Handles Literal, ArrayExpression, ObjectExpression, and simple UnaryExpression.
+function astToJsValue(node: any): { ok: true; value: any } | { ok: false } {
+  switch (node.type) {
+    case 'Literal':
+      return { ok: true, value: node.value };
+    case 'ArrayExpression': {
+      const out: any[] = [];
+
+      for (const el of node.elements) {
+        if (!el) return { ok: false }; // holes not supported
+
+        const r = astToJsValue(el);
+
+        if (!r.ok) return { ok: false };
+
+        out.push(r.value);
+      }
+
+      return { ok: true, value: out };
+    }
+    case 'ObjectExpression': {
+      const obj: Record<string, any> = {};
+
+      for (const prop of node.properties) {
+        // Support standard properties only
+        if (prop.type !== 'Property' || prop.computed) return { ok: false };
+
+        // Key may be Identifier or Literal(string/number)
+        let key: string;
+
+        if (prop.key.type === 'Identifier') key = prop.key.name;
+        else if (prop.key.type === 'Literal') key = String(prop.key.value);
+        else return { ok: false };
+
+        const r = astToJsValue(prop.value);
+
+        if (!r.ok) return { ok: false };
+
+        obj[key] = r.value;
+      }
+
+      return { ok: true, value: obj };
+    }
+    case 'UnaryExpression': {
+      // Support numeric negation like -1
+      if (node.operator === '-' || node.operator === '+') {
+        const r = astToJsValue(node.argument);
+
+        if (!r.ok || typeof r.value !== 'number') return { ok: false };
+
+        return {
+          ok: true,
+          value: node.operator === '-' ? -r.value : +r.value
+        };
+      }
+
+      if (node.operator === '!') {
+        const r = astToJsValue(node.argument);
+
+        if (!r.ok) return { ok: false };
+
+        return { ok: true, value: !r.value };
+      }
+      return { ok: false };
+    }
+    case 'TemplateLiteral': {
+      // Only handle no-expr templates like `hello`
+      if (node.expressions?.length) return { ok: false };
+
+      const raw = node.quasis.map((q: any) => q.value.cooked ?? '').join('');
+
+      return { ok: true, value: raw };
+    }
+    default:
+      return { ok: false };
+  }
+}
+
+// Serialize a JS value back to JS code (not JSON).
+// Uses single quotes for strings and preserves identifier keys unquoted.
+function printJsValue(v: any): string {
+  if (v === null) return 'null';
+
+  const t = typeof v;
+
+  if (t === 'number' || t === 'boolean') return String(v);
+
+  if (t === 'string') {
+    // escape single quotes and backslashes
+    const escaped = v.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+    return `'${escaped}'`;
+  }
+
+  if (Array.isArray(v)) {
+    return `[${v.map((x) => printJsValue(x)).join(', ')}]`;
+  }
+
+  if (t === 'object') {
+    const entries = Object.keys(v).map((k) => {
+      const keyCode = isValidIdentifierName(k) ? k : printJsValue(k);
+      return `${keyCode}: ${printJsValue(v[k])}`;
+    });
+
+    return `{ ${entries.join(', ')} }`;
+  }
+
+  // Fallback for unsupported types
+  return String(v);
+}
+
 export function extractJsElements(code: string): {
   exportVariables: ExtractedExportVarInfo[];
   exportFunctions: ExtractedExportFuncInfo[];
@@ -43,20 +159,15 @@ export function extractJsElements(code: string): {
   const exportVariables: ExtractedExportVarInfo[] = [];
 
   const parsedNodes = getAcornParsedNodes(code);
-
-  if (!parsedNodes) {
-    return { exportVariables, exportFunctions };
-  }
+  if (!parsedNodes) return { exportVariables, exportFunctions };
 
   for (const node of parsedNodes.body) {
-    // define variables
+    // 1) Collect non-export variable declarations (and lift function expressions)
     if (node.type === 'VariableDeclaration') {
-      const kind = node.kind; // const, let, var
+      const kind = node.kind; // const | let | var
 
       for (const decl of node.declarations) {
-        if (decl.id.type !== 'Identifier') {
-          continue;
-        }
+        if (decl.id.type !== 'Identifier') continue;
 
         const name = decl.id.name;
         const valueCode = code.slice(decl.start, decl.end);
@@ -66,10 +177,12 @@ export function extractJsElements(code: string): {
           value: valueCode
         });
 
+        // Lift function expressions into functionMap
         if (
           decl.init &&
           (decl.init.type === 'ArrowFunctionExpression' ||
-            decl.init.type === 'FunctionExpression')
+            decl.init.type === 'FunctionExpression') &&
+          decl.init.body?.type === 'BlockStatement'
         ) {
           const params = decl.init.params.map((p: any) => p.name || 'unknown');
           const bodyStart = decl.init.body.start + 1;
@@ -84,7 +197,7 @@ export function extractJsElements(code: string): {
       }
     }
 
-    // define functions
+    // 2) Collect non-export function declarations
     if (node.type === 'FunctionDeclaration' && node.id) {
       const name = node.id.name;
       const params = node.params.map((p: any) => p.name || 'unknown');
@@ -98,7 +211,7 @@ export function extractJsElements(code: string): {
       });
     }
 
-    // extract functions
+    // 3) Exported function declarations
     if (
       node.type === 'ExportNamedDeclaration' &&
       node.declaration?.type === 'FunctionDeclaration'
@@ -110,23 +223,32 @@ export function extractJsElements(code: string): {
       const bodyEnd = funcNode.body.end - 1;
       const body = code.slice(bodyStart, bodyEnd).trim();
 
+      // Register the exported function FIRST so other exports can depend on it
+      functionMap.set(name, {
+        signature: `(${params.join(', ')})`,
+        body
+      });
+
+      // Build a minimal prelude of dependencies
       const used = extractReferencedIdentifiers(funcNode.body);
       const prelude: string[] = [];
+      const seen = new Set<string>();
 
       for (const id of used) {
-        if (variableMap.has(id)) {
-          const variable = variableMap.get(id);
+        if (id === name || seen.has(id)) continue;
 
-          if (variable !== undefined) {
-            const { declaration } = variable;
-            prelude.push(declaration);
-          }
-        } else if (functionMap.has(id)) {
-          const fn = functionMap.get(id);
+        // Prefer function definitions over variable declarations
+        const fn = functionMap.get(id);
+        if (fn) {
+          prelude.push(`function ${id}${fn.signature} {\n${fn.body}\n}`);
+          seen.add(id);
+          continue;
+        }
 
-          if (fn !== undefined) {
-            prelude.push(`function ${id}${fn.signature} {\n${fn.body}\n}`);
-          }
+        const v = variableMap.get(id);
+        if (v) {
+          prelude.push(v.declaration);
+          seen.add(id);
         }
       }
 
@@ -137,7 +259,7 @@ export function extractJsElements(code: string): {
       });
     }
 
-    // extract constant variables
+    // 4) Exported variable declarations
     if (
       node.type === 'ExportNamedDeclaration' &&
       node.declaration?.type === 'VariableDeclaration'
@@ -145,84 +267,97 @@ export function extractJsElements(code: string): {
       const kind = node.declaration.kind;
 
       for (const decl of node.declaration.declarations) {
-        if (decl.id.type !== 'Identifier') {
-          continue;
-        }
+        if (decl.id.type !== 'Identifier') continue;
 
         const name = decl.id.name;
         const valueCode = code.slice(decl.start, decl.end);
+
+        // Keep full declaration for possible variable prelude usage
         variableMap.set(name, {
           declaration: `${kind} ${valueCode};`,
           value: valueCode
         });
 
+        // If export is a function expression or arrow function, lift it and also export as function
         if (
           decl.init &&
           (decl.init.type === 'ArrowFunctionExpression' ||
-            decl.init.type === 'FunctionExpression')
+            decl.init.type === 'FunctionExpression') &&
+          decl.init.body?.type === 'BlockStatement'
         ) {
           const params = decl.init.params.map((p: any) => p.name || 'unknown');
           const bodyStart = decl.init.body.start + 1;
           const bodyEnd = decl.init.body.end - 1;
           const body = code.slice(bodyStart, bodyEnd).trim();
 
+          // Register in functionMap so other exports can depend on it
+          functionMap.set(name, {
+            signature: `(${params.join(', ')})`,
+            body
+          });
+
           const used = extractReferencedIdentifiers(decl.init.body);
           const prelude: string[] = [];
+          const seen = new Set<string>();
 
           for (const id of used) {
-            if (variableMap.has(id)) {
-              const variable = variableMap.get(id);
+            if (id === name || seen.has(id)) continue;
 
-              if (variable !== undefined) {
-                const { declaration } = variable;
-                prelude.push(declaration);
-              }
-            } else if (functionMap.has(id)) {
-              const fn = functionMap.get(id);
+            // Prefer function definitions first
+            const fn = functionMap.get(id);
+            if (fn) {
+              prelude.push(`function ${id}${fn.signature} {\n${fn.body}\n}`);
+              seen.add(id);
+              continue;
+            }
 
-              if (fn !== undefined) {
-                prelude.push(`function ${id}${fn.signature} {\n${fn.body}\n}`);
-              }
+            const v = variableMap.get(id);
+            if (v) {
+              prelude.push(v.declaration);
+              seen.add(id);
             }
           }
 
-          // extract arrow functions
           exportFunctions.push({
             name,
             signature: `(${params.join(', ')})`,
             body: prelude.concat([body]).join('\n')
           });
-        } else {
-          // extract constant variables, ensure value is handled correctly
-          if (decl.init && decl.init.type === 'Literal') {
-            if (typeof decl.init.value === 'string') {
-              // For string literals, use the exact quote type as in the code
-              exportVariables.push({
-                name,
-                value: `${decl.init.raw}` // Directly use the raw value (keeping quotes intact)
-              });
-            } else {
-              // For numbers, no quotes
-              exportVariables.push({
-                name,
-                value: `${decl.init.value}` // No quotes for numbers
-              });
-            }
-          } else {
+          continue;
+        }
+
+        // Otherwise handle exported variables
+        if (decl.init) {
+          if (decl.init.type === 'Literal') {
             exportVariables.push({
               name,
-              value: `(${valueCode})` // Keep the original code if it's not a literal
+              value: (decl.init as any).value
             });
+          } else if (
+            decl.init.type === 'ArrayExpression' ||
+            decl.init.type === 'ObjectExpression' ||
+            decl.init.type === 'UnaryExpression' ||
+            decl.init.type === 'TemplateLiteral'
+          ) {
+            const r = astToJsValue(decl.init);
+            if (r.ok) {
+              exportVariables.push({ name, value: r.value });
+            } else {
+              const initCode = code.slice(decl.init.start, decl.init.end);
+              exportVariables.push({ name, value: initCode });
+            }
+          } else {
+            const initCode = code.slice(decl.init.start, decl.init.end);
+            exportVariables.push({ name, value: initCode });
           }
+        } else {
+          exportVariables.push({ name, value: 'undefined' });
         }
       }
     }
   }
 
-  return {
-    exportVariables,
-    exportFunctions
-  };
+  return { exportVariables, exportFunctions };
 }
 
 export function extractExportedCodeInfoArray(
@@ -258,6 +393,7 @@ export function replaceImportsWithDefinitions(
 
       const start = node.loc.start.line - 1;
       const end = node.loc.end.line - 1;
+
       for (let i = start; i <= end; i++) {
         importLinesToRemove.add(i);
       }
@@ -280,7 +416,11 @@ export function replaceImportsWithDefinitions(
           (v: any) => v.name === importedName
         );
         if (matchedVar) {
-          definitions.push(`const ${localName} = ${matchedVar.value};`);
+          // If value is a plain JS value (string/number/boolean/null/array/object),
+          // print JS code accordingly. For plain strings we output single-quoted literals.
+          const rhs = printJsValue(matchedVar.value);
+          definitions.push(`const ${localName} = ${rhs};`);
+
           continue;
         }
 
