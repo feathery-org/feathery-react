@@ -19,7 +19,7 @@ import {
 import { loadPhoneValidator } from '../validation';
 import { initializeIntegrations } from '../../integrations/utils';
 import { loadLottieLight } from '../../elements/components/Lottie';
-import { featheryDoc, featheryWindow } from '../browser';
+import { featheryDoc, featheryWindow, downloadAllFileUrls } from '../browser';
 import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
@@ -993,5 +993,22 @@ export default class FeatheryClient extends IntegrationClient {
         else throw Error(parseError(await response.json()));
       }
     });
+  }
+
+  async generateDocument(action: Record<string, any> = {}) {
+    const data = await this.generateEnvelopes(action);
+    const envAction = action.envelope_action;
+
+    if (envAction === 'download') {
+      await downloadAllFileUrls(data.files);
+    } else if (envAction === 'save') {
+      let files = data.files;
+      if (files.length === 1) files = files[0];
+      const newValues = { [action.save_document_field_key]: files };
+      setFieldValues(newValues);
+      this.submitCustom(newValues);
+    }
+
+    return data;
   }
 }
