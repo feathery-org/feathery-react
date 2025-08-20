@@ -11,7 +11,8 @@ import {
   getFieldValues,
   initState,
   setFieldValues,
-  updateUserId
+  updateUserId,
+  updateTheme
 } from './init';
 import internalState, {
   AlloyEntities,
@@ -61,6 +62,8 @@ export const getFormContext = (formUuid: string) => {
     },
     setProgress: (val: any) => formState.setUserProgress(val),
     updateUserId,
+    theme: initState.theme,
+    updateTheme,
     goToStep: (stepKey: any) => {
       const { currentStep, navigate, steps, setStepKey, client, trackHashes } =
         formState;

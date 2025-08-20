@@ -30,6 +30,7 @@ import {
   getNewStepUrl,
   getOrigin,
   getPrevStepKey,
+  getSavedStepKey,
   getUrlHash,
   httpHelpers,
   isElementInViewport,
@@ -67,7 +68,8 @@ import {
   FieldValues,
   fieldValues,
   initState,
-  updateUserId
+  updateUserId,
+  updateTheme
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
 import FeatheryClient from '../utils/featheryClient';
@@ -1192,19 +1194,24 @@ function Form({
         if (authState.redirectAfterLogin || authState.hasRedirected || stepKey)
           return;
 
-        const newKey = getInitialStep({
-          initialStepId,
-          steps,
-          sessionCurrentStep: session.current_step_key
-        });
+        // Check if there's a saved step key from remounting (for theme switching)
+        const savedStepKey = getSavedStepKey(_internalId);
+        const newKey =
+          savedStepKey ||
+          getInitialStep({
+            initialStepId,
+            steps,
+            sessionCurrentStep: session.current_step_key
+          });
         if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
         setStepKey(newKey);
       })
       .catch(async (error: any) => {
         console.warn(error);
-        // Go to first step if origin fails
+        // Go to first step if origin fails, or saved step if available
         const [data] = await formPromise;
-        const newKey = (getOrigin as any)(data).key;
+        const savedStepKey = getSavedStepKey(_internalId);
+        const newKey = savedStepKey || (getOrigin as any)(data).key;
         if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
         else setStepKey(newKey);
       });

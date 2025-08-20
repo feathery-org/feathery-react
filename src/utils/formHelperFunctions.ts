@@ -24,6 +24,7 @@ import Field from './entities/Field';
 import { formatDateString } from '../elements/fields/DateSelectorField';
 import { findCountryByID } from '../elements/components/data/countries';
 import { DEFAULT_MOBILE_BREAKPOINT } from '../elements/styles';
+import internalState from './internalState';
 
 export const ARRAY_FIELD_TYPES = [
   'button_group',
@@ -768,8 +769,28 @@ export function rerenderAllForms() {
   );
 }
 
-export function remountAllForms() {
+// Store current step keys for each form during remount
+const savedStepKeys: Record<string, string> = {};
+
+export function remountAllForms(saveCurrentStep?: boolean) {
+  if (saveCurrentStep) {
+    // Save current step keys from internal state before remounting
+    Object.entries(internalState).forEach(([formId, state]) => {
+      if (state?.currentStep?.key) {
+        savedStepKeys[formId] = state.currentStep.key;
+      }
+    });
+  }
   Object.values(initInfo().remountCallbacks).forEach((cb) => cb());
+}
+
+export function getSavedStepKey(formId: string): string | undefined {
+  const savedKey = savedStepKeys[formId];
+  if (savedKey) {
+    delete savedStepKeys[formId];
+    return savedKey;
+  }
+  return undefined;
 }
 
 /**
