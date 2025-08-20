@@ -995,20 +995,38 @@ export default class FeatheryClient extends IntegrationClient {
     });
   }
 
-  async generateDocument(action: Record<string, any> = {}) {
-    const data = await this.generateEnvelopes(action);
-    const envAction = action.envelope_action;
+  async generateDocuments({
+    documentIds,
+    downloadEnvelopes = false
+  }: {
+    documentIds: string[];
+    downloadEnvelopes?: boolean;
+  }) {
+    const { userId } = initInfo();
+    const payload: Record<string, any> = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      documents: documentIds
+    };
 
-    if (envAction === 'download') {
-      await downloadAllFileUrls(data.files);
-    } else if (envAction === 'save') {
-      let files = data.files;
-      if (files.length === 1) files = files[0];
-      const newValues = { [action.save_document_field_key]: files };
-      setFieldValues(newValues);
-      this.submitCustom(newValues);
-    }
-
-    return data;
+    const url = `${API_URL}document/form/generate/`;
+    return this._fetch(
+      url,
+      {
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        body: JSON.stringify(payload)
+      },
+      false
+    ).then(async (response) => {
+      if (response) {
+        if (response.ok) {
+          const data = await response.json();
+          const files = data.files;
+          if (downloadEnvelopes) await downloadAllFileUrls(files);
+          return files;
+        } else throw Error(parseError(await response.json()));
+      }
+    });
   }
 }
