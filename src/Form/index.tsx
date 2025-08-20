@@ -68,8 +68,7 @@ import {
   FieldValues,
   fieldValues,
   initState,
-  updateUserId,
-  updateTheme
+  updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
 import FeatheryClient from '../utils/featheryClient';

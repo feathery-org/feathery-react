@@ -6,7 +6,8 @@ import {
   init,
   updateUserId,
   setFieldValues,
-  getFieldValues
+  getFieldValues,
+  updateTheme
 } from './utils/init';
 import { OPERATOR_CODE } from './utils/logic';
 import { featheryDoc } from './utils/browser';
@@ -63,6 +64,7 @@ const Feathery = {
   Elements,
   init,
   updateUserId,
+  updateTheme,
   setFieldValues,
   getFieldValues,
   renderAt
@@ -73,6 +75,7 @@ export {
   Elements,
   init,
   updateUserId,
+  updateTheme,
   setFieldValues,
   getFieldValues,
   renderAt,
