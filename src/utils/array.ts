@@ -1,4 +1,4 @@
-import { getDefaultFieldValue } from './formHelperFunctions';
+import { getDefaultFieldValue } from './fieldHelperFunctions';
 
 /**
  * Inserts an element into a list without side effects.

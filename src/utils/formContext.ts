@@ -1,10 +1,7 @@
 import { featheryWindow } from './browser';
-import {
-  changeStep,
-  FieldOptions,
-  formatAllFormFields,
-  getAllElements
-} from './formHelperFunctions';
+import { getAllElements } from './formHelperFunctions';
+import { changeStep } from './stepHelperFunctions';
+import { FieldOptions, formatAllFormFields } from './fieldHelperFunctions';
 import {
   defaultClient,
   FieldValues,

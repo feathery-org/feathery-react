@@ -1,5 +1,6 @@
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
-import { ARRAY_FIELD_TYPES, setFormElementError } from './formHelperFunctions';
+import { setFormElementError } from './formHelperFunctions';
+import { ARRAY_FIELD_TYPES } from './fieldHelperFunctions';
 import { dynamicImport } from '../integrations/utils';
 import React from 'react';
 import { fieldValues, initInfo } from './init';

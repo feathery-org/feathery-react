@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { getStepDepthMap } from '../../utils/formHelperFunctions';
+import { getStepDepthMap } from '../../utils/stepHelperFunctions';
 import {
   DiagonalArrowIcon,
   LeftChevronIcon,

@@ -7,253 +7,17 @@ import {
   initState,
   setFieldValues
 } from './init';
-import { toBase64 } from './image';
-import { evalComparisonRule, ResolvedComparisonRule } from './logic';
-import { getVisibleElements } from './hideAndRepeats';
 import throttle from 'lodash.throttle';
-import {
-  ACTION_EXECUTION_ORDER,
-  ACTION_NEXT,
-  ACTION_STORE_FIELD,
-  ACTION_URL
-} from './elementActions';
+import { ACTION_EXECUTION_ORDER, ACTION_STORE_FIELD } from './elementActions';
 import { featheryDoc, featheryWindow } from './browser';
-import FeatheryClient from './featheryClient';
-import { isObjectEmpty } from './primitives';
-import Field from './entities/Field';
-import { formatDateString } from '../elements/fields/DateSelectorField';
-import { findCountryByID } from '../elements/components/data/countries';
 import { DEFAULT_MOBILE_BREAKPOINT } from '../elements/styles';
 import internalState from './internalState';
-
-export const ARRAY_FIELD_TYPES = [
-  'button_group',
-  'file_upload',
-  'multiselect',
-  'dropdown_multi'
-];
-
-function _transformSignatureVal(value: any) {
-  return value !== null && (value instanceof File || value instanceof Promise)
-    ? Promise.resolve(value).then((file) => toBase64(file))
-    : Promise.resolve('');
-}
-
-function _transformUrlVal(value: any) {
-  return value ? value.replaceAll(' ', '%20') : value;
-}
-
-/**
- *
- * @param {*} step
- * @param {*} visiblePositions
- * @param {boolean} forUser indicate whether the result of this function is
- * meant for the user, or Feathery's BE. Presently the only difference is
- * whether signature field values are base64 or a JS File obj
- * visible to user as determined by the hide if rules
- * @returns Formatted fields for the step
- */
-export const formatStepFields = (
-  step: any,
-  visiblePositions: any,
-  forUser: boolean
-) => {
-  const fields = visiblePositions
-    ? getVisibleElements(step, visiblePositions, ['servar_fields']).map(
-        ({ element }) => element
-      )
-    : step.servar_fields;
-
-  const formattedFields: Record<
-    string,
-    {
-      value: any;
-      type: string;
-      displayText: string;
-      options?: any[];
-      position: number[];
-    }
-  > = {};
-  fields.forEach((field: any) => {
-    const servar = field.servar;
-    // Only use base64 for signature if these values will be presented to the user
-    let value: any = fieldValues[servar.key];
-    if (forUser && servar.type === 'signature') {
-      value = servar.repeated
-        ? value.map(_transformSignatureVal)
-        : _transformSignatureVal(value);
-    } else if (!forUser && servar.type === 'url') {
-      value = servar.repeated
-        ? value.map(_transformUrlVal)
-        : _transformUrlVal(value);
-    }
-    formattedFields[servar.key] = {
-      value,
-      type: servar.type,
-      displayText: servar.name,
-      position: field.position
-    };
-    if (servar.metadata.options) {
-      formattedFields[servar.key].options = servar.metadata.options.map(
-        (option: string, index: number) => ({
-          value: option,
-          label: (servar.metadata.option_labels ?? [])[index]
-        })
-      );
-    }
-  });
-  return formattedFields;
-};
-
-export const formatAllFormFields = (steps: any, forUser = false) => {
-  let formattedFields = {};
-  Object.values(steps).forEach((step) => {
-    const stepFields = formatStepFields(step, null, forUser);
-    formattedFields = { ...formattedFields, ...stepFields };
-  });
-  return formattedFields;
-};
-
-export const getAllFields = (
-  fieldKeys: string[],
-  hiddenFieldKeys: string[],
-  formUuid: string
-): Record<string, Field> => {
-  const fields: Record<string, Field> = {};
-  fieldKeys.forEach((key) => {
-    fields[key] = new Field(key, formUuid);
-  });
-  hiddenFieldKeys.forEach((key) => {
-    fields[key] = new Field(key, formUuid, true);
-  });
-
-  return fields;
-};
-
-export function isValidFieldIdentifier(str: string) {
-  // Regular expression to match (approximately) all valid Unicode identifiers
-  // The most complete regex is here: https://stackoverflow.com/a/2008444 but seems
-  // impractical to use in this case
-  const identifierRegex = /^[_$a-zA-Z\xA0-\uFFFF][_$a-zA-Z0-9\xA0-\uFFFF]*$/u;
-
-  // Check if the string matches the regex and is not a reserved word
-  return (
-    identifierRegex.test(str) &&
-    !isRuntimeReservedWord(str) &&
-    !isJsReservedWord(str)
-  );
-}
+import { setSavedStepKey } from './stepHelperFunctions';
 
 export function isStoreFieldValueAction(el: any) {
   (el.properties?.actions ?? []).some(
     (action: any) => action.type === ACTION_STORE_FIELD
   );
-}
-
-//
-// The issue is that the form designer could assign a field id that collides with a
-// javascript reserved word. They will get a validation error should they try to use
-// it in a rule. However, even if they do not use it in a rule, the runtime injects
-// that field and this causes an exception at runtime due to the reserved word being
-// used. So to keep things robust we need to avoid injecting fields with reserved word
-// ids/keys.
-//
-function isRuntimeReservedWord(str: string) {
-  // these are allowed
-  const browserGlobals = [
-    'atob',
-    'Blob',
-    'btoa',
-    'clearInterval',
-    'clearTimeout',
-    'document',
-    'fetch',
-    'File',
-    'FileList',
-    'FileReader',
-    'Intl',
-    'location',
-    'Navigator',
-    'setInterval',
-    'setTimeout',
-    'TextDecoder',
-    'TextEncoder',
-    'URL',
-    'URLSearchParams',
-    'window'
-  ];
-  const otherGlobals = ['feathery', 'console'];
-  return browserGlobals.includes(str) || otherGlobals.includes(str);
-}
-
-// Helper function to check if a string is a Javascript reserved word
-function isJsReservedWord(str: string) {
-  const reservedWords = [
-    'abstract',
-    'await',
-    'boolean',
-    'break',
-    'byte',
-    'case',
-    'catch',
-    'char',
-    'class',
-    'const',
-    'continue',
-    'debugger',
-    'default',
-    'delete',
-    'do',
-    'double',
-    'else',
-    'enum',
-    'export',
-    'extends',
-    'false',
-    'final',
-    'finally',
-    'float',
-    'for',
-    'function',
-    'goto',
-    'if',
-    'implements',
-    'import',
-    'in',
-    'instanceof',
-    'int',
-    'interface',
-    'let',
-    'long',
-    'native',
-    'new',
-    'null',
-    'package',
-    'private',
-    'protected',
-    'public',
-    'return',
-    'short',
-    'static',
-    'super',
-    'switch',
-    'synchronized',
-    'this',
-    'throw',
-    'throws',
-    'transient',
-    'true',
-    'try',
-    'typeof',
-    'var',
-    'void',
-    'volatile',
-    'while',
-    'with',
-    'yield'
-  ];
-
-  return reservedWords.includes(str);
 }
 
 export const getABVariant = (stepRes: any) => {
@@ -282,136 +46,6 @@ export const getABVariant = (stepRes: any) => {
   delete stepRes.variant_connector_fields;
   return stepRes;
 };
-
-export function getDefaultFieldValue(field: any) {
-  const servar = field.servar;
-  const meta = servar.metadata;
-  if (meta.default_value) {
-    if (['multiselect', 'dropdown_multi'].includes(servar.type)) {
-      return meta.default_value.split(',').map((val: string) => val.trim());
-    }
-    return meta.default_value;
-  }
-  if (servar.type === 'date_selector' && meta.default_date_today)
-    return formatDateString(new Date(), meta);
-
-  const matrixVal: Record<string, any> = {};
-  let country: string;
-  switch (servar.type) {
-    case 'checkbox':
-      // eslint-disable-next-line camelcase
-      return !!meta.always_checked || !!meta.default_checked;
-    case 'hex_color':
-      return 'FFFFFFFF';
-    case 'rating':
-      return 0;
-    case 'slider':
-      return servar.min_length ?? 0;
-    case 'select':
-    case 'signature':
-    case 'file_upload':
-      return null;
-    case 'dropdown_multi':
-    case 'button_group':
-    case 'multiselect':
-      return [];
-    case 'gmap_state':
-      return meta.default_state ?? '';
-    case 'gmap_country':
-      country = meta.default_country;
-      if (!country) return '';
-      if (meta.store_abbreviation) return country;
-      else return findCountryByID(country)?.countryName ?? '';
-    case 'matrix':
-      (meta.questions as any[])
-        .filter((question) => question.default_value)
-        .forEach((question) => {
-          const val = question.default_value;
-          matrixVal[question.id] = meta.multiple
-            ? val.split(',').map((v: string) => v.trim())
-            : [val];
-        });
-      return matrixVal;
-    default:
-      return '';
-  }
-}
-
-export function getDefaultFormFieldValue(field: any) {
-  // Default value is null for file_upload, but value should always be an
-  // array regardless if repeated or not
-  if (field.servar.type === 'file_upload') return [];
-
-  const val = getDefaultFieldValue(field);
-  return field.servar.repeated ? [val] : val;
-}
-
-export type OptionType =
-  | string
-  | { value: string; label?: string; image?: string };
-// TODO: remove string[] for backcompat
-export type FieldOptions = Record<string, OptionType[] | null>;
-
-export function updateStepFieldOptions(
-  step: any,
-  newOptions: FieldOptions,
-  repeatIndex?: number
-) {
-  step.servar_fields.forEach((field: any) => {
-    const servar = field.servar;
-    if (servar.key in newOptions) {
-      const options = newOptions[servar.key];
-      if (repeatIndex === null || repeatIndex === undefined) {
-        if (!options) return;
-        servar.metadata.options = options.map((option) =>
-          typeof option === 'object' ? option.value : option
-        );
-        servar.metadata.option_labels = options.map((option) =>
-          typeof option === 'object' ? option.label ?? option.value : option
-        );
-        servar.metadata.option_images = options.map((option) =>
-          typeof option === 'object' ? option.image ?? '' : ''
-        );
-      } else {
-        if (!servar.metadata.repeat_options)
-          servar.metadata.repeat_options = [];
-        if (!options) servar.metadata.repeat_options.splice(repeatIndex, 1);
-        else {
-          servar.metadata.repeat_options[repeatIndex] = options;
-        }
-      }
-    }
-  });
-}
-
-export type FieldStyles = Record<string, any>;
-
-export function updateStepFieldStyles(
-  step: any,
-  fieldKey: string,
-  newStyles: FieldStyles
-) {
-  step.servar_fields.forEach((field: any) => {
-    const servar = field.servar;
-    if (servar.key === fieldKey) Object.assign(field.styles, newStyles);
-  });
-}
-
-export type FieldProperties = Record<string, any>;
-
-export function updateStepFieldProperties(
-  step: any,
-  fieldKey: string,
-  newProperties: Record<string, any>,
-  onServar = false
-) {
-  step.servar_fields.forEach((field: any) => {
-    const servar = field.servar;
-    if (servar.key === fieldKey) {
-      Object.assign(onServar ? servar : field.properties, newProperties);
-    }
-  });
-}
 
 export const getAllElements = (step: any) => {
   return [
@@ -450,104 +84,6 @@ export const lookUpTrigger = (
   }
   return { id: elementID, type, ...payload };
 };
-
-export const nextStepKey = (nextConditions: any, metadata: any) => {
-  let newKey: any = null;
-  nextConditions
-    .filter(
-      (cond: any) =>
-        cond.element_type === metadata.elementType &&
-        metadata.elementIDs.includes(cond.element_id) &&
-        cond.metadata.start === metadata.start &&
-        cond.metadata.end === metadata.end
-    )
-    .sort((cond1: any, cond2: any) => {
-      return cond1.rules.length < cond2.rules.length ? 1 : -1;
-    })
-    .forEach((cond: any) => {
-      if (newKey) return;
-      let rulesMet = true;
-      cond.rules.forEach((rule: ResolvedComparisonRule) => {
-        rulesMet &&= evalComparisonRule(rule);
-      });
-      if (rulesMet) newKey = cond.next_step_key;
-    });
-  return newKey;
-};
-
-// No origin is possible if there are no steps, e.g. form is disabled
-const NO_ORIGIN_DEFAULT = { key: '' };
-export const getOrigin = (steps: any) =>
-  Object.values(steps).find((step) => (step as any).origin) ??
-  NO_ORIGIN_DEFAULT;
-
-function recurseQueue(
-  depthMap: Record<string, any>,
-  steps: any,
-  hasProgressBar: boolean,
-  queue: any[],
-  altQueue?: any[]
-) {
-  while (queue.length > 0) {
-    const [step, depth] = queue.shift();
-    if (step.key in depthMap) continue;
-
-    // Optionally filter only for steps with progress bar
-    const missingBar = hasProgressBar && step.progress_bars.length === 0;
-    depthMap[step.key] = missingBar ? 0 : depth;
-
-    const incr = missingBar ? 0 : 1;
-    step.next_conditions.forEach((condition: any) => {
-      queue.push([steps[condition.next_step_key], depth + incr]);
-    });
-    // For calculating progress bar depth, deprioritize previous condition
-    // depths relative to next conditions
-    const previousQueue = hasProgressBar && altQueue ? altQueue : queue;
-    step.previous_conditions.forEach((condition: any) => {
-      previousQueue.push([steps[condition.previous_step_key], depth + incr]);
-    });
-  }
-}
-
-export const getStepDepthMap = (steps: any, hasProgressBar = false) => {
-  const depthMap: Record<string, any> = {};
-  const stepQueue = [[getOrigin(steps), 0]];
-  const reverseQueue: any[] = [];
-  recurseQueue(depthMap, steps, hasProgressBar, stepQueue, reverseQueue);
-  if (hasProgressBar)
-    recurseQueue(depthMap, steps, hasProgressBar, reverseQueue);
-  return depthMap;
-};
-
-export const recurseProgressDepth = (steps: any, curKey: any) => {
-  const depthMap = getStepDepthMap(steps, true);
-  return [depthMap[curKey], Math.max(...Object.values(depthMap))];
-};
-
-/**
- * Retrieves the value of the servar from the provided values.
- * If the servar field is repeated, gets the indexed value.
- */
-export function getFieldValue(field: any) {
-  const { servar, repeat } = field;
-
-  // Need to check if undefined, rather than !values[servar.key], because null can be a set value
-  if (fieldValues[servar?.key] === undefined)
-    return { value: getDefaultFieldValue(field) };
-
-  const fieldValue = fieldValues[servar.key] as any;
-  return repeat !== undefined
-    ? {
-        repeated: true,
-        index: repeat,
-        value: fieldValue[repeat] ?? getDefaultFieldValue(field),
-        valueList: fieldValues[servar.key] as any[]
-      }
-    : {
-        repeated: false,
-        value: fieldValue
-      };
-}
 
 /** Update the fieldValues cache with a backend session */
 export function updateSessionValues(session: any) {
@@ -688,47 +224,6 @@ export async function fetchS3File(url: any) {
   });
 }
 
-export function changeStep(
-  newKey: string,
-  oldKey: string,
-  steps: any,
-  setStepKey: any,
-  navigate: any,
-  client: any,
-  trackHashes?: boolean
-) {
-  const sameKey = oldKey === newKey;
-  if (!sameKey && newKey) {
-    if (newKey in steps) {
-      client.registerEvent({
-        step_key: oldKey,
-        next_step_key: newKey,
-        event: 'complete'
-      });
-      if (trackHashes)
-        navigate(location.pathname + location.search + `#${newKey}`, {
-          replace: true
-        });
-      setStepKey(newKey);
-      return true;
-    } else console.warn(`${newKey} is not a valid step to navigate to`);
-  }
-  return false;
-}
-
-export function getNewStepUrl(stepKey: any) {
-  return location.pathname + location.search + `#${stepKey}`;
-}
-
-export function getPrevStepKey(curStep: any, stepMap: Record<string, string>) {
-  let newStepKey = stepMap[curStep.key];
-  if (!newStepKey) {
-    const prevCondition = curStep.previous_conditions[0];
-    if (prevCondition) newStepKey = prevCondition.previous_step_key;
-  }
-  return newStepKey;
-}
-
 // Update the map we maintain to track files that have already been uploaded to S3
 // This means nulling the existing mapping because the user uploaded a new file
 export function clearFilePathMapEntry(key: any, index = null) {
@@ -740,15 +235,6 @@ export function clearFilePathMapEntry(key: any, index = null) {
     filePathMap[key] = null;
   }
   delete fileSubmittedMap[key];
-}
-
-export function setUrlStepHash(navigate: any, steps: any, stepName: string) {
-  // No hash necessary if form only has one step
-  if (Object.keys(steps).length > 1) {
-    navigate(location.pathname + location.search + `#${stepName}`, {
-      replace: true
-    });
-  }
 }
 
 export function registerRenderCallback(
@@ -769,118 +255,16 @@ export function rerenderAllForms() {
   );
 }
 
-// Store current step keys for each form during remount
-const savedStepKeys: Record<string, string> = {};
-
 export function remountAllForms(saveCurrentStep?: boolean) {
   if (saveCurrentStep) {
     // Save current step keys from internal state before remounting
     Object.entries(internalState).forEach(([formId, state]) => {
       if (state?.currentStep?.key) {
-        savedStepKeys[formId] = state.currentStep.key;
+        setSavedStepKey(formId, state.currentStep.key);
       }
     });
   }
   Object.values(initInfo().remountCallbacks).forEach((cb) => cb());
-}
-
-export function getSavedStepKey(formId: string): string | undefined {
-  const savedKey = savedStepKeys[formId];
-  if (savedKey) {
-    delete savedStepKeys[formId];
-    return savedKey;
-  }
-  return undefined;
-}
-
-/**
- *
- * @returns Url hash without the #, or '' if decodeURI fails
- */
-export function getUrlHash() {
-  try {
-    return decodeURI(location.hash.substr(1));
-  } catch (e) {
-    console.warn(e);
-    return '';
-  }
-}
-
-export function getInitialStep({
-  initialStepId,
-  steps,
-  sessionCurrentStep
-}: {
-  initialStepId: string;
-  steps: any;
-  sessionCurrentStep?: string;
-}) {
-  return initialStepId || sessionCurrentStep || (getOrigin as any)(steps).key;
-}
-
-export function castServarVal(
-  servarType: string | undefined,
-  val: any,
-  repeated = false
-): any {
-  if (Array.isArray(val)) {
-    if (ARRAY_FIELD_TYPES.includes(servarType ?? '')) return val;
-    else return val.map((entry) => castServarVal(servarType, entry));
-  }
-
-  // If there is no type, we will treat it as a string
-  if (servarType === undefined) return String(val);
-  else if (ARRAY_FIELD_TYPES.includes(servarType) || repeated) return [val];
-
-  let newVal;
-  switch (servarType) {
-    case 'currency':
-    case 'integer_field':
-    case 'rating':
-    case 'slider':
-      newVal = Number(val);
-      break;
-    case 'checkbox':
-      newVal = !['False', 'false', false].includes(val);
-      break;
-    default:
-      newVal = String(val);
-      break;
-  }
-
-  return newVal;
-}
-
-export function castHiddenVal(hfType: string, val: any) {
-  let newVal;
-  switch (hfType) {
-    case 'number_value':
-      newVal = Number(val);
-      break;
-    default:
-      newVal = String(val);
-      break;
-  }
-
-  return newVal;
-}
-
-export function getServarAttrMap(steps: any) {
-  const servarKeyToTypeMap: Record<
-    string,
-    { type: string; repeated: boolean }
-  > = {};
-  if (steps) {
-    Object.values(steps).forEach((step: any) => {
-      step.servar_fields.forEach(({ servar }: any) => {
-        servarKeyToTypeMap[servar.key] = {
-          type: servar.type,
-          repeated: servar.repeated
-        };
-      });
-    });
-  }
-  return servarKeyToTypeMap;
 }
 
 // Reorders by leaving non-execution order actions in place and moving actons with specific
@@ -897,81 +281,6 @@ export function prioritizeActions(actions: any[]) {
       }
     });
   return newActions;
-}
-
-export function isStepTerminal(step: any) {
-  // If step is navigable to another step, it's not terminal
-  if (step.next_conditions.length > 0) return false;
-
-  if (
-    step.servar_fields.some((field: any) => field.servar.required) &&
-    step.buttons.some((b: any) => b.properties.submit)
-  ) {
-    // Not terminal if there is a required field on the step that can be saved
-    return false;
-  }
-
-  const onlyExits = ['buttons', 'texts', 'subgrids'].every((key) =>
-    step[key].every((b: any) =>
-      (b.properties.actions ?? []).every(
-        (action: any) => action.type === ACTION_URL
-      )
-    )
-  );
-  if (onlyExits && step.servar_fields.length === 0) return true;
-
-  const hasNext = step.buttons.some((b: any) =>
-    (b.properties.actions ?? []).some(
-      (action: any) =>
-        action.type === ACTION_NEXT ||
-        (action.type === ACTION_URL && !action.open_tab)
-    )
-  );
-
-  return !hasNext;
-}
-
-export function saveInitialValuesAndUrlParams({
-  updateFieldValues,
-  client,
-  saveUrlParams,
-  initialValues,
-  steps,
-  hiddenFields
-}: {
-  updateFieldValues: any;
-  client: FeatheryClient;
-  saveUrlParams: boolean;
-  initialValues: any;
-  steps: any;
-  hiddenFields: Record<string, string>;
-}) {
-  let rerenderRequired = false;
-  // Submit initial values & URL params
-  let valuesToSubmit: Record<string, any> = {};
-  if (!isObjectEmpty(initialValues)) {
-    rerenderRequired = true;
-    const servarAttrMap = getServarAttrMap(steps);
-    valuesToSubmit = { ...initialValues };
-    Object.entries(valuesToSubmit).map(([key, val]) => {
-      const attrs = servarAttrMap[key] ?? {};
-      const hiddenFieldType = hiddenFields[key];
-      valuesToSubmit[key] = hiddenFieldType
-        ? castHiddenVal(hiddenFieldType, val)
-        : castServarVal(attrs.type, val, attrs.repeated);
-    });
-  }
-  const params = new URLSearchParams(featheryWindow().location.search);
-  if (saveUrlParams) {
-    params.forEach((value, key) => {
-      if (key === '_slug') return;
-      valuesToSubmit[key] = value;
-    });
-  }
-  if (!isObjectEmpty(valuesToSubmit)) {
-    updateFieldValues(valuesToSubmit, { rerender: rerenderRequired });
-    client.submitCustom(valuesToSubmit, { override: false });
-  }
 }
 
 export function mapFormSettingsResponse(res: any) {
@@ -1048,6 +357,21 @@ function getConnectorFieldValues(connectorFields: string[]) {
   return _fieldValues;
 }
 
+export function isElementInViewport(el: any) {
+  const rect = el.getBoundingClientRect();
+
+  const height =
+    featheryWindow().innerHeight || featheryDoc().documentElement.clientHeight;
+  const width =
+    featheryWindow().innerWidth || featheryDoc().documentElement.clientWidth;
+  return (
+    rect.top >= 0 &&
+    rect.left >= 0 &&
+    rect.bottom <= height &&
+    rect.right <= width
+  );
+}
+
 export function httpHelpers(client: any, connectorFields: string[] = []) {
   const helpers: Record<string, any> = {};
   [
@@ -1105,19 +429,4 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
   };
 
   return helpers;
-}
-
-export function isElementInViewport(el: any) {
-  const rect = el.getBoundingClientRect();
-
-  const height =
-    featheryWindow().innerHeight || featheryDoc().documentElement.clientHeight;
-  const width =
-    featheryWindow().innerWidth || featheryDoc().documentElement.clientWidth;
-  return (
-    rect.top >= 0 &&
-    rect.left >= 0 &&
-    rect.bottom <= height &&
-    rect.right <= width
-  );
 }
