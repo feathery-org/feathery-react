@@ -675,7 +675,7 @@ function Form({
 
   const handleFormComplete = async () => {
     // Send form completion message for webkit
-    if (featheryWindow().webkit?.messageHandlers?.feathery) {
+    if (featheryWindow().webkit?.messageHandlers?.feathery?.postMessage) {
       if (initState.isTestEnv) console.log('Webkit event sent');
       featheryWindow().webkit.messageHandlers.feathery.postMessage(
         'Form completed'
