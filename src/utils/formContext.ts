@@ -162,12 +162,11 @@ export const getFormContext = (formUuid: string) => {
       formState.client.setCollaboratorAsCompleted(templateId),
     generateDocuments: ({
       documentIds,
-      downloadEnvelopes
+      download
     }: {
       documentIds: string[];
-      downloadEnvelopes?: boolean;
-    }) =>
-      formState.client.generateDocuments({ documentIds, downloadEnvelopes }),
+      download?: boolean;
+    }) => formState.client.generateDocuments({ documentIds, download }),
     getQuikForms: (props: { dealerNames: string[] }) =>
       formState.client.getQuikForms(props),
     getQuikFormRoles: (props: { formIds: number[] }) =>

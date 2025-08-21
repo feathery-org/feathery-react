@@ -997,10 +997,10 @@ export default class FeatheryClient extends IntegrationClient {
 
   async generateDocuments({
     documentIds,
-    downloadEnvelopes = false
+    download = false
   }: {
     documentIds: string[];
-    downloadEnvelopes?: boolean;
+    download?: boolean;
   }) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
@@ -1023,8 +1023,8 @@ export default class FeatheryClient extends IntegrationClient {
         if (response.ok) {
           const data = await response.json();
           const files = data.files;
-          if (downloadEnvelopes) await downloadAllFileUrls(files);
-          return files;
+          if (download) await downloadAllFileUrls(files);
+          return { files };
         } else throw Error(parseError(await response.json()));
       }
     });
