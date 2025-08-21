@@ -345,7 +345,7 @@ function TextField({
             }}
             onFocus={iosScrollOnFocus}
             inputRef={setRef}
-            {...getInputProps(servar, options, autoComplete)}
+            {...getInputProps(servar, options, autoComplete === 'on')}
             {...getMaskProps(servar, rawValue, showPassword)}
             onAccept={onAccept}
           />
