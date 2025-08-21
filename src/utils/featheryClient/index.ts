@@ -19,7 +19,7 @@ import {
 import { loadPhoneValidator } from '../validation';
 import { initializeIntegrations } from '../../integrations/utils';
 import { loadLottieLight } from '../../elements/components/Lottie';
-import { featheryDoc, featheryWindow } from '../browser';
+import { featheryDoc, featheryWindow, downloadAllFileUrls } from '../browser';
 import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
@@ -991,6 +991,41 @@ export default class FeatheryClient extends IntegrationClient {
       if (response) {
         if (response.ok) return await response.json();
         else throw Error(parseError(await response.json()));
+      }
+    });
+  }
+
+  async generateDocuments({
+    documentIds,
+    download = false
+  }: {
+    documentIds: string[];
+    download?: boolean;
+  }) {
+    const { userId } = initInfo();
+    const payload: Record<string, any> = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      documents: documentIds
+    };
+
+    const url = `${API_URL}document/form/generate/`;
+    return this._fetch(
+      url,
+      {
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        body: JSON.stringify(payload)
+      },
+      false
+    ).then(async (response) => {
+      if (response) {
+        if (response.ok) {
+          const data = await response.json();
+          const files = data.files;
+          if (download) await downloadAllFileUrls(files);
+          return { files };
+        } else throw Error(parseError(await response.json()));
       }
     });
   }
