@@ -105,49 +105,57 @@ jest.mock('../../utils/init', () => {
 
 // Form helper functions
 jest.mock('../../utils/formHelperFunctions', () => ({
-  calculateGlobalCSS: () => ({ getTarget: () => ({}) }),
-  calculateStepCSS: () => ({}),
+  getAllElements: () => [],
+  getABVariant: (stepRes: any) => stepRes,
+  clearBrowserErrors: () => {},
+  httpHelpers: () => ({}),
+  isElementInViewport: () => true,
+  lookUpTrigger: () => ({}),
+  mapFormSettingsResponse: () => ({}),
+  prioritizeActions: (a: any) => a,
+  registerRenderCallback: () => {},
+  rerenderAllForms: () => {},
+  setFormElementError: () => {},
+  updateCustomCSS: () => {},
+  updateCustomHead: () => {}
+}));
+
+// Field helper functions
+jest.mock('../../utils/fieldHelperFunctions', () => ({
   castHiddenVal: (_: any, v: any) => v,
   castServarVal: (_: any, v: any) => v,
+  FieldOptions: {},
+  FieldProperties: {},
+  FieldStyles: {},
+  formatStepFields: () => ({}),
+  formatAllFormFields: () => ({}),
+  getAllFields: () => ({}),
+  getDefaultFieldValue: () => '',
+  getDefaultFormFieldValue: () => '',
+  getFieldValue: () => ({ value: '', valueList: undefined }),
+  isValidFieldIdentifier: () => true,
+  saveInitialValuesAndUrlParams: () => {},
+  updateStepFieldOptions: () => {},
+  updateStepFieldProperties: () => {},
+  updateStepFieldStyles: () => {}
+}));
+
+// Step helper functions
+jest.mock('../../utils/stepHelperFunctions', () => ({
   changeStep: (_n: any, _o: any, _s: any, setStepKey: any) => {
     // Simulate successful step change
     setStepKey(_n);
     return true;
   },
-  clearBrowserErrors: () => {},
-  FieldOptions: {},
-  FieldProperties: {},
-  FieldStyles: {},
-  formatStepFields: () => ({}),
-  getAllElements: () => [],
-  getAllFields: () => ({}),
-  getDefaultFieldValue: () => '',
-  getDefaultFormFieldValue: () => '',
-  getFieldValue: () => ({ value: '', valueList: undefined }),
   getInitialStep: ({ initialStepId }: any) => initialStepId || 'step-1',
   getNewStepUrl: (k: string) => `/#${k}`,
   getOrigin: () => ({ key: 'origin' }),
   getPrevStepKey: () => '',
   getUrlHash: () => '',
-  httpHelpers: () => ({}),
-  isElementInViewport: () => true,
   isStepTerminal: () => false,
-  isValidFieldIdentifier: () => true,
-  lookUpTrigger: () => ({}),
-  mapFormSettingsResponse: () => ({}),
   nextStepKey: () => undefined,
-  prioritizeActions: (a: any) => a,
   recurseProgressDepth: () => [0, 1],
-  registerRenderCallback: () => {},
-  rerenderAllForms: () => {},
-  saveInitialValuesAndUrlParams: () => {},
-  setFormElementError: () => {},
-  setUrlStepHash: () => {},
-  updateCustomCSS: () => {},
-  updateCustomHead: () => {},
-  updateStepFieldOptions: () => {},
-  updateStepFieldProperties: () => {},
-  updateStepFieldStyles: () => {}
+  setUrlStepHash: () => {}
 }));
 
 // Grid mock: no out of scope captures, only uses props

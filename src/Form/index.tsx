@@ -13,44 +13,48 @@ import debounce from 'lodash.debounce';
 
 import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
 import {
-  castHiddenVal,
-  castServarVal,
-  changeStep,
   clearBrowserErrors,
-  FieldOptions,
-  FieldProperties,
-  FieldStyles,
-  formatStepFields,
   getAllElements,
-  getAllFields,
-  getDefaultFieldValue,
-  getDefaultFormFieldValue,
-  getFieldValue,
+  httpHelpers,
+  isElementInViewport,
+  lookUpTrigger,
+  mapFormSettingsResponse,
+  prioritizeActions,
+  registerRenderCallback,
+  rerenderAllForms,
+  setFormElementError,
+  updateCustomCSS,
+  updateCustomHead
+} from '../utils/formHelperFunctions';
+import {
+  changeStep,
   getInitialStep,
   getNewStepUrl,
   getOrigin,
   getPrevStepKey,
   getUrlHash,
-  httpHelpers,
-  isElementInViewport,
   isStepTerminal,
-  isValidFieldIdentifier,
-  lookUpTrigger,
-  mapFormSettingsResponse,
   nextStepKey,
-  prioritizeActions,
   recurseProgressDepth,
-  registerRenderCallback,
-  rerenderAllForms,
+  setUrlStepHash
+} from '../utils/stepHelperFunctions';
+import {
+  castHiddenVal,
+  castServarVal,
+  FieldOptions,
+  FieldProperties,
+  FieldStyles,
+  formatStepFields,
+  getAllFields,
+  getDefaultFieldValue,
+  getDefaultFormFieldValue,
+  getFieldValue,
+  isValidFieldIdentifier,
   saveInitialValuesAndUrlParams,
-  setFormElementError,
-  setUrlStepHash,
-  updateCustomCSS,
-  updateCustomHead,
   updateStepFieldOptions,
   updateStepFieldProperties,
   updateStepFieldStyles
-} from '../utils/formHelperFunctions';
+} from '../utils/fieldHelperFunctions';
 import {
   getContainerById,
   getFieldsInRepeat,
@@ -1195,7 +1199,8 @@ function Form({
         const newKey = getInitialStep({
           initialStepId,
           steps,
-          sessionCurrentStep: session.current_step_key
+          sessionCurrentStep: session.current_step_key,
+          formId: _internalId
         });
         if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
         setStepKey(newKey);

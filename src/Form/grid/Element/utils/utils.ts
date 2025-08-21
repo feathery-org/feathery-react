@@ -1,5 +1,5 @@
 import { fieldValues } from '../../../../utils/init';
-import { getFieldValue } from '../../../../utils/formHelperFunctions';
+import { getFieldValue } from '../../../../utils/fieldHelperFunctions';
 import { justInsert } from '../../../../utils/array';
 
 /**

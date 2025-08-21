@@ -231,6 +231,11 @@ async function updateUserId(newUserId?: string, merge = false): Promise<void> {
   }
 }
 
+async function updateTheme(newTheme = '') {
+  initState.theme = newTheme;
+  await remountAllForms(true);
+}
+
 /**
  * If customers provide files through setFieldValues
  * we need to explicitly convert any files to file Promises
@@ -259,6 +264,7 @@ export {
   init,
   initInfo,
   updateUserId,
+  updateTheme,
   setFieldValues,
   getFieldValues,
   initState,

@@ -2,9 +2,9 @@ import React, { useCallback } from 'react';
 import Elements from '../../../elements';
 import {
   clearFilePathMapEntry,
-  getFieldValue,
   setFormElementError
 } from '../../../utils/formHelperFunctions';
+import { getFieldValue } from '../../../utils/fieldHelperFunctions';
 import {
   isNum,
   isObjectEmpty,

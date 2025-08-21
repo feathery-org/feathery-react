@@ -12,10 +12,10 @@ import { dataURLToFile, isBase64Image } from '../image';
 import { encodeGetParams } from '../primitives';
 import {
   getABVariant,
-  getDefaultFormFieldValue,
   isStoreFieldValueAction,
   updateSessionValues
 } from '../formHelperFunctions';
+import { getDefaultFormFieldValue } from '../fieldHelperFunctions';
 import { loadPhoneValidator } from '../validation';
 import { initializeIntegrations } from '../../integrations/utils';
 import { loadLottieLight } from '../../elements/components/Lottie';

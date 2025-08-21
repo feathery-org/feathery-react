@@ -1,17 +1,15 @@
 import { featheryWindow } from './browser';
-import {
-  changeStep,
-  FieldOptions,
-  formatAllFormFields,
-  getAllElements
-} from './formHelperFunctions';
+import { getAllElements } from './formHelperFunctions';
+import { changeStep } from './stepHelperFunctions';
+import { FieldOptions, formatAllFormFields } from './fieldHelperFunctions';
 import {
   defaultClient,
   FieldValues,
   getFieldValues,
   initState,
   setFieldValues,
-  updateUserId
+  updateUserId,
+  updateTheme
 } from './init';
 import internalState, {
   AlloyEntities,
@@ -61,6 +59,8 @@ export const getFormContext = (formUuid: string) => {
     },
     setProgress: (val: any) => formState.setUserProgress(val),
     updateUserId,
+    theme: initState.theme,
+    updateTheme,
     goToStep: (stepKey: any) => {
       const { currentStep, navigate, steps, setStepKey, client, trackHashes } =
         formState;
