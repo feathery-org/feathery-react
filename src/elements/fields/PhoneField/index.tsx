@@ -307,7 +307,7 @@ function PhoneField({
               setRef(ref);
             }}
             type='tel'
-            autoComplete={autoComplete ? 'tel' : 'off'}
+            autoComplete={autoComplete === 'on' ? 'tel' : 'off'}
             dir='ltr' // always left-to-right numbers but will be right justified in RTL
             onFocus={(e) => {
               iosScrollOnFocus(e);

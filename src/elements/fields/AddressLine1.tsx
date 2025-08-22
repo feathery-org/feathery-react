@@ -152,7 +152,7 @@ function AddressLine1({
             placeholder=''
             disabled={disabled}
             aria-label={element.properties.aria_label}
-            autoComplete={autoComplete ? 'street-address' : 'off'}
+            autoComplete={autoComplete === 'on' ? 'street-address' : 'off'}
             value={value}
             ref={setRef}
             // Not on focus because if error is showing, it will

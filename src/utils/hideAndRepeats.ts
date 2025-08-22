@@ -1,7 +1,7 @@
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { TEXT_VARIABLE_PATTERN } from '../elements/components/TextNodes';
 import { fieldValues } from './init';
-import { getDefaultFieldValue } from './formHelperFunctions';
+import { getDefaultFieldValue } from './fieldHelperFunctions';
 import {
   getRepeatedContainer,
   getRepeatedContainers,

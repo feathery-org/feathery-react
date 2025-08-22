@@ -37,7 +37,7 @@ jest.mock('../../../components/useBorder', () => {
 // Mock with state tracking
 let mockFieldValue = '';
 
-jest.mock('../../../../utils/formHelperFunctions', () => ({
+jest.mock('../../../../utils/fieldHelperFunctions', () => ({
   getFieldValue: jest.fn(() => {
     return { value: mockFieldValue };
   })

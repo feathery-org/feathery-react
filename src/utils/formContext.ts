@@ -1,16 +1,14 @@
 import { featheryWindow } from './browser';
-import {
-  changeStep,
-  FieldOptions,
-  formatAllFormFields,
-  getAllElements
-} from './formHelperFunctions';
+import { getAllElements } from './formHelperFunctions';
+import { changeStep } from './stepHelperFunctions';
+import { FieldOptions, formatAllFormFields } from './fieldHelperFunctions';
 import {
   defaultClient,
   FieldValues,
   getFieldValues,
   initState,
   setFieldValues,
+  updateTheme,
   updateUserId
 } from './init';
 import internalState, {
@@ -61,6 +59,7 @@ export const getFormContext = (formUuid: string) => {
     },
     setProgress: (val: any) => formState.setUserProgress(val),
     updateUserId,
+    updateTheme,
     goToStep: (stepKey: any) => {
       const { currentStep, navigate, steps, setStepKey, client, trackHashes } =
         formState;
@@ -160,6 +159,13 @@ export const getFormContext = (formUuid: string) => {
       formState.client.createLoanProCustomerWithAuthorizedEmail(bodyParams),
     setCollaboratorAsCompleted: (templateId: string) =>
       formState.client.setCollaboratorAsCompleted(templateId),
+    generateDocuments: ({
+      documentIds,
+      download
+    }: {
+      documentIds: string[];
+      download?: boolean;
+    }) => formState.client.generateDocuments({ documentIds, download }),
     getQuikForms: (props: { dealerNames: string[] }) =>
       formState.client.getQuikForms(props),
     getQuikFormRoles: (props: { formIds: number[] }) =>

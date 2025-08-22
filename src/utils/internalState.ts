@@ -2,7 +2,7 @@ import {
   FieldOptions,
   FieldProperties,
   FieldStyles
-} from './formHelperFunctions';
+} from './fieldHelperFunctions';
 import Field from './entities/Field';
 import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';

@@ -6,7 +6,7 @@ import { bootstrapStyles } from '../../styles';
 import { emailPatternStr } from '../../../utils/validation';
 import useBorder from '../../components/useBorder';
 import TextAutocomplete from './TextAutocomplete';
-import { getFieldValue } from '../../../utils/formHelperFunctions';
+import { getFieldValue } from '../../../utils/fieldHelperFunctions';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
@@ -345,7 +345,7 @@ function TextField({
             }}
             onFocus={iosScrollOnFocus}
             inputRef={setRef}
-            {...getInputProps(servar, options, autoComplete)}
+            {...getInputProps(servar, options, autoComplete === 'on')}
             {...getMaskProps(servar, rawValue, showPassword)}
             onAccept={onAccept}
           />

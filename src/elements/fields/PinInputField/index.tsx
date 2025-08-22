@@ -126,7 +126,7 @@ function SingleOtpInput({
           width: '100%',
           ...responsiveStyles.getTarget('field')
         }}
-        autoComplete={autoComplete ? 'one-time-code' : 'off'}
+        autoComplete={autoComplete === 'on' ? 'one-time-code' : 'off'}
         inputMode='numeric'
         disabled={disabled}
         ref={input}
