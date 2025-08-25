@@ -16,17 +16,6 @@ import { FormContext } from './types/Form';
 import LoginForm from './auth/LoginForm';
 import useAuthClient from './auth/useAuthClient';
 import './utils/polyfills';
-import {
-  ExtractedImportResult,
-  ExtractedReusableLogicInfo,
-  ImportedItem,
-  ImportedSource,
-  ReusableLogicInfo
-} from './Form/definitions';
-import {
-  extractExportedCodeInfoArray,
-  getAcornParsedNodes
-} from './Form/utils';
 
 const mountedForms: Record<string, Root> = {};
 /**
@@ -95,14 +84,5 @@ export {
   StyledContainer
 };
 
-export { extractExportedCodeInfoArray, getAcornParsedNodes };
-
 export type { OPERATOR_CODE, FormContext };
 export type { StyledContainerProps } from './Form/grid/StyledContainer';
-export type {
-  ExtractedImportResult,
-  ExtractedReusableLogicInfo,
-  ImportedItem,
-  ImportedSource,
-  ReusableLogicInfo
-};
