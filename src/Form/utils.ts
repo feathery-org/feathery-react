@@ -149,7 +149,7 @@ function printJsValue(v: any): string {
   return String(v);
 }
 
-export function extractJsElements(code: string): {
+function extractJsElements(code: string): {
   exportVariables: ExtractedExportVarInfo[];
   exportFunctions: ExtractedExportFuncInfo[];
 } {
@@ -160,6 +160,28 @@ export function extractJsElements(code: string): {
 
   const parsedNodes = getAcornParsedNodes(code);
   if (!parsedNodes) return { exportVariables, exportFunctions };
+
+  // Helper: turn a param node into its original text
+  const paramText = (p: any) => code.slice(p.start, p.end);
+
+  // Helper: build function signature and body from FunctionExpression or ArrowFunctionExpression
+  const buildFnParts = (fnNode: any) => {
+    const params = (fnNode.params ?? []).map((p: any) => paramText(p));
+    let body: string;
+
+    // If body is a block, take inside braces; if it's an expression, wrap in a return statement
+    if (fnNode.body?.type === 'BlockStatement') {
+      const bodyStart = fnNode.body.start + 1;
+      const bodyEnd = fnNode.body.end - 1;
+      body = code.slice(bodyStart, bodyEnd).trim();
+    } else {
+      // Expression-bodied arrow function
+      const expr = code.slice(fnNode.body.start, fnNode.body.end).trim();
+      body = `return ${expr};`;
+    }
+
+    return { signature: `(${params.join(', ')})`, body };
+  };
 
   for (const node of parsedNodes.body) {
     // 1) Collect non-export variable declarations (and lift function expressions)
@@ -172,27 +194,20 @@ export function extractJsElements(code: string): {
         const name = decl.id.name;
         const valueCode = code.slice(decl.start, decl.end);
 
+        // Keep full declaration text for potential dependency prelude
         variableMap.set(name, {
           declaration: `${kind} ${valueCode};`,
           value: valueCode
         });
 
-        // Lift function expressions into functionMap
+        // Lift function expressions and arrow functions (including expression-bodied)
         if (
           decl.init &&
           (decl.init.type === 'ArrowFunctionExpression' ||
-            decl.init.type === 'FunctionExpression') &&
-          decl.init.body?.type === 'BlockStatement'
+            decl.init.type === 'FunctionExpression')
         ) {
-          const params = decl.init.params.map((p: any) => p.name || 'unknown');
-          const bodyStart = decl.init.body.start + 1;
-          const bodyEnd = decl.init.body.end - 1;
-          const body = code.slice(bodyStart, bodyEnd).trim();
-
-          functionMap.set(name, {
-            signature: `(${params.join(', ')})`,
-            body
-          });
+          const { signature, body } = buildFnParts(decl.init);
+          functionMap.set(name, { signature, body });
         }
       }
     }
@@ -200,7 +215,7 @@ export function extractJsElements(code: string): {
     // 2) Collect non-export function declarations
     if (node.type === 'FunctionDeclaration' && node.id) {
       const name = node.id.name;
-      const params = node.params.map((p: any) => p.name || 'unknown');
+      const params = node.params.map((p: any) => paramText(p));
       const bodyStart = node.body.start + 1;
       const bodyEnd = node.body.end - 1;
       const body = code.slice(bodyStart, bodyEnd).trim();
@@ -218,18 +233,18 @@ export function extractJsElements(code: string): {
     ) {
       const funcNode = node.declaration;
       const name = funcNode.id.name;
-      const params = funcNode.params.map((p: any) => p.name || 'unknown');
+      const params = funcNode.params.map((p: any) => paramText(p));
       const bodyStart = funcNode.body.start + 1;
       const bodyEnd = funcNode.body.end - 1;
       const body = code.slice(bodyStart, bodyEnd).trim();
 
-      // Register the exported function FIRST so other exports can depend on it
+      // Register exported function first
       functionMap.set(name, {
         signature: `(${params.join(', ')})`,
         body
       });
 
-      // Build a minimal prelude of dependencies
+      // Build minimal dependency prelude
       const used = extractReferencedIdentifiers(funcNode.body);
       const prelude: string[] = [];
       const seen = new Set<string>();
@@ -237,7 +252,6 @@ export function extractJsElements(code: string): {
       for (const id of used) {
         if (id === name || seen.has(id)) continue;
 
-        // Prefer function definitions over variable declarations
         const fn = functionMap.get(id);
         if (fn) {
           prelude.push(`function ${id}${fn.signature} {\n${fn.body}\n}`);
@@ -272,29 +286,22 @@ export function extractJsElements(code: string): {
         const name = decl.id.name;
         const valueCode = code.slice(decl.start, decl.end);
 
-        // Keep full declaration for possible variable prelude usage
+        // Keep full declaration for possible prelude usage
         variableMap.set(name, {
           declaration: `${kind} ${valueCode};`,
           value: valueCode
         });
 
-        // If export is a function expression or arrow function, lift it and also export as function
+        // If export is a function expression or arrow function, treat it as an exported function
         if (
           decl.init &&
           (decl.init.type === 'ArrowFunctionExpression' ||
-            decl.init.type === 'FunctionExpression') &&
-          decl.init.body?.type === 'BlockStatement'
+            decl.init.type === 'FunctionExpression')
         ) {
-          const params = decl.init.params.map((p: any) => p.name || 'unknown');
-          const bodyStart = decl.init.body.start + 1;
-          const bodyEnd = decl.init.body.end - 1;
-          const body = code.slice(bodyStart, bodyEnd).trim();
+          const { signature, body } = buildFnParts(decl.init);
 
           // Register in functionMap so other exports can depend on it
-          functionMap.set(name, {
-            signature: `(${params.join(', ')})`,
-            body
-          });
+          functionMap.set(name, { signature, body });
 
           const used = extractReferencedIdentifiers(decl.init.body);
           const prelude: string[] = [];
@@ -303,7 +310,6 @@ export function extractJsElements(code: string): {
           for (const id of used) {
             if (id === name || seen.has(id)) continue;
 
-            // Prefer function definitions first
             const fn = functionMap.get(id);
             if (fn) {
               prelude.push(`function ${id}${fn.signature} {\n${fn.body}\n}`);
@@ -320,13 +326,13 @@ export function extractJsElements(code: string): {
 
           exportFunctions.push({
             name,
-            signature: `(${params.join(', ')})`,
+            signature,
             body: prelude.concat([body]).join('\n')
           });
           continue;
         }
 
-        // Otherwise handle exported variables
+        // Otherwise handle exported variables as before
         if (decl.init) {
           if (decl.init.type === 'Literal') {
             exportVariables.push({
