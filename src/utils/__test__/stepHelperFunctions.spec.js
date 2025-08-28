@@ -3,7 +3,7 @@ import {
   getOrigin,
   recurseProgressDepth
 } from '../stepHelperFunctions';
-import { fieldValues, initInfo } from '../init';
+import { fieldValues } from '../init';
 
 jest.mock('../init');
 
