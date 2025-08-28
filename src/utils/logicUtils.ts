@@ -121,6 +121,11 @@ function astToJsValue(node: any): { ok: true; value: any } | { ok: false } {
 function printJsValue(v: any): string {
   if (v === null) return 'null';
 
+  // Handle RegExp literals: print as `/pattern/flags`
+  if (v instanceof RegExp) {
+    return v.toString(); // e.g., `/^[^\s@]+@[^\s@]+\.[^\s@]+$/`
+  }
+
   const t = typeof v;
 
   if (t === 'number' || t === 'boolean') return String(v);
