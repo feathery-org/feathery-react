@@ -5,7 +5,7 @@ import {
   ExtractedExportVarInfo,
   ExtractedReusableLogicInfo,
   ReusableLogicInfo
-} from '../Form/definitions';
+} from './definitions';
 
 export function getAcornParsedNodes(input: string): Program | null {
   let parsedNode: Program | null = null;
