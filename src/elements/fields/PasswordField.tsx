@@ -106,10 +106,7 @@ function PasswordField({
           disabled={disabled}
           value={rawValue}
           ref={setRef}
-          // Many modern browsers do not support autocomplete="off".
-          // In order to avoid the autoComplete, use autocomplete="new-password"
-          // @See: https://developer.mozilla.org/en-US/docs/Web/Security/Practical_implementation_guides/Turning_off_form_autocompletion
-          autoComplete='new-password'
+          autoComplete='off'
           type={showPassword ? 'text' : 'password'}
           onFocus={iosScrollOnFocus}
         />
