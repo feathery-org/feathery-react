@@ -205,7 +205,7 @@ import { ReusableLogicInfo } from './definitions';
 import {
   extractExportedCodeInfoArray,
   replaceImportsWithDefinitions
-} from './utils';
+} from '../utils/logicUtils';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
