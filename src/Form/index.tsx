@@ -1831,6 +1831,7 @@ function Form({
         );
         break;
       } else if (type === ACTION_ALLOY_VERIFY_ID) {
+        await Promise.all([submitPromise, client.flushCustomFields()]);
         await verifyAlloyId(action, integrations?.alloy, flowOnSuccess(i));
         break;
       } else if (type === ACTION_SCHWAB_CREATE_CONTACT) {
@@ -1850,7 +1851,7 @@ function Form({
         );
         break;
       } else if (type === ACTION_TRIGGER_ARGYLE) {
-        await submitPromise;
+        await Promise.all([submitPromise, client.flushCustomFields()]);
         await openArgyleLink(client, flowOnSuccess(i), integrations?.argyle);
         break;
       } else if (type === ACTION_TRIGGER_FLINKS) {
@@ -1993,6 +1994,7 @@ function Form({
           break;
         }
       } else if (type === ACTION_INVITE_COLLABORATOR) {
+        await Promise.all([submitPromise, client.flushCustomFields()]);
         // Invited collaborators is a mixed list of emails and/or user group names (comma sep or array)
         const val = fieldValues[action.email_field_key];
         if (!val) {
@@ -2019,6 +2021,7 @@ function Form({
           break;
         }
       } else if (type === ACTION_REWIND_COLLABORATION) {
+        await Promise.all([submitPromise, client.flushCustomFields()]);
         try {
           await client.rewindCollaboration(
             action.template_id,
@@ -2029,10 +2032,9 @@ function Form({
           break;
         }
       } else if (type === ACTION_AI_EXTRACTION) {
+        await Promise.all([submitPromise, client.flushCustomFields()]);
+        const extractions = [];
         try {
-          await submitPromise;
-
-          const extractions = [];
           while (i < actions.length) {
             const curAction = actions[i];
             if (
