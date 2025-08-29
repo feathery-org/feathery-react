@@ -126,7 +126,10 @@ function SingleOtpInput({
           width: '100%',
           ...responsiveStyles.getTarget('field')
         }}
-        autoComplete={autoComplete === 'on' ? 'one-time-code' : 'off'}
+        // Many modern browsers do not support autocomplete="off".
+        // In order to avoid the autoComplete, use autocomplete="new-password"
+        // @See: https://developer.mozilla.org/en-US/docs/Web/Security/Practical_implementation_guides/Turning_off_form_autocompletion
+        autoComplete={autoComplete === 'on' ? 'one-time-code' : 'new-password'}
         inputMode='numeric'
         disabled={disabled}
         ref={input}
