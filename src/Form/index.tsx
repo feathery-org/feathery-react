@@ -2424,12 +2424,7 @@ function Form({
     <ReactPortal options={popupOptions}>
       <BootstrapForm
         {...formProps}
-        autoComplete={
-          // Many modern browsers do not support autocomplete="off".
-          // In order to avoid the autoComplete, use autocomplete="new-password"
-          // @See: https://developer.mozilla.org/en-US/docs/Web/Security/Practical_implementation_guides/Turning_off_form_autocompletion
-          formSettings.autocomplete !== 'on' ? 'new-password' : 'on'
-        }
+        autoComplete={formSettings.autocomplete}
         className={`feathery ${className || ''}`}
         ref={formRef}
         css={{
