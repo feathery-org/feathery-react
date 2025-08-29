@@ -152,7 +152,12 @@ function AddressLine1({
             placeholder=''
             disabled={disabled}
             aria-label={element.properties.aria_label}
-            autoComplete={autoComplete === 'on' ? 'street-address' : 'off'}
+            autoComplete={
+              // Many modern browsers do not support autocomplete="off".
+              // In order to avoid the autoComplete, use autocomplete="new-password"
+              // @See: https://developer.mozilla.org/en-US/docs/Web/Security/Practical_implementation_guides/Turning_off_form_autocompletion
+              autoComplete === 'on' ? 'street-address' : 'new-password'
+            }
             value={value}
             ref={setRef}
             // Not on focus because if error is showing, it will

@@ -244,7 +244,10 @@ function DateSelectorField({
         <DatePicker
           id={element.servar.key}
           selected={internalDate}
-          autoComplete='off'
+          // Many modern browsers do not support autocomplete="off".
+          // In order to avoid the autoComplete, use autocomplete="new-password"
+          // @See: https://developer.mozilla.org/en-US/docs/Web/Security/Practical_implementation_guides/Turning_off_form_autocompletion
+          autoComplete='new-password'
           locale={locale}
           timeCaption={translation.time_label}
           preventOpenOnFocus={isTouchDevice()}

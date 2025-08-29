@@ -307,7 +307,10 @@ function PhoneField({
               setRef(ref);
             }}
             type='tel'
-            autoComplete={autoComplete === 'on' ? 'tel' : 'off'}
+            // Many modern browsers do not support autocomplete="off".
+            // In order to avoid the autoComplete, use autocomplete="new-password"
+            // @See: https://developer.mozilla.org/en-US/docs/Web/Security/Practical_implementation_guides/Turning_off_form_autocompletion
+            autoComplete={autoComplete === 'on' ? 'tel' : 'new-password'}
             dir='ltr' // always left-to-right numbers but will be right justified in RTL
             onFocus={(e) => {
               iosScrollOnFocus(e);
