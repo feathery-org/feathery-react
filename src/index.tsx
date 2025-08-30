@@ -1,4 +1,3 @@
-import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import Elements from './elements';
 import Form, { JSForm, Props as FormProps, StyledContainer } from './Form';
