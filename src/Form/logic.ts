@@ -3,8 +3,8 @@ import * as walk from 'acorn-walk';
 import {
   ExtractedExportFuncInfo,
   ExtractedExportVarInfo,
-  ExtractedReusableLogicInfo,
-  ReusableLogicInfo
+  ExtractedSharedCodeInfo,
+  SharedCodeInfo
 } from './definitions';
 
 export function getAcornParsedNodes(input: string): Program | null {
@@ -372,9 +372,9 @@ function extractJsElements(code: string): {
 }
 
 export function extractExportedCodeInfoArray(
-  reusableLogicInfoArray: ReusableLogicInfo[]
-): ExtractedReusableLogicInfo[] {
-  return reusableLogicInfoArray
+  sharedCodeInfoArray: SharedCodeInfo[]
+): ExtractedSharedCodeInfo[] {
+  return sharedCodeInfoArray
     .filter((codeInfo) => codeInfo.valid)
     .map((codeInfo) => ({
       key: codeInfo.key,
@@ -384,7 +384,7 @@ export function extractExportedCodeInfoArray(
 
 export function replaceImportsWithDefinitions(
   code: string,
-  extractedReusableLogicInfo: ExtractedReusableLogicInfo[]
+  extractedSharedCodeInfo: ExtractedSharedCodeInfo[]
 ): string {
   const lines = code.split('\n');
   const definitions: string[] = [];
@@ -399,7 +399,7 @@ export function replaceImportsWithDefinitions(
   walk.simple(parsedNodes, {
     ImportDeclaration(node: any) {
       const key = node.source.value;
-      const rule = extractedReusableLogicInfo.find((r: any) => r.key === key);
+      const rule = extractedSharedCodeInfo.find((r: any) => r.key === key);
       if (!rule) return;
 
       const start = node.loc.start.line - 1;

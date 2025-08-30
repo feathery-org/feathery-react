@@ -1,6 +1,6 @@
 import { Program } from 'acorn';
 
-export interface ReusableLogicInfo {
+export interface SharedCodeInfo {
   id: string;
   key: string;
   code: string;
@@ -20,7 +20,7 @@ export interface ExtractedExportFuncInfo {
   body: string;
 }
 
-export interface ExtractedReusableLogicInfo {
+export interface ExtractedSharedCodeInfo {
   key: string;
   exportVariables: ExtractedExportVarInfo[];
   exportFunctions: ExtractedExportFuncInfo[];

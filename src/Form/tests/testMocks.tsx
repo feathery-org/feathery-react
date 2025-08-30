@@ -242,7 +242,7 @@ jest.mock('uuid', () => ({ v4: () => 'uuid-1' }));
 // internalState and setter
 jest.mock('../../utils/internalState', () => ({
   __esModule: true,
-  default: { reusableLogics: [] },
+  default: { sharedCodes: [] },
   setFormInternalState: jest.fn()
 }));
 

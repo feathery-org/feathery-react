@@ -201,7 +201,7 @@ import QuikFormViewer from '../elements/components/QuikFormViewer';
 import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
 import usePollFuserData from '../hooks/usePollFuserData';
-import { ReusableLogicInfo } from './definitions';
+import { SharedCodeInfo } from './definitions';
 import {
   extractExportedCodeInfoArray,
   replaceImportsWithDefinitions
@@ -350,7 +350,7 @@ function Form({
 
   const [connectorFields, setConnectorFields] = useState<any>();
   const [logicRules, setLogicRules] = useState<LogicRule[]>([]);
-  const [reusableLogics, setReusableLogics] = useState<ReusableLogicInfo[]>([]);
+  const [sharedCodes, setSharedCodes] = useState<SharedCodeInfo[]>([]);
   const [inlineErrors, setInlineErrors] = useState<
     Record<string, { message: string; index: number }>
   >({});
@@ -416,15 +416,15 @@ function Form({
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
 
-  const extractedReusableLogicInfo = useMemo(() => {
-    if (reusableLogics.length < 1) {
+  const extractedSharedCodeInfo = useMemo(() => {
+    if (sharedCodes.length < 1) {
       return [];
     }
 
     return extractExportedCodeInfoArray(
-      Object.values(reusableLogics) as ReusableLogicInfo[]
+      Object.values(sharedCodes) as SharedCodeInfo[]
     );
-  }, [reusableLogics]);
+  }, [sharedCodes]);
 
   useEffect(() => {
     // TODO: remove support for formName (deprecated)
@@ -758,10 +758,10 @@ function Form({
 
           let logicRuleCode = logicRule.code;
 
-          if (extractedReusableLogicInfo.length > 0) {
+          if (extractedSharedCodeInfo.length > 0) {
             logicRuleCode = replaceImportsWithDefinitions(
               logicRule.code,
-              extractedReusableLogicInfo
+              extractedSharedCodeInfo
             );
           }
 
@@ -1144,7 +1144,7 @@ function Form({
         setFormSettings({ ...formSettings, ...mapFormSettingsResponse(res) });
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);
-        setReusableLogics(res.reusable_logics);
+        setSharedCodes(res.reusable_logics);
         trackHashes.current =
           hashNavigation !== undefined ? hashNavigation : res.track_hashes;
 
