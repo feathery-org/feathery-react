@@ -2,7 +2,7 @@ import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/InlineTooltip';
-import { bootstrapStyles } from '../styles';
+import { resetStyles } from '../styles';
 import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
 
@@ -81,7 +81,7 @@ function TextArea({
             margin: 0,
             backgroundColor: 'transparent',
             resize: 'none',
-            ...bootstrapStyles,
+            ...resetStyles,
             padding: '0.5rem 0.75rem',
             ...responsiveStyles.getTarget('field'),
             ...(focused || rawValue || !element.properties.placeholder

@@ -596,7 +596,7 @@ export const noTextSelectStyles: CSSProperties = {
   userSelect: 'none' /* Chrome, Firefox, etc. */
 };
 
-export const bootstrapStyles: CSSProperties = {
+export const resetStyles: CSSProperties = {
   padding: '0.375rem 0.75rem',
   boxSizing: 'border-box',
   transition: 'border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out',

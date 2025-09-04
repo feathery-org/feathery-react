@@ -7,14 +7,18 @@ jest.mock('../../../../utils/browser', () => ({
       setAttribute: jest.fn(),
       appendChild: jest.fn()
     })),
-    addEventListener: jest.fn()
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    body: {}
   })),
   featheryWindow: jest.fn(() => ({
     matchMedia: jest.fn(() => ({
       matches: false,
       addEventListener: jest.fn(),
       removeEventListener: jest.fn()
-    }))
+    })),
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn()
   })),
   isHoverDevice: jest.fn(() => false),
   isTouchDevice: jest.fn(() => false),
@@ -126,16 +130,6 @@ beforeAll(() => {
     // silence a warning from react-testing-library
     // See also: https://github.com/facebook/react/pull/14853
     if (/Warning.*not wrapped in act/.test(args[0])) {
-      return;
-    }
-    // TODO (tyler): remove this when react-bootstrap is removed
-    // silence a warning from react-bootstrap
-    // React does not recognize the `arrowProps` prop on a DOM element. Also applies to other props
-    if (
-      /Warning: React does not recognize the.*prop on a DOM element/.test(
-        args[0]
-      )
-    ) {
       return;
     }
     originalError.call(console, ...args);
