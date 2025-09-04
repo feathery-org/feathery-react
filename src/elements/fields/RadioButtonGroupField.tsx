@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import ReactForm from '../components/CustomFormControl';
+import { FormControl } from '../components/FormControl';
 import { resetStyles } from '../styles';
 import {
   applyCheckableInputStyles,
@@ -198,7 +198,7 @@ function RadioButtonGroupField({
             >
               {otherLabel}
             </label>
-            <ReactForm.Control
+            <FormControl
               type='text'
               // Paired with flex grow, will not expand parent width
               htmlSize={1}

@@ -1,5 +1,5 @@
 import React, { useMemo, useRef } from 'react';
-import ReactForm from '../components/CustomFormControl';
+import { FormControl } from '../components/FormControl';
 import { resetStyles } from '../styles';
 import {
   applyCheckableInputStyles,
@@ -190,7 +190,7 @@ function CheckboxGroupField({
             >
               {otherLabel}
             </label>
-            <ReactForm.Control
+            <FormControl
               type='text'
               // Paired with flex grow, will not expand parent width
               htmlSize={1}
