@@ -3,10 +3,10 @@ import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import timeZoneCountries from './timeZoneCountries';
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
-import { bootstrapStyles } from '../../styles';
+import { resetStyles } from '../../styles';
 import countryData from '../../components/data/countries';
 import exampleNumbers from './exampleNumbers';
-import { Overlay } from 'react-bootstrap';
+import { Overlay } from '../../components/CustomOverlay';
 import { isNum } from '../../../utils/primitives';
 import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
@@ -291,7 +291,7 @@ function PhoneField({
               border: 'none',
               margin: 0,
               ...(rightToLeft ? { textAlign: 'right' } : {}),
-              ...bootstrapStyles,
+              ...resetStyles,
               ...responsiveStyles.getTarget('field'),
               ...(focused || formattedNumber || !placeholder
                 ? {}

@@ -3,12 +3,14 @@ import React, {
   useEffect,
   useImperativeHandle,
   useRef,
-  useState
+  useState,
+  Suspense,
+  lazy
 } from 'react';
 import { toBase64 } from '../../../../utils/image';
-import Signature from 'react-signature-canvas';
 import { fromDataURL } from './utils';
 import { SignatureTranslations } from '../translation';
+const Signature = lazy(() => import('react-signature-canvas'));
 
 export type SignatureCanvasProps = {
   fieldKey?: string;
@@ -141,28 +143,30 @@ const SignatureCanvas = forwardRef<
           {t.clear}
         </div>
       )}
-      <Signature
-        penColor='black'
-        dotSize={4}
-        minWidth={1.5}
-        maxWidth={3}
-        clearOnResize={false}
-        canvasProps={{
-          id: fieldKey + repeatIndex,
-          style: {
-            ...signatureCanvasStyles,
-            width: '100%',
-            height: '100%',
-            boxSizing: 'border-box',
-            paddingLeft: '5px'
-          }
-        }}
-        ref={signatureRef}
-        onEnd={() => {
-          onEnd();
-          setIsClearVisible(!signatureRef.current.isEmpty());
-        }}
-      />
+      <Suspense fallback={<div>Loading...</div>}>
+        <Signature
+          penColor='black'
+          dotSize={4}
+          minWidth={1.5}
+          maxWidth={3}
+          clearOnResize={false}
+          canvasProps={{
+            id: fieldKey + repeatIndex,
+            style: {
+              ...signatureCanvasStyles,
+              width: '100%',
+              height: '100%',
+              boxSizing: 'border-box',
+              paddingLeft: '5px'
+            }
+          }}
+          ref={signatureRef}
+          onEnd={() => {
+            onEnd();
+            setIsClearVisible(!signatureRef.current.isEmpty());
+          }}
+        />
+      </Suspense>
     </>
   );
 });

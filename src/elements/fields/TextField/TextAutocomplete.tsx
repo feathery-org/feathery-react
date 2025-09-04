@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 
-import { OverlayTrigger } from 'react-bootstrap';
+import { OverlayTrigger } from '../../components/CustomTooltip';
 import { DROPDOWN_Z_INDEX } from '..';
 
 function TextAutocomplete({
