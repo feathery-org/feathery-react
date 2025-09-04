@@ -74,7 +74,7 @@ const SignatureCanvas = forwardRef<
     async function setSignatureCanvas() {
       const sig = signatureRef.current?.getCanvas();
 
-      if (defaultValue === null) {
+      if (sig && defaultValue === null) {
         sig.getContext('2d').clearRect(0, 0, sig.width, sig.height);
         return;
       }
