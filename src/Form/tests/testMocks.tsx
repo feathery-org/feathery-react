@@ -153,6 +153,9 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
   getPrevStepKey: () => '',
   getUrlHash: () => '',
   isStepTerminal: () => false,
+  isValidFieldIdentifier: () => true,
+  lookUpTrigger: () => ({}),
+  mapFormSettingsResponse: () => ({ shared_codes: [] }),
   nextStepKey: () => undefined,
   recurseProgressDepth: () => [0, 1],
   setUrlStepHash: () => {}
@@ -239,7 +242,7 @@ jest.mock('uuid', () => ({ v4: () => 'uuid-1' }));
 // internalState and setter
 jest.mock('../../utils/internalState', () => ({
   __esModule: true,
-  default: {},
+  default: { sharedCodes: [] },
   setFormInternalState: jest.fn()
 }));
 
@@ -366,6 +369,7 @@ jest.mock('../../utils/featheryClient', () => {
       completion_behavior: '',
       formOff: false,
       logic_rules: [],
+      shared_codes: [],
       track_hashes: false
     });
 
