@@ -2,7 +2,7 @@ import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/InlineTooltip';
-import { bootstrapStyles } from '../styles';
+import { resetStyles } from '../styles';
 import useBorder from '../components/useBorder';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
@@ -81,7 +81,7 @@ function PasswordField({
               border: 'none',
               margin: 0,
               backgroundColor: 'transparent',
-              ...bootstrapStyles,
+              ...resetStyles,
               ...responsiveStyles.getTarget('field'),
               [`&:focus ~ #${borderId}`]: Object.values(borderStyles.active)[0],
               '&:not(:focus)':

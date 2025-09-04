@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { OverlayTrigger, Tooltip } from './CustomTooltip';
 import { HelpIcon } from './icons';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import { replaceTextVariables } from './TextNodes';

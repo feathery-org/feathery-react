@@ -1,6 +1,6 @@
 import React, { useMemo, useRef } from 'react';
-import ReactForm from 'react-bootstrap/Form';
-import { bootstrapStyles } from '../styles';
+import ReactForm from '../components/CustomFormControl';
+import { resetStyles } from '../styles';
 import {
   applyCheckableInputStyles,
   applyHeightWidthMarginByFontSize,
@@ -196,7 +196,7 @@ function CheckboxGroupField({
               htmlSize={1}
               css={{
                 marginLeft: '5px',
-                ...bootstrapStyles,
+                ...resetStyles,
                 paddingLeft: '0.4rem',
                 flexGrow: 1,
                 ...responsiveStyles.getTarget('field'),
