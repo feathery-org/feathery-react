@@ -1144,7 +1144,7 @@ function Form({
         setFormSettings({ ...formSettings, ...mapFormSettingsResponse(res) });
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);
-        setSharedCodes(res.reusable_logics);
+        setSharedCodes(res.shared_codes);
         trackHashes.current =
           hashNavigation !== undefined ? hashNavigation : res.track_hashes;
 

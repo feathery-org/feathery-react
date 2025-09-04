@@ -155,7 +155,7 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
   isStepTerminal: () => false,
   isValidFieldIdentifier: () => true,
   lookUpTrigger: () => ({}),
-  mapFormSettingsResponse: () => ({ reusable_logics: [] }),
+  mapFormSettingsResponse: () => ({ shared_codes: [] }),
   nextStepKey: () => undefined,
   recurseProgressDepth: () => [0, 1],
   setUrlStepHash: () => {}
@@ -369,7 +369,7 @@ jest.mock('../../utils/featheryClient', () => {
       completion_behavior: '',
       formOff: false,
       logic_rules: [],
-      reusable_logics: [],
+      shared_codes: [],
       track_hashes: false
     });
 
