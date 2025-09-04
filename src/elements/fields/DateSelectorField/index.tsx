@@ -3,15 +3,20 @@ import React, { memo, useEffect, useRef, useState } from 'react';
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
 import DatePicker from 'react-datepicker';
-import DateSelectorStyles from './styles';
+import DateSelectorStyles, {
+  DATEPICKER_ALIGN_VALUE,
+  DATEPICKER_PADDING_TOP_VALUE,
+  PORTAL_CONTAINER_CLASS
+} from './styles';
 
 import { bootstrapStyles } from '../../styles';
 import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';
 import {
   featheryDoc,
+  featheryWindow,
   hoverStylesGuard,
-  isTouchDevice
+  isMobile as _isMobile
 } from '../../../utils/browser';
 import { useCustomDateLocale } from './useDateLocale';
 
@@ -123,14 +128,35 @@ function DateSelectorField({
     shortDayNames: translation.weekdays
   });
 
+  const [curPointerY, setCurPointerY] = useState(0);
+
+  const isMobile = _isMobile();
+  const isEmbedded = featheryWindow()?.self !== featheryWindow()?.top;
+
   // disables mobile devices from focusing inputs through a portal
   // https://github.com/Hacker0x01/react-datepicker/issues/2524
   const handleCalendarOpen = () => {
     featheryDoc().addEventListener('touchstart', stopTouchPropagation, true);
+
+    if (isEmbedded && isMobile) {
+      featheryDoc()
+        .querySelector(PORTAL_CONTAINER_CLASS)
+        ?.style.setProperty(DATEPICKER_PADDING_TOP_VALUE, `${curPointerY}px`);
+
+      featheryDoc()
+        .querySelector(PORTAL_CONTAINER_CLASS)
+        ?.style.setProperty(DATEPICKER_ALIGN_VALUE, 'flex-start');
+    }
   };
 
   const handleCalendarClose = () => {
     featheryDoc().removeEventListener('touchstart', stopTouchPropagation, true);
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isEmbedded && isMobile) {
+      setCurPointerY(e.clientY);
+    }
   };
 
   useEffect(() => {
@@ -208,6 +234,7 @@ function DateSelectorField({
         ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
+      onPointerDown={handlePointerDown}
     >
       {children}
       {fieldLabel}
@@ -250,7 +277,7 @@ function DateSelectorField({
           autoComplete='new-password'
           locale={locale}
           timeCaption={translation.time_label}
-          preventOpenOnFocus={isTouchDevice()}
+          preventOpenOnFocus={isMobile}
           onCalendarOpen={handleCalendarOpen}
           onCalendarClose={() => {
             handleCalendarClose();
@@ -262,7 +289,7 @@ function DateSelectorField({
           onSelect={(date) => onDateChange(date)} // when day is clicked
           onChange={(date) => onDateChange(date)} // only when value has changed
           onFocus={(e: any) => {
-            if (isTouchDevice()) {
+            if (isMobile) {
               // hide keyboard on mobile focus
               e.target.readOnly = true;
             }
@@ -289,8 +316,8 @@ function DateSelectorField({
           forceShowMonthNavigation={false}
           dropdownMode='select'
           // Open up calendar as a modal in mobile
-          withPortal={isTouchDevice()}
-          portalId={isTouchDevice() ? 'feathery-portal' : undefined}
+          withPortal={isMobile}
+          portalId={isMobile ? 'feathery-portal' : undefined}
           aria-label={element.properties.aria_label}
           css={{
             height: '100%',
