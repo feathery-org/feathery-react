@@ -2,12 +2,12 @@ import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/InlineTooltip';
-import { bootstrapStyles } from '../styles';
+import { resetStyles } from '../styles';
 import FeatheryClient from '../../utils/featheryClient';
 import useMounted from '../../hooks/useMounted';
 
 import debounce from 'lodash.debounce';
-import { OverlayTrigger } from 'react-bootstrap';
+import { OverlayTrigger } from '../components/CustomTooltip';
 import useBorder from '../components/useBorder';
 import { DROPDOWN_Z_INDEX } from './index';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
@@ -141,7 +141,7 @@ function AddressLine1({
               border: 'none',
               margin: 0,
               backgroundColor: 'transparent',
-              ...bootstrapStyles,
+              ...resetStyles,
               ...responsiveStyles.getTarget('field'),
               ...(focused || value || !element.properties.placeholder
                 ? {}

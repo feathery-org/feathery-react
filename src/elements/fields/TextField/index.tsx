@@ -2,7 +2,7 @@ import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
-import { bootstrapStyles } from '../../styles';
+import { resetStyles } from '../../styles';
 import { emailPatternStr } from '../../../utils/validation';
 import useBorder from '../../components/useBorder';
 import TextAutocomplete from './TextAutocomplete';
@@ -294,7 +294,7 @@ function TextField({
               border: 'none',
               margin: 0,
               backgroundColor: 'transparent',
-              ...bootstrapStyles,
+              ...resetStyles,
               ...responsiveStyles.getTarget('field'),
               '&:focus': responsiveStyles.getTarget('field')['&:focus'],
               [`&:focus ~ #${borderId}`]: Object.values(borderStyles.active)[0],

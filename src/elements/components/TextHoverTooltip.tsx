@@ -1,5 +1,5 @@
 import React from 'react';
-import { OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { OverlayTrigger, Tooltip } from './CustomTooltip';
 import { FORM_Z_INDEX } from '../../utils/styles';
 
 export default function TextHoverTooltip({ text, children, container }: any) {

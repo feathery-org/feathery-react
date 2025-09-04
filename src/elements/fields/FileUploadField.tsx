@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useThumbnailData } from '../../utils/image';
 import { isEmptyArray, justRemove, toList } from '../../utils/array';
 
-import { Image } from 'react-bootstrap';
 import { CloseIcon, DownloadIcon, FileUploadIcon } from '../components/icons';
 import { imgMaxSizeStyles } from '../styles';
 import { FORM_Z_INDEX } from '../../utils/styles';
@@ -173,7 +172,10 @@ function FileUploadField({
     ...responsiveStyles.getTarget('img')
   };
   const icon = element.properties.icon ? (
-    <Image src={element.properties.icon} fluid style={imgStyles} />
+    <img
+      src={element.properties.icon}
+      style={{ ...imgStyles, maxWidth: '100%', height: 'auto' }}
+    />
   ) : (
     <FileUploadIcon
       width={
@@ -246,7 +248,7 @@ function FileUploadField({
               </div>
             )}
             {thumbnail ? (
-              <Image
+              <img
                 src={thumbnail}
                 style={{
                   width: '100%',
