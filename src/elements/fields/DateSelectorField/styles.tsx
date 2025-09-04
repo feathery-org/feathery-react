@@ -1,6 +1,10 @@
 import React from 'react';
 import { Global, css } from '@emotion/react';
 
+export const PORTAL_CONTAINER_CLASS = '.react-datepicker__portal';
+export const DATEPICKER_PADDING_TOP_VALUE = '--datepicker-pad-top';
+export const DATEPICKER_ALIGN_VALUE = '--datepicker-align';
+
 export default function SelectorStyles() {
   return (
     <Global
@@ -906,7 +910,7 @@ export default function SelectorStyles() {
           clear: left;
         }
 
-        .react-datepicker__portal {
+        ${PORTAL_CONTAINER_CLASS} {
           position: fixed;
           background-color: rgba(0, 0, 0, 0.8);
           bottom: 0;
@@ -914,9 +918,10 @@ export default function SelectorStyles() {
           left: 0;
           top: 0;
           justify-content: center;
-          align-items: center;
+          align-items: var(${DATEPICKER_ALIGN_VALUE}, center);
           display: flex;
           z-index: 2147483647;
+          padding-top: var(${DATEPICKER_PADDING_TOP_VALUE}, 0px);
         }
         .react-datepicker__portal .react-datepicker__day-name,
         .react-datepicker__portal .react-datepicker__day,
