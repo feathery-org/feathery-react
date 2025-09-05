@@ -220,9 +220,8 @@ function TextField({
     error: inlineError,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
-  const containerRef = useRef<HTMLDivElement>(null);
   const listItemRef = useRef<any[]>([]);
-  const inputRef = containerRef.current?.getElementsByTagName('input')[0];
+  const inputRef = useRef<{ element?: HTMLInputElement }>(null);
   const { value: fieldVal } = getFieldValue(element);
   const rawValue = stringifyWithNull(fieldVal);
 
@@ -231,7 +230,6 @@ function TextField({
   const spacing = element.properties.tooltipText ? 30 : 8;
   return (
     <div
-      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -274,17 +272,17 @@ function TextField({
           onSelect={(option) => {
             onAccept(option, {});
             setShowAutocomplete(false);
-            inputRef?.focus();
+            inputRef.current?.element?.focus?.();
           }}
           responsiveStyles={responsiveStyles}
-          container={containerRef}
           listItemRef={listItemRef}
           onHide={() => setShowAutocomplete(false)}
-          onInputFocus={() => inputRef?.focus()}
+          onInputFocus={() => inputRef.current?.element?.focus?.()}
         >
           <IMaskInput
             id={servar.key}
             name={servar.key}
+            ref={inputRef}
             css={{
               position: 'relative',
               // Position input above the border div
@@ -374,7 +372,6 @@ function TextField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
-          container={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

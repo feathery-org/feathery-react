@@ -33,7 +33,6 @@ function RadioButtonGroupField({
   children
 }: any) {
   const servar = element.servar;
-  const containerRef = useRef(null);
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
 
@@ -81,7 +80,6 @@ function RadioButtonGroupField({
 
   return (
     <div
-      ref={containerRef}
       css={{
         width: '100%',
         height: '100%',
@@ -150,7 +148,6 @@ function RadioButtonGroupField({
                 </span>
               </label>
               <InlineTooltip
-                container={containerRef}
                 id={`${element.id}-${value}`}
                 text={tooltip}
                 responsiveStyles={responsiveStyles}
@@ -224,7 +221,6 @@ function RadioButtonGroupField({
               disabled={otherTextDisabled || loadingDynamicOptions}
             />
             <InlineTooltip
-              container={containerRef}
               id={`${element.id}-`}
               text={servar.metadata.other_tooltip}
               responsiveStyles={responsiveStyles}
