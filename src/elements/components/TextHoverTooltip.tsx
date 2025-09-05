@@ -1,12 +1,12 @@
 import React from 'react';
-import { OverlayTrigger, Tooltip } from './CustomTooltip';
+import { Tooltip } from './Tooltip';
 import { FORM_Z_INDEX } from '../../utils/styles';
+import { OverlayTrigger } from './Overlay';
 
 export default function TextHoverTooltip({ text, children, container }: any) {
   return text ? (
     <OverlayTrigger
       placement='auto'
-      flip
       container={() => container?.current}
       overlay={
         <Tooltip
