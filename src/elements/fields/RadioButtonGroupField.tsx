@@ -178,7 +178,6 @@ function RadioButtonGroupField({
                 onChange(e);
               }}
               onFocus={iosScrollOnFocus}
-              value={otherVal || ''}
               style={{
                 padding: 0,
                 lineHeight: 'normal'
