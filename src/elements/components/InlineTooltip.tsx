@@ -19,7 +19,6 @@ export default function InlineTooltip({
   text,
   responsiveStyles,
   absolute = true,
-  container,
   repeat
 }: InlineTooltipProps) {
   const [show, setShow] = useState(false);

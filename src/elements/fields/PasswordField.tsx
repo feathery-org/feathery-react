@@ -30,13 +30,10 @@ function PasswordField({
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
   const [showPassword, setShowPassword] = useState(false);
-  const containerRef = useRef(null);
-
   const servar = element.servar;
   const spacing = element.properties.tooltipText ? 30 : 8;
   return (
     <div
-      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -134,7 +131,6 @@ function PasswordField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
-          container={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

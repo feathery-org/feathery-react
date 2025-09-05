@@ -65,8 +65,6 @@ const CardField = ({
     error: inlineError,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
-  const containerRef = useRef(null);
-
   const stripe = useStripe();
   const stripeElements = useElements();
   const [lastError, setLastError] = useState('');
@@ -142,7 +140,6 @@ const CardField = ({
 
   return (
     <div
-      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -209,7 +206,6 @@ const CardField = ({
           />
         </div>
         <InlineTooltip
-          container={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

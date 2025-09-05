@@ -20,7 +20,6 @@ function MatrixField({
   const servar = element.servar;
   const allowMultiple = servar.metadata.multiple;
   const inputType = allowMultiple ? 'checkbox' : 'radio';
-  const containerRef = useRef(null);
   const { backgroundColor, borderRadius } =
     responsiveStyles.getTarget('sub-fc');
 
@@ -47,7 +46,6 @@ function MatrixField({
 
   return (
     <div
-      ref={containerRef}
       css={{
         width: '100%',
         height: '100%',
@@ -97,7 +95,7 @@ function MatrixField({
               marginBottom: 6
             }}
           >
-            <TextHoverTooltip container={containerRef} text={q.tooltip}>
+            <TextHoverTooltip text={q.tooltip}>
               <div css={firstColStyle}>{q.label}</div>
             </TextHoverTooltip>
             {options.map((opt: any, j: number) => {
