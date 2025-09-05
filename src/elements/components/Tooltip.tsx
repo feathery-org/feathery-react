@@ -1,8 +1,9 @@
 import { ComponentProps } from 'react';
 import { FORM_Z_INDEX } from '../../utils/styles';
+import type { Interpolation, Theme } from '@emotion/react';
 
 interface TooltipProps extends ComponentProps<'div'> {
-  css: Record<string, any>;
+  css?: Interpolation<Theme>;
 }
 
 const Tooltip = ({ children, css, ...props }: TooltipProps) => {
@@ -21,7 +22,7 @@ const Tooltip = ({ children, css, ...props }: TooltipProps) => {
           borderRadius: '.25rem',
           fontSize: 'smaller'
         },
-        ...css
+        ...(css as any)
       }}
       {...props}
     >
