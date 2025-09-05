@@ -34,7 +34,7 @@ function TextAutocomplete({
   if (allOptions.length === 0) return children;
 
   return (
-    <div ref={triggerRef}>
+    <div ref={triggerRef} css={{ height: '100%', width: '100%' }}>
       {children}
       {triggerRef.current && options.length > 0 && showOptions && (
         <Overlay target={triggerRef.current} show placement='bottom-start'>
