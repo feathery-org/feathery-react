@@ -18,6 +18,7 @@ export interface ExtractedExportFuncInfo {
   name: string;
   signature: string;
   body: string;
+  isAsync?: boolean;
 }
 
 export interface ExtractedSharedCodeInfo {
