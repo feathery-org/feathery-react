@@ -7,6 +7,8 @@ import {
   cleanup
 } from '@testing-library/react';
 import { JSForm } from '..';
+import FeatheryClient from '../../utils/featheryClient';
+import internalState from '../../utils/internalState';
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -16,6 +18,72 @@ afterEach(() => {
   HooksMod._spies.nextActionStateRef.current.isGettingNewStep = false;
   HooksMod._spies.nextActionStateRef.current.isNextButtonAction = false;
   HooksMod._spies.nextActionStateRef.current.latestClickedButton = null;
+});
+
+describe('ReactForm sharedCodes initialization', () => {
+  it('sets sharedCodes to empty array when shared_codes is null', async () => {
+    // Arrange: override FeatheryClient mock to return null shared_codes
+    const MockClient = FeatheryClient;
+    MockClient.prototype.fetchForm = async () => ({
+      steps: [
+        {
+          key: 'step-1',
+          id: 's1',
+          servar_fields: [],
+          buttons: [],
+          next_conditions: []
+        }
+      ],
+      form_name: 'Test Form',
+      completion_behavior: '',
+      formOff: false,
+      logic_rules: [],
+      shared_codes: null, // explicitly null
+      track_hashes: false
+    });
+
+    render(<JSForm formId='f1' _internalId='iid-sc1' />);
+    const btn = await screen.findByTestId('btn'); // wait for Grid render
+
+    // Assert: sharedCodes should be initialized to empty array safely
+    expect(btn).toBeInTheDocument();
+
+    // Accessing internalState mock to confirm
+    const sharedCodes: any = internalState.sharedCodes;
+    expect(Array.isArray(internalState.sharedCodes)).toBe(true);
+    expect(sharedCodes?.length).toBe(0);
+  });
+
+  it('sets sharedCodes to empty array when shared_codes is undefined', async () => {
+    // Arrange: override FeatheryClient mock to return undefined shared_codes
+    const MockClient = FeatheryClient;
+    MockClient.prototype.fetchForm = async () => ({
+      steps: [
+        {
+          key: 'step-1',
+          id: 's1',
+          servar_fields: [],
+          buttons: [],
+          next_conditions: []
+        }
+      ],
+      form_name: 'Test Form',
+      completion_behavior: '',
+      formOff: false,
+      logic_rules: [],
+      // shared_codes is intentionally omitted to be undefined
+      track_hashes: false
+    });
+
+    render(<JSForm formId='f1' _internalId='iid-sc2' />);
+    const btn = await screen.findByTestId('btn');
+
+    // Assert
+    const sharedCodes: any = internalState.sharedCodes;
+    expect(btn).toBeInTheDocument();
+    expect(Array.isArray(sharedCodes)).toBe(true);
+    expect(sharedCodes?.length).toBe(0);
+  });
 });
 
 /// /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
