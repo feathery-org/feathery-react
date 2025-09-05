@@ -159,7 +159,10 @@ function extractJsElements(code: string): {
   exportFunctions: ExtractedExportFuncInfo[];
 } {
   const variableMap = new Map<string, { declaration: string; value: string }>();
-  const functionMap = new Map<string, { signature: string; body: string }>();
+  const functionMap = new Map<
+    string,
+    { signature: string; body: string; isAsync?: boolean }
+  >();
   const exportFunctions: ExtractedExportFuncInfo[] = [];
   const exportVariables: ExtractedExportVarInfo[] = [];
 
@@ -185,7 +188,11 @@ function extractJsElements(code: string): {
       body = `return ${expr};`;
     }
 
-    return { signature: `(${params.join(', ')})`, body };
+    return {
+      signature: `(${params.join(', ')})`,
+      body,
+      isAsync: fnNode?.async
+    };
   };
 
   for (const node of parsedNodes.body) {
@@ -211,8 +218,8 @@ function extractJsElements(code: string): {
           (decl.init.type === 'ArrowFunctionExpression' ||
             decl.init.type === 'FunctionExpression')
         ) {
-          const { signature, body } = buildFnParts(decl.init);
-          functionMap.set(name, { signature, body });
+          const { signature, body, isAsync } = buildFnParts(decl.init);
+          functionMap.set(name, { signature, body, isAsync });
         }
       }
     }
@@ -224,10 +231,12 @@ function extractJsElements(code: string): {
       const bodyStart = node.body.start + 1;
       const bodyEnd = node.body.end - 1;
       const body = code.slice(bodyStart, bodyEnd).trim();
+      const isAsync = node.async;
 
       functionMap.set(name, {
         signature: `(${params.join(', ')})`,
-        body
+        body,
+        isAsync
       });
     }
 
@@ -237,6 +246,7 @@ function extractJsElements(code: string): {
       node.declaration?.type === 'FunctionDeclaration'
     ) {
       const funcNode = node.declaration;
+      const isAsync = funcNode.async;
       const name = funcNode.id.name;
       const params = funcNode.params.map((p: any) => paramText(p));
       const bodyStart = funcNode.body.start + 1;
@@ -246,7 +256,8 @@ function extractJsElements(code: string): {
       // Register exported function first
       functionMap.set(name, {
         signature: `(${params.join(', ')})`,
-        body
+        body,
+        isAsync
       });
 
       // Build minimal dependency prelude
@@ -259,7 +270,11 @@ function extractJsElements(code: string): {
 
         const fn = functionMap.get(id);
         if (fn) {
-          prelude.push(`function ${id}${fn.signature} {\n${fn.body}\n}`);
+          prelude.push(
+            `${fn.isAsync ? 'async ' : ''}function ${id}${fn.signature} {\n${
+              fn.body
+            }\n}`
+          );
           seen.add(id);
           continue;
         }
@@ -274,7 +289,8 @@ function extractJsElements(code: string): {
       exportFunctions.push({
         name,
         signature: `(${params.join(', ')})`,
-        body: prelude.concat([body]).join('\n')
+        body: prelude.concat([body]).join('\n'),
+        isAsync
       });
     }
 
@@ -303,10 +319,10 @@ function extractJsElements(code: string): {
           (decl.init.type === 'ArrowFunctionExpression' ||
             decl.init.type === 'FunctionExpression')
         ) {
-          const { signature, body } = buildFnParts(decl.init);
+          const { signature, body, isAsync } = buildFnParts(decl.init);
 
           // Register in functionMap so other exports can depend on it
-          functionMap.set(name, { signature, body });
+          functionMap.set(name, { signature, body, isAsync });
 
           const used = extractReferencedIdentifiers(decl.init.body);
           const prelude: string[] = [];
@@ -317,7 +333,11 @@ function extractJsElements(code: string): {
 
             const fn = functionMap.get(id);
             if (fn) {
-              prelude.push(`function ${id}${fn.signature} {\n${fn.body}\n}`);
+              prelude.push(
+                `${fn.isAsync ? 'async ' : ''}function ${id}${
+                  fn.signature
+                } {\n${fn.body}\n}`
+              );
               seen.add(id);
               continue;
             }
@@ -332,7 +352,8 @@ function extractJsElements(code: string): {
           exportFunctions.push({
             name,
             signature,
-            body: prelude.concat([body]).join('\n')
+            body: prelude.concat([body]).join('\n'),
+            isAsync
           });
           continue;
         }
@@ -440,7 +461,9 @@ export function replaceImportsWithDefinitions(
         );
         if (matchedFunc) {
           definitions.push(
-            `function ${localName}${matchedFunc.signature} {\n${matchedFunc.body}\n}`
+            `${matchedFunc.isAsync ? 'async ' : ''}function ${localName}${
+              matchedFunc.signature
+            } {\n${matchedFunc.body}\n}`
           );
         }
       }
