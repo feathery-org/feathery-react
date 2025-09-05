@@ -34,7 +34,6 @@ export default function DropdownField({
   });
   const [focused, setFocused] = useState(false);
   const [curCountry, setCurCountry] = useState(null);
-  const containerRef = useRef(null);
   const servar = element.servar;
   const short = servar.metadata.store_abbreviation;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
@@ -127,7 +126,6 @@ export default function DropdownField({
   responsiveStyles.applyFontStyles('field', !fieldVal);
   return (
     <div
-      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -228,7 +226,6 @@ export default function DropdownField({
           {element.properties.placeholder || ''}
         </span>
         <InlineTooltip
-          container={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

@@ -9,13 +9,11 @@ const mockResponsiveStyles = {
 };
 
 function TestWrapper({ children, ...props }: any) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const listItemRef = useRef<any[]>([]);
 
   return (
-    <div ref={containerRef}>
+    <div>
       <TextAutocomplete
-        container={containerRef}
         listItemRef={listItemRef}
         responsiveStyles={mockResponsiveStyles}
         {...props}
