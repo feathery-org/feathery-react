@@ -12,7 +12,7 @@ import { Tooltip } from '../components/Tooltip';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import Placeholder from '../components/Placeholder';
 import useSalesforceSync from '../../hooks/useSalesforceSync';
-import { OverlayTrigger } from '../components/Overlay';
+import Overlay from '../components/Popover';
 
 type OptionData = {
   tooltip?: string;
@@ -23,18 +23,22 @@ type OptionData = {
 type Options = string[] | OptionData[];
 
 const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
-  let optComponent = (
-    // @ts-ignore
-    <SelectComponents.Option {...props}>{children}</SelectComponents.Option>
-  );
+  const optionRef = useRef<HTMLDivElement>(null);
+  const [showTooltip, setShowTooltip] = useState(false);
 
-  if (props.data.tooltip) {
-    optComponent = (
-      <OverlayTrigger
-        placement='right'
-        // @ts-expect-error
-        container={() => props.selectProps.container?.current}
-        overlay={
+  return (
+    <div
+      ref={optionRef}
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      <SelectComponents.Option {...props}>{children}</SelectComponents.Option>
+      {props.data.tooltip && optionRef.current && (
+        <Overlay
+          target={optionRef.current}
+          show={showTooltip}
+          placement='right'
+        >
           <Tooltip
             id={`tooltip-${props.data.value}`}
             css={{
@@ -54,14 +58,10 @@ const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
           >
             {props.data.tooltip}
           </Tooltip>
-        }
-      >
-        <div>{optComponent}</div>
-      </OverlayTrigger>
-    );
-  }
-
-  return optComponent;
+        </Overlay>
+      )}
+    </div>
+  );
 };
 
 export default function DropdownMultiField({
@@ -84,8 +84,6 @@ export default function DropdownMultiField({
     error: inlineError,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
-  const containerRef = useRef(null);
-
   const [focused, setFocused] = useState(false);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
@@ -97,10 +95,8 @@ export default function DropdownMultiField({
 
     fieldVal.forEach((val: string) => {
       if (typeof newOptions[0] === 'string') {
-        // handle string[]
         if (!newOptions.includes(val)) newOptions.push(val);
       } else if (!newOptions.some((option: any) => option.value === val)) {
-        // handle OptionData[]
         newOptions.push({ value: val, label: val });
       }
     });
@@ -121,8 +117,7 @@ export default function DropdownMultiField({
     });
   } else if (
     repeatIndex !== null &&
-    servar.metadata.repeat_options !== undefined &&
-    servar.metadata.repeat_options[repeatIndex] !== undefined
+    servar.metadata.repeat_options?.[repeatIndex] !== undefined
   ) {
     const repeatOptions = servar.metadata.repeat_options[repeatIndex];
     options = addFieldValOptions(repeatOptions).map((option) => {
@@ -138,25 +133,20 @@ export default function DropdownMultiField({
       (option, index) => {
         if (typeof option === 'string') {
           labelMap[option] = labels[index] || option;
-
           return {
             value: option,
             label: labels[index] || option,
             tooltip: tooltips[index] || ''
           };
         }
-
         labelMap[option.value] = option.label;
-
         return option;
       }
     );
   }
+
   const selectVal = fieldVal
-    ? fieldVal.map((val: any) => ({
-        label: labelMap[val],
-        value: val
-      }))
+    ? fieldVal.map((val: any) => ({ label: labelMap[val], value: val }))
     : [];
 
   const hasTooltip = !!element.properties.tooltipText;
@@ -165,11 +155,9 @@ export default function DropdownMultiField({
   const Component = create ? CreatableSelect : Select;
 
   responsiveStyles.applyFontStyles('field');
+
   return (
     <div
-      // react-select doesn't support changing refs well,
-      // so instead we save ref in state so changes cause rerenders
-      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -224,23 +212,18 @@ export default function DropdownMultiField({
               } ${chevronPosition}px center`,
               position: 'relative'
             }),
-            // @ts-ignore
             container: (baseStyles) => ({
               ...baseStyles,
               height: '100%',
               minHeight: 'inherit'
             }),
-            // @ts-ignore
             valueContainer: (baseStyles) => ({
               ...baseStyles,
               paddingInlineEnd: 28
             }),
-            // @ts-ignore
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
-              // allow word wrap
               whiteSpace: 'normal',
-              // line clamp to 3 lines
               overflow: 'hidden',
               display: '-webkit-box',
               WebkitBoxOrient: 'vertical',
@@ -248,7 +231,6 @@ export default function DropdownMultiField({
             }),
             indicatorSeparator: () => ({ display: 'none' }),
             indicatorsContainer: () => ({ display: 'none' }),
-            // @ts-ignore
             menu: (baseStyles) => ({
               ...baseStyles,
               zIndex: DROPDOWN_Z_INDEX,
@@ -256,8 +238,6 @@ export default function DropdownMultiField({
             })
           }}
           components={{ Option: TooltipOption }}
-          // @ts-ignore
-          container={containerRef}
           inputId={servar.key}
           value={selectVal}
           required={required}
@@ -282,7 +262,6 @@ export default function DropdownMultiField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
-          container={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

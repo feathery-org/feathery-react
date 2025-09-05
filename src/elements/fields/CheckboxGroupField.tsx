@@ -36,7 +36,6 @@ function CheckboxGroupField({
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
   const otherChecked = fieldVal.includes(otherVal);
   const otherLabel = servar.metadata.other_label ?? 'Other';
-  const containerRef = useRef(null);
 
   const styles = useMemo(() => {
     applyCheckableInputStyles(element, responsiveStyles);
@@ -87,7 +86,6 @@ function CheckboxGroupField({
 
   return (
     <div
-      ref={containerRef}
       css={{
         position: 'relative',
         width: '100%',
@@ -150,7 +148,6 @@ function CheckboxGroupField({
                 </span>
               </label>
               <InlineTooltip
-                container={containerRef}
                 id={`${element.id}-${value}`}
                 text={option.tooltip ?? ''}
                 responsiveStyles={responsiveStyles}
@@ -214,7 +211,6 @@ function CheckboxGroupField({
               disabled={otherTextDisabled}
             />
             <InlineTooltip
-              container={containerRef}
               id={`${element.id}-`}
               text={servar.metadata.other_tooltip}
               responsiveStyles={responsiveStyles}
