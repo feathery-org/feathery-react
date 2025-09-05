@@ -7,7 +7,7 @@ import FeatheryClient from '../../utils/featheryClient';
 import useMounted from '../../hooks/useMounted';
 
 import debounce from 'lodash.debounce';
-import { OverlayTrigger } from '../components/CustomTooltip';
+import { OverlayTrigger } from '../components/Overlay';
 import useBorder from '../components/useBorder';
 import { DROPDOWN_Z_INDEX } from './index';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
@@ -88,9 +88,10 @@ function AddressLine1({
         {customBorder}
         <OverlayTrigger
           placement='bottom-start'
-          delay={{ show: 250, hide: 250 }}
+          // delay={{ show: 250, hide: 250 }}
           container={() => containerRef?.current}
           show={options.length > 0 && showOptions}
+          onToggle={() => {}}
           overlay={
             <ul
               css={{
