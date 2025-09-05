@@ -12,9 +12,15 @@ function CountryDropdown(
 ) {
   const listItemRef = useRef<Record<string, any>>({});
   const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!show) setQuery('');
+    else if (inputRef.current) {
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
+    }
   }, [show]);
 
   const countryItems = useMemo(() => {
@@ -36,7 +42,7 @@ function CountryDropdown(
     return (
       <>
         <input
-          autoFocus
+          ref={inputRef}
           placeholder='Search'
           css={{
             width: '100%',
@@ -57,9 +63,6 @@ function CountryDropdown(
               const firstCountry = filteredData[0];
               if (firstCountry)
                 listItemRef.current[firstCountry.countryCode].focus();
-            } else if (e.key === 'Escape') {
-              disable();
-              hide();
             } else if (e.key === 'Enter') disable();
           }}
           onChange={(e) => setQuery(e.target.value.toLowerCase())}

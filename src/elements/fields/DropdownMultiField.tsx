@@ -8,10 +8,11 @@ import CreatableSelect from 'react-select/creatable';
 import { hoverStylesGuard } from '../../utils/browser';
 import InlineTooltip from '../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from './index';
-import { OverlayTrigger, Tooltip } from '../components/CustomTooltip';
+import { Tooltip } from '../components/Tooltip';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import Placeholder from '../components/Placeholder';
 import useSalesforceSync from '../../hooks/useSalesforceSync';
+import { OverlayTrigger } from '../components/Overlay';
 
 type OptionData = {
   tooltip?: string;

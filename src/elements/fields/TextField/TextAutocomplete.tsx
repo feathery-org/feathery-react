@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 
-import { OverlayTrigger } from '../../components/CustomTooltip';
 import { DROPDOWN_Z_INDEX } from '..';
+import { OverlayTrigger } from '../../components/Overlay';
 
 function TextAutocomplete({
   allOptions = [],
@@ -105,7 +105,7 @@ function TextAutocomplete({
           </ul>
         }
       >
-        {children}
+        <div>{children}</div>
       </OverlayTrigger>
     );
 }
