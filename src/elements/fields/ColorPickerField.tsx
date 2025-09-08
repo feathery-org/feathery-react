@@ -1,6 +1,6 @@
-import React, { useState, Suspense, lazy } from 'react';
+import React, { useState } from 'react';
 import { FORM_Z_INDEX } from '../../utils/styles';
-const Sketch = lazy(() => import('@uiw/react-color-sketch'));
+import Sketch from '@uiw/react-color-sketch';
 
 function alphaToHex(alpha: number): string {
   const clampedAlpha = Math.max(0, Math.min(1, alpha));
@@ -62,17 +62,15 @@ function ColorPickerField({
             }}
             onClick={() => setShowPicker(false)}
           />
-          <Suspense fallback={<div>Loading...</div>}>
-            <Sketch
-              aria-label={element.properties.aria_label}
-              color={`#${fieldVal}`}
-              onChange={(color) => {
-                const hex = color.hex.substring(1, 7);
-                const alpha = alphaToHex(color.rgba.a);
-                onChange(`${hex}${alpha}`);
-              }}
-            />
-          </Suspense>
+          <Sketch
+            aria-label={element.properties.aria_label}
+            color={`#${fieldVal}`}
+            onChange={(color) => {
+              const hex = color.hex.substring(1, 7);
+              const alpha = alphaToHex(color.rgba.a);
+              onChange(`${hex}${alpha}`);
+            }}
+          />
         </div>
       ) : null}
     </div>
