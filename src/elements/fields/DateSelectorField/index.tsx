@@ -336,6 +336,7 @@ function DateSelectorField({
             setRef(ref);
           }}
           customInput={<CustomMaskedInput dateMask={dateMask} />}
+          open={focused}
         />
         <Placeholder
           value={value}
