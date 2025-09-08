@@ -167,10 +167,9 @@ function DateSelectorField({
   };
 
   useEffect(() => {
-    if (pickerRef.current !== null) {
-      pickerRef.current.input.inputMode = 'none';
+    if (pickerRef.current != null) {
     }
-  }, [pickerRef]);
+  }, [pickerRef.current]);
 
   useEffect(() => {
     let internalVal = null;
