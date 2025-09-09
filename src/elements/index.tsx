@@ -1,5 +1,5 @@
 import React, { memo, useMemo } from 'react';
-import VisibilitySensor from 'react-visibility-sensor';
+import { InView } from 'react-intersection-observer';
 
 import Fields from './fields';
 import TextElement from './basic/TextElement';
@@ -49,7 +49,7 @@ Object.entries(Elements).map(([key, Element]) => {
       );
 
       const e = onView ? (
-        <VisibilitySensor onChange={onView}>{featheryElement}</VisibilitySensor>
+        <InView onChange={onView}>{featheryElement}</InView>
       ) : (
         featheryElement
       );
