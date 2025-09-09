@@ -113,7 +113,7 @@ export default function DropdownField({
         )
           return null;
         return (
-          <option key={option} value={option} title={tooltip}>
+          <option key={`${index}${option}`} value={option} title={tooltip}>
             {label}
           </option>
         );
