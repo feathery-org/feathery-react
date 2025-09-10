@@ -75,7 +75,7 @@ const Element = ({ node: el, form }: any) => {
   };
   const fieldId = el.servar?.key ?? el.id;
   if (elementOnView && onViewElements.includes(fieldId))
-    basicProps.onView = (isVisible: any) => elementOnView(fieldId, isVisible);
+    basicProps.onView = (inView: boolean) => elementOnView(fieldId, inView);
 
   if (type === 'progress_bar')
     return (

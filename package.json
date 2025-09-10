@@ -118,9 +118,9 @@
     "react-hotkeys-hook": "^3.4.4",
     "react-idle-timer": "5.6.2",
     "react-imask": "7.6.1",
+    "react-intersection-observer": "^9.16.0",
     "react-select": "5.10.1",
     "react-signature-canvas": "1.1.0-alpha.2",
-    "react-visibility-sensor": "^5.1.1",
     "scriptjs": "^2.5.9",
     "uuid": "^8.3.2",
     "webfontloader": "^1.6.28"
