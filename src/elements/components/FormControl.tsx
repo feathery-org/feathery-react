@@ -1,18 +1,8 @@
-import React from 'react';
+import React, { ComponentProps } from 'react';
 
-interface FormControlProps {
-  type?: string;
+interface FormControlProps extends ComponentProps<'input'> {
   htmlSize?: number;
   css?: any;
-  id?: string;
-  value?: string;
-  onChange?: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  onKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
-  maxLength?: number;
-  minLength?: number;
-  required?: boolean;
-  disabled?: boolean;
-  [key: string]: any;
 }
 
 // Simple input used for the 'other' option in checkbox and radio groups
@@ -20,14 +10,6 @@ export function FormControl({
   type = 'text',
   htmlSize,
   css,
-  id,
-  value,
-  onChange,
-  onKeyDown,
-  maxLength,
-  minLength,
-  required,
-  disabled,
   ...props
 }: FormControlProps) {
   return (
@@ -56,14 +38,6 @@ export function FormControl({
         },
         ...css
       }}
-      id={id}
-      value={value}
-      onChange={onChange}
-      onKeyDown={onKeyDown}
-      maxLength={maxLength}
-      minLength={minLength}
-      required={required}
-      disabled={disabled}
       {...props}
     />
   );

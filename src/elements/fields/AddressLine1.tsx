@@ -62,6 +62,7 @@ function AddressLine1({
         css={{
           position: 'relative',
           width: '100%',
+          // Prevent placeholder overflow
           overflowX: 'clip',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
@@ -172,14 +173,12 @@ function AddressLine1({
             ))}
           </ul>
         </Overlay>
-
         <Placeholder
           value={value}
           element={element}
           responsiveStyles={responsiveStyles}
           repeatIndex={repeatIndex}
         />
-
         <InlineTooltip
           id={element.id}
           text={element.properties.tooltipText}

@@ -198,7 +198,7 @@ function ButtonElement({
       id={element.id}
       key={element.id}
       type={element.properties.submit ? 'submit' : 'button'}
-      className={active ? 'active' : ''}
+      className={active ? 'active' : undefined}
       style={{
         display: 'flex',
         cursor: editMode || noActions ? 'default' : 'pointer',
