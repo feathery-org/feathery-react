@@ -1,4 +1,4 @@
-import React, { memo, useRef, useState } from 'react';
+import React, { memo, useRef } from 'react';
 import { DROPDOWN_Z_INDEX } from '..';
 import Overlay from '../../components/Popover';
 
@@ -9,7 +9,6 @@ function TextAutocomplete({
   onHide = () => {},
   onInputFocus = () => {},
   value = '',
-  container,
   responsiveStyles,
   listItemRef,
   children

@@ -7,7 +7,7 @@ import { authState } from '../../../auth/LoginForm';
 import { DROPDOWN_Z_INDEX } from '../index';
 
 function CountryDropdown(
-  { show, hide, itemOnClick, responsiveStyles, ...props }: any,
+  { show, itemOnClick, responsiveStyles, ...props }: any,
   ref: any
 ) {
   const listItemRef = useRef<Record<string, any>>({});
