@@ -49,12 +49,10 @@ const Overlay = ({
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<Position | null>(null);
 
-  // Keep target ref updated
   useEffect(() => {
     targetRef.current = target;
   }, [target]);
 
-  // --- Recalculate overlay position ---
   const recalculatePosition = useCallback(() => {
     if (!show || !targetRef.current || !ref.current) return;
 
@@ -201,7 +199,6 @@ const Overlay = ({
     });
   }, [show, placement, offset]);
 
-  // --- Throttled recalc ---
   const throttledRecalc = useRef<() => void>(() => {});
   useEffect(() => {
     let ticking = false;
@@ -216,7 +213,6 @@ const Overlay = ({
     };
   }, [recalculatePosition]);
 
-  // --- Layout effect: position overlay & prevent autofocus scroll ---
   useLayoutEffect(() => {
     if (!show) return;
 
@@ -248,7 +244,6 @@ const Overlay = ({
     };
   }, [show, recalculatePosition]);
 
-  // --- Handle Escape & outside clicks ---
   useEffect(() => {
     if (!show) return;
 
