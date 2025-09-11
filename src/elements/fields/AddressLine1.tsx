@@ -148,7 +148,7 @@ function AddressLine1({
               ...responsiveStyles.getTarget('dropdown')
             }}
           >
-            {options.map(({ display, address_id }) => (
+            {options.map(({ display, address_id: addressId }) => (
               <li
                 key={display}
                 css={{
@@ -160,9 +160,9 @@ function AddressLine1({
                 }}
                 onClick={async () => {
                   const details = await new FeatheryClient().addressDetail(
-                    address_id
+                    addressId
                   );
-                  onSelect(details, address_id);
+                  onSelect(details, addressId);
                   setShowOptions(false);
                   inputRef.current?.focus();
                 }}

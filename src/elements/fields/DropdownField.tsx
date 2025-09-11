@@ -1,6 +1,6 @@
 import { resetStyles } from '../styles';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import InlineTooltip from '../components/InlineTooltip';
 import useBorder from '../components/useBorder';
 import countryData from '../components/data/countries';

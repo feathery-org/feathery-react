@@ -10,11 +10,7 @@ import { isNum } from '../../../utils/primitives';
 import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
-import {
-  featheryDoc,
-  hoverStylesGuard,
-  iosScrollOnFocus
-} from '../../../utils/browser';
+import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { isValidPhoneLength } from './validation';
 import Popover from '../../components/Popover';
 

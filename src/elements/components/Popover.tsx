@@ -58,6 +58,7 @@ const Overlay = ({
   const recalculatePosition = useCallback(() => {
     if (!show || !targetRef.current || !ref.current) return;
 
+    const window = featheryWindow();
     const targetRect = targetRef.current.getBoundingClientRect();
     const overlayRect = ref.current.getBoundingClientRect();
 
@@ -188,6 +189,7 @@ const Overlay = ({
 
     // Only update state if it changed
     setPosition((prev) => {
+      const window = featheryWindow();
       if (
         !prev ||
         prev.top !== top + window.scrollY ||
@@ -218,6 +220,8 @@ const Overlay = ({
   useLayoutEffect(() => {
     if (!show) return;
 
+    const window = featheryWindow();
+
     const scrollX = window.scrollX;
     const scrollY = window.scrollY;
 
@@ -227,8 +231,8 @@ const Overlay = ({
       window.scrollTo(scrollX, scrollY);
     });
 
-    window.addEventListener('resize', throttledRecalc.current!);
-    window.addEventListener('scroll', throttledRecalc.current!, true);
+    window.addEventListener('resize', throttledRecalc.current);
+    window.addEventListener('scroll', throttledRecalc.current, true);
 
     const resizeObserver = new ResizeObserver(() =>
       throttledRecalc.current?.()
@@ -238,8 +242,8 @@ const Overlay = ({
 
     return () => {
       cancelAnimationFrame(handleFrame);
-      window.removeEventListener('resize', throttledRecalc.current!);
-      window.removeEventListener('scroll', throttledRecalc.current!, true);
+      window.removeEventListener('resize', throttledRecalc.current);
+      window.removeEventListener('scroll', throttledRecalc.current, true);
       resizeObserver.disconnect();
     };
   }, [show, recalculatePosition]);
