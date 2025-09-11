@@ -206,6 +206,7 @@ import {
   extractExportedCodeInfoArray,
   replaceImportsWithDefinitions
 } from './logic';
+import { useNextActionButtonState } from './hooks/useNextActionButtonState';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -1037,7 +1038,9 @@ function Form({
       ['fields']
     );
 
+    setUserLogicRunning(true);
     await runUserLogic('load');
+    setUserLogicRunning(false);
 
     if (trackHashes.current) {
       const newHash = getUrlHash();
@@ -1657,8 +1660,17 @@ function Form({
     return state;
   };
 
+  const {
+    isNextButtonRunning,
+    updateNextButtonState,
+    clearNextButtonState,
+    setUserLogicRunning
+  } = useNextActionButtonState(setButtonLoader, clearLoaders);
+
   const buttonOnClick = async (button: ClickActionElement) => {
-    await setButtonLoader(button);
+    if (!isNextButtonRunning()) {
+      await setButtonLoader(button);
+    }
 
     const setButtonError = (message: string) => {
       // Clear loaders before setting errors since buttons are disabled
@@ -1698,7 +1710,9 @@ function Form({
         onAsyncEnd: () => clearLoaders()
       });
 
-      if (!running) clearLoaders();
+      if (!running && !isNextButtonRunning()) {
+        clearLoaders();
+      }
     } catch (e: any) {
       if (e) setButtonError(e.toString());
       else clearLoaders();
@@ -1729,6 +1743,13 @@ function Form({
     if (id && elementClicks[id]) return;
     elementClicks[id] = true;
 
+    if (isNextButtonRunning()) {
+      elementClicks[id] = false;
+      return true;
+    }
+
+    updateNextButtonState(elementType, actions, element);
+
     const metadata = {
       elementType,
       elementIDs: [element.id],
@@ -1755,6 +1776,8 @@ function Form({
       ) {
         setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
         elementClicks[id] = false;
+        clearNextButtonState();
+
         return;
       }
 
@@ -1772,6 +1795,8 @@ function Form({
       if (invalid) {
         setAutoValidate(true);
         elementClicks[id] = false;
+        clearNextButtonState();
+
         return;
       }
 
@@ -1791,6 +1816,8 @@ function Form({
 
       if (!newPromise) {
         elementClicks[id] = false;
+        clearNextButtonState();
+
         return;
       }
       submitPromise = newPromise[0];
@@ -1803,6 +1830,8 @@ function Form({
     const flowOnSuccess = (index: number) => async () => {
       flowCompleted.current = true;
       elementClicks[id] = false;
+      clearNextButtonState();
+
       const running = await runElementActions({
         actions: actions.slice(index + 1),
         element,
@@ -2301,11 +2330,14 @@ function Form({
 
     if (i < actions.length) {
       elementClicks[id] = false;
+      clearNextButtonState();
+
       return true;
     }
 
     await runAction(false);
     elementClicks[id] = false;
+    clearNextButtonState();
   };
 
   const fieldOnChange =
