@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Tooltip } from './Tooltip';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import Overlay from './Popover';
+import { isMobile as _isMobile } from '../../utils/browser';
 
 interface TextHoverTooltipProps {
   text: string;
@@ -17,12 +18,14 @@ export default function TextHoverTooltip({
 
   if (!text) return <>{children}</>;
 
+  const isMobile = _isMobile();
+
   return (
     <>
       <span
         ref={triggerRef}
-        onMouseEnter={() => setShow(true)}
-        onMouseLeave={() => setShow(false)}
+        onMouseEnter={isMobile ? undefined : () => setShow(true)}
+        onMouseLeave={isMobile ? undefined : () => setShow(false)}
         onFocus={() => setShow(true)}
         onBlur={() => setShow(false)}
         onClick={() => setShow((prev) => !prev)}
