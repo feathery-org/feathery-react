@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useState } from 'react';
+import React, { memo, useCallback, useState, useMemo } from 'react';
 import { DROPDOWN_Z_INDEX } from '..';
 import Overlay from '../../components/Overlay';
 
@@ -9,7 +9,7 @@ function TextAutocomplete({
   onHide = () => {},
   onInputFocus = () => {},
   value = '',
-  container,
+  containerRef,
   responsiveStyles,
   listItemRef,
   children
@@ -20,7 +20,7 @@ function TextAutocomplete({
   onHide: () => void;
   onInputFocus: () => void;
   value: string;
-  container?: any;
+  containerRef?: React.RefObject<HTMLElement | null>;
   responsiveStyles: any;
   listItemRef: any;
   children: any;
@@ -46,9 +46,10 @@ function TextAutocomplete({
       {triggerElement && options.length > 0 && showOptions && (
         <Overlay
           target={triggerElement}
-          container={triggerElement}
+          containerRef={containerRef}
           show
           placement='bottom-start'
+          onHide={onHide}
         >
           <ul
             css={{

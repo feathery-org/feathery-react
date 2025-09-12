@@ -150,7 +150,7 @@ function RadioButtonGroupField({
                 </span>
               </label>
               <InlineTooltip
-                container={containerRef.current}
+                containerRef={containerRef}
                 id={`${element.id}-${value}`}
                 text={tooltip}
                 responsiveStyles={responsiveStyles}
@@ -223,7 +223,7 @@ function RadioButtonGroupField({
               disabled={otherTextDisabled || loadingDynamicOptions}
             />
             <InlineTooltip
-              container={containerRef.current}
+              containerRef={containerRef}
               id={`${element.id}-`}
               text={servar.metadata.other_tooltip}
               responsiveStyles={responsiveStyles}

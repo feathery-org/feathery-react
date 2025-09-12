@@ -147,7 +147,7 @@ function ButtonGroupField({
               )}
               {tooltip && (
                 <InlineTooltip
-                  container={containerRef.current}
+                  containerRef={containerRef}
                   id={`${element.id}-${label}`}
                   text={tooltip}
                   responsiveStyles={responsiveStyles}

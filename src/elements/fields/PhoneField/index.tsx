@@ -43,7 +43,7 @@ function PhoneField({
   children
 }: any) {
   const triggerRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef(null);
+  const containerRef = useRef<HTMLElement>(null);
   const dropdownRef = useRef<any>(null);
   const inputRef = useRef<any>(null);
   const [cursor, setCursor] = useState<number | null>(null);
@@ -219,7 +219,7 @@ function PhoneField({
           show={show}
           onHide={() => setShow(false)}
           target={triggerRef.current}
-          container={containerRef.current}
+          containerRef={containerRef}
           placement='bottom-start'
           offset={0}
         >
@@ -393,7 +393,7 @@ function PhoneField({
             repeatIndex={repeatIndex}
           />
           <InlineTooltip
-            container={containerRef.current}
+            containerRef={containerRef}
             id={element.id}
             text={element.properties.tooltipText}
             responsiveStyles={responsiveStyles}

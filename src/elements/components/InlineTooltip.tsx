@@ -11,7 +11,7 @@ interface InlineTooltipProps {
   text: string;
   responsiveStyles: any;
   absolute?: boolean;
-  container?: HTMLElement | null;
+  containerRef?: React.RefObject<HTMLElement | null>;
   repeat?: any;
 }
 
@@ -20,7 +20,7 @@ export default function InlineTooltip({
   text,
   responsiveStyles,
   absolute = true,
-  container,
+  containerRef,
   repeat
 }: InlineTooltipProps) {
   const [show, setShow] = useState(false);
@@ -69,7 +69,7 @@ export default function InlineTooltip({
       <Overlay
         show={show}
         target={triggerRef.current}
-        container={container}
+        containerRef={containerRef}
         placement='left'
         onHide={() => setShow(false)}
         offset={8}

@@ -228,7 +228,7 @@ export default function DropdownField({
           {element.properties.placeholder || ''}
         </span>
         <InlineTooltip
-          container={containerRef.current}
+          containerRef={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

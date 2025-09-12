@@ -37,7 +37,7 @@ function AddressLine1({
   const [showOptions, setShowOptions] = useState(false);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const containerRef = useRef(null);
+  const containerRef = useRef<HTMLElement>(null);
 
   const { borderStyles, customBorder } = useBorder({
     element,
@@ -135,7 +135,7 @@ function AddressLine1({
         <Overlay
           show={showOptions && options.length > 0}
           target={inputRef.current}
-          container={containerRef.current}
+          containerRef={containerRef}
           placement='bottom-start'
           offset={4}
           onHide={() => setShowOptions(false)}
@@ -183,7 +183,7 @@ function AddressLine1({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
-          container={containerRef.current}
+          containerRef={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

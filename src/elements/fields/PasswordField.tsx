@@ -133,7 +133,7 @@ function PasswordField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
-          container={containerRef.current}
+          containerRef={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

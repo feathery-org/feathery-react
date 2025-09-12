@@ -277,6 +277,7 @@ function TextField({
             inputRef.current?.element?.focus?.();
           }}
           responsiveStyles={responsiveStyles}
+          containerRef={containerRef}
           listItemRef={listItemRef}
           onHide={() => setShowAutocomplete(false)}
           onInputFocus={() => inputRef.current?.element?.focus?.()}
@@ -374,7 +375,7 @@ function TextField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
-          container={containerRef.current}
+          containerRef={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

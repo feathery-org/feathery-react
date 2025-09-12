@@ -38,7 +38,7 @@ const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
         <Overlay
           target={optionRef.current}
           // @ts-expect-error
-          container={props.selectProps.container?.current}
+          containerRef={props.selectProps.containerRef}
           show={showTooltip}
           placement='right'
         >
@@ -87,7 +87,7 @@ export default function DropdownMultiField({
     error: inlineError,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
-  const containerRef = useRef(null);
+  const containerRef = useRef<HTMLElement>(null);
   const [focused, setFocused] = useState(false);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
@@ -253,7 +253,7 @@ export default function DropdownMultiField({
             })
           }}
           components={{ Option: TooltipOption }}
-          container={containerRef}
+          containerRef={containerRef}
           inputId={servar.key}
           value={selectVal}
           required={required}
@@ -278,7 +278,7 @@ export default function DropdownMultiField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
-          container={containerRef.current}
+          containerRef={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

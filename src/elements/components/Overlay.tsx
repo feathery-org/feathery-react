@@ -35,7 +35,8 @@ interface OverlayProps {
   onHide?: () => void;
   placement?: Placement;
   offset?: number;
-  container?: HTMLElement | null;
+  /** Optional container ref to render the overlay into. Defaults to document.body */
+  containerRef?: React.RefObject<HTMLElement | null>;
 }
 
 const Overlay = ({
@@ -45,7 +46,7 @@ const Overlay = ({
   onHide,
   placement = 'bottom-start',
   offset = 0,
-  container
+  containerRef
 }: OverlayProps) => {
   const targetRef = useRef<HTMLElement>(target);
   const ref = useRef<HTMLDivElement>(null);
@@ -279,8 +280,12 @@ const Overlay = ({
 
   if (!show) return null;
 
-  const portalContainer = container || featheryDoc().body;
-  if (!portalContainer) return children;
+  console.log(containerRef, containerRef?.current, featheryDoc().body);
+  // Get container from ref, fallback to document.body
+  const container = containerRef ? containerRef.current : featheryDoc().body;
+
+  console.log(container);
+  if (!container) return <>{children}</>;
 
   return createPortal(
     <div
@@ -292,7 +297,7 @@ const Overlay = ({
     >
       {children}
     </div>,
-    portalContainer
+    container
   );
 };
 

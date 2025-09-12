@@ -150,7 +150,7 @@ function CheckboxGroupField({
                 </span>
               </label>
               <InlineTooltip
-                container={containerRef.current}
+                containerRef={containerRef}
                 id={`${element.id}-${value}`}
                 text={option.tooltip ?? ''}
                 responsiveStyles={responsiveStyles}
@@ -214,7 +214,7 @@ function CheckboxGroupField({
               disabled={otherTextDisabled}
             />
             <InlineTooltip
-              container={containerRef.current}
+              containerRef={containerRef}
               id={`${element.id}-`}
               text={servar.metadata.other_tooltip}
               responsiveStyles={responsiveStyles}
