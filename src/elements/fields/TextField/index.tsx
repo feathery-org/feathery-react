@@ -220,6 +220,7 @@ function TextField({
     error: inlineError,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
+  const containerRef = useRef<HTMLDivElement>(null);
   const listItemRef = useRef<any[]>([]);
   const inputRef = useRef<{ element?: HTMLInputElement }>(null);
   const { value: fieldVal } = getFieldValue(element);
@@ -230,6 +231,7 @@ function TextField({
   const spacing = element.properties.tooltipText ? 30 : 8;
   return (
     <div
+      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -372,6 +374,7 @@ function TextField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
+          container={containerRef.current}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

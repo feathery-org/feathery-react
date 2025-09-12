@@ -1,17 +1,19 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, RefObject } from 'react';
 import { Tooltip } from './Tooltip';
 import { FORM_Z_INDEX } from '../../utils/styles';
-import Overlay from './Popover';
+import Overlay from './Overlay';
 import { isMobile as _isMobile } from '../../utils/browser';
 
 interface TextHoverTooltipProps {
   text: string;
   children: React.ReactNode;
+  container?: RefObject<HTMLDivElement>;
 }
 
 export default function TextHoverTooltip({
   text,
-  children
+  children,
+  container
 }: TextHoverTooltipProps) {
   const [show, setShow] = useState(false);
   const triggerRef = useRef<HTMLElement>(null);
@@ -37,6 +39,7 @@ export default function TextHoverTooltip({
       <Overlay
         show={show}
         target={triggerRef.current}
+        container={container?.current}
         placement='top'
         onHide={() => setShow(false)}
         offset={4}

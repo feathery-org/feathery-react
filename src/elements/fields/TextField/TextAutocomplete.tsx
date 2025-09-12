@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useState } from 'react';
 import { DROPDOWN_Z_INDEX } from '..';
-import Overlay from '../../components/Popover';
+import Overlay from '../../components/Overlay';
 
 function TextAutocomplete({
   allOptions = [],
@@ -9,6 +9,7 @@ function TextAutocomplete({
   onHide = () => {},
   onInputFocus = () => {},
   value = '',
+  container,
   responsiveStyles,
   listItemRef,
   children
@@ -43,7 +44,12 @@ function TextAutocomplete({
     <div ref={triggerRef} css={{ height: '100%', width: '100%' }}>
       {children}
       {triggerElement && options.length > 0 && showOptions && (
-        <Overlay target={triggerElement} show placement='bottom-start'>
+        <Overlay
+          target={triggerElement}
+          container={triggerElement}
+          show
+          placement='bottom-start'
+        >
           <ul
             css={{
               zIndex: DROPDOWN_Z_INDEX,

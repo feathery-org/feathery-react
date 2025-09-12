@@ -6,7 +6,7 @@ import FeatheryClient from '../../utils/featheryClient';
 import useMounted from '../../hooks/useMounted';
 import debounce from 'lodash.debounce';
 import useBorder from '../components/useBorder';
-import Overlay from '../components/Popover';
+import Overlay from '../components/Overlay';
 import { DROPDOWN_Z_INDEX } from './index';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
 
@@ -37,6 +37,7 @@ function AddressLine1({
   const [showOptions, setShowOptions] = useState(false);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef(null);
 
   const { borderStyles, customBorder } = useBorder({
     element,
@@ -46,6 +47,7 @@ function AddressLine1({
 
   return (
     <div
+      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -133,6 +135,7 @@ function AddressLine1({
         <Overlay
           show={showOptions && options.length > 0}
           target={inputRef.current}
+          container={containerRef.current}
           placement='bottom-start'
           offset={4}
           onHide={() => setShowOptions(false)}
@@ -180,6 +183,7 @@ function AddressLine1({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
+          container={containerRef.current}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

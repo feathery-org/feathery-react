@@ -6,9 +6,9 @@ import React, {
   useState
 } from 'react';
 import { toBase64 } from '../../../../utils/image';
+import Signature from 'react-signature-canvas';
 import { fromDataURL } from './utils';
 import { SignatureTranslations } from '../translation';
-import Signature from 'react-signature-canvas';
 
 export type SignatureCanvasProps = {
   fieldKey?: string;

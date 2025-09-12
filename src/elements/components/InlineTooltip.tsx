@@ -3,7 +3,7 @@ import { Tooltip } from './Tooltip';
 import { HelpIcon } from './icons';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import { replaceTextVariables } from './TextNodes';
-import Overlay from './Popover';
+import Overlay from './Overlay';
 import { isMobile as _isMobile } from '../../utils/browser';
 
 interface InlineTooltipProps {
@@ -11,7 +11,7 @@ interface InlineTooltipProps {
   text: string;
   responsiveStyles: any;
   absolute?: boolean;
-  container?: React.RefObject<HTMLElement>;
+  container?: HTMLElement | null;
   repeat?: any;
 }
 
@@ -20,6 +20,7 @@ export default function InlineTooltip({
   text,
   responsiveStyles,
   absolute = true,
+  container,
   repeat
 }: InlineTooltipProps) {
   const [show, setShow] = useState(false);
@@ -68,6 +69,7 @@ export default function InlineTooltip({
       <Overlay
         show={show}
         target={triggerRef.current}
+        container={container}
         placement='left'
         onHide={() => setShow(false)}
         offset={8}

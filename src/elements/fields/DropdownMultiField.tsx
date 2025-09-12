@@ -12,7 +12,7 @@ import { Tooltip } from '../components/Tooltip';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import Placeholder from '../components/Placeholder';
 import useSalesforceSync from '../../hooks/useSalesforceSync';
-import Overlay from '../components/Popover';
+import Overlay from '../components/Overlay';
 
 type OptionData = {
   tooltip?: string;
@@ -37,6 +37,8 @@ const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
       {props.data.tooltip && optionRef.current && (
         <Overlay
           target={optionRef.current}
+          // @ts-expect-error
+          container={props.selectProps.container?.current}
           show={showTooltip}
           placement='right'
         >
@@ -85,6 +87,7 @@ export default function DropdownMultiField({
     error: inlineError,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
+  const containerRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
@@ -96,8 +99,10 @@ export default function DropdownMultiField({
 
     fieldVal.forEach((val: string) => {
       if (typeof newOptions[0] === 'string') {
+        // handle string[]
         if (!newOptions.includes(val)) newOptions.push(val);
       } else if (!newOptions.some((option: any) => option.value === val)) {
+        // handle OptionData[]
         newOptions.push({ value: val, label: val });
       }
     });
@@ -134,13 +139,16 @@ export default function DropdownMultiField({
       (option, index) => {
         if (typeof option === 'string') {
           labelMap[option] = labels[index] || option;
+
           return {
             value: option,
             label: labels[index] || option,
             tooltip: tooltips[index] || ''
           };
         }
+
         labelMap[option.value] = option.label;
+
         return option;
       }
     );
@@ -159,6 +167,7 @@ export default function DropdownMultiField({
 
   return (
     <div
+      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -197,6 +206,7 @@ export default function DropdownMultiField({
         {customBorder}
         <Component
           styles={{
+            // @ts-ignore
             control: (baseStyles) => ({
               ...baseStyles,
               ...responsiveStyles.getTarget('field'),
@@ -213,36 +223,37 @@ export default function DropdownMultiField({
               } ${chevronPosition}px center`,
               position: 'relative'
             }),
-            container: (baseStyles) =>
-              ({
-                ...baseStyles,
-                height: '100%',
-                minHeight: 'inherit'
-              } as any),
-            valueContainer: (baseStyles) =>
-              ({
-                ...baseStyles,
-                paddingInlineEnd: 28
-              } as any),
-            multiValueLabel: (baseStyles) =>
-              ({
-                ...baseStyles,
-                whiteSpace: 'normal',
-                overflow: 'hidden',
-                display: '-webkit-box',
-                WebkitBoxOrient: 'vertical',
-                WebkitLineClamp: 3
-              } as any),
+            // @ts-ignore
+            container: (baseStyles) => ({
+              ...baseStyles,
+              height: '100%',
+              minHeight: 'inherit'
+            }),
+            // @ts-ignore
+            valueContainer: (baseStyles) => ({
+              ...baseStyles,
+              paddingInlineEnd: 28
+            }),
+            // @ts-ignore
+            multiValueLabel: (baseStyles) => ({
+              ...baseStyles,
+              whiteSpace: 'normal',
+              overflow: 'hidden',
+              display: '-webkit-box',
+              WebkitBoxOrient: 'vertical',
+              WebkitLineClamp: 3
+            }),
             indicatorSeparator: () => ({ display: 'none' }),
             indicatorsContainer: () => ({ display: 'none' }),
-            menu: (baseStyles) =>
-              ({
-                ...baseStyles,
-                zIndex: DROPDOWN_Z_INDEX,
-                textAlign: 'start'
-              } as any)
+            // @ts-ignore
+            menu: (baseStyles) => ({
+              ...baseStyles,
+              zIndex: DROPDOWN_Z_INDEX,
+              textAlign: 'start'
+            })
           }}
           components={{ Option: TooltipOption }}
+          container={containerRef}
           inputId={servar.key}
           value={selectVal}
           required={required}
@@ -267,6 +278,7 @@ export default function DropdownMultiField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
+          container={containerRef.current}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

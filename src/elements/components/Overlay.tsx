@@ -35,6 +35,7 @@ interface OverlayProps {
   onHide?: () => void;
   placement?: Placement;
   offset?: number;
+  container?: HTMLElement | null;
 }
 
 const Overlay = ({
@@ -43,7 +44,8 @@ const Overlay = ({
   children,
   onHide,
   placement = 'bottom-start',
-  offset = 0
+  offset = 0,
+  container
 }: OverlayProps) => {
   const targetRef = useRef<HTMLElement>(target);
   const ref = useRef<HTMLDivElement>(null);
@@ -277,6 +279,9 @@ const Overlay = ({
 
   if (!show) return null;
 
+  const portalContainer = container || featheryDoc().body;
+  if (!portalContainer) return children;
+
   return createPortal(
     <div
       ref={ref}
@@ -287,7 +292,7 @@ const Overlay = ({
     >
       {children}
     </div>,
-    featheryDoc().body
+    portalContainer
   );
 };
 

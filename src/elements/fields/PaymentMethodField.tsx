@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import {
   CardElement,
   Elements,
@@ -65,6 +65,8 @@ const CardField = ({
     error: inlineError,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
+  const containerRef = useRef(null);
+
   const stripe = useStripe();
   const stripeElements = useElements();
   const [lastError, setLastError] = useState('');
@@ -140,6 +142,7 @@ const CardField = ({
 
   return (
     <div
+      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -206,6 +209,7 @@ const CardField = ({
           />
         </div>
         <InlineTooltip
+          container={containerRef.current}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

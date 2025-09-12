@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/InlineTooltip';
@@ -22,6 +22,7 @@ function TextArea({
   children
 }: any) {
   const [focused, setFocused] = useState(false);
+  const containerRef = useRef(null);
   const { borderStyles, customBorder } = useBorder({
     element,
     error: inlineError,
@@ -31,6 +32,7 @@ function TextArea({
   const servar = element.servar;
   return (
     <div
+      ref={containerRef}
       css={{
         maxWidth: '100%',
         position: 'relative',
@@ -106,6 +108,7 @@ function TextArea({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
+          container={containerRef.current}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

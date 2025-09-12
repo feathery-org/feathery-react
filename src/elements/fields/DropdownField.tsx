@@ -1,6 +1,6 @@
 import { resetStyles } from '../styles';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import InlineTooltip from '../components/InlineTooltip';
 import useBorder from '../components/useBorder';
 import countryData from '../components/data/countries';
@@ -34,6 +34,7 @@ export default function DropdownField({
   });
   const [focused, setFocused] = useState(false);
   const [curCountry, setCurCountry] = useState(null);
+  const containerRef = useRef(null);
   const servar = element.servar;
   const short = servar.metadata.store_abbreviation;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
@@ -126,6 +127,7 @@ export default function DropdownField({
   responsiveStyles.applyFontStyles('field', !fieldVal);
   return (
     <div
+      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -226,6 +228,7 @@ export default function DropdownField({
           {element.properties.placeholder || ''}
         </span>
         <InlineTooltip
+          container={containerRef.current}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

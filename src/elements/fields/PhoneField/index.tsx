@@ -12,7 +12,7 @@ import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { isValidPhoneLength } from './validation';
-import Popover from '../../components/Popover';
+import Overlay from '../../components/Overlay';
 
 const DEFAULT_COUNTRY = 'US';
 
@@ -43,6 +43,7 @@ function PhoneField({
   children
 }: any) {
   const triggerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef(null);
   const dropdownRef = useRef<any>(null);
   const inputRef = useRef<any>(null);
   const [cursor, setCursor] = useState<number | null>(null);
@@ -160,6 +161,7 @@ function PhoneField({
 
   return (
     <div
+      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -212,10 +214,12 @@ function PhoneField({
         >
           {countryMap[curCountryCode].flag}
         </div>
-        <Popover
+        <Overlay
+          key={`overlay-${curCountryCode}`}
           show={show}
           onHide={() => setShow(false)}
           target={triggerRef.current}
+          container={containerRef.current}
           placement='bottom-start'
           offset={0}
         >
@@ -235,8 +239,7 @@ function PhoneField({
             }}
             show={show}
           />
-          {/* <div css={{ width: 100, height: 100, background: 'red' }}></div> */}
-        </Popover>
+        </Overlay>
         <div
           css={{
             position: 'relative',
@@ -390,6 +393,7 @@ function PhoneField({
             repeatIndex={repeatIndex}
           />
           <InlineTooltip
+            container={containerRef.current}
             id={element.id}
             text={element.properties.tooltipText}
             responsiveStyles={responsiveStyles}

@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/InlineTooltip';
@@ -30,10 +30,12 @@ function PasswordField({
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
   const [showPassword, setShowPassword] = useState(false);
+  const containerRef = useRef(null);
   const servar = element.servar;
   const spacing = element.properties.tooltipText ? 30 : 8;
   return (
     <div
+      ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
@@ -131,6 +133,7 @@ function PasswordField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
+          container={containerRef.current}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
