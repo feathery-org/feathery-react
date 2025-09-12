@@ -1,6 +1,6 @@
-import React, { useMemo, useRef, useState } from 'react';
-import ReactForm from 'react-bootstrap/Form';
-import { bootstrapStyles } from '../styles';
+import React, { useMemo, useState } from 'react';
+import { FormControl } from '../components/FormControl';
+import { resetStyles } from '../styles';
 import {
   applyCheckableInputStyles,
   applyHeightWidthMarginByFontSize,
@@ -33,7 +33,6 @@ function RadioButtonGroupField({
   children
 }: any) {
   const servar = element.servar;
-  const containerRef = useRef(null);
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
 
@@ -81,7 +80,6 @@ function RadioButtonGroupField({
 
   return (
     <div
-      ref={containerRef}
       css={{
         width: '100%',
         height: '100%',
@@ -150,7 +148,6 @@ function RadioButtonGroupField({
                 </span>
               </label>
               <InlineTooltip
-                container={containerRef}
                 id={`${element.id}-${value}`}
                 text={tooltip}
                 responsiveStyles={responsiveStyles}
@@ -181,7 +178,6 @@ function RadioButtonGroupField({
                 onChange(e);
               }}
               onFocus={iosScrollOnFocus}
-              value={otherVal || ''}
               style={{
                 padding: 0,
                 lineHeight: 'normal'
@@ -198,13 +194,13 @@ function RadioButtonGroupField({
             >
               {otherLabel}
             </label>
-            <ReactForm.Control
+            <FormControl
               type='text'
               // Paired with flex grow, will not expand parent width
               htmlSize={1}
               css={{
                 marginLeft: '5px',
-                ...bootstrapStyles,
+                ...resetStyles,
                 paddingLeft: '0.4rem',
                 flexGrow: 1,
                 ...responsiveStyles.getTarget('field'),
@@ -224,7 +220,6 @@ function RadioButtonGroupField({
               disabled={otherTextDisabled || loadingDynamicOptions}
             />
             <InlineTooltip
-              container={containerRef}
               id={`${element.id}-`}
               text={servar.metadata.other_tooltip}
               responsiveStyles={responsiveStyles}

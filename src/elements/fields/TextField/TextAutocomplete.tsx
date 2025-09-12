@@ -1,7 +1,6 @@
-import React, { memo } from 'react';
-
-import { OverlayTrigger } from 'react-bootstrap';
+import React, { memo, useCallback, useState } from 'react';
 import { DROPDOWN_Z_INDEX } from '..';
+import Overlay from '../../components/Popover';
 
 function TextAutocomplete({
   allOptions = [],
@@ -10,7 +9,6 @@ function TextAutocomplete({
   onHide = () => {},
   onInputFocus = () => {},
   value = '',
-  container,
   responsiveStyles,
   listItemRef,
   children
@@ -30,15 +28,22 @@ function TextAutocomplete({
     opt.toLowerCase().includes(value.toLowerCase())
   );
 
+  // using ref callback strategy here to handle rerendering
+  // when trigger is rendered or changes
+  const [triggerElement, setTriggerElement] = useState<HTMLDivElement | null>(
+    null
+  );
+  const triggerRef = useCallback((node: HTMLDivElement | null) => {
+    setTriggerElement(node);
+  }, []);
+
   if (allOptions.length === 0) return children;
-  else
-    return (
-      <OverlayTrigger
-        placement='bottom-start'
-        delay={{ show: 250, hide: 250 }}
-        show={options.length > 0 && showOptions}
-        container={() => container?.current}
-        overlay={
+
+  return (
+    <div ref={triggerRef} css={{ height: '100%', width: '100%' }}>
+      {children}
+      {triggerElement && options.length > 0 && showOptions && (
+        <Overlay target={triggerElement} show placement='bottom-start'>
           <ul
             css={{
               zIndex: DROPDOWN_Z_INDEX,
@@ -68,6 +73,9 @@ function TextAutocomplete({
                   }
                 }}
                 tabIndex={0}
+                ref={(ref) => {
+                  listItemRef.current[index] = ref;
+                }}
                 onClick={() => onSelect(opt)}
                 onKeyDown={(e) => {
                   const disable = () => {
@@ -92,22 +100,19 @@ function TextAutocomplete({
                     !listItemRef.current.some(
                       (item: any) => item === e.relatedTarget
                     )
-                  )
+                  ) {
                     onHide();
-                }}
-                ref={(ref) => {
-                  listItemRef.current[index] = ref;
+                  }
                 }}
               >
                 {opt}
               </li>
             ))}
           </ul>
-        }
-      >
-        {children}
-      </OverlayTrigger>
-    );
+        </Overlay>
+      )}
+    </div>
+  );
 }
 
 export default memo(TextAutocomplete);

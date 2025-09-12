@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 
-import ReactButton from 'react-bootstrap/Button';
 import TextNodes from '../components/TextNodes';
 import { imgMaxSizeStyles } from '../styles';
 import { adjustColor } from '../../utils/styles';
@@ -195,11 +194,11 @@ function ButtonElement({
   const actions = element.properties.actions ?? [];
   const noActions = actions.length === 0 && !element.properties.submit;
   return (
-    <ReactButton
+    <button
       id={element.id}
       key={element.id}
-      active={active}
       type={element.properties.submit ? 'submit' : 'button'}
+      className={active ? 'active' : undefined}
       style={{
         display: 'flex',
         cursor: editMode || noActions ? 'default' : 'pointer',
@@ -270,7 +269,7 @@ function ButtonElement({
           aria-label={element.properties.aria_label}
         />
       )}
-    </ReactButton>
+    </button>
   );
 }
 

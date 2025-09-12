@@ -8,7 +8,6 @@ import React, {
   useState
 } from 'react';
 
-import BootstrapForm from 'react-bootstrap/Form';
 import debounce from 'lodash.debounce';
 
 import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
@@ -2450,7 +2449,7 @@ function Form({
 
   return (
     <ReactPortal options={popupOptions}>
-      <BootstrapForm
+      <form
         {...formProps}
         autoComplete={formSettings.autocomplete}
         className={`feathery ${className || ''}`}
@@ -2510,7 +2509,7 @@ function Form({
           show={formSettings.showBrand}
           brandPosition={formSettings.brandPosition}
         />
-      </BootstrapForm>
+      </form>
     </ReactPortal>
   );
 }

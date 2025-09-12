@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo } from 'react';
 import { imgMaxSizeStyles, noTextSelectStyles } from '../styles';
 import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
@@ -19,7 +19,6 @@ function ButtonGroupField({
   disabled = false,
   children
 }: any) {
-  const containerRef = useRef(null);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
@@ -65,7 +64,6 @@ function ButtonGroupField({
 
   return (
     <div
-      ref={containerRef}
       css={{
         position: 'relative',
         width: '100%',
@@ -147,7 +145,6 @@ function ButtonGroupField({
               )}
               {tooltip && (
                 <InlineTooltip
-                  container={containerRef}
                   id={`${element.id}-${label}`}
                   text={tooltip}
                   responsiveStyles={responsiveStyles}
