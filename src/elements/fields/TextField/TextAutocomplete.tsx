@@ -1,4 +1,4 @@
-import React, { memo, useRef } from 'react';
+import React, { memo, useCallback, useState } from 'react';
 import { DROPDOWN_Z_INDEX } from '..';
 import Overlay from '../../components/Popover';
 
@@ -28,15 +28,22 @@ function TextAutocomplete({
     opt.toLowerCase().includes(value.toLowerCase())
   );
 
-  const triggerRef = useRef<HTMLDivElement>(null);
+  // using ref callback strategy here to handle rerendering
+  // when trigger is rendered or changes
+  const [triggerElement, setTriggerElement] = useState<HTMLDivElement | null>(
+    null
+  );
+  const triggerRef = useCallback((node: HTMLDivElement | null) => {
+    setTriggerElement(node);
+  }, []);
 
   if (allOptions.length === 0) return children;
 
   return (
     <div ref={triggerRef} css={{ height: '100%', width: '100%' }}>
       {children}
-      {triggerRef.current && options.length > 0 && showOptions && (
-        <Overlay target={triggerRef.current} show placement='bottom-start'>
+      {triggerElement && options.length > 0 && showOptions && (
+        <Overlay target={triggerElement} show placement='bottom-start'>
           <ul
             css={{
               zIndex: DROPDOWN_Z_INDEX,
@@ -44,8 +51,8 @@ function TextAutocomplete({
               padding: 0,
               margin: 0,
               maxHeight: '210px',
-              overflowY: 'auto',
-              overflowX: 'hidden',
+              overflowY: 'scroll',
+              overflowX: 'auto',
               width: '400px',
               backgroundColor: 'white',
               cursor: 'pointer',

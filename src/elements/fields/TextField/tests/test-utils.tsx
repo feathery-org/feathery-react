@@ -1,25 +1,16 @@
 import React from 'react';
 import { DEFAULT_MOBILE_BREAKPOINT } from '../../../styles';
+
+global.ResizeObserver = jest.fn().mockImplementation(() => ({
+  observe: jest.fn(),
+  unobserve: jest.fn(),
+  disconnect: jest.fn()
+}));
+
 jest.mock('../../../../utils/browser', () => ({
-  runningInClient: jest.fn(() => false),
-  featheryDoc: jest.fn(() => ({
-    createElement: jest.fn(() => ({
-      setAttribute: jest.fn(),
-      appendChild: jest.fn()
-    })),
-    addEventListener: jest.fn(),
-    removeEventListener: jest.fn(),
-    body: {}
-  })),
-  featheryWindow: jest.fn(() => ({
-    matchMedia: jest.fn(() => ({
-      matches: false,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn()
-    })),
-    addEventListener: jest.fn(),
-    removeEventListener: jest.fn()
-  })),
+  runningInClient: jest.fn(() => true),
+  featheryDoc: jest.fn(() => global.document),
+  featheryWindow: jest.fn(() => global.window),
   isHoverDevice: jest.fn(() => false),
   isTouchDevice: jest.fn(() => false),
   isIOS: jest.fn(() => false),
