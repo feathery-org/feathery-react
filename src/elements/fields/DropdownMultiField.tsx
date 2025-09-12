@@ -32,6 +32,7 @@ const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >
+      {/* @ts-ignore */}
       <SelectComponents.Option {...props}>{children}</SelectComponents.Option>
       {props.data.tooltip && optionRef.current && (
         <Overlay
@@ -212,30 +213,34 @@ export default function DropdownMultiField({
               } ${chevronPosition}px center`,
               position: 'relative'
             }),
-            container: (baseStyles) => ({
-              ...baseStyles,
-              height: '100%',
-              minHeight: 'inherit'
-            }),
-            valueContainer: (baseStyles) => ({
-              ...baseStyles,
-              paddingInlineEnd: 28
-            }),
-            multiValueLabel: (baseStyles) => ({
-              ...baseStyles,
-              whiteSpace: 'normal',
-              overflow: 'hidden',
-              display: '-webkit-box',
-              WebkitBoxOrient: 'vertical',
-              WebkitLineClamp: 3
-            }),
+            container: (baseStyles) =>
+              ({
+                ...baseStyles,
+                height: '100%',
+                minHeight: 'inherit'
+              } as any),
+            valueContainer: (baseStyles) =>
+              ({
+                ...baseStyles,
+                paddingInlineEnd: 28
+              } as any),
+            multiValueLabel: (baseStyles) =>
+              ({
+                ...baseStyles,
+                whiteSpace: 'normal',
+                overflow: 'hidden',
+                display: '-webkit-box',
+                WebkitBoxOrient: 'vertical',
+                WebkitLineClamp: 3
+              } as any),
             indicatorSeparator: () => ({ display: 'none' }),
             indicatorsContainer: () => ({ display: 'none' }),
-            menu: (baseStyles) => ({
-              ...baseStyles,
-              zIndex: DROPDOWN_Z_INDEX,
-              textAlign: 'start'
-            })
+            menu: (baseStyles) =>
+              ({
+                ...baseStyles,
+                zIndex: DROPDOWN_Z_INDEX,
+                textAlign: 'start'
+              } as any)
           }}
           components={{ Option: TooltipOption }}
           inputId={servar.key}
