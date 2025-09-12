@@ -4,6 +4,7 @@ import { HelpIcon } from './icons';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import { replaceTextVariables } from './TextNodes';
 import Overlay from './Popover';
+import { isMobile as _isMobile } from '../../utils/browser';
 
 interface InlineTooltipProps {
   id: string;
@@ -28,12 +29,21 @@ export default function InlineTooltip({
 
   if (!text) return null;
 
+  const isMobile = _isMobile();
+
   return (
     <>
       <div
         ref={triggerRef}
-        onMouseEnter={() => setShow(true)}
-        onMouseLeave={() => setShow(false)}
+        onMouseEnter={() => {
+          // this prevents needing to click twice on mobile
+          if (isMobile) return;
+          setShow(true);
+        }}
+        onMouseLeave={() => {
+          if (isMobile) return;
+          setShow(false);
+        }}
         onFocus={() => setShow(true)}
         onBlur={() => setShow(false)}
         onClick={() => setShow((prev) => !prev)}
