@@ -35,15 +35,9 @@ export default function InlineTooltip({
     <>
       <div
         ref={triggerRef}
-        onMouseEnter={() => {
-          // this prevents needing to click twice on mobile
-          if (isMobile) return;
-          setShow(true);
-        }}
-        onMouseLeave={() => {
-          if (isMobile) return;
-          setShow(false);
-        }}
+        // this prevents needing to click twice on mobile
+        onMouseEnter={isMobile ? undefined : () => setShow(true)}
+        onMouseLeave={isMobile ? undefined : () => setShow(false)}
         onFocus={() => setShow(true)}
         onBlur={() => setShow(false)}
         onClick={() => setShow((prev) => !prev)}
