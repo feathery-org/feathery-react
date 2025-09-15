@@ -10,6 +10,9 @@ export type DataItem = {
   id: string;
   variantId: string;
   isSequential: boolean;
+  run_id?: string;
+  created_at?: string;
+  file_sources?: any[];
 };
 
 type ExtractionToastProps = {

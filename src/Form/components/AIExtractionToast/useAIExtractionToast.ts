@@ -74,12 +74,12 @@ export const useAIExtractionToast = () => {
 
             if (pollData.parent_runs && pollData.parent_runs[0]) {
               const parent = pollData.parent_runs[0];
-              (updatedExtraction as any).extraction_key = parent.extraction_key;
-              (updatedExtraction as any).extraction_variant_key =
+              updatedExtraction.extraction_key = parent.extraction_key;
+              updatedExtraction.extraction_variant_key =
                 parent.extraction_variant_key;
-              (updatedExtraction as any).run_id = parent.run_id;
-              (updatedExtraction as any).created_at = parent.created_at;
-              (updatedExtraction as any).file_sources = parent.file_sources;
+              updatedExtraction.run_id = parent.run_id;
+              updatedExtraction.created_at = parent.created_at;
+              updatedExtraction.file_sources = parent.file_sources;
             }
 
             if (pollData.child_runs && pollData.child_runs.length > 0) {
