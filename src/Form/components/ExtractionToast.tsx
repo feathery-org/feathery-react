@@ -12,6 +12,8 @@ type ExtractionToastProps = {
   title?: string;
 };
 
+const INDENT_PX = 24;
+
 const ExtractionItem = ({
   item,
   level = 0
@@ -22,7 +24,7 @@ const ExtractionItem = ({
   const [isExpanded, setIsExpanded] = useState(true);
   const hasChildren = item.children && item.children.length > 0;
 
-  const paddingLeft = level * 24;
+  const paddingLeft = level * INDENT_PX;
 
   return (
     <div css={{ width: '100%' }}>
@@ -35,7 +37,7 @@ const ExtractionItem = ({
           paddingLeft: `${paddingLeft + 16}px`,
           cursor: hasChildren ? 'pointer' : 'default',
           ':hover': {
-            backgroundColor: '#f9fafb'
+            backgroundColor: hasChildren ? '#f9fafb' : ''
           }
         }}
         onClick={() => hasChildren && setIsExpanded(!isExpanded)}
@@ -60,12 +62,12 @@ const ExtractionItem = ({
               ? `${item.extraction_key} (${item.extraction_variant_key})`
               : item.extraction_key ||
                 {
-                  complete: 'Completed Extraction',
-                  error: 'Failed Extraction',
-                  queued: 'Queued Extraction',
-                  polling: 'Running Extraction'
+                  complete: 'Completed',
+                  error: 'Failed',
+                  queued: 'Queued Action',
+                  polling: 'Uploading Document'
                 }[item.status] ||
-                'Extraction'}
+                'Action'}
           </span>
         </div>
 
@@ -93,7 +95,7 @@ const ExtractionItem = ({
 
 const ExtractionToast = ({
   data,
-  title = 'Document Extractions'
+  title = 'Scanning Documents'
 }: ExtractionToastProps) => {
   const [isToastExpanded, setIsToastExpanded] = useState(true);
 
@@ -174,41 +176,40 @@ const CheckIcon = () => (
 
 const SpinnerIcon = () => (
   <svg
-    width='20'
-    height='20'
-    viewBox='0 0 24 24'
-    fill='none'
-    css={{
-      animation: 'spin 1s linear infinite',
-      '@keyframes spin': {
-        from: { transform: 'rotate(0deg)' },
-        to: { transform: 'rotate(360deg)' }
-      }
+    style={{
+      width: '20',
+      height: '20',
+      borderRadius: '50%'
     }}
+    viewBox='0 0 50 50'
   >
     <circle
-      cx='12'
-      cy='12'
-      r='10'
-      stroke='#3b82f6'
-      strokeWidth='2'
-      fill='none'
-      strokeDasharray='31.416'
-      strokeDashoffset='31.416'
-    >
-      <animate
-        attributeName='stroke-dasharray'
-        dur='2s'
-        values='0 31.416;15.708 15.708;0 31.416'
-        repeatCount='indefinite'
-      />
-      <animate
-        attributeName='stroke-dashoffset'
-        dur='2s'
-        values='0;-15.708;-31.416'
-        repeatCount='indefinite'
-      />
-    </circle>
+      cx={25}
+      cy={25}
+      r={22.5}
+      style={{
+        fill: 'none',
+        stroke: '#dbdfe8',
+        strokeWidth: 2,
+        opacity: 1
+      }}
+    />
+    <circle
+      cx={25}
+      cy={25}
+      r={22.5}
+      style={{
+        fill: 'none',
+        stroke: '#333849',
+        strokeWidth: 2,
+        opacity: 1,
+        strokeLinecap: 'round',
+        transformOrigin: '50% 50%',
+        transform: 'rotate3d(0,0,1,0deg)',
+        animation:
+          '2156ms ease-in-out 0s infinite normal none running feathery-spinner-arc,1829ms linear 0s infinite normal none running feathery-spinner-rotate'
+      }}
+    />
   </svg>
 );
 
