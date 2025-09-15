@@ -34,7 +34,7 @@ function TextAutocomplete({
   return (
     <div ref={triggerRef} css={{ height: '100%', width: '100%' }}>
       {children}
-      {triggerRef.current && options.length > 0 && showOptions && (
+      {options.length > 0 && showOptions && (
         <Overlay
           targetRef={triggerRef}
           containerRef={containerRef}
