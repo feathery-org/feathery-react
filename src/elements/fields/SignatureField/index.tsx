@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import SignatureCanvas from './components/SignatureCanvas';
 import SignatureModal from './components/SignatureModal';
 import { FORM_Z_INDEX } from '../../../utils/styles';
@@ -72,37 +72,51 @@ function SignatureField({
             ...responsiveStyles.getTarget('sub-fc')
           }}
         >
-          <div
-            onClick={() => {
-              if (!disabled) setShowSignatureModal(true);
-            }}
-            css={{
-              position: 'absolute',
-              display: 'flex',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              zIndex: FORM_Z_INDEX,
-              alignItems: 'center',
-              justifyContent: 'center',
-              ...(disabled ? { backgroundColor: 'rgb(229, 229, 229)' } : {}),
-              '&:hover': {
-                cursor: 'pointer'
-              }
-            }}
+          <Suspense
+            fallback={
+              <div
+                css={{
+                  ...responsiveStyles.getTarget('field', true),
+                  width: '100%',
+                  height: '100%',
+                  boxSizing: 'border-box',
+                  paddingLeft: '5px'
+                }}
+              />
+            }
           >
-            {!defaultValue && !disabled && t.label}
-          </div>
-          <SignatureCanvas
-            fieldKey={fieldKey}
-            repeatIndex={repeatIndex}
-            responsiveStyles={responsiveStyles}
-            defaultValue={defaultValue}
-            disabled={disabled}
-            showClear={false}
-            translation={t}
-          />
+            <div
+              onClick={() => {
+                if (!disabled) setShowSignatureModal(true);
+              }}
+              css={{
+                position: 'absolute',
+                display: 'flex',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                zIndex: FORM_Z_INDEX,
+                alignItems: 'center',
+                justifyContent: 'center',
+                ...(disabled ? { backgroundColor: 'rgb(229, 229, 229)' } : {}),
+                '&:hover': {
+                  cursor: 'pointer'
+                }
+              }}
+            >
+              {!defaultValue && !disabled && t.label}
+            </div>
+            <SignatureCanvas
+              fieldKey={fieldKey}
+              repeatIndex={repeatIndex}
+              responsiveStyles={responsiveStyles}
+              defaultValue={defaultValue}
+              disabled={disabled}
+              showClear={false}
+              translation={t}
+            />
+          </Suspense>
           {/* This input must always be rendered so we can set field errors */}
           <ErrorInput
             id={servar.key}

@@ -275,7 +275,7 @@ function DateSelectorField({
         {customBorder}
         <DateSelectorStyles />
 
-        <Suspense fallback={<div>Loading...</div>}>
+        <Suspense fallback={<></>}>
           <DatePicker
             id={element.servar.key}
             selected={internalDate}

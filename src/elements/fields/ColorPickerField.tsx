@@ -62,7 +62,7 @@ function ColorPickerField({
             }}
             onClick={() => setShowPicker(false)}
           />
-          <Suspense fallback={<div>Loading...</div>}>
+          <Suspense fallback={<></>}>
             <Sketch
               aria-label={element.properties.aria_label}
               color={`#${fieldVal}`}

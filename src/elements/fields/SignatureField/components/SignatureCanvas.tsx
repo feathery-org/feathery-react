@@ -4,7 +4,6 @@ import React, {
   useImperativeHandle,
   useRef,
   useState,
-  Suspense,
   lazy
 } from 'react';
 import { toBase64 } from '../../../../utils/image';
@@ -143,30 +142,28 @@ const SignatureCanvas = forwardRef<
           {t.clear}
         </div>
       )}
-      <Suspense fallback={<div>Loading...</div>}>
-        <Signature
-          penColor='black'
-          dotSize={4}
-          minWidth={1.5}
-          maxWidth={3}
-          clearOnResize={false}
-          canvasProps={{
-            id: fieldKey + repeatIndex,
-            style: {
-              ...signatureCanvasStyles,
-              width: '100%',
-              height: '100%',
-              boxSizing: 'border-box',
-              paddingLeft: '5px'
-            }
-          }}
-          ref={signatureRef}
-          onEnd={() => {
-            onEnd();
-            setIsClearVisible(!signatureRef.current.isEmpty());
-          }}
-        />
-      </Suspense>
+      <Signature
+        penColor='black'
+        dotSize={4}
+        minWidth={1.5}
+        maxWidth={3}
+        clearOnResize={false}
+        canvasProps={{
+          id: fieldKey + repeatIndex,
+          style: {
+            ...signatureCanvasStyles,
+            width: '100%',
+            height: '100%',
+            boxSizing: 'border-box',
+            paddingLeft: '5px'
+          }
+        }}
+        ref={signatureRef}
+        onEnd={() => {
+          onEnd();
+          setIsClearVisible(!signatureRef.current.isEmpty());
+        }}
+      />
     </>
   );
 });
