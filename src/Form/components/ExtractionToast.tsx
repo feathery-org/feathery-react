@@ -270,7 +270,7 @@ const StatusIcon = ({ status }: { status: DataItem['status'] }) => {
     case 'error':
       return <ErrorIcon />;
     default:
-      return <div style={{ height: 20, width: 20 }}></div>;
+      return null;
   }
 };
 
