@@ -421,7 +421,6 @@ function Form({
         extractions.push({
           id: action.extraction_id,
           variantId: action.variant_id || '',
-          name: action.extraction_name || `Extraction ${action.extraction_id}`,
           status: 'queued',
           isSequential: action.run_sequential && extractions.length > 0,
           children: []
@@ -472,25 +471,18 @@ function Form({
                 ? 'error'
                 : 'polling';
 
-            updatedExtraction.rawData = pollData;
+            if (pollData.parent_runs && pollData.parent_runs[0]) {
+              const parent = pollData.parent_runs[0];
+              updatedExtraction.extraction_key = parent.extraction_key;
+              updatedExtraction.extraction_variant_key =
+                parent.extraction_variant_key;
+              updatedExtraction.run_id = parent.run_id;
+              updatedExtraction.created_at = parent.created_at;
+              updatedExtraction.file_sources = parent.file_sources;
+            }
 
             if (pollData.child_runs && pollData.child_runs.length > 0) {
               const children: any[] = [];
-
-              // Add parent runs if they exist
-              if (pollData.parent_runs && pollData.parent_runs.length > 0) {
-                pollData.parent_runs.forEach((parent: any) => {
-                  children.push({
-                    id:
-                      parent.run_id ||
-                      `${extractionId}_parent_${children.length}`,
-                    extraction_key: parent.extraction_key,
-                    extraction_variant_key: parent.extraction_variant_key,
-                    status:
-                      parent.status === 'incomplete' ? 'polling' : parent.status
-                  });
-                });
-              }
               // Add child runs
               pollData.child_runs.forEach((child: any) => {
                 children.push({
