@@ -206,7 +206,8 @@ import {
   extractExportedCodeInfoArray,
   replaceImportsWithDefinitions
 } from './logic';
-import ExtractionToast from './components/ExtractionToast';
+import ExtractionToast from './components/AIExtractionToast';
+import { useAIExtractionToast } from './components/AIExtractionToast/useAIExtractionToast';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -409,112 +410,13 @@ function Form({
     formRef
   });
 
-  const [currentActionExtractions, setCurrentActionExtractions] = useState([]);
-
-  // take a set of actions and create toast data
-  const initializeActionExtractions = useCallback((actions: any) => {
-    const extractions = [];
-
-    for (let i = 0; i < actions.length; i++) {
-      const action = actions[i];
-      if (action.type === ACTION_AI_EXTRACTION && !action.run_async) {
-        extractions.push({
-          id: action.extraction_id,
-          variantId: action.variant_id || '',
-          status: 'queued',
-          isSequential: action.run_sequential && extractions.length > 0,
-          children: []
-        });
-      }
-    }
-
-    setCurrentActionExtractions(extractions as any);
-  }, []);
-
-  // update extraction directly
-  const updateExtractionInAction = useCallback(
-    (extractionId: any, variantId: any, updates: any) => {
-      setCurrentActionExtractions((prev: any) => {
-        return prev.map((extraction: any) => {
-          if (
-            extraction.id === extractionId &&
-            extraction.variantId === variantId
-          ) {
-            return { ...extraction, ...updates };
-          }
-          return extraction;
-        });
-      });
-    },
-    []
-  );
-
-  const clearActionExtractions = useCallback(() => {
-    setCurrentActionExtractions([]);
-  }, []);
-
-  // update extraction data using polling result
-  const handleExtractionStatusUpdate = useCallback(
-    (extractionId: any, variantId: any, pollData: any) => {
-      setCurrentActionExtractions((prev: any) => {
-        const result = prev.map((extraction: any) => {
-          if (
-            extraction.id === extractionId &&
-            extraction.variantId === variantId
-          ) {
-            const updatedExtraction = { ...extraction };
-
-            updatedExtraction.status =
-              pollData.status === 'complete'
-                ? 'complete'
-                : pollData.status === 'error'
-                ? 'error'
-                : 'polling';
-
-            if (pollData.parent_runs && pollData.parent_runs[0]) {
-              const parent = pollData.parent_runs[0];
-              updatedExtraction.extraction_key = parent.extraction_key;
-              updatedExtraction.extraction_variant_key =
-                parent.extraction_variant_key;
-              updatedExtraction.run_id = parent.run_id;
-              updatedExtraction.created_at = parent.created_at;
-              updatedExtraction.file_sources = parent.file_sources;
-            }
-
-            if (pollData.child_runs && pollData.child_runs.length > 0) {
-              const children: any[] = [];
-              // Add child runs
-              pollData.child_runs.forEach((child: any) => {
-                children.push({
-                  ...child,
-                  status: child.error
-                    ? 'error'
-                    : child.status === 'incomplete'
-                    ? 'polling'
-                    : child.status
-                });
-              });
-
-              updatedExtraction.children = children;
-
-              const hasPollingChild = children.some(
-                (child) =>
-                  child.status === 'polling' || child.status === 'incomplete'
-              );
-              if (hasPollingChild) {
-                updatedExtraction.status = 'polling';
-              }
-            }
-
-            return updatedExtraction;
-          }
-          return extraction;
-        });
-        return result;
-      });
-    },
-    []
-  );
+  const {
+    currentActionExtractions,
+    initializeActionExtractions,
+    updateExtractionInAction,
+    clearActionExtractions,
+    handleExtractionStatusUpdate
+  } = useAIExtractionToast();
 
   // Tracks element to focus
   const focusRef = useRef<any>(undefined);
