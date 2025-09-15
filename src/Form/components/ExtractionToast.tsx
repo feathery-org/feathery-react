@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 
 type DataItem = {
-  label: string;
   status: 'complete' | 'polling' | 'error' | 'queued';
-  items?: DataItem[];
+  extraction_key: string;
+  extraction_variant_key?: string;
+  children?: DataItem[];
 };
 
 type ExtractionToastProps = {
@@ -19,7 +20,7 @@ const ExtractionItem = ({
   level?: number;
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
-  const hasChildren = item.items && item.items.length > 0;
+  const hasChildren = item.children && item.children.length > 0;
 
   const paddingLeft = level * 24;
 
@@ -55,7 +56,16 @@ const ExtractionItem = ({
               fontSize: '14px'
             }}
           >
-            {getRunLabel(item)}
+            {item.extraction_key && item.extraction_variant_key
+              ? `${item.extraction_key} (${item.extraction_variant_key})`
+              : item.extraction_key ||
+                {
+                  complete: 'Completed Extraction',
+                  error: 'Failed Extraction',
+                  queued: 'Queued Extraction',
+                  polling: 'Running Extraction'
+                }[item.status] ||
+                'Extraction'}
           </span>
         </div>
 
@@ -72,8 +82,8 @@ const ExtractionItem = ({
 
       {hasChildren && isExpanded && (
         <div css={{ width: '100%' }}>
-          {item.items?.map((childItem, index) => (
-            <ExtractionItem key={index} item={childItem} level={level + 1} />
+          {item.children?.map((child, index) => (
+            <ExtractionItem key={index} item={child} level={level + 1} />
           ))}
         </div>
       )}
@@ -271,28 +281,5 @@ const StatusIcon = ({ status }: { status: DataItem['status'] }) => {
       return <ErrorIcon />;
     default:
       return null;
-  }
-};
-
-export const getRunLabel = (run: any): string => {
-  if (run.extraction_key && run.extraction_variant_key) {
-    return `${run.extraction_key} (${run.extraction_variant_key})`;
-  }
-
-  if (run.extraction_key) {
-    return run.extraction_key;
-  }
-
-  switch (run.status) {
-    case 'complete':
-      return 'Completed Extraction';
-    case 'error':
-      return 'Failed Extraction';
-    case 'queued':
-      return 'Queued Extraction';
-    case 'polling':
-      return 'Running Extraction';
-    default:
-      return 'Extraction';
   }
 };

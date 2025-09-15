@@ -461,7 +461,6 @@ function Form({
           ) {
             const updatedExtraction = { ...extraction };
 
-            // Main extraction status
             updatedExtraction.status =
               pollData.status === 'complete'
                 ? 'complete'
@@ -471,7 +470,6 @@ function Form({
 
             updatedExtraction.rawData = pollData;
 
-            // Child statuses
             if (pollData.child_runs && pollData.child_runs.length > 0) {
               const children: any[] = [];
 
@@ -492,10 +490,7 @@ function Form({
               // Add child runs
               pollData.child_runs.forEach((child: any) => {
                 children.push({
-                  id:
-                    child.run_id || `${extractionId}_child_${children.length}`,
-                  extraction_key: child.extraction_key,
-                  extraction_variant_key: child.extraction_variant_key,
+                  ...child,
                   status: child.error
                     ? 'error'
                     : child.status === 'incomplete'
@@ -506,7 +501,6 @@ function Form({
 
               updatedExtraction.children = children;
 
-              // Overall status should be polling if any children are polling
               const hasPollingChild = children.some(
                 (child) =>
                   child.status === 'polling' || child.status === 'incomplete'
@@ -525,25 +519,6 @@ function Form({
     },
     []
   );
-
-  const extractionToastData = useMemo(() => {
-    return currentActionExtractions.map((extraction: any) => ({
-      label: extraction.name,
-      status: extraction.status,
-      extraction_key: extraction.rawData?.parent_runs?.[0]?.extraction_key,
-      extraction_variant_key:
-        extraction.rawData?.parent_runs?.[0]?.extraction_variant_key,
-      items:
-        extraction.children && extraction.children.length > 0
-          ? extraction.children.map((child: any) => ({
-              label: child.name,
-              status: child.status,
-              extraction_key: child.extraction_key,
-              extraction_variant_key: child.extraction_variant_key
-            }))
-          : undefined
-    }));
-  }, [currentActionExtractions]);
 
   // Tracks element to focus
   const focusRef = useRef<any>(undefined);
@@ -2669,7 +2644,7 @@ function Form({
           brandPosition={formSettings.brandPosition}
         />
         {currentActionExtractions.length > 0 && (
-          <ExtractionToast data={extractionToastData} />
+          <ExtractionToast data={currentActionExtractions} />
         )}
       </BootstrapForm>
     </ReactPortal>
