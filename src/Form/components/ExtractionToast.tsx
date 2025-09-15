@@ -50,12 +50,12 @@ const ExtractionItem = ({
           <StatusIcon status={item.status} />
           <span
             css={{
-              color: '#374151',
+              color: item.status === 'queued' ? '#aaa' : '#374151',
               fontWeight: 500,
               fontSize: '14px'
             }}
           >
-            {item.label}
+            {getRunLabel(item)}
           </span>
         </div>
 
@@ -83,7 +83,7 @@ const ExtractionItem = ({
 
 const ExtractionToast = ({
   data,
-  title = 'Document Extraction'
+  title = 'Document Extractions'
 }: ExtractionToastProps) => {
   const [isToastExpanded, setIsToastExpanded] = useState(true);
 
@@ -257,6 +257,29 @@ const StatusIcon = ({ status }: { status: DataItem['status'] }) => {
     case 'error':
       return <ErrorIcon />;
     default:
-      return null;
+      return <div style={{ height: 20, width: 20 }}></div>;
+  }
+};
+
+export const getRunLabel = (run: any): string => {
+  if (run.extraction_key && run.extraction_variant_key) {
+    return `${run.extraction_key} (${run.extraction_variant_key})`;
+  }
+
+  if (run.extraction_key) {
+    return run.extraction_key;
+  }
+
+  switch (run.status) {
+    case 'complete':
+      return 'Completed Extraction';
+    case 'error':
+      return 'Failed Extraction';
+    case 'queued':
+      return 'Queued Extraction';
+    case 'polling':
+      return 'Running Extraction';
+    default:
+      return 'Extraction';
   }
 };

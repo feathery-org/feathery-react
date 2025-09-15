@@ -469,31 +469,38 @@ function Form({
                 ? 'error'
                 : 'polling';
 
+            updatedExtraction.rawData = pollData;
+
             // Child statuses
             if (pollData.child_runs && pollData.child_runs.length > 0) {
-              const children = [];
+              const children: any[] = [];
 
-              // Add the original extraction as first child if it's complete
-              if (updatedExtraction.status === 'complete') {
-                children.push({
-                  id: `${extractionId}_original`,
-                  name: updatedExtraction.name,
-                  status: 'complete'
+              // Add parent runs if they exist
+              if (pollData.parent_runs && pollData.parent_runs.length > 0) {
+                pollData.parent_runs.forEach((parent: any) => {
+                  children.push({
+                    id:
+                      parent.run_id ||
+                      `${extractionId}_parent_${children.length}`,
+                    extraction_key: parent.extraction_key,
+                    extraction_variant_key: parent.extraction_variant_key,
+                    status:
+                      parent.status === 'incomplete' ? 'polling' : parent.status
+                  });
                 });
               }
-
               // Add child runs
               pollData.child_runs.forEach((child: any) => {
                 children.push({
-                  id: child.id || `${extractionId}_child_${children.length}`,
-                  name:
-                    child.name ||
-                    `${updatedExtraction.name} ${children.length}`,
+                  id:
+                    child.run_id || `${extractionId}_child_${children.length}`,
+                  extraction_key: child.extraction_key,
+                  extraction_variant_key: child.extraction_variant_key,
                   status: child.error
                     ? 'error'
                     : child.status === 'incomplete'
                     ? 'polling'
-                    : 'complete'
+                    : child.status
                 });
               });
 
@@ -501,7 +508,8 @@ function Form({
 
               // Overall status should be polling if any children are polling
               const hasPollingChild = children.some(
-                (child) => child.status === 'polling'
+                (child) =>
+                  child.status === 'polling' || child.status === 'incomplete'
               );
               if (hasPollingChild) {
                 updatedExtraction.status = 'polling';
@@ -522,11 +530,16 @@ function Form({
     return currentActionExtractions.map((extraction: any) => ({
       label: extraction.name,
       status: extraction.status,
+      extraction_key: extraction.rawData?.parent_runs?.[0]?.extraction_key,
+      extraction_variant_key:
+        extraction.rawData?.parent_runs?.[0]?.extraction_variant_key,
       items:
-        extraction.children.length > 0
+        extraction.children && extraction.children.length > 0
           ? extraction.children.map((child: any) => ({
               label: child.name,
-              status: child.status
+              status: child.status,
+              extraction_key: child.extraction_key,
+              extraction_variant_key: child.extraction_variant_key
             }))
           : undefined
     }));
