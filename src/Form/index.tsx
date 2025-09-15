@@ -410,6 +410,8 @@ function Form({
   });
 
   const [currentActionExtractions, setCurrentActionExtractions] = useState([]);
+
+  // take a set of actions and create toast data
   const initializeActionExtractions = useCallback((actions: any) => {
     const extractions = [];
 
@@ -430,6 +432,7 @@ function Form({
     setCurrentActionExtractions(extractions as any);
   }, []);
 
+  // update extraction directly
   const updateExtractionInAction = useCallback(
     (extractionId: any, variantId: any, updates: any) => {
       setCurrentActionExtractions((prev: any) => {
@@ -451,6 +454,7 @@ function Form({
     setCurrentActionExtractions([]);
   }, []);
 
+  // update extraction data using polling result
   const handleExtractionStatusUpdate = useCallback(
     (extractionId: any, variantId: any, pollData: any) => {
       setCurrentActionExtractions((prev: any) => {
