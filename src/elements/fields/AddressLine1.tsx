@@ -134,7 +134,7 @@ function AddressLine1({
 
         <Overlay
           show={showOptions && options.length > 0}
-          target={inputRef.current}
+          targetRef={inputRef}
           containerRef={containerRef}
           placement='bottom-start'
           offset={4}

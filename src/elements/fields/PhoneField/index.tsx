@@ -218,7 +218,7 @@ function PhoneField({
           key={`overlay-${curCountryCode}`}
           show={show}
           onHide={() => setShow(false)}
-          target={triggerRef.current}
+          targetRef={triggerRef}
           containerRef={containerRef}
           placement='bottom-start'
           offset={0}

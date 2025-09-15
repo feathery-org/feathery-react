@@ -38,7 +38,7 @@ export default function TextHoverTooltip({
 
       <Overlay
         show={show}
-        target={triggerRef.current}
+        targetRef={triggerRef}
         containerRef={containerRef}
         placement='top'
         onHide={() => setShow(false)}

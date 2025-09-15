@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useState, useMemo } from 'react';
+import React, { memo, useCallback, useState, useMemo, useRef } from 'react';
 import { DROPDOWN_Z_INDEX } from '..';
 import Overlay from '../../components/Overlay';
 
@@ -28,24 +28,15 @@ function TextAutocomplete({
   const options = allOptions.filter((opt) =>
     opt.toLowerCase().includes(value.toLowerCase())
   );
-
-  // using ref callback strategy here to handle rerendering
-  // when trigger is rendered or changes
-  const [triggerElement, setTriggerElement] = useState<HTMLDivElement | null>(
-    null
-  );
-  const triggerRef = useCallback((node: HTMLDivElement | null) => {
-    setTriggerElement(node);
-  }, []);
-
+  const triggerRef = useRef<HTMLDivElement>(null);
   if (allOptions.length === 0) return children;
 
   return (
     <div ref={triggerRef} css={{ height: '100%', width: '100%' }}>
       {children}
-      {triggerElement && options.length > 0 && showOptions && (
+      {triggerRef.current && options.length > 0 && showOptions && (
         <Overlay
-          target={triggerElement}
+          targetRef={triggerRef}
           containerRef={containerRef}
           show
           placement='bottom-start'

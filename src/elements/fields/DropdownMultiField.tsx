@@ -36,7 +36,7 @@ const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
       <SelectComponents.Option {...props}>{children}</SelectComponents.Option>
       {props.data.tooltip && optionRef.current && (
         <Overlay
-          target={optionRef.current}
+          targetRef={optionRef}
           // @ts-expect-error
           containerRef={props.selectProps.containerRef}
           show={showTooltip}

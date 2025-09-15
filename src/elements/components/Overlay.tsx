@@ -30,222 +30,134 @@ type Placement =
 
 interface OverlayProps {
   show: boolean;
-  target: HTMLElement | null;
+  targetRef: React.RefObject<HTMLElement | null>;
   children: ReactNode;
   onHide?: () => void;
   placement?: Placement;
   offset?: number;
+  zIndex?: number;
   /** Optional container ref to render the overlay into. Defaults to document.body */
   containerRef?: React.RefObject<HTMLElement | null>;
 }
 
 const Overlay = ({
   show,
-  target,
+  targetRef,
   children,
   onHide,
   placement = 'bottom-start',
   offset = 0,
+  zIndex = 1000,
   containerRef
 }: OverlayProps) => {
-  const targetRef = useRef<HTMLElement>(target);
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<Position | null>(null);
 
-  useEffect(() => {
-    targetRef.current = target;
-  }, [target]);
+  const getContainer = useCallback(() => {
+    return containerRef?.current || featheryDoc().body;
+  }, [containerRef]);
 
-  const recalculatePosition = useCallback(() => {
+  const recalcPosition = useCallback(() => {
     if (!show || !targetRef.current || !ref.current) return;
 
     const window = featheryWindow();
+    const container = getContainer();
+    if (!container) return;
+
     const targetRect = targetRef.current.getBoundingClientRect();
     const overlayRect = ref.current.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
 
-    let top = 0;
-    let left = 0;
-    let effectivePlacement: Placement = placement;
+    let { top, left } = calcPosition(
+      placement,
+      targetRect,
+      overlayRect,
+      offset
+    );
 
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
+    // Flip if it doesn’t fit
+    const overlayBottom = top + overlayRect.height;
+    const overlayRight = left + overlayRect.width;
 
-    const calcPosition = (pl: Placement) => {
-      switch (pl) {
-        case 'top':
-          return {
-            top: targetRect.top - overlayRect.height - offset,
-            left: targetRect.left + (targetRect.width - overlayRect.width) / 2
-          };
-        case 'top-start':
-          return {
-            top: targetRect.top - overlayRect.height - offset,
-            left: targetRect.left
-          };
-        case 'top-end':
-          return {
-            top: targetRect.top - overlayRect.height - offset,
-            left: targetRect.right - overlayRect.width
-          };
-        case 'left':
-          return {
-            top: targetRect.top + (targetRect.height - overlayRect.height) / 2,
-            left: targetRect.left - overlayRect.width - offset
-          };
-        case 'left-start':
-          return {
-            top: targetRect.top,
-            left: targetRect.left - overlayRect.width - offset
-          };
-        case 'left-end':
-          return {
-            top: targetRect.bottom - overlayRect.height,
-            left: targetRect.left - overlayRect.width - offset
-          };
-        case 'bottom':
-          return {
-            top: targetRect.bottom + offset,
-            left: targetRect.left + (targetRect.width - overlayRect.width) / 2
-          };
-        case 'bottom-start':
-          return { top: targetRect.bottom + offset, left: targetRect.left };
-        case 'bottom-end':
-          return {
-            top: targetRect.bottom + offset,
-            left: targetRect.right - overlayRect.width
-          };
-        case 'right':
-          return {
-            top: targetRect.top + (targetRect.height - overlayRect.height) / 2,
-            left: targetRect.right + offset
-          };
-        case 'right-start':
-          return { top: targetRect.top, left: targetRect.right + offset };
-        case 'right-end':
-          return {
-            top: targetRect.bottom - overlayRect.height,
-            left: targetRect.right + offset
-          };
-        default:
-          return {
-            top: targetRect.bottom + offset,
-            left: targetRect.left + (targetRect.width - overlayRect.width) / 2
-          };
-      }
-    };
-
-    ({ top, left } = calcPosition(placement));
-
-    // Flip if overflowing viewport
-    const fitsVertically =
-      top >= 0 && top + overlayRect.height <= viewportHeight;
-    const fitsHorizontally =
-      left >= 0 && left + overlayRect.width <= viewportWidth;
+    const fitsVertically = top >= 0 && overlayBottom <= window.innerHeight;
+    const fitsHorizontally = left >= 0 && overlayRight <= window.innerWidth;
 
     if (!fitsVertically || !fitsHorizontally) {
-      switch (placement) {
-        case 'top':
-        case 'top-start':
-        case 'top-end':
-          if (top < 0)
-            effectivePlacement = placement.replace(
-              'top',
-              'bottom'
-            ) as Placement;
-          break;
-        case 'bottom':
-        case 'bottom-start':
-        case 'bottom-end':
-          if (top + overlayRect.height > viewportHeight)
-            effectivePlacement = placement.replace(
-              'bottom',
-              'top'
-            ) as Placement;
-          break;
-        case 'left':
-        case 'left-start':
-        case 'left-end':
-          if (left < 0)
-            effectivePlacement = placement.replace(
-              'left',
-              'right'
-            ) as Placement;
-          break;
-        case 'right':
-        case 'right-start':
-        case 'right-end':
-          if (left + overlayRect.width > viewportWidth)
-            effectivePlacement = placement.replace(
-              'right',
-              'left'
-            ) as Placement;
-          break;
+      const flipped = getFlippedPlacement(
+        placement,
+        !fitsVertically,
+        !fitsHorizontally
+      );
+      if (flipped !== placement) {
+        ({ top, left } = calcPosition(
+          flipped,
+          targetRect,
+          overlayRect,
+          offset
+        ));
       }
-      ({ top, left } = calcPosition(effectivePlacement));
     }
 
-    // Clamp inside viewport
-    top = Math.max(0, Math.min(top, viewportHeight - overlayRect.height));
-    left = Math.max(0, Math.min(left, viewportWidth - overlayRect.width));
+    const isBodyContainer = container === featheryDoc().body;
+    const finalTop = isBodyContainer
+      ? top + window.scrollY
+      : top - containerRect.top;
+    const finalLeft = isBodyContainer
+      ? left + window.scrollX
+      : left - containerRect.left;
 
-    // Only update state if it changed
     setPosition((prev) => {
-      const window = featheryWindow();
-      if (
-        !prev ||
-        prev.top !== top + window.scrollY ||
-        prev.left !== left + window.scrollX
-      ) {
-        return { top: top + window.scrollY, left: left + window.scrollX };
+      if (!prev || prev.top !== finalTop || prev.left !== finalLeft) {
+        return { top: finalTop, left: finalLeft };
       }
       return prev;
     });
-  }, [show, placement, offset]);
+  }, [show, placement, offset, getContainer, targetRef]);
 
-  const throttledRecalc = useRef<() => void>(() => {});
-  useEffect(() => {
+  const throttledRecalc = useCallback(() => {
     let ticking = false;
-    throttledRecalc.current = () => {
+    return () => {
       if (!ticking) {
         ticking = true;
         requestAnimationFrame(() => {
-          recalculatePosition();
+          recalcPosition();
           ticking = false;
         });
       }
     };
-  }, [recalculatePosition]);
+  }, [recalcPosition])();
 
   useLayoutEffect(() => {
+    if (show) recalcPosition();
+  }, [show, recalcPosition]);
+
+  useEffect(() => {
     if (!show) return;
 
     const window = featheryWindow();
+    const container = getContainer();
+    if (!container) return;
 
-    const scrollX = window.scrollX;
-    const scrollY = window.scrollY;
+    window.addEventListener('resize', throttledRecalc);
+    window.addEventListener('scroll', throttledRecalc, true);
 
-    recalculatePosition();
+    if (container !== featheryDoc().body) {
+      container.addEventListener('scroll', throttledRecalc);
+    }
 
-    const handleFrame = requestAnimationFrame(() => {
-      window.scrollTo(scrollX, scrollY);
-    });
-
-    window.addEventListener('resize', throttledRecalc.current);
-    window.addEventListener('scroll', throttledRecalc.current, true);
-
-    const resizeObserver = new ResizeObserver(() =>
-      throttledRecalc.current?.()
-    );
-    if (ref.current) resizeObserver.observe(ref.current);
+    const resizeObserver = new ResizeObserver(() => throttledRecalc());
     if (targetRef.current) resizeObserver.observe(targetRef.current);
+    if (container !== featheryDoc().body) resizeObserver.observe(container);
 
     return () => {
-      cancelAnimationFrame(handleFrame);
-      window.removeEventListener('resize', throttledRecalc.current);
-      window.removeEventListener('scroll', throttledRecalc.current, true);
+      window.removeEventListener('resize', throttledRecalc);
+      window.removeEventListener('scroll', throttledRecalc, true);
+      if (container !== featheryDoc().body) {
+        container.removeEventListener('scroll', throttledRecalc);
+      }
       resizeObserver.disconnect();
     };
-  }, [show, recalculatePosition]);
+  }, [show, throttledRecalc, getContainer, targetRef]);
 
   useEffect(() => {
     if (!show) return;
@@ -257,34 +169,32 @@ const Overlay = ({
       }
     };
 
-    const handleClickOutside = (event: any) => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
       if (
         ref.current &&
-        !ref.current.contains(event.target) &&
+        !ref.current.contains(target) &&
         targetRef.current &&
-        !targetRef.current.contains(event.target)
+        !targetRef.current.contains(target)
       ) {
         setPosition(null);
         onHide?.();
       }
     };
 
-    featheryDoc().addEventListener('mousedown', handleClickOutside);
-    featheryDoc().addEventListener('keydown', handleKeyDown);
+    const doc = featheryDoc();
+    doc.addEventListener('mousedown', handleClickOutside);
+    doc.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      featheryDoc().removeEventListener('mousedown', handleClickOutside);
-      featheryDoc().removeEventListener('keydown', handleKeyDown);
+      doc.removeEventListener('mousedown', handleClickOutside);
+      doc.removeEventListener('keydown', handleKeyDown);
     };
-  }, [show, onHide]);
+  }, [show, onHide, targetRef]);
 
   if (!show) return null;
 
-  console.log(containerRef, containerRef?.current, featheryDoc().body);
-  // Get container from ref, fallback to document.body
-  const container = containerRef ? containerRef.current : featheryDoc().body;
-
-  console.log(container);
+  const container = getContainer();
   if (!container) return <>{children}</>;
 
   return createPortal(
@@ -292,7 +202,8 @@ const Overlay = ({
       ref={ref}
       style={{
         position: 'absolute',
-        ...(position || { top: -9999, left: -9999 })
+        ...(position || { top: -9999, left: -9999 }),
+        zIndex
       }}
     >
       {children}
@@ -302,3 +213,102 @@ const Overlay = ({
 };
 
 export default Overlay;
+
+const getFlippedPlacement = (
+  original: Placement,
+  needsVerticalFlip: boolean,
+  needsHorizontalFlip: boolean
+): Placement => {
+  if (needsVerticalFlip) {
+    if (original.includes('top')) {
+      return original.replace('top', 'bottom') as Placement;
+    }
+    if (original.includes('bottom')) {
+      return original.replace('bottom', 'top') as Placement;
+    }
+  }
+  if (needsHorizontalFlip) {
+    if (original.includes('left')) {
+      return original.replace('left', 'right') as Placement;
+    }
+    if (original.includes('right')) {
+      return original.replace('right', 'left') as Placement;
+    }
+  }
+  return original;
+};
+
+const calcPosition = (
+  pl: Placement,
+  targetRect: DOMRect,
+  overlayRect: DOMRect,
+  offset = 0
+): Position => {
+  switch (pl) {
+    case 'top':
+      return {
+        top: targetRect.top - overlayRect.height - offset,
+        left: targetRect.left + (targetRect.width - overlayRect.width) / 2
+      };
+    case 'top-start':
+      return {
+        top: targetRect.top - overlayRect.height - offset,
+        left: targetRect.left
+      };
+    case 'top-end':
+      return {
+        top: targetRect.top - overlayRect.height - offset,
+        left: targetRect.right - overlayRect.width
+      };
+    case 'left':
+      return {
+        top: targetRect.top + (targetRect.height - overlayRect.height) / 2,
+        left: targetRect.left - overlayRect.width - offset
+      };
+    case 'left-start':
+      return {
+        top: targetRect.top,
+        left: targetRect.left - overlayRect.width - offset
+      };
+    case 'left-end':
+      return {
+        top: targetRect.bottom - overlayRect.height,
+        left: targetRect.left - overlayRect.width - offset
+      };
+    case 'bottom':
+      return {
+        top: targetRect.bottom + offset,
+        left: targetRect.left + (targetRect.width - overlayRect.width) / 2
+      };
+    case 'bottom-start':
+      return {
+        top: targetRect.bottom + offset,
+        left: targetRect.left
+      };
+    case 'bottom-end':
+      return {
+        top: targetRect.bottom + offset,
+        left: targetRect.right - overlayRect.width
+      };
+    case 'right':
+      return {
+        top: targetRect.top + (targetRect.height - overlayRect.height) / 2,
+        left: targetRect.right + offset
+      };
+    case 'right-start':
+      return {
+        top: targetRect.top,
+        left: targetRect.right + offset
+      };
+    case 'right-end':
+      return {
+        top: targetRect.bottom - overlayRect.height,
+        left: targetRect.right + offset
+      };
+    default:
+      return {
+        top: targetRect.bottom + offset,
+        left: targetRect.left + (targetRect.width - overlayRect.width) / 2
+      };
+  }
+};

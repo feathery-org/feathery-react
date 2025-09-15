@@ -68,7 +68,7 @@ export default function InlineTooltip({
 
       <Overlay
         show={show}
-        target={triggerRef.current}
+        targetRef={triggerRef}
         containerRef={containerRef}
         placement='left'
         onHide={() => setShow(false)}
