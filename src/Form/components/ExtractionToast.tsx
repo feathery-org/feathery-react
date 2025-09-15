@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 
 type DataItem = {
   label: string;
-  status: 'complete' | 'in_progress' | 'error' | string;
+  status: 'complete' | 'polling' | 'error' | 'queued';
   items?: DataItem[];
 };
 
@@ -50,7 +50,7 @@ const ExtractionItem = ({
           <StatusIcon status={item.status} />
           <span
             css={{
-              color: item.status === 'queued' ? '#aaa' : '#374151',
+              color: item.status === 'queued' ? '#9ca3af' : '#374151',
               fontWeight: 500,
               fontSize: '14px'
             }}
@@ -222,6 +222,19 @@ const ErrorIcon = () => (
   </svg>
 );
 
+const PendingIcon = () => (
+  <svg width='20' height='20' viewBox='0 0 24 24' fill='none'>
+    <circle cx='12' cy='12' r='10' fill='#9ca3af' />
+    <path
+      d='M12 6v6l4 2'
+      stroke='white'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+  </svg>
+);
+
 const ChevronDown = () => (
   <svg width='16' height='16' viewBox='0 0 24 24' fill='none'>
     <path
@@ -250,10 +263,10 @@ const StatusIcon = ({ status }: { status: DataItem['status'] }) => {
   switch (status) {
     case 'complete':
       return <CheckIcon />;
-    case 'in_progress':
-    case 'incomplete':
     case 'polling':
       return <SpinnerIcon />;
+    case 'queued':
+      return <PendingIcon />;
     case 'error':
       return <ErrorIcon />;
     default:
