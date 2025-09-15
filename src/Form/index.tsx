@@ -1959,7 +1959,7 @@ function Form({
     await runAction(true);
 
     let i: number;
-    let hasExtractions = actions.some(
+    const hasExtractions = actions.some(
       (action) => action.type === ACTION_AI_EXTRACTION && !action.run_async
     );
     if (hasExtractions) {
