@@ -206,6 +206,7 @@ import {
   extractExportedCodeInfoArray,
   replaceImportsWithDefinitions
 } from './logic';
+import ExtractionToast from './components/ExtractionToast';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -407,6 +408,129 @@ function Form({
     loaderBackgroundColor: stepCSS?.backgroundColor,
     formRef
   });
+
+  const [currentActionExtractions, setCurrentActionExtractions] = useState([]);
+  const initializeActionExtractions = useCallback((actions: any) => {
+    const extractions = [];
+
+    for (let i = 0; i < actions.length; i++) {
+      const action = actions[i];
+      if (action.type === ACTION_AI_EXTRACTION && !action.run_async) {
+        extractions.push({
+          id: action.extraction_id,
+          variantId: action.variant_id || '',
+          name: action.extraction_name || `Extraction ${action.extraction_id}`,
+          status: 'queued',
+          isSequential: action.run_sequential && extractions.length > 0,
+          children: []
+        });
+      }
+    }
+
+    setCurrentActionExtractions(extractions as any);
+  }, []);
+
+  const updateExtractionInAction = useCallback(
+    (extractionId: any, variantId: any, updates: any) => {
+      setCurrentActionExtractions((prev: any) => {
+        return prev.map((extraction: any) => {
+          if (
+            extraction.id === extractionId &&
+            extraction.variantId === variantId
+          ) {
+            return { ...extraction, ...updates };
+          }
+          return extraction;
+        });
+      });
+    },
+    []
+  );
+
+  const clearActionExtractions = useCallback(() => {
+    setCurrentActionExtractions([]);
+  }, []);
+
+  const handleExtractionStatusUpdate = useCallback(
+    (extractionId: any, variantId: any, pollData: any) => {
+      setCurrentActionExtractions((prev: any) => {
+        const result = prev.map((extraction: any) => {
+          if (
+            extraction.id === extractionId &&
+            extraction.variantId === variantId
+          ) {
+            const updatedExtraction = { ...extraction };
+
+            // Main extraction status
+            updatedExtraction.status =
+              pollData.status === 'complete'
+                ? 'complete'
+                : pollData.status === 'error'
+                ? 'error'
+                : 'polling';
+
+            // Child statuses
+            if (pollData.child_runs && pollData.child_runs.length > 0) {
+              const children = [];
+
+              // Add the original extraction as first child if it's complete
+              if (updatedExtraction.status === 'complete') {
+                children.push({
+                  id: `${extractionId}_original`,
+                  name: updatedExtraction.name,
+                  status: 'complete'
+                });
+              }
+
+              // Add child runs
+              pollData.child_runs.forEach((child: any) => {
+                children.push({
+                  id: child.id || `${extractionId}_child_${children.length}`,
+                  name:
+                    child.name ||
+                    `${updatedExtraction.name} ${children.length}`,
+                  status: child.error
+                    ? 'error'
+                    : child.status === 'incomplete'
+                    ? 'polling'
+                    : 'complete'
+                });
+              });
+
+              updatedExtraction.children = children;
+
+              // Overall status should be polling if any children are polling
+              const hasPollingChild = children.some(
+                (child) => child.status === 'polling'
+              );
+              if (hasPollingChild) {
+                updatedExtraction.status = 'polling';
+              }
+            }
+
+            return updatedExtraction;
+          }
+          return extraction;
+        });
+        return result;
+      });
+    },
+    []
+  );
+
+  const extractionToastData = useMemo(() => {
+    return currentActionExtractions.map((extraction: any) => ({
+      label: extraction.name,
+      status: extraction.status,
+      items:
+        extraction.children.length > 0
+          ? extraction.children.map((child: any) => ({
+              label: child.name,
+              status: child.status
+            }))
+          : undefined
+    }));
+  }, [currentActionExtractions]);
 
   // Tracks element to focus
   const focusRef = useRef<any>(undefined);
@@ -1835,6 +1959,12 @@ function Form({
     await runAction(true);
 
     let i: number;
+    let hasExtractions = actions.some(
+      (action) => action.type === ACTION_AI_EXTRACTION && !action.run_async
+    );
+    if (hasExtractions) {
+      initializeActionExtractions(actions);
+    }
     for (i = 0; i < actions.length; i++) {
       const action = actions[i];
       const type = action.type;
@@ -2077,8 +2207,20 @@ function Form({
                     meetingUrl: fieldValues[curAction.meeting_url_field_key]
                   },
                   undefined,
-                  setPollFuserData
+                  setPollFuserData,
+                  onStatusUpdate: (pollData: any) =>
+                    handleExtractionStatusUpdate(
+                      curAction.extraction_id,
+                      curAction.variant_id || '',
+                      pollData
+                    )
                 })
+              );
+              // set current extraction to pending
+              updateExtractionInAction(
+                curAction.extraction_id,
+                curAction.variant_id || '',
+                { status: 'polling' }
               );
               i++;
             } else {
@@ -2298,7 +2440,10 @@ function Form({
         }
       }
     }
-
+    if (hasExtractions) {
+      // clear toast
+      clearActionExtractions();
+    }
     if (i < actions.length) {
       elementClicks[id] = false;
       return true;
@@ -2510,6 +2655,9 @@ function Form({
           show={formSettings.showBrand}
           brandPosition={formSettings.brandPosition}
         />
+        {currentActionExtractions.length > 0 && (
+          <ExtractionToast data={extractionToastData} />
+        )}
       </BootstrapForm>
     </ReactPortal>
   );
