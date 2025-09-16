@@ -2552,7 +2552,16 @@ function Form({
           brandPosition={formSettings.brandPosition}
         />
         {currentActionExtractions.length > 0 && (
-          <ExtractionToast data={currentActionExtractions} />
+          <ExtractionToast
+            data={currentActionExtractions}
+            // adjust position if brand watermark is in bottom right
+            bottom={
+              formSettings.showBrand &&
+              formSettings.brandPosition === 'bottom_right'
+                ? 67
+                : 20
+            }
+          />
         )}
       </BootstrapForm>
     </ReactPortal>

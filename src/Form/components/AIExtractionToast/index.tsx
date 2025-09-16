@@ -18,11 +18,13 @@ export type DataItem = {
 type ExtractionToastProps = {
   data: DataItem[];
   title?: string;
+  bottom?: number;
 };
 
 const ExtractionToast = ({
   data,
-  title = 'Scanning Documents'
+  title = 'Scanning Documents',
+  bottom = 20
 }: ExtractionToastProps) => {
   const [isToastExpanded, setIsToastExpanded] = useState(true);
 
@@ -30,7 +32,7 @@ const ExtractionToast = ({
     <div
       css={{
         position: 'fixed',
-        bottom: '16px',
+        bottom: `${bottom}px`,
         right: '16px',
         width: '384px',
         background: 'white',
