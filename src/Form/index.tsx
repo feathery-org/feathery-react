@@ -1031,7 +1031,17 @@ function Form({
             extractionId,
             options,
             pages,
-            setPollFuserData
+            setPollFuserData,
+            onStatusUpdate:
+              typeof options == 'object' && options.waitForCompletion
+                ? (pollData: any) =>
+                    handleExtractionStatusUpdate(
+                      extractionId,
+                      (typeof options == 'object' && options.variantId) || '',
+                      pollData,
+                      true
+                    )
+                : undefined
           });
           if (data.status === 'error') {
             throw new Error(data.message);

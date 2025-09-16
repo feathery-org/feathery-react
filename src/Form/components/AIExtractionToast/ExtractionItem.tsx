@@ -12,7 +12,8 @@ export default function ExtractionItem({
   level?: number;
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
-  const hasChildren = item.children && item.children.length > 0;
+  const hasChildren =
+    item.status === 'polling' && item.children && item.children.length > 0;
 
   const paddingLeft = level * INDENT_PX;
 
@@ -40,25 +41,15 @@ export default function ExtractionItem({
             flex: 1
           }}
         >
-          <StatusIcon status={item.status} />
-          <span
+          <StatusIcon status={item.status} css={{ flexShrink: 0 }} />
+          <div
             css={{
-              color: item.status === 'queued' ? '#9ca3af' : '#374151',
-              fontWeight: 500,
-              fontSize: '14px'
+              fontSize: '14px',
+              fontWeight: 500
             }}
           >
-            {item.extraction_key && item.extraction_variant_key
-              ? `${item.extraction_key} (${item.extraction_variant_key})`
-              : item.extraction_key ||
-                {
-                  complete: 'Completed',
-                  error: 'Failed',
-                  queued: 'Queued Action',
-                  polling: 'Uploading Document'
-                }[item.status] ||
-                'Action'}
-          </span>
+            {renderItemLabel(item)}
+          </div>
         </div>
 
         <div
@@ -82,3 +73,52 @@ export default function ExtractionItem({
     </div>
   );
 }
+
+const renderItemLabel = (item: DataItem) => {
+  // fallback labels if no run data yet
+  if (!item.extraction_key) {
+    const label =
+      {
+        complete: 'Completed',
+        error: 'Failed',
+        queued: 'Queued Action',
+        polling: 'Uploading Document'
+      }[item.status] || 'Action';
+
+    return (
+      <span css={{ color: item.status === 'queued' ? '#9ca3af' : '#374151' }}>
+        {label}
+      </span>
+    );
+  }
+
+  const fileSourcesText = getFileSourcesText(item.file_sources);
+
+  return (
+    <>
+      <span css={{ color: item.status === 'queued' ? '#9ca3af' : '#374151' }}>
+        {item.extraction_key}
+      </span>
+      {fileSourcesText && (
+        <span css={{ color: '#9ca3af' }}> {fileSourcesText}</span>
+      )}
+    </>
+  );
+};
+
+const getFileSourcesText = (fileSources?: any[]) => {
+  if (!fileSources?.length) return null;
+
+  const fileName = getFileName(fileSources[0].url as string);
+  const additionalFiles = fileSources.length - 1;
+
+  const fileInfo =
+    additionalFiles > 0 ? `${fileName} & ${additionalFiles} more` : fileName;
+
+  return `(${fileInfo})`;
+};
+
+const getFileName = (fileUrl: string) => {
+  const lastSlashIndex = fileUrl.lastIndexOf('/');
+  return fileUrl.substring(lastSlashIndex + 1);
+};

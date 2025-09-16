@@ -1,7 +1,8 @@
+import { ComponentProps } from 'react';
 import { DataItem } from '.';
 
-const CheckIcon = () => (
-  <svg width='20' height='20' viewBox='0 0 24 24' fill='none'>
+const CheckIcon = (props: ComponentProps<'svg'>) => (
+  <svg width='20' height='20' viewBox='0 0 24 24' fill='none' {...props}>
     <circle cx='12' cy='12' r='10' fill='#10b981' />
     <path
       d='m9 12 2 2 4-4'
@@ -13,7 +14,7 @@ const CheckIcon = () => (
   </svg>
 );
 
-const SpinnerIcon = () => (
+const SpinnerIcon = (props: ComponentProps<'svg'>) => (
   <svg
     style={{
       width: '20',
@@ -21,6 +22,7 @@ const SpinnerIcon = () => (
       borderRadius: '50%'
     }}
     viewBox='0 0 50 50'
+    {...props}
   >
     <circle
       cx={25}
@@ -52,8 +54,8 @@ const SpinnerIcon = () => (
   </svg>
 );
 
-const ErrorIcon = () => (
-  <svg width='20' height='20' viewBox='0 0 24 24' fill='none'>
+const ErrorIcon = (props: ComponentProps<'svg'>) => (
+  <svg width='20' height='20' viewBox='0 0 24 24' fill='none' {...props}>
     <circle cx='12' cy='12' r='10' fill='#ef4444' />
     <path
       d='m15 9-6 6'
@@ -72,8 +74,8 @@ const ErrorIcon = () => (
   </svg>
 );
 
-const PendingIcon = () => (
-  <svg width='20' height='20' viewBox='0 0 24 24' fill='none'>
+const PendingIcon = (props: ComponentProps<'svg'>) => (
+  <svg width='20' height='20' viewBox='0 0 24 24' fill='none' {...props}>
     <circle cx='12' cy='12' r='10' fill='#9ca3af' />
     <path
       d='M12 6v6l4 2'
@@ -109,16 +111,19 @@ export const ChevronUp = () => (
   </svg>
 );
 
-export const StatusIcon = ({ status }: { status: DataItem['status'] }) => {
+export const StatusIcon = ({
+  status,
+  ...props
+}: { status: DataItem['status'] } & ComponentProps<'svg'>) => {
   switch (status) {
     case 'complete':
-      return <CheckIcon />;
+      return <CheckIcon {...props} />;
     case 'polling':
-      return <SpinnerIcon />;
+      return <SpinnerIcon {...props} />;
     case 'queued':
-      return <PendingIcon />;
+      return <PendingIcon {...props} />;
     case 'error':
-      return <ErrorIcon />;
+      return <ErrorIcon {...props} />;
     default:
       return null;
   }
