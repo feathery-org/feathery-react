@@ -1033,11 +1033,11 @@ function Form({
             pages,
             setPollFuserData,
             onStatusUpdate:
-              typeof options == 'object' && options.waitForCompletion
+              typeof options === 'object' && options.waitForCompletion
                 ? (pollData: any) =>
                     handleExtractionStatusUpdate(
                       extractionId,
-                      (typeof options == 'object' && options.variantId) || '',
+                      (typeof options === 'object' && options.variantId) || '',
                       pollData,
                       true
                     )

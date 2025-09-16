@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, StatusIcon } from './icons';
+import { ChevronDown, ChevronUp } from './icons';
 import ExtractionItem from './ExtractionItem';
 
 export type DataItem = {
