@@ -137,12 +137,14 @@ const HEADER_STYLES = `
 
     /* Reset and Download buttons */
     .action-buttons .reset-button,
+    .action-buttons .draft-button,
     .action-buttons .download-button {
         background: ${HEADER_TEXT_COLOR};
         border: 1px solid ${BUTTON_BORDER_COLOR};
         color: ${BUTTON_TEXT_COLOR};
     }
     .action-buttons .reset-button:hover,
+    .action-buttons .draft-button:hover,
     .action-buttons .download-button:hover {
         background-color: #f0f0f0;
         border-color: #c0c0c0;
@@ -265,19 +267,86 @@ function createNewHeaderElements(
     actionButtons.appendChild(downloadButton);
   }
 
-  // Sign Button
   if (content.btnSign) {
-    const signButton = doc.createElement('button');
-    signButton.className = 'button sign-button';
-    const signIcon = doc.createElement('div');
-    signIcon.className = 'check-icon';
-    signIcon.innerHTML = SIGN_BUTTON_ICON;
-    signButton.appendChild(signIcon);
-    const signText = doc.createElement('span');
-    signText.textContent = content.btnSign.value;
-    signButton.appendChild(signText);
-    signButton.id = content.btnSign.id;
-    actionButtons.appendChild(signButton);
+    const sendButton = doc.createElement('button');
+    sendButton.className = 'button sign-button';
+    const sendIcon = doc.createElement('div');
+    sendIcon.className = 'check-icon';
+    sendIcon.innerHTML = SIGN_BUTTON_ICON;
+    sendButton.appendChild(sendIcon);
+    const sendText = doc.createElement('span');
+    sendText.textContent = 'Send Document';
+    sendButton.appendChild(sendText);
+    sendButton.id = 'btnSign';
+
+    // Draft Button
+    const draftButton = doc.createElement('button');
+    draftButton.className = 'button draft-button';
+    const draftText = doc.createElement('span');
+    draftText.textContent = 'Save Draft';
+    draftButton.appendChild(draftText);
+    draftButton.id = 'btnSaveDraft';
+    sendButton.style.marginRight = '5px';
+
+    actionButtons.appendChild(draftButton);
+    actionButtons.appendChild(sendButton);
+
+    content.btnSign.remove();
+
+    // Handle pressing the draft button or send button
+    // Overwrite content sent to docusign/sign
+    const script = doc.createElement('script');
+    script.textContent = `
+      window.currentDraftStatus = 'sent';
+
+      // Intercept XMLHttpRequest
+      const originalSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.send = function(data) {
+        if (this._url && this._url.includes('docusign/sign')) {
+          if (data && typeof data === 'string') {
+            try {
+              let parsedData = JSON.parse(data);
+              if (parsedData.SignData && parsedData.SignData.Status) {
+                parsedData.SignData.Status = window.currentDraftStatus;
+                data = JSON.stringify(parsedData);
+              }
+            } catch (e) {
+              console.log('Could not modify XMLHttpRequest data:', e);
+            }
+          }
+        }
+
+        return originalSend.call(this, data);
+      };
+
+      // Store URL for XMLHttpRequest interception
+      const originalOpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(method, url, ...args) {
+        this._url = url;
+        return originalOpen.call(this, method, url, ...args);
+      };
+
+      window.addEventListener('load', function() {
+        if (typeof $ !== 'undefined') {
+          window.isDraftClick = false;
+
+          $('#btnSaveDraft').on('click', function(e) {
+            window.currentDraftStatus = 'created';
+            window.isDraftClick = true;
+            $('#btnSign').trigger('click');
+          });
+
+          $('#btnSign').on('click', function(e) {
+            if (!window.isDraftClick) {
+               window.currentDraftStatus = 'sent';
+            } else {
+              window.isDraftClick = false; // Reset for next time
+            }
+          });
+        }
+      });
+    `;
+    doc.head.appendChild(script);
   }
 
   // Submit Button
