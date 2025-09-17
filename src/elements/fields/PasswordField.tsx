@@ -2,7 +2,7 @@ import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/InlineTooltip';
-import { bootstrapStyles } from '../styles';
+import { resetStyles } from '../styles';
 import useBorder from '../components/useBorder';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
@@ -31,7 +31,6 @@ function PasswordField({
   });
   const [showPassword, setShowPassword] = useState(false);
   const containerRef = useRef(null);
-
   const servar = element.servar;
   const spacing = element.properties.tooltipText ? 30 : 8;
   return (
@@ -81,7 +80,7 @@ function PasswordField({
               border: 'none',
               margin: 0,
               backgroundColor: 'transparent',
-              ...bootstrapStyles,
+              ...resetStyles,
               ...responsiveStyles.getTarget('field'),
               [`&:focus ~ #${borderId}`]: Object.values(borderStyles.active)[0],
               '&:not(:focus)':
@@ -134,7 +133,7 @@ function PasswordField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
-          container={containerRef}
+          containerRef={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

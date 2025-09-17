@@ -2,7 +2,7 @@ import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
-import { bootstrapStyles } from '../../styles';
+import { resetStyles } from '../../styles';
 import { emailPatternStr } from '../../../utils/validation';
 import useBorder from '../../components/useBorder';
 import TextAutocomplete from './TextAutocomplete';
@@ -222,7 +222,7 @@ function TextField({
   });
   const containerRef = useRef<HTMLDivElement>(null);
   const listItemRef = useRef<any[]>([]);
-  const inputRef = containerRef.current?.getElementsByTagName('input')[0];
+  const inputRef = useRef<{ element?: HTMLInputElement }>(null);
   const { value: fieldVal } = getFieldValue(element);
   const rawValue = stringifyWithNull(fieldVal);
 
@@ -274,17 +274,18 @@ function TextField({
           onSelect={(option) => {
             onAccept(option, {});
             setShowAutocomplete(false);
-            inputRef?.focus();
+            inputRef.current?.element?.focus?.();
           }}
           responsiveStyles={responsiveStyles}
-          container={containerRef}
+          containerRef={containerRef}
           listItemRef={listItemRef}
           onHide={() => setShowAutocomplete(false)}
-          onInputFocus={() => inputRef?.focus()}
+          onInputFocus={() => inputRef.current?.element?.focus?.()}
         >
           <IMaskInput
             id={servar.key}
             name={servar.key}
+            ref={inputRef}
             css={{
               position: 'relative',
               // Position input above the border div
@@ -294,7 +295,7 @@ function TextField({
               border: 'none',
               margin: 0,
               backgroundColor: 'transparent',
-              ...bootstrapStyles,
+              ...resetStyles,
               ...responsiveStyles.getTarget('field'),
               '&:focus': responsiveStyles.getTarget('field')['&:focus'],
               [`&:focus ~ #${borderId}`]: Object.values(borderStyles.active)[0],
@@ -374,7 +375,7 @@ function TextField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
-          container={containerRef}
+          containerRef={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

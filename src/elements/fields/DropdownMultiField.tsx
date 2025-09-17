@@ -8,10 +8,11 @@ import CreatableSelect from 'react-select/creatable';
 import { hoverStylesGuard } from '../../utils/browser';
 import InlineTooltip from '../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from './index';
-import { OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { Tooltip } from '../components/Tooltip';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import Placeholder from '../components/Placeholder';
 import useSalesforceSync from '../../hooks/useSalesforceSync';
+import Overlay from '../components/Overlay';
 
 type OptionData = {
   tooltip?: string;
@@ -22,18 +23,25 @@ type OptionData = {
 type Options = string[] | OptionData[];
 
 const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
-  let optComponent = (
-    // @ts-ignore
-    <SelectComponents.Option {...props}>{children}</SelectComponents.Option>
-  );
+  const optionRef = useRef<HTMLDivElement>(null);
+  const [showTooltip, setShowTooltip] = useState(false);
 
-  if (props.data.tooltip) {
-    optComponent = (
-      <OverlayTrigger
-        placement='right'
-        // @ts-expect-error
-        container={() => props.selectProps.container?.current}
-        overlay={
+  return (
+    <div
+      ref={optionRef}
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      {/* @ts-ignore */}
+      <SelectComponents.Option {...props}>{children}</SelectComponents.Option>
+      {props.data.tooltip && optionRef.current && (
+        <Overlay
+          targetRef={optionRef}
+          // @ts-expect-error
+          containerRef={props.selectProps.containerRef}
+          show={showTooltip}
+          placement='right'
+        >
           <Tooltip
             id={`tooltip-${props.data.value}`}
             css={{
@@ -53,14 +61,10 @@ const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
           >
             {props.data.tooltip}
           </Tooltip>
-        }
-      >
-        <div>{optComponent}</div>
-      </OverlayTrigger>
-    );
-  }
-
-  return optComponent;
+        </Overlay>
+      )}
+    </div>
+  );
 };
 
 export default function DropdownMultiField({
@@ -83,8 +87,7 @@ export default function DropdownMultiField({
     error: inlineError,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
-  const containerRef = useRef(null);
-
+  const containerRef = useRef<HTMLElement>(null);
   const [focused, setFocused] = useState(false);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
@@ -120,8 +123,7 @@ export default function DropdownMultiField({
     });
   } else if (
     repeatIndex !== null &&
-    servar.metadata.repeat_options !== undefined &&
-    servar.metadata.repeat_options[repeatIndex] !== undefined
+    servar.metadata.repeat_options?.[repeatIndex] !== undefined
   ) {
     const repeatOptions = servar.metadata.repeat_options[repeatIndex];
     options = addFieldValOptions(repeatOptions).map((option) => {
@@ -151,11 +153,9 @@ export default function DropdownMultiField({
       }
     );
   }
+
   const selectVal = fieldVal
-    ? fieldVal.map((val: any) => ({
-        label: labelMap[val],
-        value: val
-      }))
+    ? fieldVal.map((val: any) => ({ label: labelMap[val], value: val }))
     : [];
 
   const hasTooltip = !!element.properties.tooltipText;
@@ -164,10 +164,9 @@ export default function DropdownMultiField({
   const Component = create ? CreatableSelect : Select;
 
   responsiveStyles.applyFontStyles('field');
+
   return (
     <div
-      // react-select doesn't support changing refs well,
-      // so instead we save ref in state so changes cause rerenders
       ref={containerRef}
       css={{
         maxWidth: '100%',
@@ -207,6 +206,7 @@ export default function DropdownMultiField({
         {customBorder}
         <Component
           styles={{
+            // @ts-ignore
             control: (baseStyles) => ({
               ...baseStyles,
               ...responsiveStyles.getTarget('field'),
@@ -237,9 +237,7 @@ export default function DropdownMultiField({
             // @ts-ignore
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
-              // allow word wrap
               whiteSpace: 'normal',
-              // line clamp to 3 lines
               overflow: 'hidden',
               display: '-webkit-box',
               WebkitBoxOrient: 'vertical',
@@ -255,8 +253,7 @@ export default function DropdownMultiField({
             })
           }}
           components={{ Option: TooltipOption }}
-          // @ts-ignore
-          container={containerRef}
+          containerRef={containerRef}
           inputId={servar.key}
           value={selectVal}
           required={required}
@@ -281,7 +278,7 @@ export default function DropdownMultiField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
-          container={containerRef}
+          containerRef={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}

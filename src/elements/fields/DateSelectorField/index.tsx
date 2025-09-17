@@ -2,14 +2,12 @@ import React, { memo, useEffect, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
-import DatePicker from 'react-datepicker';
 import DateSelectorStyles, {
   DATEPICKER_ALIGN_VALUE,
   DATEPICKER_PADDING_TOP_VALUE,
   PORTAL_CONTAINER_CLASS
 } from './styles';
-
-import { bootstrapStyles } from '../../styles';
+import { resetStyles } from '../../styles';
 import { parseISO } from 'date-fns';
 import useBorder from '../../components/useBorder';
 import {
@@ -19,6 +17,7 @@ import {
   isMobile as _isMobile
 } from '../../../utils/browser';
 import { useCustomDateLocale } from './useDateLocale';
+import DatePicker from 'react-datepicker';
 
 // Due to issues with imask and react-imask package exports, we need
 // to bundle the packages and import them using this format
@@ -120,9 +119,9 @@ function DateSelectorField({
 
   const pickerRef = useRef<any>(undefined);
   const [internalDate, setInternalDate] = useState<InternalDate>(null);
+  const translation = element.properties.translate || {};
   const containerRef = useRef(null);
 
-  const translation = element.properties.translate || {};
   const locale = useCustomDateLocale({
     monthNames: translation.months,
     shortDayNames: translation.weekdays
@@ -325,7 +324,7 @@ function DateSelectorField({
             border: 'none',
             margin: 0,
             background: 'transparent',
-            ...bootstrapStyles,
+            ...resetStyles,
             ...responsiveStyles.getTarget('field'),
             ...(focused || value || !element.properties.placeholder
               ? {}
@@ -346,7 +345,7 @@ function DateSelectorField({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
-          container={containerRef}
+          containerRef={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
