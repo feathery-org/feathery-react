@@ -1,4 +1,11 @@
-import React, { memo, useEffect, useRef, useState } from 'react';
+import React, {
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  Suspense,
+  lazy
+} from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
@@ -17,7 +24,7 @@ import {
   isMobile as _isMobile
 } from '../../../utils/browser';
 import { useCustomDateLocale } from './useDateLocale';
-import DatePicker from 'react-datepicker';
+const DatePicker = lazy(() => import('react-datepicker'));
 
 // Due to issues with imask and react-imask package exports, we need
 // to bundle the packages and import them using this format
@@ -159,10 +166,9 @@ function DateSelectorField({
   };
 
   useEffect(() => {
-    if (pickerRef.current !== null) {
-      pickerRef.current.input.inputMode = 'none';
+    if (pickerRef.current != null) {
     }
-  }, [pickerRef]);
+  }, [pickerRef.current]);
 
   useEffect(() => {
     let internalVal = null;
@@ -267,76 +273,78 @@ function DateSelectorField({
       >
         {customBorder}
         <DateSelectorStyles />
-        <DatePicker
-          id={element.servar.key}
-          selected={internalDate}
-          // Many modern browsers do not support autocomplete="off".
-          // In order to avoid the autoComplete, use autocomplete="new-password"
-          // @See: https://developer.mozilla.org/en-US/docs/Web/Security/Practical_implementation_guides/Turning_off_form_autocompletion
-          autoComplete='new-password'
-          locale={locale}
-          timeCaption={translation.time_label}
-          preventOpenOnFocus={isMobile}
-          onCalendarOpen={handleCalendarOpen}
-          onCalendarClose={() => {
-            handleCalendarClose();
-            setFocused(false);
-            // the calendar closes on blur, select, or modal close on mobile
-            // this ensures the date is updated on close and triggers logic rules
-            onDateChange(internalDate, true);
-          }}
-          onSelect={(date) => onDateChange(date)} // when day is clicked
-          onChange={(date) => onDateChange(date)} // only when value has changed
-          onFocus={(e: any) => {
-            if (isMobile) {
-              // hide keyboard on mobile focus
-              e.target.readOnly = true;
-            }
-            // select all text on focus
-            e.target.select();
-            setFocused(true);
-          }}
-          onBlur={() => setFocused(false)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') onEnter(e);
-          }}
-          required={required}
-          readOnly={disabled}
-          filterDate={filterPassedDate}
-          filterTime={filterPassedTime}
-          showTimeSelect={servarMeta.choose_time ?? false}
-          timeIntervals={servarMeta.time_interval || 30}
-          dateFormat={dateMask}
-          timeFormat={timeMask}
-          maxDate={servarMeta.no_future && !editMode ? new Date() : undefined}
-          minDate={servarMeta.no_past && !editMode ? new Date() : undefined}
-          showMonthDropdown
-          showYearDropdown
-          forceShowMonthNavigation={false}
-          dropdownMode='select'
-          // Open up calendar as a modal in mobile
-          withPortal={isMobile}
-          portalId={isMobile ? 'feathery-portal' : undefined}
-          aria-label={element.properties.aria_label}
-          css={{
-            height: '100%',
-            width: '100%',
-            border: 'none',
-            margin: 0,
-            background: 'transparent',
-            ...resetStyles,
-            ...responsiveStyles.getTarget('field'),
-            ...(focused || value || !element.properties.placeholder
-              ? {}
-              : { color: 'transparent !important' })
-          }}
-          ref={(ref) => {
-            pickerRef.current = ref;
-            setRef(ref);
-          }}
-          customInput={<CustomMaskedInput dateMask={dateMask} />}
-          open={isMobile ? undefined : focused}
-        />
+        <Suspense fallback={<></>}>
+          <DatePicker
+            id={element.servar.key}
+            selected={internalDate}
+            // Many modern browsers do not support autocomplete="off".
+            // In order to avoid the autoComplete, use autocomplete="new-password"
+            // @See: https://developer.mozilla.org/en-US/docs/Web/Security/Practical_implementation_guides/Turning_off_form_autocompletion
+            autoComplete='new-password'
+            locale={locale}
+            timeCaption={translation.time_label}
+            preventOpenOnFocus={isMobile}
+            onCalendarOpen={handleCalendarOpen}
+            onCalendarClose={() => {
+              handleCalendarClose();
+              setFocused(false);
+              // the calendar closes on blur, select, or modal close on mobile
+              // this ensures the date is updated on close and triggers logic rules
+              onDateChange(internalDate, true);
+            }}
+            onSelect={(date) => onDateChange(date)} // when day is clicked
+            onChange={(date) => onDateChange(date)} // only when value has changed
+            onFocus={(e: any) => {
+              if (isMobile) {
+                // hide keyboard on mobile focus
+                e.target.readOnly = true;
+              }
+              // select all text on focus
+              e.target.select();
+              setFocused(true);
+            }}
+            onBlur={() => setFocused(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onEnter(e);
+            }}
+            required={required}
+            readOnly={disabled}
+            filterDate={filterPassedDate}
+            filterTime={filterPassedTime}
+            showTimeSelect={servarMeta.choose_time ?? false}
+            timeIntervals={servarMeta.time_interval || 30}
+            dateFormat={dateMask}
+            timeFormat={timeMask}
+            maxDate={servarMeta.no_future && !editMode ? new Date() : undefined}
+            minDate={servarMeta.no_past && !editMode ? new Date() : undefined}
+            showMonthDropdown
+            showYearDropdown
+            forceShowMonthNavigation={false}
+            dropdownMode='select'
+            // Open up calendar as a modal in mobile
+            withPortal={isMobile}
+            portalId={isMobile ? 'feathery-portal' : undefined}
+            aria-label={element.properties.aria_label}
+            css={{
+              height: '100%',
+              width: '100%',
+              border: 'none',
+              margin: 0,
+              background: 'transparent',
+              ...resetStyles,
+              ...responsiveStyles.getTarget('field'),
+              ...(focused || value || !element.properties.placeholder
+                ? {}
+                : { color: 'transparent !important' })
+            }}
+            ref={(ref) => {
+              pickerRef.current = ref;
+              setRef(ref);
+            }}
+            customInput={<CustomMaskedInput dateMask={dateMask} />}
+            open={isMobile ? undefined : focused}
+          />
+        </Suspense>
         <Placeholder
           value={value}
           element={element}

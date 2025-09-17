@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useState, useMemo, useRef } from 'react';
+import React, { memo, useRef } from 'react';
 import { DROPDOWN_Z_INDEX } from '..';
 import Overlay from '../../components/Overlay';
 
