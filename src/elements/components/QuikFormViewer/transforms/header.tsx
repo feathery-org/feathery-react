@@ -328,17 +328,37 @@ function createNewHeaderElements(
         if (typeof $ !== 'undefined') {
           window.isDraftClick = false;
 
+          function updateModalForDraft() {
+            const $firstChild = $('#prepareToSignDialog').children().first();
+            const html = $firstChild.html();
+            if (html && html.includes('Prepare to Sign')) {
+              $firstChild.html(html.replace('Prepare to Sign', 'Prepare Draft'));
+            }
+            $('#btnSend').val('Save Draft to DocuSign');
+          }
+
+          function updateModalForSign() {
+            const $firstChild = $('#prepareToSignDialog').children().first();
+            const html = $firstChild.html();
+            if (html && html.includes('Prepare Draft')) {
+              $firstChild.html(html.replace('Prepare Draft', 'Prepare to Sign'));
+            }
+            $('#btnSend').val('Send');
+          }
+
           $('#btnSaveDraft').on('click', function(e) {
             window.currentDraftStatus = 'created';
             window.isDraftClick = true;
+            updateModalForDraft();
             $('#btnSign').trigger('click');
           });
 
           $('#btnSign').on('click', function(e) {
             if (!window.isDraftClick) {
                window.currentDraftStatus = 'sent';
+               updateModalForSign();
             } else {
-              window.isDraftClick = false; // Reset for next time
+              window.isDraftClick = false;
             }
           });
         }
