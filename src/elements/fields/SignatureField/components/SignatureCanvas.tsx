@@ -3,12 +3,13 @@ import React, {
   useEffect,
   useImperativeHandle,
   useRef,
-  useState
+  useState,
+  lazy
 } from 'react';
 import { toBase64 } from '../../../../utils/image';
-import Signature from 'react-signature-canvas';
 import { fromDataURL } from './utils';
 import { SignatureTranslations } from '../translation';
+const Signature = lazy(() => import('react-signature-canvas'));
 
 export type SignatureCanvasProps = {
   fieldKey?: string;
@@ -72,7 +73,7 @@ const SignatureCanvas = forwardRef<
     async function setSignatureCanvas() {
       const sig = signatureRef.current?.getCanvas();
 
-      if (defaultValue === null) {
+      if (sig && defaultValue === null) {
         sig.getContext('2d').clearRect(0, 0, sig.width, sig.height);
         return;
       }

@@ -97,7 +97,7 @@ function MatrixField({
               marginBottom: 6
             }}
           >
-            <TextHoverTooltip container={containerRef} text={q.tooltip}>
+            <TextHoverTooltip text={q.tooltip}>
               <div css={firstColStyle}>{q.label}</div>
             </TextHoverTooltip>
             {options.map((opt: any, j: number) => {

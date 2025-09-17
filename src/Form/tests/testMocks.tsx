@@ -16,20 +16,6 @@ jest.mock('../../hooks/router', () => {
   };
 });
 
-// React Bootstrap Form mock (forwardRef to accept ref without warnings)
-jest.mock('react-bootstrap/Form', () => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const React = require('react');
-  const FormMock = React.forwardRef(function FormMock(props: any, ref: any) {
-    // Avoid jsdom HTMLFormElement.prototype.submit by ensuring no implicit submit
-    return <form ref={ref} {...props} />;
-  });
-  return {
-    __esModule: true,
-    default: FormMock
-  };
-});
-
 // lodash.debounce mock: run immediately and expose cancel()
 jest.mock('lodash.debounce', () => {
   return (fn: any) => {

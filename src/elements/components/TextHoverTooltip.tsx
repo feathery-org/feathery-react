@@ -1,14 +1,49 @@
-import React from 'react';
-import { OverlayTrigger, Tooltip } from 'react-bootstrap';
+import React, { useState, useRef, RefObject } from 'react';
+import { Tooltip } from './Tooltip';
 import { FORM_Z_INDEX } from '../../utils/styles';
+import Overlay from './Overlay';
+import { isMobile as _isMobile } from '../../utils/browser';
 
-export default function TextHoverTooltip({ text, children, container }: any) {
-  return text ? (
-    <OverlayTrigger
-      placement='auto'
-      flip
-      container={() => container?.current}
-      overlay={
+interface TextHoverTooltipProps {
+  text: string;
+  children: React.ReactNode;
+  containerRef?: RefObject<HTMLElement>;
+}
+
+export default function TextHoverTooltip({
+  text,
+  children,
+  containerRef
+}: TextHoverTooltipProps) {
+  const [show, setShow] = useState(false);
+  const triggerRef = useRef<HTMLElement>(null);
+
+  if (!text) return <>{children}</>;
+
+  const isMobile = _isMobile();
+
+  return (
+    <>
+      <span
+        ref={triggerRef}
+        onMouseEnter={isMobile ? undefined : () => setShow(true)}
+        onMouseLeave={isMobile ? undefined : () => setShow(false)}
+        onFocus={() => setShow(true)}
+        onBlur={() => setShow(false)}
+        onClick={() => setShow((prev) => !prev)}
+        style={{ display: 'inline-block', cursor: 'pointer' }}
+      >
+        {children}
+      </span>
+
+      <Overlay
+        show={show}
+        targetRef={triggerRef}
+        containerRef={containerRef}
+        placement='top'
+        onHide={() => setShow(false)}
+        offset={4}
+      >
         <Tooltip
           id={`tooltip-${text}`}
           css={{
@@ -29,11 +64,7 @@ export default function TextHoverTooltip({ text, children, container }: any) {
         >
           {text}
         </Tooltip>
-      }
-    >
-      {children}
-    </OverlayTrigger>
-  ) : (
-    children
+      </Overlay>
+    </>
   );
 }

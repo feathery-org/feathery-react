@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import Slider from 'rc-slider';
+import Slider from '@rc-component/slider';
 import { hoverStylesGuard } from '../../../utils/browser';
 
 import SliderStyles from './styles';

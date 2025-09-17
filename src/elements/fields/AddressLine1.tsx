@@ -1,14 +1,12 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-
 import Placeholder from '../components/Placeholder';
 import InlineTooltip from '../components/InlineTooltip';
-import { bootstrapStyles } from '../styles';
+import { resetStyles } from '../styles';
 import FeatheryClient from '../../utils/featheryClient';
 import useMounted from '../../hooks/useMounted';
-
 import debounce from 'lodash.debounce';
-import { OverlayTrigger } from 'react-bootstrap';
 import useBorder from '../components/useBorder';
+import Overlay from '../components/Overlay';
 import { DROPDOWN_Z_INDEX } from './index';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
 
@@ -38,7 +36,8 @@ function AddressLine1({
   const options = useAddressSearch(value, servar);
   const [showOptions, setShowOptions] = useState(false);
   const [focused, setFocused] = useState(false);
-  const containerRef = useRef(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLElement>(null);
 
   const { borderStyles, customBorder } = useBorder({
     element,
@@ -86,110 +85,97 @@ function AddressLine1({
         }}
       >
         {customBorder}
-        <OverlayTrigger
-          placement='bottom-start'
-          delay={{ show: 250, hide: 250 }}
-          container={() => containerRef?.current}
-          show={options.length > 0 && showOptions}
-          overlay={
-            <ul
-              css={{
-                zIndex: DROPDOWN_Z_INDEX,
-                listStyleType: 'none',
-                padding: 0,
-                margin: 0,
-                backgroundColor: 'white',
-                cursor: 'pointer',
-                boxShadow: '0 0 4px rgb(0 0 0 / 15%)',
-                ...responsiveStyles.getTarget('dropdown')
-              }}
-            >
-              {options.map(({ display }) => (
-                <li
-                  key={display}
-                  css={{
-                    padding: '8px 14px',
-                    transition: '0.1s ease all',
-                    '&:hover': hoverStylesGuard({
-                      backgroundColor: '#e6e6e633'
-                    })
-                  }}
-                  onClick={async () => {
-                    // @ts-expect-error TS(2532): Object is possibly 'undefined'.
-                    const addressId = options.find(
-                      (opt) => (opt as any).display === display
-                    ).address_id;
-                    const details = await new FeatheryClient().addressDetail(
-                      addressId
-                    );
-                    onSelect(details, addressId);
-                  }}
-                >
-                  {display}
-                </li>
-              ))}
-            </ul>
+        <input
+          id={servar.key}
+          name={servar.key}
+          css={{
+            position: 'relative',
+            height: '100%',
+            width: '100%',
+            border: 'none',
+            margin: 0,
+            backgroundColor: 'transparent',
+            ...resetStyles,
+            ...responsiveStyles.getTarget('field'),
+            ...(focused || value || !element.properties.placeholder
+              ? {}
+              : { color: 'transparent !important' })
+          }}
+          maxLength={servar.max_length}
+          minLength={servar.min_length}
+          placeholder=''
+          disabled={disabled}
+          aria-label={element.properties.aria_label}
+          autoComplete={
+            autoComplete === 'on' ? 'street-address' : 'new-password'
           }
-        >
-          <input
-            id={servar.key}
-            name={servar.key}
-            css={{
-              position: 'relative',
-              height: '100%',
-              width: '100%',
-              border: 'none',
-              margin: 0,
-              backgroundColor: 'transparent',
-              ...bootstrapStyles,
-              ...responsiveStyles.getTarget('field'),
-              ...(focused || value || !element.properties.placeholder
-                ? {}
-                : { color: 'transparent !important' })
-            }}
-            maxLength={servar.max_length}
-            minLength={servar.min_length}
-            placeholder=''
-            disabled={disabled}
-            aria-label={element.properties.aria_label}
-            autoComplete={
-              // Many modern browsers do not support autocomplete="off".
-              // In order to avoid the autoComplete, use autocomplete="new-password"
-              // @See: https://developer.mozilla.org/en-US/docs/Web/Security/Practical_implementation_guides/Turning_off_form_autocompletion
-              autoComplete === 'on' ? 'street-address' : 'new-password'
-            }
-            value={value}
-            ref={setRef}
-            // Not on focus because if error is showing, it will
-            // keep triggering dropdown after blur
-            onKeyDown={(e) => {
-              if (!e.isTrusted || !e.code) {
-                // In Chrome, a keydown event is triggered when autofill populates the input field.
-                // In this case, the keydown event should be ignored.
-                return;
-              }
+          value={value}
+          ref={(ref) => {
+            inputRef.current = ref;
+            setRef(ref);
+          }}
+          onKeyDown={(e) => {
+            if (!e.isTrusted || !e.code) return;
+            if (e.key === 'Enter') onEnter(e);
+            else setShowOptions(e.key !== 'Escape');
+          }}
+          onFocus={(event) => {
+            setFocused(true);
+            iosScrollOnFocus(event);
+          }}
+          onBlur={(e) => {
+            setTimeout(() => setShowOptions(false), EXIT_DELAY_TIME_MS);
+            onBlur(e);
+            setFocused(false);
+          }}
+          onChange={onChange}
+          required={required}
+        />
 
-              if (e.key === 'Enter') {
-                onEnter(e);
-              } else {
-                setShowOptions(e.key !== 'Escape');
-              }
+        <Overlay
+          show={showOptions && options.length > 0}
+          targetRef={inputRef}
+          containerRef={containerRef}
+          placement='bottom-start'
+          offset={4}
+          onHide={() => setShowOptions(false)}
+        >
+          <ul
+            css={{
+              zIndex: DROPDOWN_Z_INDEX,
+              listStyleType: 'none',
+              padding: 0,
+              margin: 0,
+              backgroundColor: 'white',
+              cursor: 'pointer',
+              boxShadow: '0 0 4px rgb(0 0 0 / 15%)',
+              ...responsiveStyles.getTarget('dropdown')
             }}
-            onFocus={(event) => {
-              setFocused(true);
-              iosScrollOnFocus(event);
-            }}
-            onBlur={(e) => {
-              // Blur may be triggered by option selection, and option
-              // click logic may need to be run first. So delay option removal.
-              setTimeout(() => setShowOptions(false), EXIT_DELAY_TIME_MS);
-              onBlur(e);
-              setFocused(false);
-            }}
-            onChange={onChange}
-            required={required}
-          />
-        </OverlayTrigger>
+          >
+            {options.map(({ display, address_id: addressId }) => (
+              <li
+                key={display}
+                css={{
+                  padding: '8px 14px',
+                  transition: '0.1s ease all',
+                  '&:hover': hoverStylesGuard({
+                    backgroundColor: '#e6e6e633'
+                  })
+                }}
+                onClick={async () => {
+                  const details = await new FeatheryClient().addressDetail(
+                    addressId
+                  );
+                  onSelect(details, addressId);
+                  setShowOptions(false);
+                  inputRef.current?.focus();
+                }}
+              >
+                {display}
+              </li>
+            ))}
+          </ul>
+        </Overlay>
         <Placeholder
           value={value}
           element={element}
@@ -197,7 +183,7 @@ function AddressLine1({
           repeatIndex={repeatIndex}
         />
         <InlineTooltip
-          container={containerRef}
+          containerRef={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
@@ -212,34 +198,29 @@ function useAddressSearch(searchTerm: any, servar: any) {
   const meta = servar.metadata;
   const active = meta.address_autocomplete;
   const country = meta.autocomplete_country ?? '';
-
   const mounted = useMounted();
   const [term, setTerm] = useState(searchTerm);
-  const [results, setResults] = React.useState([]);
+  const [results, setResults] = useState<any[]>([]);
 
   const fetchAddresses = useCallback(
-    debounce(
-      (newTerm: any) =>
-        new FeatheryClient()
-          .addressSearchResults(newTerm, country, servar.type === 'gmap_city')
-          .then((addresses) => {
-            if (mounted.current) {
-              setResults(addresses);
-              setTerm(newTerm);
-            }
-          }),
-      SEARCH_DELAY_TIME_MS
-    ),
+    debounce((newTerm: string) => {
+      new FeatheryClient()
+        .addressSearchResults(newTerm, country, servar.type === 'gmap_city')
+        .then((addresses) => {
+          if (mounted.current) {
+            setResults(addresses);
+            setTerm(newTerm);
+          }
+        });
+    }, SEARCH_DELAY_TIME_MS),
     [setResults, setTerm]
   );
 
   useEffect(() => {
     const trimmedTerm = searchTerm.trim();
     if (!active || trimmedTerm === term) return;
-
-    if (trimmedTerm.length > 3) {
-      fetchAddresses(trimmedTerm);
-    } else {
+    if (trimmedTerm.length > 3) fetchAddresses(trimmedTerm);
+    else {
       if (results.length) setResults([]);
       setTerm(trimmedTerm);
     }

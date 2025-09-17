@@ -12,7 +12,7 @@ import {
   SCAN_CONFIG
 } from './constants';
 import { setCameraPreferences } from './utils/local-storage';
-import Slider from 'rc-slider';
+import Slider from '@rc-component/slider';
 import SliderStyles from '../SliderField/styles';
 import throttle from 'lodash.throttle';
 import ErrorInput from '../../components/ErrorInput';

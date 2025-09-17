@@ -1,21 +1,16 @@
 import React from 'react';
 import { DEFAULT_MOBILE_BREAKPOINT } from '../../../styles';
+
+global.ResizeObserver = jest.fn().mockImplementation(() => ({
+  observe: jest.fn(),
+  unobserve: jest.fn(),
+  disconnect: jest.fn()
+}));
+
 jest.mock('../../../../utils/browser', () => ({
-  runningInClient: jest.fn(() => false),
-  featheryDoc: jest.fn(() => ({
-    createElement: jest.fn(() => ({
-      setAttribute: jest.fn(),
-      appendChild: jest.fn()
-    })),
-    addEventListener: jest.fn()
-  })),
-  featheryWindow: jest.fn(() => ({
-    matchMedia: jest.fn(() => ({
-      matches: false,
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn()
-    }))
-  })),
+  runningInClient: jest.fn(() => true),
+  featheryDoc: jest.fn(() => global.document),
+  featheryWindow: jest.fn(() => global.window),
   isHoverDevice: jest.fn(() => false),
   isTouchDevice: jest.fn(() => false),
   isIOS: jest.fn(() => false),
@@ -126,16 +121,6 @@ beforeAll(() => {
     // silence a warning from react-testing-library
     // See also: https://github.com/facebook/react/pull/14853
     if (/Warning.*not wrapped in act/.test(args[0])) {
-      return;
-    }
-    // TODO (tyler): remove this when react-bootstrap is removed
-    // silence a warning from react-bootstrap
-    // React does not recognize the `arrowProps` prop on a DOM element. Also applies to other props
-    if (
-      /Warning: React does not recognize the.*prop on a DOM element/.test(
-        args[0]
-      )
-    ) {
       return;
     }
     originalError.call(console, ...args);

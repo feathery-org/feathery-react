@@ -1,6 +1,6 @@
 import React, { useMemo, useRef } from 'react';
-import ReactForm from 'react-bootstrap/Form';
-import { bootstrapStyles } from '../styles';
+import { FormControl } from '../components/FormControl';
+import { resetStyles } from '../styles';
 import {
   applyCheckableInputStyles,
   applyHeightWidthMarginByFontSize,
@@ -150,7 +150,7 @@ function CheckboxGroupField({
                 </span>
               </label>
               <InlineTooltip
-                container={containerRef}
+                containerRef={containerRef}
                 id={`${element.id}-${value}`}
                 text={option.tooltip ?? ''}
                 responsiveStyles={responsiveStyles}
@@ -190,13 +190,13 @@ function CheckboxGroupField({
             >
               {otherLabel}
             </label>
-            <ReactForm.Control
+            <FormControl
               type='text'
               // Paired with flex grow, will not expand parent width
               htmlSize={1}
               css={{
                 marginLeft: '5px',
-                ...bootstrapStyles,
+                ...resetStyles,
                 paddingLeft: '0.4rem',
                 flexGrow: 1,
                 ...responsiveStyles.getTarget('field'),
@@ -214,7 +214,7 @@ function CheckboxGroupField({
               disabled={otherTextDisabled}
             />
             <InlineTooltip
-              container={containerRef}
+              containerRef={containerRef}
               id={`${element.id}-`}
               text={servar.metadata.other_tooltip}
               responsiveStyles={responsiveStyles}

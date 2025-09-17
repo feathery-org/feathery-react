@@ -1,4 +1,4 @@
-import { bootstrapStyles } from '../styles';
+import { resetStyles } from '../styles';
 
 import React, { useEffect, useRef, useState } from 'react';
 import InlineTooltip from '../components/InlineTooltip';
@@ -175,7 +175,7 @@ export default function DropdownField({
         {customBorder}
         <select
           css={{
-            ...bootstrapStyles,
+            ...resetStyles,
             ...responsiveStyles.getTarget('field'),
             width: '100%',
             height: '100%',
@@ -228,7 +228,7 @@ export default function DropdownField({
           {element.properties.placeholder || ''}
         </span>
         <InlineTooltip
-          container={containerRef}
+          containerRef={containerRef}
           id={element.id}
           text={element.properties.tooltipText}
           responsiveStyles={responsiveStyles}
