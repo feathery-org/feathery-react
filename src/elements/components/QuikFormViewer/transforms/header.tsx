@@ -275,7 +275,6 @@ function createNewHeaderElements(
     draftText.textContent = 'Save Draft';
     draftButton.appendChild(draftText);
     draftButton.id = 'btnSaveDraft';
-    draftButton.style.marginRight = '5px';
     actionButtons.appendChild(draftButton);
 
     const sendButton = doc.createElement('button');
