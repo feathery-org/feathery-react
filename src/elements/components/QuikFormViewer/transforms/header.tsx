@@ -268,17 +268,6 @@ function createNewHeaderElements(
   }
 
   if (content.btnSign) {
-    const sendButton = doc.createElement('button');
-    sendButton.className = 'button sign-button';
-    const sendIcon = doc.createElement('div');
-    sendIcon.className = 'check-icon';
-    sendIcon.innerHTML = SIGN_BUTTON_ICON;
-    sendButton.appendChild(sendIcon);
-    const sendText = doc.createElement('span');
-    sendText.textContent = 'Send Document';
-    sendButton.appendChild(sendText);
-    sendButton.id = 'btnSign';
-
     // Draft Button
     const draftButton = doc.createElement('button');
     draftButton.className = 'button draft-button';
@@ -286,9 +275,19 @@ function createNewHeaderElements(
     draftText.textContent = 'Save Draft';
     draftButton.appendChild(draftText);
     draftButton.id = 'btnSaveDraft';
-    sendButton.style.marginRight = '5px';
-
+    draftButton.style.marginRight = '5px';
     actionButtons.appendChild(draftButton);
+
+    const sendButton = doc.createElement('button');
+    sendButton.className = 'button sign-button';
+    const sendIcon = doc.createElement('div');
+    sendIcon.className = 'check-icon';
+    sendIcon.innerHTML = SIGN_BUTTON_ICON;
+    sendButton.appendChild(sendIcon);
+    const sendText = doc.createElement('span');
+    sendText.textContent = 'Sign';
+    sendButton.appendChild(sendText);
+    sendButton.id = 'btnSign';
     actionButtons.appendChild(sendButton);
 
     content.btnSign.remove();
