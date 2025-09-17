@@ -332,7 +332,7 @@ function createNewHeaderElements(
             const $firstChild = $('#prepareToSignDialog').children().first();
             const html = $firstChild.html();
             if (html && html.includes('Prepare to Sign')) {
-              $firstChild.html(html.replace('Prepare to Sign', 'Prepare Draft'));
+              $firstChild.html(html.replace('Prepare to Sign', 'Prepare Draft DocuSign Envelope'));
             }
             $('#btnSend').val('Save Draft to DocuSign');
           }
@@ -340,8 +340,8 @@ function createNewHeaderElements(
           function updateModalForSign() {
             const $firstChild = $('#prepareToSignDialog').children().first();
             const html = $firstChild.html();
-            if (html && html.includes('Prepare Draft')) {
-              $firstChild.html(html.replace('Prepare Draft', 'Prepare to Sign'));
+            if (html && html.includes('Prepare Draft DocuSign Envelope')) {
+              $firstChild.html(html.replace('Prepare Draft DocuSign Envelope', 'Prepare to Sign'));
             }
             $('#btnSend').val('Send');
           }
