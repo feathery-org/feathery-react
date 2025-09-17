@@ -277,7 +277,7 @@ export default function DropdownMultiField({
   ) => {
     onChange(newValue, actionMeta);
 
-    if (!isCompactDisplay) {
+    if (!isCompactOptions) {
       return;
     }
 
@@ -310,15 +310,15 @@ export default function DropdownMultiField({
 
   responsiveStyles.applyFontStyles('field');
 
-  const isCompactDisplay = element.styles.compact_display;
+  const isCompactOptions = element.styles.compact_options;
 
-  // The width and height are fixed when the compact display toggle is on
+  // The width and height are fixed when the compact options checkbox is on
 
-  const styleWidth = isCompactDisplay
+  const styleWidth = isCompactOptions
     ? `${element.styles.width}${element.styles.width_unit}`
     : '100%';
 
-  const styleHeight = isCompactDisplay
+  const styleHeight = isCompactOptions
     ? `${element.styles.height}${element.styles.height_unit}`
     : '100%';
 
@@ -365,7 +365,7 @@ export default function DropdownMultiField({
         {customBorder}
         <Component
           classNamePrefix='react-select' // This is for the query selector of the option items and input
-          hideSelectedOptions={!isCompactDisplay} // Show the select option list if the compact display is on
+          hideSelectedOptions={!isCompactOptions} // Show the select option list if the compact options is on
           styles={{
             // @ts-ignore
             control: (baseStyles) => ({
@@ -394,7 +394,7 @@ export default function DropdownMultiField({
             valueContainer: (baseStyles) => ({
               ...baseStyles,
               paddingInlineEnd: 28,
-              ...(isCompactDisplay && {
+              ...(isCompactOptions && {
                 display: 'flex',
                 flexWrap: 'nowrap',
                 overflow: 'hidden'
@@ -404,13 +404,13 @@ export default function DropdownMultiField({
             multiValue: (baseStyles) => ({
               ...baseStyles,
               // Set the minWidth in order to show the remove button (X) and label partially
-              minWidth: isCompactDisplay ? '40px' : 'unset'
+              minWidth: isCompactOptions ? '40px' : 'unset'
             }),
             // @ts-ignore
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
-              // Allow word wrap when the compact display is on
-              whiteSpace: isCompactDisplay ? 'nowrap' : 'normal',
+              // Allow word wrap when the compact options is on
+              whiteSpace: isCompactOptions ? 'nowrap' : 'normal',
               overflow: 'hidden',
               display: '-webkit-box',
               WebkitBoxOrient: 'vertical',
@@ -432,7 +432,7 @@ export default function DropdownMultiField({
             // @ts-ignore
             input: (baseStyles) => ({
               ...baseStyles,
-              ...(isCompactDisplay && {
+              ...(isCompactOptions && {
                 // Prevent the input element from breaking the container layout
                 maxWidth: `${containerWidth / 2}px`,
                 overflow: 'hidden',
@@ -442,7 +442,7 @@ export default function DropdownMultiField({
           }}
           components={{
             Option: TooltipOption,
-            ...(isCompactDisplay && { ValueContainer: CustomValueContainer })
+            ...(isCompactOptions && { ValueContainer: CustomValueContainer })
           }}
           // @ts-ignore
           containerRef={containerRef}
