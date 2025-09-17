@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
-import ReactForm from 'react-bootstrap/Form';
-import { bootstrapStyles } from '../styles';
+import { FormControl } from '../components/FormControl';
+import { resetStyles } from '../styles';
 import {
   applyCheckableInputStyles,
   applyHeightWidthMarginByFontSize,
@@ -150,7 +150,7 @@ function RadioButtonGroupField({
                 </span>
               </label>
               <InlineTooltip
-                container={containerRef}
+                containerRef={containerRef}
                 id={`${element.id}-${value}`}
                 text={tooltip}
                 responsiveStyles={responsiveStyles}
@@ -181,7 +181,6 @@ function RadioButtonGroupField({
                 onChange(e);
               }}
               onFocus={iosScrollOnFocus}
-              value={otherVal || ''}
               style={{
                 padding: 0,
                 lineHeight: 'normal'
@@ -198,13 +197,13 @@ function RadioButtonGroupField({
             >
               {otherLabel}
             </label>
-            <ReactForm.Control
+            <FormControl
               type='text'
               // Paired with flex grow, will not expand parent width
               htmlSize={1}
               css={{
                 marginLeft: '5px',
-                ...bootstrapStyles,
+                ...resetStyles,
                 paddingLeft: '0.4rem',
                 flexGrow: 1,
                 ...responsiveStyles.getTarget('field'),
@@ -224,7 +223,7 @@ function RadioButtonGroupField({
               disabled={otherTextDisabled || loadingDynamicOptions}
             />
             <InlineTooltip
-              container={containerRef}
+              containerRef={containerRef}
               id={`${element.id}-`}
               text={servar.metadata.other_tooltip}
               responsiveStyles={responsiveStyles}

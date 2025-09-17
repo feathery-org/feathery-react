@@ -3,20 +3,16 @@ import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import timeZoneCountries from './timeZoneCountries';
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
-import { bootstrapStyles } from '../../styles';
+import { resetStyles } from '../../styles';
 import countryData from '../../components/data/countries';
 import exampleNumbers from './exampleNumbers';
-import { Overlay } from 'react-bootstrap';
 import { isNum } from '../../../utils/primitives';
 import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
-import {
-  featheryDoc,
-  hoverStylesGuard,
-  iosScrollOnFocus
-} from '../../../utils/browser';
+import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { isValidPhoneLength } from './validation';
+import Overlay from '../../components/Overlay';
 
 const DEFAULT_COUNTRY = 'US';
 
@@ -46,15 +42,14 @@ function PhoneField({
   onEnter,
   children
 }: any) {
-  const triggerRef = useRef(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLElement>(null);
   const dropdownRef = useRef<any>(null);
   const inputRef = useRef<any>(null);
   const [cursor, setCursor] = useState<number | null>(null);
   // Track cursorChange since cursor may stay in same place but need to be
   // re-applied (e.g. delete)
   const [cursorChange, setCursorChange] = useState(false);
-  const containerRef = useRef(null);
-
   const [show, setShow] = useState(false);
   // The number parsed from the fullNumber prop, updated via triggerOnChange to rawNumber
   const [curFullNumber, setCurFullNumber] = useState('');
@@ -127,19 +122,6 @@ function PhoneField({
     const onlyDigits = LPN.parseDigits(rawNumber, curCountryCode);
     return asYouType.input(`+${onlyDigits}`);
   }, [curCountryCode, rawNumber]);
-
-  useEffect(() => {
-    function hideOnClickAway(event: any) {
-      const clickedWithin = [triggerRef, dropdownRef].some((ref: any) =>
-        ref.current?.contains(event.target)
-      );
-      if (!clickedWithin) setShow(false);
-    }
-
-    featheryDoc().addEventListener('mousedown', hideOnClickAway);
-    return () =>
-      featheryDoc().removeEventListener('mousedown', hideOnClickAway);
-  }, []);
 
   useEffect(() => {
     const elPlaceholder = element.properties.placeholder ?? '';
@@ -233,44 +215,30 @@ function PhoneField({
           {countryMap[curCountryCode].flag}
         </div>
         <Overlay
-          // CONTEXT: The key prop will force React to remount the component if the container changes.
-          // This is helpful when react is dealing with left over components.
-          // It will be able to perform cleanup and avoid the node not found type of errors.
           key={`overlay-${curCountryCode}`}
-          target={triggerRef.current}
           show={show}
           onHide={() => setShow(false)}
-          placement={rightToLeft ? 'bottom-end' : 'bottom-start'}
-          // CONTEXT: The container prop of the overlay lets us specify which element will hold the overlay.
-          // If we do not specify the container, there are chances that the page's body is taken as the container.
-          // This can cause the auto-scrolling issue that we observed.
-          container={triggerRef.current}
+          targetRef={triggerRef}
+          containerRef={containerRef}
+          placement='bottom-start'
+          offset={0}
         >
-          {(props) => {
-            ['placement', 'arrowProps', 'show', 'popper'].forEach(
-              (prop) => delete props[prop]
-            );
-            return (
-              <CountryDropdown
-                hide={() => setShow(false)}
-                itemOnClick={(countryCode: string, phoneCode: string) => {
-                  setCurCountryCode(countryCode);
-                  setRawNumber(phoneCode);
-                  resetToPhoneCode(phoneCode);
-                  setShow(false);
-                  handleOnComplete(phoneCode);
-                  inputRef.current.focus();
-                }}
-                responsiveStyles={responsiveStyles}
-                {...props}
-                ref={(ref: any) => {
-                  dropdownRef.current = ref;
-                  props.ref(ref);
-                }}
-                show={show}
-              />
-            );
-          }}
+          <CountryDropdown
+            hide={() => setShow(false)}
+            itemOnClick={(countryCode: string, phoneCode: string) => {
+              setCurCountryCode(countryCode);
+              setRawNumber(phoneCode);
+              resetToPhoneCode(phoneCode);
+              setShow(false);
+              handleOnComplete(phoneCode);
+              inputRef.current.focus();
+            }}
+            responsiveStyles={responsiveStyles}
+            ref={(ref: any) => {
+              dropdownRef.current = ref;
+            }}
+            show={show}
+          />
         </Overlay>
         <div
           css={{
@@ -291,7 +259,7 @@ function PhoneField({
               border: 'none',
               margin: 0,
               ...(rightToLeft ? { textAlign: 'right' } : {}),
-              ...bootstrapStyles,
+              ...resetStyles,
               ...responsiveStyles.getTarget('field'),
               ...(focused || formattedNumber || !placeholder
                 ? {}
@@ -425,7 +393,7 @@ function PhoneField({
             repeatIndex={repeatIndex}
           />
           <InlineTooltip
-            container={containerRef}
+            containerRef={containerRef}
             id={element.id}
             text={element.properties.tooltipText}
             responsiveStyles={responsiveStyles}

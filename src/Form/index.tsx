@@ -8,7 +8,6 @@ import React, {
   useState
 } from 'react';
 
-import BootstrapForm from 'react-bootstrap/Form';
 import debounce from 'lodash.debounce';
 
 import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
@@ -206,6 +205,8 @@ import {
   extractExportedCodeInfoArray,
   replaceImportsWithDefinitions
 } from './logic';
+import ExtractionToast from './components/AIExtractionToast';
+import { useAIExtractionToast } from './components/AIExtractionToast/useAIExtractionToast';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -407,6 +408,14 @@ function Form({
     loaderBackgroundColor: stepCSS?.backgroundColor,
     formRef
   });
+
+  const {
+    currentActionExtractions,
+    initializeActionExtractions,
+    updateExtractionInAction,
+    clearActionExtractions,
+    handleExtractionStatusUpdate
+  } = useAIExtractionToast();
 
   // Tracks element to focus
   const focusRef = useRef<any>(undefined);
@@ -1021,7 +1030,17 @@ function Form({
             extractionId,
             options,
             pages,
-            setPollFuserData
+            setPollFuserData,
+            onStatusUpdate:
+              typeof options === 'object' && options.waitForCompletion
+                ? (pollData: any) =>
+                    handleExtractionStatusUpdate(
+                      extractionId,
+                      (typeof options === 'object' && options.variantId) || '',
+                      pollData,
+                      true
+                    )
+                : undefined
           });
           if (data.status === 'error') {
             throw new Error(data.message);
@@ -1835,6 +1854,12 @@ function Form({
     await runAction(true);
 
     let i: number;
+    const hasExtractions = actions.some(
+      (action) => action.type === ACTION_AI_EXTRACTION && !action.run_async
+    );
+    if (hasExtractions) {
+      initializeActionExtractions(actions);
+    }
     for (i = 0; i < actions.length; i++) {
       const action = actions[i];
       const type = action.type;
@@ -2077,8 +2102,20 @@ function Form({
                     meetingUrl: fieldValues[curAction.meeting_url_field_key]
                   },
                   undefined,
-                  setPollFuserData
+                  setPollFuserData,
+                  onStatusUpdate: (pollData: any) =>
+                    handleExtractionStatusUpdate(
+                      curAction.extraction_id,
+                      curAction.variant_id || '',
+                      pollData
+                    )
                 })
+              );
+              // set current extraction to pending
+              updateExtractionInAction(
+                curAction.extraction_id,
+                curAction.variant_id || '',
+                { status: 'polling' }
               );
               i++;
             } else {
@@ -2298,7 +2335,10 @@ function Form({
         }
       }
     }
-
+    if (hasExtractions) {
+      // clear toast
+      clearActionExtractions();
+    }
     if (i < actions.length) {
       elementClicks[id] = false;
       return true;
@@ -2450,7 +2490,7 @@ function Form({
 
   return (
     <ReactPortal options={popupOptions}>
-      <BootstrapForm
+      <form
         {...formProps}
         autoComplete={formSettings.autocomplete}
         className={`feathery ${className || ''}`}
@@ -2510,7 +2550,19 @@ function Form({
           show={formSettings.showBrand}
           brandPosition={formSettings.brandPosition}
         />
-      </BootstrapForm>
+        {currentActionExtractions.length > 0 && (
+          <ExtractionToast
+            data={currentActionExtractions}
+            // adjust position if brand watermark is in bottom right
+            bottom={
+              formSettings.showBrand &&
+              formSettings.brandPosition === 'bottom_right'
+                ? 67
+                : 20
+            }
+          />
+        )}
+      </form>
     </ReactPortal>
   );
 }

@@ -811,12 +811,14 @@ export default class FeatheryClient extends IntegrationClient {
     extractionId,
     options,
     pages,
-    setPollFuserData
+    setPollFuserData,
+    onStatusUpdate
   }: {
     extractionId: string;
     options: ExtractionActionOptions | boolean;
     pages?: number[];
     setPollFuserData?: any;
+    onStatusUpdate?: any;
   }) {
     let runAsync: boolean;
     let variantId: string | undefined;
@@ -865,6 +867,11 @@ export default class FeatheryClient extends IntegrationClient {
         if (!response) return;
 
         const data = await response.json();
+
+        if (onStatusUpdate) {
+          onStatusUpdate(data);
+        }
+
         if (response.ok) {
           if (data.status === 'complete') {
             return resolve(data);

@@ -1,6 +1,6 @@
 {
   "name": "@feathery/react",
-  "version": "2.4.83",
+  "version": "2.4.84",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
@@ -111,7 +111,6 @@
     "lodash.throttle": "^4.1.1",
     "quill-delta": "^4.2.2",
     "rc-slider": "11.1.8",
-    "react-bootstrap": "2.10.6",
     "react-datepicker": "8.3.0",
     "react-ga4": "^1.4.1",
     "react-gtm-module": "^2.0.11",
