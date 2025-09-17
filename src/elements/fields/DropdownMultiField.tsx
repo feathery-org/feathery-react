@@ -1,9 +1,13 @@
-import React, { useRef, useState } from 'react';
-import useBorder from '../components/useBorder';
+import React, { useEffect, useRef, useState } from 'react';
 import Select, {
   components as SelectComponents,
-  OptionProps
+  OptionProps,
+  GroupBase,
+  ValueContainerProps,
+  MultiValue,
+  ActionMeta
 } from 'react-select';
+import useBorder from '../components/useBorder';
 import CreatableSelect from 'react-select/creatable';
 import { hoverStylesGuard } from '../../utils/browser';
 import InlineTooltip from '../components/InlineTooltip';
@@ -13,6 +17,8 @@ import { FORM_Z_INDEX } from '../../utils/styles';
 import Placeholder from '../components/Placeholder';
 import useSalesforceSync from '../../hooks/useSalesforceSync';
 import Overlay from '../components/Overlay';
+
+const MORE_INDICATOR_WIDTH = 80;
 
 type OptionData = {
   tooltip?: string;
@@ -67,6 +73,115 @@ const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
   );
 };
 
+const CustomValueContainer = <
+  Option,
+  IsMulti extends boolean,
+  Group extends GroupBase<Option>
+>(
+  props: ValueContainerProps<Option, IsMulti, Group>
+) => {
+  const ValueContainerWrapper =
+    SelectComponents.ValueContainer as unknown as React.ComponentType<
+      ValueContainerProps<Option, IsMulti, Group>
+    >;
+
+  const [moreCount, setMoreCount] = useState(0);
+
+  const valueContainerRef = useRef<HTMLDivElement | null>(null);
+  const moreIndicatorRef = useRef<HTMLDivElement | null>(null);
+
+  const totalItems = props.getValue().length;
+
+  // Calculate the total width of all the option items
+  // in order to show the +N more indicator
+  useEffect(() => {
+    if (!valueContainerRef.current) return;
+
+    const update = () => {
+      const el = valueContainerRef.current;
+      if (!el) return;
+
+      const containerWidth = el.clientWidth;
+
+      const optionItems = Array.from(
+        el.querySelectorAll('.react-select__multi-value')
+      ) as HTMLElement[];
+
+      let itemTotalWidth = 0;
+
+      for (let i = 0; i < optionItems.length; i++) {
+        itemTotalWidth +=
+          (optionItems[i]?.offsetLeft || 0) +
+          (optionItems[i]?.offsetWidth || 0);
+
+        if (itemTotalWidth > containerWidth - MORE_INDICATOR_WIDTH) {
+          setMoreCount(totalItems - 1 - i);
+          break;
+        } else {
+          setMoreCount(0);
+        }
+      }
+    };
+
+    update();
+
+    const resizeObserver = new ResizeObserver(update);
+    resizeObserver.observe(valueContainerRef.current);
+
+    return () => resizeObserver.disconnect();
+  }, [props.getValue()]);
+
+  const childrenContainer = [];
+  const optionItemContainer = [];
+  const inputContainer = [];
+
+  if (totalItems > 0 && Array.isArray(props.children)) {
+    // It is required to show the option item array and the input element separately
+    // in order to show the +N more indicator, and
+    // this indicator will be located between the option items and the input element
+
+    let optionItems = props.children[0];
+
+    if (Array.isArray(optionItems)) {
+      optionItems = optionItems.slice(0, totalItems - moreCount);
+    }
+
+    optionItemContainer.push(optionItems);
+    inputContainer.push(props.children[1]);
+  } else {
+    // Show all the children (the optional placeholder and input element)
+    // if there is no selected item.
+
+    childrenContainer.push(props.children);
+  }
+
+  return (
+    <ValueContainerWrapper {...props} innerProps={{ ref: valueContainerRef }}>
+      {childrenContainer}
+
+      {optionItemContainer}
+      {moreCount > 0 && (
+        <div
+          ref={moreIndicatorRef}
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            width: `${MORE_INDICATOR_WIDTH}px`,
+            backgroundColor: '#e6e6e6',
+            padding: '2px 6px',
+            fontSize: '15px',
+            borderRadius: '2px',
+            cursor: 'pointer'
+          }}
+        >
+          +{moreCount} more
+        </div>
+      )}
+      {inputContainer}
+    </ValueContainerWrapper>
+  );
+};
+
 export default function DropdownMultiField({
   element,
   responsiveStyles,
@@ -87,8 +202,10 @@ export default function DropdownMultiField({
     error: inlineError,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
-  const containerRef = useRef<HTMLElement>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
   const [focused, setFocused] = useState(false);
+
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
@@ -154,6 +271,34 @@ export default function DropdownMultiField({
     );
   }
 
+  const handleChange = (
+    newValue: MultiValue<any>,
+    actionMeta: ActionMeta<any>
+  ) => {
+    onChange(newValue, actionMeta);
+
+    if (!isCompactDisplay) {
+      return;
+    }
+
+    // Manually set the focus to the input
+    // when the option items, +N more indicator and the input element are generated by CustomValueContainer
+    // This will be generated when the number of selected items are updated (add, update and delete => newValue.length < 2)
+    if (
+      (actionMeta.action === 'remove-value' ||
+        actionMeta.action === 'select-option' ||
+        actionMeta.action === 'clear') &&
+      newValue.length < 2
+    ) {
+      setTimeout(() => {
+        const inputEl = containerRef?.current?.querySelector<HTMLInputElement>(
+          '.react-select__input'
+        );
+        inputEl?.focus();
+      });
+    }
+  };
+
   const selectVal = fieldVal
     ? fieldVal.map((val: any) => ({ label: labelMap[val], value: val }))
     : [];
@@ -165,13 +310,27 @@ export default function DropdownMultiField({
 
   responsiveStyles.applyFontStyles('field');
 
+  const isCompactDisplay = element.styles.compact_display;
+
+  // The width and height are fixed when the compact display toggle is on
+
+  const styleWidth = isCompactDisplay
+    ? `${element.styles.width}${element.styles.width_unit}`
+    : '100%';
+
+  const styleHeight = isCompactDisplay
+    ? `${element.styles.height}${element.styles.height_unit}`
+    : '100%';
+
+  const containerWidth = containerRef.current?.offsetWidth || 0;
+
   return (
     <div
       ref={containerRef}
       css={{
-        maxWidth: '100%',
-        width: '100%',
-        height: '100%',
+        maxWidth: styleWidth,
+        width: styleWidth,
+        height: styleHeight,
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
         ...responsiveStyles.getTarget('fc')
@@ -205,6 +364,8 @@ export default function DropdownMultiField({
       >
         {customBorder}
         <Component
+          classNamePrefix='react-select' // This is for the query selector of the option items and input
+          hideSelectedOptions={!isCompactDisplay} // Show the select option list if the compact display is on
           styles={{
             // @ts-ignore
             control: (baseStyles) => ({
@@ -232,12 +393,24 @@ export default function DropdownMultiField({
             // @ts-ignore
             valueContainer: (baseStyles) => ({
               ...baseStyles,
-              paddingInlineEnd: 28
+              paddingInlineEnd: 28,
+              ...(isCompactDisplay && {
+                display: 'flex',
+                flexWrap: 'nowrap',
+                overflow: 'hidden'
+              })
+            }),
+            // @ts-ignore
+            multiValue: (baseStyles) => ({
+              ...baseStyles,
+              // Set the minWidth in order to show the remove button (X) and label partially
+              minWidth: isCompactDisplay ? '40px' : 'unset'
             }),
             // @ts-ignore
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
-              whiteSpace: 'normal',
+              // Allow word wrap when the compact display is on
+              whiteSpace: isCompactDisplay ? 'nowrap' : 'normal',
               overflow: 'hidden',
               display: '-webkit-box',
               WebkitBoxOrient: 'vertical',
@@ -250,15 +423,34 @@ export default function DropdownMultiField({
               ...baseStyles,
               zIndex: DROPDOWN_Z_INDEX,
               textAlign: 'start'
+            }),
+            // @ts-ignore
+            multiValueRemove: (baseStyles) => ({
+              ...baseStyles,
+              cursor: 'pointer'
+            }),
+            // @ts-ignore
+            input: (baseStyles) => ({
+              ...baseStyles,
+              ...(isCompactDisplay && {
+                // Prevent the input element from breaking the container layout
+                maxWidth: `${containerWidth / 2}px`,
+                overflow: 'hidden',
+                flexShrink: 1
+              })
             })
           }}
-          components={{ Option: TooltipOption }}
+          components={{
+            Option: TooltipOption,
+            ...(isCompactDisplay && { ValueContainer: CustomValueContainer })
+          }}
+          // @ts-ignore
           containerRef={containerRef}
           inputId={servar.key}
           value={selectVal}
           required={required}
           isDisabled={disabled}
-          onChange={onChange}
+          onChange={handleChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           noOptionsMessage={create ? () => null : undefined}
