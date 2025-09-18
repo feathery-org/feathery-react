@@ -205,7 +205,7 @@ import {
   extractExportedCodeInfoArray,
   replaceImportsWithDefinitions
 } from './logic';
-import { useNextActionButtonState } from './hooks/useNextActionButtonState';
+import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ExtractionToast from './components/AIExtractionToast';
 import { useAIExtractionToast } from './components/AIExtractionToast/useAIExtractionToast';
 
@@ -1680,14 +1680,14 @@ function Form({
   };
 
   const {
-    isNextButtonRunning,
-    updateNextButtonState,
-    clearNextButtonState,
+    isButtonActionRunning,
+    updateButtonActionState,
+    clearButtonActionState,
     setUserLogicRunning
-  } = useNextActionButtonState(setButtonLoader, clearLoaders);
+  } = useCheckButtonAction(setButtonLoader, clearLoaders);
 
   const buttonOnClick = async (button: ClickActionElement) => {
-    if (!isNextButtonRunning()) {
+    if (!isButtonActionRunning()) {
       await setButtonLoader(button);
     }
 
@@ -1729,7 +1729,7 @@ function Form({
         onAsyncEnd: () => clearLoaders()
       });
 
-      if (!running && !isNextButtonRunning()) {
+      if (!running && !isButtonActionRunning()) {
         clearLoaders();
       }
     } catch (e: any) {
@@ -1762,12 +1762,12 @@ function Form({
     if (id && elementClicks[id]) return;
     elementClicks[id] = true;
 
-    if (isNextButtonRunning()) {
+    if (isButtonActionRunning()) {
       elementClicks[id] = false;
       return true;
     }
 
-    updateNextButtonState(elementType, actions, element);
+    updateButtonActionState(elementType, element);
 
     const metadata = {
       elementType,
@@ -1795,7 +1795,7 @@ function Form({
       ) {
         setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
         elementClicks[id] = false;
-        clearNextButtonState();
+        clearButtonActionState();
 
         return;
       }
@@ -1814,7 +1814,7 @@ function Form({
       if (invalid) {
         setAutoValidate(true);
         elementClicks[id] = false;
-        clearNextButtonState();
+        clearButtonActionState();
 
         return;
       }
@@ -1835,7 +1835,7 @@ function Form({
 
       if (!newPromise) {
         elementClicks[id] = false;
-        clearNextButtonState();
+        clearButtonActionState();
 
         return;
       }
@@ -1849,7 +1849,7 @@ function Form({
     const flowOnSuccess = (index: number) => async () => {
       flowCompleted.current = true;
       elementClicks[id] = false;
-      clearNextButtonState();
+      clearButtonActionState();
 
       const running = await runElementActions({
         actions: actions.slice(index + 1),
@@ -2370,14 +2370,14 @@ function Form({
     }
     if (i < actions.length) {
       elementClicks[id] = false;
-      clearNextButtonState();
+      clearButtonActionState();
 
       return true;
     }
 
     await runAction(false);
     elementClicks[id] = false;
-    clearNextButtonState();
+    clearButtonActionState();
   };
 
   const fieldOnChange =

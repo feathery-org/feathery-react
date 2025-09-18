@@ -346,115 +346,91 @@ jest.mock('../components/ReactPortal', () => ({ children }: any) => (
   <>{children}</>
 ));
 
-// useNextActionButtonState mock with internal spies exported for assertions
-jest.mock('../hooks/useNextActionButtonState', () => {
-  const runningTimerIdRef: { current: any } = { current: null };
-
-  const nextActionButtonStateRef: { current: any } = { current: null };
+// useCheckButtonAction mock with internal spies exported for assertions
+jest.mock('../hooks/useCheckButtonAction', () => {
+  const buttonActionStateRef: { current: any } = { current: null };
   const setButtonLoaderRef = { current: jest.fn() };
   const clearLoadersRef = { current: jest.fn() };
 
-  const setRunningTimer = jest.fn((delayMs: number) => {
-    if (!nextActionButtonStateRef.current?.button) return;
-
-    clearTimeout(runningTimerIdRef.current);
-
-    runningTimerIdRef.current = setTimeout(() => {
-      // Mark element action as finished
-      if (nextActionButtonStateRef.current) {
-        nextActionButtonStateRef.current.isElementActionRunning = false;
-        nextActionButtonStateRef.current.isUserLogicRunning = false;
-      }
-    }, delayMs);
-  });
-
-  const isNextButtonRunning = jest.fn(
+  const isButtonActionRunning = jest.fn(
     () =>
       !!(
-        nextActionButtonStateRef.current?.isElementActionRunning ||
-        nextActionButtonStateRef.current?.isUserLogicRunning
+        buttonActionStateRef.current?.isElementActionRunning ||
+        buttonActionStateRef.current?.isUserLogicRunning
       )
   );
 
   // Simplified implementations
-  const updateNextButtonState = jest.fn(
-    (elementType: string, actions: any[], element: any) => {
-      clearTimeout(runningTimerIdRef.current);
-
+  const updateButtonActionState = jest.fn(
+    (elementType: string, element: any) => {
       const isRunning =
-        elementType === 'button' &&
-        ((actions?.some((a: any) => a?.type === 'next') ||
-          element?.properties?.submit) ??
-          false);
+        (elementType === 'button' &&
+          element?.properties?.block_other_button_clicks_while_actions_runs) ??
+        false;
 
-      nextActionButtonStateRef.current = isRunning
+      buttonActionStateRef.current = isRunning
         ? { button: element, isElementActionRunning: true }
         : null;
     }
   );
 
-  const clearNextButtonState = jest.fn(() => {
-    clearTimeout(runningTimerIdRef.current);
-
-    if (nextActionButtonStateRef.current) {
-      nextActionButtonStateRef.current.isElementActionRunning = false;
+  const clearButtonActionState = jest.fn(() => {
+    if (buttonActionStateRef.current) {
+      buttonActionStateRef.current.isElementActionRunning = false;
     }
   });
 
   const setUserLogicRunning = jest.fn(async (isRunning: boolean) => {
-    if (!nextActionButtonStateRef.current) return;
-    nextActionButtonStateRef.current.isUserLogicRunning = isRunning;
-    _setNextButtonLoading(isRunning);
+    if (!buttonActionStateRef.current) return;
+    buttonActionStateRef.current.isUserLogicRunning = isRunning;
+    _setButtonLoading(isRunning);
   });
 
-  const _setNextButtonLoading = jest.fn(async (isLoading: boolean) => {
-    if (!nextActionButtonStateRef?.current?.button) {
+  const _setButtonLoading = jest.fn(async (isLoading: boolean) => {
+    if (!buttonActionStateRef?.current?.button) {
       return;
     }
     if (isLoading) {
-      await setButtonLoaderRef.current(nextActionButtonStateRef.current.button);
-    } else if (!isNextButtonRunning()) {
+      await setButtonLoaderRef.current(buttonActionStateRef.current.button);
+    } else if (!isButtonActionRunning()) {
       clearLoadersRef.current();
     }
   });
 
   // Hook entry
-  const useNextActionButtonState = (
+  const useCheckButtonAction = (
     setButtonLoader = jest.fn(),
     clearLoaders = jest.fn()
   ) => {
     setButtonLoaderRef.current = setButtonLoader;
     clearLoadersRef.current = clearLoaders;
     return {
-      nextActionButtonStateRef,
-      isNextButtonRunning,
-      updateNextButtonState,
-      clearNextButtonState,
+      buttonActionStateRef,
+      isButtonActionRunning,
+      updateButtonActionState,
+      clearButtonActionState,
       setUserLogicRunning,
-      _setNextButtonLoading,
-      setRunningTimer
+      _setButtonLoading
     };
   };
 
   return {
     __esModule: true,
-    useNextActionButtonState,
+    useCheckButtonAction,
     _spies: {
-      nextActionButtonStateRef,
+      buttonActionStateRef,
       setButtonLoaderRef,
       clearLoadersRef,
-      updateNextButtonState,
-      clearNextButtonState,
+      updateButtonActionState,
+      clearButtonActionState,
       setUserLogicRunning,
-      isNextButtonRunning,
-      setRunningTimer,
-      runningTimerIdRef
+      isButtonActionRunning
     }
   };
 });
 
-// Expose spies from mocked useNextActionButtonState for tests
+// Expose spies from mocked useCheckButtonAction for tests
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const NextActionButtonHooksMod: any = jest.requireMock(
-  '../hooks/useNextActionButtonState'
+export const CheckButtonActionMod: any = jest.requireMock(
+  '../hooks/useCheckButtonAction'
 );
