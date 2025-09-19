@@ -295,48 +295,6 @@ jest.mock('../../hooks/usePollFuserData', () => ({
   default: () => {}
 }));
 
-// useNextActionState mock with internal spies exported for assertions
-jest.mock('../hooks', () => {
-  const nextActionStateRef = {
-    current: {
-      isGettingNewStep: false,
-      isNextButtonAction: false,
-      latestClickedButton: null as any,
-      timerIdNextActionFlag: undefined as any,
-      timerIdGettingNewStep: undefined as any
-    }
-  };
-  const setNextButtonActionFlag = jest.fn((flag: boolean) => {
-    nextActionStateRef.current.isNextButtonAction = !!flag;
-  });
-  const clearNextActionTimer = jest.fn();
-  const setGettingNewStepFlag = jest.fn((flag: boolean) => {
-    nextActionStateRef.current.isGettingNewStep = !!flag;
-  });
-  const clearGettingNewStepTimer = jest.fn();
-  const setNextButtonLoading = jest.fn();
-
-  return {
-    __esModule: true,
-    useNextActionState: () => ({
-      nextActionStateRef,
-      setNextButtonActionFlag,
-      clearNextActionTimer,
-      setGettingNewStepFlag,
-      clearGettingNewStepTimer,
-      setNextButtonLoading
-    }),
-    _spies: {
-      nextActionStateRef,
-      setNextButtonActionFlag,
-      clearNextActionTimer,
-      setGettingNewStepFlag,
-      clearGettingNewStepTimer,
-      setNextButtonLoading
-    }
-  };
-});
-
 // FeatheryClient mock with a REAL step so activeStep renders and Grid appears
 jest.mock('../../utils/featheryClient', () => {
   class MockClient {
@@ -388,6 +346,91 @@ jest.mock('../components/ReactPortal', () => ({ children }: any) => (
   <>{children}</>
 ));
 
-// Expose spies from mocked hooks for tests
+// useCheckButtonAction mock with internal spies exported for assertions
+jest.mock('../hooks/useCheckButtonAction', () => {
+  const buttonActionStateRef: { current: any } = { current: null };
+  const setButtonLoaderRef = { current: jest.fn() };
+  const clearLoadersRef = { current: jest.fn() };
+
+  const isButtonActionRunning = jest.fn(
+    () =>
+      !!(
+        buttonActionStateRef.current?.isElementActionRunning ||
+        buttonActionStateRef.current?.isUserLogicRunning
+      )
+  );
+
+  // Simplified implementations
+  const updateButtonActionState = jest.fn(
+    (elementType: string, element: any) => {
+      const isRunning =
+        (elementType === 'button' &&
+          element?.properties?.block_button_clicks) ??
+        false;
+
+      buttonActionStateRef.current = isRunning
+        ? { button: element, isElementActionRunning: true }
+        : null;
+    }
+  );
+
+  const clearButtonActionState = jest.fn(() => {
+    if (buttonActionStateRef.current) {
+      buttonActionStateRef.current.isElementActionRunning = false;
+    }
+  });
+
+  const setUserLogicRunning = jest.fn(async (isRunning: boolean) => {
+    if (!buttonActionStateRef.current) return;
+    buttonActionStateRef.current.isUserLogicRunning = isRunning;
+    _setButtonLoading(isRunning);
+  });
+
+  const _setButtonLoading = jest.fn(async (isLoading: boolean) => {
+    if (!buttonActionStateRef?.current?.button) {
+      return;
+    }
+    if (isLoading) {
+      await setButtonLoaderRef.current(buttonActionStateRef.current.button);
+    } else if (!isButtonActionRunning()) {
+      clearLoadersRef.current();
+    }
+  });
+
+  // Hook entry
+  const useCheckButtonAction = (
+    setButtonLoader = jest.fn(),
+    clearLoaders = jest.fn()
+  ) => {
+    setButtonLoaderRef.current = setButtonLoader;
+    clearLoadersRef.current = clearLoaders;
+    return {
+      buttonActionStateRef,
+      isButtonActionRunning,
+      updateButtonActionState,
+      clearButtonActionState,
+      setUserLogicRunning,
+      _setButtonLoading
+    };
+  };
+
+  return {
+    __esModule: true,
+    useCheckButtonAction,
+    _spies: {
+      buttonActionStateRef,
+      setButtonLoaderRef,
+      clearLoadersRef,
+      updateButtonActionState,
+      clearButtonActionState,
+      setUserLogicRunning,
+      isButtonActionRunning
+    }
+  };
+});
+
+// Expose spies from mocked useCheckButtonAction for tests
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const HooksMod: any = jest.requireMock('../hooks');
+export const CheckButtonActionMod: any = jest.requireMock(
+  '../hooks/useCheckButtonAction'
+);

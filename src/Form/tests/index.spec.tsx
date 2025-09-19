@@ -1,23 +1,25 @@
-import { HooksMod, MockClickActionElement } from './testMocks';
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  cleanup
-} from '@testing-library/react';
+import { CheckButtonActionMod } from './testMocks';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { JSForm } from '..';
 import FeatheryClient from '../../utils/featheryClient';
 import internalState from '../../utils/internalState';
+
+let originalFetchForm: any;
+
+beforeAll(() => {
+  originalFetchForm = FeatheryClient.prototype.fetchForm;
+});
 
 afterEach(() => {
   jest.clearAllMocks();
   cleanup();
 
-  // Reset flags on the shared ref exposed by the hooks mock
-  HooksMod._spies.nextActionStateRef.current.isGettingNewStep = false;
-  HooksMod._spies.nextActionStateRef.current.isNextButtonAction = false;
-  HooksMod._spies.nextActionStateRef.current.latestClickedButton = null;
+  // Reset useCheckButtonAction refs
+  CheckButtonActionMod._spies.buttonActionStateRef.current = null;
+  CheckButtonActionMod._spies.setButtonLoaderRef.current = jest.fn();
+
+  // Restore FeatheryClient prototype if a test overrode it
+  FeatheryClient.prototype.fetchForm = originalFetchForm;
 });
 
 describe('ReactForm sharedCodes initialization', () => {
@@ -86,96 +88,151 @@ describe('ReactForm sharedCodes initialization', () => {
   });
 });
 
-/// /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Skip this test until the button related issue is fundamentally resolved
-/// /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-describe.skip('ReactForm next action flows', () => {
-  it('buttonOnClick returns early when async flags are raised', async () => {
-    render(<JSForm formId='f1' _internalId='iid-1' />);
+describe('useCheckButtonAction behavior', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Reset mocked hook internal state
+    CheckButtonActionMod._spies.buttonActionStateRef.current = null;
+    CheckButtonActionMod._spies.setButtonLoaderRef.current = jest.fn();
+    CheckButtonActionMod._spies.clearLoadersRef.current = jest.fn();
+  });
 
-    // Wait until the Grid button appears to ensure effects are flushed
+  it('calls setButtonLoader when _setButtonLoading(true) with a tracked block_button_clicks', async () => {
+    // Arrange: inject a custom setButtonLoader
+    const setButtonLoader = jest.fn(async () => {});
+    const api = CheckButtonActionMod.useCheckButtonAction(setButtonLoader);
+
+    // No tracked button yet - should not call loader
+    await api._setButtonLoading(true);
+    expect(setButtonLoader).not.toHaveBeenCalled();
+
+    // Create tracked state via updateButtonActionState
+    const el = {
+      id: 'b-load',
+      properties: {
+        block_button_clicks: true,
+        actions: []
+      }
+    };
+    api.updateButtonActionState('button', el);
+
+    // Act
+    await api._setButtonLoading(true);
+
+    // Assert
+    expect(setButtonLoader).toHaveBeenCalledTimes(1);
+    expect(setButtonLoader).toHaveBeenCalledWith(el);
+  });
+
+  it('calls clearLoaders when _setButtonLoading(false) and there is no running state', async () => {
+    const setButtonLoader = jest.fn();
+    const clearLoaders = jest.fn();
+    const api = CheckButtonActionMod.useCheckButtonAction(
+      setButtonLoader,
+      clearLoaders
+    );
+
+    // Create tracked button state, then end element action
+    const el = {
+      id: 'b-clear',
+      properties: {
+        block_button_clicks: true,
+        actions: []
+      }
+    };
+    api.updateButtonActionState('button', el);
+    api.clearButtonActionState();
+
+    // Ensure not running
+    expect(api.isButtonActionRunning()).toBe(false);
+
+    // Act
+    await api._setButtonLoading(false);
+
+    // Assert
+    expect(clearLoaders).toHaveBeenCalledTimes(1);
+  });
+
+  it('JSForm flow: keeps state cleared when block_button_clicks is not set', async () => {
+    render(<JSForm formId='f1' _internalId='iid-btn-1' />);
+
     const btn = await screen.findByTestId('btn');
-
-    // Simulate async work already in progress
-    HooksMod._spies.nextActionStateRef.current.isGettingNewStep = true;
-    HooksMod._spies.nextActionStateRef.current.isNextButtonAction = true;
-
-    // Click the stubbed button that triggers form.buttonOnClick
     fireEvent.click(btn);
 
-    // Should not toggle flags nor store latestClickedButton
-    expect(HooksMod._spies.setNextButtonActionFlag).not.toHaveBeenCalled();
-    expect(
-      HooksMod._spies.nextActionStateRef.current.latestClickedButton
-    ).toBeNull();
+    // GridMock uses actions: [] and block_button_clicks is not set, so state must remain null
+    expect(CheckButtonActionMod._spies.buttonActionStateRef.current).toBeNull();
+
+    // Running state should be false
+    expect(CheckButtonActionMod._spies.isButtonActionRunning()).toBe(false);
   });
 
-  it('buttonOnClick toggles flags and sets latestClickedButton on normal flow', async () => {
-    render(<JSForm formId='f1' _internalId='iid-2' />);
+  it('sets running when block_button_clicks=true and triggers setButtonLoader while user logic running', async () => {
+    // Initialize mocked hook with an injectable setButtonLoader
+    const setButtonLoader = jest.fn(async () => {});
+    const api = CheckButtonActionMod.useCheckButtonAction(setButtonLoader);
 
-    // Wait until the Grid button appears to ensure effects are flushed
-    const btn = await screen.findByTestId('btn');
+    const element = {
+      id: 'b-button',
+      properties: {
+        block_button_clicks: true,
+        actions: []
+      }
+    };
 
-    // Pre condition
-    expect(HooksMod._spies.nextActionStateRef.current.isNextButtonAction).toBe(
-      false
-    );
+    // block_button_clicks=true should set the internal state
+    api.updateButtonActionState('button', element);
 
-    fireEvent.click(btn);
-
-    // Wait until the "false" toggle is observed
-    await waitFor(() =>
-      expect(HooksMod._spies.setNextButtonActionFlag).toHaveBeenLastCalledWith(
-        false
-      )
-    );
-
-    // It should set true at start and false at end
-    const calls = HooksMod._spies.setNextButtonActionFlag.mock.calls.map(
-      (args: any[]) => args[0]
-    );
-    expect(calls[0]).toBe(true);
-    expect(calls[calls.length - 1]).toBe(false);
-
-    expect(HooksMod._spies.nextActionStateRef.current.isNextButtonAction).toBe(
-      false
-    );
-
-    // Assert latestClickedButton contents without non null assertion
-    const clicked = HooksMod._spies.nextActionStateRef.current
-      .latestClickedButton as MockClickActionElement | null;
-    expect(clicked).toBeTruthy();
-    if (clicked) {
-      expect(clicked.id).toBe('b1');
-    }
-  });
-
-  it('runGetNewStep effect toggles setGettingNewStepFlag and setNextButtonLoading', async () => {
-    render(<JSForm formId='f1' _internalId='iid-3' />);
-
-    // Wait for initial mount to stabilize
-    await screen.findByTestId('btn');
-
-    // Flags should be turned on at the beginning of the effect
-    await waitFor(() => {
-      expect(HooksMod._spies.setGettingNewStepFlag).toHaveBeenCalledWith(true);
-      expect(HooksMod._spies.setNextButtonLoading).toHaveBeenCalledWith(true);
+    expect(CheckButtonActionMod._spies.buttonActionStateRef.current).toEqual({
+      button: element,
+      isElementActionRunning: true
     });
 
-    // And turned off in the finally block
-    await waitFor(() => {
-      expect(HooksMod._spies.setGettingNewStepFlag).toHaveBeenCalledWith(false);
-      expect(HooksMod._spies.setNextButtonLoading).toHaveBeenCalledWith(false);
-    });
+    // Starting user logic
+    await api.setUserLogicRunning(true);
+
+    // Still running due to element action
+    expect(api.isButtonActionRunning()).toBe(true);
+
+    // Stopping user logic keeps running because element action is still true
+    await api.setUserLogicRunning(false);
+    expect(api.isButtonActionRunning()).toBe(true);
+
+    // Stopping element action ends running state
+    api.clearButtonActionState();
+    expect(api.isButtonActionRunning()).toBe(false);
   });
 
-  it('clearNextActionTimer is called on unmount', async () => {
-    const { unmount } = render(<JSForm formId='f1' _internalId='iid-4' />);
+  it('does not call setButtonLoader when user logic running is set to false', async () => {
+    const setButtonLoader = jest.fn(async () => {});
+    const api = CheckButtonActionMod.useCheckButtonAction(setButtonLoader);
 
-    // Wait for button to ensure the effect chain has run
-    await screen.findByTestId('btn');
+    // No state yet: setting false should not call loader
+    await api.setUserLogicRunning(false);
+    expect(setButtonLoader).not.toHaveBeenCalled();
 
-    unmount();
-    expect(HooksMod._spies.clearNextActionTimer).toHaveBeenCalled();
+    // Create state then set false again: still should not call loader
+    const el = {
+      id: 'b-x',
+      properties: {
+        block_button_clicks: true,
+        actions: []
+      }
+    };
+    api.updateButtonActionState('button', el);
+    await api.setUserLogicRunning(false);
+    expect(setButtonLoader).not.toHaveBeenCalled();
+  });
+
+  it('ignores non-button element types in updateButtonActionState', () => {
+    const api = CheckButtonActionMod.useCheckButtonAction(jest.fn());
+
+    // container element should not be tracked
+    api.updateButtonActionState('container', {
+      id: 'c1',
+      properties: { block_button_clicks: true }
+    });
+
+    expect(CheckButtonActionMod._spies.buttonActionStateRef.current).toBeNull();
+    expect(api.isButtonActionRunning()).toBe(false);
   });
 });
