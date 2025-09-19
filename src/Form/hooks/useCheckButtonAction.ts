@@ -11,7 +11,7 @@ export function useCheckButtonAction(
   setButtonLoader: (button: any) => Promise<void>,
   clearLoaders: () => void
 ) {
-  const buttonActionStateRef = useRef<ActionButtonState>(null);
+  const buttonActionStateRef = useRef<ActionButtonState | null>(null);
 
   const isButtonActionRunning = () =>
     buttonActionStateRef.current?.isElementActionRunning ||
@@ -20,7 +20,7 @@ export function useCheckButtonAction(
   const updateButtonActionState = (elementType: string, element: any) => {
     // Set the state only when the element is a button and block_button_clicks is true
     const isRunning =
-      elementType === 'button' && element?.properties?.block_button_clicks;
+      elementType === 'button' && !!element?.properties?.block_button_clicks;
 
     if (isRunning) {
       buttonActionStateRef.current = {
