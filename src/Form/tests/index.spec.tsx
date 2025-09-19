@@ -97,7 +97,7 @@ describe('useCheckButtonAction behavior', () => {
     CheckButtonActionMod._spies.clearLoadersRef.current = jest.fn();
   });
 
-  it('calls setButtonLoader when _setButtonLoading(true) with a tracked block_other_button_clicks_while_actions_runs', async () => {
+  it('calls setButtonLoader when _setButtonLoading(true) with a tracked block_button_clicks', async () => {
     // Arrange: inject a custom setButtonLoader
     const setButtonLoader = jest.fn(async () => {});
     const api = CheckButtonActionMod.useCheckButtonAction(setButtonLoader);
@@ -110,7 +110,7 @@ describe('useCheckButtonAction behavior', () => {
     const el = {
       id: 'b-load',
       properties: {
-        block_other_button_clicks_while_actions_runs: true,
+        block_button_clicks: true,
         actions: []
       }
     };
@@ -136,7 +136,7 @@ describe('useCheckButtonAction behavior', () => {
     const el = {
       id: 'b-clear',
       properties: {
-        block_other_button_clicks_while_actions_runs: true,
+        block_button_clicks: true,
         actions: []
       }
     };
@@ -153,20 +153,20 @@ describe('useCheckButtonAction behavior', () => {
     expect(clearLoaders).toHaveBeenCalledTimes(1);
   });
 
-  it('JSForm flow: keeps state cleared when block_other_button_clicks_while_actions_runs is not set', async () => {
+  it('JSForm flow: keeps state cleared when block_button_clicks is not set', async () => {
     render(<JSForm formId='f1' _internalId='iid-btn-1' />);
 
     const btn = await screen.findByTestId('btn');
     fireEvent.click(btn);
 
-    // GridMock uses actions: [] and block_other_button_clicks_while_actions_runs is not set, so state must remain null
+    // GridMock uses actions: [] and block_button_clicks is not set, so state must remain null
     expect(CheckButtonActionMod._spies.buttonActionStateRef.current).toBeNull();
 
     // Running state should be false
     expect(CheckButtonActionMod._spies.isButtonActionRunning()).toBe(false);
   });
 
-  it('sets running when block_other_button_clicks_while_actions_runs=true and triggers setButtonLoader while user logic running', async () => {
+  it('sets running when block_button_clicks=true and triggers setButtonLoader while user logic running', async () => {
     // Initialize mocked hook with an injectable setButtonLoader
     const setButtonLoader = jest.fn(async () => {});
     const api = CheckButtonActionMod.useCheckButtonAction(setButtonLoader);
@@ -174,12 +174,12 @@ describe('useCheckButtonAction behavior', () => {
     const element = {
       id: 'b-button',
       properties: {
-        block_other_button_clicks_while_actions_runs: true,
+        block_button_clicks: true,
         actions: []
       }
     };
 
-    // block_other_button_clicks_while_actions_runs=true should set the internal state
+    // block_button_clicks=true should set the internal state
     api.updateButtonActionState('button', element);
 
     expect(CheckButtonActionMod._spies.buttonActionStateRef.current).toEqual({
@@ -214,7 +214,7 @@ describe('useCheckButtonAction behavior', () => {
     const el = {
       id: 'b-x',
       properties: {
-        block_other_button_clicks_while_actions_runs: true,
+        block_button_clicks: true,
         actions: []
       }
     };
@@ -229,7 +229,7 @@ describe('useCheckButtonAction behavior', () => {
     // container element should not be tracked
     api.updateButtonActionState('container', {
       id: 'c1',
-      properties: { block_other_button_clicks_while_actions_runs: true }
+      properties: { block_button_clicks: true }
     });
 
     expect(CheckButtonActionMod._spies.buttonActionStateRef.current).toBeNull();
