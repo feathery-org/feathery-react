@@ -70,11 +70,19 @@ export const Container = ({
     Object.assign(additionalCss, selectableStyles);
   }
 
+  // If compact_options is set to true in the multi dropdown,
+  // the dropdown width including the option items should shrink when the parent width decreases.
+  // To achieve this, the parent’s min-width must be set to 0.
+  const dropDownMultiStyles =
+    node?.servar?.type === 'dropdown_multi' && !!node?.styles?.compact_options
+      ? { minWidth: 0 }
+      : {};
+
   return (
     <StyledContainer
       ref={ref}
       node={node}
-      css={additionalCss}
+      css={{ ...additionalCss, ...dropDownMultiStyles }}
       onClick={handleClick}
       viewport={viewport}
       breakpoint={form.formSettings.mobileBreakpoint}

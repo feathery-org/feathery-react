@@ -19,6 +19,7 @@ import { getRenderData } from '../../../utils/image';
 import DangerouslySetHtmlContent from '../../../utils/DangerouslySetHTMLContent';
 import { replaceTextVariables } from '../../../elements/components/TextNodes';
 import { ShadowDomHtmlContent } from '../../../utils/ShadowDomHtmlContent';
+import { useCompactOptionMultiDropdown } from './hooks/useCompactOptionMultiDropdown';
 
 export type StyledContainerProps = PropsWithChildren & {
   key?: string;
@@ -125,6 +126,11 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
 
     useContainerEngine(node, rawNode, ref);
 
+    // If compact_options is set to true in the multi dropdown,
+    // the dropdown width including the option items should shrink when the parent width decreases.
+    // To achieve this, the top parent’s min-width must be set to 0.
+    const { multiDropdownStyles } = useCompactOptionMultiDropdown(node);
+
     if (component) {
       const Component = component;
 
@@ -133,7 +139,10 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           key={node.id}
           ref={ref}
           node={_node}
-          css={styles}
+          css={{
+            ...styles,
+            ...multiDropdownStyles
+          }}
           className={classNames('styled-container', type, className)}
           {...props}
         >
@@ -156,7 +165,8 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
             css={{
               ...styles,
               position: 'fixed',
-              zIndex: FORM_Z_INDEX + 1
+              zIndex: FORM_Z_INDEX + 1,
+              ...multiDropdownStyles
             }}
             ref={fixedContainerRef}
             data-feathery-id={node.key}
@@ -169,7 +179,18 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
         <div
           key={node.id}
           ref={ref}
-          css={isFixed ? { ...styles, visibility: 'hidden' } : styles}
+          css={
+            isFixed
+              ? {
+                  ...styles,
+                  visibility: 'hidden',
+                  ...multiDropdownStyles
+                }
+              : {
+                  ...styles,
+                  ...multiDropdownStyles
+                }
+          }
           className={classNames('styled-container', type, className)}
           data-id={node.id}
           data-feathery-id={node.key}
