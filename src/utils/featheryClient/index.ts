@@ -19,7 +19,7 @@ import { getDefaultFormFieldValue } from '../fieldHelperFunctions';
 import { loadPhoneValidator } from '../validation';
 import { initializeIntegrations } from '../../integrations/utils';
 import { loadLottieLight } from '../../elements/components/Lottie';
-import { featheryDoc, featheryWindow, downloadAllFileUrls } from '../browser';
+import { downloadAllFileUrls, featheryDoc, featheryWindow } from '../browser';
 import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
 import { loadQRScanner } from '../../elements/fields/QRScanner';
@@ -769,14 +769,13 @@ export default class FeatheryClient extends IntegrationClient {
     const { userId } = initInfo();
     const data: any = {
       fuser_key: userId,
-      form_key: this.formKey
+      form_key: this.formKey,
+      name: payload.name,
+      method: payload.method,
+      url: payload.url,
+      user_data: payload.data,
+      headers: payload.headers
     };
-
-    data.name = payload.name;
-    data.method = payload.method;
-    data.url = payload.url;
-    data.user_data = payload.data;
-    data.headers = payload.headers;
 
     if (fieldValues) {
       data.field_values = fieldValues;
