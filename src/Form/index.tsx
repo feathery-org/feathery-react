@@ -220,6 +220,7 @@ export interface Props {
   formName?: string; // TODO: remove support for formName (deprecated)
   onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
   onLoad?: null | ((context: FormContext) => Promise<any> | void);
+  onFormLoad?: null | ((context: FormContext) => Promise<any> | void);
   onFormComplete?: null | ((context: FormContext) => Promise<any> | void);
   onSubmit?: null | ((context: ContextOnSubmit) => Promise<any> | void);
   onError?: null | ((context: ContextOnError) => Promise<any> | void);
@@ -281,6 +282,7 @@ function Form({
   formId, // The 'live' env slug
   onChange = null,
   onLoad = null,
+  onFormLoad = null,
   onFormComplete = null,
   onSubmit = null,
   onError = null,
@@ -365,6 +367,7 @@ function Form({
   const [requiredStepAction, setRequiredStepAction] = useState<
     keyof typeof REQUIRED_FLOW_ACTIONS | ''
   >('');
+  const [formLoadLogicStarted, setFormLoadLogicStarted] = useState(false);
 
   const [viewport, setViewport] = useState(() =>
     getViewport(formSettings.mobileBreakpoint)
@@ -681,6 +684,7 @@ function Form({
   const eventCallbackMap: Record<string, any> = {
     change: onChange,
     load: onLoad,
+    form_load: onFormLoad,
     form_complete: onFormComplete,
     submit: onSubmit,
     error: onError,
@@ -1270,6 +1274,19 @@ function Form({
     const hashKey = getUrlHash();
     if (hashKey in steps) setStepKey(hashKey);
   }, [location]);
+
+  useEffect(() => {
+    const runFormLoadLogic = async () => {
+      setUserLogicRunning(true);
+      await runUserLogic('form_load');
+      setUserLogicRunning(false);
+    };
+
+    if (!formLoadLogicStarted && eventHasUserLogic('form_load')) {
+      setFormLoadLogicStarted(true);
+      runFormLoadLogic();
+    }
+  }, [logicRules]);
 
   useEffect(() => {
     // We set render to re-evaluate auth nav rules - but should only getNewStep if either the step or authId has changed.
