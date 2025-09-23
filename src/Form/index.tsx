@@ -1062,6 +1062,10 @@ function Form({
     );
 
     setUserLogicRunning(true);
+    if (!formLoadLogicStarted) {
+      setFormLoadLogicStarted(true);
+      await runUserLogic('form_load');
+    }
     await runUserLogic('load');
     setUserLogicRunning(false);
 
@@ -1274,19 +1278,6 @@ function Form({
     const hashKey = getUrlHash();
     if (hashKey in steps) setStepKey(hashKey);
   }, [location]);
-
-  useEffect(() => {
-    const runFormLoadLogic = async () => {
-      setUserLogicRunning(true);
-      await runUserLogic('form_load');
-      setUserLogicRunning(false);
-    };
-
-    if (!formLoadLogicStarted && eventHasUserLogic('form_load')) {
-      setFormLoadLogicStarted(true);
-      runFormLoadLogic();
-    }
-  }, [logicRules]);
 
   useEffect(() => {
     // We set render to re-evaluate auth nav rules - but should only getNewStep if either the step or authId has changed.
