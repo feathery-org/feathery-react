@@ -26,14 +26,14 @@ function FileUploadField({
   const isMultiple = servar.metadata.multiple;
   const fileInput = useRef<any>(undefined);
 
-  const [rawFiles, setRawFiles] = useState<any[]>([]);
+  const [rawFiles, setRawFiles] = useState<File[]>([]);
   const [hoverDownload, setHoverDownload] = useState(-1);
 
   useEffect(() => {
     // Prevent infinite loop of setting a new empty array as the value
     if (isEmptyArray(rawFiles) && isEmptyArray(initialFiles)) return;
     setRawFiles(toList(initialFiles));
-  }, [initialFiles]);
+  }, [rawFiles, initialFiles]);
 
   const thumbnailData = useThumbnailData(rawFiles);
   const allowMoreFiles = isMultiple || thumbnailData.length === 0;
@@ -99,11 +99,11 @@ function FileUploadField({
     }
   };
 
-  const fileSizeLimit = servar.max_length
-    ? servar.max_length * 1024
-    : DEFAULT_FILE_SIZE_LIMIT;
-
   const validateFileSizes = (files: File[]) => {
+    const fileSizeLimit = servar.max_length
+      ? servar.max_length * 1024
+      : DEFAULT_FILE_SIZE_LIMIT;
+
     if (files.some((file: any) => file.size > fileSizeLimit)) {
       let sizeLabel = '';
       if (fileSizeLimit < 1024) sizeLabel = `${fileSizeLimit} bytes`;
@@ -120,43 +120,40 @@ function FileUploadField({
 
   // When the user uploads files to the multi-file upload, we just append to the existing set
   // By default the input element would just replace all the uploaded files (we don't want that)
-  const handleFiles = async (filelist: FileList) => {
-    let files = Array.from(filelist);
+  const handleFiles = (fileList: FileList) => {
+    let files = Array.from(fileList);
     if (!isMultiple) {
       files = [files[0]];
     }
 
-    try {
-      validateFileTypes(files);
-      validateFileSizes(files);
+    validateFileTypes(files);
+    validateFileSizes(files);
 
-      const originalLength = hidePreview ? 0 : rawFiles.length;
-      if (files.length + originalLength > NUM_FILES_LIMIT) {
-        // Splice off the uploaded files past the upload count
-        files.splice(NUM_FILES_LIMIT - originalLength);
-      }
-
-      const uploadedFiles = files.map((file) => Promise.resolve(file));
-      // If the value is [null] (initial state of repeating rows), we want to replace the null with the file
-      const isRawFilesNull = rawFiles.length === 1 && rawFiles[0] === null;
-      let newRawFiles, length;
-      if (isRawFilesNull || hidePreview) {
-        newRawFiles = uploadedFiles;
-        length = 0;
-      } else {
-        newRawFiles = [...rawFiles, ...uploadedFiles];
-        length = rawFiles.length;
-      }
-      setRawFiles(newRawFiles);
-      customOnChange(newRawFiles, length);
-
-      // Wipe the value of the upload element so we can upload multiple copies of the same file
-      // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
-      fileInput.current.value = [];
-    } catch (error: any) {
-      fileInput.current.setCustomValidity(error.message);
-      fileInput.current.reportValidity();
+    const originalLength = hidePreview ? 0 : rawFiles.length;
+    if (files.length + originalLength > NUM_FILES_LIMIT) {
+      // Splice off the uploaded files past the upload count
+      files.splice(NUM_FILES_LIMIT - originalLength);
     }
+
+    const isRawFilesNull = rawFiles.length === 1 && rawFiles[0] === null;
+
+    let newRawFiles: File[];
+    let length: number;
+
+    if (isRawFilesNull || hidePreview) {
+      newRawFiles = files;
+      length = 0;
+    } else {
+      newRawFiles = [...rawFiles, ...files];
+      length = rawFiles.length;
+    }
+
+    setRawFiles(newRawFiles);
+    customOnChange(newRawFiles, length);
+
+    // Wipe the value of the upload element so we can upload multiple copies of the same file
+    // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
+    fileInput.current.value = [];
   };
 
   function onClear(index: any) {
@@ -171,6 +168,7 @@ function FileUploadField({
     ...imgMaxSizeStyles,
     ...responsiveStyles.getTarget('img')
   };
+
   const icon = element.properties.icon ? (
     <img
       src={element.properties.icon}
@@ -242,7 +240,7 @@ function FileUploadField({
                   alignItems: 'center',
                   justifyContent: 'center'
                 }}
-                onClick={async () => downloadFile(await rawFiles[index])}
+                onClick={() => downloadFile(rawFiles[index])}
               >
                 <DownloadIcon />
               </div>
