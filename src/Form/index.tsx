@@ -367,7 +367,7 @@ function Form({
   const [requiredStepAction, setRequiredStepAction] = useState<
     keyof typeof REQUIRED_FLOW_ACTIONS | ''
   >('');
-  const [formLoadLogicStarted, setFormLoadLogicStarted] = useState(false);
+  const formLoadRan = useRef(false);
 
   const [viewport, setViewport] = useState(() =>
     getViewport(formSettings.mobileBreakpoint)
@@ -1062,8 +1062,8 @@ function Form({
     );
 
     setUserLogicRunning(true);
-    if (!formLoadLogicStarted) {
-      setFormLoadLogicStarted(true);
+    if (!formLoadRan.current) {
+      formLoadRan.current = true;
       await runUserLogic('form_load');
     }
     await runUserLogic('load');
