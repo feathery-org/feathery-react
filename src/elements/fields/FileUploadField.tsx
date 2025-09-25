@@ -126,34 +126,39 @@ function FileUploadField({
       files = [files[0]];
     }
 
-    validateFileTypes(files);
-    validateFileSizes(files);
+    try {
+      validateFileTypes(files);
+      validateFileSizes(files);
 
-    const originalLength = hidePreview ? 0 : rawFiles.length;
-    if (files.length + originalLength > NUM_FILES_LIMIT) {
-      // Splice off the uploaded files past the upload count
-      files.splice(NUM_FILES_LIMIT - originalLength);
+      const originalLength = hidePreview ? 0 : rawFiles.length;
+      if (files.length + originalLength > NUM_FILES_LIMIT) {
+        // Splice off the uploaded files past the upload count
+        files.splice(NUM_FILES_LIMIT - originalLength);
+      }
+
+      const isRawFilesNull = rawFiles.length === 1 && rawFiles[0] === null;
+
+      let newRawFiles: File[];
+      let length: number;
+
+      if (isRawFilesNull || hidePreview) {
+        newRawFiles = files;
+        length = 0;
+      } else {
+        newRawFiles = [...rawFiles, ...files];
+        length = rawFiles.length;
+      }
+
+      setRawFiles(newRawFiles);
+      customOnChange(newRawFiles, length);
+
+      // Wipe the value of the upload element so we can upload multiple copies of the same file
+      // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
+      fileInput.current.value = [];
+    } catch (error: any) {
+      fileInput.current.setCustomValidity(error.message);
+      fileInput.current.reportValidity();
     }
-
-    const isRawFilesNull = rawFiles.length === 1 && rawFiles[0] === null;
-
-    let newRawFiles: File[];
-    let length: number;
-
-    if (isRawFilesNull || hidePreview) {
-      newRawFiles = files;
-      length = 0;
-    } else {
-      newRawFiles = [...rawFiles, ...files];
-      length = rawFiles.length;
-    }
-
-    setRawFiles(newRawFiles);
-    customOnChange(newRawFiles, length);
-
-    // Wipe the value of the upload element so we can upload multiple copies of the same file
-    // If we didn't do this, then uploading the same file wouldn't re-trigger onChange
-    fileInput.current.value = [];
   };
 
   function onClear(index: any) {
