@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { isEmptyArray, toList } from './array';
+import { FeatheryFieldTypes } from './init';
 
 export const THUMBNAIL_TYPE = {
   PDF: 'pdf',
@@ -11,18 +12,13 @@ export const THUMBNAIL_TYPE = {
 export const BASE64_REGEX =
   /(data:image\/(png|jpg|jpeg);base64,)([0-9a-zA-Z+/]{4})*(([0-9a-zA-Z+/]{2}==)|([0-9a-zA-Z+/]{3}=))?$/gm;
 
-export function getThumbnailType(file: any) {
-  let thumbnailType = THUMBNAIL_TYPE.UNKNOWN;
+export function getThumbnailType(file: File | null) {
+  if (!file) return THUMBNAIL_TYPE.UNKNOWN;
 
-  if (file) {
-    if (/image\//.test(file.type)) {
-      thumbnailType = THUMBNAIL_TYPE.IMAGE;
-    } else if (/application\/pdf/.test(file.type)) {
-      thumbnailType = THUMBNAIL_TYPE.PDF;
-    }
-  }
+  if (/image\//.test(file.type)) return THUMBNAIL_TYPE.IMAGE;
+  if (/application\/pdf/.test(file.type)) return THUMBNAIL_TYPE.PDF;
 
-  return thumbnailType;
+  return THUMBNAIL_TYPE.UNKNOWN;
 }
 
 /**
@@ -30,8 +26,8 @@ export function getThumbnailType(file: any) {
  * This custom hook maintains a referentially-stable list of files,
  * and will execute a callback every time that list changes.
  */
-export function useFileData(initialFiles: any, onSetFiles = () => {}) {
-  const [files, setFiles] = useState<any[]>(toList(initialFiles));
+export function useFileData(initialFiles: File[] = [], onSetFiles = () => {}) {
+  const [files, setFiles] = useState<File[]>(toList(initialFiles));
 
   useEffect(() => {
     // Prevent infinite loop of setting a new empty array as the value
@@ -47,25 +43,32 @@ export function useFileData(initialFiles: any, onSetFiles = () => {}) {
  * Given a File (or a Promise<File>), convert the file to a filename and thumbnail.
  * Filename will be a plaintext string and thumbnail will be a base64 encoded image.
  */
-export async function getThumbnailData(filePromise: any) {
-  const file = await filePromise;
+export async function getThumbnailData(file: File) {
+  if (!file) return Promise.resolve({ filename: '', thumbnail: '' });
+
   const thumbnailType = getThumbnailType(file);
+
   if (thumbnailType === THUMBNAIL_TYPE.IMAGE) {
-    const url = await new Promise((resolve) => {
+    return new Promise<{ filename: string; thumbnail: string }>((resolve) => {
       const reader = new FileReader();
 
-      reader.addEventListener('load', (event) => {
-        // @ts-expect-error TS(2531): Object is possibly 'null'.
-        resolve(event.target.result);
-      });
+      reader.onload = (event) => {
+        resolve({
+          filename: file.name,
+          thumbnail: event.target?.result as string
+        });
+      };
+
+      reader.onerror = () => {
+        resolve({ filename: file.name, thumbnail: '' });
+      };
 
       reader.readAsDataURL(file);
     });
-
-    return { filename: '', thumbnail: url };
-  } else {
-    return { filename: file?.name ?? '', thumbnail: '' };
   }
+
+  // For PDF or unknown files, only show filename
+  return Promise.resolve({ filename: file.name, thumbnail: '' });
 }
 
 /**
@@ -84,24 +87,36 @@ export async function getRenderData(filePromise: any) {
 /**
  * Utility hook for converting a list of files into a list of thumbnail information.
  */
-export function useThumbnailData(files: any) {
+export function useThumbnailData(files: File[]) {
   const [thumbnailData, setThumbnailData] = useState(
-    files.map(() => ({ filename: '', thumbnail: '' }))
+    files.map((f) => ({ filename: f?.name ?? '', thumbnail: '' }))
   );
 
   useEffect(() => {
-    const thumbnailPromises = files.map(getThumbnailData);
-    Promise.all(thumbnailPromises).then((data) => {
-      setThumbnailData(data);
-    });
+    let cancelled = false;
+
+    async function generate() {
+      const data = await Promise.all(files.map(getThumbnailData));
+      if (!cancelled) setThumbnailData(data);
+    }
+
+    generate();
+
+    return () => {
+      cancelled = true;
+    };
   }, [files]);
 
   return thumbnailData;
 }
 
-export const dataURLToFile = (dataURL: any, name: any) => {
+export const dataURLToFile = (dataURL: FeatheryFieldTypes, name: string) => {
+  if (typeof dataURL !== 'string') {
+    throw new Error('dataURL must be a base64 string');
+  }
+
   const arr = dataURL.split(',');
-  const mime = arr[0].match(/:(.*?);/)[1];
+  const mime = arr[0].match(/:(.*?);/)?.at(1);
   const bstr = atob(arr[1]);
   let n = bstr.length;
   const u8arr = new Uint8Array(n);
