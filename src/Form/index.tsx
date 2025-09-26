@@ -417,7 +417,6 @@ function Form({
     currentActionExtractions,
     initializeActionExtractions,
     updateExtractionInAction,
-    clearActionExtractions,
     handleExtractionStatusUpdate
   } = useAIExtractionToast();
 
@@ -2152,7 +2151,7 @@ function Form({
               updateExtractionInAction(
                 curAction.extraction_id,
                 curAction.variant_id || '',
-                { status: 'polling' }
+                { status: 'incomplete' }
               );
               i++;
             } else {
@@ -2371,10 +2370,6 @@ function Form({
           break;
         }
       }
-    }
-    if (hasExtractions) {
-      // clear toast
-      clearActionExtractions();
     }
     if (i < actions.length) {
       elementClicks[id] = false;

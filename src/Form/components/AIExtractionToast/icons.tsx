@@ -1,5 +1,5 @@
 import { ComponentProps } from 'react';
-import { DataItem } from '.';
+import { DataItem } from './useAIExtractionToast';
 
 const CheckIcon = (props: ComponentProps<'svg'>) => (
   <svg width='20' height='20' viewBox='0 0 24 24' fill='none' {...props}>
@@ -118,7 +118,7 @@ export const StatusIcon = ({
   switch (status) {
     case 'complete':
       return <CheckIcon {...props} />;
-    case 'polling':
+    case 'incomplete':
       return <SpinnerIcon {...props} />;
     case 'queued':
       return <PendingIcon {...props} />;
