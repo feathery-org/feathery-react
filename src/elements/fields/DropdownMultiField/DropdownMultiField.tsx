@@ -218,23 +218,12 @@ export default function DropdownMultiField({
               })
             }),
             // @ts-ignore
-            multiValue: (baseStyles) => {
-              if (!isCompactOptions) {
-                return { ...baseStyles };
-              }
-
-              const inputEl =
-                containerRef?.current?.querySelector<HTMLInputElement>(
-                  '.react-select__input'
-                );
-
-              return {
-                ...baseStyles,
-                // Set the minWidth in order to show the remove button (X) and label partially
-                minWidth: '40px',
-                flexShrink: (inputEl?.value?.length || 0) > 0 ? 1 : 0
-              };
-            },
+            multiValue: (baseStyles) => ({
+              ...baseStyles,
+              ...(isCompactOptions && {
+                flexShrink: 0
+              })
+            }),
             // @ts-ignore
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
@@ -263,7 +252,6 @@ export default function DropdownMultiField({
               ...baseStyles,
               ...(isCompactOptions && {
                 // Prevent the input element from breaking the container layout
-                maxWidth: '50%',
                 overflow: 'hidden',
                 flexShrink: 1
               })
