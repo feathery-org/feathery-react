@@ -1,19 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronUp } from './icons';
 import ExtractionItem from './ExtractionItem';
-
-export type DataItem = {
-  status: 'complete' | 'polling' | 'error' | 'queued';
-  extraction_key?: string;
-  extraction_variant_key?: string;
-  children?: DataItem[];
-  id: string;
-  variantId: string;
-  isSequential: boolean;
-  run_id?: string;
-  created_at?: string;
-  file_sources?: any[];
-};
+import { DataItem } from './useAIExtractionToast';
 
 type ExtractionToastProps = {
   data: DataItem[];
