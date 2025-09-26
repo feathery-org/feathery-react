@@ -37,9 +37,8 @@ function RadioButtonGroupField({
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
 
-  const [otherSelect, setOtherSelect] = useState({});
+  const [otherSelect, setOtherSelect] = useState<Record<string, boolean>>({});
   const otherChecked =
-    // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
     (otherSelect[servar.key] || fieldVal) && fieldVal === otherVal;
   const otherTextDisabled = !otherChecked || disabled;
   const otherLabel = servar.metadata.other_label ?? 'Other';
@@ -172,6 +171,7 @@ function RadioButtonGroupField({
                   : servar.key
               }
               checked={otherChecked}
+              value={otherVal || ''}
               disabled={disabled || loadingDynamicOptions}
               onChange={(e) => {
                 setOtherSelect({
