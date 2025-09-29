@@ -76,7 +76,7 @@ type PollData =
 const COMPLETED_TOAST_DURATION_MS = 3200;
 
 const isFinished = (item: DataItem) =>
-  item.status === 'complete' || item.status === 'error';
+  !(item.status === 'queued' || item.status === 'incomplete');
 
 const emptyItems = (item: DataItem) => {
   if (item.status !== 'complete') return true;

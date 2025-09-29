@@ -888,6 +888,9 @@ export default class FeatheryClient extends IntegrationClient {
         } else {
           const message = parseError(data);
           console.error(message);
+          onStatusUpdate({
+            error: message
+          });
           return resolve({ status: 'error', message });
         }
       };
