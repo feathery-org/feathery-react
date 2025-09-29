@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { DataItem } from '.';
 import { ChevronDown, ChevronUp, StatusIcon } from './icons';
+import { DataItem } from './useAIExtractionToast';
 
 const INDENT_PX = 24;
 
@@ -13,7 +13,7 @@ export default function ExtractionItem({
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
   const hasChildren =
-    item.status === 'polling' && item.children && item.children.length > 0;
+    item.status === 'incomplete' && item.children && item.children.length > 0;
 
   const paddingLeft = level * INDENT_PX;
 
@@ -76,13 +76,13 @@ export default function ExtractionItem({
 
 const renderItemLabel = (item: DataItem) => {
   // fallback labels if no run data yet
-  if (!item.extraction_key) {
+  if (!item.extractionKey) {
     const label =
       {
         complete: 'Completed',
         error: 'Failed',
-        queued: 'Queued Action',
-        polling: 'Uploading Document'
+        queued: 'Queued Document',
+        incomplete: 'Uploading Document'
       }[item.status] || 'Action';
 
     return (
@@ -92,12 +92,12 @@ const renderItemLabel = (item: DataItem) => {
     );
   }
 
-  const fileSourcesText = getFileSourcesText(item.file_sources);
+  const fileSourcesText = getFileSourcesText(item.fileSources);
 
   return (
     <>
       <span css={{ color: item.status === 'queued' ? '#9ca3af' : '#374151' }}>
-        {item.extraction_key}
+        {item.extractionKey}
       </span>
       {fileSourcesText && (
         <span css={{ color: '#9ca3af' }}> {fileSourcesText}</span>
