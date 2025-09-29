@@ -1,71 +1,22 @@
-import React, { useRef, useState } from 'react';
-import useBorder from '../components/useBorder';
-import Select, {
-  components as SelectComponents,
-  OptionProps
-} from 'react-select';
+import React, { useMemo, useRef, useState } from 'react';
+import Select from 'react-select';
+import useBorder from '../../components/useBorder';
 import CreatableSelect from 'react-select/creatable';
-import { hoverStylesGuard } from '../../utils/browser';
-import InlineTooltip from '../components/InlineTooltip';
-import { DROPDOWN_Z_INDEX } from './index';
-import { Tooltip } from '../components/Tooltip';
-import { FORM_Z_INDEX } from '../../utils/styles';
-import Placeholder from '../components/Placeholder';
-import useSalesforceSync from '../../hooks/useSalesforceSync';
-import Overlay from '../components/Overlay';
+import { hoverStylesGuard } from '../../../utils/browser';
+import InlineTooltip from '../../components/InlineTooltip';
+import { DROPDOWN_Z_INDEX } from '../index';
+import Placeholder from '../../components/Placeholder';
+import useSalesforceSync from '../../../hooks/useSalesforceSync';
+import TooltipOption from './components/TooltipOption';
+import CompactOptionValueContainer from './components/CompactOptionValueContainer';
 
-type OptionData = {
+export type OptionData = {
   tooltip?: string;
   value: string;
   label: string;
 };
 
 type Options = string[] | OptionData[];
-
-const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
-  const optionRef = useRef<HTMLDivElement>(null);
-  const [showTooltip, setShowTooltip] = useState(false);
-
-  return (
-    <div
-      ref={optionRef}
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
-    >
-      {/* @ts-ignore */}
-      <SelectComponents.Option {...props}>{children}</SelectComponents.Option>
-      {props.data.tooltip && optionRef.current && (
-        <Overlay
-          targetRef={optionRef}
-          // @ts-expect-error
-          containerRef={props.selectProps.containerRef}
-          show={showTooltip}
-          placement='right'
-        >
-          <Tooltip
-            id={`tooltip-${props.data.value}`}
-            css={{
-              zIndex: FORM_Z_INDEX + 1,
-              padding: '.4rem 0',
-              transition: 'opacity .10s linear',
-              '.tooltip-inner': {
-                maxWidth: '200px',
-                padding: '.25rem .5rem',
-                color: '#fff',
-                textAlign: 'center',
-                backgroundColor: '#000',
-                borderRadius: '.25rem',
-                fontSize: 'smaller'
-              }
-            }}
-          >
-            {props.data.tooltip}
-          </Tooltip>
-        </Overlay>
-      )}
-    </div>
-  );
-};
 
 export default function DropdownMultiField({
   element,
@@ -87,8 +38,10 @@ export default function DropdownMultiField({
     error: inlineError,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
-  const containerRef = useRef<HTMLElement>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
   const [focused, setFocused] = useState(false);
+
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
@@ -165,13 +118,31 @@ export default function DropdownMultiField({
 
   responsiveStyles.applyFontStyles('field');
 
+  const isCompactOptions = element.styles.compact_options;
+
+  const memoizedComponents = useMemo(() => {
+    return {
+      Option: TooltipOption,
+      ...(isCompactOptions && {
+        ValueContainer: (props: any) => (
+          <CompactOptionValueContainer {...props} />
+        )
+      })
+    };
+  }, [isCompactOptions]);
+
+  // The height is fixed when the compact options checkbox is on
+  const styleHeight = isCompactOptions
+    ? `${element.styles.height}${element.styles.height_unit}`
+    : '100%';
+
   return (
     <div
       ref={containerRef}
       css={{
         maxWidth: '100%',
         width: '100%',
-        height: '100%',
+        height: styleHeight,
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
         ...responsiveStyles.getTarget('fc')
@@ -205,6 +176,8 @@ export default function DropdownMultiField({
       >
         {customBorder}
         <Component
+          classNamePrefix='react-select' // This is for the query selector of the option items and input
+          hideSelectedOptions={!isCompactOptions} // Show the select option list if the compact options is on
           styles={{
             // @ts-ignore
             control: (baseStyles) => ({
@@ -232,12 +205,30 @@ export default function DropdownMultiField({
             // @ts-ignore
             valueContainer: (baseStyles) => ({
               ...baseStyles,
-              paddingInlineEnd: 28
+              paddingInlineEnd: 28,
+              ...(isCompactOptions && {
+                position: 'relative',
+                display: 'flex',
+                flexWrap: 'nowrap',
+                overflow: 'hidden',
+                paddingLeft: 0,
+                paddingRight: 0,
+                marginRight: '28px',
+                marginLeft: '10px'
+              })
+            }),
+            // @ts-ignore
+            multiValue: (baseStyles) => ({
+              ...baseStyles,
+              ...(isCompactOptions && {
+                flexShrink: 0
+              })
             }),
             // @ts-ignore
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
-              whiteSpace: 'normal',
+              // Allow word wrap when the compact options is on
+              whiteSpace: isCompactOptions ? 'nowrap' : 'normal',
               overflow: 'hidden',
               display: '-webkit-box',
               WebkitBoxOrient: 'vertical',
@@ -250,9 +241,24 @@ export default function DropdownMultiField({
               ...baseStyles,
               zIndex: DROPDOWN_Z_INDEX,
               textAlign: 'start'
+            }),
+            // @ts-ignore
+            multiValueRemove: (baseStyles) => ({
+              ...baseStyles,
+              cursor: 'pointer'
+            }),
+            // @ts-ignore
+            input: (baseStyles) => ({
+              ...baseStyles,
+              ...(isCompactOptions && {
+                // Prevent the input element from breaking the container layout
+                overflow: 'hidden',
+                flexShrink: 1
+              })
             })
           }}
-          components={{ Option: TooltipOption }}
+          components={memoizedComponents}
+          // @ts-ignore
           containerRef={containerRef}
           inputId={servar.key}
           value={selectVal}
