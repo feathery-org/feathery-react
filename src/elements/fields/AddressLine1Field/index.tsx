@@ -1,14 +1,15 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import Placeholder from '../components/Placeholder';
-import InlineTooltip from '../components/InlineTooltip';
-import { resetStyles } from '../styles';
-import FeatheryClient from '../../utils/featheryClient';
-import useMounted from '../../hooks/useMounted';
+import Placeholder from '../../components/Placeholder';
+import InlineTooltip from '../../components/InlineTooltip';
+import { resetStyles } from '../../styles';
+import FeatheryClient from '../../../utils/featheryClient';
+import useMounted from '../../../hooks/useMounted';
 import debounce from 'lodash.debounce';
-import useBorder from '../components/useBorder';
-import Overlay from '../components/Overlay';
-import { DROPDOWN_Z_INDEX } from './index';
-import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
+import useBorder from '../../components/useBorder';
+import Overlay from '../../components/Overlay';
+import { DROPDOWN_Z_INDEX } from '../index';
+import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
+import { isKeydownValid } from './utils';
 
 const SEARCH_DELAY_TIME_MS = 500;
 const EXIT_DELAY_TIME_MS = 200;
@@ -115,7 +116,7 @@ function AddressLine1({
             setRef(ref);
           }}
           onKeyDown={(e) => {
-            if (!e.isTrusted || !e.code) return;
+            if (!isKeydownValid) return;
             if (e.key === 'Enter') onEnter(e);
             else setShowOptions(e.key !== 'Escape');
           }}
@@ -131,7 +132,6 @@ function AddressLine1({
           onChange={onChange}
           required={required}
         />
-
         <Overlay
           show={showOptions && options.length > 0}
           targetRef={inputRef}
