@@ -1,132 +1,52 @@
-import React from 'react';
-import { DEFAULT_MOBILE_BREAKPOINT } from '../../../styles';
+import {
+  createStatefulAcceptHandler,
+  mockResponsiveStyles,
+  setMockFieldValue,
+  getMockFieldValue,
+  resetMockFieldValue,
+  expectFieldToBeDisabled,
+  expectFieldToBeRequired,
+  expectFieldToHaveMaxLength,
+  expectFieldToHaveMinLength,
+  expectFieldToHaveAriaLabel,
+  createBaseElement,
+  createFieldProps
+} from '../../shared/tests/field-test-utils';
 
-global.ResizeObserver = jest.fn().mockImplementation(() => ({
-  observe: jest.fn(),
-  unobserve: jest.fn(),
-  disconnect: jest.fn()
-}));
-
-jest.mock('../../../../utils/browser', () => ({
-  runningInClient: jest.fn(() => true),
-  featheryDoc: jest.fn(() => global.document),
-  featheryWindow: jest.fn(() => global.window),
-  isHoverDevice: jest.fn(() => false),
-  isTouchDevice: jest.fn(() => false),
-  isIOS: jest.fn(() => false),
-  hoverStylesGuard: jest.fn((styles) => styles),
-  iosScrollOnFocus: jest.fn()
-}));
-
-jest.mock('../../../components/useBorder', () => {
-  return {
-    __esModule: true,
-    default: () => ({
-      borderStyles: { active: {}, hover: {} },
-      customBorder: null,
-      borderId: 'test-border-id'
-    })
-  };
-});
-
-// Mock with state tracking
-let mockFieldValue = '';
-
-jest.mock('../../../../utils/fieldHelperFunctions', () => ({
-  getFieldValue: jest.fn(() => {
-    return { value: mockFieldValue };
-  })
-}));
-
-// Helper functions for tests to control mock state
-export const setMockFieldValue = (value: string) => {
-  mockFieldValue = value;
-};
-
-export const getMockFieldValue = () => mockFieldValue;
-
-export const resetMockFieldValue = () => {
-  mockFieldValue = '';
-};
-
-export const mockResponsiveStyles = {
-  getTarget: jest.fn(() => ({})),
-  getMobileBreakpoint: jest.fn(() => DEFAULT_MOBILE_BREAKPOINT)
-};
-
-export const createMockElement = (
+export const createTextFieldElement = (
   type: string,
-  metadata: any = {}
-): {
-  id: string;
-  servar: { key: string; type: string; metadata: Record<string, any> } & Record<
-    string,
-    any
-  >;
-  properties: Record<string, any>;
-  repeat: boolean;
-} => ({
-  id: 'test-field',
-  servar: {
-    key: 'test-key',
+  metadata: any = {},
+  styles: any = {}
+) =>
+  createBaseElement(
+    'test-textfield',
     type,
-    metadata: {
-      options: [],
-      mask: null,
-      prefix: '',
-      suffix: '',
-      allowed_characters: null,
-      save_mask: false,
-      custom_autocomplete: null,
-      number_keypad: false,
-      ...metadata
-    }
-  },
-  properties: {
-    placeholder: 'Enter text',
-    tooltipText: '',
-    aria_label: 'Test field'
-  },
-  repeat: false
-});
+    metadata,
+    {
+      placeholder: 'Enter text',
+      aria_label: 'Test field'
+    },
+    styles
+  );
 
-export const createDefaultProps = (element: any, customProps: any = {}) => ({
-  element,
-  responsiveStyles: mockResponsiveStyles,
-  fieldLabel: <label>Test Label</label>,
-  elementProps: {},
-  required: false,
-  disabled: false,
-  autoComplete: true,
-  editMode: false,
-  onAccept: jest.fn(),
-  onEnter: jest.fn(),
-  setRef: jest.fn(),
-  inlineError: null,
-  repeatIndex: null,
-  children: null,
-  ...customProps
-});
-
-// Helper to create a stateful onAccept that updates the mock field value
-export const createStatefulOnAccept = () => {
-  return jest.fn((value: string) => {
-    setMockFieldValue(value);
+export const createTextFieldProps = (element: any, customProps: any = {}) =>
+  createFieldProps(element, {
+    autoComplete: true,
+    onAccept: jest.fn(),
+    onEnter: jest.fn(),
+    setRef: jest.fn(),
+    ...customProps
   });
+
+export {
+  mockResponsiveStyles,
+  setMockFieldValue,
+  getMockFieldValue,
+  resetMockFieldValue,
+  expectFieldToBeDisabled,
+  expectFieldToBeRequired,
+  expectFieldToHaveMaxLength,
+  expectFieldToHaveMinLength,
+  expectFieldToHaveAriaLabel,
+  createStatefulAcceptHandler
 };
-
-const originalError = console.error;
-beforeAll(() => {
-  console.error = (...args) => {
-    // silence a warning from react-testing-library
-    // See also: https://github.com/facebook/react/pull/14853
-    if (/Warning.*not wrapped in act/.test(args[0])) {
-      return;
-    }
-    originalError.call(console, ...args);
-  };
-});
-
-afterAll(() => {
-  console.error = originalError;
-});
