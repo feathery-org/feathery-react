@@ -1,10 +1,10 @@
 import React, { useMemo, useRef } from 'react';
-import { imgMaxSizeStyles, noTextSelectStyles } from '../styles';
-import useBorder from '../components/useBorder';
-import { hoverStylesGuard } from '../../utils/browser';
-import InlineTooltip from '../components/InlineTooltip';
-import ErrorInput from '../components/ErrorInput';
-import useSalesforceSync from '../../hooks/useSalesforceSync';
+import { imgMaxSizeStyles, noTextSelectStyles } from '../../styles';
+import useBorder from '../../components/useBorder';
+import { hoverStylesGuard } from '../../../utils/browser';
+import InlineTooltip from '../../components/InlineTooltip';
+import ErrorInput from '../../components/ErrorInput';
+import useSalesforceSync from '../../../hooks/useSalesforceSync';
 
 function ButtonGroupField({
   element,
@@ -96,7 +96,11 @@ function ButtonGroupField({
 
           return (
             <div
-              onClick={() => onClick(value)}
+              onClick={() => {
+                if (!editMode && !disabled && !loadingDynamicOptions) {
+                  onClick(value);
+                }
+              }}
               key={`${servar.key}-${index}`}
               css={{
                 position: 'relative',
