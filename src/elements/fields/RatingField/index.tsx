@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import RatingStar from '../components/icons/RatingStar';
-import Heart from '../components/icons/Heart';
-import ErrorInput from '../components/ErrorInput';
+import RatingStar from '../../components/icons/RatingStar';
+import Heart from '../../components/icons/Heart';
+import ErrorInput from '../../components/ErrorInput';
 
 export default function RatingField({
   element,
