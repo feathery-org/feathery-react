@@ -1,5 +1,5 @@
 import React, { useState, Suspense, lazy } from 'react';
-import { FORM_Z_INDEX } from '../../utils/styles';
+import { FORM_Z_INDEX } from '../../../utils/styles';
 const Sketch = lazy(() => import('@uiw/react-color-sketch'));
 
 function alphaToHex(alpha: number): string {
