@@ -1,7 +1,7 @@
 import {
-  createMockElement,
-  createDefaultProps,
-  createStatefulOnAccept,
+  createTextFieldElement,
+  createTextFieldProps,
+  createStatefulAcceptHandler,
   getMockFieldValue,
   resetMockFieldValue
 } from './test-utils';
@@ -22,8 +22,8 @@ describe('TextField - SSN Type', () => {
 
   describe('SSN Field Rendering', () => {
     it('renders SSN input with numeric input mode', () => {
-      const ssnElement = createMockElement('ssn');
-      const props = createDefaultProps(ssnElement);
+      const ssnElement = createTextFieldElement('ssn');
+      const props = createTextFieldProps(ssnElement);
 
       render(<TextField {...props} />);
 
@@ -33,9 +33,9 @@ describe('TextField - SSN Type', () => {
 
   describe('SSN Field Processing', () => {
     it('handles SSN input with formatting', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const ssnElement = createMockElement('ssn');
-      const props = createDefaultProps(ssnElement);
+      const mockOnAccept = createStatefulAcceptHandler();
+      const ssnElement = createTextFieldElement('ssn');
+      const props = createTextFieldProps(ssnElement);
 
       const { rerender } = render(
         <TextField {...props} onAccept={mockOnAccept} />
@@ -66,9 +66,9 @@ describe('TextField - SSN Type', () => {
     });
 
     it('restricts input to numeric characters', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const ssnElement = createMockElement('ssn');
-      const props = createDefaultProps(ssnElement);
+      const mockOnAccept = createStatefulAcceptHandler();
+      const ssnElement = createTextFieldElement('ssn');
+      const props = createTextFieldProps(ssnElement);
 
       const { rerender } = render(
         <TextField {...props} onAccept={mockOnAccept} />
@@ -100,9 +100,11 @@ describe('TextField - SSN Type', () => {
     });
 
     it('handles last four digits configuration', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const ssnElement = createMockElement('ssn', { last_four_digits: true });
-      const props = createDefaultProps(ssnElement);
+      const mockOnAccept = createStatefulAcceptHandler();
+      const ssnElement = createTextFieldElement('ssn', {
+        last_four_digits: true
+      });
+      const props = createTextFieldProps(ssnElement);
 
       const { rerender } = render(
         <TextField {...props} onAccept={mockOnAccept} />

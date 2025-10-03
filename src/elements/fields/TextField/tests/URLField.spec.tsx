@@ -1,7 +1,7 @@
 import {
-  createMockElement,
-  createDefaultProps,
-  createStatefulOnAccept,
+  createTextFieldElement,
+  createTextFieldProps,
+  createStatefulAcceptHandler,
   getMockFieldValue,
   resetMockFieldValue
 } from './test-utils';
@@ -19,8 +19,8 @@ describe('TextField - URL Type', () => {
 
   describe('URL Field Rendering', () => {
     it('renders URL input with default max length', () => {
-      const urlElement = createMockElement('url');
-      const props = createDefaultProps(urlElement);
+      const urlElement = createTextFieldElement('url');
+      const props = createTextFieldProps(urlElement);
 
       render(<TextField {...props} />);
 
@@ -30,9 +30,9 @@ describe('TextField - URL Type', () => {
 
   describe('URL Field Processing', () => {
     it('handles URL input', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const urlElement = createMockElement('url');
-      const props = createDefaultProps(urlElement);
+      const mockOnAccept = createStatefulAcceptHandler();
+      const urlElement = createTextFieldElement('url');
+      const props = createTextFieldProps(urlElement);
 
       render(<TextField {...props} onAccept={mockOnAccept} />);
 
@@ -56,10 +56,10 @@ describe('TextField - URL Type', () => {
     });
 
     it('respects max length constraints', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const urlElement = createMockElement('url');
+      const mockOnAccept = createStatefulAcceptHandler();
+      const urlElement = createTextFieldElement('url');
       urlElement.servar.max_length = 12;
-      const props = createDefaultProps(urlElement);
+      const props = createTextFieldProps(urlElement);
 
       render(<TextField {...props} onAccept={mockOnAccept} />);
 
@@ -80,6 +80,58 @@ describe('TextField - URL Type', () => {
       );
 
       expect(input().value).toBe('https://very');
+    });
+
+    it('accepts URL input without http/https protocol', () => {
+      const mockOnAccept = createStatefulAcceptHandler();
+      const urlElement = createTextFieldElement('url');
+      const props = createTextFieldProps(urlElement);
+
+      render(<TextField {...props} onAccept={mockOnAccept} />);
+
+      act(() => {
+        const inputElement = input();
+        fireEvent.focus(inputElement);
+        fireEvent.input(inputElement, {
+          target: { value: 'www.example.com' }
+        });
+        fireEvent.blur(inputElement);
+      });
+
+      expect(getMockFieldValue()).toBe('www.example.com');
+      expect(mockOnAccept).toHaveBeenCalledWith(
+        'www.example.com',
+        expect.anything(),
+        expect.anything()
+      );
+
+      expect(input().value).toBe('www.example.com');
+    });
+
+    it('accepts URL input without http/https protocol and without subdomain', () => {
+      const mockOnAccept = createStatefulAcceptHandler();
+      const urlElement = createTextFieldElement('url');
+      const props = createTextFieldProps(urlElement);
+
+      render(<TextField {...props} onAccept={mockOnAccept} />);
+
+      act(() => {
+        const inputElement = input();
+        fireEvent.focus(inputElement);
+        fireEvent.input(inputElement, {
+          target: { value: 'example.com' }
+        });
+        fireEvent.blur(inputElement);
+      });
+
+      expect(getMockFieldValue()).toBe('example.com');
+      expect(mockOnAccept).toHaveBeenCalledWith(
+        'example.com',
+        expect.anything(),
+        expect.anything()
+      );
+
+      expect(input().value).toBe('example.com');
     });
   });
 });

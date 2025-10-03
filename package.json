@@ -20,7 +20,7 @@
     "analyze-bundle": "webpack --mode development --config webpack.development.js --env analyze",
     "analyze-prod-bundle": "webpack --mode production --config webpack.development.js --env analyze",
     "prepublishOnly": "yarn build",
-    "test": "jest --coverage",
+    "test": "jest",
     "test:ci": "jest --silent --maxWorkers=50% --ci",
     "test:debug": "npm-run-all -p test:watch jest-preview",
     "test:watch": "jest --watchAll",

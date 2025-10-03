@@ -11,7 +11,7 @@ export const THUMBNAIL_TYPE = {
 export const BASE64_REGEX =
   /(data:image\/(png|jpg|jpeg);base64,)([0-9a-zA-Z+/]{4})*(([0-9a-zA-Z+/]{2}==)|([0-9a-zA-Z+/]{3}=))?$/gm;
 
-export function getThumbnailType(file: any) {
+export function getThumbnailType(file: File) {
   let thumbnailType = THUMBNAIL_TYPE.UNKNOWN;
 
   if (file) {
@@ -47,11 +47,11 @@ export function useFileData(initialFiles: any, onSetFiles = () => {}) {
  * Given a File (or a Promise<File>), convert the file to a filename and thumbnail.
  * Filename will be a plaintext string and thumbnail will be a base64 encoded image.
  */
-export async function getThumbnailData(filePromise: any) {
+export async function getThumbnailData(filePromise: File | Promise<File>) {
   const file = await filePromise;
   const thumbnailType = getThumbnailType(file);
   if (thumbnailType === THUMBNAIL_TYPE.IMAGE) {
-    const url = await new Promise((resolve) => {
+    const url: string = await new Promise((resolve) => {
       const reader = new FileReader();
 
       reader.addEventListener('load', (event) => {
@@ -62,7 +62,7 @@ export async function getThumbnailData(filePromise: any) {
       reader.readAsDataURL(file);
     });
 
-    return { filename: '', thumbnail: url };
+    return { filename: file?.name ?? '', thumbnail: url };
   } else {
     return { filename: file?.name ?? '', thumbnail: '' };
   }
@@ -71,10 +71,10 @@ export async function getThumbnailData(filePromise: any) {
 /**
  * Given a File (or a Promise<File>), convert the file to a source url and file type.
  */
-export async function getRenderData(filePromise: any) {
+export async function getRenderData(filePromise: File | Promise<File>) {
   const file = await filePromise;
 
-  if (file) {
+  if (file && file instanceof File) {
     return { type: file.type, url: URL.createObjectURL(file) };
   } else {
     return { type: '', url: '' };
@@ -84,7 +84,7 @@ export async function getRenderData(filePromise: any) {
 /**
  * Utility hook for converting a list of files into a list of thumbnail information.
  */
-export function useThumbnailData(files: any) {
+export function useThumbnailData(files: Promise<File>[]) {
   const [thumbnailData, setThumbnailData] = useState(
     files.map(() => ({ filename: '', thumbnail: '' }))
   );

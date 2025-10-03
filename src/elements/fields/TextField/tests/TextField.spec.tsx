@@ -1,7 +1,7 @@
 import {
-  createMockElement,
-  createDefaultProps,
-  createStatefulOnAccept,
+  createTextFieldElement,
+  createTextFieldProps,
+  createStatefulAcceptHandler,
   getMockFieldValue,
   resetMockFieldValue
 } from './test-utils';
@@ -19,8 +19,8 @@ describe('TextField - Base Functionality', () => {
 
   describe('Basic Rendering', () => {
     it('renders TextField component with default props', () => {
-      const element = createMockElement('text_field');
-      const props = createDefaultProps(element);
+      const element = createTextFieldElement('text_field');
+      const props = createTextFieldProps(element);
 
       render(<TextField {...props} />);
 
@@ -29,8 +29,8 @@ describe('TextField - Base Functionality', () => {
     });
 
     it('renders with disabled state', () => {
-      const element = createMockElement('text_field');
-      const props = createDefaultProps(element);
+      const element = createTextFieldElement('text_field');
+      const props = createTextFieldProps(element);
 
       render(<TextField {...props} disabled />);
 
@@ -40,9 +40,9 @@ describe('TextField - Base Functionality', () => {
 
   describe('Text Field Processing', () => {
     it('handles basic text input', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const element = createMockElement('text_field');
-      const props = createDefaultProps(element);
+      const mockOnAccept = createStatefulAcceptHandler();
+      const element = createTextFieldElement('text_field');
+      const props = createTextFieldProps(element);
 
       render(<TextField {...props} onAccept={mockOnAccept} />);
 
@@ -64,11 +64,11 @@ describe('TextField - Base Functionality', () => {
     });
 
     it('handles constrained text input - letters only', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const element = createMockElement('text_field', {
+      const mockOnAccept = createStatefulAcceptHandler();
+      const element = createTextFieldElement('text_field', {
         allowed_characters: 'letters'
       });
-      const props = createDefaultProps(element);
+      const props = createTextFieldProps(element);
 
       render(<TextField {...props} onAccept={mockOnAccept} />);
 
@@ -90,11 +90,11 @@ describe('TextField - Base Functionality', () => {
     });
 
     it('handles constrained text input - digits only', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const element = createMockElement('text_field', {
+      const mockOnAccept = createStatefulAcceptHandler();
+      const element = createTextFieldElement('text_field', {
         allowed_characters: 'digits'
       });
-      const props = createDefaultProps(element);
+      const props = createTextFieldProps(element);
 
       render(<TextField {...props} onAccept={mockOnAccept} />);
 
@@ -117,12 +117,12 @@ describe('TextField - Base Functionality', () => {
     });
 
     it('handles prefix and suffix', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const element = createMockElement('text_field', {
+      const mockOnAccept = createStatefulAcceptHandler();
+      const element = createTextFieldElement('text_field', {
         prefix: 'Mr. ',
         suffix: ' Jr.'
       });
-      const props = createDefaultProps(element);
+      const props = createTextFieldProps(element);
 
       render(<TextField {...props} onAccept={mockOnAccept} />);
 

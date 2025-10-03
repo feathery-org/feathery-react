@@ -1,7 +1,7 @@
 import {
-  createMockElement,
-  createDefaultProps,
-  createStatefulOnAccept,
+  createStatefulAcceptHandler,
+  createTextFieldElement,
+  createTextFieldProps,
   getMockFieldValue,
   resetMockFieldValue
 } from './test-utils';
@@ -19,8 +19,8 @@ describe('TextField - Email Type', () => {
 
   describe('Email Field Rendering', () => {
     it('renders email input with correct type', () => {
-      const emailElement = createMockElement('email');
-      const props = createDefaultProps(emailElement);
+      const emailElement = createTextFieldElement('email');
+      const props = createTextFieldProps(emailElement);
 
       render(<TextField {...props} />);
 
@@ -30,9 +30,9 @@ describe('TextField - Email Type', () => {
 
   describe('Email Field Processing', () => {
     it('handles email input', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const emailElement = createMockElement('email');
-      const props = createDefaultProps(emailElement);
+      const mockOnAccept = createStatefulAcceptHandler();
+      const emailElement = createTextFieldElement('email');
+      const props = createTextFieldProps(emailElement);
 
       render(<TextField {...props} onAccept={mockOnAccept} />);
 
@@ -56,9 +56,9 @@ describe('TextField - Email Type', () => {
     });
 
     it('handles email with special characters', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const emailElement = createMockElement('email');
-      const props = createDefaultProps(emailElement);
+      const mockOnAccept = createStatefulAcceptHandler();
+      const emailElement = createTextFieldElement('email');
+      const props = createTextFieldProps(emailElement);
 
       render(<TextField {...props} onAccept={mockOnAccept} />);
 
@@ -82,10 +82,10 @@ describe('TextField - Email Type', () => {
     });
 
     it('respects max length constraints', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const emailElement = createMockElement('email');
+      const mockOnAccept = createStatefulAcceptHandler();
+      const emailElement = createTextFieldElement('email');
       emailElement.servar.max_length = 12;
-      const props = createDefaultProps(emailElement);
+      const props = createTextFieldProps(emailElement);
 
       render(<TextField {...props} onAccept={mockOnAccept} />);
 

@@ -24,6 +24,13 @@ function TestWrapper({ children, ...props }: any) {
   );
 }
 
+jest.mock('../../../components/Overlay', () => {
+  return function MockOverlay({ show, children }: any) {
+    if (!show) return null;
+    return <div data-testid='overlay'>{children}</div>;
+  };
+});
+
 describe('TextAutocomplete', () => {
   beforeEach(() => {
     jest.clearAllMocks();

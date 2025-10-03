@@ -17,7 +17,7 @@ import SignatureField from './SignatureField';
 import SliderField from './SliderField';
 import TextField from './TextField';
 import TextArea from './TextArea';
-import AddressLine1 from './AddressLine1';
+import AddressLine1 from './AddressLine1Field';
 import PasswordField from './PasswordField';
 import PaymentMethodField from './PaymentMethodField';
 import MatrixField from './MatrixField';
