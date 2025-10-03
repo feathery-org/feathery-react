@@ -198,6 +198,7 @@ function PhoneField({
       >
         {customBorder}
         <div
+          data-testid='country-trigger'
           css={{
             transition: '0.2s ease all',
             display: 'flex',
@@ -210,7 +211,9 @@ function PhoneField({
             ...enabledCountryStyles
           }}
           ref={triggerRef}
-          onClick={() => countriesEnabled && setShow(!show)}
+          onClick={() => {
+            if (countriesEnabled && !disabled) setShow(!show);
+          }}
         >
           {countryMap[curCountryCode].flag}
         </div>
