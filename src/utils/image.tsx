@@ -74,7 +74,7 @@ export async function getThumbnailData(filePromise: File | Promise<File>) {
 export async function getRenderData(filePromise: File | Promise<File>) {
   const file = await filePromise;
 
-  if (file) {
+  if (file && file instanceof File) {
     return { type: file.type, url: URL.createObjectURL(file) };
   } else {
     return { type: '', url: '' };
