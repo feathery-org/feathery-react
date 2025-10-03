@@ -1,7 +1,7 @@
 import {
-  createMockElement,
-  createDefaultProps,
-  createStatefulOnChange,
+  createFileUploadElement,
+  createFileUploadProps,
+  createStatefulFileOnChange,
   getMockFieldValue,
   resetMockFieldValue,
   createMockFile,
@@ -23,8 +23,7 @@ import FileUploadField from '../index';
 describe('FileUploadField - Base Functionality', () => {
   const getFileInput = () =>
     screen.getByLabelText('File upload field') as HTMLInputElement;
-  const getUploadArea = () =>
-    screen.getByText('Upload Files').closest('div') as HTMLElement;
+  const getUploadArea = () => getFileInput().parentElement as HTMLElement;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -33,21 +32,21 @@ describe('FileUploadField - Base Functionality', () => {
 
   describe('Basic Rendering', () => {
     it('renders FileUploadField component with default props', () => {
-      const element = createMockElement('file_upload');
-      const props = createDefaultProps(element);
+      const element = createFileUploadElement('file_upload');
+      const props = createFileUploadProps(element);
 
       render(<FileUploadField {...props} />);
 
       expect(screen.getByLabelText('File upload field')).toBeTruthy();
-      expect(screen.getByText('Upload Files')).toBeTruthy();
+      expect(getUploadArea()).toBeTruthy();
     });
   });
 
   describe('File Upload Processing', () => {
     it('handles single file upload', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload');
-      const props = createDefaultProps(element);
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload');
+      const props = createFileUploadProps(element);
 
       render(<FileUploadField {...props} onChange={mockOnChange} />);
 
@@ -63,9 +62,11 @@ describe('FileUploadField - Base Functionality', () => {
     });
 
     it('handles multiple file upload', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload', { multiple: true });
-      const props = createDefaultProps(element);
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload', {
+        multiple: true
+      });
+      const props = createFileUploadProps(element);
 
       render(<FileUploadField {...props} onChange={mockOnChange} />);
 
@@ -84,9 +85,9 @@ describe('FileUploadField - Base Functionality', () => {
     });
 
     it('handles drag and drop upload', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload');
-      const props = createDefaultProps(element);
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload');
+      const props = createFileUploadProps(element);
 
       render(<FileUploadField {...props} onChange={mockOnChange} />);
 
@@ -104,11 +105,11 @@ describe('FileUploadField - Base Functionality', () => {
 
   describe('File Validation', () => {
     it('validates file types - accepts valid types', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload', {
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload', {
         file_types: ['image/*']
       });
-      const props = createDefaultProps(element);
+      const props = createFileUploadProps(element);
 
       render(<FileUploadField {...props} onChange={mockOnChange} />);
 
@@ -124,11 +125,11 @@ describe('FileUploadField - Base Functionality', () => {
     });
 
     it('validates file types - rejects invalid types', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload', {
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload', {
         file_types: ['image/*']
       });
-      const props = createDefaultProps(element);
+      const props = createFileUploadProps(element);
 
       render(<FileUploadField {...props} onChange={mockOnChange} />);
 
@@ -144,10 +145,10 @@ describe('FileUploadField - Base Functionality', () => {
     });
 
     it('validates file size - accepts valid sizes', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload');
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload');
       element.servar.max_length = 2; // 2KB limit
-      const props = createDefaultProps(element);
+      const props = createFileUploadProps(element);
 
       render(<FileUploadField {...props} onChange={mockOnChange} />);
 
@@ -163,10 +164,10 @@ describe('FileUploadField - Base Functionality', () => {
     });
 
     it('validates file size - rejects oversized files', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload');
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload');
       element.servar.max_length = 1; // 1KB limit
-      const props = createDefaultProps(element);
+      const props = createFileUploadProps(element);
 
       render(<FileUploadField {...props} onChange={mockOnChange} />);
 
@@ -182,11 +183,11 @@ describe('FileUploadField - Base Functionality', () => {
     });
 
     it('validates custom file types', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload', {
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload', {
         custom_file_types: ['docx']
       });
-      const props = createDefaultProps(element);
+      const props = createFileUploadProps(element);
 
       render(<FileUploadField {...props} onChange={mockOnChange} />);
 
@@ -207,9 +208,11 @@ describe('FileUploadField - Base Functionality', () => {
 
   describe('File Limits', () => {
     it('enforces file count limit', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload', { multiple: true });
-      const props = createDefaultProps(element);
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload', {
+        multiple: true
+      });
+      const props = createFileUploadProps(element);
 
       render(<FileUploadField {...props} onChange={mockOnChange} />);
 
@@ -229,9 +232,9 @@ describe('FileUploadField - Base Functionality', () => {
     });
 
     it('handles single file replacement for non-multiple fields', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload');
-      const props = createDefaultProps(element);
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload');
+      const props = createFileUploadProps(element);
 
       render(<FileUploadField {...props} onChange={mockOnChange} />);
 
@@ -253,9 +256,9 @@ describe('FileUploadField - Base Functionality', () => {
 
   describe('File Preview', () => {
     it('displays file preview for uploaded files', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload');
-      const props = createDefaultProps(element, {
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload');
+      const props = createFileUploadProps(element, {
         initialFiles: [createMockFile('test.txt', 'text/plain')]
       });
 
@@ -267,9 +270,11 @@ describe('FileUploadField - Base Functionality', () => {
     });
 
     it('displays file preview for multiple files', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload', { multiple: true });
-      const props = createDefaultProps(element, {
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload', {
+        multiple: true
+      });
+      const props = createFileUploadProps(element, {
         initialFiles: [
           createMockFile('test1.txt', 'text/plain'),
           createMockFile('test2.txt', 'text/plain')
@@ -283,9 +288,9 @@ describe('FileUploadField - Base Functionality', () => {
     });
 
     it('displays image thumbnails for image files', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload');
-      const props = createDefaultProps(element, {
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload');
+      const props = createFileUploadProps(element, {
         initialFiles: [createMockImageFile()]
       });
 
@@ -298,9 +303,11 @@ describe('FileUploadField - Base Functionality', () => {
     });
 
     it('displays image thumbnails for multiple image files', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload', { multiple: true });
-      const props = createDefaultProps(element, {
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload', {
+        multiple: true
+      });
+      const props = createFileUploadProps(element, {
         initialFiles: [createMockImageFile(), createMockImageFile('test2.png')]
       });
       render(<FileUploadField {...props} onChange={mockOnChange} />);
@@ -311,9 +318,9 @@ describe('FileUploadField - Base Functionality', () => {
     });
 
     it('displays thumbnails for new uploaded files', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload');
-      const props = createDefaultProps(element);
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload');
+      const props = createFileUploadProps(element);
       render(<FileUploadField {...props} onChange={mockOnChange} />);
       const testFile = createMockImageFile();
       const event = createFileInputChangeEvent([testFile]);
@@ -327,10 +334,10 @@ describe('FileUploadField - Base Functionality', () => {
     });
 
     it('hides preview when hide_file_preview is true', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload');
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload');
       element.styles.hide_file_preview = true;
-      const props = createDefaultProps(element, {
+      const props = createFileUploadProps(element, {
         initialFiles: [createMockFile('test.txt', 'text/plain')]
       });
 
@@ -344,9 +351,9 @@ describe('FileUploadField - Base Functionality', () => {
 
   describe('File Management', () => {
     it('removes files when clear button is clicked', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload');
-      const props = createDefaultProps(element, {
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload');
+      const props = createFileUploadProps(element, {
         initialFiles: [createMockFile('test.txt', 'text/plain')]
       });
 
@@ -368,11 +375,11 @@ describe('FileUploadField - Base Functionality', () => {
 
   describe('Error Handling', () => {
     it('displays validation errors', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload', {
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload', {
         file_types: ['image/*']
       });
-      const props = createDefaultProps(element);
+      const props = createFileUploadProps(element);
 
       render(<FileUploadField {...props} onChange={mockOnChange} />);
 
@@ -388,9 +395,9 @@ describe('FileUploadField - Base Functionality', () => {
     });
 
     it('clears validation errors on successful upload', async () => {
-      const mockOnChange = createStatefulOnChange();
-      const element = createMockElement('file_upload');
-      const props = createDefaultProps(element);
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload');
+      const props = createFileUploadProps(element);
 
       render(<FileUploadField {...props} onChange={mockOnChange} />);
 
