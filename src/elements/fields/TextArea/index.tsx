@@ -1,10 +1,10 @@
 import React, { memo, useRef, useState } from 'react';
 
-import Placeholder from '../components/Placeholder';
-import InlineTooltip from '../components/InlineTooltip';
-import { resetStyles } from '../styles';
-import useBorder from '../components/useBorder';
-import { hoverStylesGuard } from '../../utils/browser';
+import Placeholder from '../../components/Placeholder';
+import InlineTooltip from '../../components/InlineTooltip';
+import { resetStyles } from '../../styles';
+import useBorder from '../../components/useBorder';
+import { hoverStylesGuard } from '../../../utils/browser';
 
 function TextArea({
   element,
