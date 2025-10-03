@@ -1,14 +1,14 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { FormControl } from '../components/FormControl';
-import { resetStyles } from '../styles';
+import { FormControl } from '../../components/FormControl';
+import { resetStyles } from '../../styles';
 import {
   applyCheckableInputStyles,
   applyHeightWidthMarginByFontSize,
   composeCheckableInputStyle
-} from './CheckboxField';
-import InlineTooltip from '../components/InlineTooltip';
-import { iosScrollOnFocus } from '../../utils/browser';
-import useSalesforceSync from '../../hooks/useSalesforceSync';
+} from '../CheckboxField';
+import InlineTooltip from '../../components/InlineTooltip';
+import { iosScrollOnFocus } from '../../../utils/browser';
+import useSalesforceSync from '../../../hooks/useSalesforceSync';
 
 const applyRadioGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('radioGroup');
@@ -171,6 +171,7 @@ function RadioButtonGroupField({
                   ? `${servar.key}-${repeatIndex}`
                   : servar.key
               }
+              value={otherVal || ''}
               checked={otherChecked}
               disabled={disabled || loadingDynamicOptions}
               onChange={(e) => {
