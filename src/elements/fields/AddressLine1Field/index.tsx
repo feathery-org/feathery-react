@@ -116,7 +116,7 @@ function AddressLine1({
             setRef(ref);
           }}
           onKeyDown={(e) => {
-            if (!isKeydownValid) return;
+            if (!isKeydownValid(e)) return;
             if (e.key === 'Enter') onEnter(e);
             else setShowOptions(e.key !== 'Escape');
           }}
