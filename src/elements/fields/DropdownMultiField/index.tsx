@@ -1,18 +1,18 @@
 import React, { useRef, useState } from 'react';
-import useBorder from '../components/useBorder';
+import useBorder from '../../components/useBorder';
 import Select, {
   components as SelectComponents,
   OptionProps
 } from 'react-select';
 import CreatableSelect from 'react-select/creatable';
-import { hoverStylesGuard } from '../../utils/browser';
-import InlineTooltip from '../components/InlineTooltip';
-import { DROPDOWN_Z_INDEX } from './index';
-import { Tooltip } from '../components/Tooltip';
-import { FORM_Z_INDEX } from '../../utils/styles';
-import Placeholder from '../components/Placeholder';
-import useSalesforceSync from '../../hooks/useSalesforceSync';
-import Overlay from '../components/Overlay';
+import { hoverStylesGuard } from '../../../utils/browser';
+import InlineTooltip from '../../components/InlineTooltip';
+import { DROPDOWN_Z_INDEX } from '../index';
+import { Tooltip } from '../../components/Tooltip';
+import { FORM_Z_INDEX } from '../../../utils/styles';
+import Placeholder from '../../components/Placeholder';
+import useSalesforceSync from '../../../hooks/useSalesforceSync';
+import Overlay from '../../components/Overlay';
 
 type OptionData = {
   tooltip?: string;
