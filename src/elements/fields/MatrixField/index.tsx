@@ -1,10 +1,10 @@
 import React, { useMemo, useRef } from 'react';
-import TextHoverTooltip from '../components/TextHoverTooltip';
+import TextHoverTooltip from '../../components/TextHoverTooltip';
 import {
   applyCheckableInputStyles,
   composeCheckableInputStyle
-} from './CheckboxField';
-import { iosScrollOnFocus } from '../../utils/browser';
+} from '../CheckboxField';
+import { iosScrollOnFocus } from '../../../utils/browser';
 
 function MatrixField({
   element,
