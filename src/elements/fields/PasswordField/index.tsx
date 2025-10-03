@@ -1,12 +1,12 @@
 import React, { memo, useRef, useState } from 'react';
 
-import Placeholder from '../components/Placeholder';
-import InlineTooltip from '../components/InlineTooltip';
-import { resetStyles } from '../styles';
-import useBorder from '../components/useBorder';
-import { FORM_Z_INDEX } from '../../utils/styles';
-import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
-import { HideEyeIcon, ShowEyeIcon } from '../components/icons';
+import Placeholder from '../../components/Placeholder';
+import InlineTooltip from '../../components/InlineTooltip';
+import { resetStyles } from '../../styles';
+import useBorder from '../../components/useBorder';
+import { FORM_Z_INDEX } from '../../../utils/styles';
+import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
+import { HideEyeIcon, ShowEyeIcon } from '../../components/icons';
 
 function PasswordField({
   element,
