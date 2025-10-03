@@ -63,6 +63,7 @@ export const resetMockFieldValue = () => {
 // Shared responsive styles mock
 export const mockResponsiveStyles = {
   getTarget: jest.fn(() => ({})),
+  getTargets: jest.fn(() => ({})),
   getMobileBreakpoint: jest.fn(() => DEFAULT_MOBILE_BREAKPOINT),
   applyFontStyles: jest.fn(),
   // Additional methods needed for CheckboxField

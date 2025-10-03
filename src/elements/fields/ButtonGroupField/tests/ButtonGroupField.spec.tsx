@@ -20,7 +20,7 @@ import {
   expectErrorInputToHaveAttributes
 } from './test-utils';
 import React from 'react';
-import { render, fireEvent, screen } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import ButtonGroupField from '../index';
 
 describe('ButtonGroupField', () => {
@@ -281,7 +281,7 @@ describe('ButtonGroupField', () => {
       expect(getButtonLabels()).toEqual(['Display 1', 'val2']);
     });
 
-    it('renders empty label when label is empty string', () => {
+    it('renders option when label is empty string', () => {
       const options = ['val1', 'val2'];
       const labels = ['', 'Label 2'];
       const element = createButtonGroupElement(
@@ -295,7 +295,7 @@ describe('ButtonGroupField', () => {
       const label1 = getButtonLabel(0);
       const label2 = getButtonLabel(1);
 
-      expect(label1).toBe('');
+      expect(label1).toBe('val1');
       expect(label2).toBe('Label 2');
     });
   });
