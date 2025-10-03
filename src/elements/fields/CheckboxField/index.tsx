@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { hoverStylesGuard, iosScrollOnFocus } from '../../utils/browser';
+import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 
 // Draws a checkmark, similar in dimensions to the default Chrome checkbox, in CSS
 const checkmarkClipPath =
