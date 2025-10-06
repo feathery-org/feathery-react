@@ -2,4 +2,11 @@ build/
 dist/
 node_modules/
 .snapshots/
-*.min.js
+\*.min.js
+
+**/tests/**
+**/**tests**/**
+_.test.ts
+_.test.tsx
+_.spec.ts
+_.spec.tsx

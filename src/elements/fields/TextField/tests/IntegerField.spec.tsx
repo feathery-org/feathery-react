@@ -1,7 +1,7 @@
 import {
-  createMockElement,
-  createDefaultProps,
-  createStatefulOnAccept,
+  createTextFieldElement,
+  createTextFieldProps,
+  createStatefulAcceptHandler,
   getMockFieldValue,
   resetMockFieldValue
 } from './test-utils';
@@ -19,8 +19,8 @@ describe('TextField - Integer Type', () => {
 
   describe('Integer Field Rendering', () => {
     it('renders integer input with decimal input mode', () => {
-      const integerElement = createMockElement('integer_field');
-      const props = createDefaultProps(integerElement);
+      const integerElement = createTextFieldElement('integer_field');
+      const props = createTextFieldProps(integerElement);
 
       render(<TextField {...props} />);
 
@@ -30,9 +30,9 @@ describe('TextField - Integer Type', () => {
 
   describe('Integer Field Number Processing', () => {
     it('handles number input', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const integerElement = createMockElement('integer_field');
-      const props = createDefaultProps(integerElement);
+      const mockOnAccept = createStatefulAcceptHandler();
+      const integerElement = createTextFieldElement('integer_field');
+      const props = createTextFieldProps(integerElement);
 
       render(<TextField {...props} onAccept={mockOnAccept} />);
 
@@ -54,9 +54,9 @@ describe('TextField - Integer Type', () => {
     });
 
     it('handles decimal separator with user input', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const integerElement = createMockElement('integer_field');
-      const props = createDefaultProps(integerElement);
+      const mockOnAccept = createStatefulAcceptHandler();
+      const integerElement = createTextFieldElement('integer_field');
+      const props = createTextFieldProps(integerElement);
 
       render(<TextField {...props} onAccept={mockOnAccept} />);
 
@@ -78,9 +78,9 @@ describe('TextField - Integer Type', () => {
     });
 
     it('restricts input to numeric characters', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const integerElement = createMockElement('integer_field');
-      const props = createDefaultProps(integerElement);
+      const mockOnAccept = createStatefulAcceptHandler();
+      const integerElement = createTextFieldElement('integer_field');
+      const props = createTextFieldProps(integerElement);
 
       render(<TextField {...props} onAccept={mockOnAccept} />);
 
@@ -102,10 +102,10 @@ describe('TextField - Integer Type', () => {
     });
 
     it('handles currency formatting', () => {
-      const mockOnAccept = createStatefulOnAccept();
-      const integerElement = createMockElement('integer_field');
+      const mockOnAccept = createStatefulAcceptHandler();
+      const integerElement = createTextFieldElement('integer_field');
       integerElement.servar.format = 'currency';
-      const props = createDefaultProps(integerElement);
+      const props = createTextFieldProps(integerElement);
 
       render(<TextField {...props} onAccept={mockOnAccept} />);
 
