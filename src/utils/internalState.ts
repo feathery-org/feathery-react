@@ -21,7 +21,7 @@ export type RunIntegrationActions = (
 
 export type ExtractionActionOptions = {
   waitForCompletion?: boolean;
-  pages?: number[];
+  pages?: number[] | number[][];
   variantId?: string;
   meetingUrl?: string;
 };
@@ -91,7 +91,7 @@ export interface FormInternalState {
   runAIExtraction: (
     extractionId: string,
     options: ExtractionActionOptions | boolean,
-    pages?: number[]
+    pages?: number[] | number[][]
   ) => Promise<Record<string, string>>;
   getConfig: GetConfig;
 }
