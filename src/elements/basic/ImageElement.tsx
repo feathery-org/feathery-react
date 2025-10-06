@@ -45,7 +45,7 @@ function ImageElement({
         setDocumentType('');
         setDocumentUrl(imageFieldSource);
       } else {
-        getRenderData(imageFieldSource).then((data) => {
+        getRenderData(imageFieldSource as any).then((data) => {
           setDocumentType(data.type);
           setDocumentUrl(data.url);
         });
