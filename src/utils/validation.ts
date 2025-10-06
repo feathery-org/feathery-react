@@ -217,7 +217,7 @@ const validators = {
       if (a[urlObj.origin.length] === ':') return false;
       // Check for filtered out special characters, e.g.
       // https://@google.com -> https://google.com
-      if (!a.includes(`/${hostname}`)) return false;
+      if (!a.toLowerCase().includes(`/${hostname.toLowerCase()}`)) return false;
       return parts.length > 1;
     } catch (e) {
       return false;
