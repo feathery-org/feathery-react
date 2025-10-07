@@ -286,8 +286,8 @@ export default function DropdownMultiField({
             create
               ? () => null
               : noOptionsText
-                ? () => noOptionsText
-                : undefined
+              ? () => noOptionsText
+              : undefined
           }
           options={options}
           isOptionDisabled={() =>
