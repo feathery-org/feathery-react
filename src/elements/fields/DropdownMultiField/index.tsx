@@ -99,7 +99,9 @@ export default function DropdownMultiField({
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
 
   const translation = element.properties.translate || {};
-  const noOptionsText: string | undefined = translation.no_options;
+  const noOptionsMessage = translation.no_options
+    ? () => translation.no_options as string
+    : undefined;
 
   const addFieldValOptions = (options: Options) => {
     const newOptions = Array.isArray(options) ? [...options] : [];
@@ -173,14 +175,17 @@ export default function DropdownMultiField({
     create && translation.create_option_label
       ? translation.create_option_label
       : null;
-  const formatCreateLabel = create
-    ? (inputValue: string) =>
-        createOptionLabelTemplate
-          ? createOptionLabelTemplate.includes('{value}')
-            ? createOptionLabelTemplate.replace(/\{value\}/g, inputValue)
-            : `${createOptionLabelTemplate} "${inputValue}"`
-          : `Create "${inputValue}"`
-    : null;
+
+  let formatCreateLabel: ((inputValue: string) => string) | undefined;
+  if (create && createOptionLabelTemplate) {
+    const template = createOptionLabelTemplate;
+    formatCreateLabel = (inputValue: string) => {
+      if (template.includes('{value}')) {
+        return template.replace(/\{value\}/g, inputValue);
+      }
+      return `${template} "${inputValue}"`;
+    };
+  }
   const Component = create ? CreatableSelect : Select;
 
   responsiveStyles.applyFontStyles('field');
@@ -282,13 +287,7 @@ export default function DropdownMultiField({
           onChange={onChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          noOptionsMessage={
-            create
-              ? () => null
-              : noOptionsText
-              ? () => noOptionsText
-              : undefined
-          }
+          noOptionsMessage={create ? () => null : noOptionsMessage}
           options={options}
           isOptionDisabled={() =>
             (servar.max_length && selectVal.length >= servar.max_length) ||
@@ -297,11 +296,7 @@ export default function DropdownMultiField({
           isMulti
           placeholder=''
           aria-label={element.properties.aria_label}
-          {...(formatCreateLabel
-            ? {
-                formatCreateLabel
-              }
-            : {})}
+          formatCreateLabel={formatCreateLabel || undefined}
         />
         <Placeholder
           value={selectVal.length || focused}
