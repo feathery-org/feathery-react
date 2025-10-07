@@ -22,14 +22,15 @@ type OptionData = {
 
 type Options = string[] | OptionData[];
 
-const DEFAULT_NO_OPTIONS_TEXT = 'No options';
-const DEFAULT_CREATE_OPTION_LABEL = 'Create {value}';
-
-const TooltipOption = ({ children, ...props }: OptionProps<OptionData, true>) => {
+const TooltipOption = ({
+  children,
+  ...props
+}: OptionProps<OptionData, true>) => {
   const optionRef = useRef<HTMLDivElement>(null);
   const [showTooltip, setShowTooltip] = useState(false);
-  const containerRef = (props.selectProps as any)
-    .containerRef as React.RefObject<HTMLElement | null> | undefined;
+  const containerRef = (props.selectProps as any).containerRef as
+    | React.RefObject<HTMLElement | null>
+    | undefined;
 
   return (
     <div
@@ -98,7 +99,7 @@ export default function DropdownMultiField({
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
 
   const translation = element.properties.translate || {};
-  const noOptionsText = translation.no_options || DEFAULT_NO_OPTIONS_TEXT;
+  const noOptionsText: string | undefined = translation.no_options;
 
   const addFieldValOptions = (options: Options) => {
     const newOptions = Array.isArray(options) ? [...options] : [];
@@ -168,8 +169,17 @@ export default function DropdownMultiField({
   const hasTooltip = !!element.properties.tooltipText;
   const chevronPosition = hasTooltip ? 30 : 10;
   const create = servar.metadata.creatable_options;
-  const createOptionLabelTemplate = create
-    ? translation.create_option_label ?? DEFAULT_CREATE_OPTION_LABEL
+  const createOptionLabelTemplate =
+    create && translation.create_option_label
+      ? translation.create_option_label
+      : null;
+  const formatCreateLabel = create
+    ? (inputValue: string) =>
+        createOptionLabelTemplate
+          ? createOptionLabelTemplate.includes('{value}')
+            ? createOptionLabelTemplate.replace(/\{value\}/g, inputValue)
+            : `${createOptionLabelTemplate} "${inputValue}"`
+          : `Create "${inputValue}"`
     : null;
   const Component = create ? CreatableSelect : Select;
 
@@ -272,7 +282,13 @@ export default function DropdownMultiField({
           onChange={onChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          noOptionsMessage={create ? () => null : () => noOptionsText}
+          noOptionsMessage={
+            create
+              ? () => null
+              : noOptionsText
+                ? () => noOptionsText
+                : undefined
+          }
           options={options}
           isOptionDisabled={() =>
             (servar.max_length && selectVal.length >= servar.max_length) ||
@@ -281,15 +297,9 @@ export default function DropdownMultiField({
           isMulti
           placeholder=''
           aria-label={element.properties.aria_label}
-          {...(createOptionLabelTemplate
+          {...(formatCreateLabel
             ? {
-                formatCreateLabel: (inputValue: string) =>
-                  createOptionLabelTemplate.includes('{value}')
-                    ? createOptionLabelTemplate.replace(
-                        /\{value\}/g,
-                        inputValue
-                      )
-                    : `${createOptionLabelTemplate} ${inputValue}`
+                formatCreateLabel
               }
             : {})}
         />
