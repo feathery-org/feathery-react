@@ -70,6 +70,7 @@ import {
   FieldValues,
   fieldValues,
   initState,
+  setFieldValues,
   updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
@@ -268,6 +269,7 @@ export interface LogicRule {
   code: string;
   enabled: boolean;
   valid: boolean;
+  server_side: boolean;
 }
 
 const AsyncFunction = async function () {}.constructor;
@@ -768,6 +770,24 @@ function Form({
           logicRan = true;
 
           if (toAwait) await toAwait;
+
+          if (logicRule.server_side) {
+            try {
+              const response = await client.runServerSideLogicRule(
+                logicRule.id
+              );
+              if (response?.field_data) {
+                setFieldValues(response?.field_data, true, true);
+              } else if (response?.error) {
+                handleRuleError(response?.error, logicRule);
+              }
+            } catch (e: any) {
+              const errorMessage =
+                e.reason?.message ?? e.error?.message ?? e.message;
+              handleRuleError(errorMessage, logicRule);
+            }
+            continue;
+          }
 
           let logicRuleCode = logicRule.code;
 
