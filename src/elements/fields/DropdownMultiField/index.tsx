@@ -171,20 +171,13 @@ export default function DropdownMultiField({
   const hasTooltip = !!element.properties.tooltipText;
   const chevronPosition = hasTooltip ? 30 : 10;
   const create = servar.metadata.creatable_options;
-  const createOptionLabelTemplate =
-    create && translation.create_option_label
-      ? translation.create_option_label
-      : null;
-
   let formatCreateLabel: ((inputValue: string) => string) | undefined;
-  if (create && createOptionLabelTemplate) {
-    const template = createOptionLabelTemplate;
-    formatCreateLabel = (inputValue: string) => {
-      if (template.includes('{value}')) {
-        return template.replace(/\{value\}/g, inputValue);
-      }
-      return `${template} "${inputValue}"`;
-    };
+  if (create && translation.create_option_label) {
+    const template = translation.create_option_label;
+    const hasValuePlaceholder = template.includes('{value}');
+    formatCreateLabel = hasValuePlaceholder
+      ? (inputValue: string) => template.replace(/\{value\}/g, inputValue)
+      : (inputValue: string) => `${template} "${inputValue}"`;
   }
   const Component = create ? CreatableSelect : Select;
 
