@@ -758,6 +758,10 @@ function Form({
           if (toAwait) await toAwait;
 
           if (logicRule.server_side) {
+            // for now, skip running server-side logic rules if they're draft rules
+            if (_draft) {
+              continue;
+            }
             try {
               const response = await client.runServerSideLogicRule(
                 logicRule.id
