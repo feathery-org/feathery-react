@@ -1,4 +1,12 @@
-import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 
 import timeZoneCountries from './timeZoneCountries';
 import Placeholder from '../../components/Placeholder';
@@ -10,7 +18,11 @@ import { isNum } from '../../../utils/primitives';
 import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
-import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
+import {
+  featheryWindow,
+  hoverStylesGuard,
+  iosScrollOnFocus
+} from '../../../utils/browser';
 import { isValidPhoneLength } from './validation';
 import Overlay from '../../components/Overlay';
 
@@ -44,6 +56,7 @@ function PhoneField({
 }: any) {
   const triggerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLElement>(null);
+  const fieldWrapperRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<any>(null);
   const inputRef = useRef<any>(null);
   const [cursor, setCursor] = useState<number | null>(null);
@@ -78,6 +91,7 @@ function PhoneField({
     element.properties.placeholder
   );
   const [focused, setFocused] = useState(false);
+  const [dropdownWidth, setDropdownWidth] = useState<number | undefined>();
 
   const { borderStyles, customBorder } = useBorder({
     element,
@@ -159,6 +173,41 @@ function PhoneField({
       }
     : {};
 
+  const measureDropdownWidth = useCallback(() => {
+    const wrapper = fieldWrapperRef.current;
+    if (!wrapper) return;
+    const { width } = wrapper.getBoundingClientRect();
+    setDropdownWidth(width > 0 ? width : undefined);
+  }, []);
+
+  useLayoutEffect(() => {
+    measureDropdownWidth();
+  }, [measureDropdownWidth]);
+
+  useEffect(() => {
+    // Keep dropdown width in sync with viewport changes (rotation, window drag).
+    const handleResize = () => measureDropdownWidth();
+    const win = featheryWindow();
+    win.addEventListener('resize', handleResize);
+
+    return () => {
+      win.removeEventListener('resize', handleResize);
+    };
+  }, [measureDropdownWidth]);
+
+  useEffect(() => {
+    // Track layout-driven width changes (e.g., responsive grid shifts).
+    const wrapper = fieldWrapperRef.current;
+    if (!wrapper || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(() => measureDropdownWidth());
+    observer.observe(wrapper);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [measureDropdownWidth]);
+
   return (
     <div
       ref={containerRef}
@@ -175,6 +224,7 @@ function PhoneField({
       {children}
       {fieldLabel}
       <div
+        ref={fieldWrapperRef}
         css={{
           display: 'flex',
           position: 'relative',
@@ -227,7 +277,6 @@ function PhoneField({
           offset={0}
         >
           <CountryDropdown
-            hide={() => setShow(false)}
             itemOnClick={(countryCode: string, phoneCode: string) => {
               setCurCountryCode(countryCode);
               setRawNumber(phoneCode);
@@ -237,6 +286,7 @@ function PhoneField({
               inputRef.current.focus();
             }}
             responsiveStyles={responsiveStyles}
+            dropdownWidth={dropdownWidth}
             ref={(ref: any) => {
               dropdownRef.current = ref;
             }}

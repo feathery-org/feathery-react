@@ -7,7 +7,7 @@ import { authState } from '../../../auth/LoginForm';
 import { DROPDOWN_Z_INDEX } from '../index';
 
 function CountryDropdown(
-  { show, itemOnClick, responsiveStyles, ...props }: any,
+  { show, itemOnClick, responsiveStyles, dropdownWidth, ...props }: any,
   ref: any
 ) {
   const listItemRef = useRef<Record<string, any>>({});
@@ -126,6 +126,9 @@ function CountryDropdown(
     );
   }, [query]);
 
+  const resolvedWidth =
+    dropdownWidth !== undefined ? `${dropdownWidth}px` : '100%';
+
   return (
     <ul
       css={{
@@ -141,7 +144,8 @@ function CountryDropdown(
         maxHeight: '210px',
         overflowY: 'scroll',
         overflowX: 'hidden',
-        width: '400px',
+        boxSizing: 'border-box',
+        width: resolvedWidth,
         ...responsiveStyles.getTarget('dropdown')
       }}
       ref={ref}
