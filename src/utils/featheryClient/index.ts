@@ -851,7 +851,7 @@ export default class FeatheryClient extends IntegrationClient {
       fuser_key: userId
     };
 
-    const url = `${API_URL}logic-rule/execute/`;
+    const url = `${API_URL}panel/logic-rule/execute/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
@@ -859,15 +859,8 @@ export default class FeatheryClient extends IntegrationClient {
       keepalive: false
     };
 
-    const run = () =>
-      this._fetch(url, options).then((response) =>
-        response ? response.json() : Promise.resolve()
-      );
-    return this.offlineRequestHandler.runOrSaveRequest(
-      run,
-      url,
-      options,
-      'serverSideLogicRule'
+    return this._fetch(url, options).then((response) =>
+      response ? response.json() : Promise.resolve()
     );
   }
 
