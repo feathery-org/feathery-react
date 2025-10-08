@@ -18,11 +18,7 @@ import { isNum } from '../../../utils/primitives';
 import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
-import {
-  featheryWindow,
-  hoverStylesGuard,
-  iosScrollOnFocus
-} from '../../../utils/browser';
+import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { isValidPhoneLength } from './validation';
 import Overlay from '../../components/Overlay';
 
@@ -182,30 +178,6 @@ function PhoneField({
 
   useLayoutEffect(() => {
     measureDropdownWidth();
-  }, [measureDropdownWidth]);
-
-  useEffect(() => {
-    // Keep dropdown width in sync with viewport changes (rotation, window drag).
-    const handleResize = () => measureDropdownWidth();
-    const win = featheryWindow();
-    win.addEventListener('resize', handleResize);
-
-    return () => {
-      win.removeEventListener('resize', handleResize);
-    };
-  }, [measureDropdownWidth]);
-
-  useEffect(() => {
-    // Track layout-driven width changes (e.g., responsive grid shifts).
-    const wrapper = fieldWrapperRef.current;
-    if (!wrapper || typeof ResizeObserver === 'undefined') return;
-
-    const observer = new ResizeObserver(() => measureDropdownWidth());
-    observer.observe(wrapper);
-
-    return () => {
-      observer.disconnect();
-    };
   }, [measureDropdownWidth]);
 
   return (
