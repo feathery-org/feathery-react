@@ -18,7 +18,11 @@ import { isNum } from '../../../utils/primitives';
 import { phoneLibPromise } from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
-import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
+import {
+  hoverStylesGuard,
+  iosScrollOnFocus,
+  featheryWindow
+} from '../../../utils/browser';
 import { isValidPhoneLength } from './validation';
 import Overlay from '../../components/Overlay';
 
@@ -176,8 +180,30 @@ function PhoneField({
     setDropdownWidth(width > 0 ? width : undefined);
   }, []);
 
+  // ensure measureDropdownWidth is useCallback-memoized
   useLayoutEffect(() => {
-    measureDropdownWidth();
+    const win = featheryWindow();
+    if (!win || typeof win.addEventListener !== 'function') return;
+
+    let raf = 0;
+    const measure = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        measureDropdownWidth();
+      });
+    };
+
+    // Viewport changes
+    win.addEventListener('resize', measure);
+
+    // initial
+    measure();
+
+    return () => {
+      win.removeEventListener('resize', measure);
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, [measureDropdownWidth]);
 
   return (
