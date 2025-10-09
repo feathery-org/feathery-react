@@ -241,7 +241,11 @@ async function updateTheme(newTheme = '') {
  * we need to explicitly convert any files to file Promises
  * since they may not have done so
  */
-function setFieldValues(userVals: FieldValues, rerender = true): void {
+function setFieldValues(
+  userVals: FieldValues,
+  rerender = true,
+  skipSubmit = false
+): void {
   const result: FieldValues = {};
   Object.entries(userVals).forEach(([key, value]) => {
     if (Array.isArray(value))
@@ -250,7 +254,7 @@ function setFieldValues(userVals: FieldValues, rerender = true): void {
   });
 
   Object.assign(fieldValues, result);
-  defaultClient.submitCustom(result);
+  if (!skipSubmit) defaultClient.submitCustom(result);
 
   if (rerender) rerenderAllForms();
 }

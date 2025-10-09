@@ -70,6 +70,7 @@ import {
   FieldValues,
   fieldValues,
   initState,
+  setFieldValues,
   updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
@@ -268,6 +269,7 @@ export interface LogicRule {
   code: string;
   enabled: boolean;
   valid: boolean;
+  server_side: boolean;
 }
 
 const AsyncFunction = async function () {}.constructor;
@@ -769,57 +771,78 @@ function Form({
 
           if (toAwait) await toAwait;
 
-          let logicRuleCode = logicRule.code;
+          if (logicRule.server_side) {
+            // for now, skip running server-side logic rules if they're draft rules
+            if (_draft) {
+              continue;
+            }
+            try {
+              const response = await client.runServerSideLogicRule(
+                logicRule.id
+              );
+              if (response?.field_data) {
+                setFieldValues(response?.field_data, true, true);
+              } else if (response?.error) {
+                handleRuleError(response?.error, logicRule);
+              }
+            } catch (e: any) {
+              const errorMessage =
+                e.reason?.message ?? e.error?.message ?? e.message;
+              handleRuleError(errorMessage, logicRule);
+            }
+          } else {
+            let logicRuleCode = logicRule.code;
 
-          if (extractedSharedCodeInfo.length > 0) {
-            logicRuleCode = replaceImportsWithDefinitions(
-              logicRule.code,
-              extractedSharedCodeInfo
+            if (extractedSharedCodeInfo.length > 0) {
+              logicRuleCode = replaceImportsWithDefinitions(
+                logicRule.code,
+                extractedSharedCodeInfo
+              );
+            }
+
+            // Note:
+            // AsyncFunction is nice and tidy but was throwing an error when trying to use await at
+            // the top level of the user code.
+            // The error was: Uncaught (in promise) SyntaxError: await is only valid in async functions and the top level bodies of modules.
+            // So, then tried eval instead, but had a serious issue with the webpacked published
+            // lib which was just invalid. So, now wrapping the rule code
+            // in an async function and calling it immediately from within an AsyncFunction.
+            const asyncWrappedCode = `return (async () => { ${logicRuleCode}\n })()`;
+
+            // Do not inject field globals that are invalid js identifiers or that collide
+            // with a javascript or browser reserved word. This avoids validation errors
+            // should they try to use it in a rule. However, even if they do not use it
+            // in a rule, the runtime injects that field and this causes an exception
+            // at runtime due to the reserved word being used or invalid identifier.
+
+            const injectableFields = Object.entries(
+              internalState[_internalId]?.fields ?? {}
+            )
+              .filter(([key]) => isValidFieldIdentifier(key))
+              .reduce((acc, [key, field]) => {
+                acc[key] = field;
+                return acc;
+              }, {} as Record<string, Field>);
+            // @ts-ignore
+            const fn = new AsyncFunction(
+              'feathery',
+              // pass in all the fields as arguments so they are globals in the rule code
+              ...Object.keys(injectableFields),
+              asyncWrappedCode
             );
-          }
-
-          // Note:
-          // AsyncFunction is nice and tidy but was throwing an error when trying to use await at
-          // the top level of the user code.
-          // The error was: Uncaught (in promise) SyntaxError: await is only valid in async functions and the top level bodies of modules.
-          // So, then tried eval instead, but had a serious issue with the webpacked published
-          // lib which was just invalid. So, now wrapping the rule code
-          // in an async function and calling it immediately from within an AsyncFunction.
-          const asyncWrappedCode = `return (async () => { ${logicRuleCode}\n })()`;
-
-          // Do not inject field globals that are invalid js identifiers or that collide
-          // with a javascript or browser reserved word. This avoids validation errors
-          // should they try to use it in a rule. However, even if they do not use it
-          // in a rule, the runtime injects that field and this causes an exception
-          // at runtime due to the reserved word being used or invalid identifier.
-
-          const injectableFields = Object.entries(
-            internalState[_internalId]?.fields ?? {}
-          )
-            .filter(([key]) => isValidFieldIdentifier(key))
-            .reduce((acc, [key, field]) => {
-              acc[key] = field;
-              return acc;
-            }, {} as Record<string, Field>);
-          // @ts-ignore
-          const fn = new AsyncFunction(
-            'feathery',
-            // pass in all the fields as arguments so they are globals in the rule code
-            ...Object.keys(injectableFields),
-            asyncWrappedCode
-          );
-          try {
-            await fn(
-              { ...props, http: httpHelpers(client, connectorFields) },
-              ...Object.values(injectableFields)
-            ).catch((e: any) => {
-              // catch unhandled rejections in async user code (if a promise is returned)
-              // handle any errors in async code that actually returns a promise
-              handleRuleError(e.message, logicRule);
-            });
-          } catch (e: any) {
-            const errorMessage = e.reason?.message ?? e.error?.message;
-            handleRuleError(errorMessage, logicRule);
+            try {
+              await fn(
+                { ...props, http: httpHelpers(client, connectorFields) },
+                ...Object.values(injectableFields)
+              ).catch((e: any) => {
+                // catch unhandled rejections in async user code (if a promise is returned)
+                // handle any errors in async code that actually returns a promise
+                handleRuleError(e.message, logicRule);
+              });
+            } catch (e: any) {
+              const errorMessage = e.reason?.message ?? e.error?.message;
+              handleRuleError(errorMessage, logicRule);
+            }
           }
         }
       }
