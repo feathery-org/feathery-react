@@ -1,6 +1,7 @@
 import React, { memo, useRef } from 'react';
 import { DROPDOWN_Z_INDEX } from '..';
 import Overlay from '../../components/Overlay';
+import useOverlayMeasurement from '../../../hooks/useOverlayMeasurement';
 
 function TextAutocomplete({
   allOptions = [],
@@ -29,6 +30,7 @@ function TextAutocomplete({
     opt.toLowerCase().includes(value.toLowerCase())
   );
   const triggerRef = useRef<HTMLDivElement>(null);
+  const dropdownWidth = useOverlayMeasurement(triggerRef);
   if (allOptions.length === 0) return children;
 
   return (
@@ -51,7 +53,7 @@ function TextAutocomplete({
               maxHeight: '210px',
               overflowY: 'scroll',
               overflowX: 'auto',
-              width: '400px',
+              width: dropdownWidth !== undefined ? `${dropdownWidth}px` : '100%',
               backgroundColor: 'white',
               cursor: 'pointer',
               boxShadow: '0 0 4px rgb(0 0 0 / 15%)',

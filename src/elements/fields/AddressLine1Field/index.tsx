@@ -10,6 +10,7 @@ import Overlay from '../../components/Overlay';
 import { DROPDOWN_Z_INDEX } from '../index';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { isKeydownValid } from './utils';
+import useOverlayMeasurement from '../../../hooks/useOverlayMeasurement';
 
 const SEARCH_DELAY_TIME_MS = 500;
 const EXIT_DELAY_TIME_MS = 200;
@@ -39,6 +40,8 @@ function AddressLine1({
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLElement>(null);
+  const fieldWrapperRef = useRef<HTMLDivElement>(null);
+  const dropdownWidth = useOverlayMeasurement(fieldWrapperRef);
 
   const { borderStyles, customBorder } = useBorder({
     element,
@@ -62,6 +65,7 @@ function AddressLine1({
       {children}
       {fieldLabel}
       <div
+        ref={fieldWrapperRef}
         css={{
           position: 'relative',
           width: '100%',
@@ -149,6 +153,8 @@ function AddressLine1({
               backgroundColor: 'white',
               cursor: 'pointer',
               boxShadow: '0 0 4px rgb(0 0 0 / 15%)',
+              width:
+                dropdownWidth !== undefined ? `${dropdownWidth}px` : '100%',
               ...responsiveStyles.getTarget('dropdown')
             }}
           >
