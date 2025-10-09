@@ -85,13 +85,12 @@ function SingleOtpInput({
   );
 
   const subFcStyles = responsiveStyles.getTarget('sub-fc') ?? {};
-  const trimmedWidth = 
+  const trimmedWidth =
     typeof subFcStyles.width === 'string' ? subFcStyles.width.trim() : null;
 
-  const processedSubFcStyles =
-    trimmedWidth?.endsWith('px')
-      ? { ...subFcStyles, width: '100%', maxWidth: trimmedWidth }
-      : subFcStyles;
+  const processedSubFcStyles = trimmedWidth?.endsWith('px')
+    ? { ...subFcStyles, width: '100%', maxWidth: trimmedWidth }
+    : subFcStyles;
 
   return (
     <div
