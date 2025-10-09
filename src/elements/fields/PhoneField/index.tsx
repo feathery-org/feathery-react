@@ -1,11 +1,4 @@
-import React, {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 
 import timeZoneCountries from './timeZoneCountries';
 import Placeholder from '../../components/Placeholder';
@@ -168,7 +161,6 @@ function PhoneField({
         })
       }
     : {};
-
 
   return (
     <div

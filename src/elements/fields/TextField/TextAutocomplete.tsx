@@ -53,7 +53,8 @@ function TextAutocomplete({
               maxHeight: '210px',
               overflowY: 'scroll',
               overflowX: 'auto',
-              width: dropdownWidth !== undefined ? `${dropdownWidth}px` : '100%',
+              width:
+                dropdownWidth !== undefined ? `${dropdownWidth}px` : '100%',
               backgroundColor: 'white',
               cursor: 'pointer',
               boxShadow: '0 0 4px rgb(0 0 0 / 15%)',

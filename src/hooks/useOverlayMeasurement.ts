@@ -16,7 +16,13 @@ export default function useOverlayMeasurement(anchorRef: {
       setWidth(width > 0 ? width : undefined);
     };
 
-    if (!win || typeof window.addEventListener !== 'function') return;
+    // Guard against SSR/mocked environments and ensure listener APIs exist
+    if (
+      !win ||
+      typeof win.addEventListener !== 'function' ||
+      typeof win.removeEventListener !== 'function'
+    )
+      return;
 
     win.addEventListener('resize', measure);
     measure();
