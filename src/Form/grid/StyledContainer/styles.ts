@@ -95,13 +95,14 @@ export const getContainerStyles = (
 
       // Button group individual buttons are responsive but not
       // the overall container
-      if (contentResponsive)
-        contentResponsive = getElementType(node) !== 'button_group';
+      const elementType = getElementType(node);
+
+      if (contentResponsive) contentResponsive = elementType !== 'button_group';
 
       // if element is multi dropdown, don't apply min-width: min-content in order to allow for selected items
       // to wrap. Other elements should have min-width: min-content to prevent them from overflowing and becoming
       // too small.
-      if (getElementType(node) !== 'dropdown_multi') s.minWidth = 'min-content';
+      if (elementType !== 'dropdown_multi') s.minWidth = 'min-content';
       s.width = '100%';
 
       const isFillWidth = isFill(width) || isFill(widthUnit);
@@ -127,8 +128,10 @@ export const getContainerStyles = (
         }
 
         if (widthUnit === 'px' || widthUnit === '%') {
-          if (getElementType(node) === 'checkbox') {
+          if (elementType === 'checkbox') {
             s.maxWidth = 'max-content';
+          } else if (elementType === 'pin_input' && widthUnit === 'px') {
+            delete s.maxWidth;
           } else {
             s.maxWidth = `${width}${widthUnit}`;
           }
