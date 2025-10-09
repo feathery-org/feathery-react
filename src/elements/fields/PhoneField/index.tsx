@@ -13,7 +13,7 @@ import useBorder from '../../components/useBorder';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { isValidPhoneLength } from './validation';
 import Overlay from '../../components/Overlay';
-import useOverlayMeasurement from '../../../hooks/useOverlayMeasurement';
+import useElementSize from '../../../hooks/useElementSize';
 
 const DEFAULT_COUNTRY = 'US';
 
@@ -80,7 +80,7 @@ function PhoneField({
     element.properties.placeholder
   );
   const [focused, setFocused] = useState(false);
-  const dropdownWidth = useOverlayMeasurement(fieldWrapperRef);
+  const { width: dropdownWidth } = useElementSize(fieldWrapperRef);
 
   const { borderStyles, customBorder } = useBorder({
     element,

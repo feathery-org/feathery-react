@@ -10,7 +10,7 @@ import Overlay from '../../components/Overlay';
 import { DROPDOWN_Z_INDEX } from '../index';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { isKeydownValid } from './utils';
-import useOverlayMeasurement from '../../../hooks/useOverlayMeasurement';
+import useElementSize from '../../../hooks/useElementSize';
 
 const SEARCH_DELAY_TIME_MS = 500;
 const EXIT_DELAY_TIME_MS = 200;
@@ -41,7 +41,7 @@ function AddressLine1({
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLElement>(null);
   const fieldWrapperRef = useRef<HTMLDivElement>(null);
-  const dropdownWidth = useOverlayMeasurement(fieldWrapperRef);
+  const { width: dropdownWidth } = useElementSize(fieldWrapperRef);
 
   const { borderStyles, customBorder } = useBorder({
     element,

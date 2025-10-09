@@ -1,3 +1,4 @@
+// Shared browser mocks (matchMedia included) are defined in test-utils
 jest.mock('../../../../utils/browser', () => ({
   runningInClient: jest.fn(() => true),
   featheryDoc: jest.fn(() => global.document),
@@ -97,20 +98,6 @@ import {
 
 describe('PhoneField Component', () => {
   beforeEach(() => {
-    Object.defineProperty(global.window, 'matchMedia', {
-      writable: true,
-      configurable: true,
-      value: jest.fn(() => ({
-        matches: false,
-        media: '',
-        onchange: null,
-        addListener: jest.fn(),
-        removeListener: jest.fn(),
-        addEventListener: jest.fn(),
-        removeEventListener: jest.fn(),
-        dispatchEvent: jest.fn()
-      }))
-    });
     resetMockFieldValue();
     jest.clearAllMocks();
     // Reset to default US timezone
