@@ -244,7 +244,7 @@ async function updateTheme(newTheme = '') {
 function setFieldValues(
   userVals: FieldValues,
   rerender = true,
-  skipSubmit = false
+  skipServerSubmit = false
 ): void {
   const result: FieldValues = {};
   Object.entries(userVals).forEach(([key, value]) => {
@@ -254,7 +254,7 @@ function setFieldValues(
   });
 
   Object.assign(fieldValues, result);
-  if (!skipSubmit) defaultClient.submitCustom(result);
+  if (!skipServerSubmit) defaultClient.submitCustom(result);
 
   if (rerender) rerenderAllForms();
 }
