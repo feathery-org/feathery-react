@@ -422,7 +422,8 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
       getConnectorFieldValues(connectorFields)
     );
 
-    if (response?.field_values) setFieldValues(response?.field_values);
+    if (response?.field_values)
+      setFieldValues(response?.field_values, true, true);
 
     return {
       data: response.data,
