@@ -84,22 +84,14 @@ function SingleOtpInput({
     }
   );
 
-  const subFcStyles = responsiveStyles.getTarget('sub-fc') ?? {};
-  const trimmedWidth =
-    typeof subFcStyles.width === 'string' ? subFcStyles.width.trim() : null;
-
-  const processedSubFcStyles = trimmedWidth?.endsWith('px')
-    ? { ...subFcStyles, width: '100%', maxWidth: trimmedWidth }
-    : subFcStyles;
-
   return (
     <div
       css={{
         position: 'relative',
         display: 'flex',
         alignItems: 'center',
-        marginLeft: '8px',
-        ...processedSubFcStyles,
+        marginLeft: index === 0 ? 0 : '8px',
+        ...responsiveStyles.getTarget('sub-fc'),
         ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
         '&:hover': hoverStylesGuard(
           disabled
