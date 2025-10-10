@@ -13,6 +13,7 @@ import useBorder from '../../components/useBorder';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { isValidPhoneLength } from './validation';
 import Overlay from '../../components/Overlay';
+import useElementSize from '../../../hooks/useElementSize';
 
 const DEFAULT_COUNTRY = 'US';
 
@@ -44,6 +45,7 @@ function PhoneField({
 }: any) {
   const triggerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLElement>(null);
+  const fieldWrapperRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<any>(null);
   const inputRef = useRef<any>(null);
   const [cursor, setCursor] = useState<number | null>(null);
@@ -78,6 +80,7 @@ function PhoneField({
     element.properties.placeholder
   );
   const [focused, setFocused] = useState(false);
+  const { width: dropdownWidth } = useElementSize(fieldWrapperRef);
 
   const { borderStyles, customBorder } = useBorder({
     element,
@@ -175,6 +178,7 @@ function PhoneField({
       {children}
       {fieldLabel}
       <div
+        ref={fieldWrapperRef}
         css={{
           display: 'flex',
           position: 'relative',
@@ -227,7 +231,6 @@ function PhoneField({
           offset={0}
         >
           <CountryDropdown
-            hide={() => setShow(false)}
             itemOnClick={(countryCode: string, phoneCode: string) => {
               setCurCountryCode(countryCode);
               setRawNumber(phoneCode);
@@ -237,6 +240,7 @@ function PhoneField({
               inputRef.current.focus();
             }}
             responsiveStyles={responsiveStyles}
+            dropdownWidth={dropdownWidth}
             ref={(ref: any) => {
               dropdownRef.current = ref;
             }}

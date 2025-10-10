@@ -1,14 +1,8 @@
+// Shared browser mocks (matchMedia included) are defined in test-utils
 jest.mock('../../../../utils/browser', () => ({
   runningInClient: jest.fn(() => true),
   featheryDoc: jest.fn(() => global.document),
-  featheryWindow: jest.fn(() => ({
-    ...global.window,
-    matchMedia: jest.fn(() => ({
-      matches: false,
-      addListener: jest.fn(),
-      removeListener: jest.fn()
-    }))
-  })),
+  featheryWindow: jest.fn(() => global.window),
   isHoverDevice: jest.fn(() => false),
   isTouchDevice: jest.fn(() => false),
   isIOS: jest.fn(() => false),
