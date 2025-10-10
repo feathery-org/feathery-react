@@ -422,7 +422,10 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
       getConnectorFieldValues(connectorFields)
     );
 
-    if (response?.field_values) setFieldValues(response?.field_values);
+    if (response?.field_values)
+      // skip server submit when setting field values here
+      // because these values were just created on the server
+      setFieldValues(response?.field_values, true, true);
 
     return {
       data: response.data,
