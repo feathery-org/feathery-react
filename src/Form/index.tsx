@@ -1023,7 +1023,7 @@ function Form({
           extractionId: string,
           options: ExtractionActionOptions | boolean,
           // deprecated, pages should be in options
-          pages?: number[]
+          pages?: number[] | number[][]
         ) => {
           if (!extractionId) {
             console.error('No extraction ID was passed');

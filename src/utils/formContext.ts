@@ -149,7 +149,7 @@ export const getFormContext = (formUuid: string) => {
     runAIExtraction: async (
       extractionId: string,
       options = { waitForCompletion: false },
-      pages?: number[]
+      pages?: number[] | number[][]
     ) => formState.runAIExtraction(extractionId, options, pages),
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
