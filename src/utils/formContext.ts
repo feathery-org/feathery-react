@@ -90,6 +90,7 @@ export const getFormContext = (formUuid: string) => {
         const id = type === 'field' ? el.servar.key : el.id;
         hideIfMap[id] = {
           elementType: type,
+          showOrHide: el.show_logic ? 'show' : 'hide',
           rules: el.hide_ifs.map((hideIf: any) => ({
             comparisonField: hideIf.field_key,
             comparator: hideIf.comparison,

@@ -22,9 +22,15 @@ type OptionData = {
 
 type Options = string[] | OptionData[];
 
-const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
+const TooltipOption = ({
+  children,
+  ...props
+}: OptionProps<OptionData, true>) => {
   const optionRef = useRef<HTMLDivElement>(null);
   const [showTooltip, setShowTooltip] = useState(false);
+  const containerRef = (props.selectProps as any).containerRef as
+    | React.RefObject<HTMLElement | null>
+    | undefined;
 
   return (
     <div
@@ -37,8 +43,7 @@ const TooltipOption = ({ children, ...props }: OptionProps<OptionData>) => {
       {props.data.tooltip && optionRef.current && (
         <Overlay
           targetRef={optionRef}
-          // @ts-expect-error
-          containerRef={props.selectProps.containerRef}
+          containerRef={containerRef}
           show={showTooltip}
           placement='right'
         >
@@ -87,11 +92,16 @@ export default function DropdownMultiField({
     error: inlineError,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
-  const containerRef = useRef<HTMLElement>(null);
+  const containerRef = useRef<HTMLElement | null>(null);
   const [focused, setFocused] = useState(false);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
+
+  const translation = element.properties.translate || {};
+  const noOptionsMessage = translation.no_options
+    ? () => translation.no_options as string
+    : undefined;
 
   const addFieldValOptions = (options: Options) => {
     const newOptions = Array.isArray(options) ? [...options] : [];
@@ -161,6 +171,14 @@ export default function DropdownMultiField({
   const hasTooltip = !!element.properties.tooltipText;
   const chevronPosition = hasTooltip ? 30 : 10;
   const create = servar.metadata.creatable_options;
+  let formatCreateLabel: ((inputValue: string) => string) | undefined;
+  if (create && translation.create_option_label) {
+    const template = translation.create_option_label;
+    const hasValuePlaceholder = template.includes('{value}');
+    formatCreateLabel = hasValuePlaceholder
+      ? (inputValue: string) => template.replace(/\{value\}/g, inputValue)
+      : (inputValue: string) => `${template} "${inputValue}"`;
+  }
   const Component = create ? CreatableSelect : Select;
 
   responsiveStyles.applyFontStyles('field');
@@ -253,6 +271,7 @@ export default function DropdownMultiField({
             })
           }}
           components={{ Option: TooltipOption }}
+          // @ts-ignore React Select doesn't type custom props on selectProps
           containerRef={containerRef}
           inputId={servar.key}
           value={selectVal}
@@ -261,7 +280,7 @@ export default function DropdownMultiField({
           onChange={onChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          noOptionsMessage={create ? () => null : undefined}
+          noOptionsMessage={create ? () => null : noOptionsMessage}
           options={options}
           isOptionDisabled={() =>
             (servar.max_length && selectVal.length >= servar.max_length) ||
@@ -270,6 +289,7 @@ export default function DropdownMultiField({
           isMulti
           placeholder=''
           aria-label={element.properties.aria_label}
+          formatCreateLabel={formatCreateLabel || undefined}
         />
         <Placeholder
           value={selectVal.length || focused}
