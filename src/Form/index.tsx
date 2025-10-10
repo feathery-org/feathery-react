@@ -257,17 +257,20 @@ export interface ClickActionElement {
   repeat?: any;
 }
 
-export interface LogicRule {
+interface LogicRuleBase {
   id: string;
   name: string;
   trigger_event: string;
   steps: string[];
   elements: string[];
-  code: string;
   enabled: boolean;
   valid: boolean;
-  server_side: boolean;
 }
+
+// the server_side code is not exposed to the form
+export type LogicRule =
+  | (LogicRuleBase & { server_side: false; code: string })
+  | (LogicRuleBase & { server_side: true });
 
 const AsyncFunction = async function () {}.constructor;
 
