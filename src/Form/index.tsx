@@ -524,20 +524,19 @@ function Form({
 
   useEffect(() => {
     const autoscroll = formSettings.autoscroll;
-    if (shouldScrollToTop && autoscroll !== 'none') {
-      const scroll =
-        autoscroll === 'top_of_form'
-          ? () => formRef.current?.scrollIntoView({ behavior: 'smooth' })
-          : () => featheryWindow().scrollTo({ top: 0, behavior: 'smooth' });
-      try {
-        // Needs to be async to scroll up in Safari sometimes
-        setTimeout(scroll, 100);
-      } catch (e) {
-        // Some browsers may not have support for scrollTo
-        console.warn(e);
-      }
-    }
-  }, [stepKey]);
+    if (!shouldScrollToTop || autoscroll === 'none') return;
+
+    const win = featheryWindow();
+
+    const scroll =
+      autoscroll === 'top_of_form'
+        ? () => formRef.current?.scrollIntoView({ behavior: 'smooth' })
+        : () => win.scrollTo({ top: 0, behavior: 'smooth' });
+    win.requestAnimationFrame(() => {
+      scroll();
+      win.requestAnimationFrame(scroll);
+    });
+  }, [stepKey, shouldScrollToTop, formSettings.autoscroll]);
 
   function updateRepeatValues(
     repeatContainer: Subgrid | undefined,
