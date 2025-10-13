@@ -532,11 +532,7 @@ function Form({
       autoscroll === 'top_of_form'
         ? () => formRef.current?.scrollIntoView({ behavior: 'smooth' })
         : () => win.scrollTo({ top: 0, behavior: 'smooth' });
-    // Double RAF waits two paint frames so browser finishes layout before scrolling
-    win.requestAnimationFrame(() => {
-      scroll();
-      win.requestAnimationFrame(scroll);
-    });
+    win.requestAnimationFrame(scroll);
   }, [stepKey, shouldScrollToTop, formSettings.autoscroll]);
 
   function updateRepeatValues(
