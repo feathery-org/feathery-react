@@ -1274,11 +1274,12 @@ function Form({
     const hashKey = getUrlHash();
     if (hashKey in steps) {
       const scrollIntent = pendingScrollRef.current;
-      if (scrollIntent === false) setShouldScrollToTop(false);
-      else setShouldScrollToTop(true);
+      setShouldScrollToTop(scrollIntent !== false);
       pendingScrollRef.current = null;
       setStepKey(hashKey);
-    } else pendingScrollRef.current = null;
+    } else {
+      pendingScrollRef.current = null;
+    }
   }, [location]);
 
   useEffect(() => {
