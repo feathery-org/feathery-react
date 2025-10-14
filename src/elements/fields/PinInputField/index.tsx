@@ -90,7 +90,7 @@ function SingleOtpInput({
         position: 'relative',
         display: 'flex',
         alignItems: 'center',
-        marginLeft: '8px',
+        marginLeft: index === 0 ? 0 : '8px',
         ...responsiveStyles.getTarget('sub-fc'),
         ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
         '&:hover': hoverStylesGuard(

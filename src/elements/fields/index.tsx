@@ -291,6 +291,15 @@ function applyFieldStyles(field: any, styles: any) {
       break;
     case 'pin_input':
       styles.applyWidth('sub-fc');
+      styles.apply(
+        'sub-fc',
+        ['width', 'width_unit'],
+        (widthValue: any, widthUnit: any) => {
+          if (widthUnit === 'px') {
+            return { width: '100%', maxWidth: widthValue };
+          }
+        }
+      );
       styles.applyHeight('sub-fc');
       styles.applyBoxShadow('sub-fc');
       styles.applyCorners('sub-fc');
