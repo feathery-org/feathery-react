@@ -35,12 +35,13 @@ function FileUploadField({
   useEffect(() => {
     // Prevent infinite loop of setting a new empty array as the value
     if (isEmptyArray(rawFiles) && isEmptyArray(initialFiles)) return;
-    setRawFiles(toList(initialFiles));
+    // Normalize placeholders like [null] to an empty list
+    setRawFiles(toList(initialFiles).filter(Boolean));
   }, [initialFiles]);
 
-  // In repeating rows, initial value can be [null]. Treat nulls as no file.
+  // Thumbnails derived from current files; rawFiles is normalized to exclude nulls
   const thumbnailData = useThumbnailData(rawFiles);
-  const hasFiles = rawFiles.some((f: any) => Boolean(f));
+  const hasFiles = rawFiles.length > 0;
   const allowMoreFiles = isMultiple || !hasFiles;
   const hidePreview = element.styles.hide_file_preview;
 
@@ -136,17 +137,15 @@ function FileUploadField({
       validateFileTypes(files);
       validateFileSizes(files);
 
-      const existingCount = hidePreview ? 0 : rawFiles.filter(Boolean).length;
+      const existingCount = hidePreview ? 0 : rawFiles.length;
       if (files.length + existingCount > NUM_FILES_LIMIT) {
         // Splice off the uploaded files past the upload limit
         files.splice(NUM_FILES_LIMIT - existingCount);
       }
 
       const uploadedFiles = files.map((file) => Promise.resolve(file));
-      // If the value is [null] (initial state of repeating rows), we want to replace the null with the file
-      const isRawFilesNull = rawFiles.length === 1 && rawFiles[0] === null;
       let newRawFiles, length;
-      if (isRawFilesNull || hidePreview) {
+      if (hidePreview) {
         newRawFiles = uploadedFiles;
         length = 0;
       } else {
