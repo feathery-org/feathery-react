@@ -29,7 +29,7 @@ function FileUploadField({
   const isMultiple = servar.metadata.multiple;
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const [rawFiles, setRawFiles] = useState<(Promise<File> | null)[]>([]);
+  const [rawFiles, setRawFiles] = useState<Promise<File>[]>([]);
   const [hoverDownload, setHoverDownload] = useState(-1);
 
   useEffect(() => {
@@ -214,7 +214,7 @@ function FileUploadField({
       {children}
       {!hidePreview &&
         thumbnailData.map(({ filename, thumbnail }, index) =>
-          rawFiles[index] ? (
+          index < rawFiles.length ? (
             <div
               key={index}
               css={{
