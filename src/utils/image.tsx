@@ -48,7 +48,7 @@ export function useFileData(initialFiles: any, onSetFiles = () => {}) {
  * Filename will be a plaintext string and thumbnail will be a base64 encoded image.
  */
 export async function getThumbnailData(filePromise: File | Promise<File>) {
-  const file = await filePromise;
+  const file = await (filePromise as any);
   const thumbnailType = getThumbnailType(file);
   if (thumbnailType === THUMBNAIL_TYPE.IMAGE) {
     const url: string = await new Promise((resolve) => {
