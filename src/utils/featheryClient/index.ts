@@ -815,7 +815,7 @@ export default class FeatheryClient extends IntegrationClient {
   }: {
     extractionId: string;
     options: ExtractionActionOptions | boolean;
-    pages?: number[];
+    pages?: number[] | number[][];
     setPollFuserData?: any;
     onStatusUpdate?: any;
   }) {
