@@ -320,6 +320,7 @@ function Form({
   const [activeStep, setActiveStep] = useState<any>(null);
   const [stepKey, setStepKey] = useState('');
   const [shouldScrollToTop, setShouldScrollToTop] = useState(false);
+  const pendingScrollRef = useRef<boolean | null>(null);
   const [finished, setFinished] = useState(false);
   const [userProgress, setUserProgress] = useState(null);
   const [curDepth, setCurDepth] = useState(0);
@@ -532,11 +533,7 @@ function Form({
       autoscroll === 'top_of_form'
         ? () => formRef.current?.scrollIntoView({ behavior: 'smooth' })
         : () => win.scrollTo({ top: 0, behavior: 'smooth' });
-    // Double RAF waits two paint frames so browser finishes layout before scrolling
-    win.requestAnimationFrame(() => {
-      scroll();
-      win.requestAnimationFrame(scroll);
-    });
+    win.requestAnimationFrame(scroll);
   }, [stepKey, shouldScrollToTop, formSettings.autoscroll]);
 
   function updateRepeatValues(
@@ -1275,7 +1272,13 @@ function Form({
   useEffect(() => {
     if (!trackHashes.current) return;
     const hashKey = getUrlHash();
-    if (hashKey in steps) setStepKey(hashKey);
+    if (hashKey in steps) {
+      const scrollIntent = pendingScrollRef.current;
+      if (scrollIntent === false) setShouldScrollToTop(false);
+      else setShouldScrollToTop(true);
+      pendingScrollRef.current = null;
+      setStepKey(hashKey);
+    } else pendingScrollRef.current = null;
   }, [location]);
 
   useEffect(() => {
@@ -1612,13 +1615,17 @@ function Form({
       }
       if (!eventData.completed) client.registerEvent(eventData);
       updateBackNavMap({ [redirectKey]: activeStep.key });
-      setShouldScrollToTop(explicitNav);
+      pendingScrollRef.current = explicitNav;
 
       if (trackHashes.current) {
         const newURL = getNewStepUrl(redirectKey);
         if (explicitNav) navigate(newURL);
         else navigate(newURL, { replace: true });
-      } else setStepKey(redirectKey);
+      } else {
+        setShouldScrollToTop(explicitNav);
+        pendingScrollRef.current = null;
+        setStepKey(redirectKey);
+      }
     }
   }
 
@@ -1626,8 +1633,13 @@ function Form({
     await callbackRef.current.all();
     const prevStepKey = getPrevStepKey(activeStep, backNavMap);
     if (prevStepKey) {
+      pendingScrollRef.current = false;
       if (trackHashes.current) navigate(getNewStepUrl(prevStepKey));
-      else setStepKey(prevStepKey);
+      else {
+        setShouldScrollToTop(false);
+        pendingScrollRef.current = null;
+        setStepKey(prevStepKey);
+      }
     }
   };
 
