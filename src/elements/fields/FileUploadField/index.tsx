@@ -134,6 +134,12 @@ function FileUploadField({
     }
 
     try {
+      if (
+        files.some((file) => !file || !(file instanceof File) || file.size <= 0)
+      ) {
+        throw new Error('Some files are invalid');
+      }
+
       validateFileTypes(files);
       validateFileSizes(files);
 
