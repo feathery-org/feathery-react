@@ -84,13 +84,39 @@ export const getFormContext = (formUuid: string) => {
       const rootStyles = step
         ? step.subgrids.find((grid: any) => grid.position.length === 0).styles
         : {};
+
+      const containerIdByPosition: Record<string, string> = {};
+      step.subgrids.forEach((grid: any) => {
+        containerIdByPosition[grid.position.join(',')] = grid.id;
+      });
+
+      const fieldKeysByContainer: Record<string, string[]> = {};
+
+      // add field key to every position prefix
+      step.servar_fields?.forEach((field: any) => {
+        const pos = field.position;
+        for (let i = pos.length - 1; i > 0; i--) {
+          const posPrefix = pos.slice(0, i).join(',');
+          const containerId = containerIdByPosition[posPrefix];
+          if (containerId) {
+            if (!fieldKeysByContainer[containerId]) {
+              fieldKeysByContainer[containerId] = [];
+            }
+            fieldKeysByContainer[containerId].push(field.servar.key);
+          }
+        }
+      });
+
       const hideIfMap: Record<string, any> = {};
       getAllElements(step).forEach(([el, type]) => {
         if (!el.hide_ifs.length) return;
         const id = type === 'field' ? el.servar.key : el.id;
         hideIfMap[id] = {
           elementType: type,
+          name: type === 'field' ? el.servar.key : el.key ?? el.id,
           showOrHide: el.show_logic ? 'show' : 'hide',
+          childFields:
+            type === 'subgrid' ? fieldKeysByContainer[el.id] : undefined,
           rules: el.hide_ifs.map((hideIf: any) => ({
             comparisonField: hideIf.field_key,
             comparator: hideIf.comparison,
