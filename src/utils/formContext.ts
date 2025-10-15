@@ -115,7 +115,8 @@ export const getFormContext = (formUuid: string) => {
           elementType: type,
           name: type === 'field' ? el.servar.key : el.key ?? el.id,
           showOrHide: el.show_logic ? 'show' : 'hide',
-          fields: type === 'subgrid' ? fieldKeysByContainer[el.id] : undefined,
+          childFields:
+            type === 'subgrid' ? fieldKeysByContainer[el.id] : undefined,
           rules: el.hide_ifs.map((hideIf: any) => ({
             comparisonField: hideIf.field_key,
             comparator: hideIf.comparison,
