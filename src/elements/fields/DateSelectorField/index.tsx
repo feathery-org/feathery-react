@@ -127,7 +127,8 @@ function DateSelectorField({
   const pickerRef = useRef<any>(undefined);
   const [internalDate, setInternalDate] = useState<InternalDate>(null);
   const translation = element.properties.translate || {};
-  const containerRef = useRef(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const shouldRestoreCalendarRef = useRef(false);
 
   const locale = useCustomDateLocale({
     monthNames: translation.months,
@@ -169,6 +170,38 @@ function DateSelectorField({
     if (pickerRef.current != null) {
     }
   }, [pickerRef.current]);
+
+  useEffect(() => {
+    const doc = featheryDoc() as Document;
+
+    const handleVisibilityChange = () => {
+      if (doc.visibilityState === 'hidden') {
+        shouldRestoreCalendarRef.current = true;
+      }
+    };
+
+    doc.addEventListener('visibilitychange', handleVisibilityChange);
+    return () =>
+      doc.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    const handleFocusIn = () => {
+      if (!shouldRestoreCalendarRef.current || disabled || isMobile) return;
+      // TODO (joon): confirm this is still needed when react-datepicker is upgraded.
+      // Legacy react-datepicker (<CalendarContainer>) never re-opens after the tab
+      // goes background → foreground. We manually flip its open flag on the next focus
+      // event.
+      shouldRestoreCalendarRef.current = false;
+      pickerRef.current?.setOpen?.(true);
+    };
+
+    node.addEventListener('focusin', handleFocusIn);
+    return () => node.removeEventListener('focusin', handleFocusIn);
+  }, [disabled, isMobile]);
 
   useEffect(() => {
     let internalVal = null;
