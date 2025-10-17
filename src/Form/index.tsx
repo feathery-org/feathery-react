@@ -1043,11 +1043,10 @@ function Form({
                     )
                 : undefined
           });
-          if (data.status === 'error') {
-            throw new Error(data.message);
+          if (data.status !== 'error') {
+            const vals = data.data ?? {};
+            updateFieldValues(vals);
           }
-          const vals = data.data ?? {};
-          updateFieldValues(vals);
           return data;
         }
       },
