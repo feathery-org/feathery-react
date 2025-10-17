@@ -113,6 +113,7 @@ export default class FeatheryClient extends IntegrationClient {
    */
   debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
   customSubmitInFlight: Record<string, any>;
+  firstInteractionDetected: boolean;
 
   constructor(
     formKey = '',
@@ -123,6 +124,7 @@ export default class FeatheryClient extends IntegrationClient {
     super(formKey, ignoreNetworkErrors, draft, bypassCDN);
     this.pendingCustomFieldUpdates = {};
     this.customSubmitInFlight = {};
+    this.firstInteractionDetected = false;
     this.debouncedSubmitCustom = debounce(
       this._debouncedSubmitCustom.bind(this),
       SUBMIT_CUSTOM_DEBOUNCE_WINDOW
@@ -284,6 +286,10 @@ export default class FeatheryClient extends IntegrationClient {
       ...additionalValues,
       ...fieldValues
     });
+  }
+
+  setFirstInteractionDetected() {
+    this.firstInteractionDetected = true;
   }
 
   _loadFormPackages(res: any) {
@@ -527,6 +533,11 @@ export default class FeatheryClient extends IntegrationClient {
       return;
     }
 
+    // Don't flush if first interaction hasn't happened yet - keep accumulating values
+    if (!this.firstInteractionDetected) {
+      return;
+    }
+
     const customKeyValues = { ...this.pendingCustomFieldUpdates };
     this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
 
@@ -685,14 +696,18 @@ export default class FeatheryClient extends IntegrationClient {
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    this.submitQueue = Promise.all([
-      this.submitQueue,
-      this.submitCustom(hiddenFields, { shouldFlush: true }),
-      this._submitJSONData(jsonServars, step.key, hasNext),
-      ...fileServars.map((servar: any) =>
-        this._submitFileData(servar, step.key)
-      )
-    ]);
+    this.setFirstInteractionDetected();
+    this.submitQueue = this.submitCustom(hiddenFields, {
+      shouldFlush: true
+    }).then(() =>
+      Promise.all([
+        this.submitQueue,
+        this._submitJSONData(jsonServars, step.key, hasNext),
+        ...fileServars.map((servar: any) =>
+          this._submitFileData(servar, step.key)
+        )
+      ])
+    );
     return this.submitQueue;
   }
 

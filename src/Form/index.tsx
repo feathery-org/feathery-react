@@ -473,6 +473,42 @@ function Form({
     return () => featheryWindow().removeEventListener('resize', handleResize);
   }, [formSettings]);
 
+  // detect first user interaction
+  useEffect(() => {
+    if (!client || client.firstInteractionDetected) return;
+    const formElement = formRef.current;
+    if (!formElement) return;
+
+    // keyboard, mouse, touch events
+    const interactionEvents = ['keydown', 'pointerdown'];
+
+    const handleFirstInteraction = () => {
+      client.setFirstInteractionDetected();
+
+      interactionEvents.forEach((eventType) => {
+        formElement.removeEventListener(
+          eventType,
+          handleFirstInteraction,
+          true
+        );
+      });
+    };
+
+    interactionEvents.forEach((eventType) => {
+      formElement.addEventListener(eventType, handleFirstInteraction, true);
+    });
+
+    return () => {
+      interactionEvents.forEach((eventType) => {
+        formElement.removeEventListener(
+          eventType,
+          handleFirstInteraction,
+          true
+        );
+      });
+    };
+  }, [activeStep, client, stepKey, formName]);
+
   useEffect(() => {
     const oldLanguage = curLanguage.current;
     curLanguage.current = language;
