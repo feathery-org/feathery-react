@@ -475,7 +475,7 @@ function Form({
 
   // detect first user interaction
   useEffect(() => {
-    if (!client || client.firstInteractionTracked) return;
+    if (!client || client.firstInteractionDetected) return;
     const formElement = formRef.current;
     if (!formElement) return;
 
