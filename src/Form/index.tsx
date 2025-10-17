@@ -369,7 +369,6 @@ function Form({
     keyof typeof REQUIRED_FLOW_ACTIONS | ''
   >('');
   const formLoadRan = useRef(false);
-  const firstInteractionTracked = useRef(false);
 
   const [viewport, setViewport] = useState(() =>
     getViewport(formSettings.mobileBreakpoint)
@@ -476,19 +475,15 @@ function Form({
 
   // detect first user interaction
   useEffect(() => {
-    if (firstInteractionTracked.current) return;
-
+    if (!client || client.firstInteractionTracked) return;
     const formElement = formRef.current;
-    if (!formElement || !client?.offlineRequestHandler) return;
+    if (!formElement) return;
 
     // keyboard, mouse, touch events
     const interactionEvents = ['keydown', 'pointerdown'];
 
     const handleFirstInteraction = () => {
-      if (firstInteractionTracked.current) return;
-
-      firstInteractionTracked.current = true;
-      client.offlineRequestHandler.setFirstInteractionDetected();
+      client.setFirstInteractionDetected();
 
       interactionEvents.forEach((eventType) => {
         formElement.removeEventListener(
