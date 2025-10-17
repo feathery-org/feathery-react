@@ -369,6 +369,7 @@ function Form({
     keyof typeof REQUIRED_FLOW_ACTIONS | ''
   >('');
   const formLoadRan = useRef(false);
+  const firstInteractionTracked = useRef(false);
 
   const [viewport, setViewport] = useState(() =>
     getViewport(formSettings.mobileBreakpoint)
@@ -472,6 +473,46 @@ function Form({
     featheryWindow().addEventListener('resize', handleResize);
     return () => featheryWindow().removeEventListener('resize', handleResize);
   }, [formSettings]);
+
+  // detect first user interaction
+  useEffect(() => {
+    if (firstInteractionTracked.current) return;
+
+    const formElement = formRef.current;
+    if (!formElement || !client?.offlineRequestHandler) return;
+
+    // keyboard, mouse, touch events
+    const interactionEvents = ['keydown', 'pointerdown'];
+
+    const handleFirstInteraction = () => {
+      if (firstInteractionTracked.current) return;
+
+      firstInteractionTracked.current = true;
+      client.offlineRequestHandler.setFirstInteractionDetected();
+
+      interactionEvents.forEach((eventType) => {
+        formElement.removeEventListener(
+          eventType,
+          handleFirstInteraction,
+          true
+        );
+      });
+    };
+
+    interactionEvents.forEach((eventType) => {
+      formElement.addEventListener(eventType, handleFirstInteraction, true);
+    });
+
+    return () => {
+      interactionEvents.forEach((eventType) => {
+        formElement.removeEventListener(
+          eventType,
+          handleFirstInteraction,
+          true
+        );
+      });
+    };
+  }, [activeStep, client, stepKey, formName]);
 
   useEffect(() => {
     const oldLanguage = curLanguage.current;

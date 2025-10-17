@@ -101,6 +101,8 @@ export class OfflineRequestHandler {
   private onlineSignals: Map<string, any[]>;
   private indexedDBSupported: boolean;
   private errorCallback?: (error: string) => void;
+  private firstInteractionDetected: boolean;
+  private interactionSignals: Map<string, any[]>;
 
   constructor(formKey: string, errorCallback?: (error: string) => void) {
     this.isReplayingRequests = new Map();
@@ -113,6 +115,8 @@ export class OfflineRequestHandler {
     this.onlineSignals = new Map();
     this.indexedDBSupported = typeof indexedDB !== 'undefined';
     this.errorCallback = errorCallback;
+    this.firstInteractionDetected = false;
+    this.interactionSignals = new Map();
   }
 
   // Check if any requests are stored in indexedDB
@@ -152,6 +156,17 @@ export class OfflineRequestHandler {
       }
       this.onlineSignals.get(this.formKey)?.push(resolve);
     });
+  }
+
+  public setFirstInteractionDetected() {
+    if (this.firstInteractionDetected) return;
+    this.firstInteractionDetected = true;
+
+    const signals = this.interactionSignals.get(this.formKey) || [];
+    signals.forEach((signal) => signal());
+    this.interactionSignals.delete(this.formKey);
+
+    this.replayRequests();
   }
 
   // Open a connection to the IndexedDB database
@@ -222,6 +237,12 @@ export class OfflineRequestHandler {
     type: string,
     stepKey?: string
   ): Promise<void> {
+    // If first user interaction hasn't happened, queue any custom submit requests
+    if (!this.firstInteractionDetected && url.includes('/custom/submit')) {
+      await this.saveRequest(url, options, type, stepKey);
+      return;
+    }
+
     if (navigator.onLine) {
       // Prevent page unload while processing requests to avoid data loss
       trackUnload();
