@@ -513,6 +513,39 @@ export default function DropdownMultiField({
   const { visibleCount, collapsedCount, isMeasuring, rowHeight } =
     useCollapsibleValues(containerRef, selectVal, collapseSelected);
 
+  const handleChange = useCallback(
+    (selected: any, actionMeta: any) => {
+      if (!collapseSelected || !Array.isArray(selected)) {
+        onChange(selected, actionMeta);
+        return;
+      }
+
+      if (
+        actionMeta &&
+        (actionMeta.action === 'select-option' ||
+          actionMeta.action === 'create-option')
+      ) {
+        const option = actionMeta.option;
+        if (option) {
+          const latestIndex = selected.findIndex(
+            (item) => item.value === option.value
+          );
+          if (latestIndex >= 0) {
+            const latest = selected[latestIndex];
+            const remaining = selected.filter(
+              (item) => item.value !== option.value
+            );
+            onChange([latest, ...remaining], actionMeta);
+            return;
+          }
+        }
+      }
+
+      onChange(selected, actionMeta);
+    },
+    [collapseSelected, onChange]
+  );
+
   const hasTooltip = !!element.properties.tooltipText;
   const chevronPosition = hasTooltip ? 30 : 10;
   const create = servar.metadata.creatable_options;
@@ -673,7 +706,7 @@ export default function DropdownMultiField({
           value={selectVal}
           required={required}
           isDisabled={disabled}
-          onChange={onChange}
+          onChange={handleChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           noOptionsMessage={create ? () => null : noOptionsMessage}
