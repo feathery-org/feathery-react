@@ -137,14 +137,14 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
-  private handleInteraction() {
+  private async handleInteraction() {
     if (this.interactionDetected) return;
     this.interactionDetected = true;
-    this.submitCustom({}, { shouldFlush: true });
     featheryWindow().removeEventListener?.(
       'feathery:interaction',
       this.handleInteraction
     );
+    return this.submitCustom({}, { shouldFlush: true });
   }
 
   public destroy() {
@@ -714,18 +714,16 @@ export default class FeatheryClient extends IntegrationClient {
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    this.handleInteraction();
-    this.submitQueue = this.submitCustom(hiddenFields, {
-      shouldFlush: true
-    }).then(() =>
-      Promise.all([
-        this.submitQueue,
-        this._submitJSONData(jsonServars, step.key, hasNext),
-        ...fileServars.map((servar: any) =>
-          this._submitFileData(servar, step.key)
-        )
-      ])
-    );
+    await this.handleInteraction();
+    this.submitQueue = Promise.all([
+      this.submitQueue,
+      this.submitCustom(hiddenFields, { shouldFlush: true }),
+      this._submitJSONData(jsonServars, step.key, hasNext),
+      ...fileServars.map((servar: any) =>
+        this._submitFileData(servar, step.key)
+      )
+    ]);
+
     return this.submitQueue;
   }
 

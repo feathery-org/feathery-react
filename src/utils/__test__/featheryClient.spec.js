@@ -100,6 +100,8 @@ describe('featheryClient', () => {
       // Arrange
       const formKey = 'formKey';
       const featheryClient = new FeatheryClient(formKey);
+      featheryClient.interactionDetected = true;
+
       const customKeyValues = { foo: 'bar' };
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest.fn().mockResolvedValue({ status: 200 });
@@ -126,6 +128,8 @@ describe('featheryClient', () => {
       // Arrange
       const formKey = 'formKey';
       const featheryClient = new FeatheryClient(formKey);
+      featheryClient.interactionDetected = true;
+
       const customKeyValues = { foo: 'bar' };
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
       global.fetch = jest
@@ -152,6 +156,8 @@ describe('featheryClient', () => {
       // Arrange
       const formKey = 'formKey';
       const featheryClient = new FeatheryClient(formKey);
+      featheryClient.interactionDetected = true;
+
       const servars = [
         {
           key: 'servar1',
@@ -194,6 +200,8 @@ describe('featheryClient', () => {
       // Arrange
       const formKey = 'formKey';
       const featheryClient = new FeatheryClient(formKey);
+      featheryClient.interactionDetected = true;
+
       const servars = [
         {
           key: 'servar1',
