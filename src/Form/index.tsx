@@ -473,38 +473,37 @@ function Form({
     return () => featheryWindow().removeEventListener('resize', handleResize);
   }, [formSettings]);
 
-  // detect first user interaction
+  const interactionTracked = useRef(false);
   useEffect(() => {
-    if (!client || client.firstInteractionDetected) return;
+    if (interactionTracked.current) return;
     const formElement = formRef.current;
     if (!formElement) return;
 
     // keyboard, mouse, touch events
     const interactionEvents = ['keydown', 'pointerdown'];
 
-    const handleFirstInteraction = () => {
-      client.setFirstInteractionDetected();
+    const handleInteraction = () => {
+      if (interactionTracked.current) return;
+      interactionTracked.current = true;
+
+      // Dispatch custom event to notify all FeatheryClient instances
+      // there may be multiple clients (form client, default client, etc.)
+      // custom event is an efficient way to notify all of them.
+      const event = new CustomEvent('feathery:interaction');
+      featheryWindow().dispatchEvent(event);
 
       interactionEvents.forEach((eventType) => {
-        formElement.removeEventListener(
-          eventType,
-          handleFirstInteraction,
-          true
-        );
+        formElement.removeEventListener(eventType, handleInteraction, true);
       });
     };
 
     interactionEvents.forEach((eventType) => {
-      formElement.addEventListener(eventType, handleFirstInteraction, true);
+      formElement.addEventListener(eventType, handleInteraction, true);
     });
 
     return () => {
       interactionEvents.forEach((eventType) => {
-        formElement.removeEventListener(
-          eventType,
-          handleFirstInteraction,
-          true
-        );
+        formElement.removeEventListener(eventType, handleInteraction, true);
       });
     };
   }, [activeStep, client, stepKey, formName]);

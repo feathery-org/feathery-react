@@ -113,7 +113,7 @@ export default class FeatheryClient extends IntegrationClient {
    */
   debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
   customSubmitInFlight: Record<string, any>;
-  firstInteractionDetected: boolean;
+  interactionDetected: boolean;
 
   constructor(
     formKey = '',
@@ -124,10 +124,33 @@ export default class FeatheryClient extends IntegrationClient {
     super(formKey, ignoreNetworkErrors, draft, bypassCDN);
     this.pendingCustomFieldUpdates = {};
     this.customSubmitInFlight = {};
-    this.firstInteractionDetected = false;
+    this.interactionDetected = false;
     this.debouncedSubmitCustom = debounce(
       this._debouncedSubmitCustom.bind(this),
       SUBMIT_CUSTOM_DEBOUNCE_WINDOW
+    );
+
+    this.handleInteraction = this.handleInteraction.bind(this);
+    featheryWindow().addEventListener?.(
+      'feathery:interaction',
+      this.handleInteraction
+    );
+  }
+
+  private handleInteraction() {
+    if (this.interactionDetected) return;
+    this.interactionDetected = true;
+    this.submitCustom({}, { shouldFlush: true });
+    featheryWindow().removeEventListener?.(
+      'feathery:interaction',
+      this.handleInteraction
+    );
+  }
+
+  public destroy() {
+    featheryWindow().removeEventListener?.(
+      'feathery:interaction',
+      this.handleInteraction
     );
   }
 
@@ -286,10 +309,6 @@ export default class FeatheryClient extends IntegrationClient {
       ...additionalValues,
       ...fieldValues
     });
-  }
-
-  setFirstInteractionDetected() {
-    this.firstInteractionDetected = true;
   }
 
   _loadFormPackages(res: any) {
@@ -533,8 +552,7 @@ export default class FeatheryClient extends IntegrationClient {
       return;
     }
 
-    // Don't flush if first interaction hasn't happened yet - keep accumulating values
-    if (!this.firstInteractionDetected) {
+    if (!this.interactionDetected) {
       return;
     }
 
@@ -696,7 +714,7 @@ export default class FeatheryClient extends IntegrationClient {
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
-    this.setFirstInteractionDetected();
+    this.handleInteraction();
     this.submitQueue = this.submitCustom(hiddenFields, {
       shouldFlush: true
     }).then(() =>
