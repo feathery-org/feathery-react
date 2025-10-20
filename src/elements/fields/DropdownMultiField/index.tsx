@@ -16,7 +16,7 @@ import Select, {
   ValueContainerProps
 } from 'react-select';
 import CreatableSelect from 'react-select/creatable';
-import { hoverStylesGuard } from '../../../utils/browser';
+import { featheryWindow, hoverStylesGuard } from '../../../utils/browser';
 import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
 import { Tooltip } from '../../components/Tooltip';
@@ -106,6 +106,7 @@ const useCollapsibleValues = (
   const queuedMeasurementRef = useRef(false);
   const frameRef = useRef<number | null>(null);
   const lastWidthRef = useRef<number | null>(null);
+  const lastCollapsedVisibleRef = useRef(totalCount);
 
   const valuesSignature = useMemo(
     () => values.map((item) => item.value).join('|'),
@@ -128,7 +129,7 @@ const useCollapsibleValues = (
       ) as HTMLElement | null;
       if (chip) {
         const rect = chip.getBoundingClientRect();
-        const style = window.getComputedStyle(chip);
+        const style = featheryWindow().getComputedStyle(chip);
         const computedHeight =
           rect.height +
           parseFloat(style.marginTop || '0') +
@@ -152,12 +153,9 @@ const useCollapsibleValues = (
     if (!enabled) return;
 
     const node = containerRef.current;
-    if (!node || typeof window === 'undefined') return;
+    if (!node) return;
 
-    const Observer = window.ResizeObserver;
-    if (!Observer) return;
-
-    const observer = new Observer((entries) => {
+    const observer = new ResizeObserver((entries) => {
       const entry = entries[entries.length - 1];
       if (!entry) return;
       const width = entry.contentRect.width;
@@ -180,9 +178,9 @@ const useCollapsibleValues = (
   }, [containerRef, enabled, requestMeasurement]);
 
   useLayoutEffect(() => {
-    if (!pendingMeasurementRef.current || typeof window === 'undefined') return;
+    if (!pendingMeasurementRef.current) return;
 
-    frameRef.current = window.requestAnimationFrame(() => {
+    frameRef.current = featheryWindow().requestAnimationFrame(() => {
       pendingMeasurementRef.current = false;
 
       const container = containerRef.current;
@@ -205,7 +203,7 @@ const useCollapsibleValues = (
           }
 
           const rect = chips[0].getBoundingClientRect();
-          const style = window.getComputedStyle(chips[0]);
+          const style = featheryWindow().getComputedStyle(chips[0]);
           const computedHeight =
             rect.height +
             parseFloat(style.marginTop || '0') +
@@ -223,7 +221,12 @@ const useCollapsibleValues = (
       setIsMeasuring(false);
 
       if (containerRef.current) {
-        lastWidthRef.current = containerRef.current.getBoundingClientRect().width;
+        lastWidthRef.current =
+          containerRef.current.getBoundingClientRect().width;
+      }
+
+      if (enabled) {
+        lastCollapsedVisibleRef.current = nextVisible;
       }
 
       if (queuedMeasurementRef.current) {
@@ -234,7 +237,7 @@ const useCollapsibleValues = (
 
     return () => {
       if (frameRef.current !== null) {
-        window.cancelAnimationFrame(frameRef.current);
+        featheryWindow().cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
       }
     };
@@ -242,18 +245,28 @@ const useCollapsibleValues = (
 
   useEffect(() => {
     if (!enabled) {
-      setVisibleCount(totalCount);
       setIsMeasuring(false);
       setRowHeight(null);
       pendingMeasurementRef.current = false;
       queuedMeasurementRef.current = false;
       lastWidthRef.current = null;
+      return;
     }
+
+    setVisibleCount((prev) => {
+      const restored = Math.min(lastCollapsedVisibleRef.current, totalCount);
+      return prev === restored ? prev : restored;
+    });
   }, [enabled, totalCount]);
 
-  const collapsedCount = enabled
-    ? Math.max(totalCount - visibleCount, 0)
-    : 0;
+  useEffect(() => {
+    lastCollapsedVisibleRef.current = Math.min(
+      lastCollapsedVisibleRef.current,
+      totalCount
+    );
+  }, [totalCount]);
+
+  const collapsedCount = enabled ? Math.max(totalCount - visibleCount, 0) : 0;
 
   return {
     visibleCount: enabled ? visibleCount : totalCount,
@@ -324,8 +337,7 @@ const CollapsibleMultiValueContainer = (
     ExtendedSelectProps & {
       value?: readonly OptionData[] | null;
     };
-  const BaseContainer = SelectComponents
-    .MultiValueContainer as ComponentType<
+  const BaseContainer = SelectComponents.MultiValueContainer as ComponentType<
     MultiValueGenericProps<OptionData, true>
   >;
 
@@ -400,10 +412,7 @@ const CollapsibleValueContainer = (
   }
 
   return (
-    <BaseValueContainer
-      {...props}
-      innerProps={mergedInnerProps}
-    >
+    <BaseValueContainer {...props} innerProps={mergedInnerProps}>
       {props.children}
       {shouldShowIndicator ? (
         <CollapsedIndicator collapsedCount={selectProps.collapsedCount} />
@@ -508,13 +517,93 @@ export default function DropdownMultiField({
     ? fieldVal.map((val: any) => ({ label: labelMap[val], value: val }))
     : [];
 
-  const collapseSelected = !!servar.metadata.collapse_selected_options;
+  const collapseSelectedPreference =
+    !!servar.metadata.collapse_selected_options;
+  const [isMenuExpanded, setIsMenuExpanded] = useState(false);
+  const [isHoverExpanded, setIsHoverExpanded] = useState(false);
+  const hoverTimerRef = useRef<number | null>(null);
+  const pointerInsideRef = useRef(false);
+  const collapseSelected =
+    collapseSelectedPreference && !(isMenuExpanded || isHoverExpanded);
 
   const { visibleCount, collapsedCount, isMeasuring, rowHeight } =
     useCollapsibleValues(containerRef, selectVal, collapseSelected);
 
+  const clearHoverTimer = useCallback(() => {
+    if (hoverTimerRef.current === null) return;
+
+    const win = featheryWindow();
+    if (typeof win.clearTimeout === 'function') {
+      win.clearTimeout(hoverTimerRef.current);
+    }
+    hoverTimerRef.current = null;
+  }, []);
+
+  const handleHoverEnter = useCallback(() => {
+    if (disabled || !collapseSelectedPreference) return;
+    pointerInsideRef.current = true;
+    if (isMenuExpanded || isHoverExpanded || hoverTimerRef.current !== null) {
+      return;
+    }
+
+    const win = featheryWindow();
+    if (typeof win.setTimeout !== 'function') {
+      setIsHoverExpanded(true);
+      return;
+    }
+
+    hoverTimerRef.current = win.setTimeout(() => {
+      hoverTimerRef.current = null;
+      if (
+        !pointerInsideRef.current ||
+        disabled ||
+        !collapseSelectedPreference
+      ) {
+        return;
+      }
+      setIsHoverExpanded(true);
+    }, 500) as unknown as number;
+  }, [collapseSelectedPreference, disabled, isHoverExpanded, isMenuExpanded]);
+
+  const handleHoverLeave = useCallback(() => {
+    pointerInsideRef.current = false;
+    clearHoverTimer();
+    if (!isMenuExpanded) {
+      setIsHoverExpanded(false);
+    }
+  }, [clearHoverTimer, isMenuExpanded]);
+
+  useEffect(
+    () => () => {
+      pointerInsideRef.current = false;
+      clearHoverTimer();
+    },
+    [clearHoverTimer]
+  );
+
+  useEffect(() => {
+    if (!collapseSelectedPreference) {
+      pointerInsideRef.current = false;
+      clearHoverTimer();
+      setIsHoverExpanded(false);
+      setIsMenuExpanded(false);
+    }
+  }, [clearHoverTimer, collapseSelectedPreference]);
+
+  useEffect(() => {
+    if (disabled) {
+      pointerInsideRef.current = false;
+      clearHoverTimer();
+      setIsHoverExpanded(false);
+    }
+  }, [clearHoverTimer, disabled]);
+
   const handleChange = useCallback(
     (selected: any, actionMeta: any) => {
+      if (collapseSelectedPreference) {
+        setIsHoverExpanded(false);
+      }
+
       if (!collapseSelected || !Array.isArray(selected)) {
         onChange(selected, actionMeta);
         return;
@@ -610,6 +699,8 @@ export default function DropdownMultiField({
               }
             : {}
         }}
+        onMouseEnter={handleHoverEnter}
+        onMouseLeave={handleHoverLeave}
       >
         {customBorder}
         <Component
@@ -639,20 +730,35 @@ export default function DropdownMultiField({
             }),
             // @ts-ignore
             valueContainer: (baseStyles, state) => {
-              const selectProps = state.selectProps as typeof state.selectProps &
-                ExtendedSelectProps & { inputValue?: string };
+              const selectProps =
+                state.selectProps as typeof state.selectProps &
+                  ExtendedSelectProps & { inputValue?: string };
               const shouldWrap =
                 selectProps.isMeasuring ||
                 !selectProps.collapseSelected ||
                 !!selectProps.inputValue;
+              const paddingBlock = shouldWrap
+                ? {
+                    paddingTop:
+                      baseStyles.paddingTop !== undefined
+                        ? baseStyles.paddingTop
+                        : '8px',
+                    paddingBottom:
+                      baseStyles.paddingBottom !== undefined
+                        ? baseStyles.paddingBottom
+                        : '8px'
+                  }
+                : {};
 
               return {
                 ...baseStyles,
+                ...paddingBlock,
                 paddingInlineEnd: 28,
                 display: 'flex',
                 minWidth: 0,
                 flexWrap: shouldWrap ? 'wrap' : 'nowrap',
-                alignItems: 'center',
+                alignItems: shouldWrap ? 'flex-start' : 'center',
+                alignContent: shouldWrap ? 'flex-start' : 'center',
                 ...(collapseSelected
                   ? {
                       '& .rs-collapsed-chip': {
@@ -709,6 +815,18 @@ export default function DropdownMultiField({
           onChange={handleChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
+          onMenuOpen={() => {
+            if (collapseSelectedPreference) {
+              setIsMenuExpanded(true);
+            }
+          }}
+          onMenuClose={() => {
+            if (!collapseSelectedPreference) return;
+            setIsMenuExpanded(false);
+            clearHoverTimer();
+            setIsHoverExpanded(false);
+            pointerInsideRef.current = false;
+          }}
           noOptionsMessage={create ? () => null : noOptionsMessage}
           options={options}
           isOptionDisabled={() =>
