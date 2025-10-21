@@ -208,6 +208,12 @@ import {
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ExtractionToast from './components/AIExtractionToast';
 import { useAIExtractionToast } from './components/AIExtractionToast/useAIExtractionToast';
+import {
+  INTERACTION_EVENT_TYPES,
+  FEATHERY_INTERACTION_EVENT,
+  isInteractionDetected,
+  setInteractionDetected
+} from '../utils/interactionState';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -473,36 +479,32 @@ function Form({
     return () => featheryWindow().removeEventListener('resize', handleResize);
   }, [formSettings]);
 
-  const interactionTracked = useRef(false);
   useEffect(() => {
-    if (interactionTracked.current) return;
+    if (isInteractionDetected()) return;
     const formElement = formRef.current;
     if (!formElement) return;
 
-    // keyboard, mouse, touch events
-    const interactionEvents = ['keydown', 'pointerdown'];
-
     const handleInteraction = () => {
-      if (interactionTracked.current) return;
-      interactionTracked.current = true;
+      if (isInteractionDetected()) return;
+      setInteractionDetected();
 
       // Dispatch custom event to notify all FeatheryClient instances
       // there may be multiple clients (form client, default client, etc.)
       // custom event is an efficient way to notify all of them.
-      const event = new CustomEvent('feathery:interaction');
+      const event = new CustomEvent(FEATHERY_INTERACTION_EVENT);
       featheryWindow().dispatchEvent(event);
 
-      interactionEvents.forEach((eventType) => {
+      INTERACTION_EVENT_TYPES.forEach((eventType) => {
         formElement.removeEventListener(eventType, handleInteraction, true);
       });
     };
 
-    interactionEvents.forEach((eventType) => {
+    INTERACTION_EVENT_TYPES.forEach((eventType) => {
       formElement.addEventListener(eventType, handleInteraction, true);
     });
 
     return () => {
-      interactionEvents.forEach((eventType) => {
+      INTERACTION_EVENT_TYPES.forEach((eventType) => {
         formElement.removeEventListener(eventType, handleInteraction, true);
       });
     };

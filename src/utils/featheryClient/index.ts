@@ -29,6 +29,11 @@ import debounce from 'lodash.debounce';
 import { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
 import { ExtractionActionOptions, GetConfigParams } from '../internalState';
+import {
+  FEATHERY_INTERACTION_EVENT,
+  isInteractionDetected,
+  setInteractionDetected
+} from '../interactionState';
 
 export const API_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
@@ -113,7 +118,6 @@ export default class FeatheryClient extends IntegrationClient {
    */
   debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
   customSubmitInFlight: Record<string, any>;
-  interactionDetected: boolean;
 
   constructor(
     formKey = '',
@@ -124,24 +128,26 @@ export default class FeatheryClient extends IntegrationClient {
     super(formKey, ignoreNetworkErrors, draft, bypassCDN);
     this.pendingCustomFieldUpdates = {};
     this.customSubmitInFlight = {};
-    this.interactionDetected = false;
     this.debouncedSubmitCustom = debounce(
       this._debouncedSubmitCustom.bind(this),
       SUBMIT_CUSTOM_DEBOUNCE_WINDOW
     );
 
     this.handleInteraction = this.handleInteraction.bind(this);
-    featheryWindow().addEventListener?.(
-      'feathery:interaction',
-      this.handleInteraction
-    );
+    if (typeof CustomEvent !== 'undefined') {
+      featheryWindow().addEventListener?.(
+        FEATHERY_INTERACTION_EVENT,
+        this.handleInteraction
+      );
+    } else {
+      console.warn('CustomEvent is not available');
+      setInteractionDetected();
+    }
   }
 
   private async handleInteraction() {
-    if (this.interactionDetected) return;
-    this.interactionDetected = true;
     featheryWindow().removeEventListener?.(
-      'feathery:interaction',
+      FEATHERY_INTERACTION_EVENT,
       this.handleInteraction
     );
     return this.submitCustom({}, { shouldFlush: true });
@@ -149,7 +155,7 @@ export default class FeatheryClient extends IntegrationClient {
 
   public destroy() {
     featheryWindow().removeEventListener?.(
-      'feathery:interaction',
+      FEATHERY_INTERACTION_EVENT,
       this.handleInteraction
     );
   }
@@ -552,7 +558,7 @@ export default class FeatheryClient extends IntegrationClient {
       return;
     }
 
-    if (!this.interactionDetected) {
+    if (!isInteractionDetected()) {
       return;
     }
 

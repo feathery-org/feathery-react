@@ -4,6 +4,7 @@ import FeatheryClient, {
   STATIC_URL
 } from '../featheryClient';
 import { initFormsPromise, initInfo } from '../init';
+import { setInteractionDetected } from '../interactionState';
 
 jest.mock('../init', () => ({
   initInfo: jest.fn(),
@@ -100,7 +101,7 @@ describe('featheryClient', () => {
       // Arrange
       const formKey = 'formKey';
       const featheryClient = new FeatheryClient(formKey);
-      featheryClient.interactionDetected = true;
+      setInteractionDetected();
 
       const customKeyValues = { foo: 'bar' };
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
@@ -128,7 +129,7 @@ describe('featheryClient', () => {
       // Arrange
       const formKey = 'formKey';
       const featheryClient = new FeatheryClient(formKey);
-      featheryClient.interactionDetected = true;
+      setInteractionDetected();
 
       const customKeyValues = { foo: 'bar' };
       initInfo.mockReturnValue({ sdkKey: 'sdkKey', userId: 'userId' });
@@ -156,7 +157,7 @@ describe('featheryClient', () => {
       // Arrange
       const formKey = 'formKey';
       const featheryClient = new FeatheryClient(formKey);
-      featheryClient.interactionDetected = true;
+      setInteractionDetected();
 
       const servars = [
         {
@@ -200,7 +201,7 @@ describe('featheryClient', () => {
       // Arrange
       const formKey = 'formKey';
       const featheryClient = new FeatheryClient(formKey);
-      featheryClient.interactionDetected = true;
+      setInteractionDetected();
 
       const servars = [
         {
