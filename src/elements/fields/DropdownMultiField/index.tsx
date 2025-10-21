@@ -1,425 +1,23 @@
-import React, {
-  ComponentType,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import useBorder from '../../components/useBorder';
-import Select, {
-  components as SelectComponents,
-  MultiValueGenericProps,
-  MultiValueProps,
-  OptionProps,
-  ValueContainerProps
-} from 'react-select';
+import Select, { ActionMeta, OnChangeValue } from 'react-select';
 import CreatableSelect from 'react-select/creatable';
-import { featheryWindow, hoverStylesGuard } from '../../../utils/browser';
+import { hoverStylesGuard } from '../../../utils/browser';
 import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
-import { Tooltip } from '../../components/Tooltip';
-import { FORM_Z_INDEX } from '../../../utils/styles';
 import Placeholder from '../../components/Placeholder';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
-import Overlay from '../../components/Overlay';
 
-type OptionData = {
-  tooltip?: string;
-  value: string;
-  label: string;
-};
-
-type Options = string[] | OptionData[];
-
-const TooltipOption = ({
-  children,
-  ...props
-}: OptionProps<OptionData, true>) => {
-  const optionRef = useRef<HTMLDivElement>(null);
-  const [showTooltip, setShowTooltip] = useState(false);
-  const containerRef = (props.selectProps as any).containerRef as
-    | React.RefObject<HTMLElement | null>
-    | undefined;
-
-  return (
-    <div
-      ref={optionRef}
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
-    >
-      {/* @ts-ignore */}
-      <SelectComponents.Option {...props}>{children}</SelectComponents.Option>
-      {props.data.tooltip && optionRef.current && (
-        <Overlay
-          targetRef={optionRef}
-          containerRef={containerRef}
-          show={showTooltip}
-          placement='right'
-        >
-          <Tooltip
-            id={`tooltip-${props.data.value}`}
-            css={{
-              zIndex: FORM_Z_INDEX + 1,
-              padding: '.4rem 0',
-              transition: 'opacity .10s linear',
-              '.tooltip-inner': {
-                maxWidth: '200px',
-                padding: '.25rem .5rem',
-                color: '#fff',
-                textAlign: 'center',
-                backgroundColor: '#000',
-                borderRadius: '.25rem',
-                fontSize: 'smaller'
-              }
-            }}
-          >
-            {props.data.tooltip}
-          </Tooltip>
-        </Overlay>
-      )}
-    </div>
-  );
-};
-
-type ExtendedSelectProps = {
-  collapsedCount: number;
-  containerRef: React.RefObject<HTMLElement | null>;
-  collapseSelected: boolean;
-  isMeasuring: boolean;
-  rowHeight: number | null;
-  visibleCount: number;
-};
-
-const useCollapsibleValues = (
-  containerRef: React.RefObject<HTMLElement | null>,
-  values: { value: string }[],
-  enabled: boolean
-) => {
-  const totalCount = values.length;
-  const [visibleCount, setVisibleCount] = useState(totalCount);
-  const [isMeasuring, setIsMeasuring] = useState(false);
-  const [rowHeight, setRowHeight] = useState<number | null>(null);
-  const [measurementTick, setMeasurementTick] = useState(0);
-  const pendingMeasurementRef = useRef(false);
-  const queuedMeasurementRef = useRef(false);
-  const frameRef = useRef<number | null>(null);
-  const lastWidthRef = useRef<number | null>(null);
-  const lastCollapsedVisibleRef = useRef(totalCount);
-
-  const valuesSignature = useMemo(
-    () => values.map((item) => item.value).join('|'),
-    [values]
-  );
-
-  const requestMeasurement = useCallback(() => {
-    if (!enabled) return;
-
-    if (pendingMeasurementRef.current) {
-      queuedMeasurementRef.current = true;
-      return;
-    }
-
-    pendingMeasurementRef.current = true;
-    queuedMeasurementRef.current = false;
-    if (containerRef.current) {
-      const chip = containerRef.current.querySelector(
-        '[data-feathery-multi-value="true"]'
-      ) as HTMLElement | null;
-      if (chip) {
-        const rect = chip.getBoundingClientRect();
-        const style = featheryWindow().getComputedStyle(chip);
-        const computedHeight =
-          rect.height +
-          parseFloat(style.marginTop || '0') +
-          parseFloat(style.marginBottom || '0');
-        setRowHeight((prev) => {
-          if (prev === null) return computedHeight;
-          return Math.abs(prev - computedHeight) > 0.5 ? computedHeight : prev;
-        });
-      }
-    }
-    setIsMeasuring(true);
-    setVisibleCount(totalCount);
-    setMeasurementTick((tick) => tick + 1);
-  }, [containerRef, enabled, totalCount]);
-
-  useEffect(() => {
-    if (enabled) requestMeasurement();
-  }, [enabled, requestMeasurement, valuesSignature]);
-
-  useEffect(() => {
-    if (!enabled) return;
-
-    const node = containerRef.current;
-    if (!node) return;
-
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[entries.length - 1];
-      if (!entry) return;
-      const width = entry.contentRect.width;
-
-      if (lastWidthRef.current === null) {
-        lastWidthRef.current = width;
-        requestMeasurement();
-        return;
-      }
-
-      if (Math.abs(width - lastWidthRef.current) > 0.5) {
-        lastWidthRef.current = width;
-        requestMeasurement();
-      }
-    });
-
-    observer.observe(node);
-
-    return () => observer.disconnect();
-  }, [containerRef, enabled, requestMeasurement]);
-
-  useLayoutEffect(() => {
-    if (!pendingMeasurementRef.current) return;
-
-    frameRef.current = featheryWindow().requestAnimationFrame(() => {
-      pendingMeasurementRef.current = false;
-
-      const container = containerRef.current;
-      let nextVisible = totalCount;
-
-      if (enabled && container) {
-        const chips = Array.from(
-          container.querySelectorAll('[data-feathery-multi-value="true"]')
-        ) as HTMLElement[];
-
-        if (chips.length) {
-          const firstTop = chips[0].offsetTop;
-          nextVisible = chips.length;
-
-          for (let index = 0; index < chips.length; index += 1) {
-            if (chips[index].offsetTop - firstTop > 1) {
-              nextVisible = index;
-              break;
-            }
-          }
-
-          const rect = chips[0].getBoundingClientRect();
-          const style = featheryWindow().getComputedStyle(chips[0]);
-          const computedHeight =
-            rect.height +
-            parseFloat(style.marginTop || '0') +
-            parseFloat(style.marginBottom || '0');
-          setRowHeight((prev) => {
-            if (prev === null) return computedHeight;
-            return Math.abs(prev - computedHeight) > 0.5
-              ? computedHeight
-              : prev;
-          });
-        }
-      }
-
-      setVisibleCount((prev) => (prev === nextVisible ? prev : nextVisible));
-      setIsMeasuring(false);
-
-      if (containerRef.current) {
-        lastWidthRef.current =
-          containerRef.current.getBoundingClientRect().width;
-      }
-
-      if (enabled) {
-        lastCollapsedVisibleRef.current = nextVisible;
-      }
-
-      if (queuedMeasurementRef.current) {
-        queuedMeasurementRef.current = false;
-        requestMeasurement();
-      }
-    });
-
-    return () => {
-      if (frameRef.current !== null) {
-        featheryWindow().cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
-    };
-  }, [enabled, measurementTick, requestMeasurement, totalCount]);
-
-  useEffect(() => {
-    if (!enabled) {
-      setIsMeasuring(false);
-      setRowHeight(null);
-      pendingMeasurementRef.current = false;
-      queuedMeasurementRef.current = false;
-      lastWidthRef.current = null;
-      return;
-    }
-
-    setVisibleCount((prev) => {
-      const restored = Math.min(lastCollapsedVisibleRef.current, totalCount);
-      return prev === restored ? prev : restored;
-    });
-  }, [enabled, totalCount]);
-
-  useEffect(() => {
-    lastCollapsedVisibleRef.current = Math.min(
-      lastCollapsedVisibleRef.current,
-      totalCount
-    );
-  }, [totalCount]);
-
-  const collapsedCount = enabled ? Math.max(totalCount - visibleCount, 0) : 0;
-
-  return {
-    visibleCount: enabled ? visibleCount : totalCount,
-    collapsedCount,
-    isMeasuring: enabled ? isMeasuring : false,
-    rowHeight: enabled ? rowHeight : null
-  };
-};
-
-const CollapsibleMultiValue = (props: MultiValueProps<OptionData, true>) => {
-  const selectProps = props.selectProps as typeof props.selectProps &
-    ExtendedSelectProps;
-
-  const cutoff = selectProps.visibleCount;
-  const hideCompletely =
-    selectProps.collapseSelected &&
-    !selectProps.isMeasuring &&
-    props.index >= cutoff;
-  if (hideCompletely) return null;
-
-  const BaseMultiValue = SelectComponents.MultiValue as ComponentType<
-    MultiValueProps<OptionData, true>
-  >;
-
-  const innerPropsStyle =
-    props.innerProps && 'style' in props.innerProps
-      ? (props.innerProps.style as React.CSSProperties | undefined)
-      : undefined;
-  const shouldMaskDuringMeasure =
-    selectProps.collapseSelected &&
-    selectProps.isMeasuring &&
-    props.index >= cutoff;
-  const mergedInnerProps = {
-    ...props.innerProps
-  } as typeof props.innerProps & {
-    style?: React.CSSProperties;
-    'data-feathery-multi-value'?: string;
-  };
-  mergedInnerProps['data-feathery-multi-value'] = 'true';
-  if (shouldMaskDuringMeasure) {
-    mergedInnerProps.style = {
-      ...innerPropsStyle,
-      opacity: 0,
-      pointerEvents: 'none'
-    };
-  } else if (innerPropsStyle) {
-    mergedInnerProps.style = innerPropsStyle;
-  }
-
-  return (
-    <BaseMultiValue
-      {...props}
-      selectProps={selectProps}
-      innerProps={mergedInnerProps}
-    />
-  );
-};
-
-const CollapsedIndicator = ({ collapsedCount }: { collapsedCount: number }) =>
-  collapsedCount > 0 ? (
-    <span className='rs-collapsed-chip'>+{collapsedCount}</span>
-  ) : null;
-
-const CollapsibleMultiValueContainer = (
-  props: MultiValueGenericProps<OptionData, true>
-) => {
-  const selectProps = props.selectProps as typeof props.selectProps &
-    ExtendedSelectProps & {
-      value?: readonly OptionData[] | null;
-    };
-  const BaseContainer = SelectComponents.MultiValueContainer as ComponentType<
-    MultiValueGenericProps<OptionData, true>
-  >;
-
-  if (!selectProps.collapseSelected) {
-    return <BaseContainer {...props} />;
-  }
-
-  const valueList = Array.isArray(selectProps.value)
-    ? (selectProps.value as readonly OptionData[])
-    : [];
-  const currentIndex = valueList.findIndex(
-    (option: OptionData) => option.value === props.data.value
-  );
-  const targetIndex = Math.max(selectProps.visibleCount - 1, 0);
-  const showIndicator =
-    selectProps.collapsedCount > 0 &&
-    selectProps.visibleCount > 0 &&
-    currentIndex >= 0 &&
-    currentIndex === targetIndex;
-
-  return (
-    <BaseContainer {...props}>
-      {props.children}
-      {showIndicator ? (
-        <CollapsedIndicator collapsedCount={selectProps.collapsedCount} />
-      ) : null}
-    </BaseContainer>
-  );
-};
-
-const CollapsibleValueContainer = (
-  props: ValueContainerProps<OptionData, true>
-) => {
-  const selectProps = props.selectProps as typeof props.selectProps &
-    ExtendedSelectProps;
-  const BaseValueContainer = SelectComponents.ValueContainer as ComponentType<
-    ValueContainerProps<OptionData, true>
-  >;
-
-  if (!selectProps.collapseSelected) {
-    return <BaseValueContainer {...props} />;
-  }
-
-  const shouldShowIndicator =
-    selectProps.collapsedCount > 0 && selectProps.visibleCount === 0;
-
-  const innerPropsStyle =
-    props.innerProps && 'style' in props.innerProps
-      ? (props.innerProps.style as React.CSSProperties | undefined)
-      : undefined;
-  const measuringStyles =
-    selectProps.isMeasuring && selectProps.rowHeight
-      ? {
-          maxHeight: `${selectProps.rowHeight}px`,
-          overflow: 'hidden'
-        }
-      : {};
-  const mergedInnerProps = {
-    ...props.innerProps
-  } as typeof props.innerProps & {
-    style?: React.CSSProperties;
-    'data-feathery-value-container'?: string;
-  };
-  mergedInnerProps['data-feathery-value-container'] = 'true';
-  if (Object.keys(measuringStyles).length) {
-    mergedInnerProps.style = {
-      ...innerPropsStyle,
-      ...measuringStyles
-    };
-  } else if (innerPropsStyle) {
-    mergedInnerProps.style = innerPropsStyle;
-  }
-
-  return (
-    <BaseValueContainer {...props} innerProps={mergedInnerProps}>
-      {props.children}
-      {shouldShowIndicator ? (
-        <CollapsedIndicator collapsedCount={selectProps.collapsedCount} />
-      ) : null}
-    </BaseValueContainer>
-  );
-};
+import {
+  CollapsibleMultiValue,
+  CollapsibleMultiValueContainer,
+  CollapsibleValueContainer,
+  TooltipOption,
+  CollapsibleMultiValueRemove
+} from './CollapsibleComponents';
+import useDropdownCollapse from './useDropdownCollapse';
+import useSelectionOrdering from './useSelectionOrdering';
+import type { OptionData, Options } from './types';
 
 export default function DropdownMultiField({
   element,
@@ -441,6 +39,7 @@ export default function DropdownMultiField({
     error: inlineError,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
+
   const containerRef = useRef<HTMLElement | null>(null);
   const [focused, setFocused] = useState(false);
   const servar = element.servar;
@@ -457,12 +56,16 @@ export default function DropdownMultiField({
     if (!fieldVal) return newOptions;
 
     fieldVal.forEach((val: string) => {
-      if (typeof newOptions[0] === 'string') {
-        // handle string[]
-        if (!newOptions.includes(val)) newOptions.push(val);
-      } else if (!newOptions.some((option: any) => option.value === val)) {
-        // handle OptionData[]
-        newOptions.push({ value: val, label: val });
+      const items = newOptions as (string | OptionData)[];
+      if (typeof items[0] === 'string') {
+        const stringOptions = newOptions as string[];
+        if (!stringOptions.includes(val)) stringOptions.push(val);
+        return;
+      }
+
+      const optionDataOptions = newOptions as OptionData[];
+      if (!optionDataOptions.some((option) => option.value === val)) {
+        optionDataOptions.push({ value: val, label: val });
       }
     });
 
@@ -473,12 +76,16 @@ export default function DropdownMultiField({
   const tooltips = servar.metadata.option_tooltips || [];
 
   const labelMap: Record<string, string> = {};
-  let options: any[] = [];
+  const tooltipMap: Record<string, string | undefined> = {};
+  let options: OptionData[] = [];
 
   if (shouldSalesforceSync) {
-    options = dynamicOptions.map((option) => {
+    options = dynamicOptions.map((option: OptionData) => {
       labelMap[option.value] = option.label;
-      return { value: option.value, label: option.label };
+      return {
+        value: option.value,
+        label: option.label
+      };
     });
   } else if (
     repeatIndex !== null &&
@@ -488,9 +95,11 @@ export default function DropdownMultiField({
     options = addFieldValOptions(repeatOptions).map((option) => {
       if (typeof option === 'string') {
         labelMap[option] = option;
+        tooltipMap[option] = '';
         return { value: option, label: option, tooltip: '' };
       }
       labelMap[option.value] = option.label;
+      tooltipMap[option.value] = option.tooltip;
       return option;
     });
   } else {
@@ -498,6 +107,7 @@ export default function DropdownMultiField({
       (option, index) => {
         if (typeof option === 'string') {
           labelMap[option] = labels[index] || option;
+          tooltipMap[option] = tooltips[index];
 
           return {
             value: option,
@@ -507,132 +117,84 @@ export default function DropdownMultiField({
         }
 
         labelMap[option.value] = option.label;
+        tooltipMap[option.value] = option.tooltip;
 
         return option;
       }
     );
   }
 
-  const selectVal = fieldVal
-    ? fieldVal.map((val: any) => ({ label: labelMap[val], value: val }))
+  const selectVal: OptionData[] = fieldVal
+    ? fieldVal.map((val: string) => ({
+        label: labelMap[val] ?? val,
+        value: val,
+        tooltip: tooltipMap[val]
+      }))
     : [];
 
-  const collapseSelectedPreference =
-    !!servar.metadata.collapse_selected_options;
-  const [isMenuExpanded, setIsMenuExpanded] = useState(false);
-  const [isHoverExpanded, setIsHoverExpanded] = useState(false);
-  const hoverTimerRef = useRef<number | null>(null);
-  const pointerInsideRef = useRef(false);
-  const collapseSelected =
-    collapseSelectedPreference && !(isMenuExpanded || isHoverExpanded);
-
-  const { visibleCount, collapsedCount, isMeasuring, rowHeight } =
-    useCollapsibleValues(containerRef, selectVal, collapseSelected);
-
-  const clearHoverTimer = useCallback(() => {
-    if (hoverTimerRef.current === null) return;
-
-    const win = featheryWindow();
-    if (typeof win.clearTimeout === 'function') {
-      win.clearTimeout(hoverTimerRef.current);
-    }
-    hoverTimerRef.current = null;
-  }, []);
-
-  const handleHoverEnter = useCallback(() => {
-    if (disabled || !collapseSelectedPreference) return;
-    pointerInsideRef.current = true;
-    if (isMenuExpanded || isHoverExpanded || hoverTimerRef.current !== null) {
-      return;
-    }
-
-    const win = featheryWindow();
-    if (typeof win.setTimeout !== 'function') {
-      setIsHoverExpanded(true);
-      return;
-    }
-
-    hoverTimerRef.current = win.setTimeout(() => {
-      hoverTimerRef.current = null;
-      if (
-        !pointerInsideRef.current ||
-        disabled ||
-        !collapseSelectedPreference
-      ) {
-        return;
-      }
-      setIsHoverExpanded(true);
-    }, 500) as unknown as number;
-  }, [collapseSelectedPreference, disabled, isHoverExpanded, isMenuExpanded]);
-
-  const handleHoverLeave = useCallback(() => {
-    pointerInsideRef.current = false;
-    clearHoverTimer();
-    if (!isMenuExpanded) {
-      setIsHoverExpanded(false);
-    }
-  }, [clearHoverTimer, isMenuExpanded]);
-
-  useEffect(
-    () => () => {
-      pointerInsideRef.current = false;
-      clearHoverTimer();
-    },
-    [clearHoverTimer]
+  const collapseSelectedPreference = !!servar.metadata.collapse_selected_options;
+  const { orderedSelectVal, reorderSelected } = useSelectionOrdering(
+    selectVal,
+    collapseSelectedPreference
   );
 
-  useEffect(() => {
-    if (!collapseSelectedPreference) {
-      pointerInsideRef.current = false;
-      clearHoverTimer();
-      setIsHoverExpanded(false);
-      setIsMenuExpanded(false);
-    }
-  }, [clearHoverTimer, collapseSelectedPreference]);
+  const {
+    collapseSelected,
+    collapsedCount,
+    computedMenuIsOpen,
+    closeMenuImmediately,
+    handleHoverEnter,
+    handleHoverLeave,
+    handleMenuClose,
+    handleMenuOpen,
+    handleWrapperMouseDown,
+    handleWrapperTouchStart,
+    isMeasuring,
+    rowHeight,
+    selectRef,
+    closeHover,
+    visibleCount
+  } = useDropdownCollapse({
+    collapseSelectedPreference,
+    containerRef,
+    disabled,
+    values: orderedSelectVal
+  });
 
-  useEffect(() => {
-    if (disabled) {
-      pointerInsideRef.current = false;
-      clearHoverTimer();
-      setIsHoverExpanded(false);
-    }
-  }, [clearHoverTimer, disabled]);
+  const selectComponentsOverride = useMemo(
+    () =>
+      collapseSelected
+        ? {
+            Option: TooltipOption,
+            MultiValue: CollapsibleMultiValue,
+            MultiValueContainer: CollapsibleMultiValueContainer,
+            ValueContainer: CollapsibleValueContainer,
+            MultiValueRemove: CollapsibleMultiValueRemove
+          }
+        : { Option: TooltipOption, MultiValueRemove: CollapsibleMultiValueRemove },
+    [collapseSelected]
+  );
 
   const handleChange = useCallback(
-    (selected: any, actionMeta: any) => {
+    (
+      selected: OnChangeValue<OptionData, true>,
+      actionMeta: ActionMeta<OptionData>
+    ) => {
       if (collapseSelectedPreference) {
-        setIsHoverExpanded(false);
+        closeHover();
+        closeMenuImmediately();
       }
 
-      if (!collapseSelected || !Array.isArray(selected)) {
-        onChange(selected, actionMeta);
-        return;
-      }
-
-      if (
-        actionMeta &&
-        (actionMeta.action === 'select-option' ||
-          actionMeta.action === 'create-option')
-      ) {
-        const option = actionMeta.option;
-        if (option) {
-          const latestIndex = selected.findIndex(
-            (item) => item.value === option.value
-          );
-          if (latestIndex >= 0) {
-            const latest = selected[latestIndex];
-            const remaining = selected.filter(
-              (item) => item.value !== option.value
-            );
-            onChange([latest, ...remaining], actionMeta);
-            return;
-          }
-        }
-      }
-
-      onChange(selected, actionMeta);
+      const nextSelected = reorderSelected(selected, actionMeta);
+      onChange(nextSelected, actionMeta);
     },
-    [collapseSelected, onChange]
+    [
+      closeHover,
+      closeMenuImmediately,
+      collapseSelectedPreference,
+      onChange,
+      reorderSelected
+    ]
   );
 
   const hasTooltip = !!element.properties.tooltipText;
@@ -647,18 +209,6 @@ export default function DropdownMultiField({
       : (inputValue: string) => `${template} "${inputValue}"`;
   }
   const Component = create ? CreatableSelect : Select;
-  const selectComponentsOverride = useMemo(
-    () =>
-      collapseSelected
-        ? {
-            Option: TooltipOption,
-            MultiValue: CollapsibleMultiValue,
-            MultiValueContainer: CollapsibleMultiValueContainer,
-            ValueContainer: CollapsibleValueContainer
-          }
-        : { Option: TooltipOption },
-    [collapseSelected]
-  );
 
   responsiveStyles.applyFontStyles('field');
 
@@ -701,11 +251,15 @@ export default function DropdownMultiField({
         }}
         onMouseEnter={handleHoverEnter}
         onMouseLeave={handleHoverLeave}
+        onMouseDown={handleWrapperMouseDown}
+        onTouchStart={handleWrapperTouchStart}
       >
         {customBorder}
         <Component
+          ref={selectRef}
+          menuIsOpen={computedMenuIsOpen}
           styles={{
-            // @ts-ignore
+            // @ts-ignore React Select style typing is overly strict
             control: (baseStyles) => ({
               ...baseStyles,
               ...responsiveStyles.getTarget('field'),
@@ -717,22 +271,24 @@ export default function DropdownMultiField({
               backgroundColor: 'transparent',
               backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='%23${element.styles.font_color}'/></svg>")`,
               backgroundRepeat: 'no-repeat',
-              backgroundPosition: `${
-                rightToLeft ? 'left' : 'right'
-              } ${chevronPosition}px center`,
+              backgroundPosition: `${rightToLeft ? 'left' : 'right'} ${chevronPosition}px center`,
               position: 'relative'
             }),
-            // @ts-ignore
+            // @ts-ignore React Select style typing is overly strict
             container: (baseStyles) => ({
               ...baseStyles,
               height: '100%',
               minHeight: 'inherit'
             }),
-            // @ts-ignore
+            // @ts-ignore React Select style typing is overly strict
             valueContainer: (baseStyles, state) => {
               const selectProps =
-                state.selectProps as typeof state.selectProps &
-                  ExtendedSelectProps & { inputValue?: string };
+                state.selectProps as typeof state.selectProps & {
+                  collapseSelected: boolean;
+                  isMeasuring: boolean;
+                  visibleCount: number;
+                  inputValue?: string;
+                };
               const shouldWrap =
                 selectProps.isMeasuring ||
                 !selectProps.collapseSelected ||
@@ -777,7 +333,7 @@ export default function DropdownMultiField({
                   : {})
               };
             },
-            // @ts-ignore
+            // @ts-ignore React Select style typing is overly strict
             multiValueLabel: (baseStyles) => ({
               ...baseStyles,
               whiteSpace: 'normal',
@@ -788,7 +344,7 @@ export default function DropdownMultiField({
             }),
             indicatorSeparator: () => ({ display: 'none' }),
             indicatorsContainer: () => ({ display: 'none' }),
-            // @ts-ignore
+            // @ts-ignore React Select style typing is overly strict
             menu: (baseStyles) => ({
               ...baseStyles,
               zIndex: DROPDOWN_Z_INDEX,
@@ -809,28 +365,19 @@ export default function DropdownMultiField({
           // @ts-ignore React Select doesn't type custom props on selectProps
           collapseSelected={collapseSelected}
           inputId={servar.key}
-          value={selectVal}
+          value={orderedSelectVal}
           required={required}
           isDisabled={disabled}
           onChange={handleChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          onMenuOpen={() => {
-            if (collapseSelectedPreference) {
-              setIsMenuExpanded(true);
-            }
-          }}
-          onMenuClose={() => {
-            if (!collapseSelectedPreference) return;
-            setIsMenuExpanded(false);
-            clearHoverTimer();
-            setIsHoverExpanded(false);
-            pointerInsideRef.current = false;
-          }}
+          onMenuOpen={handleMenuOpen}
+          onMenuClose={handleMenuClose}
           noOptionsMessage={create ? () => null : noOptionsMessage}
           options={options}
           isOptionDisabled={() =>
-            (servar.max_length && selectVal.length >= servar.max_length) ||
+            (servar.max_length &&
+              orderedSelectVal.length >= servar.max_length) ||
             loadingDynamicOptions
           }
           isMulti
@@ -839,7 +386,7 @@ export default function DropdownMultiField({
           formatCreateLabel={formatCreateLabel || undefined}
         />
         <Placeholder
-          value={selectVal.length || focused}
+          value={orderedSelectVal.length || focused}
           element={element}
           responsiveStyles={responsiveStyles}
           repeatIndex={repeatIndex}
