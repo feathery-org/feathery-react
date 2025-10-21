@@ -208,12 +208,7 @@ import {
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ExtractionToast from './components/AIExtractionToast';
 import { useAIExtractionToast } from './components/AIExtractionToast/useAIExtractionToast';
-import {
-  INTERACTION_EVENT_TYPES,
-  FEATHERY_INTERACTION_EVENT,
-  isInteractionDetected,
-  setInteractionDetected
-} from '../utils/interactionState';
+import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -479,36 +474,7 @@ function Form({
     return () => featheryWindow().removeEventListener('resize', handleResize);
   }, [formSettings]);
 
-  useEffect(() => {
-    if (isInteractionDetected()) return;
-    const formElement = formRef.current;
-    if (!formElement) return;
-
-    const handleInteraction = () => {
-      if (isInteractionDetected()) return;
-      setInteractionDetected();
-
-      // Dispatch custom event to notify all FeatheryClient instances
-      // there may be multiple clients (form client, default client, etc.)
-      // custom event is an efficient way to notify all of them.
-      const event = new CustomEvent(FEATHERY_INTERACTION_EVENT);
-      featheryWindow().dispatchEvent(event);
-
-      INTERACTION_EVENT_TYPES.forEach((eventType) => {
-        formElement.removeEventListener(eventType, handleInteraction, true);
-      });
-    };
-
-    INTERACTION_EVENT_TYPES.forEach((eventType) => {
-      formElement.addEventListener(eventType, handleInteraction, true);
-    });
-
-    return () => {
-      INTERACTION_EVENT_TYPES.forEach((eventType) => {
-        formElement.removeEventListener(eventType, handleInteraction, true);
-      });
-    };
-  }, [activeStep, client, stepKey, formName]);
+  useTrackUserInteraction(formRef, activeStep, stepKey, formName);
 
   useEffect(() => {
     const oldLanguage = curLanguage.current;
