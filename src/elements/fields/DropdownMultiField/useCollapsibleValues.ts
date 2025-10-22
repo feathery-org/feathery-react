@@ -144,7 +144,8 @@ export default function useCollapsibleValues(
         }
       }
 
-      setVisibleCount((prev) => (prev === nextVisible ? prev : nextVisible));
+      const clampedVisible = nextVisible || (enabled && values.length ? 1 : 0);
+      setVisibleCount((prev) => (prev === clampedVisible ? prev : clampedVisible));
       setIsMeasuring(false);
 
       if (containerRef.current) {
@@ -182,7 +183,8 @@ export default function useCollapsibleValues(
 
     setVisibleCount((prev) => {
       const restored = Math.min(lastCollapsedVisibleRef.current, totalCount);
-      return prev === restored ? prev : restored;
+      const clamped = restored || (totalCount > 0 ? 1 : 0);
+      return prev === clamped ? prev : clamped;
     });
   }, [enabled, totalCount]);
 
