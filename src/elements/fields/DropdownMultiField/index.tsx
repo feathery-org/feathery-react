@@ -11,10 +11,9 @@ import useSalesforceSync from '../../../hooks/useSalesforceSync';
 import {
   CollapsibleMultiValue,
   CollapsibleMultiValueContainer,
-  CollapsibleValueContainer,
   TooltipOption,
   CollapsibleMultiValueRemove
-} from './CollapsibleComponents';
+} from './DropdownMultiFieldSelectComponents';
 import useDropdownCollapse from './useDropdownCollapse';
 import useSelectionOrdering from './useSelectionOrdering';
 import type { OptionData, Options } from './types';
@@ -168,7 +167,6 @@ export default function DropdownMultiField({
             Option: TooltipOption,
             MultiValue: CollapsibleMultiValue,
             MultiValueContainer: CollapsibleMultiValueContainer,
-            ValueContainer: CollapsibleValueContainer,
             MultiValueRemove: CollapsibleMultiValueRemove
           }
         : { Option: TooltipOption, MultiValueRemove: CollapsibleMultiValueRemove },

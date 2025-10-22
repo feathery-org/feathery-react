@@ -4,7 +4,6 @@ import {
   type MultiValueGenericProps,
   type MultiValueProps,
   type OptionProps,
-  type ValueContainerProps,
   type MultiValueRemoveProps
 } from 'react-select';
 
@@ -12,7 +11,7 @@ import Overlay from '../../components/Overlay';
 import { Tooltip } from '../../components/Tooltip';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 
-import type { CollapsibleSelectProps, OptionData } from './types';
+import type { DropdownSelectProps, OptionData } from './types';
 
 const TooltipOption = ({ children, ...props }: OptionProps<OptionData, true>) => {
   const optionRef = useRef<HTMLDivElement>(null);
@@ -66,7 +65,7 @@ const BaseMultiValueRemove = SelectComponents
 
 // Prevent react-select from interpreting remove taps as control clicks. Without
 // this guard the menu closes immediately when a collapsed chip is dismissed on
-// touch devices (agents rule: document non-obvious behavior).
+// touch devices
 const CollapsibleMultiValueRemove = (
   props: MultiValueRemoveProps<OptionData>
 ) => {
@@ -96,10 +95,7 @@ const CollapsedIndicator = ({ collapsedCount }: { collapsedCount: number }) =>
 const CollapsibleMultiValueContainer = (
   props: MultiValueGenericProps<OptionData, true>
 ) => {
-  const selectProps = props.selectProps as typeof props.selectProps &
-    CollapsibleSelectProps & {
-      value?: readonly OptionData[] | null;
-    };
+  const selectProps = props.selectProps as DropdownSelectProps;
 
   const BaseContainer = SelectComponents.MultiValueContainer as ComponentType<
     MultiValueGenericProps<OptionData, true>
@@ -133,8 +129,7 @@ const CollapsibleMultiValueContainer = (
 };
 
 const CollapsibleMultiValue = (props: MultiValueProps<OptionData, true>) => {
-  const selectProps = props.selectProps as typeof props.selectProps &
-    CollapsibleSelectProps;
+  const selectProps = props.selectProps as DropdownSelectProps;
   const BaseMultiValue = SelectComponents.MultiValue as ComponentType<
     MultiValueProps<OptionData, true>
   >;
@@ -158,14 +153,15 @@ const CollapsibleMultiValue = (props: MultiValueProps<OptionData, true>) => {
       ? (props.innerProps.style as React.CSSProperties | undefined)
       : undefined;
 
-  const mergedInnerProps = {
-    ...props.innerProps
-  } as typeof props.innerProps & {
+  type MultiValueInnerProps = typeof props.innerProps & {
     style?: React.CSSProperties;
     'data-feathery-multi-value'?: string;
   };
 
-  mergedInnerProps['data-feathery-multi-value'] = 'true';
+  const mergedInnerProps: MultiValueInnerProps = {
+    ...props.innerProps,
+    'data-feathery-multi-value': 'true'
+  };
   mergedInnerProps.onMouseDown = (event) => {
     event.stopPropagation();
     props.innerProps?.onMouseDown?.(event);
@@ -193,70 +189,9 @@ const CollapsibleMultiValue = (props: MultiValueProps<OptionData, true>) => {
   );
 };
 
-const CollapsibleValueContainer = (
-  props: ValueContainerProps<OptionData, true>
-) => {
-  const selectProps = props.selectProps as typeof props.selectProps &
-    CollapsibleSelectProps;
-  const BaseValueContainer = SelectComponents.ValueContainer as ComponentType<
-    ValueContainerProps<OptionData, true>
-  >;
-
-  if (!selectProps.collapseSelected) {
-    return <BaseValueContainer {...props} />;
-  }
-
-  const shouldShowIndicator =
-    !selectProps.isMeasuring &&
-    selectProps.collapsedCount > 0 &&
-    selectProps.visibleCount === 0;
-
-  const innerPropsStyle =
-    props.innerProps && 'style' in props.innerProps
-      ? (props.innerProps.style as React.CSSProperties | undefined)
-      : undefined;
-  const measuringStyles =
-    selectProps.isMeasuring && selectProps.rowHeight
-      ? {
-          maxHeight: `${selectProps.rowHeight}px`,
-          overflow: 'hidden'
-        }
-      : {};
-
-  const mergedInnerProps = {
-    ...props.innerProps
-  } as typeof props.innerProps & {
-    style?: React.CSSProperties;
-    'data-feathery-value-container'?: string;
-  };
-
-  mergedInnerProps['data-feathery-value-container'] = 'true';
-
-  if (Object.keys(measuringStyles).length) {
-    // Lock the container height to the measured row so collapsed chips cannot
-    // momentarily bump layout while react-select recalculates.
-    mergedInnerProps.style = {
-      ...innerPropsStyle,
-      ...measuringStyles
-    };
-  } else if (innerPropsStyle) {
-    mergedInnerProps.style = innerPropsStyle;
-  }
-
-  return (
-    <BaseValueContainer {...props} innerProps={mergedInnerProps}>
-      {props.children}
-      {shouldShowIndicator ? (
-        <CollapsedIndicator collapsedCount={selectProps.collapsedCount} />
-      ) : null}
-    </BaseValueContainer>
-  );
-};
-
 export {
   CollapsibleMultiValue,
   CollapsibleMultiValueContainer,
-  CollapsibleValueContainer,
   TooltipOption,
   CollapsibleMultiValueRemove
 };

@@ -1,4 +1,5 @@
 import type React from 'react';
+import type { MultiValueProps } from 'react-select';
 
 export type OptionData = {
   tooltip?: string;
@@ -8,9 +9,7 @@ export type OptionData = {
 
 export type Options = string[] | OptionData[];
 
-// Additional props we inject into React Select so nested components can react to
-// the collapse measurements and container metrics.
-export type CollapsibleSelectProps = {
+export type DropdownSelectProps = MultiValueProps<OptionData, true>['selectProps'] & {
   collapsedCount: number;
   containerRef: React.RefObject<HTMLElement | null>;
   collapseSelected: boolean;
