@@ -25,7 +25,6 @@ type HoverControls = {
 };
 
 type MenuControls = {
-  isOpen: boolean | undefined;
   open: () => void;
   close: () => void;
   forceClose: () => void;
@@ -64,7 +63,6 @@ export default function useDropdownCollapse({
   const selectRef = useRef<SelectInstance<OptionData, true> | null>(null);
   const hoverTimerRef = useRef<number | null>(null);
   const pointerInsideRef = useRef(false);
-  const ignoreNextMenuCloseRef = useRef(false);
 
   // Collapse only when enabled and no expansion path is active.
   const collapseSelected =
@@ -73,11 +71,6 @@ export default function useDropdownCollapse({
   // useCollapsibleValues measures chip rows when collapsing is active.
   const { collapsedCount, isMeasuring, rowHeight, visibleCount } =
     useCollapsibleValues(containerRef, values, collapseSelected);
-
-  // Control menu state only when collapse overrides are on; otherwise leave defaults.
-  const computedMenuIsOpen = collapseSelectedPreference
-    ? isMenuExpanded
-    : undefined;
 
   // Hover expansion is delayed; keep the timer so we can cancel on leave or state change.
   const clearHoverTimer = useCallback(() => {
@@ -96,7 +89,6 @@ export default function useDropdownCollapse({
   }, [clearHoverTimer]);
 
   const closeMenu = useCallback(() => {
-    ignoreNextMenuCloseRef.current = false;
     closeHover();
     setIsMenuExpanded(false);
     const instance = selectRef.current as any;
@@ -139,37 +131,23 @@ export default function useDropdownCollapse({
     }
   }, [clearHoverTimer, isMenuExpanded]);
 
-  const openMenu = useCallback(() => {
-    pointerInsideRef.current = true;
-    ignoreNextMenuCloseRef.current = true;
-    setIsMenuExpanded(true);
-  }, []);
-
   const handleWrapperPointer = useCallback(
     (eventTarget: EventTarget | null) => {
       if (disabled || !collapseSelectedPreference) return;
 
       const elementTarget = eventTarget as HTMLElement | null;
-      if (elementTarget?.closest('[data-feathery-multi-value="true"]')) {
+      if (
+        elementTarget?.closest('[data-feathery-multi-value="true"]') ||
+        elementTarget?.closest('[data-feathery-multi-value-remove="true"]')
+      ) {
         return;
       }
 
-      // When the menu is already expanded, a click outside of an option should
-      // collapse it instead of toggling immediately back to open.
-      const optionTarget = (eventTarget as HTMLElement | null)?.closest(
-        '[role="option"]'
-      );
-
-      if (isMenuExpanded) {
-        if (!optionTarget) {
-          closeMenu();
-        }
-        return;
-      }
-
-      openMenu();
+      pointerInsideRef.current = true;
+      const instance = selectRef.current as any;
+      instance?.focus?.();
     },
-    [collapseSelectedPreference, closeMenu, disabled, isMenuExpanded, openMenu]
+    [collapseSelectedPreference, disabled]
   );
 
   const handleWrapperMouseDown = useCallback(
@@ -188,26 +166,18 @@ export default function useDropdownCollapse({
 
   const handleMenuOpen = useCallback(() => {
     if (!collapseSelectedPreference) return;
-    ignoreNextMenuCloseRef.current = true;
     setIsMenuExpanded(true);
   }, [collapseSelectedPreference]);
 
   const handleMenuClose = useCallback(() => {
     if (!collapseSelectedPreference) return;
-    if (ignoreNextMenuCloseRef.current) {
-      ignoreNextMenuCloseRef.current = false;
-      setIsMenuExpanded(true);
-      return;
-    }
-
-    ignoreNextMenuCloseRef.current = false;
-    closeMenu();
-  }, [closeMenu, collapseSelectedPreference]);
+    setIsMenuExpanded(false);
+    closeHover();
+  }, [closeHover, collapseSelectedPreference]);
 
   useEffect(() => {
     if (!collapseSelectedPreference) {
       pointerInsideRef.current = false;
-      ignoreNextMenuCloseRef.current = false;
       clearHoverTimer();
       setIsHoverExpanded(false);
       setIsMenuExpanded(false);
@@ -245,7 +215,6 @@ export default function useDropdownCollapse({
         close: closeHover
       },
       menu: {
-        isOpen: computedMenuIsOpen,
         open: handleMenuOpen,
         close: handleMenuClose,
         forceClose: closeMenu
@@ -266,7 +235,6 @@ export default function useDropdownCollapse({
       collapsedCount,
       closeHover,
       closeMenu,
-      computedMenuIsOpen,
       handleHoverEnter,
       handleHoverLeave,
       handleMenuClose,

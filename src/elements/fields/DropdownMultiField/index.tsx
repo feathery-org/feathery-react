@@ -45,7 +45,8 @@ export default function DropdownMultiField({
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
 
-  const translation = element.properties.translate || {};
+  const properties = element.properties || {};
+  const translation = properties.translate || {};
   const noOptionsMessage = translation.no_options
     ? () => translation.no_options as string
     : undefined;
@@ -131,10 +132,9 @@ export default function DropdownMultiField({
       }))
     : [];
 
-  const collapseSelectedPreference =
-    !!servar.metadata.collapse_selected_options;
+  const collapseSelectedPreference = !!properties.collapseSelectedOptions;
   const selectionOrderingPreference = collapseSelectedPreference
-    ? !!servar.metadata.preserve_selection_order
+    ? !!properties.preserveSelectionOrder
     : false;
   const { orderedSelectVal, reorderSelected } = useSelectionOrdering(
     selectVal,
@@ -162,7 +162,6 @@ export default function DropdownMultiField({
     close: closeHover
   } = hover;
   const {
-    isOpen: computedMenuIsOpen,
     open: handleMenuOpen,
     close: handleMenuClose,
     forceClose: closeMenuImmediately
@@ -211,7 +210,7 @@ export default function DropdownMultiField({
     ]
   );
 
-  const hasTooltip = !!element.properties.tooltipText;
+  const hasTooltip = !!properties.tooltipText;
   const chevronPosition = hasTooltip ? 30 : 10;
   const create = servar.metadata.creatable_options;
   let formatCreateLabel: ((inputValue: string) => string) | undefined;
@@ -271,7 +270,6 @@ export default function DropdownMultiField({
         {customBorder}
         <Component
           ref={selectRef}
-          menuIsOpen={computedMenuIsOpen}
           styles={{
             // @ts-ignore React Select style typing is overly strict
             control: (baseStyles) => ({
