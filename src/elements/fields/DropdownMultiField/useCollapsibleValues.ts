@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 
 import { featheryWindow } from '../../../utils/browser';
 
@@ -149,7 +156,9 @@ export default function useCollapsibleValues(
       }
 
       const clampedVisible = nextVisible || (enabled && values.length ? 1 : 0);
-      setVisibleCount((prev) => (prev === clampedVisible ? prev : clampedVisible));
+      setVisibleCount((prev) =>
+        prev === clampedVisible ? prev : clampedVisible
+      );
       setIsMeasuring(false);
 
       if (containerRef.current) {

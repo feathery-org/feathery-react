@@ -36,9 +36,10 @@ export default function useSelectionOrdering(
     selectVal.map((option) => option.value)
   );
 
-  const selectValSignature = useMemo(() => valuesSignature(selectVal), [
-    selectVal
-  ]);
+  const selectValSignature = useMemo(
+    () => valuesSignature(selectVal),
+    [selectVal]
+  );
 
   useEffect(() => {
     // Drop deselected values and append new ones so the ref tracks selectVal without losing order.
@@ -101,10 +102,8 @@ export default function useSelectionOrdering(
       stableOrder.forEach((value, index) => stableOrderIndex.set(value, index));
 
       const orderedSelection = [...selected].sort((a, b) => {
-        const aIndex =
-          stableOrderIndex.get(a.value) ?? Number.MAX_SAFE_INTEGER;
-        const bIndex =
-          stableOrderIndex.get(b.value) ?? Number.MAX_SAFE_INTEGER;
+        const aIndex = stableOrderIndex.get(a.value) ?? Number.MAX_SAFE_INTEGER;
+        const bIndex = stableOrderIndex.get(b.value) ?? Number.MAX_SAFE_INTEGER;
         return aIndex - bIndex;
       });
 

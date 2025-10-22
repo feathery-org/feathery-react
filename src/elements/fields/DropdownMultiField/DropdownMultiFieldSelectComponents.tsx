@@ -13,7 +13,10 @@ import { FORM_Z_INDEX } from '../../../utils/styles';
 
 import type { DropdownSelectProps, OptionData } from './types';
 
-const TooltipOption = ({ children, ...props }: OptionProps<OptionData, true>) => {
+const TooltipOption = ({
+  children,
+  ...props
+}: OptionProps<OptionData, true>) => {
   const optionRef = useRef<HTMLDivElement>(null);
   const [showTooltip, setShowTooltip] = useState(false);
   const containerRef = (props.selectProps as any).containerRef as
@@ -60,8 +63,9 @@ const TooltipOption = ({ children, ...props }: OptionProps<OptionData, true>) =>
   );
 };
 
-const BaseMultiValueRemove = SelectComponents
-  .MultiValueRemove as ComponentType<MultiValueRemoveProps<OptionData>>;
+const BaseMultiValueRemove = SelectComponents.MultiValueRemove as ComponentType<
+  MultiValueRemoveProps<OptionData>
+>;
 
 // Prevent react-select from interpreting remove taps as control clicks. Without
 // this guard the menu closes immediately when a collapsed chip is dismissed on

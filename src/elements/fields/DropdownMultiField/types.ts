@@ -9,7 +9,10 @@ export type OptionData = {
 
 export type Options = string[] | OptionData[];
 
-export type DropdownSelectProps = MultiValueProps<OptionData, true>['selectProps'] & {
+export type DropdownSelectProps = MultiValueProps<
+  OptionData,
+  true
+>['selectProps'] & {
   collapsedCount: number;
   containerRef: React.RefObject<HTMLElement | null>;
   collapseSelected: boolean;
