@@ -93,7 +93,9 @@ const CollapsibleMultiValueRemove = (
 
 const CollapsedIndicator = ({ collapsedCount }: { collapsedCount: number }) =>
   collapsedCount > 0 ? (
-    <span className='rs-collapsed-chip'>+{collapsedCount}</span>
+    <span aria-hidden='true' className='rs-collapsed-chip'>
+      +{collapsedCount}
+    </span>
   ) : null;
 
 const CollapsibleMultiValueContainer = (
@@ -122,13 +124,17 @@ const CollapsibleMultiValueContainer = (
     currentIndex >= 0 &&
     currentIndex === targetIndex;
 
+  const containerElement = (
+    <BaseContainer {...props}>{props.children}</BaseContainer>
+  );
+
+  if (!showIndicator) return containerElement;
+
   return (
-    <BaseContainer {...props}>
-      {props.children}
-      {showIndicator ? (
-        <CollapsedIndicator collapsedCount={selectProps.collapsedCount} />
-      ) : null}
-    </BaseContainer>
+    <>
+      {containerElement}
+      <CollapsedIndicator collapsedCount={selectProps.collapsedCount} />
+    </>
   );
 };
 

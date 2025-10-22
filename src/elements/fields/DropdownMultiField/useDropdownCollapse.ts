@@ -2,11 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { SelectInstance } from 'react-select';
 
-import {
-  featheryDoc,
-  featheryWindow,
-  isHoverDevice
-} from '../../../utils/browser';
+import { featheryDoc } from '../../../utils/browser';
 
 import type { OptionData } from './types';
 import useCollapsibleValues from './useCollapsibleValues';
@@ -18,21 +14,21 @@ type CollapseParams = {
   values: OptionData[];
 };
 
-type HoverControls = {
-  enter: () => void;
-  leave: () => void;
-  close: () => void;
+type MenuCloseOptions = {
+  skipBlur?: boolean;
 };
 
 type MenuControls = {
+  isOpen: boolean;
   open: () => void;
   close: () => void;
-  forceClose: () => void;
+  forceClose: (options?: MenuCloseOptions) => void;
 };
 
 type PointerControls = {
   onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
   onTouchStart: (event: React.TouchEvent<HTMLDivElement>) => void;
+  reset: () => void;
 };
 
 type MeasurementState = {
@@ -44,7 +40,6 @@ type MeasurementState = {
 type CollapseControls = {
   collapseSelected: boolean;
   collapsedCount: number;
-  hover: HoverControls;
   menu: MenuControls;
   pointer: PointerControls;
   measurement: MeasurementState;
@@ -57,79 +52,35 @@ export default function useDropdownCollapse({
   disabled,
   values
 }: CollapseParams): CollapseControls {
-  // Track menu toggles from click/tap and the hover preview; either keeps chips expanded.
+  // Track whether the menu opened from user interaction so we can suspend collapsing while it is active.
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
-  const [isHoverExpanded, setIsHoverExpanded] = useState(false);
   const selectRef = useRef<SelectInstance<OptionData, true> | null>(null);
-  const hoverTimerRef = useRef<number | null>(null);
   const pointerInsideRef = useRef(false);
 
   // Collapse only when enabled and no expansion path is active.
   const collapseSelected =
-    collapseSelectedPreference && !isMenuExpanded && !isHoverExpanded;
+    collapseSelectedPreference && !isMenuExpanded;
 
   // useCollapsibleValues measures chip rows when collapsing is active.
   const { collapsedCount, isMeasuring, rowHeight, visibleCount } =
     useCollapsibleValues(containerRef, values, collapseSelected);
 
-  // Hover expansion is delayed; keep the timer so we can cancel on leave or state change.
-  const clearHoverTimer = useCallback(() => {
-    if (hoverTimerRef.current === null) return;
-    const win = featheryWindow();
-    if (typeof win.clearTimeout === 'function') {
-      win.clearTimeout(hoverTimerRef.current);
-    }
-    hoverTimerRef.current = null;
-  }, []);
-
   const closeHover = useCallback(() => {
     pointerInsideRef.current = false;
-    clearHoverTimer();
-    setIsHoverExpanded(false);
-  }, [clearHoverTimer]);
+  }, []);
 
-  const closeMenu = useCallback(() => {
-    closeHover();
-    setIsMenuExpanded(false);
-    const instance = selectRef.current as any;
-    instance?.blur?.();
-    instance?.closeMenu?.();
-  }, [closeHover]);
-
-  const handleHoverEnter = useCallback(() => {
-    if (disabled || !collapseSelectedPreference || !isHoverDevice()) return;
-    pointerInsideRef.current = true;
-    if (isMenuExpanded || isHoverExpanded || hoverTimerRef.current !== null) {
-      return;
-    }
-
-    const win = featheryWindow();
-    if (typeof win.setTimeout !== 'function') {
-      setIsHoverExpanded(true);
-      return;
-    }
-
-    hoverTimerRef.current = win.setTimeout(() => {
-      hoverTimerRef.current = null;
-      if (
-        !pointerInsideRef.current ||
-        disabled ||
-        !collapseSelectedPreference
-      ) {
-        return;
+  const closeMenu = useCallback(
+    (options?: MenuCloseOptions) => {
+      closeHover();
+      setIsMenuExpanded(false);
+      const instance = selectRef.current as any;
+      if (!options?.skipBlur) {
+        instance?.blur?.();
       }
-      setIsHoverExpanded(true);
-    }, 500) as unknown as number;
-  }, [collapseSelectedPreference, disabled, isHoverExpanded, isMenuExpanded]);
-
-  const handleHoverLeave = useCallback(() => {
-    if (!isHoverDevice()) return;
-    pointerInsideRef.current = false;
-    clearHoverTimer();
-    if (!isMenuExpanded) {
-      setIsHoverExpanded(false);
-    }
-  }, [clearHoverTimer, isMenuExpanded]);
+      instance?.closeMenu?.();
+    },
+    [closeHover]
+  );
 
   const handleWrapperPointer = useCallback(
     (eventTarget: EventTarget | null) => {
@@ -156,13 +107,13 @@ export default function useDropdownCollapse({
     },
     [handleWrapperPointer]
   );
-
   const handleWrapperTouchStart = useCallback(
     (event: React.TouchEvent<HTMLDivElement>) => {
       handleWrapperPointer(event.target);
     },
     [handleWrapperPointer]
   );
+
 
   const handleMenuOpen = useCallback(() => {
     if (!collapseSelectedPreference) return;
@@ -178,8 +129,6 @@ export default function useDropdownCollapse({
   useEffect(() => {
     if (!collapseSelectedPreference) {
       pointerInsideRef.current = false;
-      clearHoverTimer();
-      setIsHoverExpanded(false);
       setIsMenuExpanded(false);
       return;
     }
@@ -198,7 +147,7 @@ export default function useDropdownCollapse({
     return () => {
       doc.removeEventListener('pointerdown', handlePointerDown, true);
     };
-  }, [clearHoverTimer, closeMenu, collapseSelectedPreference, containerRef]);
+  }, [closeMenu, collapseSelectedPreference, containerRef]);
 
   useEffect(() => {
     if (!disabled) return;
@@ -209,19 +158,16 @@ export default function useDropdownCollapse({
     () => ({
       collapseSelected,
       collapsedCount,
-      hover: {
-        enter: handleHoverEnter,
-        leave: handleHoverLeave,
-        close: closeHover
-      },
       menu: {
+        isOpen: isMenuExpanded,
         open: handleMenuOpen,
         close: handleMenuClose,
         forceClose: closeMenu
       },
       pointer: {
         onMouseDown: handleWrapperMouseDown,
-        onTouchStart: handleWrapperTouchStart
+        onTouchStart: handleWrapperTouchStart,
+        reset: closeHover
       },
       measurement: {
         isMeasuring,
@@ -235,12 +181,11 @@ export default function useDropdownCollapse({
       collapsedCount,
       closeHover,
       closeMenu,
-      handleHoverEnter,
-      handleHoverLeave,
       handleMenuClose,
       handleMenuOpen,
       handleWrapperMouseDown,
       handleWrapperTouchStart,
+      isMenuExpanded,
       isMeasuring,
       rowHeight,
       visibleCount,

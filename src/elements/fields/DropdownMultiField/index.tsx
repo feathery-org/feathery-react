@@ -144,7 +144,6 @@ export default function DropdownMultiField({
   const {
     collapseSelected,
     collapsedCount,
-    hover,
     menu,
     pointer,
     measurement,
@@ -157,18 +156,15 @@ export default function DropdownMultiField({
   });
 
   const {
-    enter: handleHoverEnter,
-    leave: handleHoverLeave,
-    close: closeHover
-  } = hover;
-  const {
+    isOpen: isMenuOpen,
     open: handleMenuOpen,
     close: handleMenuClose,
     forceClose: closeMenuImmediately
   } = menu;
   const {
     onMouseDown: handleWrapperMouseDown,
-    onTouchStart: handleWrapperTouchStart
+    onTouchStart: handleWrapperTouchStart,
+    reset: resetPointerFocus
   } = pointer;
   const { isMeasuring, rowHeight, visibleCount } = measurement;
 
@@ -193,18 +189,29 @@ export default function DropdownMultiField({
       selected: OnChangeValue<OptionData, true>,
       actionMeta: ActionMeta<OptionData>
     ) => {
+      const skipBlurAction =
+        actionMeta.action === 'remove-value' ||
+        actionMeta.action === 'pop-value' ||
+        actionMeta.action === 'select-option' ||
+        actionMeta.action === 'create-option';
+
       if (collapseSelectedPreference) {
-        closeHover();
-        closeMenuImmediately();
+        resetPointerFocus();
+        if (!skipBlurAction || !isMenuOpen) {
+          closeMenuImmediately(
+            skipBlurAction ? { skipBlur: true } : undefined
+          );
+        }
       }
 
       const nextSelected = reorderSelected(selected, actionMeta);
       onChange(nextSelected, actionMeta);
     },
     [
-      closeHover,
+      resetPointerFocus,
       closeMenuImmediately,
       collapseSelectedPreference,
+      isMenuOpen,
       onChange,
       reorderSelected
     ]
@@ -262,8 +269,6 @@ export default function DropdownMultiField({
               }
             : {}
         }}
-        onMouseEnter={handleHoverEnter}
-        onMouseLeave={handleHoverLeave}
         onMouseDown={handleWrapperMouseDown}
         onTouchStart={handleWrapperTouchStart}
       >
@@ -334,7 +339,7 @@ export default function DropdownMultiField({
                       '& .rs-collapsed-chip': {
                         display: 'inline-flex',
                         alignItems: 'center',
-                        padding: '2px 8px',
+                        padding: '3px 8px',
                         margin: '2px',
                         borderRadius: baseStyles.borderRadius ?? 2,
                         backgroundColor:
@@ -363,7 +368,22 @@ export default function DropdownMultiField({
               ...baseStyles,
               zIndex: DROPDOWN_Z_INDEX,
               textAlign: 'start'
-            })
+            }),
+            // @ts-ignore React Select style typing is overly strict
+            multiValue: (baseStyles, state) => {
+              const selectProps =
+                state.selectProps as typeof state.selectProps & {
+                  collapseSelected: boolean;
+                };
+
+              if (!selectProps.collapseSelected) return baseStyles;
+
+              return {
+                ...baseStyles,
+                marginInline: '2px',
+                borderRadius: baseStyles.borderRadius ?? 2
+              };
+            }
           }}
           components={selectComponentsOverride}
           // @ts-ignore React Select doesn't type custom props on selectProps
@@ -387,6 +407,7 @@ export default function DropdownMultiField({
           onBlur={() => setFocused(false)}
           onMenuOpen={handleMenuOpen}
           onMenuClose={handleMenuClose}
+          closeMenuOnSelect={false}
           noOptionsMessage={create ? () => null : noOptionsMessage}
           options={options}
           isOptionDisabled={() =>
