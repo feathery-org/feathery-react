@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { SelectInstance } from 'react-select';
 
-import { featheryWindow, isHoverDevice } from '../../../utils/browser';
+import {
+  featheryDoc,
+  featheryWindow,
+  isHoverDevice
+} from '../../../utils/browser';
 
 import type { OptionData } from './types';
 import useCollapsibleValues from './useCollapsibleValues';
@@ -124,12 +128,7 @@ export default function useDropdownCollapse({
       }
       setIsHoverExpanded(true);
     }, 500) as unknown as number;
-  }, [
-    collapseSelectedPreference,
-    disabled,
-    isHoverExpanded,
-    isMenuExpanded
-  ]);
+  }, [collapseSelectedPreference, disabled, isHoverExpanded, isMenuExpanded]);
 
   const handleHoverLeave = useCallback(() => {
     if (!isHoverDevice()) return;
@@ -170,13 +169,7 @@ export default function useDropdownCollapse({
 
       openMenu();
     },
-    [
-      collapseSelectedPreference,
-      closeMenu,
-      disabled,
-      isMenuExpanded,
-      openMenu
-    ]
+    [collapseSelectedPreference, closeMenu, disabled, isMenuExpanded, openMenu]
   );
 
   const handleWrapperMouseDown = useCallback(
@@ -230,19 +223,12 @@ export default function useDropdownCollapse({
       closeMenu();
     };
 
-    const doc = typeof document !== 'undefined' ? document : null;
-    if (!doc) return;
-
+    const doc = featheryDoc();
     doc.addEventListener('pointerdown', handlePointerDown, true);
     return () => {
       doc.removeEventListener('pointerdown', handlePointerDown, true);
     };
-  }, [
-    clearHoverTimer,
-    closeMenu,
-    collapseSelectedPreference,
-    containerRef
-  ]);
+  }, [clearHoverTimer, closeMenu, collapseSelectedPreference, containerRef]);
 
   useEffect(() => {
     if (!disabled) return;

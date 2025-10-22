@@ -131,7 +131,8 @@ export default function DropdownMultiField({
       }))
     : [];
 
-  const collapseSelectedPreference = !!servar.metadata.collapse_selected_options;
+  const collapseSelectedPreference =
+    !!servar.metadata.collapse_selected_options;
   const selectionOrderingPreference = collapseSelectedPreference
     ? !!servar.metadata.preserve_selection_order
     : false;
@@ -155,8 +156,11 @@ export default function DropdownMultiField({
     values: orderedSelectVal
   });
 
-  const { enter: handleHoverEnter, leave: handleHoverLeave, close: closeHover } =
-    hover;
+  const {
+    enter: handleHoverEnter,
+    leave: handleHoverLeave,
+    close: closeHover
+  } = hover;
   const {
     isOpen: computedMenuIsOpen,
     open: handleMenuOpen,
@@ -178,7 +182,10 @@ export default function DropdownMultiField({
             MultiValueContainer: CollapsibleMultiValueContainer,
             MultiValueRemove: CollapsibleMultiValueRemove
           }
-        : { Option: TooltipOption, MultiValueRemove: CollapsibleMultiValueRemove },
+        : {
+            Option: TooltipOption,
+            MultiValueRemove: CollapsibleMultiValueRemove
+          },
     [collapseSelected]
   );
 
@@ -278,7 +285,9 @@ export default function DropdownMultiField({
               backgroundColor: 'transparent',
               backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='%23${element.styles.font_color}'/></svg>")`,
               backgroundRepeat: 'no-repeat',
-              backgroundPosition: `${rightToLeft ? 'left' : 'right'} ${chevronPosition}px center`,
+              backgroundPosition: `${
+                rightToLeft ? 'left' : 'right'
+              } ${chevronPosition}px center`,
               position: 'relative'
             }),
             // @ts-ignore React Select style typing is overly strict
