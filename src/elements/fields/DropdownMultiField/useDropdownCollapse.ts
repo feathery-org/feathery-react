@@ -14,22 +14,38 @@ type CollapseParams = {
   values: OptionData[];
 };
 
+type HoverControls = {
+  enter: () => void;
+  leave: () => void;
+  close: () => void;
+};
+
+type MenuControls = {
+  isOpen: boolean | undefined;
+  open: () => void;
+  close: () => void;
+  forceClose: () => void;
+};
+
+type PointerControls = {
+  onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onTouchStart: (event: React.TouchEvent<HTMLDivElement>) => void;
+};
+
+type MeasurementState = {
+  isMeasuring: boolean;
+  rowHeight: number | null;
+  visibleCount: number;
+};
+
 type CollapseControls = {
   collapseSelected: boolean;
   collapsedCount: number;
-  computedMenuIsOpen: boolean | undefined;
-  closeMenuImmediately: () => void;
-  handleHoverEnter: () => void;
-  handleHoverLeave: () => void;
-  handleMenuClose: () => void;
-  handleMenuOpen: () => void;
-  handleWrapperMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
-  handleWrapperTouchStart: (event: React.TouchEvent<HTMLDivElement>) => void;
-  isMeasuring: boolean;
-  rowHeight: number | null;
+  hover: HoverControls;
+  menu: MenuControls;
+  pointer: PointerControls;
+  measurement: MeasurementState;
   selectRef: React.RefObject<SelectInstance<OptionData, true> | null>;
-  closeHover: () => void;
-  visibleCount: number;
 };
 
 export default function useDropdownCollapse({
@@ -38,9 +54,7 @@ export default function useDropdownCollapse({
   disabled,
   values
 }: CollapseParams): CollapseControls {
-  // Track the two expansion affordances: menu opened by click/tap and the temporary
-  // hover expansion that reveals hidden values. They combine to determine whether we
-  // should collapse chips in the main control.
+  // Track menu toggles from click/tap and the hover preview; either keeps chips expanded.
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
   const [isHoverExpanded, setIsHoverExpanded] = useState(false);
   const selectRef = useRef<SelectInstance<OptionData, true> | null>(null);
@@ -48,24 +62,20 @@ export default function useDropdownCollapse({
   const pointerInsideRef = useRef(false);
   const ignoreNextMenuCloseRef = useRef(false);
 
-  // Chips should only collapse when the feature is enabled _and_ neither expansion
-  // mode is active. This mirrors the behaviour from the pre-refactor implementation.
-  const collapseSelected = collapseSelectedPreference &&
-    !(isMenuExpanded || isHoverExpanded);
+  // Collapse only when enabled and no expansion path is active.
+  const collapseSelected =
+    collapseSelectedPreference && !isMenuExpanded && !isHoverExpanded;
 
-  // useCollapsibleValues drives the measurement loop; we feed it the ordered values
-  // so it can compute how many chips fit and expose the derived counts to consumers.
+  // useCollapsibleValues measures chip rows when collapsing is active.
   const { collapsedCount, isMeasuring, rowHeight, visibleCount } =
     useCollapsibleValues(containerRef, values, collapseSelected);
 
-  // React Select accepts a controlled `menuIsOpen`, but only when custom collapsing
-  // is in play. In the default path we defer to the library.
+  // Control menu state only when collapse overrides are on; otherwise leave defaults.
   const computedMenuIsOpen = collapseSelectedPreference
     ? isMenuExpanded
     : undefined;
 
-  // Hover expansion waits half a second before opening. We keep the timer reference
-  // so we can cancel it whenever the pointer leaves or the menu state changes.
+  // Hover expansion is delayed; keep the timer so we can cancel on leave or state change.
   const clearHoverTimer = useCallback(() => {
     if (hoverTimerRef.current === null) return;
     const win = featheryWindow();
@@ -243,25 +253,34 @@ export default function useDropdownCollapse({
     () => ({
       collapseSelected,
       collapsedCount,
-      computedMenuIsOpen,
-      closeMenuImmediately: closeMenu,
-      handleHoverEnter,
-      handleHoverLeave,
-      handleMenuClose,
-      handleMenuOpen,
-      handleWrapperMouseDown,
-      handleWrapperTouchStart,
-      isMeasuring,
-      rowHeight,
-      selectRef,
-      closeHover,
-      visibleCount
+      hover: {
+        enter: handleHoverEnter,
+        leave: handleHoverLeave,
+        close: closeHover
+      },
+      menu: {
+        isOpen: computedMenuIsOpen,
+        open: handleMenuOpen,
+        close: handleMenuClose,
+        forceClose: closeMenu
+      },
+      pointer: {
+        onMouseDown: handleWrapperMouseDown,
+        onTouchStart: handleWrapperTouchStart
+      },
+      measurement: {
+        isMeasuring,
+        rowHeight,
+        visibleCount
+      },
+      selectRef
     }),
     [
       collapseSelected,
       collapsedCount,
-      computedMenuIsOpen,
+      closeHover,
       closeMenu,
+      computedMenuIsOpen,
       handleHoverEnter,
       handleHoverLeave,
       handleMenuClose,
@@ -270,7 +289,6 @@ export default function useDropdownCollapse({
       handleWrapperTouchStart,
       isMeasuring,
       rowHeight,
-      closeHover,
       visibleCount,
       selectRef
     ]

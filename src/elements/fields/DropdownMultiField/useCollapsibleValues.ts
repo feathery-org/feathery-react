@@ -19,6 +19,7 @@ export default function useCollapsibleValues(
   const [measurementTick, setMeasurementTick] = useState(0);
   const pendingMeasurementRef = useRef(false);
   const queuedMeasurementRef = useRef(false);
+  const pendingVisibleResetRef = useRef(false);
   const frameRef = useRef<number | null>(null);
   const lastWidthRef = useRef<number | null>(null);
   const lastCollapsedVisibleRef = useRef(totalCount);
@@ -36,11 +37,11 @@ export default function useCollapsibleValues(
       return;
     }
 
-    // Only one measurement pass should run at a time. If callers ask again while
-    // we're pending, we queue a follow-up instead of racing multiple reads of the DOM.
+    // Let only one measurement frame run at a time—queue the rest.
     pendingMeasurementRef.current = true;
     queuedMeasurementRef.current = false;
     if (containerRef.current) {
+      // Cache chip height (content + vertical margins) so masked rows stay steady.
       const chip = containerRef.current.querySelector(
         '[data-feathery-multi-value="true"]'
       ) as HTMLElement | null;
@@ -59,8 +60,10 @@ export default function useCollapsibleValues(
         });
       }
     }
-    setIsMeasuring(true);
-    setVisibleCount(totalCount);
+    if (!pendingVisibleResetRef.current) {
+      setIsMeasuring(true);
+    }
+    pendingVisibleResetRef.current = true;
     setMeasurementTick((tick) => tick + 1);
   }, [containerRef, enabled, totalCount]);
 
@@ -109,6 +112,7 @@ export default function useCollapsibleValues(
     // chips still share the first row and cache their height for later renders.
     frameRef.current = featheryWindow().requestAnimationFrame(() => {
       pendingMeasurementRef.current = false;
+      pendingVisibleResetRef.current = false;
 
       const container = containerRef.current;
       let nextVisible = totalCount;
@@ -177,6 +181,7 @@ export default function useCollapsibleValues(
       setRowHeight(null);
       pendingMeasurementRef.current = false;
       queuedMeasurementRef.current = false;
+      pendingVisibleResetRef.current = false;
       lastWidthRef.current = null;
       return;
     }

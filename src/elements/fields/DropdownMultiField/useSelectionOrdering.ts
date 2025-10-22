@@ -27,14 +27,11 @@ type SelectionOrdering = {
   reorderSelected: ReorderFn;
 };
 
-const SELECT_ACTIONS = new Set(['select-option', 'create-option']);
-
 export default function useSelectionOrdering(
   selectVal: OptionData[],
   enabled: boolean
 ): SelectionOrdering {
-  // Persist the user's original selection order so we can render collapsed chips
-  // in the same order they were chosen while still allowing hover reordering.
+  // Cache the pick order so collapsed chips mirror selection sequence while hover can reshuffle.
   const selectionOrderRef = useRef<string[]>(
     selectVal.map((option) => option.value)
   );
@@ -44,9 +41,7 @@ export default function useSelectionOrdering(
   ]);
 
   useEffect(() => {
-    // Remove values that are no longer selected and append any new selections to
-    // the end of the order ref. This keeps the ref aligned with `selectVal` while
-    // preserving the relative order in which values were introduced.
+    // Drop deselected values and append new ones so the ref tracks selectVal without losing order.
     const currentValues = selectVal.map((option) => option.value);
     let nextOrder = selectionOrderRef.current.filter((value) =>
       currentValues.includes(value)
@@ -73,8 +68,7 @@ export default function useSelectionOrdering(
     const orderIndexMap = new Map<string, number>();
     order.forEach((value, index) => orderIndexMap.set(value, index));
 
-    // Sort the current selections to match the preserved order. Values that missed
-    // the ref (e.g., newly created options) naturally sink to the end.
+    // Sort selections by the preserved order; unknown values naturally sink to the end.
     return [...selectVal].sort((a, b) => {
       const aIndex = orderIndexMap.get(a.value) ?? Number.MAX_SAFE_INTEGER;
       const bIndex = orderIndexMap.get(b.value) ?? Number.MAX_SAFE_INTEGER;
@@ -85,12 +79,13 @@ export default function useSelectionOrdering(
   const reorderSelected: ReorderFn = useCallback(
     (selected, actionMeta) => {
       if (!enabled || !Array.isArray(selected)) return selected;
-      if (!SELECT_ACTIONS.has(actionMeta.action)) return selected;
 
-      // We only mutate the order when a value is added/created. React Select passes
-      // the affected option via `actionMeta.option`.
+      // Only adjust ordering when React Select provides the added option and it persists in the selection.
       const option = actionMeta.option;
       if (!option) return selected;
+      if (!selected.some((item) => item.value === option.value)) {
+        return selected;
+      }
 
       const optionValue = option.value;
       const previousOrder = selectionOrderRef.current;
@@ -113,9 +108,7 @@ export default function useSelectionOrdering(
         return aIndex - bIndex;
       });
 
-      // Promote the most recently added value to the front so the hover-expanded
-      // chips show the newest selection first without mutating the persisted order
-      // of the underlying payload.
+      // Surface the latest pick first for hover preview without rewriting the stored order.
       selectionOrderRef.current = [
         optionValue,
         ...selectionOrderRef.current.filter((value) => value !== optionValue)

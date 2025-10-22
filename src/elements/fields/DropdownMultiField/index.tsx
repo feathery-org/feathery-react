@@ -132,33 +132,42 @@ export default function DropdownMultiField({
     : [];
 
   const collapseSelectedPreference = !!servar.metadata.collapse_selected_options;
+  const selectionOrderingPreference = collapseSelectedPreference
+    ? !!servar.metadata.preserve_selection_order
+    : false;
   const { orderedSelectVal, reorderSelected } = useSelectionOrdering(
     selectVal,
-    collapseSelectedPreference
+    !!selectionOrderingPreference
   );
 
   const {
     collapseSelected,
     collapsedCount,
-    computedMenuIsOpen,
-    closeMenuImmediately,
-    handleHoverEnter,
-    handleHoverLeave,
-    handleMenuClose,
-    handleMenuOpen,
-    handleWrapperMouseDown,
-    handleWrapperTouchStart,
-    isMeasuring,
-    rowHeight,
-    selectRef,
-    closeHover,
-    visibleCount
+    hover,
+    menu,
+    pointer,
+    measurement,
+    selectRef
   } = useDropdownCollapse({
     collapseSelectedPreference,
     containerRef,
     disabled,
     values: orderedSelectVal
   });
+
+  const { enter: handleHoverEnter, leave: handleHoverLeave, close: closeHover } =
+    hover;
+  const {
+    isOpen: computedMenuIsOpen,
+    open: handleMenuOpen,
+    close: handleMenuClose,
+    forceClose: closeMenuImmediately
+  } = menu;
+  const {
+    onMouseDown: handleWrapperMouseDown,
+    onTouchStart: handleWrapperTouchStart
+  } = pointer;
+  const { isMeasuring, rowHeight, visibleCount } = measurement;
 
   const selectComponentsOverride = useMemo(
     () =>
