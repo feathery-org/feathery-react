@@ -12,6 +12,8 @@ import type { OptionData } from './types';
 
 // Treat width deltas under this threshold as noise so we don't thrash measurements.
 const WIDTH_EPSILON = 0.5;
+// When checking for a new row (via offsetTop deltas), treat tiny differences as same-line noise.
+const ROW_BREAK_EPSILON = 0.5;
 
 const parseFloatOrZero = (value: string | null | undefined) =>
   value ? parseFloat(value) || 0 : 0;
@@ -34,6 +36,9 @@ export default function useCollapsibleValues(
   const indicatorRef = useRef<HTMLSpanElement | null>(null);
   const lastValuesRef = useRef<OptionData[] | null>(null);
 
+  // Reusable hidden +N indicator used only inside the measurement container.
+  // We attach it to the measurement clone's chip parent so we can account for
+  // the indicator's width without disturbing the live layout.
   const ensureIndicator = (parent: HTMLElement) => {
     let indicator = indicatorRef.current;
     if (!indicator) {
@@ -61,17 +66,19 @@ export default function useCollapsibleValues(
     return indicator;
   };
 
-  useEffect(() => () => {
-    indicatorRef.current?.remove();
-    indicatorRef.current = null;
-  }, []);
+  useEffect(
+    () => () => {
+      indicatorRef.current?.remove();
+      indicatorRef.current = null;
+    },
+    []
+  );
 
   // Create a hidden clone of the container so measurements do not disturb the live layout.
   const materializeMeasurementContainer = (
     source: HTMLElement
   ): { node: HTMLElement; cleanup: () => void } | null => {
-    const ownerDocument =
-      source.ownerDocument ?? featheryWindow().document;
+    const ownerDocument = source.ownerDocument ?? featheryWindow().document;
     const sourceRect = source.getBoundingClientRect();
 
     if (sourceRect.width <= 0 || sourceRect.height <= 0) {
@@ -136,14 +143,8 @@ export default function useCollapsibleValues(
     // Let only one measurement frame run at a time—queue the rest.
     pendingMeasurementRef.current = true;
     queuedMeasurementRef.current = false;
-    if (containerRef.current) {
-      // Cache chip height (content + vertical margins) so masked rows stay steady.
-      const chip = containerRef.current.querySelector(
-        '[data-feathery-multi-value="true"]'
-      ) as HTMLElement | null;
-      if (chip) {
-      }
-    }
+    // Note: We intentionally avoid touching layout here; all DOM measurement
+    // happens in a rAF after commit against a hidden clone.
     if (!pendingVisibleResetRef.current) {
       setIsMeasuring(true);
     }
@@ -214,10 +215,7 @@ export default function useCollapsibleValues(
       pendingVisibleResetRef.current = false;
 
       const container = containerRef.current;
-      let nextVisible = Math.min(
-        lastCollapsedVisibleRef.current,
-        totalCount
-      );
+      let nextVisible = Math.min(lastCollapsedVisibleRef.current, totalCount);
       let cleanupMeasurement: (() => void) | undefined;
       let measurementContainer: HTMLElement | null = null;
 
@@ -231,7 +229,9 @@ export default function useCollapsibleValues(
 
       if (enabled && measurementContainer) {
         const chips = Array.from(
-          measurementContainer.querySelectorAll('[data-feathery-multi-value="true"]')
+          measurementContainer.querySelectorAll(
+            '[data-feathery-multi-value="true"]'
+          )
         ) as HTMLElement[];
 
         if (chips.length) {
@@ -239,7 +239,7 @@ export default function useCollapsibleValues(
           nextVisible = chips.length;
 
           for (let index = 0; index < chips.length; index += 1) {
-            if (chips[index].offsetTop - firstTop > WIDTH_EPSILON) {
+            if (chips[index].offsetTop - firstTop > ROW_BREAK_EPSILON) {
               nextVisible = index;
               break;
             }
@@ -256,6 +256,7 @@ export default function useCollapsibleValues(
                 parseFloatOrZero(parentStyle.gap);
               const paddingLeft = parseFloatOrZero(parentStyle.paddingLeft);
               const paddingRight = parseFloatOrZero(parentStyle.paddingRight);
+              // Available width equals inner content box (exclude horizontal padding).
               const availableWidth = Math.max(
                 parentRect.width - paddingLeft - paddingRight,
                 0
@@ -290,13 +291,9 @@ export default function useCollapsibleValues(
                 const lastChipStyle =
                   featheryWindow().getComputedStyle(lastChip);
                 const chipRightEdge =
-                  lastChipRect.right -
-                  parentRect.left -
-                  paddingLeft;
+                  lastChipRect.right - parentRect.left - paddingLeft;
                 const spacer =
-                  gap > 0
-                    ? gap
-                    : parseFloatOrZero(lastChipStyle.marginRight);
+                  gap > 0 ? gap : parseFloatOrZero(lastChipStyle.marginRight);
 
                 if (
                   chipRightEdge + spacer + indicatorWidth <=
@@ -311,7 +308,10 @@ export default function useCollapsibleValues(
 
               if (iteration >= maxIterations) {
                 // Guard against oscillation if the indicator width changes while we trim.
-                nextVisible = Math.max(Math.min(nextVisible, totalCount - 1), 0);
+                nextVisible = Math.max(
+                  Math.min(nextVisible, totalCount - 1),
+                  0
+                );
               }
             }
           }
@@ -378,6 +378,6 @@ export default function useCollapsibleValues(
   return {
     visibleCount: enabled ? visibleCount : totalCount,
     collapsedCount,
-    isMeasuring: enabled ? isMeasuring : false,
+    isMeasuring: enabled ? isMeasuring : false
   };
 }

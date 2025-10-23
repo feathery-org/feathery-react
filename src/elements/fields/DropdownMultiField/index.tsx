@@ -163,8 +163,7 @@ export default function DropdownMultiField({
   } = menu;
   const {
     onMouseDown: handleWrapperMouseDown,
-    onTouchStart: handleWrapperTouchStart,
-    reset: resetPointerFocus
+    onTouchStart: handleWrapperTouchStart
   } = pointer;
   const { isMeasuring, visibleCount } = measurement;
 
@@ -196,11 +195,8 @@ export default function DropdownMultiField({
         actionMeta.action === 'create-option';
 
       if (collapseSelectedPreference) {
-        resetPointerFocus();
         if (!skipBlurAction || !isMenuOpen) {
-          closeMenuImmediately(
-            skipBlurAction ? { skipBlur: true } : undefined
-          );
+          closeMenuImmediately(skipBlurAction ? { skipBlur: true } : undefined);
         }
       }
 
@@ -209,7 +205,6 @@ export default function DropdownMultiField({
       selectRef.current?.focus?.();
     },
     [
-      resetPointerFocus,
       closeMenuImmediately,
       collapseSelectedPreference,
       isMenuOpen,
@@ -336,7 +331,7 @@ export default function DropdownMultiField({
                 flexWrap: shouldWrap ? 'wrap' : 'nowrap',
                 alignItems: shouldWrap ? 'flex-start' : 'center',
                 alignContent: shouldWrap ? 'flex-start' : 'center',
-                ...(collapseSelected
+                ...(selectProps.collapseSelected
                   ? {
                       '& .rs-collapsed-chip': {
                         display: 'inline-flex',
@@ -418,7 +413,7 @@ export default function DropdownMultiField({
           isMulti
           placeholder=''
           aria-label={element.properties.aria_label}
-          formatCreateLabel={formatCreateLabel || undefined}
+          formatCreateLabel={formatCreateLabel}
         />
         <Placeholder
           value={orderedSelectVal.length || focused}

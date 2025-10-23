@@ -19,9 +19,7 @@ const TooltipOption = ({
 }: OptionProps<OptionData, true>) => {
   const optionRef = useRef<HTMLDivElement>(null);
   const [showTooltip, setShowTooltip] = useState(false);
-  const containerRef = (props.selectProps as any).containerRef as
-    | React.RefObject<HTMLElement | null>
-    | undefined;
+  const { containerRef } = props.selectProps as DropdownSelectProps;
 
   return (
     <div
@@ -81,9 +79,15 @@ const CollapsibleMultiValueRemove = (
       props.innerProps?.onMouseDown?.(event);
     },
     onTouchStart: (event: React.TouchEvent<HTMLDivElement>) => {
-      event.preventDefault();
       event.stopPropagation();
       props.innerProps?.onTouchStart?.(event);
+    },
+    onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === 'touch' && event.cancelable) {
+        event.preventDefault();
+      }
+      event.stopPropagation();
+      props.innerProps?.onPointerDown?.(event);
     },
     'data-feathery-multi-value-remove': 'true'
   };
