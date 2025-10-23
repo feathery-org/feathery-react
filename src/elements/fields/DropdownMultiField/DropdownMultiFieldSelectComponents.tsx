@@ -150,8 +150,6 @@ const CollapsibleMultiValue = (props: MultiValueProps<OptionData, true>) => {
     selectProps.collapseSelected &&
     !selectProps.isMeasuring &&
     props.index >= cutoff;
-  if (hideCompletely) return null;
-
   const shouldMaskDuringMeasure =
     // When measuring we keep overflowed chips in the DOM (so measurements are accurate)
     // but make them invisible to avoid flicker.
@@ -185,7 +183,15 @@ const CollapsibleMultiValue = (props: MultiValueProps<OptionData, true>) => {
     mergedInnerProps.style = {
       ...innerPropsStyle,
       opacity: 0,
-      pointerEvents: 'none'
+      pointerEvents: 'none',
+      position: 'absolute',
+      left: 0,
+      top: 0
+    };
+  } else if (hideCompletely) {
+    mergedInnerProps.style = {
+      ...innerPropsStyle,
+      display: 'none'
     };
   } else if (innerPropsStyle) {
     mergedInnerProps.style = innerPropsStyle;
