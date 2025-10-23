@@ -16,7 +16,7 @@ import {
 } from './DropdownMultiFieldSelectComponents';
 import useDropdownCollapse from './useDropdownCollapse';
 import useSelectionOrdering from './useSelectionOrdering';
-import type { OptionData, Options } from './types';
+import type { DropdownSelectProps, OptionData, Options } from './types';
 
 export default function DropdownMultiField({
   element,
@@ -229,6 +229,9 @@ export default function DropdownMultiField({
 
   responsiveStyles.applyFontStyles('field');
 
+  const shouldHideInput =
+    collapseSelected && !isMeasuring && !focused && !isMenuOpen;
+
   return (
     <div
       ref={containerRef}
@@ -380,6 +383,40 @@ export default function DropdownMultiField({
                 marginInline: '2px',
                 borderRadius: baseStyles.borderRadius ?? 2
               };
+            },
+            // @ts-ignore React Select style typing is overly strict
+            input: (baseStyles, state) => {
+              const selectProps = state.selectProps as DropdownSelectProps & {
+                inputHidden?: boolean;
+              };
+
+              if (!selectProps.collapseSelected || !selectProps.inputHidden) {
+                return baseStyles;
+              }
+
+              return {
+                ...baseStyles,
+                opacity: 0,
+                maxWidth: '1px',
+                width: '1px',
+                minWidth: '1px',
+                flexBasis: 0,
+                flexGrow: 0,
+                flexShrink: 0,
+                margin: 0,
+                padding: 0,
+                pointerEvents: 'none',
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                overflow: 'hidden',
+                '> input': {
+                  width: '1px',
+                  minWidth: '1px',
+                  opacity: 0,
+                  pointerEvents: 'none'
+                }
+              };
             }
           }}
           components={selectComponentsOverride}
@@ -393,6 +430,8 @@ export default function DropdownMultiField({
           isMeasuring={isMeasuring}
           // @ts-ignore React Select doesn't type custom props on selectProps
           collapseSelected={collapseSelected}
+          // @ts-ignore React Select doesn't type custom props on selectProps
+          inputHidden={shouldHideInput}
           inputId={servar.key}
           value={orderedSelectVal}
           required={required}
@@ -403,6 +442,7 @@ export default function DropdownMultiField({
           onMenuOpen={handleMenuOpen}
           onMenuClose={handleMenuClose}
           closeMenuOnSelect={false}
+          tabSelectsValue={false}
           noOptionsMessage={create ? () => null : noOptionsMessage}
           options={options}
           isOptionDisabled={() =>
