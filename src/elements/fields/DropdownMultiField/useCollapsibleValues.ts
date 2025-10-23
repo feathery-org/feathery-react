@@ -66,6 +66,65 @@ export default function useCollapsibleValues(
     indicatorRef.current = null;
   }, []);
 
+  // Create a hidden clone of the container so measurements do not disturb the live layout.
+  const materializeMeasurementContainer = (
+    source: HTMLElement
+  ): { node: HTMLElement; cleanup: () => void } | null => {
+    const ownerDocument =
+      source.ownerDocument ?? featheryWindow().document;
+    const sourceRect = source.getBoundingClientRect();
+
+    if (sourceRect.width <= 0 || sourceRect.height <= 0) {
+      return null;
+    }
+
+    const clone = source.cloneNode(true) as HTMLElement;
+    clone.setAttribute('data-feathery-collapse-measure', 'true');
+    clone.style.position = 'absolute';
+    clone.style.visibility = 'hidden';
+    clone.style.pointerEvents = 'none';
+    clone.style.left = '-10000px';
+    clone.style.top = '0';
+    clone.style.width = `${sourceRect.width}px`;
+    clone.style.maxWidth = `${sourceRect.width}px`;
+    clone.style.height = 'auto';
+    clone.style.maxHeight = 'none';
+    clone.style.whiteSpace = 'normal';
+    clone.style.overflow = 'visible';
+    ownerDocument.body.appendChild(clone);
+
+    const chips = Array.from(
+      clone.querySelectorAll('[data-feathery-multi-value="true"]')
+    ) as HTMLElement[];
+
+    chips.forEach((chip) => {
+      chip.style.removeProperty('display');
+      chip.style.removeProperty('opacity');
+      chip.style.removeProperty('pointer-events');
+      chip.style.removeProperty('position');
+      chip.style.removeProperty('left');
+      chip.style.removeProperty('top');
+    });
+
+    const chipParent = chips[0]?.parentElement as HTMLElement | undefined;
+    if (chipParent) {
+      chipParent.style.flexWrap = 'wrap';
+      chipParent.style.whiteSpace = 'normal';
+      chipParent.style.display = 'flex';
+    }
+
+    clone
+      .querySelectorAll('[data-feathery-collapsed-indicator="true"]')
+      .forEach((node) => node.remove());
+
+    return {
+      node: clone,
+      cleanup: () => {
+        clone.remove();
+      }
+    };
+  };
+
   const requestMeasurement = useCallback(() => {
     if (!enabled) return;
 
@@ -89,7 +148,6 @@ export default function useCollapsibleValues(
       setIsMeasuring(true);
     }
     pendingVisibleResetRef.current = true;
-    setVisibleCount((prev) => (prev === totalCount ? prev : totalCount));
     setMeasurementTick((tick) => tick + 1);
   }, [containerRef, enabled, totalCount]);
 
@@ -156,11 +214,24 @@ export default function useCollapsibleValues(
       pendingVisibleResetRef.current = false;
 
       const container = containerRef.current;
-      let nextVisible = totalCount;
+      let nextVisible = Math.min(
+        lastCollapsedVisibleRef.current,
+        totalCount
+      );
+      let cleanupMeasurement: (() => void) | undefined;
+      let measurementContainer: HTMLElement | null = null;
 
       if (enabled && container) {
+        const result = materializeMeasurementContainer(container);
+        if (result) {
+          measurementContainer = result.node;
+          cleanupMeasurement = result.cleanup;
+        }
+      }
+
+      if (enabled && measurementContainer) {
         const chips = Array.from(
-          container.querySelectorAll('[data-feathery-multi-value="true"]')
+          measurementContainer.querySelectorAll('[data-feathery-multi-value="true"]')
         ) as HTMLElement[];
 
         if (chips.length) {
@@ -246,6 +317,8 @@ export default function useCollapsibleValues(
           }
         }
       }
+
+      cleanupMeasurement?.();
 
       const clampedVisible = nextVisible || (enabled && values.length ? 1 : 0);
       setVisibleCount((prev) =>
