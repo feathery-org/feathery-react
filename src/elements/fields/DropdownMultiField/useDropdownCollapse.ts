@@ -45,6 +45,13 @@ type CollapseControls = {
   selectRef: React.RefObject<SelectInstance<OptionData, true> | null>;
 };
 
+// Minimal control surface we need from react-select's instance
+type SelectControls = {
+  focus?: () => void;
+  blur?: () => void;
+  closeMenu?: () => void;
+};
+
 export default function useDropdownCollapse({
   collapseSelectedPreference,
   containerRef,
@@ -54,32 +61,25 @@ export default function useDropdownCollapse({
   // Track whether the menu opened from user interaction so we can suspend collapsing while it is active.
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
   const selectRef = useRef<SelectInstance<OptionData, true> | null>(null);
-  const pointerInsideRef = useRef(false);
 
   // Collapse only when enabled and no expansion path is active.
-  const collapseSelected =
-    collapseSelectedPreference && !isMenuExpanded;
+  const collapseSelected = collapseSelectedPreference && !isMenuExpanded;
 
   // useCollapsibleValues measures chip rows when collapsing is active.
-  const { collapsedCount, isMeasuring, visibleCount } =
-    useCollapsibleValues(containerRef, values, collapseSelected);
-
-  const closeHover = useCallback(() => {
-    pointerInsideRef.current = false;
-  }, []);
-
-  const closeMenu = useCallback(
-    (options?: MenuCloseOptions) => {
-      closeHover();
-      setIsMenuExpanded(false);
-      const instance = selectRef.current as any;
-      if (!options?.skipBlur) {
-        instance?.blur?.();
-      }
-      instance?.closeMenu?.();
-    },
-    [closeHover]
+  const { collapsedCount, isMeasuring, visibleCount } = useCollapsibleValues(
+    containerRef,
+    values,
+    collapseSelected
   );
+
+  const closeMenu = useCallback((options?: MenuCloseOptions) => {
+    setIsMenuExpanded(false);
+    const instance = (selectRef.current as unknown as SelectControls) || null;
+    if (!options?.skipBlur) {
+      instance?.blur?.();
+    }
+    instance?.closeMenu?.();
+  }, []);
 
   const handleWrapperPointer = useCallback(
     (eventTarget: EventTarget | null) => {
@@ -93,8 +93,7 @@ export default function useDropdownCollapse({
         return;
       }
 
-      pointerInsideRef.current = true;
-      const instance = selectRef.current as any;
+      const instance = (selectRef.current as unknown as SelectControls) || null;
       instance?.focus?.();
     },
     [collapseSelectedPreference, disabled]
@@ -113,7 +112,6 @@ export default function useDropdownCollapse({
     [handleWrapperPointer]
   );
 
-
   const handleMenuOpen = useCallback(() => {
     if (!collapseSelectedPreference) return;
     setIsMenuExpanded(true);
@@ -122,18 +120,16 @@ export default function useDropdownCollapse({
   const handleMenuClose = useCallback(() => {
     if (!collapseSelectedPreference) return;
     setIsMenuExpanded(false);
-    closeHover();
-  }, [closeHover, collapseSelectedPreference]);
+  }, [collapseSelectedPreference]);
 
   useEffect(() => {
     if (!collapseSelectedPreference) {
-      pointerInsideRef.current = false;
       setIsMenuExpanded(false);
       return;
     }
 
-    // Close the menu when the user interacts outside the control; we listen in the
-    // capture phase so React Select does not swallow the event first.
+    // Close the menu on outside interactions; use capture so react-select's
+    // internal handlers can't stop propagation first.
     const handlePointerDown = (event: PointerEvent) => {
       const root = containerRef.current;
       if (!root) return;
@@ -148,10 +144,7 @@ export default function useDropdownCollapse({
     };
   }, [closeMenu, collapseSelectedPreference, containerRef]);
 
-  useEffect(() => {
-    if (!disabled) return;
-    closeHover();
-  }, [closeHover, disabled]);
+  // No hover state to reset; keep minimal surface.
 
   return useMemo(
     () => ({
@@ -166,7 +159,7 @@ export default function useDropdownCollapse({
       pointer: {
         onMouseDown: handleWrapperMouseDown,
         onTouchStart: handleWrapperTouchStart,
-        reset: closeHover
+        reset: () => {}
       },
       measurement: {
         isMeasuring,
@@ -177,7 +170,6 @@ export default function useDropdownCollapse({
     [
       collapseSelected,
       collapsedCount,
-      closeHover,
       closeMenu,
       handleMenuClose,
       handleMenuOpen,

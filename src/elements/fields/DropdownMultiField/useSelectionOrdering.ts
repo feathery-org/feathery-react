@@ -5,9 +5,10 @@ import type { ActionMeta, OnChangeValue } from 'react-select';
 import type { OptionData } from './types';
 
 // Stable key used to detect when the selected values change without relying on
-// object identity coming from React Select.
+// object identity coming from React Select. Use JSON string of values to avoid
+// delimiter-collision issues.
 const valuesSignature = (values: OptionData[]) =>
-  values.map((item) => item.value).join('|');
+  JSON.stringify(values.map((item) => item.value));
 
 const arraysEqual = (a: string[], b: string[]) => {
   if (a.length !== b.length) return false;
@@ -107,7 +108,8 @@ export default function useSelectionOrdering(
         return aIndex - bIndex;
       });
 
-      // Surface the latest pick first for hover preview without rewriting the stored order.
+      // Surface the latest pick first for UI rendering while keeping the
+      // emitted selection order stable.
       selectionOrderRef.current = [
         optionValue,
         ...selectionOrderRef.current.filter((value) => value !== optionValue)
