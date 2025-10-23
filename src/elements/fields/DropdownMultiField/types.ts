@@ -17,6 +17,5 @@ export type DropdownSelectProps = MultiValueProps<
   containerRef: React.RefObject<HTMLElement | null>;
   collapseSelected: boolean;
   isMeasuring: boolean;
-  rowHeight: number | null;
   visibleCount: number;
 };

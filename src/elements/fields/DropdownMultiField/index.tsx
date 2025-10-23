@@ -166,7 +166,7 @@ export default function DropdownMultiField({
     onTouchStart: handleWrapperTouchStart,
     reset: resetPointerFocus
   } = pointer;
-  const { isMeasuring, rowHeight, visibleCount } = measurement;
+  const { isMeasuring, visibleCount } = measurement;
 
   const selectComponentsOverride = useMemo(
     () =>
@@ -206,6 +206,7 @@ export default function DropdownMultiField({
 
       const nextSelected = reorderSelected(selected, actionMeta);
       onChange(nextSelected, actionMeta);
+      selectRef.current?.focus?.();
     },
     [
       resetPointerFocus,
@@ -213,7 +214,8 @@ export default function DropdownMultiField({
       collapseSelectedPreference,
       isMenuOpen,
       onChange,
-      reorderSelected
+      reorderSelected,
+      selectRef
     ]
   );
 
@@ -394,8 +396,6 @@ export default function DropdownMultiField({
           collapsedCount={collapsedCount}
           // @ts-ignore React Select doesn't type custom props on selectProps
           isMeasuring={isMeasuring}
-          // @ts-ignore React Select doesn't type custom props on selectProps
-          rowHeight={rowHeight}
           // @ts-ignore React Select doesn't type custom props on selectProps
           collapseSelected={collapseSelected}
           inputId={servar.key}

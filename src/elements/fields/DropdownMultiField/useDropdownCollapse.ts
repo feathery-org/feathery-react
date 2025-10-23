@@ -33,7 +33,6 @@ type PointerControls = {
 
 type MeasurementState = {
   isMeasuring: boolean;
-  rowHeight: number | null;
   visibleCount: number;
 };
 
@@ -62,7 +61,7 @@ export default function useDropdownCollapse({
     collapseSelectedPreference && !isMenuExpanded;
 
   // useCollapsibleValues measures chip rows when collapsing is active.
-  const { collapsedCount, isMeasuring, rowHeight, visibleCount } =
+  const { collapsedCount, isMeasuring, visibleCount } =
     useCollapsibleValues(containerRef, values, collapseSelected);
 
   const closeHover = useCallback(() => {
@@ -171,7 +170,6 @@ export default function useDropdownCollapse({
       },
       measurement: {
         isMeasuring,
-        rowHeight,
         visibleCount
       },
       selectRef
@@ -187,7 +185,6 @@ export default function useDropdownCollapse({
       handleWrapperTouchStart,
       isMenuExpanded,
       isMeasuring,
-      rowHeight,
       visibleCount,
       selectRef
     ]
