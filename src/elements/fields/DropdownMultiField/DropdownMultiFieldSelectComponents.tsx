@@ -120,6 +120,7 @@ const CollapsibleMultiValueContainer = (
   const targetIndex = Math.max(selectProps.visibleCount - 1, 0);
   const showIndicator =
     selectProps.collapsedCount > 0 &&
+    !selectProps.isMeasuring &&
     selectProps.visibleCount > 0 &&
     currentIndex >= 0 &&
     currentIndex === targetIndex;

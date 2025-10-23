@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState
 } from 'react';
@@ -14,6 +13,9 @@ import type { OptionData } from './types';
 // Treat width deltas under this threshold as noise so we don't thrash measurements.
 const WIDTH_EPSILON = 0.5;
 
+const parseFloatOrZero = (value: string | null | undefined) =>
+  value ? parseFloat(value) || 0 : 0;
+
 export default function useCollapsibleValues(
   containerRef: React.RefObject<HTMLElement | null>,
   values: OptionData[],
@@ -22,7 +24,6 @@ export default function useCollapsibleValues(
   const totalCount = values.length;
   const [visibleCount, setVisibleCount] = useState(totalCount);
   const [isMeasuring, setIsMeasuring] = useState(false);
-  const [rowHeight, setRowHeight] = useState<number | null>(null);
   const [measurementTick, setMeasurementTick] = useState(0);
   const pendingMeasurementRef = useRef(false);
   const queuedMeasurementRef = useRef(false);
@@ -30,11 +31,40 @@ export default function useCollapsibleValues(
   const frameRef = useRef<number | null>(null);
   const lastWidthRef = useRef<number | null>(null);
   const lastCollapsedVisibleRef = useRef(totalCount);
+  const indicatorRef = useRef<HTMLSpanElement | null>(null);
+  const lastValuesRef = useRef<OptionData[] | null>(null);
 
-  const valuesSignature = useMemo(
-    () => values.map((item) => item.value).join('|'),
-    [values]
-  );
+  const ensureIndicator = (parent: HTMLElement) => {
+    let indicator = indicatorRef.current;
+    if (!indicator) {
+      const created = parent.ownerDocument?.createElement('span');
+      if (!created) {
+        return null;
+      }
+      created.setAttribute('aria-hidden', 'true');
+      created.setAttribute('data-feathery-collapsed-indicator', 'true');
+      created.className = 'rs-collapsed-chip';
+      created.style.visibility = 'hidden';
+      created.style.position = 'absolute';
+      created.style.pointerEvents = 'none';
+      created.style.whiteSpace = 'nowrap';
+      created.style.top = '0';
+      created.style.left = '0';
+      indicatorRef.current = created;
+      indicator = created;
+    }
+
+    if (!parent.contains(indicator)) {
+      parent.appendChild(indicator);
+    }
+
+    return indicator;
+  };
+
+  useEffect(() => () => {
+    indicatorRef.current?.remove();
+    indicatorRef.current = null;
+  }, []);
 
   const requestMeasurement = useCallback(() => {
     if (!enabled) return;
@@ -53,31 +83,35 @@ export default function useCollapsibleValues(
         '[data-feathery-multi-value="true"]'
       ) as HTMLElement | null;
       if (chip) {
-        const rect = chip.getBoundingClientRect();
-        const style = featheryWindow().getComputedStyle(chip);
-        const computedHeight =
-          rect.height +
-          parseFloat(style.marginTop || '0') +
-          parseFloat(style.marginBottom || '0');
-        setRowHeight((prev) => {
-          if (prev === null) return computedHeight;
-          return Math.abs(prev - computedHeight) > WIDTH_EPSILON
-            ? computedHeight
-            : prev;
-        });
       }
     }
     if (!pendingVisibleResetRef.current) {
       setIsMeasuring(true);
     }
     pendingVisibleResetRef.current = true;
+    setVisibleCount((prev) => (prev === totalCount ? prev : totalCount));
     setMeasurementTick((tick) => tick + 1);
   }, [containerRef, enabled, totalCount]);
 
   useEffect(() => {
+    const previous = lastValuesRef.current;
+    lastValuesRef.current = values;
+
     if (!enabled) return;
-    requestMeasurement();
-  }, [enabled, requestMeasurement, valuesSignature]);
+
+    if (!previous) {
+      requestMeasurement();
+      return;
+    }
+
+    const hasChanged =
+      previous.length !== values.length ||
+      previous.some((item, index) => item.value !== values[index]?.value);
+
+    if (hasChanged) {
+      requestMeasurement();
+    }
+  }, [enabled, requestMeasurement, values]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -140,18 +174,76 @@ export default function useCollapsibleValues(
             }
           }
 
-          const rect = chips[0].getBoundingClientRect();
-          const style = featheryWindow().getComputedStyle(chips[0]);
-          const computedHeight =
-            rect.height +
-            parseFloat(style.marginTop || '0') +
-            parseFloat(style.marginBottom || '0');
-          setRowHeight((prev) => {
-            if (prev === null) return computedHeight;
-            return Math.abs(prev - computedHeight) > WIDTH_EPSILON
-              ? computedHeight
-              : prev;
-          });
+          const parent = chips[0].parentElement;
+          if (parent && totalCount > nextVisible) {
+            const indicator = ensureIndicator(parent);
+            if (indicator) {
+              const parentRect = parent.getBoundingClientRect();
+              const parentStyle = featheryWindow().getComputedStyle(parent);
+              const gap =
+                parseFloatOrZero(parentStyle.columnGap) ||
+                parseFloatOrZero(parentStyle.gap);
+              const paddingLeft = parseFloatOrZero(parentStyle.paddingLeft);
+              const paddingRight = parseFloatOrZero(parentStyle.paddingRight);
+              const availableWidth = Math.max(
+                parentRect.width - paddingLeft - paddingRight,
+                0
+              );
+
+              const updateIndicatorMetrics = () => {
+                indicator.textContent = `+${Math.max(
+                  totalCount - nextVisible,
+                  0
+                )}`;
+                const indicatorRect = indicator.getBoundingClientRect();
+                const indicatorStyle =
+                  featheryWindow().getComputedStyle(indicator);
+                return (
+                  indicatorRect.width +
+                  parseFloatOrZero(indicatorStyle.marginLeft) +
+                  parseFloatOrZero(indicatorStyle.marginRight)
+                );
+              };
+
+              const maxIterations = totalCount + 1;
+              let iteration = 0;
+              let indicatorWidth = 0;
+
+              while (nextVisible > 0 && iteration < maxIterations) {
+                indicatorWidth = updateIndicatorMetrics();
+                const lastIndex = nextVisible - 1;
+                const lastChip = chips[lastIndex];
+                if (!lastChip) break;
+
+                const lastChipRect = lastChip.getBoundingClientRect();
+                const lastChipStyle =
+                  featheryWindow().getComputedStyle(lastChip);
+                const chipRightEdge =
+                  lastChipRect.right -
+                  parentRect.left -
+                  paddingLeft;
+                const spacer =
+                  gap > 0
+                    ? gap
+                    : parseFloatOrZero(lastChipStyle.marginRight);
+
+                if (
+                  chipRightEdge + spacer + indicatorWidth <=
+                  availableWidth + WIDTH_EPSILON
+                ) {
+                  break;
+                }
+
+                nextVisible -= 1;
+                iteration += 1;
+              }
+
+              if (iteration >= maxIterations) {
+                // Guard against oscillation if the indicator width changes while we trim.
+                nextVisible = Math.max(Math.min(nextVisible, totalCount - 1), 0);
+              }
+            }
+          }
         }
       }
 
@@ -187,7 +279,6 @@ export default function useCollapsibleValues(
   useEffect(() => {
     if (!enabled) {
       setIsMeasuring(false);
-      setRowHeight(null);
       pendingMeasurementRef.current = false;
       queuedMeasurementRef.current = false;
       pendingVisibleResetRef.current = false;
@@ -215,6 +306,5 @@ export default function useCollapsibleValues(
     visibleCount: enabled ? visibleCount : totalCount,
     collapsedCount,
     isMeasuring: enabled ? isMeasuring : false,
-    rowHeight: enabled ? rowHeight : null
   };
 }
