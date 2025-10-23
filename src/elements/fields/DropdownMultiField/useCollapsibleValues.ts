@@ -11,9 +11,9 @@ import { featheryWindow } from '../../../utils/browser';
 import type { OptionData } from './types';
 
 // Treat width deltas under this threshold as noise so we don't thrash measurements.
-const WIDTH_EPSILON = 0.5;
+const WIDTH_EPSILON = 20;
 // When checking for a new row (via offsetTop deltas), treat tiny differences as same-line noise.
-const ROW_BREAK_EPSILON = 0.5;
+const ROW_BREAK_EPSILON = 20;
 
 const parseFloatOrZero = (value: string | null | undefined) =>
   value ? parseFloat(value) || 0 : 0;
