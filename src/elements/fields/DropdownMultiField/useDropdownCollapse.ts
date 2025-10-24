@@ -50,6 +50,7 @@ type SelectControls = {
   focus?: () => void;
   blur?: () => void;
   closeMenu?: () => void;
+  openMenu?: (focusOption: 'first' | 'last') => void;
 };
 
 export default function useDropdownCollapse({
@@ -87,7 +88,6 @@ export default function useDropdownCollapse({
 
       const elementTarget = eventTarget as HTMLElement | null;
       if (
-        elementTarget?.closest('[data-feathery-multi-value="true"]') ||
         elementTarget?.closest('[data-feathery-multi-value-remove="true"]')
       ) {
         return;

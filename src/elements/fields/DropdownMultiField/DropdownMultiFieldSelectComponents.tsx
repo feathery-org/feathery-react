@@ -175,12 +175,17 @@ const CollapsibleMultiValue = (props: MultiValueProps<OptionData, true>) => {
     ...props.innerProps,
     'data-feathery-multi-value': 'true'
   };
+  const shouldBubblePointer = selectProps.collapseSelected;
   mergedInnerProps.onMouseDown = (event) => {
-    event.stopPropagation();
+    if (!shouldBubblePointer) {
+      event.stopPropagation();
+    }
     props.innerProps?.onMouseDown?.(event);
   };
   mergedInnerProps.onTouchStart = (event) => {
-    event.stopPropagation();
+    if (!shouldBubblePointer) {
+      event.stopPropagation();
+    }
     props.innerProps?.onTouchStart?.(event);
   };
   if (shouldMaskDuringMeasure) {
