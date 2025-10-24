@@ -1,6 +1,10 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import useBorder from '../../components/useBorder';
-import Select, { ActionMeta, OnChangeValue } from 'react-select';
+import Select, {
+  ActionMeta,
+  OnChangeValue,
+  type SelectInstance
+} from 'react-select';
 import CreatableSelect from 'react-select/creatable';
 import { hoverStylesGuard } from '../../../utils/browser';
 import InlineTooltip from '../../components/InlineTooltip';
@@ -17,6 +21,12 @@ import {
 import useDropdownCollapse from './useDropdownCollapse';
 import useSelectionOrdering from './useSelectionOrdering';
 import type { DropdownSelectProps, OptionData, Options } from './types';
+
+type SelectWithInternalState = SelectInstance<OptionData, true> & {
+  state?: {
+    focusedOption?: OptionData | null;
+  };
+};
 
 export default function DropdownMultiField({
   element,
@@ -156,11 +166,26 @@ export default function DropdownMultiField({
   });
 
   const {
-    isOpen: isMenuOpen,
-    open: handleMenuOpen,
-    close: handleMenuClose,
-    forceClose: closeMenuImmediately
+    open: openCollapseMenu,
+    close: closeCollapseMenu,
+    forceClose: forceCloseCollapseMenu
   } = menu;
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const closeMenuImmediately = useCallback(
+    (options?: Parameters<typeof forceCloseCollapseMenu>[0]) => {
+      setIsMenuOpen(false);
+      forceCloseCollapseMenu(options);
+    },
+    [forceCloseCollapseMenu]
+  );
+  const handleMenuOpen = useCallback(() => {
+    setIsMenuOpen(true);
+    openCollapseMenu();
+  }, [openCollapseMenu]);
+  const handleMenuClose = useCallback(() => {
+    setIsMenuOpen(false);
+    closeCollapseMenu();
+  }, [closeCollapseMenu]);
   const {
     onMouseDown: handleWrapperMouseDown,
     onTouchStart: handleWrapperTouchStart
@@ -214,8 +239,9 @@ export default function DropdownMultiField({
     ]
   );
 
-  const hasTooltip = !!properties.tooltipText;
-  const chevronPosition = hasTooltip ? 30 : 10;
+  const disableAllOptions =
+    (!!servar.max_length && orderedSelectVal.length >= servar.max_length) ||
+    loadingDynamicOptions;
   const create = servar.metadata.creatable_options;
   let formatCreateLabel: ((inputValue: string) => string) | undefined;
   if (create && translation.create_option_label) {
@@ -225,6 +251,27 @@ export default function DropdownMultiField({
       ? (inputValue: string) => template.replace(/\{value\}/g, inputValue)
       : (inputValue: string) => `${template} "${inputValue}"`;
   }
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key !== 'Enter' || create || disabled) return;
+
+      const instance = selectRef.current as SelectWithInternalState | null;
+      const hasFocusedOption = !!instance?.state?.focusedOption;
+
+      if (!isMenuOpen) {
+        event.preventDefault();
+        instance?.openMenu?.('first');
+        return;
+      }
+
+      if (!hasFocusedOption || disableAllOptions) {
+        event.preventDefault();
+      }
+    },
+    [create, disableAllOptions, disabled, isMenuOpen, selectRef]
+  );
+  const hasTooltip = !!properties.tooltipText;
+  const chevronPosition = hasTooltip ? 30 : 10;
   const Component = create ? CreatableSelect : Select;
 
   responsiveStyles.applyFontStyles('field');
@@ -443,6 +490,8 @@ export default function DropdownMultiField({
           onMenuClose={handleMenuClose}
           closeMenuOnSelect={false}
           tabSelectsValue={false}
+          onKeyDown={handleKeyDown}
+          blurInputOnSelect={false}
           noOptionsMessage={create ? () => null : noOptionsMessage}
           options={options}
           isOptionDisabled={() =>
