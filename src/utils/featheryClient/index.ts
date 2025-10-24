@@ -29,6 +29,11 @@ import debounce from 'lodash.debounce';
 import { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
 import { ExtractionActionOptions, GetConfigParams } from '../internalState';
+import {
+  FEATHERY_INTERACTION_EVENT,
+  isInteractionDetected,
+  setInteractionDetected
+} from '../interactionState';
 
 export const API_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
@@ -126,6 +131,32 @@ export default class FeatheryClient extends IntegrationClient {
     this.debouncedSubmitCustom = debounce(
       this._debouncedSubmitCustom.bind(this),
       SUBMIT_CUSTOM_DEBOUNCE_WINDOW
+    );
+
+    this.handleInteraction = this.handleInteraction.bind(this);
+    if (typeof CustomEvent !== 'undefined') {
+      featheryWindow().addEventListener?.(
+        FEATHERY_INTERACTION_EVENT,
+        this.handleInteraction
+      );
+    } else {
+      console.warn('CustomEvent is not available');
+      setInteractionDetected();
+    }
+  }
+
+  private async handleInteraction() {
+    featheryWindow().removeEventListener?.(
+      FEATHERY_INTERACTION_EVENT,
+      this.handleInteraction
+    );
+    return this.submitCustom({}, { shouldFlush: true });
+  }
+
+  public destroy() {
+    featheryWindow().removeEventListener?.(
+      FEATHERY_INTERACTION_EVENT,
+      this.handleInteraction
     );
   }
 
@@ -527,6 +558,10 @@ export default class FeatheryClient extends IntegrationClient {
       return;
     }
 
+    if (!isInteractionDetected()) {
+      return;
+    }
+
     const customKeyValues = { ...this.pendingCustomFieldUpdates };
     this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
 
@@ -685,6 +720,7 @@ export default class FeatheryClient extends IntegrationClient {
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
+    await this.handleInteraction();
     this.submitQueue = Promise.all([
       this.submitQueue,
       this.submitCustom(hiddenFields, { shouldFlush: true }),
@@ -693,6 +729,7 @@ export default class FeatheryClient extends IntegrationClient {
         this._submitFileData(servar, step.key)
       )
     ]);
+
     return this.submitQueue;
   }
 

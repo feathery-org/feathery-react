@@ -208,6 +208,7 @@ import {
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ExtractionToast from './components/AIExtractionToast';
 import { useAIExtractionToast } from './components/AIExtractionToast/useAIExtractionToast';
+import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -472,6 +473,8 @@ function Form({
     featheryWindow().addEventListener('resize', handleResize);
     return () => featheryWindow().removeEventListener('resize', handleResize);
   }, [formSettings]);
+
+  useTrackUserInteraction(formRef, activeStep, stepKey, formName);
 
   useEffect(() => {
     const oldLanguage = curLanguage.current;
