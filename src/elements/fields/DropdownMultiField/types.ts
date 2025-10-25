@@ -18,4 +18,9 @@ export type DropdownSelectProps = MultiValueProps<
   collapseSelected: boolean;
   isMeasuring: boolean;
   visibleCount: number;
+  onCollapsedChipPress?: (event: React.SyntheticEvent) => void;
+  onControlPress?: (
+    event: React.SyntheticEvent,
+    info: { isTouch: boolean }
+  ) => boolean;
 };

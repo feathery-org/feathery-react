@@ -1,6 +1,7 @@
 import React, { ComponentType, useRef, useState } from 'react';
 import {
   components as SelectComponents,
+  type ControlProps,
   type MultiValueGenericProps,
   type MultiValueProps,
   type OptionProps,
@@ -95,9 +96,98 @@ const CollapsibleMultiValueRemove = (
   return <BaseMultiValueRemove {...props} innerProps={removeInnerProps} />;
 };
 
-const CollapsedIndicator = ({ collapsedCount }: { collapsedCount: number }) =>
+const Control = (props: ControlProps<OptionData, true>) => {
+  const BaseControl = SelectComponents.Control as ComponentType<
+    ControlProps<OptionData, true>
+  >;
+  const selectProps = props.selectProps as DropdownSelectProps;
+  const { onControlPress } = selectProps;
+
+  const handlePointerDown: React.PointerEventHandler<HTMLDivElement> = (
+    event
+  ) => {
+    const isTouch = event.pointerType === 'touch';
+    if (onControlPress && onControlPress(event, { isTouch })) {
+      if (isTouch && event.cancelable) {
+        event.preventDefault();
+      }
+      event.stopPropagation();
+      return;
+    }
+
+    props.innerProps?.onPointerDown?.(event);
+  };
+
+  const handleMouseDown: React.MouseEventHandler<HTMLDivElement> = (event) => {
+    if (onControlPress && onControlPress(event, { isTouch: false })) {
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+      event.stopPropagation();
+      return;
+    }
+
+    props.innerProps?.onMouseDown?.(event);
+  };
+
+  const handleTouchStart: React.TouchEventHandler<HTMLDivElement> = (event) => {
+    if (onControlPress && onControlPress(event, { isTouch: true })) {
+      event.stopPropagation();
+      return;
+    }
+
+    props.innerProps?.onTouchStart?.(event);
+  };
+
+  return (
+    <BaseControl
+      {...props}
+      innerProps={{
+        ...props.innerProps,
+        onPointerDown: handlePointerDown,
+        onMouseDown: handleMouseDown,
+        onTouchStart: handleTouchStart
+      }}
+    />
+  );
+};
+
+const CollapsedIndicator = ({
+  collapsedCount,
+  onPress
+}: {
+  collapsedCount: number;
+  onPress?: (event: React.SyntheticEvent) => void;
+}) =>
   collapsedCount > 0 ? (
-    <span aria-hidden='true' className='rs-collapsed-chip'>
+    <span
+      aria-hidden='true'
+      className='rs-collapsed-chip'
+      data-feathery-collapsed-indicator='true'
+      onPointerDown={(event) => {
+        if (!onPress) return;
+        if (event.pointerType === 'touch' && event.cancelable) {
+          event.preventDefault();
+        }
+        event.stopPropagation();
+        onPress(event);
+      }}
+      onMouseDown={(event) => {
+        if (!onPress) return;
+        event.stopPropagation();
+        onPress(event);
+      }}
+      onTouchStart={(event) => {
+        if (!onPress) return;
+        event.stopPropagation();
+        onPress(event);
+      }}
+      onClick={(event) => {
+        if (!onPress) return;
+        event.stopPropagation();
+        onPress(event);
+      }}
+    >
       +{collapsedCount}
     </span>
   ) : null;
@@ -138,7 +228,10 @@ const CollapsibleMultiValueContainer = (
   return (
     <>
       {containerElement}
-      <CollapsedIndicator collapsedCount={selectProps.collapsedCount} />
+      <CollapsedIndicator
+        collapsedCount={selectProps.collapsedCount}
+        onPress={selectProps.onCollapsedChipPress}
+      />
     </>
   );
 };
@@ -176,16 +269,42 @@ const CollapsibleMultiValue = (props: MultiValueProps<OptionData, true>) => {
     'data-feathery-multi-value': 'true'
   };
   const shouldBubblePointer = selectProps.collapseSelected;
-  mergedInnerProps.onMouseDown = (event) => {
-    if (!shouldBubblePointer) {
+  mergedInnerProps.onPointerDown = (event) => {
+    if (shouldBubblePointer) {
+      if (event.pointerType === 'touch' && event.cancelable) {
+        event.preventDefault();
+      }
       event.stopPropagation();
+      // @ts-ignore - react-select's innerProps type omits pointer event here
+      selectProps.onCollapsedChipPress?.(event);
+      return;
     }
+
+    event.stopPropagation();
+    // @ts-ignore
+    props.innerProps?.onPointerDown?.(event);
+  };
+  mergedInnerProps.onMouseDown = (event) => {
+    if (shouldBubblePointer) {
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+      event.stopPropagation();
+      selectProps.onCollapsedChipPress?.(event);
+      return;
+    }
+
+    event.stopPropagation();
     props.innerProps?.onMouseDown?.(event);
   };
   mergedInnerProps.onTouchStart = (event) => {
-    if (!shouldBubblePointer) {
+    if (shouldBubblePointer) {
       event.stopPropagation();
+      selectProps.onCollapsedChipPress?.(event);
+      return;
     }
+
+    event.stopPropagation();
     props.innerProps?.onTouchStart?.(event);
   };
   if (shouldMaskDuringMeasure) {
@@ -216,6 +335,7 @@ const CollapsibleMultiValue = (props: MultiValueProps<OptionData, true>) => {
 };
 
 export {
+  Control,
   CollapsibleMultiValue,
   CollapsibleMultiValueContainer,
   TooltipOption,
