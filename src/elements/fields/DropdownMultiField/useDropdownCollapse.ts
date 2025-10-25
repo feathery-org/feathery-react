@@ -87,9 +87,7 @@ export default function useDropdownCollapse({
       if (disabled || !collapseSelectedPreference) return;
 
       const elementTarget = eventTarget as HTMLElement | null;
-      if (
-        elementTarget?.closest('[data-feathery-multi-value-remove="true"]')
-      ) {
+      if (elementTarget?.closest('[data-feathery-multi-value-remove="true"]')) {
         return;
       }
 

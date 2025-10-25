@@ -1,4 +1,10 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import useBorder from '../../components/useBorder';
 import Select, {
   ActionMeta,
@@ -6,13 +12,14 @@ import Select, {
   type SelectInstance
 } from 'react-select';
 import CreatableSelect from 'react-select/creatable';
-import { hoverStylesGuard } from '../../../utils/browser';
+import { featheryDoc, hoverStylesGuard } from '../../../utils/browser';
 import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
 import Placeholder from '../../components/Placeholder';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
 
 import {
+  Control as DropdownControl,
   CollapsibleMultiValue,
   CollapsibleMultiValueContainer,
   TooltipOption,
@@ -171,37 +178,152 @@ export default function DropdownMultiField({
     forceClose: forceCloseCollapseMenu
   } = menu;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // Guard window to ignore a spurious onMenuClose that can immediately follow
+  // a programmatic open triggered from a touch/pointer press.
+  const suppressCloseUntilRef = useRef<number>(0);
+  const { onMouseDown: focusOnMouseDown, onTouchStart: focusOnTouchStart } =
+    pointer;
+
+  const syncSelectInstance = useCallback(
+    () => selectRef.current as SelectWithInternalState | null,
+    [selectRef]
+  );
+
+  const openMenu = useCallback(
+    (options?: { focusOption?: 'first' | 'last'; defer?: boolean }) => {
+      const instance = syncSelectInstance();
+      if (!instance) return;
+
+      const { focusOption = 'first', defer = false } = options ?? {};
+
+      suppressCloseUntilRef.current = performance.now() + 250;
+      setIsMenuOpen(true);
+      openCollapseMenu();
+      instance.focus?.();
+
+      const open = () => instance.openMenu?.(focusOption);
+      if (defer) requestAnimationFrame(open);
+      else open();
+    },
+    [openCollapseMenu, syncSelectInstance]
+  );
+
   const closeMenuImmediately = useCallback(
     (options?: Parameters<typeof forceCloseCollapseMenu>[0]) => {
       setIsMenuOpen(false);
+      closeCollapseMenu();
       forceCloseCollapseMenu(options);
     },
-    [forceCloseCollapseMenu]
+    [closeCollapseMenu, forceCloseCollapseMenu]
   );
+
   const handleMenuOpen = useCallback(() => {
     setIsMenuOpen(true);
     openCollapseMenu();
-  }, [openCollapseMenu]);
+    syncSelectInstance();
+  }, [openCollapseMenu, syncSelectInstance]);
+
   const handleMenuClose = useCallback(() => {
+    if (performance.now() < suppressCloseUntilRef.current) {
+      return;
+    }
     setIsMenuOpen(false);
     closeCollapseMenu();
   }, [closeCollapseMenu]);
-  const {
-    onMouseDown: handleWrapperMouseDown,
-    onTouchStart: handleWrapperTouchStart
-  } = pointer;
+
+  const shouldOpenFromTarget = useCallback(
+    (eventTarget: EventTarget | null) => {
+      if (!collapseSelected || isMenuOpen) return false;
+
+      const elementTarget = eventTarget as HTMLElement | null;
+      if (elementTarget?.closest('[data-feathery-multi-value-remove="true"]')) {
+        return false;
+      }
+
+      return true;
+    },
+    [collapseSelected, isMenuOpen]
+  );
+
+  const handleWrapperMouseDown = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (shouldOpenFromTarget(event.target)) {
+        event.preventDefault();
+        event.stopPropagation();
+        openMenu();
+        return;
+      }
+
+      focusOnMouseDown(event);
+    },
+    [focusOnMouseDown, openMenu, shouldOpenFromTarget]
+  );
+
+  const handleWrapperTouchStart = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      if (shouldOpenFromTarget(event.target)) {
+        event.stopPropagation();
+        openMenu({ defer: true });
+        return;
+      }
+
+      focusOnTouchStart(event);
+    },
+    [focusOnTouchStart, openMenu, shouldOpenFromTarget]
+  );
+
+  const isTouchLike = (native: any) => {
+    try {
+      if (!native) return false;
+      // Treat TouchEvent or PointerEvent with touch pointerType as touch-like.
+      // eslint-disable-next-line no-undef
+      if (typeof TouchEvent !== 'undefined' && native instanceof TouchEvent)
+        return true;
+      // eslint-disable-next-line no-undef
+      if (typeof PointerEvent !== 'undefined' && native instanceof PointerEvent)
+        return native.pointerType === 'touch';
+    } catch {}
+    return false;
+  };
+
+  const handleControlPress = useCallback(
+    (event: React.SyntheticEvent, { isTouch }: { isTouch: boolean }) => {
+      if (!shouldOpenFromTarget(event.currentTarget)) return false;
+
+      if (!isTouch && 'preventDefault' in event && event.cancelable) {
+        event.preventDefault?.();
+      }
+      event.stopPropagation();
+      const touchy = isTouch || isTouchLike(event.nativeEvent);
+      openMenu({ defer: touchy });
+      return true;
+    },
+    [openMenu, shouldOpenFromTarget]
+  );
+
+  const handleCollapsedChipPress = useCallback(
+    (event: React.SyntheticEvent) => {
+      if (!shouldOpenFromTarget(event.currentTarget)) return;
+
+      event.stopPropagation();
+      openMenu({ defer: isTouchLike(event.nativeEvent) });
+    },
+    [openMenu, shouldOpenFromTarget]
+  );
   const { isMeasuring, visibleCount } = measurement;
 
   const selectComponentsOverride = useMemo(
     () =>
       collapseSelected
         ? {
+            Control: DropdownControl,
             Option: TooltipOption,
             MultiValue: CollapsibleMultiValue,
             MultiValueContainer: CollapsibleMultiValueContainer,
             MultiValueRemove: CollapsibleMultiValueRemove
           }
         : {
+            Control: DropdownControl,
             Option: TooltipOption,
             MultiValueRemove: CollapsibleMultiValueRemove
           },
@@ -278,6 +400,24 @@ export default function DropdownMultiField({
 
   const shouldHideInput =
     collapseSelected && !isMeasuring && !focused && !isMenuOpen;
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+
+    const doc = featheryDoc();
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const root = containerRef.current;
+      if (!root) return;
+      if (root.contains(event.target as Node)) return;
+      closeMenuImmediately();
+    };
+
+    doc.addEventListener('pointerdown', handlePointerDown, true);
+    return () => {
+      doc.removeEventListener('pointerdown', handlePointerDown, true);
+    };
+  }, [closeMenuImmediately, isMenuOpen]);
 
   return (
     <div
@@ -467,6 +607,13 @@ export default function DropdownMultiField({
             }
           }}
           components={selectComponentsOverride}
+          // In collapsed mode we open via custom press handlers; disable the
+          // default click-toggle to avoid immediate close on touch. Preserve
+          // default click-open when not collapsing.
+          openMenuOnClick={!collapseSelected}
+          menuIsOpen={isMenuOpen}
+          onMenuOpen={handleMenuOpen}
+          onMenuClose={handleMenuClose}
           // @ts-ignore React Select doesn't type custom props on selectProps
           containerRef={containerRef}
           // @ts-ignore React Select doesn't type custom props on selectProps
@@ -479,6 +626,12 @@ export default function DropdownMultiField({
           collapseSelected={collapseSelected}
           // @ts-ignore React Select doesn't type custom props on selectProps
           inputHidden={shouldHideInput}
+          // @ts-ignore React Select doesn't type custom props on selectProps
+          onCollapsedChipPress={
+            collapseSelected ? handleCollapsedChipPress : undefined
+          }
+          // @ts-ignore React Select doesn't type custom props on selectProps
+          onControlPress={collapseSelected ? handleControlPress : undefined}
           inputId={servar.key}
           value={orderedSelectVal}
           required={required}
@@ -486,8 +639,6 @@ export default function DropdownMultiField({
           onChange={handleChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          onMenuOpen={handleMenuOpen}
-          onMenuClose={handleMenuClose}
           closeMenuOnSelect={false}
           tabSelectsValue={false}
           onKeyDown={handleKeyDown}
