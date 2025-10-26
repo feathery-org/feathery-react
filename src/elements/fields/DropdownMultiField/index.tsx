@@ -6,12 +6,7 @@ import React, {
   useState
 } from 'react';
 import useBorder from '../../components/useBorder';
-import Select, {
-  ActionMeta,
-  OnChangeValue,
-  type SelectInstance
-} from 'react-select';
-import CreatableSelect from 'react-select/creatable';
+import { ActionMeta, OnChangeValue, type SelectInstance } from 'react-select';
 import { featheryDoc, hoverStylesGuard } from '../../../utils/browser';
 import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
@@ -25,14 +20,34 @@ import {
   TooltipOption,
   CollapsibleMultiValueRemove
 } from './DropdownMultiFieldSelectComponents';
+import {
+  DropdownCreatableSelect,
+  DropdownSelect
+} from './createDropdownSelect';
+import { createSelectStyles } from './selectStyles';
 import useDropdownCollapse from './useDropdownCollapse';
 import useSelectionOrdering from './useSelectionOrdering';
-import type { DropdownSelectProps, OptionData, Options } from './types';
+import type { OptionData, Options } from './types';
 
 type SelectWithInternalState = SelectInstance<OptionData, true> & {
   state?: {
     focusedOption?: OptionData | null;
   };
+};
+
+type SelectInternalState = SelectWithInternalState['state'] & {
+  inputValue?: string;
+};
+
+type CreatableOption = OptionData & { __isNew__?: boolean };
+
+const getLatestInputValue = (
+  stateValue: unknown,
+  inputRef: HTMLInputElement | null | undefined
+) => {
+  if (typeof stateValue === 'string') return stateValue;
+  if (typeof inputRef?.value === 'string') return inputRef.value;
+  return '';
 };
 
 export default function DropdownMultiField({
@@ -373,33 +388,150 @@ export default function DropdownMultiField({
       ? (inputValue: string) => template.replace(/\{value\}/g, inputValue)
       : (inputValue: string) => `${template} "${inputValue}"`;
   }
-  const handleKeyDown = useCallback(
+  const normalizedOptionValues = useMemo(() => {
+    const values = new Set<string>();
+    options.forEach((option) => {
+      if (option?.value) values.add(option.value.toLowerCase());
+    });
+    return values;
+  }, [options]);
+
+  const normalizedSelectedValues = useMemo(() => {
+    const values = new Set<string>();
+    orderedSelectVal.forEach((option) => {
+      if (option?.value) values.add(option.value.toLowerCase());
+    });
+    return values;
+  }, [orderedSelectVal]);
+
+  type EnterGuardDecision = 'allow' | 'block' | 'block-open';
+
+  const evaluateEnterGuard = useCallback((): EnterGuardDecision => {
+    const instance = selectRef.current as SelectWithInternalState | null;
+    const selectState = instance?.state as SelectInternalState | undefined;
+    const rawFocusedOption = selectState?.focusedOption as
+      | CreatableOption
+      | undefined;
+    const focusedOption = rawFocusedOption ?? null;
+    const focusedValue = focusedOption?.value;
+    const hasFocusedOption = Boolean(focusedValue);
+    const isCreateFocused = Boolean(create && focusedOption?.__isNew__);
+    // React Select defers state updates during keydown; fall back to the live
+    // input element so creatable text is visible before the state commit.
+    const rawInputValue = getLatestInputValue(
+      selectState?.inputValue,
+      instance?.inputRef ?? null
+    );
+    const inputValue = rawInputValue.trim();
+    const hasInput = inputValue.length > 0;
+    const normalizedInput = inputValue.toLowerCase();
+    const matchesExistingOption =
+      hasInput && normalizedOptionValues.has(normalizedInput);
+    const matchesSelectedValue =
+      hasInput && normalizedSelectedValues.has(normalizedInput);
+    const isCreatableCandidate = create && hasInput && !matchesExistingOption;
+    const normalizedFocusedValue = focusedValue?.toLowerCase();
+    const isFocusedSelected = Boolean(
+      normalizedFocusedValue &&
+        normalizedSelectedValues.has(normalizedFocusedValue)
+    );
+
+    if (!isMenuOpen) {
+      return 'block-open';
+    }
+
+    if (isCreatableCandidate) {
+      return 'allow';
+    }
+
+    if (isCreateFocused) {
+      return 'block';
+    }
+
+    if (hasFocusedOption) {
+      return isFocusedSelected ? 'block' : 'allow';
+    }
+
+    if (disableAllOptions) {
+      return 'block';
+    }
+
+    if (matchesExistingOption || matchesSelectedValue) {
+      return 'block';
+    }
+
+    // No option focused and no creatable input to act on—block to preserve the
+    // form submit guard.
+    return 'block';
+  }, [
+    create,
+    disableAllOptions,
+    isMenuOpen,
+    normalizedOptionValues,
+    normalizedSelectedValues,
+    orderedSelectVal,
+    selectRef
+  ]);
+
+  const handleSelectKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      if (event.key !== 'Enter' || create || disabled) return;
+      if (event.key !== 'Enter' || disabled) return;
 
-      const instance = selectRef.current as SelectWithInternalState | null;
-      const hasFocusedOption = !!instance?.state?.focusedOption;
+      const decision = evaluateEnterGuard();
+      if (decision === 'allow') return;
 
-      if (!isMenuOpen) {
-        event.preventDefault();
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (decision === 'block-open') {
+        const instance = selectRef.current as SelectWithInternalState | null;
         instance?.openMenu?.('first');
-        return;
-      }
-
-      if (!hasFocusedOption || disableAllOptions) {
-        event.preventDefault();
       }
     },
-    [create, disableAllOptions, disabled, isMenuOpen, selectRef]
+    [disabled, evaluateEnterGuard, selectRef]
   );
+
+  // Capture the keydown before it reaches the native form submit handler. This
+  // keeps Enter from bubbling out when React Select bails early (e.g., no
+  // creatable input or all options selected).
+  const handleKeyDownCapture = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key !== 'Enter' || disabled) return;
+
+      const decision = evaluateEnterGuard();
+      if (decision === 'allow') return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (decision === 'block-open') {
+        const instance = selectRef.current as SelectWithInternalState | null;
+        instance?.openMenu?.('first');
+      }
+    },
+    [disabled, evaluateEnterGuard, selectRef]
+  );
+
   const hasTooltip = !!properties.tooltipText;
   const chevronPosition = hasTooltip ? 30 : 10;
-  const Component = create ? CreatableSelect : Select;
+  const SelectComponent = create ? DropdownCreatableSelect : DropdownSelect;
 
   responsiveStyles.applyFontStyles('field');
 
   const shouldHideInput =
     collapseSelected && !isMeasuring && !focused && !isMenuOpen;
+
+  const selectStyles = useMemo(
+    () =>
+      createSelectStyles({
+        chevronPosition,
+        fontColor: element.styles.font_color,
+        menuZIndex: DROPDOWN_Z_INDEX,
+        responsiveStyles,
+        rightToLeft
+      }),
+    [chevronPosition, element.styles.font_color, responsiveStyles, rightToLeft]
+  );
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -458,154 +590,12 @@ export default function DropdownMultiField({
         }}
         onMouseDown={handleWrapperMouseDown}
         onTouchStart={handleWrapperTouchStart}
+        onKeyDownCapture={handleKeyDownCapture}
       >
         {customBorder}
-        <Component
+        <SelectComponent
           ref={selectRef}
-          styles={{
-            // @ts-ignore React Select style typing is overly strict
-            control: (baseStyles) => ({
-              ...baseStyles,
-              ...responsiveStyles.getTarget('field'),
-              width: '100%',
-              height: '100%',
-              minHeight: 'inherit',
-              border: 'none',
-              boxShadow: 'none',
-              backgroundColor: 'transparent',
-              backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='%23${element.styles.font_color}'/></svg>")`,
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: `${
-                rightToLeft ? 'left' : 'right'
-              } ${chevronPosition}px center`,
-              position: 'relative'
-            }),
-            // @ts-ignore React Select style typing is overly strict
-            container: (baseStyles) => ({
-              ...baseStyles,
-              height: '100%',
-              minHeight: 'inherit'
-            }),
-            // @ts-ignore React Select style typing is overly strict
-            valueContainer: (baseStyles, state) => {
-              const selectProps =
-                state.selectProps as typeof state.selectProps & {
-                  collapseSelected: boolean;
-                  isMeasuring: boolean;
-                  visibleCount: number;
-                  inputValue?: string;
-                };
-              const shouldWrap =
-                selectProps.isMeasuring ||
-                !selectProps.collapseSelected ||
-                !!selectProps.inputValue;
-              const paddingBlock = shouldWrap
-                ? {
-                    paddingTop:
-                      baseStyles.paddingTop !== undefined
-                        ? baseStyles.paddingTop
-                        : '8px',
-                    paddingBottom:
-                      baseStyles.paddingBottom !== undefined
-                        ? baseStyles.paddingBottom
-                        : '8px'
-                  }
-                : {};
-
-              return {
-                ...baseStyles,
-                ...paddingBlock,
-                paddingInlineEnd: 28,
-                display: 'flex',
-                minWidth: 0,
-                flexWrap: shouldWrap ? 'wrap' : 'nowrap',
-                alignItems: shouldWrap ? 'flex-start' : 'center',
-                alignContent: shouldWrap ? 'flex-start' : 'center',
-                ...(selectProps.collapseSelected
-                  ? {
-                      '& .rs-collapsed-chip': {
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        padding: '3px 8px',
-                        margin: '2px',
-                        borderRadius: baseStyles.borderRadius ?? 2,
-                        backgroundColor:
-                          baseStyles.backgroundColor ??
-                          'rgba(221, 221, 221, 0.8)',
-                        color: baseStyles.color ?? '#333',
-                        fontSize: baseStyles.fontSize ?? '0.85em'
-                      }
-                    }
-                  : {})
-              };
-            },
-            // @ts-ignore React Select style typing is overly strict
-            multiValueLabel: (baseStyles) => ({
-              ...baseStyles,
-              whiteSpace: 'normal',
-              overflow: 'hidden',
-              display: '-webkit-box',
-              WebkitBoxOrient: 'vertical',
-              WebkitLineClamp: 3
-            }),
-            indicatorSeparator: () => ({ display: 'none' }),
-            indicatorsContainer: () => ({ display: 'none' }),
-            // @ts-ignore React Select style typing is overly strict
-            menu: (baseStyles) => ({
-              ...baseStyles,
-              zIndex: DROPDOWN_Z_INDEX,
-              textAlign: 'start'
-            }),
-            // @ts-ignore React Select style typing is overly strict
-            multiValue: (baseStyles, state) => {
-              const selectProps =
-                state.selectProps as typeof state.selectProps & {
-                  collapseSelected: boolean;
-                };
-
-              if (!selectProps.collapseSelected) return baseStyles;
-
-              return {
-                ...baseStyles,
-                marginInline: '2px',
-                borderRadius: baseStyles.borderRadius ?? 2
-              };
-            },
-            // @ts-ignore React Select style typing is overly strict
-            input: (baseStyles, state) => {
-              const selectProps = state.selectProps as DropdownSelectProps & {
-                inputHidden?: boolean;
-              };
-
-              if (!selectProps.collapseSelected || !selectProps.inputHidden) {
-                return baseStyles;
-              }
-
-              return {
-                ...baseStyles,
-                opacity: 0,
-                maxWidth: '1px',
-                width: '1px',
-                minWidth: '1px',
-                flexBasis: 0,
-                flexGrow: 0,
-                flexShrink: 0,
-                margin: 0,
-                padding: 0,
-                pointerEvents: 'none',
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                overflow: 'hidden',
-                '> input': {
-                  width: '1px',
-                  minWidth: '1px',
-                  opacity: 0,
-                  pointerEvents: 'none'
-                }
-              };
-            }
-          }}
+          styles={selectStyles}
           components={selectComponentsOverride}
           // In collapsed mode we open via custom press handlers; disable the
           // default click-toggle to avoid immediate close on touch. Preserve
@@ -614,23 +604,15 @@ export default function DropdownMultiField({
           menuIsOpen={isMenuOpen}
           onMenuOpen={handleMenuOpen}
           onMenuClose={handleMenuClose}
-          // @ts-ignore React Select doesn't type custom props on selectProps
           containerRef={containerRef}
-          // @ts-ignore React Select doesn't type custom props on selectProps
           visibleCount={visibleCount}
-          // @ts-ignore React Select doesn't type custom props on selectProps
           collapsedCount={collapsedCount}
-          // @ts-ignore React Select doesn't type custom props on selectProps
           isMeasuring={isMeasuring}
-          // @ts-ignore React Select doesn't type custom props on selectProps
           collapseSelected={collapseSelected}
-          // @ts-ignore React Select doesn't type custom props on selectProps
           inputHidden={shouldHideInput}
-          // @ts-ignore React Select doesn't type custom props on selectProps
           onCollapsedChipPress={
             collapseSelected ? handleCollapsedChipPress : undefined
           }
-          // @ts-ignore React Select doesn't type custom props on selectProps
           onControlPress={collapseSelected ? handleControlPress : undefined}
           inputId={servar.key}
           value={orderedSelectVal}
@@ -641,7 +623,7 @@ export default function DropdownMultiField({
           onBlur={() => setFocused(false)}
           closeMenuOnSelect={false}
           tabSelectsValue={false}
-          onKeyDown={handleKeyDown}
+          onKeyDown={handleSelectKeyDown}
           blurInputOnSelect={false}
           noOptionsMessage={create ? () => null : noOptionsMessage}
           options={options}
