@@ -22,11 +22,11 @@ import { loadLottieLight } from '../../elements/components/Lottie';
 import { downloadAllFileUrls, featheryDoc, featheryWindow } from '../browser';
 import { authState } from '../../auth/LoginForm';
 import { parseError } from '../error';
-import { loadQRScanner } from '../../elements/fields/QRScanner';
+import { loadQRScanner } from '../../elements/fields/QRScanner/qrLoader';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
 import { RequestOptions } from '../offlineRequestHandler';
 import debounce from 'lodash.debounce';
-import { DebouncedFunc } from 'lodash';
+import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
 import { ExtractionActionOptions, GetConfigParams } from '../internalState';
 import {

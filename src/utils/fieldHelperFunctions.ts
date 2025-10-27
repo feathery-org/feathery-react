@@ -1,5 +1,5 @@
 import { findCountryByID } from '../elements/components/data/countries';
-import { formatDateString } from '../elements/fields/DateSelectorField';
+import { formatDateString } from '../elements/fields/DateSelectorField/utils';
 import { featheryWindow } from './browser';
 import Field from './entities/Field';
 import FeatheryClient from './featheryClient';

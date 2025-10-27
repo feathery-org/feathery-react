@@ -3,13 +3,12 @@ import React, {
   useEffect,
   useImperativeHandle,
   useRef,
-  useState,
-  lazy
+  useState
 } from 'react';
 import { toBase64 } from '../../../../utils/image';
 import { fromDataURL } from './utils';
 import { SignatureTranslations } from '../translation';
-const Signature = lazy(() => import('react-signature-canvas'));
+import Signature from 'react-signature-canvas';
 
 export type SignatureCanvasProps = {
   fieldKey?: string;

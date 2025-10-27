@@ -8,7 +8,6 @@ import { featheryWindow } from '../../../utils/browser';
 import {
   Html5QrcodeScannerState,
   PLACEHOLDER_IMAGE,
-  QR_SCANNER_LIB_URL,
   SCAN_CONFIG
 } from './constants';
 import { setCameraPreferences } from './utils/local-storage';
@@ -16,11 +15,7 @@ import Slider from '@rc-component/slider';
 import SliderStyles from '../SliderField/styles';
 import throttle from 'lodash.throttle';
 import ErrorInput from '../../components/ErrorInput';
-
-let qrPromise = Promise.resolve();
-export function loadQRScanner() {
-  qrPromise = dynamicImport(QR_SCANNER_LIB_URL);
-}
+import { loadQRScanner, qrPromise } from './qrLoader';
 
 async function createScanner(cameraElementId: string) {
   await qrPromise;

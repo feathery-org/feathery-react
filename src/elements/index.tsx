@@ -1,14 +1,14 @@
-import React, { memo, useMemo } from 'react';
+import React, { lazy, memo, useMemo, Suspense } from 'react';
 import { InView } from 'react-intersection-observer';
 
 import Fields from './fields';
-import TextElement from './basic/TextElement';
-import ButtonElement from './basic/ButtonElement';
-import ImageElement from './basic/ImageElement';
-import ProgressBarElement from './basic/ProgressBarElement';
-import VideoElement from './basic/VideoElement';
-
 import ResponsiveStyles, { ERROR_COLOR } from './styles';
+
+const TextElement = lazy(() => import(/* webpackChunkName: "TextElement" */ './basic/TextElement'));
+const ButtonElement = lazy(() => import(/* webpackChunkName: "ButtonElement" */ './basic/ButtonElement'));
+const ImageElement = lazy(() => import(/* webpackChunkName: "ImageElement" */ './basic/ImageElement'));
+const ProgressBarElement = lazy(() => import(/* webpackChunkName: "ProgressBarElement" */ './basic/ProgressBarElement'));
+const VideoElement = lazy(() => import(/* webpackChunkName: "VideoElement" */ './basic/VideoElement'));
 
 const Basic = {
   ImageElement,
@@ -41,11 +41,13 @@ Object.entries(Elements).map(([key, Element]) => {
       }, [element, componentOnly, formSettings]);
 
       const featheryElement = (
-        <Element
-          element={element}
-          responsiveStyles={responsiveStyles}
-          {...props}
-        />
+        <Suspense fallback={<div />}>
+          <Element
+            element={element}
+            responsiveStyles={responsiveStyles}
+            {...props}
+          />
+        </Suspense>
       );
 
       const e = onView ? (
