@@ -193,9 +193,13 @@ export default function DropdownMultiField({
     forceClose: forceCloseCollapseMenu
   } = menu;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  // Guard window to ignore a spurious onMenuClose that can immediately follow
-  // a programmatic open triggered from a touch/pointer press.
+  // Handle React Select quirks where touch-initiated opens can trigger
+  // immediate closes if we don't suppress the close event for a short time
+  // since we took over the pointer interaction.
   const suppressCloseUntilRef = useRef<number>(0);
+  const extendCloseSuppression = useCallback(() => {
+    suppressCloseUntilRef.current = performance.now() + 250;
+  }, []);
   const { onMouseDown: focusOnMouseDown, onTouchStart: focusOnTouchStart } =
     pointer;
 
@@ -204,24 +208,16 @@ export default function DropdownMultiField({
     [selectRef]
   );
 
-  const openMenu = useCallback(
-    (options?: { focusOption?: 'first' | 'last'; defer?: boolean }) => {
-      const instance = syncSelectInstance();
-      if (!instance) return;
+  const openMenu = useCallback(() => {
+    const instance = syncSelectInstance();
+    if (!instance) return;
 
-      const { focusOption = 'first', defer = false } = options ?? {};
-
-      suppressCloseUntilRef.current = performance.now() + 250;
-      setIsMenuOpen(true);
-      openCollapseMenu();
-      instance.focus?.();
-
-      const open = () => instance.openMenu?.(focusOption);
-      if (defer) requestAnimationFrame(open);
-      else open();
-    },
-    [openCollapseMenu, syncSelectInstance]
-  );
+    extendCloseSuppression();
+    setIsMenuOpen(true);
+    openCollapseMenu();
+    instance.focus?.();
+    instance.openMenu?.('first');
+  }, [extendCloseSuppression, openCollapseMenu, syncSelectInstance]);
 
   const closeMenuImmediately = useCallback(
     (options?: Parameters<typeof forceCloseCollapseMenu>[0]) => {
@@ -278,7 +274,7 @@ export default function DropdownMultiField({
     (event: React.TouchEvent<HTMLDivElement>) => {
       if (shouldOpenFromTarget(event.target)) {
         event.stopPropagation();
-        openMenu({ defer: true });
+        openMenu();
         return;
       }
 
@@ -286,20 +282,6 @@ export default function DropdownMultiField({
     },
     [focusOnTouchStart, openMenu, shouldOpenFromTarget]
   );
-
-  const isTouchLike = (native: any) => {
-    try {
-      if (!native) return false;
-      // Treat TouchEvent or PointerEvent with touch pointerType as touch-like.
-      // eslint-disable-next-line no-undef
-      if (typeof TouchEvent !== 'undefined' && native instanceof TouchEvent)
-        return true;
-      // eslint-disable-next-line no-undef
-      if (typeof PointerEvent !== 'undefined' && native instanceof PointerEvent)
-        return native.pointerType === 'touch';
-    } catch {}
-    return false;
-  };
 
   const handleControlPress = useCallback(
     (event: React.SyntheticEvent, { isTouch }: { isTouch: boolean }) => {
@@ -309,8 +291,7 @@ export default function DropdownMultiField({
         event.preventDefault?.();
       }
       event.stopPropagation();
-      const touchy = isTouch || isTouchLike(event.nativeEvent);
-      openMenu({ defer: touchy });
+      openMenu();
       return true;
     },
     [openMenu, shouldOpenFromTarget]
@@ -321,7 +302,7 @@ export default function DropdownMultiField({
       if (!shouldOpenFromTarget(event.currentTarget)) return;
 
       event.stopPropagation();
-      openMenu({ defer: isTouchLike(event.nativeEvent) });
+      openMenu();
     },
     [openMenu, shouldOpenFromTarget]
   );
@@ -350,6 +331,12 @@ export default function DropdownMultiField({
       selected: OnChangeValue<OptionData, true>,
       actionMeta: ActionMeta<OptionData>
     ) => {
+      if (
+        actionMeta.action === 'remove-value' ||
+        actionMeta.action === 'pop-value'
+      ) {
+        extendCloseSuppression();
+      }
       const skipBlurAction =
         actionMeta.action === 'remove-value' ||
         actionMeta.action === 'pop-value' ||
@@ -369,6 +356,7 @@ export default function DropdownMultiField({
     [
       closeMenuImmediately,
       collapseSelectedPreference,
+      extendCloseSuppression,
       isMenuOpen,
       onChange,
       reorderSelected,
@@ -614,6 +602,7 @@ export default function DropdownMultiField({
             collapseSelected ? handleCollapsedChipPress : undefined
           }
           onControlPress={collapseSelected ? handleControlPress : undefined}
+          onMultiValueRemovePointer={extendCloseSuppression}
           inputId={servar.key}
           value={orderedSelectVal}
           required={required}

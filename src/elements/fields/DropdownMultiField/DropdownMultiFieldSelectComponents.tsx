@@ -72,18 +72,25 @@ const BaseMultiValueRemove = SelectComponents.MultiValueRemove as ComponentType<
 const CollapsibleMultiValueRemove = (
   props: MultiValueRemoveProps<OptionData>
 ) => {
+  const selectProps = props.selectProps as DropdownSelectProps;
+  const guardRemoval = () => {
+    selectProps.onMultiValueRemovePointer?.();
+  };
   const removeInnerProps = {
     ...props.innerProps,
     onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => {
+      guardRemoval();
       event.preventDefault();
       event.stopPropagation();
       props.innerProps?.onMouseDown?.(event);
     },
     onTouchStart: (event: React.TouchEvent<HTMLDivElement>) => {
+      guardRemoval();
       event.stopPropagation();
       props.innerProps?.onTouchStart?.(event);
     },
     onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
+      guardRemoval();
       if (event.pointerType === 'touch' && event.cancelable) {
         event.preventDefault();
       }

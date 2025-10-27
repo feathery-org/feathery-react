@@ -26,6 +26,7 @@ export type DropdownSelectExtraProps = {
     event: React.SyntheticEvent,
     info: { isTouch: boolean }
   ) => boolean;
+  onMultiValueRemovePointer?: () => void;
 };
 
 export type DropdownSelectProps = MultiValueProps<
