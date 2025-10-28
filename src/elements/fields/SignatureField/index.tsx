@@ -31,7 +31,9 @@ function SignatureField({
 
   useEffect(() => {
     if (!global.webfontloaderPromise)
-      global.webfontloaderPromise = import(/* webpackChunkName: "webfontloader" */ 'webfontloader');
+      global.webfontloaderPromise = import(
+        /* webpackChunkName: "webfontloader" */ 'webfontloader'
+      );
     global.webfontloaderPromise.then((WebFont: any) => {
       WebFont.load({ google: { families: ['La Belle Aurore'] } });
     });

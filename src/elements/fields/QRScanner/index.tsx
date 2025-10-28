@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect } from 'react';
-import { dynamicImport } from '../../../integrations/utils';
 
 import { selectCamera } from './utils/select-camera';
 import { getZoomSettings } from './utils/supports-zoom';
