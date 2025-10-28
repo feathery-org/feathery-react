@@ -9,7 +9,6 @@ import {
   expectFieldToBeRequired,
   expectFieldToHaveAriaLabel
 } from '../../shared/tests/field-test-utils';
-import { waitFor } from '@testing-library/react';
 
 export {
   mockResponsiveStyles,
@@ -154,24 +153,11 @@ export const expectValueToBeSelected = (text: string) => {
 export const openDropdownMenu = async (user: any) => {
   const control = getReactSelectContainer();
   await user.click(control);
-  const input = getSelectInput();
-  input.focus();
-  await user.keyboard('[ArrowDown]');
-  await waitFor(() => {
-    if (getOptionElements().length === 0) {
-      throw new Error('Dropdown menu did not open');
-    }
-  });
 };
 
 export const selectOptionByText = async (user: any, text: string) => {
-  const option = await waitFor(() => {
-    const found = getOptionByText(text);
-    if (!found) {
-      throw new Error(`Option with text "${text}" not found`);
-    }
-    return found;
-  });
+  const option = getOptionByText(text);
+  if (!option) throw new Error(`Option with text "${text}" not found`);
   await user.click(option);
 };
 
