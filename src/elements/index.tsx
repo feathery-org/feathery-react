@@ -4,11 +4,24 @@ import { InView } from 'react-intersection-observer';
 import Fields from './fields';
 import ResponsiveStyles, { ERROR_COLOR } from './styles';
 
-const TextElement = lazy(() => import(/* webpackChunkName: "TextElement" */ './basic/TextElement'));
-const ButtonElement = lazy(() => import(/* webpackChunkName: "ButtonElement" */ './basic/ButtonElement'));
-const ImageElement = lazy(() => import(/* webpackChunkName: "ImageElement" */ './basic/ImageElement'));
-const ProgressBarElement = lazy(() => import(/* webpackChunkName: "ProgressBarElement" */ './basic/ProgressBarElement'));
-const VideoElement = lazy(() => import(/* webpackChunkName: "VideoElement" */ './basic/VideoElement'));
+const TextElement = lazy(
+  () => import(/* webpackChunkName: "TextElement" */ './basic/TextElement')
+);
+const ButtonElement = lazy(
+  () => import(/* webpackChunkName: "ButtonElement" */ './basic/ButtonElement')
+);
+const ImageElement = lazy(
+  () => import(/* webpackChunkName: "ImageElement" */ './basic/ImageElement')
+);
+const ProgressBarElement = lazy(
+  () =>
+    import(
+      /* webpackChunkName: "ProgressBarElement" */ './basic/ProgressBarElement'
+    )
+);
+const VideoElement = lazy(
+  () => import(/* webpackChunkName: "VideoElement" */ './basic/VideoElement')
+);
 
 const Basic = {
   ImageElement,

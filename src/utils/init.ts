@@ -130,8 +130,12 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   // NextJS support
   if (runningInClient()) {
     // Dynamically load libraries that must be client side
-    global.scriptjsLoadPromise = import(/* webpackChunkName: "scriptjs" */ 'scriptjs');
-    global.webfontloaderPromise = import(/* webpackChunkName: "webfontloader" */ 'webfontloader');
+    global.scriptjsLoadPromise = import(
+      /* webpackChunkName: "scriptjs" */ 'scriptjs'
+    );
+    global.webfontloaderPromise = import(
+      /* webpackChunkName: "webfontloader" */ 'webfontloader'
+    );
 
     // Client-side tracking logic
     if (initState.userTracking === 'cookie') {
