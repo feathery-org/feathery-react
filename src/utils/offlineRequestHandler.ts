@@ -3,6 +3,7 @@ import { featheryWindow, runningInClient } from './browser';
 import { initInfo } from './init';
 import type FeatheryClient from './featheryClient';
 import { checkResponseSuccess } from './featheryClient/utils';
+import { isInteractionDetected } from './interactionState';
 
 // Constants for the IndexedDB database
 const DB_NAME = 'requestsDB';
@@ -45,10 +46,11 @@ interface SerializedRequest {
 }
 
 const beforeUnloadEventHandler = (event: any) => {
-  // Recommended
-  event.preventDefault();
+  // allow navigation if user has not interacted with form
+  if (!isInteractionDetected()) return;
 
-  // Included for legacy support, e.g. Chrome/Edge < 119
+  event.preventDefault();
+  // Support legacy browsers, e.g. Chrome/Edge < 119
   event.returnValue = true;
 };
 
