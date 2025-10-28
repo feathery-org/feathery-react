@@ -1,28 +1,79 @@
-import React, { memo, useMemo } from 'react';
-
-import ButtonGroupField from './ButtonGroupField';
-import CheckboxField from './CheckboxField';
-import CheckboxGroupField from './CheckboxGroupField';
-import ColorPickerField from './ColorPickerField';
-import CustomField from './CustomField';
-import DateSelectorField from './DateSelectorField';
-import DropdownField from './DropdownField';
-import DropdownMultiField from './DropdownMultiField';
-import FileUploadField from './FileUploadField';
-import PhoneField from './PhoneField';
-import PinInputField from './PinInputField';
-import RadioButtonGroupField from './RadioButtonGroupField';
-import RatingField from './RatingField';
-import SignatureField from './SignatureField';
-import SliderField from './SliderField';
-import TextField from './TextField';
-import TextArea from './TextArea';
-import AddressLine1 from './AddressLine1Field';
-import PasswordField from './PasswordField';
-import PaymentMethodField from './PaymentMethodField';
-import MatrixField from './MatrixField';
+import { lazy, memo, useMemo } from 'react';
 import { DEFAULT_MIN_SIZE } from '../../Form/grid/StyledContainer/styles';
-import QRScanner from './QRScanner';
+
+const AddressLine1 = lazy(
+  () => import(/* webpackChunkName: "AddressField" */ './AddressLine1Field')
+);
+const ButtonGroupField = lazy(
+  () => import(/* webpackChunkName: "ButtonGroupField" */ './ButtonGroupField')
+);
+const CheckboxField = lazy(
+  () => import(/* webpackChunkName: "CheckboxField" */ './CheckboxField')
+);
+const CheckboxGroupField = lazy(
+  () =>
+    import(/* webpackChunkName: "CheckboxGroupField" */ './CheckboxGroupField')
+);
+const ColorPickerField = lazy(
+  () => import(/* webpackChunkName: "ColorPickerField" */ './ColorPickerField')
+);
+const CustomField = lazy(
+  () => import(/* webpackChunkName: "CustomField" */ './CustomField')
+);
+const DateSelectorField = lazy(
+  () =>
+    import(/* webpackChunkName: "DateSelectorField" */ './DateSelectorField')
+);
+const DropdownField = lazy(
+  () => import(/* webpackChunkName: "DropdownField" */ './DropdownField')
+);
+const DropdownMultiField = lazy(
+  () =>
+    import(/* webpackChunkName: "DropdownMultiField" */ './DropdownMultiField')
+);
+const FileUploadField = lazy(
+  () => import(/* webpackChunkName: "FileUploadField" */ './FileUploadField')
+);
+const MatrixField = lazy(
+  () => import(/* webpackChunkName: "MatrixField" */ './MatrixField')
+);
+const PasswordField = lazy(
+  () => import(/* webpackChunkName: "PasswordField" */ './PasswordField')
+);
+const PaymentMethodField = lazy(
+  () =>
+    import(/* webpackChunkName: "PaymentMethodField" */ './PaymentMethodField')
+);
+const PhoneField = lazy(
+  () => import(/* webpackChunkName: "PhoneField" */ './PhoneField')
+);
+const PinInputField = lazy(
+  () => import(/* webpackChunkName: "PinInputField" */ './PinInputField')
+);
+const QRScanner = lazy(
+  () => import(/* webpackChunkName: "QRScanner" */ './QRScanner')
+);
+const RadioButtonGroupField = lazy(
+  () =>
+    import(
+      /* webpackChunkName: "RadioButtonGroupField" */ './RadioButtonGroupField'
+    )
+);
+const RatingField = lazy(
+  () => import(/* webpackChunkName: "RatingField" */ './RatingField')
+);
+const SignatureField = lazy(
+  () => import(/* webpackChunkName: "SignatureField" */ './SignatureField')
+);
+const SliderField = lazy(
+  () => import(/* webpackChunkName: "SliderField" */ './SliderField')
+);
+const TextField = lazy(
+  () => import(/* webpackChunkName: "TextField" */ './TextField')
+);
+const TextArea = lazy(
+  () => import(/* webpackChunkName: "TextArea" */ './TextArea')
+);
 
 const Fields = {
   AddressLine1,

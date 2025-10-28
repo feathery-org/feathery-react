@@ -34,10 +34,9 @@ jest.mock('../useDateLocale', () => ({
   useCustomDateLocale: () => undefined
 }));
 
-import React, { lazy } from 'react';
+import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react';
 import DateSelectorField from '../index';
-
 import {
   createDateSelectorElement,
   createDateSelectorProps,
@@ -57,9 +56,6 @@ import {
 } from './test-utils';
 
 describe('DateSelectorField', () => {
-  beforeAll(() => {
-    const DatePicker = lazy(() => import('react-datepicker'));
-  });
   beforeEach(() => {
     resetMockFieldValue();
   });
@@ -75,7 +71,6 @@ describe('DateSelectorField', () => {
 
       render(<DateSelectorField {...props} />);
 
-      // Wait for lazy-loaded DatePicker component to render
       const input = await getDatePickerInput();
       expect(input).toBeInTheDocument();
     });
