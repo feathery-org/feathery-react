@@ -4,7 +4,7 @@ import timeZoneCountries from './timeZoneCountries';
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
 import { resetStyles } from '../../styles';
-import { loadCountriesData } from '../../components/data/countriesLoader';
+import countryData from '../../components/data/countries';
 import exampleNumbers from './exampleNumbers';
 import { isNum } from '../../../utils/primitives';
 import { phoneLibPromise } from '../../../utils/validation';
@@ -16,6 +16,14 @@ import Overlay from '../../components/Overlay';
 import useElementSize from '../../../hooks/useElementSize';
 
 const DEFAULT_COUNTRY = 'US';
+
+const countryMap = countryData.reduce(
+  (countryMap, { flag, countryCode, phoneCode }) => {
+    countryMap[countryCode] = { flag, phoneCode };
+    return countryMap;
+  },
+  {} as Record<string, { flag: string; phoneCode: string }>
+);
 
 function PhoneField({
   element,
@@ -47,30 +55,8 @@ function PhoneField({
   const [show, setShow] = useState(false);
   // The number parsed from the fullNumber prop, updated via triggerOnChange to rawNumber
   const [curFullNumber, setCurFullNumber] = useState('');
-  const [countryMap, setCountryMap] = useState<
-    Record<string, { flag: string; phoneCode: string }>
-  >({});
-  const [countriesLoaded, setCountriesLoaded] = useState(false);
-
-  // Dynamically load countries data
-  useEffect(() => {
-    loadCountriesData().then((countriesModule) => {
-      const countryData = countriesModule.default;
-      const map = countryData.reduce(
-        (countryMap: any, { flag, countryCode, phoneCode }: any) => {
-          countryMap[countryCode] = { flag, phoneCode };
-          return countryMap;
-        },
-        {} as Record<string, { flag: string; phoneCode: string }>
-      );
-      setCountryMap(map);
-      setCountriesLoaded(true);
-    });
-  }, []);
-
   const servar = element.servar;
   const defaultCountry = useMemo(() => {
-    if (!countriesLoaded) return DEFAULT_COUNTRY;
     if (servar.metadata.default_country === 'auto') {
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (!timezone) return DEFAULT_COUNTRY;
@@ -82,12 +68,12 @@ function PhoneField({
     } else {
       return servar.metadata.default_country || DEFAULT_COUNTRY;
     }
-  }, [servar.metadata.default_country, countryMap, countriesLoaded]);
+  }, [servar.metadata.default_country]);
   const [curCountryCode, setCurCountryCode] = useState<string>(defaultCountry);
 
   useEffect(() => setCurCountryCode(defaultCountry), [defaultCountry]);
 
-  const phoneCode = countryMap[curCountryCode]?.phoneCode;
+  const phoneCode = countryMap[curCountryCode].phoneCode;
   // The raw number entered by the user, including phone code
   const [rawNumber, setRawNumber] = useState('');
   const [placeholder, setPlaceholder] = useState<string>(
@@ -233,7 +219,7 @@ function PhoneField({
             if (countriesEnabled && !disabled) setShow(!show);
           }}
         >
-          {countryMap[curCountryCode]?.flag}
+          {countryMap[curCountryCode].flag}
         </div>
         <Overlay
           key={`overlay-${curCountryCode}`}
