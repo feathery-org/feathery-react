@@ -1,75 +1,53 @@
-import React, { useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import useBorder from '../../components/useBorder';
-import Select, {
-  components as SelectComponents,
-  OptionProps
-} from 'react-select';
-import CreatableSelect from 'react-select/creatable';
-import { hoverStylesGuard } from '../../../utils/browser';
+import { ActionMeta, OnChangeValue, type SelectInstance } from 'react-select';
+import { featheryDoc, hoverStylesGuard } from '../../../utils/browser';
 import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
-import { Tooltip } from '../../components/Tooltip';
-import { FORM_Z_INDEX } from '../../../utils/styles';
 import Placeholder from '../../components/Placeholder';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
-import Overlay from '../../components/Overlay';
 
-type OptionData = {
-  tooltip?: string;
-  value: string;
-  label: string;
+import {
+  Control as DropdownControl,
+  CollapsibleMultiValue,
+  CollapsibleMultiValueContainer,
+  TooltipOption,
+  CollapsibleMultiValueRemove
+} from './DropdownMultiFieldSelectComponents';
+import {
+  DropdownCreatableSelect,
+  DropdownSelect
+} from './createDropdownSelect';
+import { createSelectStyles } from './selectStyles';
+import useDropdownCollapse from './useDropdownCollapse';
+import useSelectionOrdering from './useSelectionOrdering';
+import type { OptionData, Options } from './types';
+
+type SelectWithInternalState = SelectInstance<OptionData, true> & {
+  state?: {
+    focusedOption?: OptionData | null;
+  };
 };
 
-type Options = string[] | OptionData[];
+type SelectInternalState = SelectWithInternalState['state'] & {
+  inputValue?: string;
+};
 
-const TooltipOption = ({
-  children,
-  ...props
-}: OptionProps<OptionData, true>) => {
-  const optionRef = useRef<HTMLDivElement>(null);
-  const [showTooltip, setShowTooltip] = useState(false);
-  const containerRef = (props.selectProps as any).containerRef as
-    | React.RefObject<HTMLElement | null>
-    | undefined;
+type CreatableOption = OptionData & { __isNew__?: boolean };
 
-  return (
-    <div
-      ref={optionRef}
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
-    >
-      {/* @ts-ignore */}
-      <SelectComponents.Option {...props}>{children}</SelectComponents.Option>
-      {props.data.tooltip && optionRef.current && (
-        <Overlay
-          targetRef={optionRef}
-          containerRef={containerRef}
-          show={showTooltip}
-          placement='right'
-        >
-          <Tooltip
-            id={`tooltip-${props.data.value}`}
-            css={{
-              zIndex: FORM_Z_INDEX + 1,
-              padding: '.4rem 0',
-              transition: 'opacity .10s linear',
-              '.tooltip-inner': {
-                maxWidth: '200px',
-                padding: '.25rem .5rem',
-                color: '#fff',
-                textAlign: 'center',
-                backgroundColor: '#000',
-                borderRadius: '.25rem',
-                fontSize: 'smaller'
-              }
-            }}
-          >
-            {props.data.tooltip}
-          </Tooltip>
-        </Overlay>
-      )}
-    </div>
-  );
+const getLatestInputValue = (
+  stateValue: unknown,
+  inputRef: HTMLInputElement | null | undefined
+) => {
+  if (typeof stateValue === 'string') return stateValue;
+  if (typeof inputRef?.value === 'string') return inputRef.value;
+  return '';
 };
 
 export default function DropdownMultiField({
@@ -92,13 +70,15 @@ export default function DropdownMultiField({
     error: inlineError,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
+
   const containerRef = useRef<HTMLElement | null>(null);
   const [focused, setFocused] = useState(false);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
 
-  const translation = element.properties.translate || {};
+  const properties = element.properties || {};
+  const translation = properties.translate || {};
   const noOptionsMessage = translation.no_options
     ? () => translation.no_options as string
     : undefined;
@@ -108,12 +88,16 @@ export default function DropdownMultiField({
     if (!fieldVal) return newOptions;
 
     fieldVal.forEach((val: string) => {
-      if (typeof newOptions[0] === 'string') {
-        // handle string[]
-        if (!newOptions.includes(val)) newOptions.push(val);
-      } else if (!newOptions.some((option: any) => option.value === val)) {
-        // handle OptionData[]
-        newOptions.push({ value: val, label: val });
+      const items = newOptions as (string | OptionData)[];
+      if (typeof items[0] === 'string') {
+        const stringOptions = newOptions as string[];
+        if (!stringOptions.includes(val)) stringOptions.push(val);
+        return;
+      }
+
+      const optionDataOptions = newOptions as OptionData[];
+      if (!optionDataOptions.some((option) => option.value === val)) {
+        optionDataOptions.push({ value: val, label: val });
       }
     });
 
@@ -124,12 +108,16 @@ export default function DropdownMultiField({
   const tooltips = servar.metadata.option_tooltips || [];
 
   const labelMap: Record<string, string> = {};
-  let options: any[] = [];
+  const tooltipMap: Record<string, string | undefined> = {};
+  let options: OptionData[] = [];
 
   if (shouldSalesforceSync) {
-    options = dynamicOptions.map((option) => {
+    options = dynamicOptions.map((option: OptionData) => {
       labelMap[option.value] = option.label;
-      return { value: option.value, label: option.label };
+      return {
+        value: option.value,
+        label: option.label
+      };
     });
   } else if (
     repeatIndex !== null &&
@@ -139,9 +127,11 @@ export default function DropdownMultiField({
     options = addFieldValOptions(repeatOptions).map((option) => {
       if (typeof option === 'string') {
         labelMap[option] = option;
+        tooltipMap[option] = '';
         return { value: option, label: option, tooltip: '' };
       }
       labelMap[option.value] = option.label;
+      tooltipMap[option.value] = option.tooltip;
       return option;
     });
   } else {
@@ -149,6 +139,7 @@ export default function DropdownMultiField({
       (option, index) => {
         if (typeof option === 'string') {
           labelMap[option] = labels[index] || option;
+          tooltipMap[option] = tooltips[index];
 
           return {
             value: option,
@@ -158,18 +149,224 @@ export default function DropdownMultiField({
         }
 
         labelMap[option.value] = option.label;
+        tooltipMap[option.value] = option.tooltip;
 
         return option;
       }
     );
   }
 
-  const selectVal = fieldVal
-    ? fieldVal.map((val: any) => ({ label: labelMap[val], value: val }))
+  const selectVal: OptionData[] = fieldVal
+    ? fieldVal.map((val: string) => ({
+        label: labelMap[val] ?? val,
+        value: val,
+        tooltip: tooltipMap[val]
+      }))
     : [];
 
-  const hasTooltip = !!element.properties.tooltipText;
-  const chevronPosition = hasTooltip ? 30 : 10;
+  const collapseSelectedPreference = !!properties.collapseSelectedOptions;
+  const selectionOrderingPreference = collapseSelectedPreference
+    ? !!properties.preserveSelectionOrder
+    : false;
+  const { orderedSelectVal, reorderSelected } = useSelectionOrdering(
+    selectVal,
+    !!selectionOrderingPreference
+  );
+
+  const {
+    collapseSelected,
+    collapsedCount,
+    menu,
+    pointer,
+    measurement,
+    selectRef
+  } = useDropdownCollapse({
+    collapseSelectedPreference,
+    containerRef,
+    disabled,
+    values: orderedSelectVal
+  });
+
+  const {
+    open: openCollapseMenu,
+    close: closeCollapseMenu,
+    forceClose: forceCloseCollapseMenu
+  } = menu;
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // Handle React Select quirks where touch-initiated opens can trigger
+  // immediate closes if we don't suppress the close event for a short time
+  // since we took over the pointer interaction.
+  const suppressCloseUntilRef = useRef<number>(0);
+  const extendCloseSuppression = useCallback(() => {
+    suppressCloseUntilRef.current = performance.now() + 250;
+  }, []);
+  const { onMouseDown: focusOnMouseDown, onTouchStart: focusOnTouchStart } =
+    pointer;
+
+  const syncSelectInstance = useCallback(
+    () => selectRef.current as SelectWithInternalState | null,
+    [selectRef]
+  );
+
+  const openMenu = useCallback(() => {
+    const instance = syncSelectInstance();
+    if (!instance) return;
+
+    extendCloseSuppression();
+    setIsMenuOpen(true);
+    openCollapseMenu();
+    instance.focus?.();
+    instance.openMenu?.('first');
+  }, [extendCloseSuppression, openCollapseMenu, syncSelectInstance]);
+
+  const closeMenuImmediately = useCallback(
+    (options?: Parameters<typeof forceCloseCollapseMenu>[0]) => {
+      setIsMenuOpen(false);
+      closeCollapseMenu();
+      forceCloseCollapseMenu(options);
+    },
+    [closeCollapseMenu, forceCloseCollapseMenu]
+  );
+
+  const handleMenuOpen = useCallback(() => {
+    setIsMenuOpen(true);
+    openCollapseMenu();
+    syncSelectInstance();
+  }, [openCollapseMenu, syncSelectInstance]);
+
+  const handleMenuClose = useCallback(() => {
+    if (performance.now() < suppressCloseUntilRef.current) {
+      return;
+    }
+    setIsMenuOpen(false);
+    closeCollapseMenu();
+  }, [closeCollapseMenu]);
+
+  const shouldOpenFromTarget = useCallback(
+    (eventTarget: EventTarget | null) => {
+      if (!collapseSelected || isMenuOpen) return false;
+
+      const elementTarget = eventTarget as HTMLElement | null;
+      if (elementTarget?.closest('[data-feathery-multi-value-remove="true"]')) {
+        return false;
+      }
+
+      return true;
+    },
+    [collapseSelected, isMenuOpen]
+  );
+
+  const handleWrapperMouseDown = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (shouldOpenFromTarget(event.target)) {
+        event.preventDefault();
+        event.stopPropagation();
+        openMenu();
+        return;
+      }
+
+      focusOnMouseDown(event);
+    },
+    [focusOnMouseDown, openMenu, shouldOpenFromTarget]
+  );
+
+  const handleWrapperTouchStart = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      if (shouldOpenFromTarget(event.target)) {
+        event.stopPropagation();
+        openMenu();
+        return;
+      }
+
+      focusOnTouchStart(event);
+    },
+    [focusOnTouchStart, openMenu, shouldOpenFromTarget]
+  );
+
+  const handleControlPress = useCallback(
+    (event: React.SyntheticEvent, { isTouch }: { isTouch: boolean }) => {
+      if (!shouldOpenFromTarget(event.currentTarget)) return false;
+
+      if (!isTouch && 'preventDefault' in event && event.cancelable) {
+        event.preventDefault?.();
+      }
+      event.stopPropagation();
+      openMenu();
+      return true;
+    },
+    [openMenu, shouldOpenFromTarget]
+  );
+
+  const handleCollapsedChipPress = useCallback(
+    (event: React.SyntheticEvent) => {
+      if (!shouldOpenFromTarget(event.currentTarget)) return;
+
+      event.stopPropagation();
+      openMenu();
+    },
+    [openMenu, shouldOpenFromTarget]
+  );
+  const { isMeasuring, visibleCount } = measurement;
+
+  const selectComponentsOverride = useMemo(
+    () =>
+      collapseSelected
+        ? {
+            Control: DropdownControl,
+            Option: TooltipOption,
+            MultiValue: CollapsibleMultiValue,
+            MultiValueContainer: CollapsibleMultiValueContainer,
+            MultiValueRemove: CollapsibleMultiValueRemove
+          }
+        : {
+            Control: DropdownControl,
+            Option: TooltipOption,
+            MultiValueRemove: CollapsibleMultiValueRemove
+          },
+    [collapseSelected]
+  );
+
+  const handleChange = useCallback(
+    (
+      selected: OnChangeValue<OptionData, true>,
+      actionMeta: ActionMeta<OptionData>
+    ) => {
+      if (
+        actionMeta.action === 'remove-value' ||
+        actionMeta.action === 'pop-value'
+      ) {
+        extendCloseSuppression();
+      }
+      const skipBlurAction =
+        actionMeta.action === 'remove-value' ||
+        actionMeta.action === 'pop-value' ||
+        actionMeta.action === 'select-option' ||
+        actionMeta.action === 'create-option';
+
+      if (collapseSelectedPreference) {
+        if (!skipBlurAction || !isMenuOpen) {
+          closeMenuImmediately(skipBlurAction ? { skipBlur: true } : undefined);
+        }
+      }
+
+      const nextSelected = reorderSelected(selected, actionMeta);
+      onChange(nextSelected, actionMeta);
+      selectRef.current?.focus?.();
+    },
+    [
+      closeMenuImmediately,
+      collapseSelectedPreference,
+      extendCloseSuppression,
+      isMenuOpen,
+      onChange,
+      reorderSelected,
+      selectRef
+    ]
+  );
+
+  const disableAllOptions =
+    (!!servar.max_length && orderedSelectVal.length >= servar.max_length) ||
+    loadingDynamicOptions;
   const create = servar.metadata.creatable_options;
   let formatCreateLabel: ((inputValue: string) => string) | undefined;
   if (create && translation.create_option_label) {
@@ -179,9 +376,168 @@ export default function DropdownMultiField({
       ? (inputValue: string) => template.replace(/\{value\}/g, inputValue)
       : (inputValue: string) => `${template} "${inputValue}"`;
   }
-  const Component = create ? CreatableSelect : Select;
+  const normalizedOptionValues = useMemo(() => {
+    const values = new Set<string>();
+    options.forEach((option) => {
+      if (option?.value) values.add(option.value.toLowerCase());
+    });
+    return values;
+  }, [options]);
+
+  const normalizedSelectedValues = useMemo(() => {
+    const values = new Set<string>();
+    orderedSelectVal.forEach((option) => {
+      if (option?.value) values.add(option.value.toLowerCase());
+    });
+    return values;
+  }, [orderedSelectVal]);
+
+  type EnterGuardDecision = 'allow' | 'block' | 'block-open';
+
+  const evaluateEnterGuard = useCallback((): EnterGuardDecision => {
+    const instance = selectRef.current as SelectWithInternalState | null;
+    const selectState = instance?.state as SelectInternalState | undefined;
+    const rawFocusedOption = selectState?.focusedOption as
+      | CreatableOption
+      | undefined;
+    const focusedOption = rawFocusedOption ?? null;
+    const focusedValue = focusedOption?.value;
+    const hasFocusedOption = Boolean(focusedValue);
+    const isCreateFocused = Boolean(create && focusedOption?.__isNew__);
+    // React Select defers state updates during keydown; fall back to the live
+    // input element so creatable text is visible before the state commit.
+    const rawInputValue = getLatestInputValue(
+      selectState?.inputValue,
+      instance?.inputRef ?? null
+    );
+    const inputValue = rawInputValue.trim();
+    const hasInput = inputValue.length > 0;
+    const normalizedInput = inputValue.toLowerCase();
+    const matchesExistingOption =
+      hasInput && normalizedOptionValues.has(normalizedInput);
+    const matchesSelectedValue =
+      hasInput && normalizedSelectedValues.has(normalizedInput);
+    const isCreatableCandidate = create && hasInput && !matchesExistingOption;
+    const normalizedFocusedValue = focusedValue?.toLowerCase();
+    const isFocusedSelected = Boolean(
+      normalizedFocusedValue &&
+        normalizedSelectedValues.has(normalizedFocusedValue)
+    );
+
+    if (!isMenuOpen) {
+      return 'block-open';
+    }
+
+    if (isCreatableCandidate) {
+      return 'allow';
+    }
+
+    if (isCreateFocused) {
+      return 'block';
+    }
+
+    if (hasFocusedOption) {
+      return isFocusedSelected ? 'block' : 'allow';
+    }
+
+    if (disableAllOptions) {
+      return 'block';
+    }
+
+    if (matchesExistingOption || matchesSelectedValue) {
+      return 'block';
+    }
+
+    // No option focused and no creatable input to act on—block to preserve the
+    // form submit guard.
+    return 'block';
+  }, [
+    create,
+    disableAllOptions,
+    isMenuOpen,
+    normalizedOptionValues,
+    normalizedSelectedValues,
+    orderedSelectVal,
+    selectRef
+  ]);
+
+  const handleSelectKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key !== 'Enter' || disabled) return;
+
+      const decision = evaluateEnterGuard();
+      if (decision === 'allow') return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (decision === 'block-open') {
+        const instance = selectRef.current as SelectWithInternalState | null;
+        instance?.openMenu?.('first');
+      }
+    },
+    [disabled, evaluateEnterGuard, selectRef]
+  );
+
+  // Capture the keydown before it reaches the native form submit handler. This
+  // keeps Enter from bubbling out when React Select bails early (e.g., no
+  // creatable input or all options selected).
+  const handleKeyDownCapture = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key !== 'Enter' || disabled) return;
+
+      const decision = evaluateEnterGuard();
+      if (decision === 'allow') return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (decision === 'block-open') {
+        const instance = selectRef.current as SelectWithInternalState | null;
+        instance?.openMenu?.('first');
+      }
+    },
+    [disabled, evaluateEnterGuard, selectRef]
+  );
+
+  const hasTooltip = !!properties.tooltipText;
+  const chevronPosition = hasTooltip ? 30 : 10;
+  const SelectComponent = create ? DropdownCreatableSelect : DropdownSelect;
 
   responsiveStyles.applyFontStyles('field');
+
+  const shouldHideInput =
+    collapseSelected && !isMeasuring && !focused && !isMenuOpen;
+
+  const selectStyles = useMemo(
+    () =>
+      createSelectStyles({
+        chevronPosition,
+        fontColor: element.styles.font_color,
+        menuZIndex: DROPDOWN_Z_INDEX,
+        responsiveStyles,
+        rightToLeft
+      }),
+    [chevronPosition, element.styles.font_color, responsiveStyles, rightToLeft]
+  );
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+
+    const doc = featheryDoc();
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const root = containerRef.current;
+      if (!root) return;
+      if (root.contains(event.target as Node)) return;
+      closeMenuImmediately();
+    };
+
+    doc.addEventListener('pointerdown', handlePointerDown, true);
+    return () => {
+      doc.removeEventListener('pointerdown', handlePointerDown, true);
+    };
+  }, [closeMenuImmediately, isMenuOpen]);
 
   return (
     <div
@@ -220,79 +576,58 @@ export default function DropdownMultiField({
               }
             : {}
         }}
+        onMouseDown={handleWrapperMouseDown}
+        onTouchStart={handleWrapperTouchStart}
+        onKeyDownCapture={handleKeyDownCapture}
       >
         {customBorder}
-        <Component
-          styles={{
-            // @ts-ignore
-            control: (baseStyles) => ({
-              ...baseStyles,
-              ...responsiveStyles.getTarget('field'),
-              width: '100%',
-              height: '100%',
-              minHeight: 'inherit',
-              border: 'none',
-              boxShadow: 'none',
-              backgroundColor: 'transparent',
-              backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='%23${element.styles.font_color}'/></svg>")`,
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: `${
-                rightToLeft ? 'left' : 'right'
-              } ${chevronPosition}px center`,
-              position: 'relative'
-            }),
-            // @ts-ignore
-            container: (baseStyles) => ({
-              ...baseStyles,
-              height: '100%',
-              minHeight: 'inherit'
-            }),
-            // @ts-ignore
-            valueContainer: (baseStyles) => ({
-              ...baseStyles,
-              paddingInlineEnd: 28
-            }),
-            // @ts-ignore
-            multiValueLabel: (baseStyles) => ({
-              ...baseStyles,
-              whiteSpace: 'normal',
-              overflow: 'hidden',
-              display: '-webkit-box',
-              WebkitBoxOrient: 'vertical',
-              WebkitLineClamp: 3
-            }),
-            indicatorSeparator: () => ({ display: 'none' }),
-            indicatorsContainer: () => ({ display: 'none' }),
-            // @ts-ignore
-            menu: (baseStyles) => ({
-              ...baseStyles,
-              zIndex: DROPDOWN_Z_INDEX,
-              textAlign: 'start'
-            })
-          }}
-          components={{ Option: TooltipOption }}
-          // @ts-ignore React Select doesn't type custom props on selectProps
+        <SelectComponent
+          ref={selectRef}
+          styles={selectStyles}
+          components={selectComponentsOverride}
+          // In collapsed mode we open via custom press handlers; disable the
+          // default click-toggle to avoid immediate close on touch. Preserve
+          // default click-open when not collapsing.
+          openMenuOnClick={!collapseSelected}
+          menuIsOpen={isMenuOpen}
+          onMenuOpen={handleMenuOpen}
+          onMenuClose={handleMenuClose}
           containerRef={containerRef}
+          visibleCount={visibleCount}
+          collapsedCount={collapsedCount}
+          isMeasuring={isMeasuring}
+          collapseSelected={collapseSelected}
+          inputHidden={shouldHideInput}
+          onCollapsedChipPress={
+            collapseSelected ? handleCollapsedChipPress : undefined
+          }
+          onControlPress={collapseSelected ? handleControlPress : undefined}
+          onMultiValueRemovePointer={extendCloseSuppression}
           inputId={servar.key}
-          value={selectVal}
+          value={orderedSelectVal}
           required={required}
           isDisabled={disabled}
-          onChange={onChange}
+          onChange={handleChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
+          closeMenuOnSelect={false}
+          tabSelectsValue={false}
+          onKeyDown={handleSelectKeyDown}
+          blurInputOnSelect={false}
           noOptionsMessage={create ? () => null : noOptionsMessage}
           options={options}
           isOptionDisabled={() =>
-            (servar.max_length && selectVal.length >= servar.max_length) ||
+            (servar.max_length &&
+              orderedSelectVal.length >= servar.max_length) ||
             loadingDynamicOptions
           }
           isMulti
           placeholder=''
           aria-label={element.properties.aria_label}
-          formatCreateLabel={formatCreateLabel || undefined}
+          formatCreateLabel={formatCreateLabel}
         />
         <Placeholder
-          value={selectVal.length || focused}
+          value={orderedSelectVal.length || focused}
           element={element}
           responsiveStyles={responsiveStyles}
           repeatIndex={repeatIndex}
