@@ -649,6 +649,9 @@ export default class FeatheryClient extends IntegrationClient {
    * @returns
    */
   _flushCustomFieldsBeforeUnload = (event: BeforeUnloadEvent) => {
+    // allow navigation if user has not interacted with form
+    if (!isInteractionDetected()) return;
+
     event.preventDefault();
     this.flushCustomFields();
     return (event.returnValue = '');
