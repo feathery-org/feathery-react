@@ -27,7 +27,18 @@ import {
 import { createSelectStyles } from './selectStyles';
 import useDropdownCollapse from './useDropdownCollapse';
 import useSelectionOrdering from './useSelectionOrdering';
-import type { OptionData, Options } from './types';
+import type {
+  OptionData,
+  Options,
+  RawOption,
+  DropdownOptionsInput,
+  NormalizeDropdownOptionParams,
+  BuildDropdownOptionsParams
+} from './types';
+import {
+  normalizeToString,
+  warnInvalidData
+} from '../../utils/fieldNormalization';
 
 type SelectWithInternalState = SelectInstance<OptionData, true> & {
   state?: {
@@ -40,6 +51,138 @@ type SelectInternalState = SelectWithInternalState['state'] & {
 };
 
 type CreatableOption = OptionData & { __isNew__?: boolean };
+
+const normalizeDropdownOption = ({
+  warningState,
+  option,
+  fieldKey,
+  context,
+  entityLabel
+}: NormalizeDropdownOptionParams): OptionData | null => {
+  const candidate =
+    typeof option === 'string' ||
+    typeof option === 'number' ||
+    typeof option === 'boolean'
+      ? { value: option }
+      : option;
+
+  if (!candidate || typeof candidate !== 'object') {
+    warnInvalidData({
+      state: warningState,
+      type: 'option',
+      field: fieldKey,
+      reason: 'invalid shape',
+      context,
+      payload: option,
+      entityLabel
+    });
+    return null;
+  }
+
+  const normalizedCandidate = candidate as Partial<OptionData> & {
+    value?: unknown;
+    label?: unknown;
+    tooltip?: unknown;
+  };
+
+  const coercedValue = normalizeToString(normalizedCandidate.value);
+  if (coercedValue === null) {
+    warnInvalidData({
+      state: warningState,
+      type: 'option',
+      field: fieldKey,
+      reason: 'missing value',
+      context,
+      payload: option,
+      entityLabel
+    });
+    return null;
+  }
+
+  let label = coercedValue;
+  const rawLabel = normalizedCandidate.label;
+  if (typeof rawLabel === 'string') {
+    label = rawLabel;
+  } else if (typeof rawLabel === 'number' || typeof rawLabel === 'boolean') {
+    label = String(rawLabel);
+  }
+
+  let tooltip: string | undefined;
+  const rawTooltip = normalizedCandidate.tooltip;
+  if (typeof rawTooltip === 'string') {
+    tooltip = rawTooltip;
+  } else if (
+    typeof rawTooltip === 'number' ||
+    typeof rawTooltip === 'boolean'
+  ) {
+    tooltip = String(rawTooltip);
+  }
+
+  return {
+    value: coercedValue,
+    label,
+    tooltip
+  };
+};
+
+const buildDropdownOptions = (
+  rawOptions: Options | DropdownOptionsInput,
+  {
+    warningState,
+    fieldKey,
+    contextPrefix,
+    labelOverrides,
+    tooltipOverrides,
+    labelMap,
+    tooltipMap,
+    entityLabel
+  }: BuildDropdownOptionsParams
+) => {
+  const optionList = Array.isArray(rawOptions) ? rawOptions : [];
+  return optionList.reduce<OptionData[]>((acc, option, index) => {
+    const normalized = normalizeDropdownOption({
+      warningState,
+      option: option as RawOption,
+      fieldKey,
+      context: `${contextPrefix}[${index}]`,
+      entityLabel
+    });
+    if (!normalized) return acc;
+
+    let label = normalized.label;
+    let tooltip = normalized.tooltip ?? '';
+
+    if (
+      typeof option === 'string' ||
+      typeof option === 'number' ||
+      typeof option === 'boolean'
+    ) {
+      const labelOverride = labelOverrides?.[index];
+      const tooltipOverride = tooltipOverrides?.[index];
+
+      if (typeof labelOverride === 'string' && labelOverride.length) {
+        label = labelOverride;
+      } else if (labelOverride) {
+        label = String(labelOverride);
+      }
+
+      if (typeof tooltipOverride === 'string' && tooltipOverride.length) {
+        tooltip = tooltipOverride;
+      } else if (tooltipOverride) {
+        tooltip = String(tooltipOverride);
+      }
+    }
+
+    labelMap[normalized.value] = label;
+    tooltipMap[normalized.value] = tooltip;
+    acc.push({
+      value: normalized.value,
+      label,
+      tooltip
+    });
+    return acc;
+  }, []);
+};
 
 const getLatestInputValue = (
   stateValue: unknown,
@@ -74,6 +217,8 @@ export default function DropdownMultiField({
   const containerRef = useRef<HTMLElement | null>(null);
   const [focused, setFocused] = useState(false);
   const servar = element.servar;
+  const fieldKey = servar.key;
+  const warningState = useMemo(() => new Set<string>(), [fieldKey]);
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
 
@@ -82,21 +227,61 @@ export default function DropdownMultiField({
   const noOptionsMessage = translation.no_options
     ? () => translation.no_options as string
     : undefined;
+  const entityLabel = 'Dropdown field';
 
-  const addFieldValOptions = (options: Options) => {
-    const newOptions = Array.isArray(options) ? [...options] : [];
-    if (!fieldVal) return newOptions;
+  const normalizedFieldValues = useMemo<string[]>(() => {
+    if (!Array.isArray(fieldVal)) {
+      warnInvalidData({
+        state: warningState,
+        type: 'value',
+        field: fieldKey,
+        reason: 'expected array for multi-select value',
+        context: 'fieldVal',
+        payload: fieldVal,
+        entityLabel
+      });
+      return [];
+    }
 
-    fieldVal.forEach((val: string) => {
-      const items = newOptions as (string | OptionData)[];
-      if (typeof items[0] === 'string') {
+    return fieldVal.reduce<string[]>((acc, rawValue, index) => {
+      const coerced = normalizeToString(rawValue);
+      if (coerced === null) {
+        warnInvalidData({
+          state: warningState,
+          type: 'value',
+          field: fieldKey,
+          reason: 'unsupported value type',
+          context: `fieldVal[${index}]`,
+          payload: rawValue,
+          entityLabel
+        });
+        return acc;
+      }
+      acc.push(coerced);
+      return acc;
+    }, []);
+  }, [fieldKey, fieldVal, warningState]);
+
+const addFieldValOptions = (options: Options): DropdownOptionsInput => {
+  const newOptions: DropdownOptionsInput = Array.isArray(options)
+    ? [...options]
+    : [];
+  if (!normalizedFieldValues.length) return newOptions;
+
+  normalizedFieldValues.forEach((val: string) => {
+    const items = newOptions as (string | OptionData)[];
+    if (typeof items[0] === 'string') {
         const stringOptions = newOptions as string[];
         if (!stringOptions.includes(val)) stringOptions.push(val);
         return;
       }
 
       const optionDataOptions = newOptions as OptionData[];
-      if (!optionDataOptions.some((option) => option.value === val)) {
+      const hasExistingOption = optionDataOptions.some((option) => {
+        const normalizedValue = normalizeToString(option?.value);
+        return normalizedValue === val;
+      });
+      if (!hasExistingOption) {
         optionDataOptions.push({ value: val, label: val });
       }
     });
@@ -112,52 +297,44 @@ export default function DropdownMultiField({
   let options: OptionData[] = [];
 
   if (shouldSalesforceSync) {
-    options = dynamicOptions.map((option: OptionData) => {
-      labelMap[option.value] = option.label;
-      return {
-        value: option.value,
-        label: option.label
-      };
+    options = buildDropdownOptions(dynamicOptions, {
+      warningState,
+      fieldKey,
+      contextPrefix: 'dynamicOptions',
+      labelMap,
+      tooltipMap,
+      entityLabel
     });
   } else if (
     repeatIndex !== null &&
     servar.metadata.repeat_options?.[repeatIndex] !== undefined
   ) {
     const repeatOptions = servar.metadata.repeat_options[repeatIndex];
-    options = addFieldValOptions(repeatOptions).map((option) => {
-      if (typeof option === 'string') {
-        labelMap[option] = option;
-        tooltipMap[option] = '';
-        return { value: option, label: option, tooltip: '' };
-      }
-      labelMap[option.value] = option.label;
-      tooltipMap[option.value] = option.tooltip;
-      return option;
+    const repeatSource = addFieldValOptions(repeatOptions);
+    options = buildDropdownOptions(repeatSource, {
+      warningState,
+      fieldKey,
+      contextPrefix: 'repeat_options',
+      labelMap,
+      tooltipMap,
+      entityLabel
     });
   } else {
-    options = addFieldValOptions(servar.metadata.options).map(
-      (option, index) => {
-        if (typeof option === 'string') {
-          labelMap[option] = labels[index] || option;
-          tooltipMap[option] = tooltips[index];
-
-          return {
-            value: option,
-            label: labels[index] || option,
-            tooltip: tooltips[index] || ''
-          };
-        }
-
-        labelMap[option.value] = option.label;
-        tooltipMap[option.value] = option.tooltip;
-
-        return option;
-      }
-    );
+    const baseOptions = addFieldValOptions(servar.metadata.options);
+    options = buildDropdownOptions(baseOptions, {
+      warningState,
+      fieldKey,
+      contextPrefix: 'options',
+      labelOverrides: labels,
+      tooltipOverrides: tooltips,
+      labelMap,
+      tooltipMap,
+      entityLabel
+    });
   }
 
-  const selectVal: OptionData[] = fieldVal
-    ? fieldVal.map((val: string) => ({
+  const selectVal: OptionData[] = normalizedFieldValues.length
+    ? normalizedFieldValues.map((val: string) => ({
         label: labelMap[val] ?? val,
         value: val,
         tooltip: tooltipMap[val]

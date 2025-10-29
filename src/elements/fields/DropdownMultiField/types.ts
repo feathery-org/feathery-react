@@ -14,6 +14,35 @@ export type OptionData = {
 
 export type Options = string[] | OptionData[];
 
+export type PrimitiveOption = string | number | boolean;
+
+export type RawOption =
+  | PrimitiveOption
+  | null
+  | undefined
+  | Partial<OptionData>;
+
+export type DropdownOptionsInput = Array<RawOption>;
+
+export type NormalizeDropdownOptionParams = {
+  warningState: Set<string>;
+  option: RawOption;
+  fieldKey: string;
+  context: string;
+  entityLabel: string;
+};
+
+export type BuildDropdownOptionsParams = {
+  warningState: Set<string>;
+  fieldKey: string;
+  contextPrefix: string;
+  labelOverrides?: unknown[];
+  tooltipOverrides?: unknown[];
+  labelMap: Record<string, string>;
+  tooltipMap: Record<string, string | undefined>;
+  entityLabel: string;
+};
+
 export type DropdownSelectExtraProps = {
   collapsedCount: number;
   containerRef: React.RefObject<HTMLElement | null>;
