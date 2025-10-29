@@ -42,8 +42,11 @@ const flushBuckets = () => {
 const scheduleFlush = () => {
   if (flushScheduled) return;
   flushScheduled = true;
-  const runner = typeof queueMicrotask === 'function' ? queueMicrotask : (cb: () => void) => Promise.resolve().then(cb);
-  runner(flushBuckets);
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(flushBuckets);
+    return;
+  }
+  Promise.resolve().then(flushBuckets);
 };
 
 export const normalizeToString = (value: unknown): string | null => {
