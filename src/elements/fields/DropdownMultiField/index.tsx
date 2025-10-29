@@ -262,15 +262,15 @@ export default function DropdownMultiField({
     }, []);
   }, [fieldKey, fieldVal, warningState]);
 
-const addFieldValOptions = (options: Options): DropdownOptionsInput => {
-  const newOptions: DropdownOptionsInput = Array.isArray(options)
-    ? [...options]
-    : [];
-  if (!normalizedFieldValues.length) return newOptions;
+  const addFieldValOptions = (options: Options): DropdownOptionsInput => {
+    const newOptions: DropdownOptionsInput = Array.isArray(options)
+      ? [...options]
+      : [];
+    if (!normalizedFieldValues.length) return newOptions;
 
-  normalizedFieldValues.forEach((val: string) => {
-    const items = newOptions as (string | OptionData)[];
-    if (typeof items[0] === 'string') {
+    normalizedFieldValues.forEach((val: string) => {
+      const items = newOptions as (string | OptionData)[];
+      if (typeof items[0] === 'string') {
         const stringOptions = newOptions as string[];
         if (!stringOptions.includes(val)) stringOptions.push(val);
         return;
