@@ -10,6 +10,42 @@ export type WarningArgs = {
   entityLabel?: string;
 };
 
+type WarningBucket = {
+  type: WarnType;
+  field: string;
+  reason: string;
+  entityLabel: string;
+  count: number;
+  contexts: string[];
+  sample: unknown;
+};
+
+const warningBuckets = new Map<string, WarningBucket>();
+let flushScheduled = false;
+
+const flushBuckets = () => {
+  flushScheduled = false;
+  warningBuckets.forEach((bucket) => {
+    const label = bucket.type === 'option' ? 'option entry' : 'selected value';
+    const plural = bucket.count === 1 ? '' : ' entries';
+    const contextSuffix = bucket.contexts.length
+      ? ` at ${bucket.contexts.join(', ')}`
+      : '';
+    console.warn(
+      `[Feathery] ${bucket.entityLabel} "${bucket.field}" skipped ${bucket.count} invalid ${label}${plural} (${bucket.reason})${contextSuffix}.`,
+      bucket.sample
+    );
+  });
+  warningBuckets.clear();
+};
+
+const scheduleFlush = () => {
+  if (flushScheduled) return;
+  flushScheduled = true;
+  const runner = typeof queueMicrotask === 'function' ? queueMicrotask : (cb: () => void) => Promise.resolve().then(cb);
+  runner(flushBuckets);
+};
+
 export const normalizeToString = (value: unknown): string | null => {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') return value;
@@ -28,13 +64,32 @@ export const warnInvalidData = ({
   payload,
   entityLabel = 'Field'
 }: WarningArgs) => {
-  const signature = `${type}|${field}|${reason}|${context}`;
-  if (state.has(signature)) return;
-  state.add(signature);
+  const contextSignature = `${type}|${field}|${reason}|${context}`;
+  if (state.has(contextSignature)) return;
+  state.add(contextSignature);
 
-  const label = type === 'option' ? 'option entry' : 'selected value';
-  console.warn(
-    `[Feathery] ${entityLabel} "${field}" skipped invalid ${label} (${reason}) at ${context}.`,
-    payload
-  );
+  const bucketKey = `${type}|${field}|${reason}`;
+  let bucket = warningBuckets.get(bucketKey);
+  if (!bucket) {
+    bucket = {
+      type,
+      field,
+      reason,
+      entityLabel,
+      count: 0,
+      contexts: [],
+      sample: payload
+    };
+    warningBuckets.set(bucketKey, bucket);
+  }
+
+  bucket.count += 1;
+  if (bucket.contexts.length < 5) {
+    bucket.contexts.push(context);
+  }
+  if (bucket.sample === undefined) {
+    bucket.sample = payload;
+  }
+
+  scheduleFlush();
 };
