@@ -4,9 +4,19 @@ import type { ActionMeta, OnChangeValue } from 'react-select';
 
 import type { OptionData } from './types';
 
-// Stable key used to detect when the selected values change without relying on
-// object identity coming from React Select. Use JSON string of values to avoid
-// delimiter-collision issues.
+type SelectionOrderingParams = {
+  values: OptionData[];
+  enabled: boolean;
+};
+
+type SelectionOrderingResult = {
+  orderedValues: OptionData[];
+  reorderSelection: (
+    selected: OnChangeValue<OptionData, true>,
+    actionMeta: ActionMeta<OptionData>
+  ) => OnChangeValue<OptionData, true>;
+};
+
 const valuesSignature = (values: OptionData[]) =>
   JSON.stringify(values.map((item) => item.value));
 
@@ -18,33 +28,23 @@ const arraysEqual = (a: string[], b: string[]) => {
   return true;
 };
 
-type ReorderFn = (
-  selected: OnChangeValue<OptionData, true>,
-  actionMeta: ActionMeta<OptionData>
-) => OnChangeValue<OptionData, true>;
-
-type SelectionOrdering = {
-  orderedSelectVal: OptionData[];
-  reorderSelected: ReorderFn;
-};
-
-export default function useSelectionOrdering(
-  selectVal: OptionData[],
-  enabled: boolean
-): SelectionOrdering {
-  // Cache the pick order so collapsed chips mirror selection sequence while hover can reshuffle.
+export default function useSelectionOrdering({
+  values,
+  enabled
+}: SelectionOrderingParams): SelectionOrderingResult {
   const selectionOrderRef = useRef<string[]>(
-    selectVal.map((option) => option.value)
+    values.map((option) => option.value)
   );
 
-  const selectValSignature = useMemo(
-    () => valuesSignature(selectVal),
-    [selectVal]
-  );
+  const signature = useMemo(() => valuesSignature(values), [values]);
 
   useEffect(() => {
-    // Drop deselected values and append new ones so the ref tracks selectVal without losing order.
-    const currentValues = selectVal.map((option) => option.value);
+    if (!enabled) {
+      selectionOrderRef.current = [];
+      return;
+    }
+
+    const currentValues = values.map((option) => option.value);
     let nextOrder = selectionOrderRef.current.filter((value) =>
       currentValues.includes(value)
     );
@@ -59,30 +59,31 @@ export default function useSelectionOrdering(
     if (!arraysEqual(selectionOrderRef.current, nextOrder)) {
       selectionOrderRef.current = nextOrder;
     }
-  }, [selectVal, selectValSignature]);
+  }, [enabled, signature, values]);
 
-  const orderedSelectVal = useMemo(() => {
-    if (!enabled) return selectVal;
+  const orderedValues = useMemo(() => {
+    if (!enabled) return values;
 
     const order = selectionOrderRef.current;
-    if (order.length <= 1) return selectVal;
+    if (order.length <= 1) return values;
 
-    const orderIndexMap = new Map<string, number>();
-    order.forEach((value, index) => orderIndexMap.set(value, index));
+    const orderIndex = new Map<string, number>();
+    order.forEach((value, index) => orderIndex.set(value, index));
 
-    // Sort selections by the preserved order; unknown values naturally sink to the end.
-    return [...selectVal].sort((a, b) => {
-      const aIndex = orderIndexMap.get(a.value) ?? Number.MAX_SAFE_INTEGER;
-      const bIndex = orderIndexMap.get(b.value) ?? Number.MAX_SAFE_INTEGER;
+    return [...values].sort((a, b) => {
+      const aIndex = orderIndex.get(a.value) ?? Number.MAX_SAFE_INTEGER;
+      const bIndex = orderIndex.get(b.value) ?? Number.MAX_SAFE_INTEGER;
       return aIndex - bIndex;
     });
-  }, [enabled, selectVal, selectValSignature]);
+  }, [enabled, signature, values]);
 
-  const reorderSelected: ReorderFn = useCallback(
-    (selected, actionMeta) => {
+  const reorderSelection = useCallback(
+    (
+      selected: OnChangeValue<OptionData, true>,
+      actionMeta: ActionMeta<OptionData>
+    ) => {
       if (!enabled || !Array.isArray(selected)) return selected;
 
-      // Only adjust ordering when React Select provides the added option and it persists in the selection.
       const option = actionMeta.option;
       if (!option) return selected;
       if (!selected.some((item) => item.value === option.value)) {
@@ -90,8 +91,7 @@ export default function useSelectionOrdering(
       }
 
       const optionValue = option.value;
-      const previousOrder = selectionOrderRef.current;
-      const stableOrder = previousOrder.filter((value) =>
+      const stableOrder = selectionOrderRef.current.filter((value) =>
         selected.some((item) => item.value === value)
       );
 
@@ -108,8 +108,6 @@ export default function useSelectionOrdering(
         return aIndex - bIndex;
       });
 
-      // Surface the latest pick first for UI rendering while keeping the
-      // emitted selection order stable.
       selectionOrderRef.current = [
         optionValue,
         ...selectionOrderRef.current.filter((value) => value !== optionValue)
@@ -120,5 +118,5 @@ export default function useSelectionOrdering(
     [enabled]
   );
 
-  return { orderedSelectVal, reorderSelected };
+  return { orderedValues, reorderSelection };
 }

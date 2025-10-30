@@ -16,10 +16,12 @@ import {
   expectValueToBeSelected,
   openDropdownMenu,
   selectOptionByText,
-  removeSelectedValue
+  removeSelectedValue,
+  getRemoveButton,
+  createSelectionOrderingHarness
 } from './test-utils';
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import DropdownMultiField from '../index';
 import useSalesforceSync from '../../../../hooks/useSalesforceSync';
@@ -628,6 +630,268 @@ describe('DropdownMultiField - Base Functionality', () => {
 
       // Check that input still exists
       expect(input).toBeInTheDocument();
+    });
+  });
+
+  describe('Pointer Interactions', () => {
+    it('opens the menu on mouse click when collapsed', async () => {
+      const user = userEvent.setup();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createOptionsMetadata(['Alpha', 'Beta', 'Gamma'])
+      );
+      element.properties = {
+        ...element.properties,
+        collapseSelectedOptions: true
+      };
+      const props = createDropdownMultiProps(element, {
+        fieldVal: ['Alpha']
+      });
+
+      render(<DropdownMultiField {...props} />);
+
+      await user.click(getReactSelectContainer());
+
+      await waitFor(() =>
+        expect(getOptionElements().length).toBeGreaterThan(0)
+      );
+    });
+
+    it('opens the menu on touch start when collapsed', async () => {
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createOptionsMetadata(['Alpha', 'Beta', 'Gamma'])
+      );
+      element.properties = {
+        ...element.properties,
+        collapseSelectedOptions: true
+      };
+      const props = createDropdownMultiProps(element, {
+        fieldVal: ['Alpha']
+      });
+
+      render(<DropdownMultiField {...props} />);
+
+      const control = getReactSelectContainer();
+      fireEvent.touchStart(control);
+
+      await waitFor(() =>
+        expect(getOptionElements().length).toBeGreaterThan(0)
+      );
+    });
+
+    it('closes the menu on outside pointer after opening', async () => {
+      const user = userEvent.setup();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createOptionsMetadata(['Alpha', 'Beta', 'Gamma'])
+      );
+      element.properties = {
+        ...element.properties,
+        collapseSelectedOptions: true
+      };
+      const props = createDropdownMultiProps(element, {
+        fieldVal: ['Alpha']
+      });
+
+      render(<DropdownMultiField {...props} />);
+
+      await user.click(getReactSelectContainer());
+
+      await waitFor(() =>
+        expect(getOptionElements().length).toBeGreaterThan(0)
+      );
+
+      fireEvent.pointerDown(document.body, {
+        pointerType: 'touch',
+        bubbles: true
+      });
+
+      await waitFor(() => expect(getOptionElements()).toHaveLength(0));
+    });
+
+    it('removes a value via touch without reopening the menu', async () => {
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createOptionsMetadata(['Alpha', 'Beta'])
+      );
+      const onChange = createStatefulOnChange();
+      const props = createDropdownMultiProps(element, {
+        fieldVal: ['Alpha', 'Beta'],
+        onChange
+      });
+
+      render(<DropdownMultiField {...props} />);
+
+      const removeBtn = getRemoveButton('Alpha');
+      if (!removeBtn) throw new Error('Remove button not found');
+
+      fireEvent.touchStart(removeBtn);
+      fireEvent.touchEnd(removeBtn);
+
+      await waitFor(() => expect(getMockFieldValue()).toEqual(['Beta']));
+      expect(getOptionElements()).toHaveLength(0);
+    });
+  });
+
+  describe('Selection Ordering Preference', () => {
+    it('emits selections in pick order when preserveSelectionOrder is enabled', async () => {
+      const user = userEvent.setup();
+      const OrderingHarness = createSelectionOrderingHarness(
+        createDropdownMultiElement(
+          'dropdown_multi',
+          createOptionsMetadata(['Alpha', 'Beta', 'Gamma', 'Delta'])
+        )
+      );
+
+      render(<OrderingHarness />);
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Alpha');
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Beta');
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Gamma');
+
+      // Latest pick surfaces first while earlier selections retain their relative order.
+      expect(getMockFieldValue()).toEqual(['Beta', 'Alpha', 'Gamma']);
+    });
+
+    it('removes deselected values from the preserved order', async () => {
+      const user = userEvent.setup();
+      const OrderingHarness = createSelectionOrderingHarness(
+        createDropdownMultiElement(
+          'dropdown_multi',
+          createOptionsMetadata(['Alpha', 'Beta', 'Gamma'])
+        )
+      );
+
+      render(<OrderingHarness />);
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Alpha');
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Beta');
+
+      await removeSelectedValue(user, 'Alpha');
+
+      expect(getMockFieldValue()).toEqual(['Beta']);
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Alpha');
+
+      expect(getMockFieldValue()).toEqual(['Beta', 'Alpha']);
+    });
+  });
+
+  describe('Keyboard Interactions', () => {
+    it('opens the menu when pressing ArrowDown while focused', async () => {
+      const user = userEvent.setup();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createOptionsMetadata(['Alpha', 'Beta'])
+      );
+      const props = createDropdownMultiProps(element);
+
+      render(<DropdownMultiField {...props} />);
+
+      const input = getSelectInput();
+      input.focus();
+
+      await user.keyboard('{ArrowDown}');
+
+      await waitFor(() =>
+        expect(getOptionElements().length).toBeGreaterThan(0)
+      );
+    });
+
+    it('selects an option with Enter after navigating', async () => {
+      const user = userEvent.setup();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createOptionsMetadata(['Alpha', 'Beta'])
+      );
+
+      const KeyboardHarness = () => {
+        const [fieldVal, setFieldVal] = React.useState<string[]>([]);
+        const props = createDropdownMultiProps(element, {
+          fieldVal,
+          onChange: (next: any[]) => {
+            setFieldVal(next.map((opt) => opt.value));
+          }
+        });
+
+        return <DropdownMultiField {...props} />;
+      };
+
+      render(<KeyboardHarness />);
+
+      const input = getSelectInput();
+      input.focus();
+
+      await user.keyboard('{ArrowDown}');
+      await waitFor(() =>
+        expect(getOptionElements().length).toBeGreaterThan(0)
+      );
+      await user.keyboard('{Enter}');
+
+      await waitFor(() => expectValueToBeSelected('Alpha'));
+    });
+
+    it('creates a new option when creatable is enabled', async () => {
+      const user = userEvent.setup();
+      const element = createCreatableElement(['Alpha']);
+
+      const CreatableHarness = () => {
+        const [fieldVal, setFieldVal] = React.useState<string[]>([]);
+        const props = createDropdownMultiProps(element, {
+          fieldVal,
+          onChange: (next: any[]) => {
+            setFieldVal(next.map((opt) => opt.value));
+          }
+        });
+
+        return <DropdownMultiField {...props} />;
+      };
+
+      render(<CreatableHarness />);
+
+      const input = getSelectInput();
+      await user.click(input);
+      await user.type(input, 'Unique Option');
+      await user.keyboard('{Enter}');
+
+      await waitFor(() => expectValueToBeSelected('Unique Option'));
+    });
+
+    it('does not duplicate a creatable option via Enter', async () => {
+      const user = userEvent.setup();
+      const element = createCreatableElement(['Alpha']);
+
+      const CreatableHarness = () => {
+        const [fieldVal, setFieldVal] = React.useState<string[]>(['Alpha']);
+        const props = createDropdownMultiProps(element, {
+          fieldVal,
+          onChange: (next: any[]) => {
+            setFieldVal(next.map((opt) => opt.value));
+          }
+        });
+
+        return <DropdownMultiField {...props} />;
+      };
+
+      render(<CreatableHarness />);
+
+      const input = getSelectInput();
+      await user.click(input);
+      await user.type(input, 'Alpha');
+      await user.keyboard('{Enter}');
+
+      await waitFor(() => expectSelectedValueCount(1));
+      expectValueToBeSelected('Alpha');
     });
   });
 

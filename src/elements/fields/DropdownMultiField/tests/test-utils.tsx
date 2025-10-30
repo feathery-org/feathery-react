@@ -1,3 +1,6 @@
+import React from 'react';
+import DropdownMultiField from '../index';
+import { waitFor } from '@testing-library/react';
 import {
   createBaseElement,
   createFieldProps,
@@ -9,7 +12,6 @@ import {
   expectFieldToBeRequired,
   expectFieldToHaveAriaLabel
 } from '../../shared/tests/field-test-utils';
-import { waitFor } from '@testing-library/react';
 
 export {
   mockResponsiveStyles,
@@ -92,6 +94,33 @@ export const createCreatableElement = (options: string[]) =>
     ...createOptionsMetadata(options),
     creatable_options: true
   });
+
+export const createSelectionOrderingHarness = (element: any) => {
+  const configuredElement = {
+    ...element,
+    properties: {
+      ...element.properties,
+      collapseSelectedOptions: true,
+      preserveSelectionOrder: true
+    }
+  };
+
+  const onChange = createStatefulOnChange();
+
+  return function SelectionOrderingHarness() {
+    const [fieldVal, setFieldVal] = React.useState<string[]>([]);
+    const props = createDropdownMultiProps(configuredElement, {
+      fieldVal,
+      onChange: (options: any[]) => {
+        onChange(options);
+        const values = options ? options.map((opt: any) => opt.value) : [];
+        setFieldVal(values);
+      }
+    });
+
+    return <DropdownMultiField {...props} />;
+  };
+};
 
 export const getSelectInput = () => {
   const input = document.querySelector('input[id="test-dropdown-multi-key"]');
