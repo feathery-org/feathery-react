@@ -31,10 +31,12 @@ export default function useCollapsibleValues(
   const queuedMeasurementRef = useRef(false);
   const pendingVisibleResetRef = useRef(false);
   const frameRef = useRef<number | null>(null);
+  const postMeasureFrameRef = useRef<number | null>(null);
   const lastWidthRef = useRef<number | null>(null);
   const lastCollapsedVisibleRef = useRef(totalCount);
   const indicatorRef = useRef<HTMLSpanElement | null>(null);
   const lastValuesRef = useRef<OptionData[] | null>(null);
+  const suppressResizeRef = useRef(false);
 
   // Reusable hidden +N indicator used only inside the measurement container.
   // We attach it to the measurement clone's chip parent so we can account for
@@ -188,6 +190,12 @@ export default function useCollapsibleValues(
         return;
       }
 
+      if (suppressResizeRef.current) {
+        suppressResizeRef.current = false;
+        lastWidthRef.current = width;
+        return;
+      }
+
       if (lastWidthRef.current === null) {
         lastWidthRef.current = width;
         requestMeasurement();
@@ -325,11 +333,20 @@ export default function useCollapsibleValues(
         prev === clampedVisible ? prev : clampedVisible
       );
       setIsMeasuring(false);
+      suppressResizeRef.current = true;
 
-      if (containerRef.current) {
-        lastWidthRef.current =
-          containerRef.current.getBoundingClientRect().width;
+      if (postMeasureFrameRef.current !== null) {
+        featheryWindow().cancelAnimationFrame(postMeasureFrameRef.current);
       }
+      postMeasureFrameRef.current = featheryWindow().requestAnimationFrame(
+        () => {
+          postMeasureFrameRef.current = null;
+          if (containerRef.current) {
+            lastWidthRef.current =
+              containerRef.current.getBoundingClientRect().width;
+          }
+        }
+      );
 
       if (enabled) {
         lastCollapsedVisibleRef.current = nextVisible;
@@ -346,6 +363,10 @@ export default function useCollapsibleValues(
         featheryWindow().cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
       }
+      if (postMeasureFrameRef.current !== null) {
+        featheryWindow().cancelAnimationFrame(postMeasureFrameRef.current);
+        postMeasureFrameRef.current = null;
+      }
     };
   }, [enabled, measurementTick, requestMeasurement, totalCount]);
 
@@ -356,6 +377,7 @@ export default function useCollapsibleValues(
       queuedMeasurementRef.current = false;
       pendingVisibleResetRef.current = false;
       lastWidthRef.current = null;
+      suppressResizeRef.current = false;
       return;
     }
 

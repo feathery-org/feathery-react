@@ -46,9 +46,7 @@ export function createSelectStyles({
         inputValue?: string;
       };
       const shouldWrap =
-        selectProps.isMeasuring ||
-        !selectProps.collapseSelected ||
-        !!selectProps.inputValue;
+        !selectProps.collapseSelected || !!selectProps.inputValue;
       const paddingBlock = shouldWrap
         ? {
             paddingTop:
@@ -88,14 +86,28 @@ export function createSelectStyles({
           : {})
       };
     },
-    multiValueLabel: (baseStyles) => ({
-      ...baseStyles,
-      whiteSpace: 'normal',
-      overflow: 'hidden',
-      display: '-webkit-box',
-      WebkitBoxOrient: 'vertical',
-      WebkitLineClamp: 3
-    }),
+    multiValueLabel: (baseStyles, state) => {
+      const selectProps = state.selectProps as DropdownSelectProps;
+      if (selectProps.collapseSelected) {
+        return {
+          ...baseStyles,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          display: 'block',
+          maxWidth: '100%'
+        };
+      }
+
+      return {
+        ...baseStyles,
+        whiteSpace: 'normal',
+        overflow: 'hidden',
+        display: '-webkit-box',
+        WebkitBoxOrient: 'vertical',
+        WebkitLineClamp: 3
+      };
+    },
     indicatorSeparator: () => ({ display: 'none' }),
     indicatorsContainer: () => ({ display: 'none' }),
     menu: (baseStyles) => ({

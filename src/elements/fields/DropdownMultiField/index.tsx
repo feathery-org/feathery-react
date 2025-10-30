@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import useBorder from '../../components/useBorder';
 import { ActionMeta, OnChangeValue, type SelectInstance } from 'react-select';
-import { featheryDoc, hoverStylesGuard } from '../../../utils/browser';
+import { featheryDoc } from '../../../utils/browser';
 import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
 import Placeholder from '../../components/Placeholder';
@@ -624,14 +624,12 @@ export default function DropdownMultiField({
           whiteSpace: 'nowrap',
           ...responsiveStyles.getTarget('sub-fc'),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          '&:hover': hoverStylesGuard(
-            disabled
-              ? {}
-              : {
-                  ...responsiveStyles.getTarget('hover'),
-                  ...borderStyles.hover
-                }
-          ),
+          '&:hover': disabled
+            ? {}
+            : {
+                ...responsiveStyles.getTarget('hover'),
+                ...borderStyles.hover
+              },
           '&&': focused
             ? {
                 ...responsiveStyles.getTarget('active'),
