@@ -297,7 +297,8 @@ export default function DropdownMultiField({
   let options: OptionData[] = [];
 
   if (shouldSalesforceSync) {
-    options = buildDropdownOptions(dynamicOptions, {
+    const dynamicSource = addFieldValOptions(dynamicOptions);
+    options = buildDropdownOptions(dynamicSource, {
       warningState,
       fieldKey,
       contextPrefix: 'dynamicOptions',

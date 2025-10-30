@@ -4,12 +4,14 @@ import {
   createStatefulOnChange,
   createOptionsMetadata,
   createMaxLengthElement,
+  createCreatableElement,
   getMockFieldValue,
   resetMockFieldValue,
   setMockFieldValue,
   getSelectInput,
   getReactSelectContainer,
   getOptionByText,
+  getOptionElements,
   expectSelectedValueCount,
   expectValueToBeSelected,
   openDropdownMenu,
@@ -17,14 +19,24 @@ import {
   removeSelectedValue
 } from './test-utils';
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import DropdownMultiField from '../index';
+import useSalesforceSync from '../../../../hooks/useSalesforceSync';
+
+const mockUseSalesforceSync = useSalesforceSync as jest.MockedFunction<
+  typeof useSalesforceSync
+>;
 
 describe('DropdownMultiField - Base Functionality', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetMockFieldValue();
+    mockUseSalesforceSync.mockReturnValue({
+      dynamicOptions: [],
+      loadingDynamicOptions: false,
+      shouldSalesforceSync: false
+    });
   });
 
   describe('Basic Rendering', () => {
@@ -456,6 +468,142 @@ describe('DropdownMultiField - Base Functionality', () => {
     });
   });
 
+  describe('Enter key guards', () => {
+    const renderDropdownForm = (props: any, submitSpy: jest.Mock) => {
+      render(
+        <form
+          onSubmit={(event: React.FormEvent<HTMLFormElement>) => {
+            event.preventDefault();
+            submitSpy(event);
+          }}
+        >
+          <DropdownMultiField {...props} />
+          <button type='submit'>Submit</button>
+        </form>
+      );
+    };
+
+    it('blocks form submission when pressing Enter with blank input', async () => {
+      const user = userEvent.setup();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createOptionsMetadata(['Alpha', 'Beta'])
+      );
+      const props = createDropdownMultiProps(element);
+      const submitSpy = jest.fn();
+
+      renderDropdownForm(props, submitSpy);
+
+      await user.click(getReactSelectContainer());
+      await user.keyboard('{Escape}');
+      expect(getOptionElements()).toHaveLength(0);
+
+      await user.keyboard('{Enter}');
+      await waitFor(() => {
+        expect(getOptionElements().length).toBeGreaterThan(0);
+      });
+
+      expect(submitSpy).not.toHaveBeenCalled();
+    });
+
+    it('blocks form submission when attempting to re-add a selected option', async () => {
+      const user = userEvent.setup();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createOptionsMetadata(['Alpha', 'Beta'])
+      );
+      const props = createDropdownMultiProps(element, {
+        fieldVal: ['Alpha']
+      });
+      const submitSpy = jest.fn();
+
+      renderDropdownForm(props, submitSpy);
+
+      await openDropdownMenu(user);
+      const input = getSelectInput();
+      await user.clear(input);
+      await user.type(input, 'Alpha');
+
+      await user.keyboard('{Enter}');
+
+      expect(submitSpy).not.toHaveBeenCalled();
+    });
+
+    it('blocks form submission when no options are available', async () => {
+      const user = userEvent.setup();
+      const element = createMaxLengthElement(1, ['Alpha']);
+      const props = createDropdownMultiProps(element, {
+        fieldVal: ['Alpha']
+      });
+      const submitSpy = jest.fn();
+
+      renderDropdownForm(props, submitSpy);
+
+      await user.click(getReactSelectContainer());
+      await waitFor(() => {
+        const menu = document.querySelector('div[class*="-menu"]');
+        if (!menu) {
+          throw new Error('Dropdown menu did not open');
+        }
+      });
+      await user.keyboard('{Enter}');
+
+      expect(submitSpy).not.toHaveBeenCalled();
+    });
+
+    it('allows creatable selection without submitting the form', async () => {
+      const user = userEvent.setup();
+      const element = createCreatableElement(['Alpha']);
+      const submitSpy = jest.fn();
+
+      const CreatableHarness = () => {
+        const [fieldVal, setFieldVal] = React.useState<string[]>([]);
+        const props = createDropdownMultiProps(element, {
+          fieldVal,
+          onChange: (next: any[]) => {
+            setFieldVal(next.map((opt) => opt.value));
+          }
+        });
+
+        return (
+          <form
+            onSubmit={(event: React.FormEvent<HTMLFormElement>) => {
+              event.preventDefault();
+              submitSpy(event);
+            }}
+          >
+            <DropdownMultiField {...props} />
+            <button type='submit'>Submit</button>
+          </form>
+        );
+      };
+
+      render(<CreatableHarness />);
+
+      await openDropdownMenu(user);
+      const input = getSelectInput();
+      await user.clear(input);
+      await user.type(input, 'New Option');
+
+      await waitFor(() => {
+        const createOption = getOptionElements().find((option) =>
+          option.textContent?.includes('New Option')
+        );
+        if (!createOption) {
+          throw new Error('Creatable option not available');
+        }
+      });
+
+      await user.keyboard('{Enter}');
+
+      await waitFor(() => {
+        expectValueToBeSelected('New Option');
+      });
+
+      expect(submitSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Focus and Blur Behavior', () => {
     it('handles focus and blur events correctly', async () => {
       const user = userEvent.setup();
@@ -480,6 +628,29 @@ describe('DropdownMultiField - Base Functionality', () => {
 
       // Check that input still exists
       expect(input).toBeInTheDocument();
+    });
+  });
+
+  describe('Salesforce sync integration', () => {
+    it('merges persisted field values into dynamic options', async () => {
+      mockUseSalesforceSync.mockReturnValue({
+        dynamicOptions: [{ value: 'alpha', label: 'Alpha' }],
+        loadingDynamicOptions: false,
+        shouldSalesforceSync: true
+      });
+
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createOptionsMetadata([])
+      );
+      const props = createDropdownMultiProps(element, {
+        fieldVal: ['Persisted Option']
+      });
+
+      render(<DropdownMultiField {...props} />);
+
+      await waitFor(() => expectSelectedValueCount(1));
+      expectValueToBeSelected('Persisted Option');
     });
   });
 });
