@@ -711,6 +711,7 @@ describe('DropdownMultiField - Base Functionality', () => {
     });
 
     it('removes a value via touch without reopening the menu', async () => {
+      const user = userEvent.setup();
       const element = createDropdownMultiElement(
         'dropdown_multi',
         createOptionsMetadata(['Alpha', 'Beta'])
@@ -726,8 +727,8 @@ describe('DropdownMultiField - Base Functionality', () => {
       const removeBtn = getRemoveButton('Alpha');
       if (!removeBtn) throw new Error('Remove button not found');
 
-      fireEvent.touchStart(removeBtn);
-      fireEvent.touchEnd(removeBtn);
+      fireEvent.pointerDown(removeBtn, { pointerType: 'touch' });
+      await user.click(removeBtn);
 
       await waitFor(() => expect(getMockFieldValue()).toEqual(['Beta']));
       expect(getOptionElements()).toHaveLength(0);
