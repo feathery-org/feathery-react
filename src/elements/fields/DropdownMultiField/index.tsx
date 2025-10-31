@@ -1,13 +1,5 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import useBorder from '../../components/useBorder';
-import { ActionMeta, OnChangeValue, type SelectInstance } from 'react-select';
-import { featheryDoc } from '../../../utils/browser';
 import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
 import Placeholder from '../../components/Placeholder';
@@ -25,35 +17,11 @@ import {
   DropdownSelect
 } from './createDropdownSelect';
 import { createSelectStyles } from './selectStyles';
-import useDropdownCollapse from './useDropdownCollapse';
-import useSelectionOrdering from './useSelectionOrdering';
-import type { OptionData, Options, DropdownOptionsInput } from './types';
-import {
-  normalizeToString,
-  warnInvalidData
-} from '../../utils/fieldNormalization';
-import { buildDropdownOptions } from './optionNormalization';
-
-type SelectWithInternalState = SelectInstance<OptionData, true> & {
-  state?: {
-    focusedOption?: OptionData | null;
-  };
-};
-
-type SelectInternalState = SelectWithInternalState['state'] & {
-  inputValue?: string;
-};
-
-type CreatableOption = OptionData & { __isNew__?: boolean };
-
-const getLatestInputValue = (
-  stateValue: unknown,
-  inputRef: HTMLInputElement | null | undefined
-) => {
-  if (typeof stateValue === 'string') return stateValue;
-  if (typeof inputRef?.value === 'string') return inputRef.value;
-  return '';
-};
+import useCollapsedSelectionManager from './useCollapsedSelectionManager';
+import useDropdownOptions from './useDropdownOptions';
+import useSelectProps from './useSelectProps';
+import useDropdownInteractions from './useDropdownInteractions';
+import type { CreatableValidator } from './types';
 
 export default function DropdownMultiField({
   element,
@@ -80,7 +48,6 @@ export default function DropdownMultiField({
   const [focused, setFocused] = useState(false);
   const servar = element.servar;
   const fieldKey = servar.key;
-  const warningState = useMemo(() => new Set<string>(), [fieldKey]);
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
 
@@ -90,154 +57,20 @@ export default function DropdownMultiField({
     ? () => translation.no_options as string
     : undefined;
   const entityLabel = 'Dropdown field';
-
-  const normalizedFieldValues = useMemo<string[]>(() => {
-    if (!Array.isArray(fieldVal)) {
-      warnInvalidData({
-        state: warningState,
-        type: 'value',
-        field: fieldKey,
-        reason: 'expected array for multi-select value',
-        context: 'fieldVal',
-        payload: fieldVal,
-        entityLabel
-      });
-      return [];
-    }
-
-    return fieldVal.reduce<string[]>((acc, rawValue, index) => {
-      const coerced = normalizeToString(rawValue);
-      if (coerced === null) {
-        warnInvalidData({
-          state: warningState,
-          type: 'value',
-          field: fieldKey,
-          reason: 'unsupported value type',
-          context: `fieldVal[${index}]`,
-          payload: rawValue,
-          entityLabel
-        });
-        return acc;
-      }
-      acc.push(coerced);
-      return acc;
-    }, []);
-  }, [fieldKey, fieldVal, warningState]);
-
-  const addFieldValOptions = useCallback(
-    (options: Options): DropdownOptionsInput => {
-      const newOptions: DropdownOptionsInput = Array.isArray(options)
-        ? [...options]
-        : [];
-      if (!normalizedFieldValues.length) return newOptions;
-
-      normalizedFieldValues.forEach((val: string) => {
-        const items = newOptions as (string | OptionData)[];
-        if (typeof items[0] === 'string') {
-          const stringOptions = newOptions as string[];
-          if (!stringOptions.includes(val)) stringOptions.push(val);
-          return;
-        }
-
-        const optionDataOptions = newOptions as OptionData[];
-        const hasExistingOption = optionDataOptions.some((option) => {
-          const normalizedValue = normalizeToString(option?.value);
-          return normalizedValue === val;
-        });
-        if (!hasExistingOption) {
-          optionDataOptions.push({ value: val, label: val });
-        }
-      });
-
-      return newOptions;
-    },
-    [normalizedFieldValues]
-  );
-
-  const labels = servar.metadata.option_labels || [];
-  const tooltips = servar.metadata.option_tooltips || [];
-
-  type OptionsSourcePlan = {
-    source: DropdownOptionsInput | Options;
-    contextPrefix: string;
-    labelOverrides?: unknown[];
-    tooltipOverrides?: unknown[];
-  };
-
-  // Pick the option source once so the expensive build step stays stable.
-  const optionsSource = useMemo<OptionsSourcePlan>(() => {
-    if (shouldSalesforceSync) {
-      return {
-        source: addFieldValOptions(dynamicOptions),
-        contextPrefix: 'dynamicOptions'
-      };
-    }
-
-    const repeatOptions =
-      repeatIndex !== null
-        ? servar.metadata.repeat_options?.[repeatIndex]
-        : undefined;
-
-    if (repeatOptions !== undefined) {
-      return {
-        source: addFieldValOptions(repeatOptions),
-        contextPrefix: 'repeat_options'
-      };
-    }
-
-    return {
-      source: addFieldValOptions(servar.metadata.options),
-      contextPrefix: 'options',
-      labelOverrides: labels,
-      tooltipOverrides: tooltips
-    };
-  }, [
-    shouldSalesforceSync,
-    dynamicOptions,
-    repeatIndex,
-    servar.metadata.repeat_options,
-    servar.metadata.options,
-    labels,
-    tooltips,
-    addFieldValOptions
-  ]);
-
-  const { options, labelMap, tooltipMap } = useMemo(() => {
-    const labelMap: Record<string, string> = {};
-    const tooltipMap: Record<string, string | undefined> = {};
-
-    // Build once per plan change and share the maps with the rest of the component.
-    const options = buildDropdownOptions(optionsSource.source, {
-      warningState,
-      fieldKey,
-      contextPrefix: optionsSource.contextPrefix,
-      labelOverrides: optionsSource.labelOverrides,
-      tooltipOverrides: optionsSource.tooltipOverrides,
-      labelMap,
-      tooltipMap,
-      entityLabel
-    });
-
-    return { options, labelMap, tooltipMap };
-  }, [fieldKey, entityLabel, optionsSource, warningState]);
-
-  const selectVal: OptionData[] = normalizedFieldValues.length
-    ? normalizedFieldValues.map((val: string) => ({
-        label: labelMap[val] ?? val,
-        value: val,
-        tooltip: tooltipMap[val]
-      }))
-    : [];
-
   const collapseSelectedPreference = !!properties.collapseSelectedOptions;
-  const selectionOrderingPreference = collapseSelectedPreference
-    ? !!properties.preserveSelectionOrder
-    : false;
-  const { orderedValues: orderedSelectVal, reorderSelection } =
-    useSelectionOrdering({
-      values: selectVal,
-      enabled: selectionOrderingPreference
-    });
+
+  // Build all dropdown options and selections
+  const { options, orderedSelectVal, reorderSelection } = useDropdownOptions({
+    fieldVal,
+    fieldKey,
+    servar,
+    properties,
+    dynamicOptions,
+    shouldSalesforceSync,
+    repeatIndex,
+    entityLabel,
+    collapseSelectedPreference
+  });
 
   const {
     collapseSelected,
@@ -246,7 +79,7 @@ export default function DropdownMultiField({
     pointer,
     measurement,
     selectRef
-  } = useDropdownCollapse({
+  } = useCollapsedSelectionManager({
     collapseSelectedPreference,
     containerRef,
     disabled,
@@ -258,118 +91,10 @@ export default function DropdownMultiField({
     close: closeCollapseMenu,
     forceClose: forceCloseCollapseMenu
   } = menu;
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  // Handle React Select quirks where touch-initiated opens can trigger
-  // immediate closes if we don't suppress the close event for a short time
-  // since we took over the pointer interaction.
-  const suppressCloseUntilRef = useRef<number>(0);
-  const extendCloseSuppression = useCallback(() => {
-    suppressCloseUntilRef.current = performance.now() + 250;
-  }, []);
   const { onMouseDown: focusOnMouseDown, onTouchStart: focusOnTouchStart } =
     pointer;
-
-  const syncSelectInstance = useCallback(
-    () => selectRef.current as SelectWithInternalState | null,
-    [selectRef]
-  );
-
-  const openMenu = useCallback(() => {
-    const instance = syncSelectInstance();
-    if (!instance) return;
-
-    extendCloseSuppression();
-    setIsMenuOpen(true);
-    openCollapseMenu();
-    instance.focus?.();
-    instance.openMenu?.('first');
-  }, [extendCloseSuppression, openCollapseMenu, syncSelectInstance]);
-
-  const closeMenuImmediately = useCallback(
-    (options?: Parameters<typeof forceCloseCollapseMenu>[0]) => {
-      setIsMenuOpen(false);
-      closeCollapseMenu();
-      forceCloseCollapseMenu(options);
-    },
-    [closeCollapseMenu, forceCloseCollapseMenu]
-  );
-
-  const handleMenuOpen = useCallback(() => {
-    setIsMenuOpen(true);
-    openCollapseMenu();
-    syncSelectInstance();
-  }, [openCollapseMenu, syncSelectInstance]);
-
-  const handleMenuClose = useCallback(() => {
-    if (performance.now() < suppressCloseUntilRef.current) {
-      return;
-    }
-    setIsMenuOpen(false);
-    closeCollapseMenu();
-  }, [closeCollapseMenu]);
-
-  const tryOpenCollapsedMenu = useCallback(
-    (eventTarget: EventTarget | null) => {
-      if (!collapseSelected || isMenuOpen) return false;
-
-      const elementTarget = eventTarget as HTMLElement | null;
-      if (elementTarget?.closest('[data-feathery-multi-value-remove="true"]')) {
-        return false;
-      }
-
-      openMenu();
-      return true;
-    },
-    [collapseSelected, isMenuOpen, openMenu]
-  );
-
-  const handleWrapperMouseDown = useCallback(
-    (event: React.MouseEvent<HTMLDivElement>) => {
-      if (tryOpenCollapsedMenu(event.target)) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-
-      focusOnMouseDown(event);
-    },
-    [focusOnMouseDown, tryOpenCollapsedMenu]
-  );
-
-  const handleWrapperTouchStart = useCallback(
-    (event: React.TouchEvent<HTMLDivElement>) => {
-      if (tryOpenCollapsedMenu(event.target)) {
-        event.stopPropagation();
-        return;
-      }
-
-      focusOnTouchStart(event);
-    },
-    [focusOnTouchStart, tryOpenCollapsedMenu]
-  );
-
-  const handleControlPress = useCallback(
-    (event: React.SyntheticEvent, { isTouch }: { isTouch: boolean }) => {
-      if (!tryOpenCollapsedMenu(event.currentTarget)) return false;
-
-      if (!isTouch && 'preventDefault' in event) {
-        event.preventDefault?.();
-      }
-      event.stopPropagation();
-      return true;
-    },
-    [tryOpenCollapsedMenu]
-  );
-
-  const handleCollapsedChipPress = useCallback(
-    (event: React.SyntheticEvent) => {
-      if (!tryOpenCollapsedMenu(event.currentTarget)) return;
-
-      event.stopPropagation();
-    },
-    [tryOpenCollapsedMenu]
-  );
   const { isMeasuring, visibleCount } = measurement;
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const selectComponentsOverride = useMemo(
     () =>
@@ -389,44 +114,6 @@ export default function DropdownMultiField({
     [collapseSelected]
   );
 
-  const handleChange = useCallback(
-    (
-      selected: OnChangeValue<OptionData, true>,
-      actionMeta: ActionMeta<OptionData>
-    ) => {
-      if (
-        actionMeta.action === 'remove-value' ||
-        actionMeta.action === 'pop-value'
-      ) {
-        extendCloseSuppression();
-      }
-      const skipBlurAction =
-        actionMeta.action === 'remove-value' ||
-        actionMeta.action === 'pop-value' ||
-        actionMeta.action === 'select-option' ||
-        actionMeta.action === 'create-option';
-
-      if (collapseSelectedPreference) {
-        if (!skipBlurAction || !isMenuOpen) {
-          closeMenuImmediately(skipBlurAction ? { skipBlur: true } : undefined);
-        }
-      }
-
-      const nextSelected = reorderSelection(selected, actionMeta);
-      onChange(nextSelected, actionMeta);
-      selectRef.current?.focus?.();
-    },
-    [
-      closeMenuImmediately,
-      collapseSelectedPreference,
-      extendCloseSuppression,
-      isMenuOpen,
-      onChange,
-      reorderSelection,
-      selectRef
-    ]
-  );
-
   const disableAllOptions =
     (!!servar.max_length && orderedSelectVal.length >= servar.max_length) ||
     loadingDynamicOptions;
@@ -439,129 +126,64 @@ export default function DropdownMultiField({
       ? (inputValue: string) => template.replace(/\{value\}/g, inputValue)
       : (inputValue: string) => `${template} "${inputValue}"`;
   }
-  const normalizedOptionValues = useMemo(() => {
-    const values = new Set<string>();
-    options.forEach((option) => {
-      if (option?.value) values.add(option.value.toLowerCase());
-    });
-    return values;
-  }, [options]);
+  const isCreatableInputValid = useCallback(
+    (inputValue: string) => {
+      const trimmed = inputValue.trim();
+      if (!trimmed) return false;
+      const normalized = trimmed.toLowerCase();
+      const hasOption = options.some(
+        (option) => option?.value?.toLowerCase() === normalized
+      );
+      if (hasOption) return false;
+      const hasSelected = orderedSelectVal.some(
+        (option) => option?.value?.toLowerCase() === normalized
+      );
+      return !hasSelected;
+    },
+    [options, orderedSelectVal]
+  );
 
-  const normalizedSelectedValues = useMemo(() => {
-    const values = new Set<string>();
-    orderedSelectVal.forEach((option) => {
-      if (option?.value) values.add(option.value.toLowerCase());
-    });
-    return values;
-  }, [orderedSelectVal]);
+  // React Select passes value/options/accessors here, but our validation only
+  // cares about the raw input string. The rest parameters keep the signature
+  // compatible while making that intent explicit.
+  const isValidNewOption = useCallback<CreatableValidator>(
+    (inputValue) => isCreatableInputValid(inputValue),
+    [isCreatableInputValid]
+  );
 
-  type EnterGuardDecision = 'allow' | 'block' | 'block-open';
-
-  const evaluateEnterGuard = useCallback((): EnterGuardDecision => {
-    const instance = selectRef.current as SelectWithInternalState | null;
-    const selectState = instance?.state as SelectInternalState | undefined;
-    const rawFocusedOption = selectState?.focusedOption as
-      | CreatableOption
-      | undefined;
-    const focusedOption = rawFocusedOption ?? null;
-    const focusedValue = focusedOption?.value;
-    const hasFocusedOption = Boolean(focusedValue);
-    const isCreateFocused = Boolean(create && focusedOption?.__isNew__);
-    // React Select defers state updates during keydown; fall back to the live
-    // input element so creatable text is visible before the state commit.
-    const rawInputValue = getLatestInputValue(
-      selectState?.inputValue,
-      instance?.inputRef ?? null
-    );
-    const inputValue = rawInputValue.trim();
-    const hasInput = inputValue.length > 0;
-    const normalizedInput = inputValue.toLowerCase();
-    const matchesExistingOption =
-      hasInput && normalizedOptionValues.has(normalizedInput);
-    const matchesSelectedValue =
-      hasInput && normalizedSelectedValues.has(normalizedInput);
-    const isCreatableCandidate = create && hasInput && !matchesExistingOption;
-    const normalizedFocusedValue = focusedValue?.toLowerCase();
-    const isFocusedSelected = Boolean(
-      normalizedFocusedValue &&
-        normalizedSelectedValues.has(normalizedFocusedValue)
-    );
-
-    if (!isMenuOpen) {
-      return 'block-open';
-    }
-
-    if (isCreatableCandidate) {
-      return 'allow';
-    }
-
-    if (isCreateFocused) {
-      return 'block';
-    }
-
-    if (hasFocusedOption) {
-      return isFocusedSelected ? 'block' : 'allow';
-    }
-
-    if (disableAllOptions) {
-      return 'block';
-    }
-
-    if (matchesExistingOption || matchesSelectedValue) {
-      return 'block';
-    }
-
-    // No option focused and no creatable input to act on—block to preserve the
-    // form submit guard.
-    return 'block';
-  }, [
+  // Handle all user interactions: keyboard, mouse, touch, and menu
+  const {
+    handleWrapperMouseDown,
+    handleWrapperTouchStart,
+    handleKeyDownCapture,
+    handleChange,
+    handleSelectKeyDown,
+    handleMenuOpen,
+    handleMenuClose,
+    handleControlPress,
+    handleCollapsedChipPress,
+    extendCloseSuppression
+  } = useDropdownInteractions({
+    selectRef,
+    containerRef,
+    disabled,
+    isMenuOpen,
+    setIsMenuOpen,
+    collapseSelected,
+    collapseSelectedPreference,
+    openCollapseMenu,
+    closeCollapseMenu,
+    forceCloseCollapseMenu,
+    focusOnMouseDown,
+    focusOnTouchStart,
+    orderedSelectVal,
+    options,
+    isCreatableInputValid: create ? isCreatableInputValid : undefined,
     create,
     disableAllOptions,
-    isMenuOpen,
-    normalizedOptionValues,
-    normalizedSelectedValues,
-    orderedSelectVal,
-    selectRef
-  ]);
-
-  const handleSelectKeyDown = useCallback(
-    (event: React.KeyboardEvent) => {
-      if (event.key !== 'Enter' || disabled) return;
-
-      const decision = evaluateEnterGuard();
-      if (decision === 'allow') return;
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (decision === 'block-open') {
-        const instance = selectRef.current as SelectWithInternalState | null;
-        instance?.openMenu?.('first');
-      }
-    },
-    [disabled, evaluateEnterGuard, selectRef]
-  );
-
-  // Capture the keydown before it reaches the native form submit handler. This
-  // keeps Enter from bubbling out when React Select bails early (e.g., no
-  // creatable input or all options selected).
-  const handleKeyDownCapture = useCallback(
-    (event: React.KeyboardEvent) => {
-      if (event.key !== 'Enter' || disabled) return;
-
-      const decision = evaluateEnterGuard();
-      if (decision === 'allow') return;
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (decision === 'block-open') {
-        const instance = selectRef.current as SelectWithInternalState | null;
-        instance?.openMenu?.('first');
-      }
-    },
-    [disabled, evaluateEnterGuard, selectRef]
-  );
+    onChange,
+    reorderSelection
+  });
 
   const hasTooltip = !!properties.tooltipText;
   const chevronPosition = hasTooltip ? 30 : 10;
@@ -584,23 +206,38 @@ export default function DropdownMultiField({
     [chevronPosition, element.styles.font_color, responsiveStyles, rightToLeft]
   );
 
-  useEffect(() => {
-    if (!isMenuOpen) return;
-
-    const doc = featheryDoc();
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const root = containerRef.current;
-      if (!root) return;
-      if (root.contains(event.target as Node)) return;
-      closeMenuImmediately();
-    };
-
-    doc.addEventListener('pointerdown', handlePointerDown, true);
-    return () => {
-      doc.removeEventListener('pointerdown', handlePointerDown, true);
-    };
-  }, [closeMenuImmediately, isMenuOpen]);
+  // Organize all SelectComponent props
+  const selectProps = useSelectProps({
+    selectRef,
+    containerRef,
+    servar,
+    orderedSelectVal,
+    options,
+    required,
+    disabled,
+    isMenuOpen,
+    loadingDynamicOptions,
+    selectStyles,
+    selectComponentsOverride,
+    collapseSelected,
+    visibleCount,
+    collapsedCount,
+    isMeasuring,
+    shouldHideInput,
+    handleChange,
+    setFocused,
+    handleSelectKeyDown,
+    handleMenuOpen,
+    handleMenuClose,
+    handleCollapsedChipPress,
+    handleControlPress,
+    extendCloseSuppression,
+    noOptionsMessage,
+    create,
+    formatCreateLabel,
+    isValidNewOption: create ? isValidNewOption : undefined,
+    ariaLabel: element.properties.aria_label
+  });
 
   return (
     <div
@@ -642,51 +279,7 @@ export default function DropdownMultiField({
         onKeyDownCapture={handleKeyDownCapture}
       >
         {customBorder}
-        <SelectComponent
-          ref={selectRef}
-          styles={selectStyles}
-          components={selectComponentsOverride}
-          // In collapsed mode we open via custom press handlers; disable the
-          // default click-toggle to avoid immediate close on touch. Preserve
-          // default click-open when not collapsing.
-          openMenuOnClick={!collapseSelected}
-          menuIsOpen={isMenuOpen}
-          onMenuOpen={handleMenuOpen}
-          onMenuClose={handleMenuClose}
-          containerRef={containerRef}
-          visibleCount={visibleCount}
-          collapsedCount={collapsedCount}
-          isMeasuring={isMeasuring}
-          collapseSelected={collapseSelected}
-          inputHidden={shouldHideInput}
-          onCollapsedChipPress={
-            collapseSelected ? handleCollapsedChipPress : undefined
-          }
-          onControlPress={collapseSelected ? handleControlPress : undefined}
-          onMultiValueRemovePointer={extendCloseSuppression}
-          inputId={servar.key}
-          value={orderedSelectVal}
-          required={required}
-          isDisabled={disabled}
-          onChange={handleChange}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          closeMenuOnSelect={false}
-          tabSelectsValue={false}
-          onKeyDown={handleSelectKeyDown}
-          blurInputOnSelect={false}
-          noOptionsMessage={create ? () => null : noOptionsMessage}
-          options={options}
-          isOptionDisabled={() =>
-            (servar.max_length &&
-              orderedSelectVal.length >= servar.max_length) ||
-            loadingDynamicOptions
-          }
-          isMulti
-          placeholder=''
-          aria-label={element.properties.aria_label}
-          formatCreateLabel={formatCreateLabel}
-        />
+        <SelectComponent {...selectProps} />
         <Placeholder
           value={orderedSelectVal.length || focused}
           element={element}

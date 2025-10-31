@@ -5,7 +5,7 @@ import type { SelectInstance } from 'react-select';
 import { featheryDoc } from '../../../utils/browser';
 
 import type { OptionData } from './types';
-import useCollapsibleValues from './useCollapsibleValues';
+import useCollapsedValuesMeasurement from './useCollapsedValuesMeasurement';
 
 type CollapseParams = {
   collapseSelectedPreference: boolean;
@@ -53,7 +53,17 @@ type SelectControls = {
   openMenu?: (focusOption: 'first' | 'last') => void;
 };
 
-export default function useDropdownCollapse({
+/**
+ * Manages the collapsed multi-select state and interactions.
+ *
+ * Coordinates value measurement, menu expansion state, and pointer
+ * event handling for the collapsed selection UI. When enabled, shows
+ * only chips that fit on one row plus a "+N" indicator.
+ *
+ * @param params - Collapse configuration and dependencies
+ * @returns Collapse state, menu controls, pointer handlers, measurement data, and select ref
+ */
+export default function useCollapsedSelectionManager({
   collapseSelectedPreference,
   containerRef,
   disabled,
@@ -66,12 +76,9 @@ export default function useDropdownCollapse({
   // Collapse only when enabled and no expansion path is active.
   const collapseSelected = collapseSelectedPreference && !isMenuExpanded;
 
-  // useCollapsibleValues measures chip rows when collapsing is active.
-  const { collapsedCount, isMeasuring, visibleCount } = useCollapsibleValues(
-    containerRef,
-    values,
-    collapseSelected
-  );
+  // Measure the visible chip window while collapse is active.
+  const { collapsedCount, isMeasuring, visibleCount } =
+    useCollapsedValuesMeasurement(containerRef, values, collapseSelected);
 
   const closeMenu = useCallback((options?: MenuCloseOptions) => {
     setIsMenuExpanded(false);
@@ -141,8 +148,6 @@ export default function useDropdownCollapse({
       doc.removeEventListener('pointerdown', handlePointerDown, true);
     };
   }, [closeMenu, collapseSelectedPreference, containerRef]);
-
-  // No hover state to reset; keep minimal surface.
 
   return useMemo(
     () => ({

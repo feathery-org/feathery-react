@@ -89,7 +89,7 @@ const CollapsibleMultiValueRemove = (
     onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
       selectProps.onMultiValueRemovePointer?.();
       if (event.pointerType === 'touch') {
-        event.preventDefault?.();
+        event.preventDefault();
       }
       event.stopPropagation();
       props.innerProps?.onPointerDown?.(event);
@@ -112,7 +112,7 @@ const Control = (props: ControlProps<OptionData, true>) => {
     isTouch: boolean
   ): boolean => {
     if (!onControlPress?.(event, { isTouch })) return false;
-    event.preventDefault?.();
+    event.preventDefault();
     event.stopPropagation();
     return true;
   };
@@ -157,14 +157,14 @@ const CollapsedIndicator = ({
       onPointerDown={(event) => {
         if (!onPress) return;
         if (event.pointerType === 'touch') {
-          event.preventDefault?.();
+          event.preventDefault();
         }
         event.stopPropagation();
         onPress(event);
       }}
       onMouseDown={(event) => {
         if (!onPress) return;
-        event.preventDefault?.();
+        event.preventDefault();
         event.stopPropagation();
         onPress(event);
       }}
@@ -269,7 +269,7 @@ const CollapsibleMultiValue = (props: MultiValueProps<OptionData, true>) => {
   mergedInnerProps.onPointerDown = (event) => {
     if (shouldBubblePointer) {
       if (event.pointerType === 'touch') {
-        event.preventDefault?.();
+        event.preventDefault();
       }
       event.stopPropagation();
       selectProps.onCollapsedChipPress?.(event);
@@ -281,7 +281,7 @@ const CollapsibleMultiValue = (props: MultiValueProps<OptionData, true>) => {
   };
   mergedInnerProps.onMouseDown = (event) => {
     if (shouldBubblePointer) {
-      event.preventDefault?.();
+      event.preventDefault();
       event.stopPropagation();
       selectProps.onCollapsedChipPress?.(event);
       return;

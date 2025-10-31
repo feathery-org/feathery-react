@@ -77,3 +77,13 @@ export type DropdownCreatableSelectComponentProps = CreatableProps<
   GroupBase<OptionData>
 > &
   DropdownSelectExtraProps;
+
+export type CreatableValidator = (
+  inputValue: string,
+  value: readonly OptionData[],
+  options: readonly (OptionData | GroupBase<OptionData>)[],
+  accessors: {
+    getOptionValue(option: OptionData): string;
+    getOptionLabel(option: OptionData): string;
+  }
+) => boolean;

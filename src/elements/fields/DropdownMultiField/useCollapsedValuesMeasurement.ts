@@ -18,7 +18,19 @@ const ROW_BREAK_EPSILON = 20;
 const parseFloatOrZero = (value: string | null | undefined) =>
   value ? parseFloat(value) || 0 : 0;
 
-export default function useCollapsibleValues(
+/**
+ * Measures how many selected value chips fit on a single row.
+ *
+ * Uses a hidden clone of the container to calculate layout without
+ * affecting the live DOM. Automatically recalculates on resize or
+ * value changes to determine which chips should be visible vs collapsed.
+ *
+ * @param containerRef - The dropdown container element
+ * @param values - Selected option values to measure
+ * @param enabled - Whether collapse measurement is active
+ * @returns Visible chip count, collapsed chip count, and measuring state
+ */
+export default function useCollapsedValuesMeasurement(
   containerRef: React.RefObject<HTMLElement | null>,
   values: OptionData[],
   enabled: boolean
