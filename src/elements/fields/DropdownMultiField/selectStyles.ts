@@ -91,10 +91,12 @@ export function createSelectStyles({
       if (selectProps.collapseSelected) {
         return {
           ...baseStyles,
-          whiteSpace: 'nowrap',
+          whiteSpace: 'normal',
           overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: 'block',
+          display: '-webkit-box',
+          WebkitBoxOrient: 'vertical',
+          WebkitLineClamp: 3,
+          wordBreak: 'break-word',
           maxWidth: '100%'
         };
       }
@@ -121,6 +123,9 @@ export function createSelectStyles({
 
       return {
         ...baseStyles,
+        maxWidth: '100%',
+        minWidth: 0,
+        overflow: 'hidden',
         marginInline: '2px',
         borderRadius: baseStyles.borderRadius ?? 2
       };
