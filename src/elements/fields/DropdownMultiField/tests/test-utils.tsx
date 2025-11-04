@@ -1,3 +1,6 @@
+import React from 'react';
+import DropdownMultiField from '../index';
+import { waitFor } from '@testing-library/react';
 import {
   createBaseElement,
   createFieldProps,
@@ -92,6 +95,33 @@ export const createCreatableElement = (options: string[]) =>
     creatable_options: true
   });
 
+export const createSelectionOrderingHarness = (element: any) => {
+  const configuredElement = {
+    ...element,
+    properties: {
+      ...element.properties,
+      collapseSelectedOptions: true,
+      preserveSelectionOrder: true
+    }
+  };
+
+  const onChange = createStatefulOnChange();
+
+  return function SelectionOrderingHarness() {
+    const [fieldVal, setFieldVal] = React.useState<string[]>([]);
+    const props = createDropdownMultiProps(configuredElement, {
+      fieldVal,
+      onChange: (options: any[]) => {
+        onChange(options);
+        const values = options ? options.map((opt: any) => opt.value) : [];
+        setFieldVal(values);
+      }
+    });
+
+    return <DropdownMultiField {...props} />;
+  };
+};
+
 export const getSelectInput = () => {
   const input = document.querySelector('input[id="test-dropdown-multi-key"]');
   if (!input) throw new Error('React-select input not found');
@@ -153,11 +183,24 @@ export const expectValueToBeSelected = (text: string) => {
 export const openDropdownMenu = async (user: any) => {
   const control = getReactSelectContainer();
   await user.click(control);
+  const input = getSelectInput();
+  input.focus();
+  await user.keyboard('[ArrowDown]');
+  await waitFor(() => {
+    if (getOptionElements().length === 0) {
+      throw new Error('Dropdown menu did not open');
+    }
+  });
 };
 
 export const selectOptionByText = async (user: any, text: string) => {
-  const option = getOptionByText(text);
-  if (!option) throw new Error(`Option with text "${text}" not found`);
+  const option = await waitFor(() => {
+    const found = getOptionByText(text);
+    if (!found) {
+      throw new Error(`Option with text "${text}" not found`);
+    }
+    return found;
+  });
   await user.click(option);
 };
 
