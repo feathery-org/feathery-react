@@ -215,10 +215,6 @@ export type { StyledContainerProps } from './grid/StyledContainer';
 
 export interface Props {
   formId: string;
-  /**
-   * @deprecated use formId instead
-   */
-  formName?: string; // TODO: remove support for formName (deprecated)
   onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
   onLoad?: null | ((context: FormContext) => Promise<any> | void);
   onFormLoad?: null | ((context: FormContext) => Promise<any> | void);
@@ -279,7 +275,6 @@ function Form({
   _bypassCDN = false,
   _draft = false,
   _pollFuserData = false,
-  formName: formNameProp,
   formId, // The 'live' env slug
   onChange = null,
   onLoad = null,
@@ -307,13 +302,12 @@ function Form({
   readOnly = false,
   hashNavigation
 }: InternalProps & Props) {
-  const [formName, setFormName] = useState(formNameProp || ''); // TODO: remove support for formName (deprecated)
-  const formKey = formId || formName; // prioritize formID but fall back to name
+  const [formName, setFormName] = useState('');
   const clientRef = useRef<any>(undefined);
   const client = clientRef.current;
   const navigate = useNavigate();
   const location = useLocation();
-  const session = initState.formSessions[formKey];
+  const session = initState.formSessions[formId];
 
   const [autoValidate, setAutoValidate] = useState(false);
 
@@ -439,15 +433,6 @@ function Form({
       Object.values(sharedCodes) as SharedCodeInfo[]
     );
   }, [sharedCodes]);
-
-  useEffect(() => {
-    // TODO: remove support for formName (deprecated)
-    if (formNameProp) {
-      console.warn(
-        'The `formName` parameter is deprecated and support will be removed in a future library version. Please use `formId` instead.'
-      );
-    }
-  }, [formNameProp]);
 
   // All mount and unmount logic should live here
   useEffect(() => {
@@ -1135,7 +1120,7 @@ function Form({
     if (clientRef.current) return;
 
     clientRef.current = new FeatheryClient(
-      formKey,
+      formId,
       hasRedirected,
       _draft,
       _bypassCDN
@@ -1153,8 +1138,6 @@ function Form({
         return data;
       })
       .then(({ steps, form_name: formNameResult, ...res }: any) => {
-        // In the future formName will not be initialized with a prop value
-        // so we set it using the response data
         setFormName(formNameResult);
         steps = steps.reduce((result: any, step: any) => {
           result[step.key] = step;
@@ -2622,7 +2605,6 @@ function Form({
 // renderAt without exposing InternalProps to SDK users
 export function JSForm({
   formId,
-  formName,
   _internalId,
   _isAuthLoading = false,
   ...props
@@ -2638,14 +2620,13 @@ export function JSForm({
   }, []);
 
   // Check client for NextJS support
-  if ((formId || formName) && runningInClient())
+  if (formId && runningInClient())
     return (
       <RouterProvider>
         <Form
           {...props}
           formId={formId}
-          formName={formName}
-          key={`${formId || formName}_${remount}`}
+          key={`${formId}_${remount}`}
           _internalId={_internalId}
           _isAuthLoading={_isAuthLoading}
         />
