@@ -275,7 +275,7 @@ function Form({
   _bypassCDN = false,
   _draft = false,
   _pollFuserData = false,
-  formId, // The 'live' env slug
+  formId: formIdProp, // The 'live' env slug
   onChange = null,
   onLoad = null,
   onFormLoad = null,
@@ -303,6 +303,7 @@ function Form({
   hashNavigation
 }: InternalProps & Props) {
   const [formName, setFormName] = useState('');
+  const [formId, setFormId] = useState(formIdProp);
   const clientRef = useRef<any>(undefined);
   const client = clientRef.current;
   const navigate = useNavigate();
@@ -1139,6 +1140,9 @@ function Form({
       })
       .then(({ steps, form_name: formNameResult, ...res }: any) => {
         setFormName(formNameResult);
+        if (res.new_form_id) {
+          setFormId(res.new_form_id);
+        }
         steps = steps.reduce((result: any, step: any) => {
           result[step.key] = step;
           return result;
