@@ -363,12 +363,10 @@ jest.mock('../hooks/useCheckButtonAction', () => {
   // Simplified implementations
   const updateButtonActionState = jest.fn(
     (elementType: string, element: any) => {
-      const isRunning =
-        (elementType === 'button' &&
-          element?.properties?.block_button_clicks) ??
-        false;
+      // Always block button clicks while actions run (default behavior)
+      const isButton = elementType === 'button';
 
-      buttonActionStateRef.current = isRunning
+      buttonActionStateRef.current = isButton
         ? { button: element, isElementActionRunning: true }
         : null;
     }

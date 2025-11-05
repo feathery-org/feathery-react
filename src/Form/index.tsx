@@ -1661,7 +1661,7 @@ function Form({
     setLoaders((loaders: Record<string, any>) => ({
       ...loaders,
       [button.id]: {
-        showOn: bp.show_loading_icon,
+        showOn: bp.show_loading_icon ?? 'on_button',
         loader,
         type: bp.loading_icon ? bp.loading_file_type : 'default',
         repeat: button.repeat

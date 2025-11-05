@@ -18,11 +18,10 @@ export function useCheckButtonAction(
     buttonActionStateRef.current?.isUserLogicRunning;
 
   const updateButtonActionState = (elementType: string, element: any) => {
-    // Set the state only when the element is a button and block_button_clicks is true
-    const isRunning =
-      elementType === 'button' && !!element?.properties?.block_button_clicks;
+    // Always block button clicks while actions run (default behavior)
+    const isButton = elementType === 'button';
 
-    if (isRunning) {
+    if (isButton) {
       buttonActionStateRef.current = {
         button: element,
         isElementActionRunning: true
