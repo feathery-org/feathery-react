@@ -72,8 +72,7 @@ const LoginForm = ({
 }) => {
   const [_internalId] = useState(uuidv4());
   const formCompleted =
-    initInfo().formSessions[formProps.formId || formProps.formName || ''] // TODO: remove support for formName (deprecated)
-      ?.form_completed ?? false;
+    initInfo().formSessions[formProps.formId || '']?.form_completed ?? false;
 
   // Need to use this flag because when doing magic link login the onChange
   // event doesn't seem to be added early enough to catch the first event which
