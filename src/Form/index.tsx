@@ -304,6 +304,7 @@ function Form({
 }: InternalProps & Props) {
   const [formName, setFormName] = useState('');
   const [formId, setFormId] = useState(formIdProp);
+  const formKey = formId || formName; // prioritize formID but fall back to name
   const clientRef = useRef<any>(undefined);
   const client = clientRef.current;
   const navigate = useNavigate();
