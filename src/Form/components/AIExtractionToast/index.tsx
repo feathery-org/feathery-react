@@ -37,7 +37,7 @@ const ExtractionToast = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '16px',
+          padding: '8px 16px',
           background: '#f9fafb',
           borderBottom: '1px solid #e5e7eb',
           cursor: 'pointer',
