@@ -1,4 +1,5 @@
 import { type FocusEvent } from 'react';
+import JSZip from 'jszip';
 import { isElementInViewport } from './formHelperFunctions';
 
 export function runningInClient() {
@@ -85,16 +86,38 @@ export function downloadFile(file: File) {
   featheryDoc().body.removeChild(element);
 }
 
-export function downloadAllFileUrls(urls: string[]) {
-  return Promise.all(
-    urls.map(async (url: string) => {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const fileName = new URL(url).pathname.split('/').at(-1) ?? '';
-      const file = new File([blob], fileName, { type: blob.type });
-      downloadFile(file);
-    })
-  );
+async function getFileData(url: string) {
+  const response = await fetch(url);
+  const blob = await response.blob();
+  const fileName = new URL(url).pathname.split('/').at(-1) ?? '';
+  return { fileName, blob };
+}
+
+export async function downloadAllFileUrls(urls: string[]) {
+  if (urls.length === 0) return;
+
+  let file: File;
+
+  if (urls.length > 1) {
+    const zip = new JSZip();
+
+    await Promise.all(
+      urls.map(async (url: string) => {
+        const { fileName, blob } = await getFileData(url);
+        zip.file(fileName, blob);
+      })
+    );
+
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    file = new File([zipBlob], 'Feathery_Download.zip', {
+      type: 'application/zip'
+    });
+  } else {
+    const { fileName, blob } = await getFileData(urls[0]);
+    file = new File([blob], fileName, { type: blob.type });
+  }
+
+  downloadFile(file);
 }
 
 // iOS devices do not scroll to focused radio buttons
