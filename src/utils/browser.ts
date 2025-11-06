@@ -94,6 +94,8 @@ async function getFileData(url: string) {
 }
 
 export async function downloadAllFileUrls(urls: string[]) {
+  let file: File;
+
   if (urls.length > 1) {
     const zip = new JSZip();
 
@@ -105,19 +107,15 @@ export async function downloadAllFileUrls(urls: string[]) {
     );
 
     const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const zipFile = new File([zipBlob], 'Feathery_Download.zip', {
+    file = new File([zipBlob], 'Feathery_Download.zip', {
       type: 'application/zip'
     });
-    downloadFile(zipFile);
   } else {
-    return Promise.all(
-      urls.map(async (url: string) => {
-        const { fileName, blob } = await getFileData(url);
-        const file = new File([blob], fileName, { type: blob.type });
-        downloadFile(file);
-      })
-    );
+    const { fileName, blob } = await getFileData(urls[0]);
+    file = new File([blob], fileName, { type: blob.type });
   }
+
+  downloadFile(file);
 }
 
 // iOS devices do not scroll to focused radio buttons
