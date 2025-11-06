@@ -33,6 +33,7 @@ export const getABVariant = (stepRes: any) => {
 
   if (useVariant) {
     stepRes.new_form_id = stepRes.variant_id;
+    stepRes.form_name = stepRes.variant_name;
     stepRes.version = stepRes.variant_version;
     stepRes.steps = stepRes.variant;
     stepRes.logic_rules = stepRes.variant_logic_rules;
@@ -41,6 +42,7 @@ export const getABVariant = (stepRes: any) => {
   }
 
   delete stepRes.variant_id;
+  delete stepRes.variant_name;
   delete stepRes.variant_version;
   delete stepRes.variant;
   delete stepRes.variant_logic_rules;
