@@ -94,6 +94,8 @@ async function getFileData(url: string) {
 }
 
 export async function downloadAllFileUrls(urls: string[]) {
+  if (urls.length === 0) return;
+
   let file: File;
 
   if (urls.length > 1) {
