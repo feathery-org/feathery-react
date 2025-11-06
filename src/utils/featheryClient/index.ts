@@ -750,6 +750,7 @@ export default class FeatheryClient extends IntegrationClient {
       ...(userId ? { fuser_key: userId } : {})
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
+    if (this.version) data.__feathery_version = this.version;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
