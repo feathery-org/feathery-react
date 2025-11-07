@@ -2179,8 +2179,8 @@ function Form({
         await Promise.all([submitPromise, client.flushCustomFields()]);
         try {
           const data = await client.generateEnvelopes(action);
-          if (data.error) {
-            setElementError(data.error);
+          if (data.status === 'error') {
+            setElementError(data.message);
             break;
           }
           const envAction = action.envelope_action;
