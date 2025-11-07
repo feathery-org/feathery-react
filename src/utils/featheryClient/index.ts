@@ -895,48 +895,15 @@ export default class FeatheryClient extends IntegrationClient {
       return {};
     }
 
-    return await new Promise((resolve) => {
-      let attempts = 0;
-      const maxAttempts = this.AI_MAX_TIME / this.AI_CHECK_INTERVAL;
-      const pollUrl = `${STATIC_URL}ai/vision/completion/?fid=${userId}&eid=${extractionId}&evid=${
-        variantId ?? ''
-      }`;
-
-      const checkCompletion = async () => {
-        const response = await this._fetch(pollUrl, {}, false);
-        if (!response) return;
-
-        const data = await response.json();
-
-        if (onStatusUpdate) {
-          onStatusUpdate(data);
-        }
-
-        if (response.ok) {
-          if (data.status === 'complete') {
-            return resolve(data);
-          } else {
-            attempts += 1;
-
-            if (attempts < maxAttempts) {
-              setTimeout(checkCompletion, this.AI_CHECK_INTERVAL);
-            } else {
-              const message = 'Extraction took too long...';
-              console.error(message);
-              return resolve({ status: 'error', message });
-            }
-          }
-        } else {
-          const message = parseError(data);
-          console.error(message);
-          onStatusUpdate({
-            error: message
-          });
-          return resolve({ status: 'error', message });
-        }
-      };
-
-      setTimeout(checkCompletion, this.AI_CHECK_INTERVAL); // Check every 2 seconds for a response
+    const pollUrl = `${STATIC_URL}ai/vision/completion/?fid=${userId}&eid=${extractionId}&evid=${
+      variantId ?? ''
+    }`;
+    return await this.pollForCompletion({
+      pollUrl,
+      checkInterval: this.AI_CHECK_INTERVAL,
+      maxTime: this.AI_MAX_TIME,
+      onStatusUpdate,
+      operationName: 'Extraction'
     });
   }
 

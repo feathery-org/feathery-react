@@ -364,15 +364,76 @@ export default class IntegrationClient {
     });
   }
 
+  async pollForCompletion({
+    pollUrl,
+    checkInterval,
+    maxTime,
+    onStatusUpdate,
+    operationName = 'Operation'
+  }: {
+    pollUrl: string;
+    checkInterval: number;
+    maxTime: number;
+    onStatusUpdate?: (data: any) => void;
+    operationName?: string;
+  }) {
+    return new Promise((resolve) => {
+      let attempts = 0;
+      const maxAttempts = maxTime / checkInterval;
+
+      const checkCompletion = async () => {
+        const response = await this._fetch(pollUrl, {}, false);
+        if (!response) return;
+
+        const data = await response.json();
+
+        if (onStatusUpdate) {
+          onStatusUpdate(data);
+        }
+
+        if (response.ok) {
+          if (data.status === 'complete') {
+            return resolve(data);
+          } else {
+            attempts += 1;
+
+            if (attempts < maxAttempts) {
+              setTimeout(checkCompletion, checkInterval);
+            } else {
+              const message = `${operationName} took too long...`;
+              console.error(message);
+              return resolve({ status: 'error', message });
+            }
+          }
+        } else {
+          const message = parseError(data);
+          console.error(message);
+          if (onStatusUpdate) {
+            onStatusUpdate({ error: message });
+          }
+          return resolve({ status: 'error', message });
+        }
+      };
+
+      setTimeout(checkCompletion, checkInterval);
+    });
+  }
+
+  ENVELOPE_CHECK_INTERVAL = 2000;
+  ENVELOPE_MAX_TIME = 3 * 60 * 1000;
+
   generateEnvelopes(action: Record<string, string>) {
     const { userId } = initInfo();
     const signer = fieldValues[action.envelope_signer_field_key];
+    const runAsync = action.run_async ?? true;
+    const documents = action.documents ?? [];
     const payload: Record<string, any> = {
       form_key: this.formKey,
       fuser_key: userId,
-      documents: action.documents ?? [],
+      documents,
       signer_email: signer,
-      repeatable: action.repeatable ?? false
+      repeatable: action.repeatable ?? false,
+      run_async: runAsync
     };
 
     const url = `${API_URL}document/form/generate/`;
@@ -381,10 +442,21 @@ export default class IntegrationClient {
       method: 'POST',
       body: JSON.stringify(payload)
     };
+
     return this._fetch(url, options, false).then(async (response) => {
       if (response) {
-        if (response.ok) return await response.json();
-        else throw Error(parseError(await response.json()));
+        const data = await response.json();
+        if (response.ok) {
+          if (!runAsync || data.files) return data;
+
+          const pollUrl = `${API_URL}document/form/generate/poll/?fid=${userId}&dids=${documents}`;
+          return await this.pollForCompletion({
+            pollUrl,
+            checkInterval: this.ENVELOPE_CHECK_INTERVAL,
+            maxTime: this.ENVELOPE_MAX_TIME,
+            operationName: 'Envelope generation'
+          });
+        } else throw Error(parseError(data));
       }
     });
   }

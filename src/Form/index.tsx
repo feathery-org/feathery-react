@@ -2179,6 +2179,10 @@ function Form({
         await Promise.all([submitPromise, client.flushCustomFields()]);
         try {
           const data = await client.generateEnvelopes(action);
+          if (data.error) {
+            setElementError(data.error);
+            break;
+          }
           const envAction = action.envelope_action;
           if (!envAction) {
             // Sign files
@@ -2193,7 +2197,7 @@ function Form({
               await client.registerEvent(eventData);
               featheryWindow().location.href = url;
             } else openTab(url);
-          } else if (envAction === 'download') {
+          } else if (envAction === 'download' && data.files) {
             // Download files directly
             await downloadAllFileUrls(data.files);
           } else if (envAction === 'save') {
