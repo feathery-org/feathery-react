@@ -87,8 +87,10 @@ const initState: InitState = {
 };
 let fieldValues: FieldValues = {};
 let filePathMap: Record<string, null | string | (string | null)[]> = {};
-// Don't resubmit files already submitted in the same session
-export const fileSubmittedMap: Record<string, number> = {};
+// Tracks number of files in last submission (prevents duplicate successful uploads)
+export const fileDeduplicationCount: Record<string, number> = {};
+// Tracks last submission result (true=success, false=failed, undefined=never tried)
+export const fileRetryStatus: Record<string, boolean> = {};
 
 function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (!sdkKey || typeof sdkKey !== 'string') {

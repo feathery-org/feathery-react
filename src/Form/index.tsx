@@ -256,6 +256,16 @@ export interface ClickActionElement {
   repeat?: any;
 }
 
+const getSubmissionErrorMessage = (error: unknown): string => {
+  if (error instanceof TypeError && error.message === 'Failed to fetch') {
+    return 'Unable to upload files. Please check your connection and try again.';
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Submission failed. Please try again.';
+};
+
 function Form({
   _internalId,
   _isAuthLoading = false,
@@ -1291,7 +1301,7 @@ function Form({
     metadata: any,
     repeat: number,
     hasNext: boolean
-  ) => {
+  ): Promise<[Promise<any>] | undefined> => {
     const formattedFields = formatStepFields(
       activeStep,
       formSettings.saveHideIfFields ? null : visiblePositions,
@@ -1506,12 +1516,25 @@ function Form({
       submitData || ['button', 'text', 'container'].includes(elementType);
     if (!redirectKey) {
       if (explicitNav) {
-        if (submitPromise) await submitPromise;
-
-        // Check if there are any failed requests before completing
-        if (await client.offlineRequestHandler.dbHasRequest()) {
-          return;
+        if (submitPromise) {
+          try {
+            await submitPromise;
+          } catch (error) {
+            throw new Error(getSubmissionErrorMessage(error));
+          }
         }
+
+        // Block form completion if user is actively offline
+        if (!navigator.onLine) {
+          throw new Error(
+            'You are offline. Please check your connection and try again.'
+          );
+        }
+
+        // Note: We don't check dbHasRequest() here because:
+        // 1. If submitPromise succeeded, the requests were already handled
+        // 2. If submitPromise failed, we threw an error above and won't reach here
+        // 3. Checking dbHasRequest() here would block manual retries after fixing network
 
         eventData.completed = true;
         await client.registerEvent(eventData).then(() => {
@@ -1523,6 +1546,21 @@ function Form({
         });
       }
     } else {
+      // Await submitPromise BEFORE navigation to ensure file uploads complete
+      // This prevents navigation when file uploads fail
+      if (submitPromise) {
+        try {
+          await submitPromise;
+        } catch (error) {
+          // The error will be caught by buttonOnClick and displayed to the user
+          throw new Error(getSubmissionErrorMessage(error));
+        }
+      }
+
+      // Note: We don't block navigation when offline here to allow users to fill
+      // out multi-step forms offline. API calls and custom logic will fail naturally
+      // if they require network. Only block final form submission (see above).
+
       const nextStep = steps[redirectKey];
       if (isStepTerminal(nextStep)) {
         const authIntegration = getAuthIntegrationMetadata(integrations);
@@ -1531,13 +1569,6 @@ function Form({
           steps[stepKey].id
         );
         if (complete) {
-          if (submitPromise) await submitPromise;
-
-          // Check if there are any failed requests before completing
-          if (await client.offlineRequestHandler.dbHasRequest()) {
-            return;
-          }
-
           eventData.completed = true;
           // Form completion must run after since logic may depend on
           // presence of fully submitted data
@@ -1685,6 +1716,12 @@ function Form({
         clearLoaders();
       }
     } catch (e: any) {
+      // Clear the click lock so user can retry
+      if (button.id) {
+        elementClicks[button.id] = false;
+      }
+      clearButtonActionState();
+
       if (e) setButtonError(e.toString());
       else clearLoaders();
     }
@@ -1752,7 +1789,19 @@ function Form({
         return;
       }
 
-      // run default form validation
+      // Clear any previous button error before re-validation
+      // This allows retry after file upload errors
+      if (submit && elementType === 'button') {
+        setFormElementError({
+          formRef,
+          fieldKey: element.id,
+          message: '', // Empty message clears the error
+          errorType: formSettings.errorType,
+          setInlineErrors,
+          triggerErrors: false
+        });
+      }
+
       const { invalid } = validateElements({
         step: activeStep,
         visiblePositions,
@@ -1763,6 +1812,7 @@ function Form({
         setInlineErrors,
         trigger
       });
+
       if (invalid) {
         setAutoValidate(true);
         elementClicks[id] = false;
@@ -1779,19 +1829,31 @@ function Form({
       const hasNext =
         actions.some((action: any) => action.type === ACTION_NEXT) &&
         getNextStepKey(metadata);
-      const newPromise = await submitStep(
+
+      const submissionResult = await submitStep(
         metadata,
         element.repeat || 0,
         !!hasNext
       );
 
-      if (!newPromise) {
+      if (!submissionResult) {
         elementClicks[id] = false;
         clearButtonActionState();
 
         return;
       }
-      submitPromise = newPromise[0];
+
+      const [stepPromise] = submissionResult;
+
+      // Wrap step promise with error handler so file upload failures clean up UI state
+      // and show user-friendly messages when awaited later (form completion, navigation, integrations)
+      submitPromise = stepPromise.catch((error) => {
+        const submissionErrorMessage = getSubmissionErrorMessage(error);
+        elementClicks[id] = false;
+        clearButtonActionState();
+        setElementError(submissionErrorMessage);
+        throw error;
+      });
     }
 
     // Adjust action order to prioritize certain actions and
@@ -2467,8 +2529,6 @@ function Form({
       formSettings.completionBehavior === 'show_completed_screen' ? (
         <FormOff reason={FILLED_OUT} showCTA={formSettings.showBrand} />
       ) : null;
-    if (!completeState && initState.isTestEnv)
-      console.log('Form has been hidden');
     return completeState;
   } else if (!activeStep) return stepLoader;
 

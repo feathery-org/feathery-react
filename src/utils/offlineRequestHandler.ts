@@ -31,6 +31,10 @@ interface SerializedRequestBody {
   body: ArrayBuffer | Record<string, any> | string;
 }
 
+interface RequestMetadata {
+  fieldKey?: string;
+}
+
 interface SerializedRequest {
   formKey: string;
   url: string;
@@ -43,6 +47,7 @@ interface SerializedRequest {
   stepKey?: string;
   keepalive?: boolean;
   key?: IDBValidKey;
+  metadata?: RequestMetadata;
 }
 
 const beforeUnloadEventHandler = (event: any) => {
@@ -222,18 +227,30 @@ export class OfflineRequestHandler {
     url: string,
     options: any,
     type: string,
-    stepKey?: string
+    stepKey?: string,
+    metadata?: RequestMetadata
   ): Promise<void> {
     if (navigator.onLine) {
       // Prevent page unload while processing requests to avoid data loss
       trackUnload();
-      if (
-        this.indexedDBSupported &&
-        (this.isReplayingRequests.get(this.formKey) ||
-          (await this.dbHasRequest()))
-      ) {
-        // If there are pending requests, wait for them to complete first
-        await this.onlineAndReplayed();
+      if (this.indexedDBSupported) {
+        if (this.isReplayingRequests.get(this.formKey)) {
+          // Replay already in progress, wait for it to complete
+          await this.onlineAndReplayed();
+        } else if (await this.dbHasRequest()) {
+          // Clear any stale requests for this step before attempting
+          // Step submissions create multiple parallel requests (JSON, custom fields, files)
+          // all with the same stepKey. Clear all of them to prevent replay loops.
+          if (stepKey !== undefined) {
+            await this.clearFailedRequestsByStep(stepKey);
+          }
+
+          // Check again if there are OTHER pending requests that need replay
+          if (await this.dbHasRequest()) {
+            // Other pending requests exist → trigger replay for them
+            await this.replayRequests();
+          }
+        }
       }
       try {
         const response = await run();
@@ -243,14 +260,18 @@ export class OfflineRequestHandler {
         // TypeError indicates network connectivity issues
         // This catches scenarios like timeouts, resolution failures, etc.
         if (e instanceof TypeError) {
-          await this.saveRequest(url, options, type, stepKey);
-          // Immediately attempt to replay in case connectivity was briefly restored
-          this.replayRequests();
+          await this.saveRequest(url, options, type, stepKey, metadata);
+          // Don't immediately trigger replay - this can cause infinite loops
+          // when the same request keeps failing. Instead, rely on:
+          // 1. The 'online' event listener to trigger replay when connectivity returns
+          // 2. The next user action (button click) to attempt submission again
+          // 3. The replayRequests() recursion check at the end of replay cycle
         }
         untrackUnload();
+        throw e; // Re-throw error so caller knows submission failed
       }
     } else {
-      await this.saveRequest(url, options, type, stepKey);
+      await this.saveRequest(url, options, type, stepKey, metadata);
     }
   }
 
@@ -258,7 +279,8 @@ export class OfflineRequestHandler {
     url: string,
     options: any,
     type: string,
-    stepKey?: string
+    stepKey?: string,
+    metadata?: RequestMetadata
   ): Promise<void> {
     // If IndexedDB is unsupported, we cannot store requests to replay
     if (!this.indexedDBSupported) return;
@@ -297,7 +319,8 @@ export class OfflineRequestHandler {
         timestamp: Date.now(),
         type,
         stepKey,
-        keepalive
+        keepalive,
+        metadata
       };
 
       const dbTransaction = await this.getDbTransaction('readwrite');
@@ -358,6 +381,7 @@ export class OfflineRequestHandler {
     }
 
     if (this.isReplayingRequests.get(this.formKey)) return;
+
     this.isReplayingRequests.set(this.formKey, true);
     trackUnload();
     try {
@@ -452,7 +476,12 @@ export class OfflineRequestHandler {
                 const nextDelay = this.getExponentialDelay(attempts);
                 // do not wait for delay if already tried max attempts
                 if (attempts >= this.maxRetryAttempts) {
-                  if (this.errorCallback) {
+                  // Remove failed request from IndexedDB to prevent infinite retry loop
+                  await this.removeRequest(key);
+                  // Don't show alert for file submissions - they show button errors instead
+                  // Only show alert for critical network failures (like losing connection)
+                  const isFileSubmission = url.includes('/submit/file/');
+                  if (this.errorCallback && !isFileSubmission) {
                     this.errorCallback(
                       `Failed to submit after ${this.maxRetryAttempts} attempts. Please check your connection and try again.`
                     );
@@ -480,6 +509,114 @@ export class OfflineRequestHandler {
       const { store } = dbTransaction;
       await store.delete(key);
     }
+  }
+
+  public async clearFailedRequestByUrl(
+    url: string,
+    options?: { fieldKey?: string }
+  ): Promise<void> {
+    const matchesRecord = (record: SerializedRequest) => {
+      if (record.url !== url || record.formKey !== this.formKey) {
+        return false;
+      }
+
+      if (!options?.fieldKey) {
+        return true;
+      }
+
+      return this.recordMatchesFieldKey(record, options.fieldKey);
+    };
+
+    return this.deleteRecordsWhere(matchesRecord);
+  }
+
+  private recordMatchesFieldKey(
+    record: SerializedRequest,
+    fieldKey: string
+  ): boolean {
+    if (this.matchesMetadataField(record, fieldKey)) return true;
+    if (this.matchesFormDataField(record, fieldKey)) return true;
+    if (this.matchesBlobField(record, fieldKey)) return true;
+    return false;
+  }
+
+  private matchesMetadataField(
+    record: SerializedRequest,
+    fieldKey: string
+  ): boolean {
+    return record.metadata?.fieldKey === fieldKey;
+  }
+
+  private matchesFormDataField(
+    record: SerializedRequest,
+    fieldKey: string
+  ): boolean {
+    if (record.bodyType !== 'formData') return false;
+
+    const body = record.body as Record<string, any> | undefined;
+    return (
+      !!body &&
+      typeof body === 'object' &&
+      Object.prototype.hasOwnProperty.call(body, fieldKey)
+    );
+  }
+
+  private matchesBlobField(
+    record: SerializedRequest,
+    fieldKey: string
+  ): boolean {
+    if (record.bodyType !== 'blob') return false;
+
+    try {
+      const buffer = record.body as ArrayBuffer;
+      const decoded = new TextDecoder().decode(buffer);
+      // Escape regex special chars to prevent injection attacks
+      const escapedFieldKey = fieldKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const fieldPattern = new RegExp(`name=["']${escapedFieldKey}["']`);
+      return fieldPattern.test(decoded);
+    } catch (error) {
+      console.warn('Failed to inspect blob body for field key', error);
+      return false;
+    }
+  }
+
+  public async clearFailedRequestsByStep(stepKey: string): Promise<void> {
+    return this.deleteRecordsWhere(
+      (record) => record.formKey === this.formKey && record.stepKey === stepKey
+    );
+  }
+
+  private async deleteRecordsWhere(
+    predicate: (record: SerializedRequest) => boolean
+  ): Promise<void> {
+    if (!this.indexedDBSupported) return;
+
+    const dbTransaction = await this.getDbTransaction('readwrite');
+    if (!dbTransaction) return;
+
+    const { store } = dbTransaction;
+    const request = store.openCursor();
+
+    return new Promise((resolve) => {
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
+          .result;
+        if (cursor) {
+          const record = cursor.value as SerializedRequest;
+          if (predicate(record)) {
+            cursor.delete();
+          }
+          cursor.continue();
+        } else {
+          resolve();
+        }
+      };
+
+      request.onerror = () => {
+        console.warn('Error during IndexedDB cursor operation');
+        resolve(); // Don't block retry on cleanup failure
+      };
+    });
   }
 
   /**
