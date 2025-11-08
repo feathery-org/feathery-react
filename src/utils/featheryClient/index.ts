@@ -843,6 +843,27 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
+  runServerSideLogicRule(id: string) {
+    const { userId } = initInfo();
+    const data: any = {
+      id: id,
+      form_key: this.formKey,
+      fuser_key: userId
+    };
+
+    const url = `${API_URL}panel/logic-rule/execute/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data),
+      keepalive: false
+    };
+
+    return this._fetch(url, options).then((response) =>
+      response ? response.json() : Promise.resolve()
+    );
+  }
+
   AI_CHECK_INTERVAL = 2000;
   AI_MAX_TIME = 10 * 60 * 1000;
 

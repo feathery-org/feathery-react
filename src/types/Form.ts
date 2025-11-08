@@ -70,3 +70,22 @@ export interface Subgrid extends PositionedElement {
   id: string;
   repeated: boolean;
 }
+
+interface LogicRuleBase {
+  id: string;
+  name: string;
+  trigger_event: string;
+  steps: string[];
+  elements: string[];
+  enabled: boolean;
+  valid: boolean;
+}
+// the server_side code is not exposed to the form
+export type ServerSideLogicRule = LogicRuleBase & {
+  server_side: true;
+};
+export type ClientSideLogicRule = LogicRuleBase & {
+  server_side: false;
+  code: string;
+};
+export type LogicRule = ServerSideLogicRule | ClientSideLogicRule;

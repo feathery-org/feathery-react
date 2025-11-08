@@ -14,7 +14,6 @@ import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
 import {
   clearBrowserErrors,
   getAllElements,
-  httpHelpers,
   isElementInViewport,
   lookUpTrigger,
   mapFormSettingsResponse,
@@ -48,7 +47,6 @@ import {
   getDefaultFieldValue,
   getDefaultFormFieldValue,
   getFieldValue,
-  isValidFieldIdentifier,
   saveInitialValuesAndUrlParams,
   updateStepFieldOptions,
   updateStepFieldProperties,
@@ -117,6 +115,7 @@ import {
   ContextOnView,
   ElementProps,
   FormContext,
+  LogicRule,
   PopupOptions,
   Subgrid,
   Trigger
@@ -179,7 +178,6 @@ import {
   getAuthIntegrationMetadata,
   isTerminalStepAuth
 } from '../auth/internal/utils';
-import Field from '../utils/entities/Field';
 import Auth from '../auth/internal/AuthIntegrationInterface';
 import { CloseIcon } from '../elements/components/icons';
 import useLoader, { InitialLoader } from '../hooks/useLoader';
@@ -203,7 +201,9 @@ import usePollFuserData from '../hooks/usePollFuserData';
 import { SharedCodeInfo } from './definitions';
 import {
   extractExportedCodeInfoArray,
-  replaceImportsWithDefinitions
+  handleRuleError,
+  runClientSideLogic,
+  runServerSideLogic
 } from './logic';
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ExtractionToast from './components/AIExtractionToast';
@@ -255,19 +255,6 @@ export interface ClickActionElement {
   properties: { [key: string]: any };
   repeat?: any;
 }
-
-export interface LogicRule {
-  id: string;
-  name: string;
-  trigger_event: string;
-  steps: string[];
-  elements: string[];
-  code: string;
-  enabled: boolean;
-  valid: boolean;
-}
-
-const AsyncFunction = async function () {}.constructor;
 
 function Form({
   _internalId,
@@ -755,56 +742,22 @@ function Form({
 
           if (toAwait) await toAwait;
 
-          let logicRuleCode = logicRule.code;
-
-          if (extractedSharedCodeInfo.length > 0) {
-            logicRuleCode = replaceImportsWithDefinitions(
-              logicRule.code,
-              extractedSharedCodeInfo
-            );
-          }
-
-          // Note:
-          // AsyncFunction is nice and tidy but was throwing an error when trying to use await at
-          // the top level of the user code.
-          // The error was: Uncaught (in promise) SyntaxError: await is only valid in async functions and the top level bodies of modules.
-          // So, then tried eval instead, but had a serious issue with the webpacked published
-          // lib which was just invalid. So, now wrapping the rule code
-          // in an async function and calling it immediately from within an AsyncFunction.
-          const asyncWrappedCode = `return (async () => { ${logicRuleCode}\n })()`;
-
-          // Do not inject field globals that are invalid js identifiers or that collide
-          // with a javascript or browser reserved word. This avoids validation errors
-          // should they try to use it in a rule. However, even if they do not use it
-          // in a rule, the runtime injects that field and this causes an exception
-          // at runtime due to the reserved word being used or invalid identifier.
-
-          const injectableFields = Object.entries(
-            internalState[_internalId]?.fields ?? {}
-          )
-            .filter(([key]) => isValidFieldIdentifier(key))
-            .reduce((acc, [key, field]) => {
-              acc[key] = field;
-              return acc;
-            }, {} as Record<string, Field>);
-          // @ts-ignore
-          const fn = new AsyncFunction(
-            'feathery',
-            // pass in all the fields as arguments so they are globals in the rule code
-            ...Object.keys(injectableFields),
-            asyncWrappedCode
-          );
           try {
-            await fn(
-              { ...props, http: httpHelpers(client, connectorFields) },
-              ...Object.values(injectableFields)
-            ).catch((e: any) => {
-              // catch unhandled rejections in async user code (if a promise is returned)
-              // handle any errors in async code that actually returns a promise
-              handleRuleError(e.message, logicRule);
-            });
+            if (logicRule.server_side) {
+              await runServerSideLogic(logicRule, client, _draft);
+            } else {
+              await runClientSideLogic(
+                logicRule,
+                client,
+                extractedSharedCodeInfo,
+                internalState[_internalId],
+                connectorFields,
+                props
+              );
+            }
           } catch (e: any) {
-            const errorMessage = e.reason?.message ?? e.error?.message;
+            const errorMessage =
+              e.reason?.message ?? e.error?.message ?? e.message;
             handleRuleError(errorMessage, logicRule);
           }
         }
@@ -817,16 +770,6 @@ function Form({
     if (event === 'form_complete') await defaultClient.flushCustomFields();
 
     return logicRan;
-  };
-
-  // Used to warn about logic rule errors
-  const handleRuleError = (errorMessage: string, logicRule: LogicRule) => {
-    // log that a specific rule had an error, log it to warning console
-    console.warn(
-      `Error while running logic rule: ${logicRule.name}`,
-      `  On Event: ${logicRule.trigger_event}`,
-      `  Error Message: ${errorMessage ?? ''}`
-    );
   };
 
   const getErrorCallback =

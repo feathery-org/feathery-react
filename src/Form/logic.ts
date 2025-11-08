@@ -6,6 +6,16 @@ import {
   ExtractedSharedCodeInfo,
   SharedCodeInfo
 } from './definitions';
+import { httpHelpers } from '../utils/formHelperFunctions';
+import { isValidFieldIdentifier } from '../utils/fieldHelperFunctions';
+import { setFieldValues } from '../utils/init';
+import {
+  ClientSideLogicRule,
+  LogicRule,
+  ServerSideLogicRule
+} from '../types/Form';
+import Field from '../utils/entities/Field';
+import { FormInternalState } from '../utils/internalState';
 
 export function getAcornParsedNodes(input: string): Program | null {
   let parsedNode: Program | null = null;
@@ -476,3 +486,87 @@ export function replaceImportsWithDefinitions(
 
   return [...definitions, '', ...remainingLines].join('\n');
 }
+
+// Used to warn about logic rule errors
+export const handleRuleError = (errorMessage: string, logicRule: LogicRule) => {
+  // log that a specific rule had an error, log it to warning console
+  console.warn(
+    `Error while running logic rule: ${logicRule.name}`,
+    `  On Event: ${logicRule.trigger_event}`,
+    `  Error Message: ${errorMessage ?? ''}`
+  );
+};
+
+export const runServerSideLogic = async (
+  logicRule: ServerSideLogicRule,
+  client: any,
+  isDraft: boolean
+) => {
+  // for now, skip running server-side logic rules if they're draft rules
+  if (isDraft) {
+    return;
+  }
+  const response = await client.runServerSideLogicRule(logicRule.id);
+  if (response?.field_data) {
+    setFieldValues(response?.field_data, true, true);
+  } else if (response?.error) {
+    handleRuleError(response?.error, logicRule);
+  }
+};
+
+const AsyncFunction = async function () {}.constructor;
+
+export const runClientSideLogic = async (
+  logicRule: ClientSideLogicRule,
+  client: any,
+  extractedSharedCodeInfo: ExtractedSharedCodeInfo[],
+  internalState: FormInternalState,
+  connectorFields: any,
+  props: Record<string, any>
+) => {
+  let logicRuleCode = logicRule.code;
+
+  if (extractedSharedCodeInfo.length > 0) {
+    logicRuleCode = replaceImportsWithDefinitions(
+      logicRule.code,
+      extractedSharedCodeInfo
+    );
+  }
+
+  // Note:
+  // AsyncFunction is nice and tidy but was throwing an error when trying to use await at
+  // the top level of the user code.
+  // The error was: Uncaught (in promise) SyntaxError: await is only valid in async functions and the top level bodies of modules.
+  // So, then tried eval instead, but had a serious issue with the webpacked published
+  // lib which was just invalid. So, now wrapping the rule code
+  // in an async function and calling it immediately from within an AsyncFunction.
+  const asyncWrappedCode = `return (async () => { ${logicRuleCode}\n })()`;
+
+  // Do not inject field globals that are invalid js identifiers or that collide
+  // with a javascript or browser reserved word. This avoids validation errors
+  // should they try to use it in a rule. However, even if they do not use it
+  // in a rule, the runtime injects that field and this causes an exception
+  // at runtime due to the reserved word being used or invalid identifier.
+
+  const injectableFields = Object.entries(internalState?.fields ?? {})
+    .filter(([key]) => isValidFieldIdentifier(key))
+    .reduce((acc, [key, field]) => {
+      acc[key] = field;
+      return acc;
+    }, {} as Record<string, Field>);
+  // @ts-ignore
+  const fn = new AsyncFunction(
+    'feathery',
+    // pass in all the fields as arguments so they are globals in the rule code
+    ...Object.keys(injectableFields),
+    asyncWrappedCode
+  );
+  await fn(
+    { ...props, http: httpHelpers(client, connectorFields) },
+    ...Object.values(injectableFields)
+  ).catch((e: any) => {
+    // catch unhandled rejections in async user code (if a promise is returned)
+    // handle any errors in async code that actually returns a promise
+    handleRuleError(e.message, logicRule);
+  });
+};
