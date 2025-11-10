@@ -100,7 +100,6 @@ export const createSelectionOrderingHarness = (element: any) => {
     ...element,
     properties: {
       ...element.properties,
-      collapseSelectedOptions: true,
       preserveSelectionOrder: true
     }
   };

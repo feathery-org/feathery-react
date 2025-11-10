@@ -634,16 +634,12 @@ describe('DropdownMultiField - Base Functionality', () => {
   });
 
   describe('Pointer Interactions', () => {
-    it('opens the menu on mouse click when collapsed', async () => {
+    it('opens the menu on mouse click', async () => {
       const user = userEvent.setup();
       const element = createDropdownMultiElement(
         'dropdown_multi',
         createOptionsMetadata(['Alpha', 'Beta', 'Gamma'])
       );
-      element.properties = {
-        ...element.properties,
-        collapseSelectedOptions: true
-      };
       const props = createDropdownMultiProps(element, {
         fieldVal: ['Alpha']
       });
@@ -657,15 +653,11 @@ describe('DropdownMultiField - Base Functionality', () => {
       );
     });
 
-    it('opens the menu on touch start when collapsed', async () => {
+    it('opens the menu on touch start', async () => {
       const element = createDropdownMultiElement(
         'dropdown_multi',
         createOptionsMetadata(['Alpha', 'Beta', 'Gamma'])
       );
-      element.properties = {
-        ...element.properties,
-        collapseSelectedOptions: true
-      };
       const props = createDropdownMultiProps(element, {
         fieldVal: ['Alpha']
       });
@@ -686,10 +678,6 @@ describe('DropdownMultiField - Base Functionality', () => {
         'dropdown_multi',
         createOptionsMetadata(['Alpha', 'Beta', 'Gamma'])
       );
-      element.properties = {
-        ...element.properties,
-        collapseSelectedOptions: true
-      };
       const props = createDropdownMultiProps(element, {
         fieldVal: ['Alpha']
       });

@@ -57,7 +57,6 @@ export default function DropdownMultiField({
     ? () => translation.no_options as string
     : undefined;
   const entityLabel = 'Dropdown field';
-  const collapseSelectedPreference = !!properties.collapseSelectedOptions;
 
   // Build all dropdown options and selections
   const { options, orderedSelectVal, reorderSelection } = useDropdownOptions({
@@ -68,8 +67,7 @@ export default function DropdownMultiField({
     dynamicOptions,
     shouldSalesforceSync,
     repeatIndex,
-    entityLabel,
-    collapseSelectedPreference
+    entityLabel
   });
 
   const {
@@ -80,7 +78,6 @@ export default function DropdownMultiField({
     measurement,
     selectRef
   } = useCollapsedSelectionManager({
-    collapseSelectedPreference,
     containerRef,
     disabled,
     values: orderedSelectVal
@@ -97,21 +94,14 @@ export default function DropdownMultiField({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const selectComponentsOverride = useMemo(
-    () =>
-      collapseSelected
-        ? {
-            Control: DropdownControl,
-            Option: TooltipOption,
-            MultiValue: CollapsibleMultiValue,
-            MultiValueContainer: CollapsibleMultiValueContainer,
-            MultiValueRemove: CollapsibleMultiValueRemove
-          }
-        : {
-            Control: DropdownControl,
-            Option: TooltipOption,
-            MultiValueRemove: CollapsibleMultiValueRemove
-          },
-    [collapseSelected]
+    () => ({
+      Control: DropdownControl,
+      Option: TooltipOption,
+      MultiValue: CollapsibleMultiValue,
+      MultiValueContainer: CollapsibleMultiValueContainer,
+      MultiValueRemove: CollapsibleMultiValueRemove
+    }),
+    []
   );
 
   const disableAllOptions =
@@ -169,8 +159,6 @@ export default function DropdownMultiField({
     disabled,
     isMenuOpen,
     setIsMenuOpen,
-    collapseSelected,
-    collapseSelectedPreference,
     openCollapseMenu,
     closeCollapseMenu,
     forceCloseCollapseMenu,
@@ -191,8 +179,7 @@ export default function DropdownMultiField({
 
   responsiveStyles.applyFontStyles('field');
 
-  const shouldHideInput =
-    collapseSelected && !isMeasuring && !focused && !isMenuOpen;
+  const shouldHideInput = collapseSelected && !isMeasuring && !focused;
 
   const selectStyles = useMemo(
     () =>

@@ -35,8 +35,6 @@ interface UseDropdownInteractionsParams {
   disabled: boolean;
   isMenuOpen: boolean;
   setIsMenuOpen: (open: boolean) => void;
-  collapseSelected: boolean;
-  collapseSelectedPreference: boolean;
 
   // Collapse controls from manager
   openCollapseMenu: () => void;
@@ -96,8 +94,6 @@ export default function useDropdownInteractions({
   disabled,
   isMenuOpen,
   setIsMenuOpen,
-  collapseSelected,
-  collapseSelectedPreference,
   openCollapseMenu,
   closeCollapseMenu,
   forceCloseCollapseMenu,
@@ -128,17 +124,11 @@ export default function useDropdownInteractions({
     const instance = syncSelectInstance();
     if (!instance) return;
 
-    extendCloseSuppression();
     setIsMenuOpen(true);
     openCollapseMenu();
     instance.focus?.();
     instance.openMenu?.('first');
-  }, [
-    extendCloseSuppression,
-    openCollapseMenu,
-    setIsMenuOpen,
-    syncSelectInstance
-  ]);
+  }, [openCollapseMenu, setIsMenuOpen, syncSelectInstance]);
 
   const closeMenuImmediately = useCallback(
     (options?: Parameters<typeof forceCloseCollapseMenu>[0]) => {
@@ -163,10 +153,10 @@ export default function useDropdownInteractions({
     closeCollapseMenu();
   }, [closeCollapseMenu, setIsMenuOpen]);
 
-  // Tries to open the menu when in collapsed mode. Returns true if menu was opened.
+  // Tries to open the menu when collapsed. Returns true if menu was opened.
   const tryOpenCollapsedMenu = useCallback(
     (eventTarget: EventTarget | null) => {
-      if (!collapseSelected || isMenuOpen) return false;
+      if (isMenuOpen) return false;
 
       const elementTarget = eventTarget as HTMLElement | null;
       if (elementTarget?.closest('[data-feathery-multi-value-remove="true"]')) {
@@ -176,7 +166,7 @@ export default function useDropdownInteractions({
       openMenu();
       return true;
     },
-    [collapseSelected, isMenuOpen, openMenu]
+    [isMenuOpen, openMenu]
   );
 
   const handleWrapperMouseDown = useCallback(
@@ -243,10 +233,8 @@ export default function useDropdownInteractions({
         actionMeta.action === 'select-option' ||
         actionMeta.action === 'create-option';
 
-      if (collapseSelectedPreference) {
-        if (!skipBlurAction || !isMenuOpen) {
-          closeMenuImmediately(skipBlurAction ? { skipBlur: true } : undefined);
-        }
+      if (!skipBlurAction || !isMenuOpen) {
+        closeMenuImmediately(skipBlurAction ? { skipBlur: true } : undefined);
       }
 
       const nextSelected = reorderSelection(selected, actionMeta);
@@ -255,7 +243,6 @@ export default function useDropdownInteractions({
     },
     [
       closeMenuImmediately,
-      collapseSelectedPreference,
       extendCloseSuppression,
       isMenuOpen,
       onChange,

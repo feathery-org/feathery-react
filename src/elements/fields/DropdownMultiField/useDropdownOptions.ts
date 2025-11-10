@@ -23,7 +23,6 @@ interface UseDropdownOptionsParams {
   shouldSalesforceSync: boolean;
   repeatIndex: number | null;
   entityLabel: string;
-  collapseSelectedPreference: boolean;
 }
 
 interface UseDropdownOptionsReturn {
@@ -50,8 +49,7 @@ export default function useDropdownOptions({
   dynamicOptions,
   shouldSalesforceSync,
   repeatIndex,
-  entityLabel,
-  collapseSelectedPreference
+  entityLabel
 }: UseDropdownOptionsParams): UseDropdownOptionsReturn {
   const warningState = useMemo(() => new Set<string>(), [fieldKey]);
 
@@ -189,10 +187,8 @@ export default function useDropdownOptions({
       }))
     : [];
 
-  // Apply selection ordering if enabled
-  const selectionOrderingPreference = collapseSelectedPreference
-    ? !!properties.preserveSelectionOrder
-    : false;
+  // Apply selection ordering if enabled (only works with collapse mode, which is now always on)
+  const selectionOrderingPreference = !!properties.preserveSelectionOrder;
   const { orderedValues: orderedSelectVal, reorderSelection } =
     useSelectionOrdering({
       values: selectVal,
