@@ -18,9 +18,8 @@ export function useCheckButtonAction(
     buttonActionStateRef.current?.isUserLogicRunning;
 
   const updateButtonActionState = (elementType: string, element: any) => {
-    // Set the state only when the element is a button and block_button_clicks is true
-    const isRunning =
-      elementType === 'button' && !!element?.properties?.block_button_clicks;
+    // Track element action state for every button to block repeat clicks by default
+    const isRunning = elementType === 'button';
 
     if (isRunning) {
       buttonActionStateRef.current = {
