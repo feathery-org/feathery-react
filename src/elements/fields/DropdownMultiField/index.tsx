@@ -59,11 +59,10 @@ export default function DropdownMultiField({
   const entityLabel = 'Dropdown field';
 
   // Build all dropdown options and selections
-  const { options, orderedSelectVal, reorderSelection } = useDropdownOptions({
+  const { options, selectVal } = useDropdownOptions({
     fieldVal,
     fieldKey,
     servar,
-    properties,
     dynamicOptions,
     shouldSalesforceSync,
     repeatIndex,
@@ -80,7 +79,7 @@ export default function DropdownMultiField({
   } = useCollapsedSelectionManager({
     containerRef,
     disabled,
-    values: orderedSelectVal
+    values: selectVal
   });
 
   const {
@@ -105,7 +104,7 @@ export default function DropdownMultiField({
   );
 
   const disableAllOptions =
-    (!!servar.max_length && orderedSelectVal.length >= servar.max_length) ||
+    (!!servar.max_length && selectVal.length >= servar.max_length) ||
     loadingDynamicOptions;
   const create = servar.metadata.creatable_options;
   let formatCreateLabel: ((inputValue: string) => string) | undefined;
@@ -125,12 +124,12 @@ export default function DropdownMultiField({
         (option) => option?.value?.toLowerCase() === normalized
       );
       if (hasOption) return false;
-      const hasSelected = orderedSelectVal.some(
+      const hasSelected = selectVal.some(
         (option) => option?.value?.toLowerCase() === normalized
       );
       return !hasSelected;
     },
-    [options, orderedSelectVal]
+    [options, selectVal]
   );
 
   // React Select passes value/options/accessors here, but our validation only
@@ -164,13 +163,12 @@ export default function DropdownMultiField({
     forceCloseCollapseMenu,
     focusOnMouseDown,
     focusOnTouchStart,
-    orderedSelectVal,
+    selectVal,
     options,
     isCreatableInputValid: create ? isCreatableInputValid : undefined,
     create,
     disableAllOptions,
-    onChange,
-    reorderSelection
+    onChange
   });
 
   const hasTooltip = !!properties.tooltipText;
@@ -198,7 +196,7 @@ export default function DropdownMultiField({
     selectRef,
     containerRef,
     servar,
-    orderedSelectVal,
+    selectVal,
     options,
     required,
     disabled,
@@ -268,7 +266,7 @@ export default function DropdownMultiField({
         {customBorder}
         <SelectComponent {...selectProps} />
         <Placeholder
-          value={orderedSelectVal.length || focused}
+          value={selectVal.length || focused}
           element={element}
           responsiveStyles={responsiveStyles}
           repeatIndex={repeatIndex}

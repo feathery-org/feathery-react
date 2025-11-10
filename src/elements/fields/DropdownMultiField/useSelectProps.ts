@@ -9,7 +9,7 @@ interface UseSelectPropsParams {
 
   // Data
   servar: any;
-  orderedSelectVal: OptionData[];
+  selectVal: OptionData[];
   options: OptionData[];
 
   // State flags
@@ -60,7 +60,7 @@ export default function useSelectProps({
   selectRef,
   containerRef,
   servar,
-  orderedSelectVal,
+  selectVal,
   options,
   required,
   disabled,
@@ -93,7 +93,7 @@ export default function useSelectProps({
       ref: selectRef as React.RefObject<SelectInstance<OptionData, true>>,
       inputId: servar.key,
       isMulti: true as const,
-      value: orderedSelectVal,
+      value: selectVal,
       options: options,
 
       // State
@@ -122,7 +122,7 @@ export default function useSelectProps({
 
       // Option state
       isOptionDisabled: () =>
-        (servar.max_length && orderedSelectVal.length >= servar.max_length) ||
+        (servar.max_length && selectVal.length >= servar.max_length) ||
         loadingDynamicOptions,
       noOptionsMessage: create ? () => null : noOptionsMessage,
 
@@ -160,7 +160,7 @@ export default function useSelectProps({
       selectRef,
       servar.key,
       servar.max_length,
-      orderedSelectVal,
+      selectVal,
       options,
       required,
       disabled,

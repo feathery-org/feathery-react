@@ -44,7 +44,7 @@ interface UseDropdownInteractionsParams {
   focusOnTouchStart: (event: React.TouchEvent<HTMLDivElement>) => void;
 
   // Selection data
-  orderedSelectVal: OptionData[];
+  selectVal: OptionData[];
   options: OptionData[];
   isCreatableInputValid?: (inputValue: string) => boolean;
 
@@ -54,7 +54,6 @@ interface UseDropdownInteractionsParams {
 
   // Parent callbacks
   onChange: (selected: any, actionMeta: any) => void;
-  reorderSelection: (selected: any, actionMeta: any) => any;
 }
 
 interface UseDropdownInteractionsReturn {
@@ -99,13 +98,12 @@ export default function useDropdownInteractions({
   forceCloseCollapseMenu,
   focusOnMouseDown,
   focusOnTouchStart,
-  orderedSelectVal,
+  selectVal,
   options,
   isCreatableInputValid,
   create,
   disableAllOptions,
-  onChange,
-  reorderSelection
+  onChange
 }: UseDropdownInteractionsParams): UseDropdownInteractionsReturn {
   // Handle React Select quirks where touch-initiated opens can trigger
   // immediate closes if we don't suppress the close event for a short time.
@@ -237,8 +235,7 @@ export default function useDropdownInteractions({
         closeMenuImmediately(skipBlurAction ? { skipBlur: true } : undefined);
       }
 
-      const nextSelected = reorderSelection(selected, actionMeta);
-      onChange(nextSelected, actionMeta);
+      onChange(selected, actionMeta);
       selectRef.current?.focus?.();
     },
     [
@@ -246,7 +243,6 @@ export default function useDropdownInteractions({
       extendCloseSuppression,
       isMenuOpen,
       onChange,
-      reorderSelection,
       selectRef
     ]
   );
@@ -278,7 +274,7 @@ export default function useDropdownInteractions({
       );
     const matchesSelectedValue =
       hasInput &&
-      orderedSelectVal.some(
+      selectVal.some(
         (option) => option?.value?.toLowerCase() === normalizedInput
       );
     const canCreateOption =
@@ -290,7 +286,7 @@ export default function useDropdownInteractions({
     const normalizedFocusedValue = focusedValue?.toLowerCase();
     const isFocusedSelected = Boolean(
       normalizedFocusedValue &&
-        orderedSelectVal.some(
+        selectVal.some(
           (option) => option?.value?.toLowerCase() === normalizedFocusedValue
         )
     );
@@ -328,7 +324,7 @@ export default function useDropdownInteractions({
     isMenuOpen,
     isCreatableInputValid,
     options,
-    orderedSelectVal,
+    selectVal,
     selectRef
   ]);
 
