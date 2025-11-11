@@ -40,26 +40,10 @@ const shimmerStyles = {
   }
 };
 
-const defaultBorderFields = [
-  'slider',
-  'checkbox',
-  'multiselect',
-  'hex_color',
-  'select',
-  'signature',
-  'file_upload'
-];
-
 function applyFieldStyles(field: any, styles: any) {
   const type = field.servar.type;
   styles.addTargets('fc', 'sub-fc', 'field');
-
-  // Apply font styles
   styles.applyFontStyles('fc', false, true);
-
-  // These are fields that have default borders
-  const hasBorder = defaultBorderFields.includes(type);
-
   switch (type) {
     case 'checkbox':
       styles.applyHeight('sub-fc');
@@ -112,11 +96,9 @@ function applyFieldStyles(field: any, styles: any) {
     case 'hex_color':
       styles.applyHeight('sub-fc');
       styles.applyColor('field', 'background_color', 'backgroundColor');
-      if (hasBorder) {
-        styles.applyBorders({ target: 'sub-fc' });
-        styles.applyCorners('sub-fc');
-        styles.applyBoxShadow('sub-fc');
-      }
+      styles.applyBorders({ target: 'sub-fc' });
+      styles.applyCorners('sub-fc');
+      styles.applyBoxShadow('sub-fc');
       break;
     case 'qr_scanner':
       styles.applyHeight('sub-fc');
@@ -124,15 +106,9 @@ function applyFieldStyles(field: any, styles: any) {
     default:
       styles.applyHeight('sub-fc');
       styles.applyColor('field', 'background_color', 'backgroundColor');
-      if (hasBorder) {
-        styles.applyBorders({ target: 'sub-fc' });
-        styles.applyCorners('sub-fc');
-        styles.applyBoxShadow('sub-fc');
-      } else {
-        styles.applyBorders({ target: 'field' });
-        styles.applyCorners('field');
-        styles.applyBoxShadow('field');
-      }
+      styles.applyBorders({ target: 'sub-fc' });
+      styles.applyCorners('sub-fc');
+      styles.applyBoxShadow('sub-fc');
       break;
   }
 

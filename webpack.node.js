@@ -18,8 +18,8 @@ module.exports = (env) => {
 
   config.output.path = path.resolve(__dirname, 'dist');
   config.performance = {
-    maxEntrypointSize: 512000,
-    maxAssetSize: 512000
+    maxEntrypointSize: 1024000,
+    maxAssetSize: 1024000
   };
   return config;
 };

@@ -4,7 +4,7 @@ module.exports = {
   entry: './src/index.tsx',
   output: {
     filename: 'index.js',
-    chunkFilename: '[name].js',
+    chunkFilename: '[name].[contenthash].js',
     globalObject: 'this' /* So window references don't break in NextJS */,
     library: {
       name: 'Feathery',
