@@ -367,10 +367,20 @@ export default function useDropdownInteractions({
   // Capture the keydown before it reaches the native form submit handler. This
   // keeps Enter from bubbling out when React Select bails early (e.g., no
   // creatable input or all options selected).
+  // Also clears close suppression for Escape to allow immediate user-initiated closes.
   const handleKeyDownCapture = useCallback(
     (event: React.KeyboardEvent) => {
-      if (event.key !== 'Enter' || disabled) return;
-      processEnterKey(event);
+      if (disabled) return;
+
+      // Clear suppression for Escape so React Select can close immediately
+      if (event.key === 'Escape') {
+        suppressCloseUntilRef.current = 0;
+        return;
+      }
+
+      if (event.key === 'Enter') {
+        processEnterKey(event);
+      }
     },
     [disabled, processEnterKey]
   );
