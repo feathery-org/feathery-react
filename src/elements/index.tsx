@@ -3,25 +3,56 @@ import { InView } from 'react-intersection-observer';
 
 import Fields from './fields';
 import ResponsiveStyles, { ERROR_COLOR } from './styles';
+import ImageElement from './basic/ImageElement';
+import VideoElement from './basic/VideoElement';
+import TextElement from './basic/TextElement';
+import ButtonElement from './basic/ButtonElement';
+import ProgressBarElement from './basic/ProgressBarElement';
+import FieldSkeleton from './components/skeletons/FieldSkeleton';
 
-const TextElement = lazy(
-  () => import(/* webpackChunkName: "TextElement" */ './basic/TextElement')
-);
-const ButtonElement = lazy(
-  () => import(/* webpackChunkName: "ButtonElement" */ './basic/ButtonElement')
-);
-const ImageElement = lazy(
-  () => import(/* webpackChunkName: "ImageElement" */ './basic/ImageElement')
-);
-const ProgressBarElement = lazy(
-  () =>
-    import(
-      /* webpackChunkName: "ProgressBarElement" */ './basic/ProgressBarElement'
-    )
-);
-const VideoElement = lazy(
-  () => import(/* webpackChunkName: "VideoElement" */ './basic/VideoElement')
-);
+// Set to a number (in ms) to artificially delay lazy loading for testing fallback UI
+const ARTIFICIAL_DELAY = 5000;
+
+export const delayImport = <T,>(importFn: () => Promise<T>): Promise<T> => {
+  if (ARTIFICIAL_DELAY > 0) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        importFn().then(resolve);
+      }, ARTIFICIAL_DELAY);
+    });
+  }
+  return importFn();
+};
+
+// const TextElement = lazy(() =>
+//   delayImport(
+//     () => import(/* webpackChunkName: "TextElement" */ './basic/TextElement')
+//   )
+// );
+// const ButtonElement = lazy(() =>
+//   delayImport(
+//     () =>
+//       import(/* webpackChunkName: "ButtonElement" */ './basic/ButtonElement')
+//   )
+// );
+// const ImageElement = lazy(() =>
+//   delayImport(
+//     () => import(/* webpackChunkName: "ImageElement" */ './basic/ImageElement')
+//   )
+// );
+// const ProgressBarElement = lazy(() =>
+//   delayImport(
+//     () =>
+//       import(
+//         /* webpackChunkName: "ProgressBarElement" */ './basic/ProgressBarElement'
+//       )
+//   )
+// );
+// const VideoElement = lazy(() =>
+//   delayImport(
+//     () => import(/* webpackChunkName: "VideoElement" */ './basic/VideoElement')
+//   )
+// );
 
 const Basic = {
   ImageElement,
@@ -54,7 +85,14 @@ Object.entries(Elements).map(([key, Element]) => {
       }, [element, componentOnly, formSettings]);
 
       const featheryElement = (
-        <Suspense fallback={<div />}>
+        <Suspense
+          fallback={
+            <FieldSkeleton
+              element={element}
+              responsiveStyles={responsiveStyles}
+            />
+          }
+        >
           <Element
             element={element}
             responsiveStyles={responsiveStyles}

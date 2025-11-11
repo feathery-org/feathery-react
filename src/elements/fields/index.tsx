@@ -1,78 +1,123 @@
 import { lazy, memo, useMemo } from 'react';
 import { DEFAULT_MIN_SIZE } from '../../Form/grid/StyledContainer/styles';
+import { delayImport } from '../index';
 
-const AddressLine1 = lazy(
-  () => import(/* webpackChunkName: "AddressField" */ './AddressLine1Field')
+const AddressLine1 = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "AddressField" */ './AddressLine1Field')
+  )
 );
-const ButtonGroupField = lazy(
-  () => import(/* webpackChunkName: "ButtonGroupField" */ './ButtonGroupField')
+const ButtonGroupField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "ButtonGroupField" */ './ButtonGroupField')
+  )
 );
-const CheckboxField = lazy(
-  () => import(/* webpackChunkName: "CheckboxField" */ './CheckboxField')
+const CheckboxField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "CheckboxField" */ './CheckboxField')
+  )
 );
-const CheckboxGroupField = lazy(
-  () =>
-    import(/* webpackChunkName: "CheckboxGroupField" */ './CheckboxGroupField')
+const CheckboxGroupField = lazy(() =>
+  delayImport(
+    () =>
+      import(/* webpackChunkName: "CheckboxGroupField" */ './CheckboxGroupField')
+  )
 );
-const ColorPickerField = lazy(
-  () => import(/* webpackChunkName: "ColorPickerField" */ './ColorPickerField')
+const ColorPickerField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "ColorPickerField" */ './ColorPickerField')
+  )
 );
-const CustomField = lazy(
-  () => import(/* webpackChunkName: "CustomField" */ './CustomField')
+const CustomField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "CustomField" */ './CustomField')
+  )
 );
-const DateSelectorField = lazy(
-  () =>
-    import(/* webpackChunkName: "DateSelectorField" */ './DateSelectorField')
+const DateSelectorField = lazy(() =>
+  delayImport(
+    () =>
+      import(/* webpackChunkName: "DateSelectorField" */ './DateSelectorField')
+  )
 );
-const DropdownField = lazy(
-  () => import(/* webpackChunkName: "DropdownField" */ './DropdownField')
+const DropdownField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "DropdownField" */ './DropdownField')
+  )
 );
-const DropdownMultiField = lazy(
-  () =>
-    import(/* webpackChunkName: "DropdownMultiField" */ './DropdownMultiField')
+const DropdownMultiField = lazy(() =>
+  delayImport(
+    () =>
+      import(/* webpackChunkName: "DropdownMultiField" */ './DropdownMultiField')
+  )
 );
-const FileUploadField = lazy(
-  () => import(/* webpackChunkName: "FileUploadField" */ './FileUploadField')
+const FileUploadField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "FileUploadField" */ './FileUploadField')
+  )
 );
-const MatrixField = lazy(
-  () => import(/* webpackChunkName: "MatrixField" */ './MatrixField')
+const MatrixField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "MatrixField" */ './MatrixField')
+  )
 );
-const PasswordField = lazy(
-  () => import(/* webpackChunkName: "PasswordField" */ './PasswordField')
+const PasswordField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "PasswordField" */ './PasswordField')
+  )
 );
-const PaymentMethodField = lazy(
-  () =>
-    import(/* webpackChunkName: "PaymentMethodField" */ './PaymentMethodField')
+const PaymentMethodField = lazy(() =>
+  delayImport(
+    () =>
+      import(/* webpackChunkName: "PaymentMethodField" */ './PaymentMethodField')
+  )
 );
-const PhoneField = lazy(
-  () => import(/* webpackChunkName: "PhoneField" */ './PhoneField')
+const PhoneField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "PhoneField" */ './PhoneField')
+  )
 );
-const PinInputField = lazy(
-  () => import(/* webpackChunkName: "PinInputField" */ './PinInputField')
+const PinInputField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "PinInputField" */ './PinInputField')
+  )
 );
-const QRScanner = lazy(
-  () => import(/* webpackChunkName: "QRScanner" */ './QRScanner')
+const QRScanner = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "QRScanner" */ './QRScanner')
+  )
 );
-const RadioButtonGroupField = lazy(
-  () =>
-    import(
-      /* webpackChunkName: "RadioButtonGroupField" */ './RadioButtonGroupField'
-    )
+const RadioButtonGroupField = lazy(() =>
+  delayImport(
+    () =>
+      import(
+        /* webpackChunkName: "RadioButtonGroupField" */ './RadioButtonGroupField'
+      )
+  )
 );
-const RatingField = lazy(
-  () => import(/* webpackChunkName: "RatingField" */ './RatingField')
+const RatingField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "RatingField" */ './RatingField')
+  )
 );
-const SignatureField = lazy(
-  () => import(/* webpackChunkName: "SignatureField" */ './SignatureField')
+const SignatureField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "SignatureField" */ './SignatureField')
+  )
 );
-const SliderField = lazy(
-  () => import(/* webpackChunkName: "SliderField" */ './SliderField')
+const SliderField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "SliderField" */ './SliderField')
+  )
 );
-const TextField = lazy(
-  () => import(/* webpackChunkName: "TextField" */ './TextField')
+const TextField = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "TextField" */ './TextField')
+  )
 );
-const TextArea = lazy(
-  () => import(/* webpackChunkName: "TextArea" */ './TextArea')
+const TextArea = lazy(() =>
+  delayImport(
+    () => import(/* webpackChunkName: "TextArea" */ './TextArea')
+  )
 );
 
 const Fields = {
