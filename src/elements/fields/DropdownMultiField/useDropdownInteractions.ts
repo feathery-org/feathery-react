@@ -122,11 +122,17 @@ export default function useDropdownInteractions({
     const instance = syncSelectInstance();
     if (!instance) return;
 
+    extendCloseSuppression();
     setIsMenuOpen(true);
     openCollapseMenu();
     instance.focus?.();
     instance.openMenu?.('first');
-  }, [openCollapseMenu, setIsMenuOpen, syncSelectInstance]);
+  }, [
+    extendCloseSuppression,
+    openCollapseMenu,
+    setIsMenuOpen,
+    syncSelectInstance
+  ]);
 
   const closeMenuImmediately = useCallback(
     (options?: Parameters<typeof forceCloseCollapseMenu>[0]) => {
