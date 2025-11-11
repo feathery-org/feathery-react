@@ -156,7 +156,7 @@ export default function FieldSkeleton({
     return pinDivs;
   };
 
-  let heightAdjust: any = {};
+  const heightAdjust: any = {};
   // apply button height to button group skeleton
   if (type === 'button_group') {
     const height = element.styles?.height_unit;
