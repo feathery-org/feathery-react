@@ -2,7 +2,8 @@ import getRandomBoolean from './random';
 import {
   fieldValues,
   filePathMap,
-  fileSubmittedMap,
+  fileDeduplicationCount,
+  fileRetryStatus,
   initInfo,
   initState,
   setFieldValues
@@ -238,7 +239,8 @@ export function clearFilePathMapEntry(key: any, index = null) {
   } else {
     filePathMap[key] = null;
   }
-  delete fileSubmittedMap[key];
+  delete fileDeduplicationCount[key];
+  fileRetryStatus[key] = false;
 }
 
 export function registerRenderCallback(

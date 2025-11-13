@@ -2,7 +2,8 @@ import IntegrationClient from './integrationClient';
 import {
   fieldValues,
   filePathMap,
-  fileSubmittedMap,
+  fileDeduplicationCount,
+  fileRetryStatus,
   initFormsPromise,
   initInfo,
   initState,
@@ -203,15 +204,60 @@ export default class FeatheryClient extends IntegrationClient {
     // If we've already stored the file from a previous session
     // There will be an entry in filePathMap for it
     // If so we just need to send the S3 path to the backend, not the full file
-    const resolveFile = async (file: any, index = null) => {
-      let path = filePathMap[servar.key];
-      if (path && index !== null) path = path[index];
-      return path ?? (await file);
+    const resolveFile = async (
+      file: any,
+      index: number | null = null,
+      { rethrowOnFailure = false }: { rethrowOnFailure?: boolean } = {}
+    ) => {
+      let path;
+      try {
+        path = filePathMap[servar.key];
+        if (path && index !== null && Array.isArray(path)) {
+          path = path[index];
+        }
+        return path && path !== '' ? path : await file;
+      } catch (error) {
+        if (rethrowOnFailure) {
+          throw error instanceof Error
+            ? error
+            : new Error('File resolution failed');
+        }
+        return null;
+      }
     };
-    return Array.isArray(fileValue)
-      ? // @ts-expect-error TS(2345): Argument of type '(file: any, index?: null) => Pro... Remove this comment to see the full error message
-        Promise.all(fileValue.map(resolveFile))
-      : resolveFile(fileValue);
+
+    if (Array.isArray(fileValue)) {
+      // Use Promise.allSettled to handle failed promises gracefully
+      const results = await Promise.allSettled(
+        fileValue.map((f, i) => resolveFile(f, i))
+      );
+
+      const successfulFiles = results
+        .filter(
+          (r) =>
+            r.status === 'fulfilled' &&
+            r.value !== null &&
+            r.value !== undefined
+        )
+        .map((r) => (r as PromiseFulfilledResult<any>).value);
+
+      // If user tried to upload files but ALL failed, throw error
+      const hadFiles = fileValue.length > 0;
+      const allFailed = successfulFiles.length === 0;
+
+      if (hadFiles && allFailed) {
+        const firstError = results.find((r) => r.status === 'rejected');
+        const errorMessage = firstError
+          ? (firstError as PromiseRejectedResult).reason?.message ||
+            'File upload failed'
+          : 'All file uploads failed';
+        throw new Error(errorMessage);
+      }
+
+      return successfulFiles;
+    } else {
+      return await resolveFile(fileValue, null, { rethrowOnFailure: true });
+    }
   }
 
   async _submitFileData(servar: any, stepKey: string) {
@@ -234,15 +280,27 @@ export default class FeatheryClient extends IntegrationClient {
       }
     }
 
-    // If no files, clear field
+    // If no files, check if we need to send clear request
     if (numFiles === 0) {
+      const hasPreviousSuccess = fileRetryStatus[servar.key] !== undefined;
+
+      // Only skip request for optional fields that were never submitted
+      if (
+        fileDeduplicationCount[servar.key] === undefined &&
+        !hasPreviousSuccess
+      ) {
+        return Promise.resolve();
+      }
       formData.append(servar.key, '');
     }
 
-    // This isn't a perfect guard against duplicate, unnecessary
-    // file submissions but reduces the frequency
-    if (fileSubmittedMap[servar.key] === numFiles) return;
-    fileSubmittedMap[servar.key] = numFiles;
+    // Only block duplicate submissions if the previous attempt SUCCEEDED
+    // This allows retries after failures while preventing duplicate successful uploads
+    const hadSuccess = fileRetryStatus[servar.key];
+    if (hadSuccess && fileDeduplicationCount[servar.key] === numFiles)
+      return Promise.resolve();
+
+    fileDeduplicationCount[servar.key] = numFiles;
 
     formData.set('__feathery_form_key', this.formKey);
     formData.set('__feathery_step_key', stepKey);
@@ -255,21 +313,35 @@ export default class FeatheryClient extends IntegrationClient {
       keepalive: false
     };
 
-    return this.offlineRequestHandler.runOrSaveRequest(
-      () =>
-        this._fetch(url, options, true, true).catch((e) => {
-          if (e instanceof TypeError && navigator.onLine)
-            // Wait 5 seconds since event may have actually been registered
-            // and just needs to be processed. If online, means it's not an
-            // offline error.
-            return new Promise((resolve) => setTimeout(resolve, 5000));
-          throw e;
-        }),
-      url,
-      options,
-      'submit',
-      stepKey
-    );
+    try {
+      // Reset retry attempts for this field before retrying so new submissions get the full budget
+      await this.offlineRequestHandler.resetRetryAttemptsByUrl(url, {
+        fieldKey: servar.key
+      });
+
+      const result = await this.offlineRequestHandler.runOrSaveRequest(
+        () => this._fetch(url, options, true, true),
+        url,
+        options,
+        'submit',
+        stepKey,
+        {
+          fieldKey: servar.key,
+          preserveStepRequests: true
+        }
+      );
+      // Mark as successful upload - will block duplicate attempts
+      fileRetryStatus[servar.key] = true;
+      await this.offlineRequestHandler.clearFailedRequestByUrl(url, {
+        fieldKey: servar.key
+      });
+      return result;
+    } catch (error) {
+      // Mark as failed - allows retry on next submission
+      fileRetryStatus[servar.key] = false;
+      delete fileDeduplicationCount[servar.key];
+      throw error;
+    }
   }
 
   updateUserId(newUserId: string, merge = false) {
@@ -723,9 +795,11 @@ export default class FeatheryClient extends IntegrationClient {
       ['file_upload', 'signature'].some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
+
     await this.handleInteraction();
-    this.submitQueue = Promise.all([
-      this.submitQueue,
+    const waitForPreviousSubmission = this.submitQueue.catch(() => undefined);
+    const submission = Promise.all([
+      waitForPreviousSubmission,
       this.submitCustom(hiddenFields, { shouldFlush: true }),
       this._submitJSONData(jsonServars, step.key, hasNext),
       ...fileServars.map((servar: any) =>
@@ -733,7 +807,12 @@ export default class FeatheryClient extends IntegrationClient {
       )
     ]);
 
-    return this.submitQueue;
+    // Maintain submitQueue semantics so downstream consumers (like registerEvent)
+    // still see actual success/failure while preventing previous rejections
+    // from blocking new submit attempts.
+    this.submitQueue = submission;
+
+    return submission;
   }
 
   async registerEvent(eventData: any) {
@@ -771,16 +850,22 @@ export default class FeatheryClient extends IntegrationClient {
         // Ensure events complete before user exits page. Submit and load event of
         // next step must happen after the previous step is done submitting
         () =>
-          this.submitQueue.then(() =>
-            this._fetch(url, options, true, true).catch((e) => {
-              if (e instanceof TypeError && navigator.onLine)
-                // Wait 5 seconds since event may have actually been registered
-                // and just needs to be processed. If online, means it's not an
-                // offline error.
-                return new Promise((resolve) => setTimeout(resolve, 5000));
-              throw e;
+          this.submitQueue
+            // Swallow TypeErrors (network failures) so _fetch proceeds regardless
+            .catch((error) => {
+              if (error instanceof TypeError) return;
+              throw error;
             })
-          ),
+            .then(() =>
+              this._fetch(url, options, true, true).catch((e) => {
+                if (e instanceof TypeError && navigator.onLine)
+                  // Wait 5 seconds since event may have actually been registered
+                  // and just needs to be processed. If online, means it's not an
+                  // offline error.
+                  return new Promise((resolve) => setTimeout(resolve, 5000));
+                throw e;
+              })
+            ),
         url,
         options,
         'registerEvent',
@@ -1066,5 +1151,21 @@ export default class FeatheryClient extends IntegrationClient {
         } else throw Error(parseError(await response.json()));
       }
     });
+  }
+
+  async resetPendingFileUploads(fieldKeys: string[]) {
+    if (!fieldKeys.length) return;
+    await initFormsPromise;
+    const { userId } = initInfo();
+    if (!userId) return;
+    const url = `${API_URL}panel/step/submit/file/${userId}/`;
+    await Promise.all(
+      fieldKeys.map((key) =>
+        this.offlineRequestHandler.resetRetryAttemptsByUrl(url, {
+          fieldKey: key
+        })
+      )
+    );
+    this.offlineRequestHandler.replayRequests().catch(() => {});
   }
 }
