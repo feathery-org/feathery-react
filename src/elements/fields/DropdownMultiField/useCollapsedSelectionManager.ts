@@ -8,7 +8,6 @@ import type { OptionData } from './types';
 import useCollapsedValuesMeasurement from './useCollapsedValuesMeasurement';
 
 type CollapseParams = {
-  collapseSelectedPreference: boolean;
   containerRef: React.RefObject<HTMLElement | null>;
   disabled: boolean;
   values: OptionData[];
@@ -64,17 +63,16 @@ type SelectControls = {
  * @returns Collapse state, menu controls, pointer handlers, measurement data, and select ref
  */
 export default function useCollapsedSelectionManager({
-  collapseSelectedPreference,
   containerRef,
   disabled,
   values
 }: CollapseParams): CollapseControls {
-  // Track whether the menu opened from user interaction so we can suspend collapsing while it is active.
+  // Track whether the menu is expanded from user interaction
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
   const selectRef = useRef<SelectInstance<OptionData, true> | null>(null);
 
-  // Collapse only when enabled and no expansion path is active.
-  const collapseSelected = collapseSelectedPreference && !isMenuExpanded;
+  // Collapse when menu is not expanded
+  const collapseSelected = !isMenuExpanded;
 
   // Measure the visible chip window while collapse is active.
   const { collapsedCount, isMeasuring, visibleCount } =
@@ -91,7 +89,7 @@ export default function useCollapsedSelectionManager({
 
   const handleWrapperPointer = useCallback(
     (eventTarget: EventTarget | null) => {
-      if (disabled || !collapseSelectedPreference) return;
+      if (disabled) return;
 
       const elementTarget = eventTarget as HTMLElement | null;
       if (elementTarget?.closest('[data-feathery-multi-value-remove="true"]')) {
@@ -101,7 +99,7 @@ export default function useCollapsedSelectionManager({
       const instance = (selectRef.current as unknown as SelectControls) || null;
       instance?.focus?.();
     },
-    [collapseSelectedPreference, disabled]
+    [disabled]
   );
 
   const handleWrapperMouseDown = useCallback(
@@ -118,21 +116,14 @@ export default function useCollapsedSelectionManager({
   );
 
   const handleMenuOpen = useCallback(() => {
-    if (!collapseSelectedPreference) return;
     setIsMenuExpanded(true);
-  }, [collapseSelectedPreference]);
+  }, []);
 
   const handleMenuClose = useCallback(() => {
-    if (!collapseSelectedPreference) return;
     setIsMenuExpanded(false);
-  }, [collapseSelectedPreference]);
+  }, []);
 
   useEffect(() => {
-    if (!collapseSelectedPreference) {
-      setIsMenuExpanded(false);
-      return;
-    }
-
     // Close the menu on outside interactions; use capture so react-select's
     // internal handlers can't stop propagation first.
     const handlePointerDown = (event: PointerEvent) => {
@@ -147,7 +138,7 @@ export default function useCollapsedSelectionManager({
     return () => {
       doc.removeEventListener('pointerdown', handlePointerDown, true);
     };
-  }, [closeMenu, collapseSelectedPreference, containerRef]);
+  }, [closeMenu, containerRef]);
 
   return useMemo(
     () => ({

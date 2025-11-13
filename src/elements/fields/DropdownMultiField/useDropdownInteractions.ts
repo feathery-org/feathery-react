@@ -35,8 +35,6 @@ interface UseDropdownInteractionsParams {
   disabled: boolean;
   isMenuOpen: boolean;
   setIsMenuOpen: (open: boolean) => void;
-  collapseSelected: boolean;
-  collapseSelectedPreference: boolean;
 
   // Collapse controls from manager
   openCollapseMenu: () => void;
@@ -46,7 +44,7 @@ interface UseDropdownInteractionsParams {
   focusOnTouchStart: (event: React.TouchEvent<HTMLDivElement>) => void;
 
   // Selection data
-  orderedSelectVal: OptionData[];
+  selectVal: OptionData[];
   options: OptionData[];
   isCreatableInputValid?: (inputValue: string) => boolean;
 
@@ -56,7 +54,6 @@ interface UseDropdownInteractionsParams {
 
   // Parent callbacks
   onChange: (selected: any, actionMeta: any) => void;
-  reorderSelection: (selected: any, actionMeta: any) => any;
 }
 
 interface UseDropdownInteractionsReturn {
@@ -96,20 +93,17 @@ export default function useDropdownInteractions({
   disabled,
   isMenuOpen,
   setIsMenuOpen,
-  collapseSelected,
-  collapseSelectedPreference,
   openCollapseMenu,
   closeCollapseMenu,
   forceCloseCollapseMenu,
   focusOnMouseDown,
   focusOnTouchStart,
-  orderedSelectVal,
+  selectVal,
   options,
   isCreatableInputValid,
   create,
   disableAllOptions,
-  onChange,
-  reorderSelection
+  onChange
 }: UseDropdownInteractionsParams): UseDropdownInteractionsReturn {
   // Handle React Select quirks where touch-initiated opens can trigger
   // immediate closes if we don't suppress the close event for a short time.
@@ -163,10 +157,10 @@ export default function useDropdownInteractions({
     closeCollapseMenu();
   }, [closeCollapseMenu, setIsMenuOpen]);
 
-  // Tries to open the menu when in collapsed mode. Returns true if menu was opened.
+  // Tries to open the menu when collapsed. Returns true if menu was opened.
   const tryOpenCollapsedMenu = useCallback(
     (eventTarget: EventTarget | null) => {
-      if (!collapseSelected || isMenuOpen) return false;
+      if (isMenuOpen) return false;
 
       const elementTarget = eventTarget as HTMLElement | null;
       if (elementTarget?.closest('[data-feathery-multi-value-remove="true"]')) {
@@ -176,7 +170,7 @@ export default function useDropdownInteractions({
       openMenu();
       return true;
     },
-    [collapseSelected, isMenuOpen, openMenu]
+    [isMenuOpen, openMenu]
   );
 
   const handleWrapperMouseDown = useCallback(
@@ -243,23 +237,18 @@ export default function useDropdownInteractions({
         actionMeta.action === 'select-option' ||
         actionMeta.action === 'create-option';
 
-      if (collapseSelectedPreference) {
-        if (!skipBlurAction || !isMenuOpen) {
-          closeMenuImmediately(skipBlurAction ? { skipBlur: true } : undefined);
-        }
+      if (!skipBlurAction || !isMenuOpen) {
+        closeMenuImmediately(skipBlurAction ? { skipBlur: true } : undefined);
       }
 
-      const nextSelected = reorderSelection(selected, actionMeta);
-      onChange(nextSelected, actionMeta);
+      onChange(selected, actionMeta);
       selectRef.current?.focus?.();
     },
     [
       closeMenuImmediately,
-      collapseSelectedPreference,
       extendCloseSuppression,
       isMenuOpen,
       onChange,
-      reorderSelection,
       selectRef
     ]
   );
@@ -291,7 +280,7 @@ export default function useDropdownInteractions({
       );
     const matchesSelectedValue =
       hasInput &&
-      orderedSelectVal.some(
+      selectVal.some(
         (option) => option?.value?.toLowerCase() === normalizedInput
       );
     const canCreateOption =
@@ -303,7 +292,7 @@ export default function useDropdownInteractions({
     const normalizedFocusedValue = focusedValue?.toLowerCase();
     const isFocusedSelected = Boolean(
       normalizedFocusedValue &&
-        orderedSelectVal.some(
+        selectVal.some(
           (option) => option?.value?.toLowerCase() === normalizedFocusedValue
         )
     );
@@ -341,7 +330,7 @@ export default function useDropdownInteractions({
     isMenuOpen,
     isCreatableInputValid,
     options,
-    orderedSelectVal,
+    selectVal,
     selectRef
   ]);
 
@@ -378,10 +367,20 @@ export default function useDropdownInteractions({
   // Capture the keydown before it reaches the native form submit handler. This
   // keeps Enter from bubbling out when React Select bails early (e.g., no
   // creatable input or all options selected).
+  // Also clears close suppression for Escape to allow immediate user-initiated closes.
   const handleKeyDownCapture = useCallback(
     (event: React.KeyboardEvent) => {
-      if (event.key !== 'Enter' || disabled) return;
-      processEnterKey(event);
+      if (disabled) return;
+
+      // Clear suppression for Escape so React Select can close immediately
+      if (event.key === 'Escape') {
+        suppressCloseUntilRef.current = 0;
+        return;
+      }
+
+      if (event.key === 'Enter') {
+        processEnterKey(event);
+      }
     },
     [disabled, processEnterKey]
   );

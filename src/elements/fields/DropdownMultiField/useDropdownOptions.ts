@@ -5,7 +5,6 @@ import {
   warnInvalidData
 } from '../../utils/fieldNormalization';
 import { buildDropdownOptions } from './optionNormalization';
-import useSelectionOrdering from './useSelectionOrdering';
 
 type OptionsSourcePlan = {
   source: DropdownOptionsInput | Options;
@@ -18,20 +17,17 @@ interface UseDropdownOptionsParams {
   fieldVal: any[];
   fieldKey: string;
   servar: any;
-  properties: any;
   dynamicOptions: any[];
   shouldSalesforceSync: boolean;
   repeatIndex: number | null;
   entityLabel: string;
-  collapseSelectedPreference: boolean;
 }
 
 interface UseDropdownOptionsReturn {
   options: OptionData[];
-  orderedSelectVal: OptionData[];
+  selectVal: OptionData[];
   labelMap: Record<string, string>;
   tooltipMap: Record<string, string | undefined>;
-  reorderSelection: (selected: any, actionMeta: any) => any;
 }
 
 /**
@@ -39,19 +35,15 @@ interface UseDropdownOptionsReturn {
  * - Normalizes field values
  * - Determines option source (Salesforce, repeat, or default)
  * - Builds options with labels and tooltips
- * - Manages selection ordering
- * - Supplies selection ordering helpers for interaction logic
  */
 export default function useDropdownOptions({
   fieldVal,
   fieldKey,
   servar,
-  properties,
   dynamicOptions,
   shouldSalesforceSync,
   repeatIndex,
-  entityLabel,
-  collapseSelectedPreference
+  entityLabel
 }: UseDropdownOptionsParams): UseDropdownOptionsReturn {
   const warningState = useMemo(() => new Set<string>(), [fieldKey]);
 
@@ -189,21 +181,10 @@ export default function useDropdownOptions({
       }))
     : [];
 
-  // Apply selection ordering if enabled
-  const selectionOrderingPreference = collapseSelectedPreference
-    ? !!properties.preserveSelectionOrder
-    : false;
-  const { orderedValues: orderedSelectVal, reorderSelection } =
-    useSelectionOrdering({
-      values: selectVal,
-      enabled: selectionOrderingPreference
-    });
-
   return {
     options,
-    orderedSelectVal,
+    selectVal,
     labelMap,
-    tooltipMap,
-    reorderSelection
+    tooltipMap
   };
 }

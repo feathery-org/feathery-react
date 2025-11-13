@@ -17,8 +17,7 @@ import {
   openDropdownMenu,
   selectOptionByText,
   removeSelectedValue,
-  getRemoveButton,
-  createSelectionOrderingHarness
+  getRemoveButton
 } from './test-utils';
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -634,16 +633,12 @@ describe('DropdownMultiField - Base Functionality', () => {
   });
 
   describe('Pointer Interactions', () => {
-    it('opens the menu on mouse click when collapsed', async () => {
+    it('opens the menu on mouse click', async () => {
       const user = userEvent.setup();
       const element = createDropdownMultiElement(
         'dropdown_multi',
         createOptionsMetadata(['Alpha', 'Beta', 'Gamma'])
       );
-      element.properties = {
-        ...element.properties,
-        collapseSelectedOptions: true
-      };
       const props = createDropdownMultiProps(element, {
         fieldVal: ['Alpha']
       });
@@ -657,15 +652,11 @@ describe('DropdownMultiField - Base Functionality', () => {
       );
     });
 
-    it('opens the menu on touch start when collapsed', async () => {
+    it('opens the menu on touch start', async () => {
       const element = createDropdownMultiElement(
         'dropdown_multi',
         createOptionsMetadata(['Alpha', 'Beta', 'Gamma'])
       );
-      element.properties = {
-        ...element.properties,
-        collapseSelectedOptions: true
-      };
       const props = createDropdownMultiProps(element, {
         fieldVal: ['Alpha']
       });
@@ -686,10 +677,6 @@ describe('DropdownMultiField - Base Functionality', () => {
         'dropdown_multi',
         createOptionsMetadata(['Alpha', 'Beta', 'Gamma'])
       );
-      element.properties = {
-        ...element.properties,
-        collapseSelectedOptions: true
-      };
       const props = createDropdownMultiProps(element, {
         fieldVal: ['Alpha']
       });
@@ -732,59 +719,6 @@ describe('DropdownMultiField - Base Functionality', () => {
 
       await waitFor(() => expect(getMockFieldValue()).toEqual(['Beta']));
       expect(getOptionElements()).toHaveLength(0);
-    });
-  });
-
-  describe('Selection Ordering Preference', () => {
-    it('emits selections in pick order when preserveSelectionOrder is enabled', async () => {
-      const user = userEvent.setup();
-      const OrderingHarness = createSelectionOrderingHarness(
-        createDropdownMultiElement(
-          'dropdown_multi',
-          createOptionsMetadata(['Alpha', 'Beta', 'Gamma', 'Delta'])
-        )
-      );
-
-      render(<OrderingHarness />);
-
-      await openDropdownMenu(user);
-      await selectOptionByText(user, 'Alpha');
-
-      await openDropdownMenu(user);
-      await selectOptionByText(user, 'Beta');
-
-      await openDropdownMenu(user);
-      await selectOptionByText(user, 'Gamma');
-
-      // Latest pick surfaces first while earlier selections retain their relative order.
-      expect(getMockFieldValue()).toEqual(['Beta', 'Alpha', 'Gamma']);
-    });
-
-    it('removes deselected values from the preserved order', async () => {
-      const user = userEvent.setup();
-      const OrderingHarness = createSelectionOrderingHarness(
-        createDropdownMultiElement(
-          'dropdown_multi',
-          createOptionsMetadata(['Alpha', 'Beta', 'Gamma'])
-        )
-      );
-
-      render(<OrderingHarness />);
-
-      await openDropdownMenu(user);
-      await selectOptionByText(user, 'Alpha');
-
-      await openDropdownMenu(user);
-      await selectOptionByText(user, 'Beta');
-
-      await removeSelectedValue(user, 'Alpha');
-
-      expect(getMockFieldValue()).toEqual(['Beta']);
-
-      await openDropdownMenu(user);
-      await selectOptionByText(user, 'Alpha');
-
-      expect(getMockFieldValue()).toEqual(['Beta', 'Alpha']);
     });
   });
 
