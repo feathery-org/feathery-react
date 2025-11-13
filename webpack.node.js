@@ -2,14 +2,24 @@ const path = require('path');
 const nodeExternals = require('webpack-node-externals');
 const config = require('./webpack.config');
 
-config.externals = [
-  'react',
-  nodeExternals({ allowlist: ['react-imask', 'imask'] })
-];
-config.output.path = path.resolve(__dirname, 'dist');
-config.performance = {
-  maxEntrypointSize: 512000,
-  maxAssetSize: 512000
-};
+module.exports = (env) => {
+  if (env.analyze) {
+    const BundleAnalyzerPlugin =
+      require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
+    config.plugins.push(
+      new BundleAnalyzerPlugin({ defaultSizes: 'stat', openAnalyzer: true })
+    );
+  }
 
-module.exports = config;
+  config.externals = [
+    'react',
+    nodeExternals({ allowlist: ['react-imask', 'imask'] })
+  ];
+
+  config.output.path = path.resolve(__dirname, 'dist');
+  config.performance = {
+    maxEntrypointSize: 1024000,
+    maxAssetSize: 1024000
+  };
+  return config;
+};

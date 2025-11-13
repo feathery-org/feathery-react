@@ -1,14 +1,14 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, Suspense } from 'react';
 import { InView } from 'react-intersection-observer';
 
 import Fields from './fields';
+import ResponsiveStyles, { ERROR_COLOR } from './styles';
+import ImageElement from './basic/ImageElement';
+import VideoElement from './basic/VideoElement';
 import TextElement from './basic/TextElement';
 import ButtonElement from './basic/ButtonElement';
-import ImageElement from './basic/ImageElement';
 import ProgressBarElement from './basic/ProgressBarElement';
-import VideoElement from './basic/VideoElement';
-
-import ResponsiveStyles, { ERROR_COLOR } from './styles';
+import FieldSkeleton from './components/skeletons/FieldSkeleton';
 
 const Basic = {
   ImageElement,
@@ -41,11 +41,20 @@ Object.entries(Elements).map(([key, Element]) => {
       }, [element, componentOnly, formSettings]);
 
       const featheryElement = (
-        <Element
-          element={element}
-          responsiveStyles={responsiveStyles}
-          {...props}
-        />
+        <Suspense
+          fallback={
+            <FieldSkeleton
+              element={element}
+              responsiveStyles={responsiveStyles}
+            />
+          }
+        >
+          <Element
+            element={element}
+            responsiveStyles={responsiveStyles}
+            {...props}
+          />
+        </Suspense>
       );
 
       const e = onView ? (
