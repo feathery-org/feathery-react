@@ -324,6 +324,8 @@ export async function updateCustomHead(headCode: string) {
       Array.from(customScript.attributes).forEach((attr) => {
         el.setAttribute(attr.name, attr.value);
       });
+      // Copy inline script content
+      el.textContent = customScript.textContent;
       if (el.src) {
         scriptWait.push(
           new Promise((resolve) => {
