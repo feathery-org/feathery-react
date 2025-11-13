@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { featheryWindow, runningInClient } from './browser';
-import { initInfo } from './init';
+import { fileRetryStatus, initInfo } from './init';
 import type FeatheryClient from './featheryClient';
 import { checkResponseSuccess } from './featheryClient/utils';
 import { isInteractionDetected } from './interactionState';
@@ -33,6 +33,7 @@ interface SerializedRequestBody {
 
 interface RequestMetadata {
   fieldKey?: string;
+  preserveStepRequests?: boolean;
 }
 
 interface SerializedRequest {
@@ -48,6 +49,7 @@ interface SerializedRequest {
   keepalive?: boolean;
   key?: IDBValidKey;
   metadata?: RequestMetadata;
+  retryAttempts?: number;
 }
 
 const beforeUnloadEventHandler = (event: any) => {
@@ -74,6 +76,14 @@ export const untrackUnload = (force = false) => {
       'beforeunload',
       beforeUnloadEventHandler
     );
+};
+
+export const markFileUploadRetrySuccess = (fieldKey?: string) => {
+  if (fieldKey) fileRetryStatus[fieldKey] = true;
+};
+
+export const markFileUploadRetryFailure = (fieldKey?: string) => {
+  if (fieldKey) fileRetryStatus[fieldKey] = false;
 };
 
 export function useOfflineRequestHandler(client: FeatheryClient) {
@@ -241,7 +251,7 @@ export class OfflineRequestHandler {
           // Clear any stale requests for this step before attempting
           // Step submissions create multiple parallel requests (JSON, custom fields, files)
           // all with the same stepKey. Clear all of them to prevent replay loops.
-          if (stepKey !== undefined) {
+          if (stepKey !== undefined && !metadata?.preserveStepRequests) {
             await this.clearFailedRequestsByStep(stepKey);
           }
 
@@ -257,6 +267,7 @@ export class OfflineRequestHandler {
         untrackUnload();
         return response;
       } catch (e) {
+        const errorToThrow = e;
         // TypeError indicates network connectivity issues
         // This catches scenarios like timeouts, resolution failures, etc.
         if (e instanceof TypeError) {
@@ -268,7 +279,7 @@ export class OfflineRequestHandler {
           // 3. The replayRequests() recursion check at the end of replay cycle
         }
         untrackUnload();
-        throw e; // Re-throw error so caller knows submission failed
+        throw errorToThrow; // Re-throw error so caller knows submission failed
       }
     } else {
       await this.saveRequest(url, options, type, stepKey, metadata);
@@ -320,7 +331,8 @@ export class OfflineRequestHandler {
         type,
         stepKey,
         keepalive,
-        metadata
+        metadata,
+        retryAttempts: 0
       };
 
       const dbTransaction = await this.getDbTransaction('readwrite');
@@ -435,9 +447,9 @@ export class OfflineRequestHandler {
     } finally {
       this.isReplayingRequests.set(this.formKey, false);
 
-      // Check if there are any new requests in IndexedDB and trigger replayRequests again
-      const requestsInDB = await this.dbHasRequest();
-      if (requestsInDB) await this.replayRequests();
+      // Check if there are any new requests in IndexedDB that are still retryable and trigger replayRequests again
+      const retryable = await this.hasReplayableRequest();
+      if (retryable) await this.replayRequests();
 
       untrackUnload();
       // Release all waiting promises that were blocked on onlineAndReplayed()
@@ -463,29 +475,34 @@ export class OfflineRequestHandler {
         };
 
         const attemptRequest = async () => {
-          let attempts = 0;
+          let attempts = request.retryAttempts ?? 0;
+
+          // Ensure exhausted retries are marked as failed before being skipped
+          if (attempts >= this.maxRetryAttempts) {
+            markFileUploadRetryFailure(request.metadata?.fieldKey);
+            return;
+          }
+
           while (attempts < this.maxRetryAttempts) {
             try {
               const response = await fetch(url, fetchOptions);
               await checkResponseSuccess(response);
+              markFileUploadRetrySuccess(request.metadata?.fieldKey);
               await this.removeRequest(key);
-              break;
+              return;
             } catch (error: any) {
               attempts++;
+              await this.updateRetryAttempts(key, attempts);
+
               if (navigator.onLine) {
                 const nextDelay = this.getExponentialDelay(attempts);
-                // do not wait for delay if already tried max attempts
                 if (attempts >= this.maxRetryAttempts) {
-                  // Remove failed request from IndexedDB to prevent infinite retry loop
-                  await this.removeRequest(key);
-                  // Don't show alert for file submissions - they show button errors instead
-                  // Only show alert for critical network failures (like losing connection)
-                  const isFileSubmission = url.includes('/submit/file/');
-                  if (this.errorCallback && !isFileSubmission) {
+                  if (this.errorCallback) {
                     this.errorCallback(
                       `Failed to submit after ${this.maxRetryAttempts} attempts. Please check your connection and try again.`
                     );
                   }
+                  markFileUploadRetryFailure(request.metadata?.fieldKey);
                   return;
                 }
                 await this.delay(nextDelay);
@@ -586,6 +603,14 @@ export class OfflineRequestHandler {
     );
   }
 
+  public async clearFailedFileUploadRequests(): Promise<void> {
+    return this.deleteRecordsWhere(
+      (record) =>
+        record.formKey === this.formKey &&
+        record.url.includes('/panel/step/submit/file/')
+    );
+  }
+
   private async deleteRecordsWhere(
     predicate: (record: SerializedRequest) => boolean
   ): Promise<void> {
@@ -617,6 +642,121 @@ export class OfflineRequestHandler {
         resolve(); // Don't block retry on cleanup failure
       };
     });
+  }
+
+  // Atomically fetch, update, and save a single request record
+  private async updateRequest(
+    key: IDBValidKey | undefined,
+    updater: (record: SerializedRequest) => void
+  ): Promise<void> {
+    if (!key) return;
+    const dbTransaction = await this.getDbTransaction('readwrite');
+    if (!dbTransaction) return;
+
+    const { store } = dbTransaction;
+    const getReq = store.get(key);
+
+    await new Promise<void>((resolve) => {
+      getReq.onsuccess = () => {
+        const record = getReq.result as SerializedRequest | undefined;
+        if (record) {
+          updater(record);
+          store.put(record, key);
+        }
+        resolve();
+      };
+      getReq.onerror = () => resolve();
+    });
+  }
+
+  // Batch update: find matching records and transform them in-place
+  private async updateRecordsWhere(
+    predicate: (record: SerializedRequest) => boolean,
+    updater: (record: SerializedRequest) => SerializedRequest
+  ): Promise<void> {
+    if (!this.indexedDBSupported) return;
+
+    const dbTransaction = await this.getDbTransaction('readwrite');
+    if (!dbTransaction) return;
+
+    const { store } = dbTransaction;
+    const request = store.openCursor();
+
+    await new Promise<void>((resolve) => {
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
+          .result;
+        if (cursor) {
+          const record = cursor.value as SerializedRequest;
+          if (predicate(record)) {
+            const updated = updater({ ...record });
+            cursor.update(updated);
+          }
+          cursor.continue();
+        } else {
+          resolve();
+        }
+      };
+
+      request.onerror = () => {
+        console.warn('Error during IndexedDB cursor update operation');
+        resolve();
+      };
+    });
+  }
+
+  private async updateRetryAttempts(
+    key: IDBValidKey | undefined,
+    attempts: number
+  ): Promise<void> {
+    await this.updateRequest(key, (record) => {
+      record.retryAttempts = attempts;
+    });
+  }
+
+  // Check if any queued requests can still be retried (haven't exceeded max attempts)
+  private async hasReplayableRequest(): Promise<boolean> {
+    const dbTransaction = await this.getDbTransaction('readonly');
+    if (!dbTransaction) return false;
+
+    const { store } = dbTransaction;
+
+    return await new Promise<boolean>((resolve) => {
+      store.openCursor().onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
+          .result;
+        if (cursor) {
+          const record = cursor.value as SerializedRequest;
+          if (record.formKey === this.formKey) {
+            const attempts = record.retryAttempts ?? 0;
+            if (attempts < this.maxRetryAttempts) {
+              resolve(true);
+              return;
+            }
+          }
+          cursor.continue();
+        } else {
+          resolve(false);
+        }
+      };
+    });
+  }
+
+  // Reset retry counter for queued requests before new submission attempt.
+  // Allows request to use full retry budget (up to MAX_RETRY_ATTEMPTS).
+  // Called before each new file upload to prevent exhausted retries from blocking progress.
+  public async resetRetryAttemptsByUrl(
+    url: string,
+    options?: { fieldKey?: string }
+  ): Promise<void> {
+    await this.updateRecordsWhere(
+      (record) => {
+        if (record.url !== url || record.formKey !== this.formKey) return false;
+        if (!options?.fieldKey) return true;
+        return this.recordMatchesFieldKey(record, options.fieldKey);
+      },
+      (record) => ({ ...record, retryAttempts: 0 })
+    );
   }
 
   /**

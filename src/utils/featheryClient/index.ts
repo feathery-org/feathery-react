@@ -256,7 +256,7 @@ export default class FeatheryClient extends IntegrationClient {
 
       return successfulFiles;
     } else {
-      return resolveFile(fileValue, null, { rethrowOnFailure: true });
+      return await resolveFile(fileValue, null, { rethrowOnFailure: true });
     }
   }
 
@@ -314,10 +314,8 @@ export default class FeatheryClient extends IntegrationClient {
     };
 
     try {
-      // Clear any previous failed attempts from IndexedDB before retrying
-      // Only remove entries for this specific servar to avoid wiping other
-      // queued file uploads that share the same endpoint.
-      await this.offlineRequestHandler.clearFailedRequestByUrl(url, {
+      // Reset retry attempts for this field before retrying so new submissions get the full budget
+      await this.offlineRequestHandler.resetRetryAttemptsByUrl(url, {
         fieldKey: servar.key
       });
 
@@ -327,10 +325,16 @@ export default class FeatheryClient extends IntegrationClient {
         options,
         'submit',
         stepKey,
-        { fieldKey: servar.key }
+        {
+          fieldKey: servar.key,
+          preserveStepRequests: true
+        }
       );
       // Mark as successful upload - will block duplicate attempts
       fileRetryStatus[servar.key] = true;
+      await this.offlineRequestHandler.clearFailedRequestByUrl(url, {
+        fieldKey: servar.key
+      });
       return result;
     } catch (error) {
       // Mark as failed - allows retry on next submission
@@ -846,16 +850,22 @@ export default class FeatheryClient extends IntegrationClient {
         // Ensure events complete before user exits page. Submit and load event of
         // next step must happen after the previous step is done submitting
         () =>
-          this.submitQueue.then(() =>
-            this._fetch(url, options, true, true).catch((e) => {
-              if (e instanceof TypeError && navigator.onLine)
-                // Wait 5 seconds since event may have actually been registered
-                // and just needs to be processed. If online, means it's not an
-                // offline error.
-                return new Promise((resolve) => setTimeout(resolve, 5000));
-              throw e;
+          this.submitQueue
+            // Swallow TypeErrors (network failures) so _fetch proceeds regardless
+            .catch((error) => {
+              if (error instanceof TypeError) return;
+              throw error;
             })
-          ),
+            .then(() =>
+              this._fetch(url, options, true, true).catch((e) => {
+                if (e instanceof TypeError && navigator.onLine)
+                  // Wait 5 seconds since event may have actually been registered
+                  // and just needs to be processed. If online, means it's not an
+                  // offline error.
+                  return new Promise((resolve) => setTimeout(resolve, 5000));
+                throw e;
+              })
+            ),
         url,
         options,
         'registerEvent',
@@ -1141,5 +1151,21 @@ export default class FeatheryClient extends IntegrationClient {
         } else throw Error(parseError(await response.json()));
       }
     });
+  }
+
+  async resetPendingFileUploads(fieldKeys: string[]) {
+    if (!fieldKeys.length) return;
+    await initFormsPromise;
+    const { userId } = initInfo();
+    if (!userId) return;
+    const url = `${API_URL}panel/step/submit/file/${userId}/`;
+    await Promise.all(
+      fieldKeys.map((key) =>
+        this.offlineRequestHandler.resetRetryAttemptsByUrl(url, {
+          fieldKey: key
+        })
+      )
+    );
+    this.offlineRequestHandler.replayRequests().catch(() => {});
   }
 }

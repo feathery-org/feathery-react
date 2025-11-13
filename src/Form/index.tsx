@@ -62,11 +62,16 @@ import {
   getPositionKey,
   getVisiblePositions
 } from '../utils/hideAndRepeats';
-import { validateElements, validators } from '../utils/validation';
+import {
+  isFieldValueEmpty,
+  validateElements,
+  validators
+} from '../utils/validation';
 import {
   defaultClient,
   FieldValues,
   fieldValues,
+  fileRetryStatus,
   initState,
   updateUserId
 } from '../utils/init';
@@ -363,6 +368,54 @@ function Form({
   >('');
   const formLoadRan = useRef(false);
 
+  // Lookup utility to find a servar (server field definition) by its key.
+  // Needed because servars are nested within steps and may be across multiple steps,
+  // so we need a way to quickly fetch metadata about a field when tracking retry status.
+  const getServarByFieldKey = (fieldKey: string) => {
+    for (const step of Object.values(steps)) {
+      if (!step?.servar_fields) continue;
+      const match = step.servar_fields.find(
+        ({ servar }: any) => servar.key === fieldKey
+      );
+      if (match) return match.servar;
+    }
+    return null;
+  };
+
+  // Collects file/signature fields that are still waiting to upload.
+  // Status is tracked in fileRetryStatus: false means "in progress/failed", true/null means "completed".
+  // This is used to block form completion/submission until all file uploads are confirmed successful,
+  // preventing data loss when users have spotty connections or large files.
+  const getPendingFileUploadKeys = () => {
+    return Object.entries(fileRetryStatus).reduce<string[]>(
+      (pending, [fieldKey, status]) => {
+        if (status !== false) return pending;
+        const servar = getServarByFieldKey(fieldKey);
+        if (!servar) return pending;
+        if (servar.type !== 'file_upload' && servar.type !== 'signature')
+          return pending;
+        if (isFieldValueEmpty(fieldValues[fieldKey], servar)) return pending;
+        pending.push(fieldKey);
+        return pending;
+      },
+      []
+    );
+  };
+
+  // Enforces that all file uploads must complete before form submission.
+  // Throws if any file uploads are still in progress, preventing incomplete submissions
+  // that could cause data integrity issues or orphaned files in the backend.
+  const requireSuccessfulFileUploads = () => {
+    const pendingKeys = getPendingFileUploadKeys();
+    if (!pendingKeys.length) return;
+    const plural = pendingKeys.length > 1;
+    throw new Error(
+      plural
+        ? 'Some file uploads are still pending. Please check your connection and try again.'
+        : 'A file upload is still pending. Please check your connection and try again.'
+    );
+  };
+
   const [viewport, setViewport] = useState(() =>
     getViewport(formSettings.mobileBreakpoint)
   );
@@ -468,6 +521,13 @@ function Form({
       initState.remountCallbacks[_internalId]();
     }
   }, [language]);
+
+  useEffect(() => {
+    if (!clientRef.current) return;
+    clientRef.current.offlineRequestHandler
+      .clearFailedFileUploadRequests()
+      .catch(() => {});
+  }, []);
 
   // Logic to run every time step changes
   useEffect(() => {
@@ -616,6 +676,10 @@ function Form({
     };
   }, [debouncedRerender]);
 
+  // Central place to update field values, with smart rerenders and error management.
+  // Normalizes null values in arrays to empty strings (prevents null from appearing in repeated fields).
+  // Intelligently rerenders based on what changed: immediate render on empty state transitions,
+  // debounced render for hideIf dependencies (perf), and validation if auto-validate is enabled.
   const updateFieldValues = (
     newFieldValues: any,
     { rerender = true, clearErrors = true, triggerErrors = true } = {}
@@ -631,6 +695,8 @@ function Form({
 
     const fields = internalState[_internalId]?.fields;
 
+    // Normalize null to empty string in repeated field arrays.
+    // This ensures repeated fields don't display "null" values when items are cleared.
     const transformedFieldValues = Object.entries(newFieldValues).reduce(
       (acc, [key, value]) => {
         const field = fields?.[key];
@@ -715,6 +781,11 @@ function Form({
     await runUserLogic('form_complete');
   };
 
+  // Executes user callbacks and backend logic rules for a given event (change, load, submit, etc).
+  // Supports both synchronous callbacks and server/client-side logic rules.
+  // toAwait parameter allows delaying logic execution until async work completes (e.g., file uploads).
+  // 'beforeSubmit' flag prevents double-execution on submit (initial validation vs final submission).
+  // Returns true if any logic ran, false if all skipped (useful for conditional behavior).
   const runUserLogic = async (
     event: string,
     getProps: () => Record<string, any> = () => ({}),
@@ -730,23 +801,22 @@ function Form({
 
     let logicRan = false;
     if (typeof eventCallbackMap[event] === 'function') {
-      // Don't run submit function twice
+      // Prevent double-execution of submit callback: only run on first pass (beforeSubmit)
+      // or if explicitly requested. This allows logic to run twice if needed (before/after submit).
       // @ts-expect-error
       if (event !== 'submit' || props.beforeSubmit) {
         logicRan = true;
         await eventCallbackMap[event](props);
       }
     }
-    // filter the logicRules that have trigger_event matching the trigger event (type_)
+    // Execute backend logic rules that target this event, in sequence.
+    // All invalid/disabled rules filtered by BE, so we just execute what's here.
     if (logicRules) {
       const logicRulesForEvent = logicRules.filter(
         (logicRule: any) => logicRule.trigger_event === event
       );
       const currentStepId = (internalState[_internalId]?.currentStep ?? {}).id;
-      // Run the logic rules in sequence!
       for (const logicRule of logicRulesForEvent) {
-        // all disabled, invalid or empty rules are filtered out by the BE
-
         if (canRunAction(logicRule, currentStepId, props, containerId)) {
           logicRan = true;
 
@@ -1036,11 +1106,13 @@ function Form({
     // because it triggers a new render, before this fn finishes execution,
     // which can cause onView to fire before the callbackRef is set
     setActiveStep(newStep);
-    client.registerEvent({
-      step_key: newStep.key,
-      event: 'load',
-      previous_step_key: oldKey
-    });
+    client
+      .registerEvent({
+        step_key: newStep.key,
+        event: 'load',
+        previous_step_key: oldKey
+      })
+      .catch(() => {});
   };
 
   const visiblePositions = useMemo(() => {
@@ -1048,7 +1120,10 @@ function Form({
     const visiblePositions = getVisiblePositions(activeStep, _internalId);
 
     if (formSettings.clearHideIfFields) {
-      // Automatically clear form fields that are hidden
+      // Auto-reset hidden fields to defaults when they become hidden via hideIf rules.
+      // This prevents stale data in fields that aren't visible, which could cause
+      // validation errors or unexpected submissions when the field is shown again.
+      // Only resets if value differs from default, minimizes unnecessary updates.
       const newFieldVals: Record<string, any> = {};
       activeStep.servar_fields.forEach((sf: any) => {
         const key = getPositionKey(sf);
@@ -1235,7 +1310,10 @@ function Form({
     }
   }, [stepKey, render]);
 
-  // Note: If index is provided, handleChange assumes the field is a repeated field
+  // Updates field value and handles side effects like auto-adding repeated rows.
+  // When repeat_trigger is 'set_value', automatically adds a new row when user fills
+  // the last field in a repeated section (provides intuitive add-more UX).
+  // If index is provided, field is treated as a repeated field with array-based values.
   const changeValue = (
     value: any,
     field: any,
@@ -1252,11 +1330,12 @@ function Form({
       const defaultValue = getDefaultFieldValue(field);
       const { value: previousValue, valueList } = getFieldValue(field);
 
-      // Add a repeated row if the value went from unset to set
+      // Auto-add row when user fills the last field from empty state.
+      // This creates a seamless experience where a new blank row appears automatically.
       const isPreviousValueDefaultArray =
         isEmptyArray(previousValue) && isEmptyArray(defaultValue);
 
-      // And this is the last field in a set of repeated fields
+      // Check if this is the last field in a repeated group
       const isLastRepeatedField = valueList && index === valueList.length - 1;
 
       repeatContainer = getRepeatedContainer(activeStep, field);
@@ -1498,6 +1577,10 @@ function Form({
     return true;
   }
 
+  // Handles stepping through the form, with special logic for form completion.
+  // If redirectKey is empty, the form is complete and we finalize submission.
+  // If redirectKey exists, navigate to next step (or handle terminal step completion).
+  // Tracks whether navigation was explicit (user-initiated) vs implicit (logic-driven).
   async function goToNewStep({
     redirectKey,
     elementType,
@@ -1524,6 +1607,8 @@ function Form({
           }
         }
 
+        requireSuccessfulFileUploads();
+
         // Block form completion if user is actively offline
         if (!navigator.onLine) {
           throw new Error(
@@ -1546,16 +1631,7 @@ function Form({
         });
       }
     } else {
-      // Await submitPromise BEFORE navigation to ensure file uploads complete
-      // This prevents navigation when file uploads fail
-      if (submitPromise) {
-        try {
-          await submitPromise;
-        } catch (error) {
-          // The error will be caught by buttonOnClick and displayed to the user
-          throw new Error(getSubmissionErrorMessage(error));
-        }
-      }
+      if (submitPromise) submitPromise.catch(() => {}); // Avoid unhandled rejections when allowing navigation
 
       // Note: We don't block navigation when offline here to allow users to fill
       // out multi-step forms offline. API calls and custom logic will fail naturally
@@ -1569,6 +1645,7 @@ function Form({
           steps[stepKey].id
         );
         if (complete) {
+          requireSuccessfulFileUploads();
           eventData.completed = true;
           // Form completion must run after since logic may depend on
           // presence of fully submitted data
@@ -1727,6 +1804,11 @@ function Form({
     }
   };
 
+  // Orchestrates all actions triggered by a button/element click.
+  // Runs validations and submission first (if submit=true), then executes click actions in order.
+  // Prevents race conditions by locking element during execution and tracking global button state.
+  // Some actions (Persona, Plaid, etc) require special handling: they pause execution and
+  // provide a callback for continuing to the next action once they complete.
   const runElementActions = async ({
     actions,
     element,
@@ -1747,7 +1829,7 @@ function Form({
     textSpanEnd?: number | undefined;
   }) => {
     const id = element.id ?? '';
-    // Prevent same element from being clicked multiple times while still running
+    // Prevent rapid re-clicks on the same element during async operations (file uploads, API calls)
     if (id && elementClicks[id]) return;
     elementClicks[id] = true;
 
@@ -1787,6 +1869,11 @@ function Form({
         clearButtonActionState();
 
         return;
+      }
+
+      const pendingFileKeys = getPendingFileUploadKeys();
+      if (pendingFileKeys.length) {
+        await client.resetPendingFileUploads(pendingFileKeys);
       }
 
       // Clear any previous button error before re-validation
@@ -1830,11 +1917,16 @@ function Form({
         actions.some((action: any) => action.type === ACTION_NEXT) &&
         getNextStepKey(metadata);
 
-      const submissionResult = await submitStep(
-        metadata,
-        element.repeat || 0,
-        !!hasNext
-      );
+      let submissionResult: [Promise<any>] | undefined;
+      try {
+        submissionResult = await submitStep(
+          metadata,
+          element.repeat || 0,
+          !!hasNext
+        );
+      } catch (error) {
+        submissionResult = [Promise.reject(error)] as [Promise<any>];
+      }
 
       if (!submissionResult) {
         elementClicks[id] = false;
@@ -1852,8 +1944,12 @@ function Form({
         elementClicks[id] = false;
         clearButtonActionState();
         setElementError(submissionErrorMessage);
-        throw error;
+        throw new Error(submissionErrorMessage);
       });
+
+      // Ensure all rejection paths are marked handled so React Dev overlay
+      // doesn't surface "Unhandled Runtime Error" when navigation is allowed
+      submitPromise.catch(() => {});
     }
 
     // Adjust action order to prioritize certain actions and

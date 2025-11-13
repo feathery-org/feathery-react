@@ -11,12 +11,20 @@
  * Focus: Integration behavior rather than internal implementation details
  */
 
-import { OfflineRequestHandler } from '../offlineRequestHandler';
+import {
+  OfflineRequestHandler,
+  markFileUploadRetrySuccess
+} from '../offlineRequestHandler';
+import { fileRetryStatus as mockFileRetryStatus } from '../init';
 
 // Mock init module
-jest.mock('../init', () => ({
-  initInfo: () => ({ sdkKey: 'test-sdk-key' })
-}));
+jest.mock('../init', () => {
+  const fileRetryStatus: Record<string, boolean> = {};
+  return {
+    initInfo: () => ({ sdkKey: 'test-sdk-key' }),
+    fileRetryStatus
+  };
+});
 
 // Mock checkResponseSuccess
 jest.mock('../featheryClient/utils', () => ({
@@ -76,6 +84,9 @@ describe('OfflineRequestHandler - Integration Tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    Object.keys(mockFileRetryStatus).forEach(
+      (key) => delete mockFileRetryStatus[key]
+    );
     errorCallback = jest.fn();
     handler = new OfflineRequestHandler('test-form', errorCallback);
 
@@ -445,6 +456,52 @@ describe('OfflineRequestHandler - Integration Tests', () => {
 
       expect(mockRun2).toHaveBeenCalledTimes(1);
     });
+
+    it('keeps queued request after max retries and marks field as pending', async () => {
+      const handlerWithSpy = new OfflineRequestHandler(
+        'test-form',
+        errorCallback
+      );
+      const removeSpy = jest
+        .spyOn(handlerWithSpy as any, 'removeRequest')
+        .mockResolvedValue(undefined);
+      const originalFetch = (global as any).fetch;
+      (global as any).fetch = jest
+        .fn()
+        .mockRejectedValue(new TypeError('Failed to fetch'));
+
+      (handlerWithSpy as any).maxRetryAttempts = 1;
+      (handlerWithSpy as any).retryDelayMs = 0;
+
+      const request: any = {
+        url: 'https://api.feathery.io/api/panel/step/submit/file',
+        method: 'POST',
+        headers: JSON.stringify({}),
+        body: '',
+        bodyType: 'text',
+        metadata: { fieldKey: 'FileUpload1' },
+        key: 99,
+        retryAttempts: 0
+      };
+
+      jest.useFakeTimers();
+      const replayPromise = (handlerWithSpy as any).replayRequestsInParallel([
+        request
+      ]);
+      while (jest.getTimerCount() > 0) {
+        jest.runOnlyPendingTimers();
+      }
+      await replayPromise;
+      jest.useRealTimers();
+
+      // Request should NOT be removed after max retries - it stays in IndexedDB for retry on next submit
+      expect(removeSpy).not.toHaveBeenCalled();
+      // Field should be marked as pending/failed
+      expect(mockFileRetryStatus.FileUpload1).toBe(false);
+
+      removeSpy.mockRestore();
+      (global as any).fetch = originalFetch;
+    });
   });
 
   describe('IndexedDB support detection', () => {
@@ -610,6 +667,14 @@ describe('OfflineRequestHandler - Integration Tests', () => {
 
       expect(promise1).toBeInstanceOf(Promise);
       expect(promise2).toBeInstanceOf(Promise);
+    });
+  });
+
+  describe('File upload retry status', () => {
+    it('marks pending field as successful when helper invoked', () => {
+      expect(mockFileRetryStatus.FileUpload1).toBeUndefined();
+      markFileUploadRetrySuccess('FileUpload1');
+      expect(mockFileRetryStatus.FileUpload1).toBe(true);
     });
   });
 
