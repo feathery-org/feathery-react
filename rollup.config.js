@@ -6,19 +6,22 @@ import del from 'rollup-plugin-delete';
 export default {
   input: 'src/index.tsx',
   output: [
-    // {
-    //   dir: "dist/cjs",
-    //   format: "cjs",
-    //   exports: "named",
-    //   chunkFileNames: "fthry_[name].[hash].js",
-    // },
     {
       dir: 'dist',
       format: 'esm',
-      chunkFileNames: 'fthry_[name].[hash].js'
+      chunkFileNames: 'fthry_[name].[hash].js',
+      preserveModules: false,
+      preserveModulesRoot: 'src'
     }
   ],
-  external: ['react', 'react-dom'],
+  // Make React external in a more comprehensive way
+  external: [
+    'react',
+    'react-dom',
+    'react/jsx-runtime',
+    /^react\//,
+    /^react-dom\//
+  ],
   plugins: [
     del({ targets: 'dist/*' }),
     resolve({

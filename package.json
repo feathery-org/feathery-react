@@ -5,8 +5,17 @@
   "author": "Boyang Dun",
   "license": "MIT",
   "repository": "https://github.com/feathery-org/feathery-react",
-  "main": "dist/index",
   "jsdelivr": "umd/index.js",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "engines": {
     "node": ">=10"
   },
@@ -132,7 +141,6 @@
     "uuid": "^8.3.2",
     "webfontloader": "^1.6.28"
   },
-  "types": "./dist/index.d.ts",
   "jest": {
     "collectCoverage": false,
     "coverageReporters": [
