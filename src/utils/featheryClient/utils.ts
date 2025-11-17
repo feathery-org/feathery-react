@@ -19,6 +19,7 @@ export async function checkResponseSuccess(response: any) {
     case 409:
       // Note: remove beforeunload listeners if there is a conflict
       untrackUnload(true);
+      window.alert('This form has been updated. Please fill it out again.');
       location.reload();
       return;
     case 500:
