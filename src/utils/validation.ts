@@ -231,6 +231,11 @@ function isFieldValueEmpty(value: any, servar: any) {
 
     // For file uploads and button groups, check if array contains only null/falsy values
     if (['file_upload', 'button_group'].includes(servar.type)) {
+      // In repeatable containers, file upload values are stored as individual Files (not arrays)
+      // because changeValue extracts value[0] for each row. Handle both cases:
+      if (!Array.isArray(value)) {
+        return !value; // Single file or null (from repeatable container)
+      }
       if (value.every((val: any) => !val)) {
         return true;
       }
