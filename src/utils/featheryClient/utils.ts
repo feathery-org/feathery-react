@@ -2,6 +2,8 @@ import { featheryWindow } from '../browser';
 import * as errors from '../error';
 import { untrackUnload } from '../offlineRequestHandler';
 
+let conflictAlertShown = false;
+
 export async function checkResponseSuccess(response: any) {
   let payload;
   switch (response.status) {
@@ -18,6 +20,10 @@ export async function checkResponseSuccess(response: any) {
     case 404:
       throw new errors.FetchError("Can't find object");
     case 409:
+      // prevent multiple 409s from displaying multiple alerts
+      if (conflictAlertShown) return;
+      conflictAlertShown = true;
+
       // Note: remove beforeunload listeners if there is a conflict
       untrackUnload(true);
       featheryWindow().alert(
