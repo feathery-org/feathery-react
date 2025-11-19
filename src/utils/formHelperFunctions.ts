@@ -14,6 +14,7 @@ import { featheryDoc, featheryWindow } from './browser';
 import { DEFAULT_MOBILE_BREAKPOINT } from '../elements/styles';
 import internalState from './internalState';
 import { setSavedStepKey } from './stepHelperFunctions';
+import { createHttpHelpers } from '@feathery/api-helpers';
 
 export function isStoreFieldValueAction(el: any) {
   (el.properties?.actions ?? []).some(
@@ -389,63 +390,19 @@ export function isElementInViewport(el: any) {
 }
 
 export function httpHelpers(client: any, connectorFields: string[] = []) {
-  const helpers: Record<string, any> = {};
-  [
-    'GET',
-    'get',
-    'PATCH',
-    'patch',
-    'POST',
-    'post',
-    'PUT',
-    'put',
-    'DELETE',
-    'delete'
-  ].forEach(
-    (method) =>
-      (helpers[method] = async (
-        url: string,
-        data: Record<string, any> | any[],
-        headers: Record<string, string>
-      ) => {
-        if (!url) return {};
-
-        const response = await client.runCustomRequest(
-          { method: method.toUpperCase(), url, data, headers },
-          getConnectorFieldValues(connectorFields)
-        );
-
-        return {
-          data: response.data,
-          statusCode: response.status_code,
-          // status_code for backwards compatibility
-          status_code: response.statusCode
-        };
-      })
-  );
-
-  helpers.connect = async (
-    name: string,
-    data: Record<string, any> | any[],
-    headers: Record<string, string>
-  ) => {
-    if (!name) return {};
-
-    const response = await client.runCustomRequest(
-      { name, data, headers },
-      getConnectorFieldValues(connectorFields)
-    );
-
-    if (response?.field_values)
+  const { sdkKey, userId } = initInfo();
+  return createHttpHelpers(
+    sdkKey,
+    client.formKey,
+    userId,
+    getConnectorFieldValues(connectorFields),
+    (fieldValues) => {
       // skip server submit when setting field values here
       // because these values were just created on the server
-      setFieldValues(response?.field_values, true, true);
-
-    return {
-      data: response.data,
-      statusCode: response.status_code
-    };
-  };
-
-  return helpers;
+      setFieldValues(fieldValues, true, true);
+    },
+    client.offlineRequestHandler.runOrSaveRequest.bind(
+      client.offlineRequestHandler
+    )
+  );
 }
