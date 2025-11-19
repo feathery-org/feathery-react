@@ -30,79 +30,57 @@ import debounce from 'lodash.debounce';
 import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  ExtractionActionOptions,
+ 
   GetConfigParams,
   PageSelectionInput
 } from '../internalState';
+import {
+  ExtractionActionOptions,
+  parseAPIError,
+  extractAIDocument,
+  inviteFormCollaborator as apiInviteFormCollaborator,
+  setEnvironment,
+  URL_ENUM,
+  getApiUrl,
+  getStaticUrl,
+  getS3Url,
+  getCdnUrl
+} from '@feathery/api-helpers';
 import {
   FEATHERY_INTERACTION_EVENT,
   isInteractionDetected,
   setInteractionDetected
 } from '../interactionState';
 
-export const API_URL_OPTIONS = {
-  local: 'http://localhost:8006/api/',
-  staging: 'https://staging.feathery.io/api/',
-  production: 'https://api.feathery.io/api/',
-  productionAU: 'https://api-au.feathery.io/api/',
-  productionEU: 'https://api-eu.feathery.io/api/',
-  productionCA: 'https://api-ca.feathery.io/api/'
-};
-
-const CDN_URL_OPTIONS = {
-  local: 'http://localhost:8006/api/',
-  staging: 'https://staging.feathery.io/api/',
-  production: 'https://cdn.feathery.io/api/',
-  productionAU: 'https://cdn-au.feathery.io/api/',
-  productionEU: 'https://cdn-eu.feathery.io/api/',
-  productionCA: 'https://cdn-ca.feathery.io/api/'
-};
-
-const STATIC_URL_OPTIONS = {
-  local: 'http://localhost:8006/api/',
-  staging: 'https://staging.feathery.io/api/',
-  production: 'https://api-static-2.feathery.io/api/',
-  productionAU: 'https://api-au.feathery.io/api/',
-  productionEU: 'https://api-eu.feathery.io/api/',
-  productionCA: 'https://api-ca.feathery.io/api/'
-};
-
-const S3_URL_OPTIONS = {
-  local: 'http://localhost:8006',
-  staging: 's3.us-west-1.amazonaws.com',
-  production: 's3.us-west-1.amazonaws.com',
-  productionAU: 's3.ap-southeast-2.amazonaws.com',
-  productionEU: 's3.eu-west-1.amazonaws.com',
-  productionCA: 's3.ca-central-1.amazonaws.com'
-};
-
-type URL_ENUM = keyof typeof API_URL_OPTIONS;
-let environment: URL_ENUM = 'production';
+setEnvironment('production');
 try {
-  environment = (process.env.BACKEND_ENV || 'production') as URL_ENUM;
+  setEnvironment((process.env.BACKEND_ENV || 'production') as URL_ENUM);
 } catch (e) {} // process.env won't exist in production build
 
-export let API_URL = API_URL_OPTIONS[environment];
-export let CDN_URL = CDN_URL_OPTIONS[environment];
-export let STATIC_URL = STATIC_URL_OPTIONS[environment];
-export let S3_URL = S3_URL_OPTIONS[environment];
+export let API_URL = getApiUrl();
+export let CDN_URL = getCdnUrl();
+export let STATIC_URL = getStaticUrl();
+export let S3_URL = getS3Url();
 
 export const updateRegionApiUrls = (region: string) => {
   if (region === 'au') {
-    CDN_URL = CDN_URL_OPTIONS.productionAU;
-    API_URL = API_URL_OPTIONS.productionAU;
-    STATIC_URL = STATIC_URL_OPTIONS.productionAU;
-    S3_URL = S3_URL_OPTIONS.productionAU;
+    setEnvironment('productionAU');
+    CDN_URL = getCdnUrl();
+    API_URL = getApiUrl();
+    STATIC_URL = getStaticUrl();
+    S3_URL = getS3Url();
   } else if (region === 'eu') {
-    CDN_URL = CDN_URL_OPTIONS.productionEU;
-    API_URL = API_URL_OPTIONS.productionEU;
-    STATIC_URL = STATIC_URL_OPTIONS.productionEU;
-    S3_URL = S3_URL_OPTIONS.productionEU;
+    setEnvironment('productionEU');
+    CDN_URL = getCdnUrl();
+    API_URL = getApiUrl();
+    STATIC_URL = getStaticUrl();
+    S3_URL = getS3Url();
   } else if (region === 'ca') {
-    CDN_URL = CDN_URL_OPTIONS.productionCA;
-    API_URL = API_URL_OPTIONS.productionCA;
-    STATIC_URL = STATIC_URL_OPTIONS.productionCA;
-    S3_URL = S3_URL_OPTIONS.productionCA;
+    setEnvironment('productionCA');
+    CDN_URL = getCdnUrl();
+    API_URL = getApiUrl();
+    STATIC_URL = getStaticUrl();
+    S3_URL = getS3Url();
   }
 };
 
@@ -885,53 +863,6 @@ export default class FeatheryClient extends IntegrationClient {
     return eventPromise;
   }
 
-  // Logic custom APIs
-  runCustomRequest(
-    payload: {
-      name?: string;
-      method?: string;
-      url?: string;
-      data: Record<string, any> | any[];
-      headers: Record<string, string>;
-    },
-    fieldValues: { [key: string]: any } | null = null
-  ) {
-    const { userId } = initInfo();
-    const data: any = {
-      fuser_key: userId,
-      form_key: this.formKey,
-      name: payload.name,
-      method: payload.method,
-      url: payload.url,
-      user_data: payload.data,
-      headers: payload.headers
-    };
-
-    if (fieldValues) {
-      data.field_values = fieldValues;
-    }
-
-    const url = `${STATIC_URL}custom_request/`;
-    const options = {
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-      body: JSON.stringify(data),
-      keepalive: false
-    };
-
-    const run = () =>
-      this._fetch(url, options).then((response) =>
-        response ? response.json() : Promise.resolve()
-      );
-    if (payload.method === 'GET') return run();
-    return this.offlineRequestHandler.runOrSaveRequest(
-      run,
-      url,
-      options,
-      'customRequest'
-    );
-  }
-
   runServerSideLogicRule(id: string) {
     const { userId } = initInfo();
     const data: any = {
@@ -970,51 +901,18 @@ export default class FeatheryClient extends IntegrationClient {
     setPollFuserData?: any;
     onStatusUpdate?: any;
   }) {
-    let runAsync: boolean;
-    let variantId: string | undefined;
-    let meetingUrl: string | undefined;
-    if (typeof options === 'object') {
-      runAsync = !options.waitForCompletion;
-      pages = options.pages;
-      variantId = options.variantId;
-      meetingUrl = options.meetingUrl || undefined;
-    } else {
-      // deprecated usage, options is waitForCompletion
-      runAsync = !options;
-    }
-
-    const { userId, collaboratorId } = initInfo();
-    const data = {
-      fuser_key: userId,
-      collaborator_user: collaboratorId,
-      extraction_id: extractionId,
-      extraction_variant_id: variantId,
+    const { userId, sdkKey, collaboratorId } = initInfo();
+    return await extractAIDocument(
+      sdkKey,
+      extractionId,
+      options,
+      userId,
       pages,
-      meeting_url: meetingUrl
-    };
-
-    const res = await this._fetch(`${STATIC_URL}ai/vision/`, {
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-      body: JSON.stringify(data)
-    });
-    const response = await res?.json();
-    if (runAsync) return {};
-    if (response.meeting_info) {
-      setPollFuserData(true);
-      return {};
-    }
-
-    const pollUrl = `${STATIC_URL}ai/vision/completion/?fid=${userId}&eid=${extractionId}&evid=${
-      variantId ?? ''
-    }`;
-    return await this.pollForCompletion({
-      pollUrl,
-      checkInterval: this.AI_CHECK_INTERVAL,
-      maxTime: this.AI_MAX_TIME,
-      onStatusUpdate,
-      operationName: 'Extraction'
-    });
+      undefined,
+      collaboratorId,
+      setPollFuserData(true),
+      onStatusUpdate
+    );
   }
 
   async getConfig(configParams: GetConfigParams) {
@@ -1045,29 +943,19 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   async inviteCollaborator(usersGroups: string[], templateId: string) {
-    const { userId, collaboratorId } = initInfo();
-    const data: Record<string, any> = {
-      form_key: this.formKey,
-      fuser_key: userId,
-      users_groups: usersGroups,
-      template_id: templateId
-    };
-    if (collaboratorId) data.collaborator_user = collaboratorId;
-    const url = `${API_URL}collaborator/invite/`;
-    return this._fetch(
-      url,
-      {
-        headers: { 'Content-Type': 'application/json' },
-        method: 'POST',
-        body: JSON.stringify(data)
-      },
-      false
-    ).then(async (response) => {
-      if (response) {
-        if (response.ok) return await response.json();
-        else throw Error(parseError(await response.json()));
-      }
-    });
+    const { userId, collaboratorId, sdkKey } = initInfo();
+    const res = await apiInviteFormCollaborator(
+      sdkKey,
+      this.formKey,
+      templateId,
+      usersGroups,
+      userId,
+      collaboratorId
+    );
+
+    if (res && res.ok) {
+      return res;
+    } else throw Error(parseAPIError(res));
   }
 
   async rewindCollaboration(templateId: string, rewindEmailKey: string) {
@@ -1092,7 +980,7 @@ export default class FeatheryClient extends IntegrationClient {
     ).then(async (response) => {
       if (response) {
         if (response.ok) return await response.json();
-        else throw Error(parseError(await response.json()));
+        else throw Error(parseAPIError(await response.json()));
       }
     });
   }
@@ -1117,7 +1005,7 @@ export default class FeatheryClient extends IntegrationClient {
     ).then(async (response) => {
       if (response) {
         if (response.ok) return await response.json();
-        else throw Error(parseError(await response.json()));
+        else throw Error(parseAPIError(await response.json()));
       }
     });
   }
@@ -1152,7 +1040,7 @@ export default class FeatheryClient extends IntegrationClient {
           const files = data.files;
           if (download) await downloadAllFileUrls(files);
           return { files };
-        } else throw Error(parseError(await response.json()));
+        } else throw Error(parseAPIError(await response.json()));
       }
     });
   }
