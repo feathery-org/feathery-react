@@ -910,7 +910,7 @@ export default class FeatheryClient extends IntegrationClient {
       pages,
       undefined,
       collaboratorId,
-      setPollFuserData(true),
+      () => setPollFuserData?.(true),
       onStatusUpdate
     );
   }
