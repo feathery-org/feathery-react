@@ -651,7 +651,7 @@ export default class IntegrationClient {
 
   async sendEmail(templateId: string) {
     const { userId, sdkKey } = initInfo();
-    await apiSendEmail(sdkKey, userId as string, this.formKey, templateId);
+    await apiSendEmail(sdkKey, userId ?? '', this.formKey, templateId);
   }
 
   async alloyJourneyApplication(journeyToken: string, entities: AlloyEntities) {
