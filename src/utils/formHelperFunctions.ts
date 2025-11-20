@@ -146,6 +146,7 @@ export async function setFormElementError({
   triggerErrors = false
 }: any) {
   let invalid = false;
+  let listIndex = index;
   if (errorType === 'html5') {
     if (!formRef.current) return false;
 
@@ -153,6 +154,12 @@ export async function setFormElementError({
     if (fieldKey) {
       if (['pin_input', 'select', 'multiselect'].includes(servarType))
         fieldKey = `${fieldKey}-0`;
+      // Add repeat index to fieldKey for fields using radio inputs
+      if (index != null && ['matrix', 'select'].includes(servarType)) {
+        fieldKey = `${fieldKey}-${index}`;
+        // no longer use index to key into element list
+        listIndex = null;
+      }
       // form.elements has reserved props so must use namedItem to get by id
       const singleOrList = formRef.current.elements.namedItem(fieldKey);
       let elements =
@@ -161,7 +168,8 @@ export async function setFormElementError({
           : [singleOrList];
       elements = elements.filter((e) => e);
 
-      if (index !== null && elements.length) elements = [elements[index]];
+      if (listIndex !== null && elements.length)
+        elements = [elements[listIndex]];
 
       elements.forEach((element) => {
         if (!element) return;
