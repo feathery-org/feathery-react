@@ -89,7 +89,7 @@ function validateElements({
       let fieldValue: any = fieldValues[key];
       // handle repeated matrix fields
       if (repeat != null && Array.isArray(fieldValue))
-        fieldValue = fieldValue[repeat];
+        fieldValue = fieldValue[repeat] ?? {};
       const { questions } = element.servar.metadata;
       const questionIds = questions.map((q: { id: string }) => q.id);
 
