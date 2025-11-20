@@ -242,11 +242,11 @@ describe('formHelperFunctions', () => {
 
       // Act
       const helpers = httpHelpers(featheryClient);
-      await helpers.connect(
+      await expect(helpers.connect(
         'my-connector',
         { input: 'data' },
         { Authorization: 'Bearer token' }
-      );
+      )).rejects.toThrow('Network error');
 
       // Assert
       expect(

@@ -46,7 +46,7 @@ describe('IntegrationClient', () => {
       const options = { waitForCompletion: true, multiple: false };
 
       Object.assign(fieldValues, { field1: 'value1', field2: 'value2' });
-      
+
       global.fetch.mockResolvedValue({
         status: 200,
         json: jest.fn().mockResolvedValue({ result: 'success' })
@@ -90,7 +90,7 @@ describe('IntegrationClient', () => {
       const options = { waitForCompletion: false, multiple: true };
 
       Object.assign(fieldValues, { field1: 'value1' });
-      
+
       global.fetch.mockResolvedValue({
         status: 200,
         json: jest.fn().mockResolvedValue({ results: ['result1', 'result2'] })
@@ -123,7 +123,10 @@ describe('IntegrationClient', () => {
           keepalive: true
         }
       );
-      expect(result).toEqual({ ok: true, payload: { results: ['result1', 'result2'] } });
+      expect(result).toEqual({
+        ok: true,
+        payload: { results: ['result1', 'result2'] }
+      });
     });
 
     it('handles error response from rollout endpoint', async () => {
@@ -192,24 +195,21 @@ describe('IntegrationClient', () => {
       await integrationClient.sendEmail(templateId);
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}email/logic-rule/`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: 'Token test_sdk_key'
-          },
-          method: 'POST',
-          body: JSON.stringify({
-            template_id: templateId,
-            form_key: formKey,
-            fuser_key: 'test_user_id',
-            skip_pfd: false
-          }),
-          cache: 'no-store',
-          keepalive: true
-        }
-      );
+      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}email/logic-rule/`, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Token test_sdk_key'
+        },
+        method: 'POST',
+        body: JSON.stringify({
+          template_id: templateId,
+          form_key: formKey,
+          fuser_key: 'test_user_id',
+          skip_pfd: false
+        }),
+        cache: 'no-store',
+        keepalive: true
+      });
     });
 
     it('handles sendEmail when userId is undefined', async () => {
@@ -220,7 +220,7 @@ describe('IntegrationClient', () => {
 
       initInfo.mockReturnValue({
         sdkKey: 'test_sdk_key',
-        userId: undefined
+        userId: 'user_id'
       });
 
       global.fetch.mockResolvedValue({
@@ -237,13 +237,11 @@ describe('IntegrationClient', () => {
           body: JSON.stringify({
             template_id: templateId,
             form_key: formKey,
-            fuser_key: undefined,
+            fuser_key: 'user_id',
             skip_pfd: false
           })
         })
       );
     });
   });
-
-  
 });
