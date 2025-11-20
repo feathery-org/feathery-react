@@ -121,7 +121,6 @@
     "acorn-walk": "^8.3.4",
     "date-fns": "^4.1.0",
     "flat-map-polyfill": "^0.3.8",
-    "imask": "7.6.1",
     "is-url": "^1.2.4",
     "js-big-decimal": "^1.4.1",
     "jszip": "^3.10.1",
