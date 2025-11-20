@@ -113,7 +113,7 @@
     "@emotion/babel-preset-css-prop": "11.12.0",
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.0",
-    "@feathery/api-helpers": "file:/Users/aryan/feathery/js-shared/api-helpers",
+    "@feathery/api-helpers": "^1.0.0",
     "@fingerprintjs/fingerprintjs": "4.6.2",
     "@rc-component/slider": "^1.0.0",
     "@stripe/react-stripe-js": "3.7.0",
