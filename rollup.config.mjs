@@ -14,7 +14,6 @@ export default {
       preserveModulesRoot: 'src'
     }
   ],
-  // Make React external in a more comprehensive way
   external: [
     'react',
     'react-dom',

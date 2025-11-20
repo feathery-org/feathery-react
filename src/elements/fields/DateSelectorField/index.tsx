@@ -19,14 +19,8 @@ import {
 import { useCustomDateLocale } from './useDateLocale';
 import { formatDateString } from './utils';
 import DatePicker from 'react-datepicker';
-
-// Due to issues with imask and react-imask package exports, we need
-// to bundle the packages and import them using this format
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { IMaskInput } = require('react-imask');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { MaskedRange, MaskedEnum } = require('imask');
+import { MaskedEnum, MaskedRange } from 'imask/esm/index';
+import { IMaskInput } from 'react-imask';
 
 type InternalDate = Date | null;
 
