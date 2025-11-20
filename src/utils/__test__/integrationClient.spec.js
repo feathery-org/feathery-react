@@ -3,8 +3,9 @@ import { initInfo, fieldValues } from '../init';
 import { setEnvironment, getApiUrl } from '@feathery/api-helpers';
 
 // Mock the API_URL and STATIC_URL to avoid circular dependency issues
-// since featheryClient/integrationClient imports them from featheryClient
-// and jest tries to load featheryClient and extend IntegrationClient before it's defined
+// since ../featheryClient/integrationClient imports them from ../featheryClient
+// and jest tries to load featheryClient and extend IntegrationClient before
+// IntegrationClient is defined
 jest.mock('../featheryClient', () => ({
   API_URL: '',
   STATIC_URL: ''
