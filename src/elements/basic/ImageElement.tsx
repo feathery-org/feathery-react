@@ -89,6 +89,7 @@ function ImageElement({
             ...styles.getTarget('image'),
             ...(applyWidth ? styles.getTarget('dimension') : {})
           }}
+          /* eslint-disable-next-line react/no-unknown-property */
           onLoad={() => setApplyWidth(false)}
           {...elementProps}
         />

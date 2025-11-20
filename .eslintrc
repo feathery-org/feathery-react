@@ -17,7 +17,9 @@
     "ecmaFeatures": {
       "legacyDecorators": true,
       "jsx": true
-    }
+    },
+    "jsxPragma": "jsx",
+    "jsxFragmentName": "Fragment"
   },
   "settings": {
     "react": {
@@ -31,6 +33,7 @@
     "react/jsx-fragments": 0,
     "react/no-unused-prop-types": 0,
     "react/react-in-jsx-scope": 0,
+    "react/no-unknown-property": ["error", { "ignore": ["css"] }],
     "import/export": 0,
     "@typescript-eslint/no-explicit-any": 0, // TODO(ts): Turn this back on after typing complete
     "@typescript-eslint/no-empty-function": 0,

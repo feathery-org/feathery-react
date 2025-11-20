@@ -212,6 +212,7 @@ function DateSelectorField({
         ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
+      /* eslint-disable-next-line react/no-unknown-property */
       onPointerDown={handlePointerDown}
     >
       {children}
