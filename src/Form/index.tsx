@@ -1747,7 +1747,13 @@ function Form({
     let loader: any = null;
     if (!bp.loading_icon) loader = <FeatherySpinner />;
     else if (bp.loading_icon_type === 'image/*') {
-      loader = <img style={{ width: '100%' }} src={bp.loading_icon} alt='Button Loader' />;
+      loader = (
+        <img
+          style={{ width: '100%' }}
+          src={bp.loading_icon}
+          alt='Button Loader'
+        />
+      );
     } else if (bp.loading_icon_type === 'application/json') {
       const animationData = await fetch(bp.loading_icon).then((response) =>
         response.json()
