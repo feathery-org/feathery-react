@@ -416,6 +416,46 @@ function Form({
     );
   };
 
+  const COMPLETION_LOADER_KEY = 'completionLoader';
+  const completionLoaderButtonIdRef = useRef<string | null>(null);
+  const showCompletionLoader = (button?: ClickActionElement) =>
+    setLoaders((loaders: Record<string, any>) => {
+      if (button?.id) {
+        completionLoaderButtonIdRef.current = button.id;
+        // Ensure the custom loader from designer is encapsulated inside the submit step button
+        if (loaders[button.id]) return loaders;
+        return {
+          ...loaders,
+          [button.id]: {
+            showOn: 'on_button',
+            loader: <FeatherySpinner />,
+            type: 'default',
+            repeat: button.repeat
+          }
+        };
+      }
+      if (loaders[COMPLETION_LOADER_KEY]) return loaders;
+      return {
+        ...loaders,
+        [COMPLETION_LOADER_KEY]: {
+          showOn: 'full_page',
+          loader: <FeatherySpinner />,
+          type: 'default',
+          isCompletionLoader: true
+        }
+      };
+    });
+  const clearCompletionLoader = () =>
+    setLoaders((loaders: Record<string, any>) => {
+      const nextLoaders = { ...loaders };
+      if (completionLoaderButtonIdRef.current) {
+        delete nextLoaders[completionLoaderButtonIdRef.current];
+        completionLoaderButtonIdRef.current = null;
+      }
+      delete nextLoaders[COMPLETION_LOADER_KEY];
+      return nextLoaders;
+    });
+
   const [viewport, setViewport] = useState(() =>
     getViewport(formSettings.mobileBreakpoint)
   );
@@ -1585,7 +1625,8 @@ function Form({
     redirectKey,
     elementType,
     submitPromise,
-    submitData = false
+    submitData = false,
+    completionButton
   }: any) {
     let eventData: Record<string, any> = {
       step_key: activeStep.key,
@@ -1599,51 +1640,66 @@ function Form({
       submitData || ['button', 'text', 'container'].includes(elementType);
     if (!redirectKey) {
       if (explicitNav) {
-        if (submitPromise) {
+        showCompletionLoader(completionButton);
+        try {
+          if (submitPromise) {
+            try {
+              await submitPromise;
+            } catch (error) {
+              throw new Error(getSubmissionErrorMessage(error));
+            }
+          }
+
+          requireSuccessfulFileUploads();
+
+          // Block form completion if user is actively offline
+          if (!navigator.onLine) {
+            throw new Error(
+              'You are offline. Please check your connection and try again.'
+            );
+          }
+
+          // Note: We don't check dbHasRequest() here because:
+          // 1. If submitPromise succeeded, the requests were already handled
+          // 2. If submitPromise failed, we threw an error above and won't reach here
+          // 3. Checking dbHasRequest() here would block manual retries after fixing network
+
+          eventData.completed = true;
+          await client.registerEvent(eventData).then(() => {
+            setFinished(true);
+            // Need to rerender when the session is marked complete so
+            // LoginForm can render children
+            session.form_completed = true;
+            rerenderAllForms();
+          });
+        } finally {
+          clearCompletionLoader();
+        }
+      }
+    } else {
+      const nextStep = steps[redirectKey];
+      const authIntegration = getAuthIntegrationMetadata(integrations);
+      const complete =
+        isStepTerminal(nextStep) &&
+        !isTerminalStepAuth(authIntegration, steps[stepKey].id);
+
+      if (complete) showCompletionLoader(completionButton);
+
+      try {
+        if (complete && submitPromise) {
           try {
             await submitPromise;
           } catch (error) {
             throw new Error(getSubmissionErrorMessage(error));
           }
+        } else if (submitPromise) {
+          submitPromise.catch(() => {}); // Avoid unhandled rejections when allowing navigation
         }
 
-        requireSuccessfulFileUploads();
+        // Note: We don't block navigation when offline here to allow users to fill
+        // out multi-step forms offline. API calls and custom logic will fail naturally
+        // if they require network. Only block final form submission (see above).
 
-        // Block form completion if user is actively offline
-        if (!navigator.onLine) {
-          throw new Error(
-            'You are offline. Please check your connection and try again.'
-          );
-        }
-
-        // Note: We don't check dbHasRequest() here because:
-        // 1. If submitPromise succeeded, the requests were already handled
-        // 2. If submitPromise failed, we threw an error above and won't reach here
-        // 3. Checking dbHasRequest() here would block manual retries after fixing network
-
-        eventData.completed = true;
-        await client.registerEvent(eventData).then(() => {
-          setFinished(true);
-          // Need to rerender when the session is marked complete so
-          // LoginForm can render children
-          session.form_completed = true;
-          rerenderAllForms();
-        });
-      }
-    } else {
-      if (submitPromise) submitPromise.catch(() => {}); // Avoid unhandled rejections when allowing navigation
-
-      // Note: We don't block navigation when offline here to allow users to fill
-      // out multi-step forms offline. API calls and custom logic will fail naturally
-      // if they require network. Only block final form submission (see above).
-
-      const nextStep = steps[redirectKey];
-      if (isStepTerminal(nextStep)) {
-        const authIntegration = getAuthIntegrationMetadata(integrations);
-        const complete = !isTerminalStepAuth(
-          authIntegration,
-          steps[stepKey].id
-        );
         if (complete) {
           requireSuccessfulFileUploads();
           eventData.completed = true;
@@ -1653,8 +1709,10 @@ function Form({
             .registerEvent(eventData)
             .then(() => handleFormComplete());
         }
+        if (!eventData.completed) client.registerEvent(eventData);
+      } finally {
+        if (complete) clearCompletionLoader();
       }
-      if (!eventData.completed) client.registerEvent(eventData);
       updateBackNavMap({ [redirectKey]: activeStep.key });
       pendingScrollRef.current = explicitNav;
 
@@ -1689,7 +1747,7 @@ function Form({
     let loader: any = null;
     if (!bp.loading_icon) loader = <FeatherySpinner />;
     else if (bp.loading_icon_type === 'image/*') {
-      loader = <img src={bp.loading_icon} alt='Button Loader' />;
+      loader = <img style={{ width: '100%' }} src={bp.loading_icon} alt='Button Loader' />;
     } else if (bp.loading_icon_type === 'application/json') {
       const animationData = await fetch(bp.loading_icon).then((response) =>
         response.json()
@@ -2162,7 +2220,9 @@ function Form({
           redirectKey: getNextStepKey(metadata),
           elementType: metadata.elementType,
           submitData: submit,
-          submitPromise
+          submitPromise,
+          completionButton:
+            elementType === 'button' ? (element as ClickActionElement) : null
         });
       } else if (type === ACTION_BACK) await goToPreviousStep();
       else if (type === ACTION_PURCHASE_PRODUCTS) {

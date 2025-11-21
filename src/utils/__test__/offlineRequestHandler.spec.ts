@@ -502,6 +502,46 @@ describe('OfflineRequestHandler - Integration Tests', () => {
       removeSpy.mockRestore();
       (global as any).fetch = originalFetch;
     });
+
+    it('does not alert when max retries exhausted for specific field upload', async () => {
+      const handlerWithCallback = new OfflineRequestHandler(
+        'test-form',
+        errorCallback
+      );
+      const originalFetch = (global as any).fetch;
+      (global as any).fetch = jest
+        .fn()
+        .mockRejectedValue(new TypeError('Failed to fetch'));
+
+      (handlerWithCallback as any).maxRetryAttempts = 1;
+      (handlerWithCallback as any).retryDelayMs = 0;
+
+      const request: any = {
+        url: 'https://api.feathery.io/api/panel/step/submit/file',
+        method: 'POST',
+        headers: JSON.stringify({}),
+        body: '',
+        bodyType: 'text',
+        metadata: { fieldKey: 'FileUpload1' },
+        key: 101,
+        retryAttempts: 0
+      };
+
+      jest.useFakeTimers();
+      const replayPromise = (
+        handlerWithCallback as any
+      ).replayRequestsInParallel([request]);
+      while (jest.getTimerCount() > 0) {
+        jest.runOnlyPendingTimers();
+      }
+      await replayPromise;
+      jest.useRealTimers();
+
+      expect(errorCallback).not.toHaveBeenCalled();
+      expect(mockFileRetryStatus.FileUpload1).toBe(false);
+
+      (global as any).fetch = originalFetch;
+    });
   });
 
   describe('IndexedDB support detection', () => {

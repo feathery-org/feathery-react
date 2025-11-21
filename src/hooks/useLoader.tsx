@@ -76,7 +76,8 @@ const useLoader = ({
   }, [loaders]);
 
   const isStepLoaderForButton = fullPageLoader
-    ? uuidValidate(fullPageLoader[0])
+    ? uuidValidate(fullPageLoader[0]) ||
+      Boolean((fullPageLoader[1] as any)?.isCompletionLoader)
     : false;
   const isShowExplicitlyFalse = initialLoader && initialLoader.show === false;
   const showLoader: boolean =
