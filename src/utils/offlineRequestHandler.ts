@@ -497,7 +497,8 @@ export class OfflineRequestHandler {
               if (navigator.onLine) {
                 const nextDelay = this.getExponentialDelay(attempts);
                 if (attempts >= this.maxRetryAttempts) {
-                  if (this.errorCallback) {
+                  // Skip alerting when a specific field upload already surfaces its own retry error
+                  if (this.errorCallback && !request.metadata?.fieldKey) {
                     this.errorCallback(
                       `Failed to submit after ${this.maxRetryAttempts} attempts. Please check your connection and try again.`
                     );
