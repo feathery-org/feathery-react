@@ -416,46 +416,6 @@ function Form({
     );
   };
 
-  const COMPLETION_LOADER_KEY = 'completionLoader';
-  const completionLoaderButtonIdRef = useRef<string | null>(null);
-  const showCompletionLoader = (button?: ClickActionElement) =>
-    setLoaders((loaders: Record<string, any>) => {
-      if (button?.id) {
-        completionLoaderButtonIdRef.current = button.id;
-        // Ensure the custom loader from designer is encapsulated inside the submit step button
-        if (loaders[button.id]) return loaders;
-        return {
-          ...loaders,
-          [button.id]: {
-            showOn: 'on_button',
-            loader: <FeatherySpinner />,
-            type: 'default',
-            repeat: button.repeat
-          }
-        };
-      }
-      if (loaders[COMPLETION_LOADER_KEY]) return loaders;
-      return {
-        ...loaders,
-        [COMPLETION_LOADER_KEY]: {
-          showOn: 'full_page',
-          loader: <FeatherySpinner />,
-          type: 'default',
-          isCompletionLoader: true
-        }
-      };
-    });
-  const clearCompletionLoader = () =>
-    setLoaders((loaders: Record<string, any>) => {
-      const nextLoaders = { ...loaders };
-      if (completionLoaderButtonIdRef.current) {
-        delete nextLoaders[completionLoaderButtonIdRef.current];
-        completionLoaderButtonIdRef.current = null;
-      }
-      delete nextLoaders[COMPLETION_LOADER_KEY];
-      return nextLoaders;
-    });
-
   const [viewport, setViewport] = useState(() =>
     getViewport(formSettings.mobileBreakpoint)
   );
@@ -499,6 +459,54 @@ function Form({
     loaderBackgroundColor: stepCSS?.backgroundColor,
     formRef
   });
+
+  // Completion loader helpers: keep the temporary completion loader scoped, reuse
+  // designer-provided button loaders when present, and clear only our entry.
+  const COMPLETION_LOADER_KEY = 'completionLoader';
+  const completionLoaderButtonIdRef = useRef<string | null>(null);
+  const showCompletionLoader = useCallback(
+    (button?: ClickActionElement) => {
+      setLoaders((loaders: Record<string, any>) => {
+        if (button?.properties?.show_loading_icon === 'none') return loaders;
+        if (button?.id) {
+          completionLoaderButtonIdRef.current = button.id;
+          // Ensure the custom loader from designer is encapsulated inside the submit step button
+          if (loaders[button.id]) return loaders;
+          return {
+            ...loaders,
+            [button.id]: {
+              showOn: 'on_button',
+              loader: <FeatherySpinner />,
+              type: 'default',
+              repeat: button.repeat
+            }
+          };
+        }
+        if (loaders[COMPLETION_LOADER_KEY]) return loaders;
+        return {
+          ...loaders,
+          [COMPLETION_LOADER_KEY]: {
+            showOn: 'full_page',
+            loader: <FeatherySpinner />,
+            type: 'default',
+            isCompletionLoader: true
+          }
+        };
+      });
+    },
+    [setLoaders]
+  );
+  const clearCompletionLoader = useCallback(() => {
+    setLoaders((loaders: Record<string, any>) => {
+      const nextLoaders = { ...loaders };
+      if (completionLoaderButtonIdRef.current) {
+        delete nextLoaders[completionLoaderButtonIdRef.current];
+        completionLoaderButtonIdRef.current = null;
+      }
+      delete nextLoaders[COMPLETION_LOADER_KEY];
+      return nextLoaders;
+    });
+  }, [setLoaders]);
 
   const {
     currentActionExtractions,
