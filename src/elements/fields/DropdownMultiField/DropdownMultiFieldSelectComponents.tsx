@@ -154,7 +154,6 @@ const CollapsedIndicator = ({
       aria-hidden='true'
       className='rs-collapsed-chip'
       data-feathery-collapsed-indicator='true'
-      /* eslint-disable-next-line react/no-unknown-property */
       onPointerDown={(event) => {
         if (!onPress) return;
         if (event.pointerType === 'touch') {
