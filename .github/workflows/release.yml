@@ -2,7 +2,16 @@ name: Release & Publish
 
 on:
   workflow_dispatch:
-
+    inputs:
+      release-type:
+        description: 'Release type: patch (bug fixes) | minor (new features) | major (breaking changes)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 jobs:
   validate-user:
     runs-on: ubuntu-latest
@@ -44,7 +53,7 @@ jobs:
     needs: setup
     strategy:
       matrix:
-        build-type: [ umd, node ]
+        build-type: [umd, node]
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -142,7 +151,7 @@ jobs:
       - name: Create Release
         env:
           GITHUB_TOKEN: ${{ secrets.FEATHERY_BOT_TOKEN }}
-        run: yarn release -- --release-as patch
+        run: yarn release -- --release-as  ${{ steps.release-type.outputs.type }}
 
       - name: Push Changes
         env:
