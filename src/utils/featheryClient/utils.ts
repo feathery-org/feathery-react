@@ -1,5 +1,6 @@
 import { featheryWindow } from '../browser';
-import * as errors from '../error';
+import { FetchError } from '@feathery/api-helpers';
+import { SDKKeyError } from '../error';
 import { untrackUnload } from '../offlineRequestHandler';
 
 let conflictAlertShown = false;
@@ -16,9 +17,9 @@ export async function checkResponseSuccess(response: any) {
       console.error(payload.toString());
       return;
     case 401:
-      throw new errors.SDKKeyError();
+      throw new SDKKeyError();
     case 404:
-      throw new errors.FetchError("Can't find object");
+      throw new FetchError("Can't find object");
     case 409:
       // prevent multiple 409s from displaying multiple alerts
       if (conflictAlertShown) return;
@@ -32,8 +33,8 @@ export async function checkResponseSuccess(response: any) {
       location.reload();
       return;
     case 500:
-      throw new errors.FetchError('Internal server error');
+      throw new FetchError('Internal server error');
     default:
-      throw new errors.FetchError('Unknown error');
+      throw new FetchError('Unknown error');
   }
 }
