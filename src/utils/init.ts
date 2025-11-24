@@ -107,6 +107,8 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   }
 
   if (initState.initialized) return Promise.resolve(initState.userId ?? ''); // can only be initialized one time per load
+  logFeatheryBadge();
+
   initState.initialized = true;
 
   initState.sdkKey = sdkKey;
@@ -268,6 +270,16 @@ function setFieldValues(
 function getFieldValues() {
   // Make a copy so users can't set fieldValues directly
   return { ...fieldValues };
+}
+
+declare const __PACKAGE_VERSION__: string;
+
+function logFeatheryBadge() {
+  console.log(
+    '%c Feathery %c v' + __PACKAGE_VERSION__ + ' ', // replaced with real version during build
+    'background: #e2626e; color: white; padding: 2px 6px; border-radius: 3px 0 0 3px; font-weight: bold;',
+    'background: #fce7e9; color: #c5495a; padding: 2px 6px; border-radius: 0 3px 3px 0;'
+  );
 }
 
 export {

@@ -1,5 +1,6 @@
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
-
+const webpack = require('webpack');
+const pkg = require('./package.json');
 module.exports = {
   entry: './src/index.tsx',
   output: {
@@ -11,7 +12,12 @@ module.exports = {
       type: 'umd'
     }
   },
-  plugins: [new CleanWebpackPlugin()],
+  plugins: [
+    new CleanWebpackPlugin(),
+    new webpack.DefinePlugin({
+      __PACKAGE_VERSION__: JSON.stringify(pkg.version)
+    })
+  ],
   module: {
     rules: [
       {
