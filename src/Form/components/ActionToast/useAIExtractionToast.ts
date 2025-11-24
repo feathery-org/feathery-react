@@ -39,6 +39,13 @@ export type DataItem = {
   createdAt?: string;
   fileSources?: FileSource[];
   runs?: string[];
+  documents?: string[];
+  labels?: {
+    queued?: string;
+    incomplete?: string;
+    complete?: string;
+    error?: string;
+  };
 };
 
 interface ParentRun {
@@ -72,6 +79,14 @@ type PollData =
   | {
       error: string;
     };
+
+// Labels for AI extraction
+const AI_EXTRACTION_LABELS = {
+  queued: 'Queued Document',
+  incomplete: 'Uploading Document',
+  complete: 'Completed',
+  error: 'Failed'
+};
 
 const COMPLETED_TOAST_DURATION_MS = 3200;
 
@@ -119,7 +134,8 @@ export const useAIExtractionToast = () => {
             id: action.extraction_id,
             variantId: action.variant_id || '',
             status: 'queued',
-            children: []
+            children: [],
+            labels: AI_EXTRACTION_LABELS
           });
         }
       }

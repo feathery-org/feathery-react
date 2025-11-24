@@ -1,19 +1,19 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronUp } from './icons';
-import ExtractionItem from './ExtractionItem';
+import ToastItem from './ToastItem';
 import { DataItem } from './useAIExtractionToast';
 
-type ExtractionToastProps = {
+type ActionToastProps = {
   data: DataItem[];
   title?: string;
   bottom?: number;
 };
 
-const ExtractionToast = ({
+const ActionToast = ({
   data,
   title = 'Scanning Documents',
   bottom = 20
-}: ExtractionToastProps) => {
+}: ActionToastProps) => {
   const [isToastExpanded, setIsToastExpanded] = useState(true);
 
   return (
@@ -68,7 +68,7 @@ const ExtractionToast = ({
           }}
         >
           {data.map((item, index) => (
-            <ExtractionItem key={index} item={item} />
+            <ToastItem key={index} item={item} />
           ))}
         </div>
       )}
@@ -76,4 +76,4 @@ const ExtractionToast = ({
   );
 };
 
-export default ExtractionToast;
+export default ActionToast;

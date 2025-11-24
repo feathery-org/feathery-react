@@ -211,8 +211,9 @@ import {
   runServerSideLogic
 } from './logic';
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
-import ExtractionToast from './components/AIExtractionToast';
-import { useAIExtractionToast } from './components/AIExtractionToast/useAIExtractionToast';
+import ActionToast from './components/ActionToast';
+import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
+import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
 
 export * from './grid/StyledContainer';
@@ -514,6 +515,12 @@ function Form({
     updateExtractionInAction,
     handleExtractionStatusUpdate
   } = useAIExtractionToast();
+
+  const {
+    currentEnvelopeGeneration,
+    initializeEnvelopeGeneration,
+    updateEnvelopeGeneration
+  } = useEnvelopeGenerationToast();
 
   // Tracks element to focus
   const focusRef = useRef<any>(undefined);
@@ -2071,6 +2078,12 @@ function Form({
     if (hasExtractions) {
       initializeActionExtractions(actions);
     }
+    const hasEnvelopeGeneration = actions.some(
+      (action) => action.type === ACTION_GENERATE_ENVELOPES
+    );
+    if (hasEnvelopeGeneration) {
+      initializeEnvelopeGeneration(actions);
+    }
     for (i = 0; i < actions.length; i++) {
       const action = actions[i];
       const type = action.type;
@@ -2351,13 +2364,17 @@ function Form({
           break;
         }
       } else if (type === ACTION_GENERATE_ENVELOPES) {
+        const envelopeId = `envelope-${i}`;
+        updateEnvelopeGeneration(envelopeId, { status: 'incomplete' });
         await Promise.all([submitPromise, client.flushCustomFields()]);
         try {
           const data = await client.generateEnvelopes(action);
           if (data.status === 'error') {
+            updateEnvelopeGeneration(envelopeId, { status: 'error' });
             setElementError(data.message);
             break;
           }
+          updateEnvelopeGeneration(envelopeId, { status: 'complete' });
           const envAction = action.envelope_action;
           if (!envAction) {
             // Sign files
@@ -2383,6 +2400,7 @@ function Form({
             client.submitCustom(newValues);
           }
         } catch (e: any) {
+          updateEnvelopeGeneration(envelopeId, { status: 'error' });
           setElementError((e as Error).message);
           break;
         }
@@ -2764,18 +2782,42 @@ function Form({
           show={formSettings.showBrand}
           brandPosition={formSettings.brandPosition}
         />
-        {currentActionExtractions.length > 0 && (
-          <ExtractionToast
-            data={currentActionExtractions}
-            // adjust position if brand watermark is in bottom right
-            bottom={
-              formSettings.showBrand &&
-              formSettings.brandPosition === 'bottom_right'
-                ? 67
-                : 20
-            }
-          />
-        )}
+        {(() => {
+          const combinedItems = [
+            ...currentActionExtractions,
+            ...currentEnvelopeGeneration
+          ];
+
+          if (combinedItems.length === 0) return null;
+
+          // Determine the title based on what types are present
+          const hasAIExtraction = currentActionExtractions.length > 0;
+          const hasEnvelopes = currentEnvelopeGeneration.length > 0;
+          let title = 'Scanning Documents';
+          if (hasEnvelopes && !hasAIExtraction) {
+            const totalDocs = currentEnvelopeGeneration.reduce(
+              (sum, env) => sum + (env.documents?.length || 0),
+              0
+            );
+            title =
+              totalDocs > 1 ? 'Preparing Documents' : 'Preparing Document';
+          } else if (hasAIExtraction && hasEnvelopes) {
+            title = 'Processing Documents';
+          }
+
+          return (
+            <ActionToast
+              data={combinedItems}
+              title={title}
+              bottom={
+                formSettings.showBrand &&
+                formSettings.brandPosition === 'bottom_right'
+                  ? 67
+                  : 20
+              }
+            />
+          );
+        })()}
       </form>
     </ReactPortal>
   );
