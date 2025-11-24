@@ -29,7 +29,11 @@ import { RequestOptions } from '../offlineRequestHandler';
 import debounce from 'lodash.debounce';
 import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
-import { ExtractionActionOptions, GetConfigParams } from '../internalState';
+import {
+  ExtractionActionOptions,
+  GetConfigParams,
+  PageSelectionInput
+} from '../internalState';
 import {
   FEATHERY_INTERACTION_EVENT,
   isInteractionDetected,
@@ -962,7 +966,7 @@ export default class FeatheryClient extends IntegrationClient {
   }: {
     extractionId: string;
     options: ExtractionActionOptions | boolean;
-    pages?: number[] | number[][];
+    pages?: PageSelectionInput;
     setPollFuserData?: any;
     onStatusUpdate?: any;
   }) {

@@ -17,6 +17,7 @@ import internalState, {
   IntegrationActionIds,
   IntegrationActionOptions,
   LoanProCustomerObject,
+  PageSelectionInput,
   setFormInternalState
 } from './internalState';
 import { validateElements } from './validation';
@@ -175,7 +176,7 @@ export const getFormContext = (formUuid: string) => {
     runAIExtraction: async (
       extractionId: string,
       options = { waitForCompletion: false },
-      pages?: number[] | number[][]
+      pages?: PageSelectionInput
     ) => formState.runAIExtraction(extractionId, options, pages),
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
