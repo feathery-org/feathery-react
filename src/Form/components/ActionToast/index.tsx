@@ -5,16 +5,32 @@ import { DataItem } from './useAIExtractionToast';
 
 type ActionToastProps = {
   data: DataItem[];
-  title?: string;
   bottom?: number;
 };
 
-const ActionToast = ({
-  data,
-  title = 'Scanning Documents',
-  bottom = 20
-}: ActionToastProps) => {
+const getTitle = (data: DataItem[]): string => {
+  const hasAIExtraction = data.some((item) => item.type === 'ai-extraction');
+  const hasEnvelopes = data.some((item) => item.type === 'envelope-generation');
+
+  const totalDocs = data
+    .filter((item) => item.type === 'envelope-generation')
+    .reduce((sum, item) => sum + (item.documents?.length || 0), 0);
+
+  if (hasAIExtraction && hasEnvelopes) {
+    return 'Processing Documents';
+  }
+
+  if (hasEnvelopes) {
+    return totalDocs > 1 ? 'Preparing Documents' : 'Preparing Document';
+  }
+
+  return 'Scanning Documents';
+};
+
+const ActionToast = ({ data, bottom = 20 }: ActionToastProps) => {
   const [isToastExpanded, setIsToastExpanded] = useState(true);
+
+  if (data.length === 0) return null;
 
   return (
     <div
@@ -55,7 +71,7 @@ const ActionToast = ({
             fontSize: '16px'
           }}
         >
-          {title}
+          {getTitle(data)}
         </h3>
         {isToastExpanded ? <ChevronUp /> : <ChevronDown />}
       </div>

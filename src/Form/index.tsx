@@ -2782,42 +2782,15 @@ function Form({
           show={formSettings.showBrand}
           brandPosition={formSettings.brandPosition}
         />
-        {(() => {
-          const combinedItems = [
-            ...currentActionExtractions,
-            ...currentEnvelopeGeneration
-          ];
-
-          if (combinedItems.length === 0) return null;
-
-          // Determine the title based on what types are present
-          const hasAIExtraction = currentActionExtractions.length > 0;
-          const hasEnvelopes = currentEnvelopeGeneration.length > 0;
-          let title = 'Scanning Documents';
-          if (hasEnvelopes && !hasAIExtraction) {
-            const totalDocs = currentEnvelopeGeneration.reduce(
-              (sum, env) => sum + (env.documents?.length || 0),
-              0
-            );
-            title =
-              totalDocs > 1 ? 'Preparing Documents' : 'Preparing Document';
-          } else if (hasAIExtraction && hasEnvelopes) {
-            title = 'Processing Documents';
+        <ActionToast
+          data={[...currentActionExtractions, ...currentEnvelopeGeneration]}
+          bottom={
+            formSettings.showBrand &&
+            formSettings.brandPosition === 'bottom_right'
+              ? 67
+              : 20
           }
-
-          return (
-            <ActionToast
-              data={combinedItems}
-              title={title}
-              bottom={
-                formSettings.showBrand &&
-                formSettings.brandPosition === 'bottom_right'
-                  ? 67
-                  : 20
-              }
-            />
-          );
-        })()}
+        />
       </form>
     </ReactPortal>
   );

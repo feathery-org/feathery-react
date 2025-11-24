@@ -30,6 +30,7 @@ interface FileSource {
 
 export type DataItem = {
   status: 'complete' | 'incomplete' | 'error' | 'queued';
+  type?: 'ai-extraction' | 'envelope-generation';
   extractionKey?: string;
   extractionVariantKey?: string | null;
   children?: DataItem[];
@@ -134,6 +135,7 @@ export const useAIExtractionToast = () => {
             id: action.extraction_id,
             variantId: action.variant_id || '',
             status: 'queued',
+            type: 'ai-extraction',
             children: [],
             labels: AI_EXTRACTION_LABELS
           });

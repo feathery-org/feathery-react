@@ -73,6 +73,7 @@ export const useEnvelopeGenerationToast = () => {
             variantId: '',
             documents: action.documents,
             status: 'queued',
+            type: 'envelope-generation',
             labels: ENVELOPE_LABELS
           });
         }
