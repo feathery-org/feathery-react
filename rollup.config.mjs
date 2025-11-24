@@ -2,6 +2,11 @@ import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
 import typescript from 'rollup-plugin-typescript2';
 import del from 'rollup-plugin-delete';
+import replace from '@rollup/plugin-replace';
+import { readFileSync } from 'fs';
+
+// Read package.json
+const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
 export default {
   input: 'src/index.tsx',
@@ -10,8 +15,7 @@ export default {
       dir: 'dist',
       format: 'esm',
       chunkFileNames: 'fthry_[name].[hash].js',
-      preserveModules: false,
-      preserveModulesRoot: 'src'
+      preserveModules: false
     }
   ],
   external: [
@@ -23,6 +27,12 @@ export default {
   ],
   plugins: [
     del({ targets: 'dist/*' }),
+    replace({
+      preventAssignment: true,
+      values: {
+        __PACKAGE_VERSION__: JSON.stringify(pkg.version)
+      }
+    }),
     resolve({
       extensions: ['.ts', '.tsx', '.js', '.jsx']
     }),
