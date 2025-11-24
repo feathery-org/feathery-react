@@ -4,7 +4,15 @@ import { DataItem } from './useAIExtractionToast';
 
 const INDENT_PX = 24;
 
-export default function ExtractionItem({
+// Default labels for different toast types
+const DEFAULT_LABELS = {
+  queued: 'Queued Document',
+  incomplete: 'Uploading Document',
+  complete: 'Completed',
+  error: 'Failed'
+};
+
+export default function ToastItem({
   item,
   level = 0
 }: {
@@ -66,7 +74,7 @@ export default function ExtractionItem({
       {hasChildren && isExpanded && (
         <div css={{ width: '100%' }}>
           {item.children?.map((child, index) => (
-            <ExtractionItem key={index} item={child} level={level + 1} />
+            <ToastItem key={index} item={child} level={level + 1} />
           ))}
         </div>
       )}
@@ -77,13 +85,14 @@ export default function ExtractionItem({
 const renderItemLabel = (item: DataItem) => {
   // fallback labels if no run data yet
   if (!item.extractionKey) {
-    const label =
-      {
-        complete: 'Completed',
-        error: 'Failed',
-        queued: 'Queued Document',
-        incomplete: 'Uploading Document'
-      }[item.status] || 'Action';
+    const docCount = item.documents?.length || 0;
+    const docCountText = docCount > 1 ? ` (${docCount})` : '';
+
+    // Use custom labels if provided, otherwise use defaults
+    const labels = item.labels || DEFAULT_LABELS;
+    const baseLabel =
+      labels[item.status] || DEFAULT_LABELS[item.status] || 'Action';
+    const label = `${baseLabel}${docCountText}`;
 
     return (
       <span css={{ color: item.status === 'queued' ? '#9ca3af' : '#374151' }}>

@@ -1,20 +1,36 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronUp } from './icons';
-import ExtractionItem from './ExtractionItem';
+import ToastItem from './ToastItem';
 import { DataItem } from './useAIExtractionToast';
 
-type ExtractionToastProps = {
+type ActionToastProps = {
   data: DataItem[];
-  title?: string;
   bottom?: number;
 };
 
-const ExtractionToast = ({
-  data,
-  title = 'Scanning Documents',
-  bottom = 20
-}: ExtractionToastProps) => {
+const getTitle = (data: DataItem[]): string => {
+  const hasAIExtraction = data.some((item) => item.type === 'ai-extraction');
+  const hasEnvelopes = data.some((item) => item.type === 'envelope-generation');
+
+  const totalDocs = data
+    .filter((item) => item.type === 'envelope-generation')
+    .reduce((sum, item) => sum + (item.documents?.length || 0), 0);
+
+  if (hasAIExtraction && hasEnvelopes) {
+    return 'Processing Documents';
+  }
+
+  if (hasEnvelopes) {
+    return totalDocs > 1 ? 'Preparing Documents' : 'Preparing Document';
+  }
+
+  return 'Scanning Documents';
+};
+
+const ActionToast = ({ data, bottom = 20 }: ActionToastProps) => {
   const [isToastExpanded, setIsToastExpanded] = useState(true);
+
+  if (data.length === 0) return null;
 
   return (
     <div
@@ -55,7 +71,7 @@ const ExtractionToast = ({
             fontSize: '16px'
           }}
         >
-          {title}
+          {getTitle(data)}
         </h3>
         {isToastExpanded ? <ChevronUp /> : <ChevronDown />}
       </div>
@@ -68,7 +84,7 @@ const ExtractionToast = ({
           }}
         >
           {data.map((item, index) => (
-            <ExtractionItem key={index} item={item} />
+            <ToastItem key={index} item={item} />
           ))}
         </div>
       )}
@@ -76,4 +92,4 @@ const ExtractionToast = ({
   );
 };
 
-export default ExtractionToast;
+export default ActionToast;
