@@ -9,6 +9,8 @@ import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
 import FeatheryClient from './featheryClient';
 
+export type PageSelectionInput = (number | string)[] | (number | string)[][];
+
 export type IntegrationActionIds = string[] | string;
 export type IntegrationActionOptions = {
   waitForCompletion?: boolean;
@@ -21,7 +23,7 @@ export type RunIntegrationActions = (
 
 export type ExtractionActionOptions = {
   waitForCompletion?: boolean;
-  pages?: number[] | number[][];
+  pages?: PageSelectionInput;
   variantId?: string;
   meetingUrl?: string;
 };
@@ -91,7 +93,7 @@ export interface FormInternalState {
   runAIExtraction: (
     extractionId: string,
     options: ExtractionActionOptions | boolean,
-    pages?: number[] | number[][]
+    pages?: PageSelectionInput
   ) => Promise<Record<string, string>>;
   getConfig: GetConfig;
 }

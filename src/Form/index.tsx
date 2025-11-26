@@ -133,6 +133,7 @@ import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
   ExtractionActionOptions,
+  PageSelectionInput,
   setFormInternalState
 } from '../utils/internalState';
 import useFormAuth from '../auth/internal/useFormAuth';
@@ -1087,7 +1088,7 @@ function Form({
           extractionId: string,
           options: ExtractionActionOptions | boolean,
           // deprecated, pages should be in options
-          pages?: number[] | number[][]
+          pages?: PageSelectionInput
         ) => {
           if (!extractionId) {
             console.error('No extraction ID was passed');
