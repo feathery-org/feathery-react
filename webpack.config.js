@@ -34,6 +34,9 @@ module.exports = {
     ]
   },
   resolve: {
-    extensions: ['*', '.js', '.jsx', '.ts', '.tsx', '.d.ts']
+    extensions: ['*', '.js', '.jsx', '.ts', '.tsx', '.d.ts'],
+    fallback: {
+      stream: false // jszip references Node's stream module but doesn't need it in browser
+    }
   }
 };
