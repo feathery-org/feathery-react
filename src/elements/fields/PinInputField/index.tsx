@@ -327,6 +327,7 @@ function PinInputField({
       style={{
         display: 'flex',
         position: 'relative',
+        flexDirection: 'column',
         pointerEvents: editMode ? 'none' : 'auto'
       }}
       {...elementProps}
