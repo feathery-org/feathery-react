@@ -30,7 +30,7 @@ export default {
     'react/jsx-runtime',
     /^react\//,
     /^react-dom\//,
-    'stream' // jszip references Node's stream module but doesn't need it in browser
+    'jszip'
   ],
   plugins: [
     del({ targets: 'dist/*' }),
