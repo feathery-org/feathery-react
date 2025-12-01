@@ -12,10 +12,16 @@ export default {
   input: 'src/index.tsx',
   output: [
     {
-      dir: 'dist',
+      dir: 'dist/esm',
       format: 'esm',
       chunkFileNames: 'fthry_[name].[hash].js',
       preserveModules: false
+    },
+    {
+      dir: 'dist/cjs',
+      format: 'cjs',
+      chunkFileNames: 'fthry_[name].[hash].js',
+      exports: 'named'
     }
   ],
   external: [
@@ -23,7 +29,8 @@ export default {
     'react-dom',
     'react/jsx-runtime',
     /^react\//,
-    /^react-dom\//
+    /^react-dom\//,
+    'jszip'
   ],
   plugins: [
     del({ targets: 'dist/*' }),
@@ -42,7 +49,7 @@ export default {
       tsconfigOverride: {
         compilerOptions: {
           declaration: true,
-          declarationDir: './dist',
+          declarationDir: './dist/esm',
           noEmit: false
         },
         exclude: [

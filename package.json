@@ -6,14 +6,15 @@
   "license": "MIT",
   "repository": "https://github.com/feathery-org/feathery-react",
   "jsdelivr": "umd/index.js",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/cjs/index.js"
     }
   },
   "engines": {
@@ -123,8 +124,8 @@
     "date-fns": "^4.1.0",
     "flat-map-polyfill": "^0.3.8",
     "is-url": "^1.2.4",
-    "js-big-decimal": "^1.4.1",
     "jszip": "^3.10.1",
+    "js-big-decimal": "^1.4.1",
     "lodash.debounce": "^4.0.8",
     "lodash.throttle": "^4.1.1",
     "quill-delta": "^4.2.2",
