@@ -106,12 +106,16 @@ export const createDateRestrictionsMetadata = (
   noPast?: boolean,
   noFuture?: boolean,
   noWeekends?: boolean,
-  disabledDates?: string[]
+  disabledDates?: string[],
+  minDate?: string | { number: number; unit: 'days' | 'weeks' | 'months' | 'years' },
+  maxDate?: string | { number: number; unit: 'days' | 'weeks' | 'months' | 'years' }
 ) => ({
   ...(noPast !== undefined && { no_past: noPast }),
   ...(noFuture !== undefined && { no_future: noFuture }),
   ...(noWeekends !== undefined && { no_weekends: noWeekends }),
-  ...(disabledDates && { disabled_dates: disabledDates })
+  ...(disabledDates && { disabled_dates: disabledDates }),
+  ...(minDate && { min_date: minDate }),
+  ...(maxDate && { max_date: maxDate })
 });
 
 export const createMMDDYYYYElement = (metadata: any = {}) =>
@@ -132,7 +136,9 @@ export const createRestrictedDateElement = (restrictions: any = {}) =>
       restrictions.noPast,
       restrictions.noFuture,
       restrictions.noWeekends,
-      restrictions.disabledDates
+      restrictions.disabledDates,
+      restrictions.minDate,
+      restrictions.maxDate
     )
   );
 
@@ -234,6 +240,20 @@ export const getWeekendDateISO = () => {
 
 export const createDisabledDateString = (month: number, day: number) => {
   return `${month}-${day}`;
+};
+
+export const getDateISO = (daysFromNow: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromNow);
+  return date.toISOString().split('T')[0];
+};
+
+export const formatDateForInput = (isoDate: string) => {
+  const date = new Date(isoDate);
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  const year = date.getFullYear();
+  return `${month}/${day}/${year}`;
 };
 
 export const expectDateToBeFiltered = async (

@@ -52,7 +52,9 @@ import {
   createDisabledDateString,
   expectDateInputToHaveValue,
   inputDateInput,
-  blurDateInput
+  blurDateInput,
+  getDateISO,
+  formatDateForInput
 } from './test-utils';
 
 describe('DateSelectorField', () => {
@@ -354,6 +356,334 @@ describe('DateSelectorField', () => {
         expect(onComplete).toHaveBeenCalledTimes(2);
         const savedValue = getMockFieldValue();
         expect(savedValue).toMatch(/^2030-12-31$/);
+      });
+    });
+  });
+
+  describe('Min/Max Date Restrictions', () => {
+    describe('Absolute Dates', () => {
+      it('restricts dates before min_date with absolute date string', async () => {
+        const minDateISO = getDateISO(7); // 7 days from now
+        const element = createRestrictedDateElement({ minDate: minDateISO });
+        const onComplete = createStatefulOnComplete();
+        const props = createDateSelectorProps(element, { onComplete });
+
+        render(<DateSelectorField {...props} />);
+
+        const input = await getDatePickerInput();
+        expect(input).toBeInTheDocument();
+
+        // Try to select a date before min_date (today)
+        const todayFormatted = formatDateForInput(getTodayISO());
+        await setDateValue(todayFormatted);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalled();
+        });
+
+        // A date after min_date should work
+        const validDateISO = getDateISO(10); // 10 days from now
+        const validDate = formatDateForInput(validDateISO);
+        await setDateValue(validDate);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalledTimes(2);
+          const savedValue = getMockFieldValue();
+          expect(savedValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        });
+      });
+
+      it('restricts dates after max_date with absolute date string', async () => {
+        const maxDateISO = getDateISO(7); // 7 days from now
+        const element = createRestrictedDateElement({ maxDate: maxDateISO });
+        const onComplete = createStatefulOnComplete();
+        const props = createDateSelectorProps(element, { onComplete });
+
+        render(<DateSelectorField {...props} />);
+
+        const input = await getDatePickerInput();
+        expect(input).toBeInTheDocument();
+
+        // Try to select a date after max_date
+        const farFutureDateISO = getDateISO(30); // 30 days from now
+        const farFutureDate = formatDateForInput(farFutureDateISO);
+        await setDateValue(farFutureDate);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalled();
+        });
+
+        // A date before max_date should work
+        const validDateISO = getDateISO(5); // 5 days from now
+        const validDate = formatDateForInput(validDateISO);
+        await setDateValue(validDate);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalledTimes(2);
+          const savedValue = getMockFieldValue();
+          expect(savedValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        });
+      });
+
+      it('restricts dates outside min_date and max_date range', async () => {
+        const minDateISO = getDateISO(5); // 5 days from now
+        const maxDateISO = getDateISO(15); // 15 days from now
+        const element = createRestrictedDateElement({
+          minDate: minDateISO,
+          maxDate: maxDateISO
+        });
+        const onComplete = createStatefulOnComplete();
+        const props = createDateSelectorProps(element, { onComplete });
+
+        render(<DateSelectorField {...props} />);
+
+        const input = await getDatePickerInput();
+        expect(input).toBeInTheDocument();
+
+        // Date within range should work
+        const validDateISO = getDateISO(10); // 10 days from now
+        const validDate = formatDateForInput(validDateISO);
+        await setDateValue(validDate);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalled();
+          const savedValue = getMockFieldValue();
+          expect(savedValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        });
+      });
+    });
+
+    describe('Relative Dates', () => {
+      it('restricts dates before min_date with relative days', async () => {
+        const element = createRestrictedDateElement({
+          minDate: { number: -7, unit: 'days' } // 7 days ago
+        });
+        const onComplete = createStatefulOnComplete();
+        const props = createDateSelectorProps(element, { onComplete });
+
+        render(<DateSelectorField {...props} />);
+
+        const input = await getDatePickerInput();
+        expect(input).toBeInTheDocument();
+
+        // Try to select a date before min_date (30 days ago)
+        const tooOldDateISO = getDateISO(-30);
+        const tooOldDate = formatDateForInput(tooOldDateISO);
+        await setDateValue(tooOldDate);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalled();
+        });
+
+        // Today should work (after min_date)
+        const todayFormatted = formatDateForInput(getTodayISO());
+        await setDateValue(todayFormatted);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalledTimes(2);
+          const savedValue = getMockFieldValue();
+          expect(savedValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        });
+      });
+
+      it('restricts dates after max_date with relative days', async () => {
+        const element = createRestrictedDateElement({
+          maxDate: { number: 30, unit: 'days' } // 30 days from now
+        });
+        const onComplete = createStatefulOnComplete();
+        const props = createDateSelectorProps(element, { onComplete });
+
+        render(<DateSelectorField {...props} />);
+
+        const input = await getDatePickerInput();
+        expect(input).toBeInTheDocument();
+
+        // Try to select a date after max_date (60 days from now)
+        const tooFarDateISO = getDateISO(60);
+        const tooFarDate = formatDateForInput(tooFarDateISO);
+        await setDateValue(tooFarDate);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalled();
+        });
+
+        // Today should work (before max_date)
+        const todayFormatted = formatDateForInput(getTodayISO());
+        await setDateValue(todayFormatted);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalledTimes(2);
+          const savedValue = getMockFieldValue();
+          expect(savedValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        });
+      });
+
+      it('restricts dates with relative weeks', async () => {
+        const element = createRestrictedDateElement({
+          minDate: { number: -2, unit: 'weeks' }, // 2 weeks ago
+          maxDate: { number: 4, unit: 'weeks' } // 4 weeks from now
+        });
+        const onComplete = createStatefulOnComplete();
+        const props = createDateSelectorProps(element, { onComplete });
+
+        render(<DateSelectorField {...props} />);
+
+        const input = await getDatePickerInput();
+        expect(input).toBeInTheDocument();
+
+        // Today should work (within range)
+        const todayFormatted = formatDateForInput(getTodayISO());
+        await setDateValue(todayFormatted);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalled();
+          const savedValue = getMockFieldValue();
+          expect(savedValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        });
+      });
+
+      it('restricts dates with relative months', async () => {
+        const element = createRestrictedDateElement({
+          minDate: { number: -1, unit: 'months' }, // 1 month ago
+          maxDate: { number: 3, unit: 'months' } // 3 months from now
+        });
+        const onComplete = createStatefulOnComplete();
+        const props = createDateSelectorProps(element, { onComplete });
+
+        render(<DateSelectorField {...props} />);
+
+        const input = await getDatePickerInput();
+        expect(input).toBeInTheDocument();
+
+        // Today should work (within range)
+        const todayFormatted = formatDateForInput(getTodayISO());
+        await setDateValue(todayFormatted);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalled();
+          const savedValue = getMockFieldValue();
+          expect(savedValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        });
+      });
+    });
+
+    describe('Priority and Fallback', () => {
+      it('uses min_date over no_past when both are set', async () => {
+        const minDateISO = getDateISO(-7); // 7 days ago
+        const element = createRestrictedDateElement({
+          noPast: true, // Would restrict to today
+          minDate: minDateISO // But this allows 7 days ago
+        });
+        const onComplete = createStatefulOnComplete();
+        const props = createDateSelectorProps(element, { onComplete });
+
+        render(<DateSelectorField {...props} />);
+
+        const input = await getDatePickerInput();
+        expect(input).toBeInTheDocument();
+
+        // A date 3 days ago should work (after min_date)
+        const validDateISO = getDateISO(-3);
+        const validDate = formatDateForInput(validDateISO);
+        await setDateValue(validDate);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalled();
+          const savedValue = getMockFieldValue();
+          expect(savedValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        });
+      });
+
+      it('uses max_date over no_future when both are set', async () => {
+        const maxDateISO = getDateISO(30); // 30 days from now
+        const element = createRestrictedDateElement({
+          noFuture: true, // Would restrict to today
+          maxDate: maxDateISO // But this allows 30 days from now
+        });
+        const onComplete = createStatefulOnComplete();
+        const props = createDateSelectorProps(element, { onComplete });
+
+        render(<DateSelectorField {...props} />);
+
+        const input = await getDatePickerInput();
+        expect(input).toBeInTheDocument();
+
+        // A date 15 days from now should work (before max_date)
+        const validDateISO = getDateISO(15);
+        const validDate = formatDateForInput(validDateISO);
+        await setDateValue(validDate);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalled();
+          const savedValue = getMockFieldValue();
+          expect(savedValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        });
+      });
+
+      it('falls back to no_past when min_date is not set', async () => {
+        const element = createRestrictedDateElement({
+          noPast: true
+        });
+        const onComplete = createStatefulOnComplete();
+        const props = createDateSelectorProps(element, { onComplete });
+
+        render(<DateSelectorField {...props} />);
+
+        const input = await getDatePickerInput();
+        expect(input).toBeInTheDocument();
+
+        // Try a past date first (should be rejected)
+        const pastDateISO = getDateISO(-5);
+        const pastDate = formatDateForInput(pastDateISO);
+        await setDateValue(pastDate);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalled();
+        });
+
+        // Future date should work (no_past allows today and future)
+        const futureDateISO = getDateISO(5);
+        const futureDate = formatDateForInput(futureDateISO);
+        await setDateValue(futureDate);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalledTimes(2);
+          const savedValue = getMockFieldValue();
+          expect(savedValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        });
+      });
+
+      it('falls back to no_future when max_date is not set', async () => {
+        const element = createRestrictedDateElement({
+          noFuture: true
+        });
+        const onComplete = createStatefulOnComplete();
+        const props = createDateSelectorProps(element, { onComplete });
+
+        render(<DateSelectorField {...props} />);
+
+        const input = await getDatePickerInput();
+        expect(input).toBeInTheDocument();
+
+        // Try a future date first (should be rejected)
+        const futureDateISO = getDateISO(30);
+        const futureDate = formatDateForInput(futureDateISO);
+        await setDateValue(futureDate);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalled();
+        });
+
+        // Past date should work (no_future allows today and past)
+        const pastDateISO = getDateISO(-5);
+        const pastDate = formatDateForInput(pastDateISO);
+        await setDateValue(pastDate);
+
+        await waitFor(() => {
+          expect(onComplete).toHaveBeenCalledTimes(2);
+          const savedValue = getMockFieldValue();
+          expect(savedValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        });
       });
     });
   });
