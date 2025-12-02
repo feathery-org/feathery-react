@@ -8,6 +8,8 @@ import VideoElement from './basic/VideoElement';
 import TextElement from './basic/TextElement';
 import ButtonElement from './basic/ButtonElement';
 import ProgressBarElement from './basic/ProgressBarElement';
+import TableElement from './basic/TableElement';
+
 import FieldSkeleton from './components/skeletons/FieldSkeleton';
 
 const Basic = {
@@ -15,7 +17,8 @@ const Basic = {
   VideoElement,
   TextElement,
   ButtonElement,
-  ProgressBarElement
+  ProgressBarElement,
+  TableElement
 };
 const Elements = { ...Basic, ...Fields };
 

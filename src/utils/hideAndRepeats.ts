@@ -153,7 +153,8 @@ const stepElementTypes = [
   'servar_fields',
   'progress_bars',
   'images',
-  'videos'
+  'videos',
+  'tables'
 ];
 
 const getPositionKey = (node: any) => {

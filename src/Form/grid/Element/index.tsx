@@ -88,6 +88,7 @@ const Element = ({ node: el, form }: any) => {
     );
   else if (type === 'image') return <Elements.ImageElement {...basicProps} />;
   else if (type === 'video') return <Elements.VideoElement {...basicProps} />;
+  else if (type === 'table') return <Elements.TableElement {...basicProps} />;
   else if (type === 'text')
     return (
       <Elements.TextElement
