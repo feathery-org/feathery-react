@@ -8,7 +8,7 @@ import DateSelectorStyles, {
   PORTAL_CONTAINER_CLASS
 } from './styles';
 import { resetStyles } from '../../styles';
-import { parseISO } from 'date-fns';
+import { parseISO, add } from 'date-fns';
 import useBorder from '../../components/useBorder';
 import {
   featheryDoc,
@@ -22,6 +22,13 @@ import DatePicker from 'react-datepicker';
 import { IMask, IMaskInput } from 'react-imask';
 
 type InternalDate = Date | null;
+
+interface RelativeDateConfig {
+  number: number;
+  unit: 'days' | 'weeks' | 'months' | 'years';
+}
+
+type DateConfig = string | RelativeDateConfig;
 
 export interface DateSelectorProps {
   element?: any;
@@ -43,6 +50,30 @@ export interface DateSelectorProps {
 // Helper function to parse time limits
 const parseTimeThreshold = (timeThreshold: string) =>
   timeThreshold.split(':').map(Number);
+
+const parseDateConfig = (config: DateConfig | undefined): Date | undefined => {
+  if (!config) return undefined;
+
+  // string - parse absolute date
+  if (typeof config === 'string') {
+    const date = parseISO(config);
+    return date.toString() === 'Invalid Date' ? undefined : date;
+  }
+
+  // object - parse relative date
+  if (
+    typeof config === 'object' &&
+    config.number !== undefined &&
+    config.unit
+  ) {
+    const now = new Date();
+    const { number, unit } = config;
+
+    return add(now, { [unit]: number });
+  }
+
+  return undefined;
+};
 
 const stopTouchPropagation = (e: TouchEvent) => e.stopPropagation();
 
@@ -287,8 +318,18 @@ function DateSelectorField({
           timeIntervals={servarMeta.time_interval || 30}
           dateFormat={dateMask}
           timeFormat={timeMask}
-          maxDate={servarMeta.no_future && !editMode ? new Date() : undefined}
-          minDate={servarMeta.no_past && !editMode ? new Date() : undefined}
+          maxDate={
+            editMode
+              ? undefined
+              : parseDateConfig(servarMeta.max_date) ??
+                (servarMeta.no_future ? new Date() : undefined)
+          }
+          minDate={
+            editMode
+              ? undefined
+              : parseDateConfig(servarMeta.min_date) ??
+                (servarMeta.no_past ? new Date() : undefined)
+          }
           showMonthDropdown
           showYearDropdown
           forceShowMonthNavigation={false}
