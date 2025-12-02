@@ -135,7 +135,7 @@ import internalState, { setFormInternalState } from '../utils/internalState';
 import {
   ExtractionActionOptions,
   PageSelectionInput
-} from '@feathery/api-helpers';
+} from '@feathery/client-utils';
 import useFormAuth from '../auth/internal/useFormAuth';
 import {
   ACTION_ADD_REPEATED_ROW,

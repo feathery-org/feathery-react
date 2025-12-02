@@ -1,5 +1,5 @@
 import { featheryWindow } from '../browser';
-import { FetchError } from '@feathery/api-helpers';
+import { FetchError } from '@feathery/client-utils';
 import { SDKKeyError } from '../error';
 import { untrackUnload } from '../offlineRequestHandler';
 

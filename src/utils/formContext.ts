@@ -22,7 +22,7 @@ import {
   IntegrationActionIds,
   IntegrationActionOptions,
   PageSelectionInput
-} from '@feathery/api-helpers';
+} from '@feathery/client-utils';
 /**
  * Used by contextRef in <Form />, renderAt for vanillajs, and the lifecycle
  * methods

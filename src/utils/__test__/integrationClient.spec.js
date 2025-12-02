@@ -1,6 +1,6 @@
 import IntegrationClient from '../featheryClient/integrationClient';
 import { initInfo, fieldValues } from '../init';
-import { setEnvironment, getApiUrl } from '@feathery/api-helpers';
+import { setEnvironment, getApiUrl } from '@feathery/client-utils';
 
 // Mock the API_URL and STATIC_URL to avoid circular dependency issues
 // since ../featheryClient/integrationClient imports them from ../featheryClient

@@ -14,7 +14,7 @@ import { featheryDoc, featheryWindow } from './browser';
 import { DEFAULT_MOBILE_BREAKPOINT } from '../elements/styles';
 import internalState from './internalState';
 import { setSavedStepKey } from './stepHelperFunctions';
-import { createHttpHelpers } from '@feathery/api-helpers';
+import { createHttpHelpers } from '@feathery/client-utils';
 
 export function isStoreFieldValueAction(el: any) {
   (el.properties?.actions ?? []).some(
