@@ -13,7 +13,7 @@ import {
   IntegrationActionOptions,
   ExtractionActionOptions,
   PageSelectionInput
-} from '@feathery/api-helpers';
+} from '@feathery/client-utils';
 
 export type RunIntegrationActions = (
   actionIds: IntegrationActionIds,

@@ -41,7 +41,7 @@ import {
   getStaticUrl,
   getS3Url,
   getCdnUrl
-} from '@feathery/api-helpers';
+} from '@feathery/client-utils';
 import {
   FEATHERY_INTERACTION_EVENT,
   isInteractionDetected,
@@ -59,25 +59,19 @@ export let STATIC_URL = getStaticUrl();
 export let S3_URL = getS3Url();
 
 export const updateRegionApiUrls = (region: string) => {
-  if (region === 'au') {
-    setEnvironment('productionAU');
-    CDN_URL = getCdnUrl();
-    API_URL = getApiUrl();
-    STATIC_URL = getStaticUrl();
-    S3_URL = getS3Url();
-  } else if (region === 'eu') {
-    setEnvironment('productionEU');
-    CDN_URL = getCdnUrl();
-    API_URL = getApiUrl();
-    STATIC_URL = getStaticUrl();
-    S3_URL = getS3Url();
-  } else if (region === 'ca') {
-    setEnvironment('productionCA');
-    CDN_URL = getCdnUrl();
-    API_URL = getApiUrl();
-    STATIC_URL = getStaticUrl();
-    S3_URL = getS3Url();
-  }
+  const environmentMap: Record<string, URL_ENUM> = {
+    au: 'productionAU',
+    ca: 'productionCA',
+    eu: 'productionEU'
+  };
+
+  if (environmentMap[region]) setEnvironment(environmentMap[region]);
+  else setEnvironment('production');
+
+  API_URL = getApiUrl();
+  CDN_URL = getCdnUrl();
+  STATIC_URL = getStaticUrl();
+  S3_URL = getS3Url();
 };
 
 /**

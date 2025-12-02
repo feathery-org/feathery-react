@@ -12,7 +12,7 @@ import {
   IntegrationActionIds,
   IntegrationActionOptions,
   parseAPIError
-} from '@feathery/api-helpers';
+} from '@feathery/client-utils';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
