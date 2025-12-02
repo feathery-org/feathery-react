@@ -146,7 +146,8 @@ const typeMap = {
   texts: 'text',
   buttons: 'button',
   servar_fields: 'field',
-  videos: 'video'
+  videos: 'video',
+  tables: 'table'
 };
 
 const buildGridMap = (step: any) => {
