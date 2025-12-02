@@ -15,13 +15,13 @@ import internalState, {
   AlloyEntities,
   GetConfigParams,
   LoanProCustomerObject,
-  PageSelectionInput,
   setFormInternalState
 } from './internalState';
 import { validateElements } from './validation';
 import {
   IntegrationActionIds,
-  IntegrationActionOptions
+  IntegrationActionOptions,
+  PageSelectionInput
 } from '@feathery/api-helpers';
 /**
  * Used by contextRef in <Form />, renderAt for vanillajs, and the lifecycle

@@ -28,13 +28,10 @@ import { RequestOptions } from '../offlineRequestHandler';
 import debounce from 'lodash.debounce';
 import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
-import {
- 
-  GetConfigParams,
-  PageSelectionInput
-} from '../internalState';
+import { GetConfigParams } from '../internalState';
 import {
   ExtractionActionOptions,
+  PageSelectionInput,
   parseAPIError,
   extractAIDocument,
   inviteFormCollaborator as apiInviteFormCollaborator,

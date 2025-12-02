@@ -11,10 +11,9 @@ import FeatheryClient from './featheryClient';
 import {
   IntegrationActionIds,
   IntegrationActionOptions,
-  ExtractionActionOptions
+  ExtractionActionOptions,
+  PageSelectionInput
 } from '@feathery/api-helpers';
-
-export type PageSelectionInput = (number | string)[] | (number | string)[][];
 
 export type RunIntegrationActions = (
   actionIds: IntegrationActionIds,
