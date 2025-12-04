@@ -31,6 +31,9 @@ function FileUploadField({
 
   const [rawFiles, setRawFiles] = useState<Promise<File>[]>([]);
   const [hoverDownload, setHoverDownload] = useState(-1);
+  const [failedThumbnails, setFailedThumbnails] = useState<Set<number>>(
+    new Set()
+  );
 
   useEffect(() => {
     // Prevent infinite loop of setting a new empty array as the value
@@ -38,6 +41,11 @@ function FileUploadField({
     // Normalize placeholders like [null] to an empty list
     setRawFiles(toList(initialFiles).filter(Boolean));
   }, [initialFiles]);
+
+  // Reset failed thumbnails when file list changes
+  useEffect(() => {
+    setFailedThumbnails(new Set());
+  }, [rawFiles.length]);
 
   // Thumbnails derived from current files; rawFiles is normalized to exclude nulls
   const thumbnailData = useThumbnailData(rawFiles);
@@ -265,9 +273,12 @@ function FileUploadField({
                   <DownloadIcon />
                 </div>
               )}
-              {thumbnail ? (
+              {thumbnail && !failedThumbnails.has(index) ? (
                 <img
                   src={thumbnail}
+                  onError={() =>
+                    setFailedThumbnails((prev) => new Set(prev).add(index))
+                  }
                   style={{
                     width: '100%',
                     height: '100%',
@@ -277,15 +288,14 @@ function FileUploadField({
                 />
               ) : (
                 <span
-                  css={{
+                  style={{
                     height: '100%',
                     width: '100%',
                     wordBreak: 'break-all',
                     display: 'flex',
                     justifyContent: 'center',
                     alignItems: 'center',
-                    textAlign: 'center',
-                    ...responsiveStyles.getTarget('filename')
+                    textAlign: 'center'
                   }}
                 >
                   {filename || 'File'}
