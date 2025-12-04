@@ -277,15 +277,14 @@ function FileUploadField({
                 />
               ) : (
                 <span
-                  css={{
+                  style={{
                     height: '100%',
                     width: '100%',
                     wordBreak: 'break-all',
                     display: 'flex',
                     justifyContent: 'center',
                     alignItems: 'center',
-                    textAlign: 'center',
-                    ...responsiveStyles.getTarget('filename')
+                    textAlign: 'center'
                   }}
                 >
                   {filename || 'File'}
