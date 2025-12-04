@@ -179,7 +179,7 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyBoxShadow('field');
       break;
     case 'file_upload':
-      styles.addTargets('ac', 'add');
+      styles.addTargets('ac', 'add', 'filename');
       styles.applyHeight('ac');
       if (field.servar.metadata.multiple) {
         styles.apply('field', 'padding_bottom', (a: number) => ({
@@ -190,6 +190,10 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyBorders({ target: 'field' });
       styles.applyCorners('field');
       styles.applyBoxShadow('field');
+      styles.applyColor('field', 'background_color', 'backgroundColor');
+      // filename target: only font styles + background for the filename span
+      styles.applyFontStyles('filename');
+      styles.applyColor('filename', 'background_color', 'backgroundColor');
       styles.applyColor('ac', 'background_color', 'backgroundColor');
       styles.applyBorders({ target: 'ac' });
       styles.applyCorners('ac');
