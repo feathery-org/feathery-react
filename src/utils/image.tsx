@@ -15,10 +15,9 @@ export function getThumbnailType(file: File) {
   let thumbnailType = THUMBNAIL_TYPE.UNKNOWN;
 
   if (file) {
-    // TIFF images are not supported by most browsers' <img> tag,
-    // so treat them as unknown (display filename only)
-    // Covers: image/tiff, image/x-tiff, image/tif
-    if (/image\//.test(file.type) && !/image\/(?:x-)?tiff?/i.test(file.type)) {
+    // Allow all image/*; unsupported ones (e.g., TIFF, HEIC off Safari)
+    // will fall back via the <img> onError handler in FileUploadField
+    if (/image\//.test(file.type)) {
       thumbnailType = THUMBNAIL_TYPE.IMAGE;
     } else if (/application\/pdf/.test(file.type)) {
       thumbnailType = THUMBNAIL_TYPE.PDF;
