@@ -1,33 +1,27 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { fieldValues } from '../../../utils/init';
+import { stringifyWithNull } from '../../../utils/primitives';
 
-type Column = {
-  display: string;
-  fieldKey: string;
+type Action = {
+  label: string;
 };
 
-const defaultColumnData = [
-  {
-    display: 'Product name',
-    fieldKey: 'table_column_a'
-  },
-  {
-    display: 'Color',
-    fieldKey: 'table_column_b'
-  },
-  {
-    display: 'Category',
-    fieldKey: 'table_column_c'
-  },
-  {
-    display: 'Price',
-    fieldKey: 'table_column_d'
-  },
-  {
-    display: 'Stock',
-    fieldKey: 'table_column_e'
-  }
-];
+type FieldDisplayColumn = {
+  name: string;
+  type: 'field_display';
+  field_id: string;
+  field_type: string;
+  field_key: string;
+};
+
+type ActionColumn = {
+  name: string;
+  type: 'action';
+  actions: Action[];
+};
+
+type Column = FieldDisplayColumn | ActionColumn;
 
 function applyTableStyles(responsiveStyles: any) {
   responsiveStyles.addTargets(
@@ -39,25 +33,231 @@ function applyTableStyles(responsiveStyles: any) {
     'td',
     'tr'
   );
-  responsiveStyles.applyFontStyles('tableContainer');
-  responsiveStyles.applyWidth('tableContainer');
   return responsiveStyles;
 }
 
-function TableElement({ element, responsiveStyles, elementProps = {} }: any) {
+function ActionButtons({
+  actions,
+  rowIndex,
+  column,
+  columnData,
+  onClick
+}: {
+  actions: Action[];
+  rowIndex: number;
+  column: ActionColumn;
+  columnData: Column[];
+  onClick?: (payload: any) => void;
+}) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [visibleActions, setVisibleActions] = useState(actions);
+  const [overflowActions, setOverflowActions] = useState<Action[]>([]);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(event.target as Node) &&
+        menuButtonRef.current &&
+        !menuButtonRef.current.contains(event.target as Node)
+      ) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMenuOpen]);
+
+  useEffect(() => {
+    // Simple heuristic: show first 2 actions, overflow the rest
+    // In a production app, you'd measure actual widths
+    const maxVisible = 2;
+    if (actions.length > maxVisible) {
+      setVisibleActions(actions.slice(0, maxVisible));
+      setOverflowActions(actions.slice(maxVisible));
+    } else {
+      setVisibleActions(actions);
+      setOverflowActions([]);
+    }
+  }, [actions]);
+
+  const handleActionClick = (action: Action) => {
+    // console.log(`Action ${action.label} clicked for row ${rowIndex}`);
+    setIsMenuOpen(false);
+
+    if (!onClick) return;
+
+    // Build row_data object with all field_display column values for this row
+    const row_data: Record<string, any> = {};
+    columnData.forEach((col) => {
+      if (col.type === 'field_display') {
+        const fieldValue = fieldValues[col.field_key];
+        const cellValue = Array.isArray(fieldValue)
+          ? fieldValue[rowIndex]
+          : fieldValue;
+        row_data[col.name] = cellValue;
+      }
+    });
+
+    onClick({
+      row: rowIndex,
+      action: action.label,
+      column: column.name,
+      row_data
+    });
+  };
+
+  const buttonStyles = {
+    paddingLeft: '12px',
+    paddingRight: '12px',
+    paddingTop: '6px',
+    paddingBottom: '6px',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#6b7280',
+    backgroundColor: 'transparent',
+    border: '1px solid #d1d5db',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+    '&:hover': {
+      backgroundColor: '#f3f4f6',
+      borderColor: '#9ca3af'
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      css={{
+        display: 'flex',
+        gap: '8px',
+        alignItems: 'center'
+      }}
+    >
+      {visibleActions.map((action, index) => (
+        <button
+          key={index}
+          type='button'
+          onClick={() => handleActionClick(action)}
+          css={buttonStyles}
+        >
+          {action.label}
+        </button>
+      ))}
+      {overflowActions.length > 0 && (
+        <>
+          <button
+            ref={menuButtonRef}
+            type='button'
+            onClick={() => {
+              if (!isMenuOpen && menuButtonRef.current) {
+                const rect = menuButtonRef.current.getBoundingClientRect();
+                setMenuPosition({
+                  top: rect.bottom + 4,
+                  left: rect.right
+                });
+              }
+              setIsMenuOpen(!isMenuOpen);
+            }}
+            css={{
+              ...buttonStyles,
+              paddingLeft: '10px',
+              paddingRight: '10px'
+            }}
+          >
+            •••
+          </button>
+          {isMenuOpen &&
+            createPortal(
+              <div
+                ref={menuRef}
+                css={{
+                  position: 'fixed',
+                  top: `${menuPosition.top}px`,
+                  left: `${menuPosition.left}px`,
+                  transform: 'translateX(-100%)',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '4px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  zIndex: 9999,
+                  minWidth: '120px'
+                }}
+              >
+                {overflowActions.map((action, index) => (
+                  <button
+                    key={index}
+                    type='button'
+                    onClick={() => handleActionClick(action)}
+                    css={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      paddingLeft: '12px',
+                      paddingRight: '12px',
+                      paddingTop: '8px',
+                      paddingBottom: '8px',
+                      fontSize: '14px',
+                      color: '#374151',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      '&:hover': {
+                        backgroundColor: '#f3f4f6'
+                      },
+                      '&:first-of-type': {
+                        borderTopLeftRadius: '4px',
+                        borderTopRightRadius: '4px'
+                      },
+                      '&:last-of-type': {
+                        borderBottomLeftRadius: '4px',
+                        borderBottomRightRadius: '4px'
+                      }
+                    }}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>,
+              document.body
+            )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function TableElement({
+  element,
+  responsiveStyles,
+  elementProps = {},
+  onClick = () => {}
+}: any) {
   const styles = useMemo(
     () => applyTableStyles(responsiveStyles),
     [responsiveStyles]
   );
 
-  const columnData: Column[] =
-    element.properties?.column_data || defaultColumnData;
+  const columnData: Column[] = element.properties?.columns || []; //defaultColumnData;
 
-  // Get the maximum number of rows across all columns to handle different lengths
   const numRows = columnData.reduce((maxRows, column) => {
-    const fieldValue = fieldValues[column.fieldKey];
-    if (Array.isArray(fieldValue)) {
-      return Math.max(maxRows, fieldValue.length);
+    if (column.type === 'field_display') {
+      const fieldValue = fieldValues[column.field_key];
+      if (Array.isArray(fieldValue)) {
+        return Math.max(maxRows, fieldValue.length);
+      }
     }
     return maxRows;
   }, 0);
@@ -67,16 +267,17 @@ function TableElement({ element, responsiveStyles, elementProps = {} }: any) {
       css={{
         position: 'relative',
         overflowX: 'auto',
-        backgroundColor: '#f9fafb',
-        boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-        borderRadius: '8px',
-        border: '1px solid #e5e7eb',
+        width: '100%',
+        height: '100%',
         ...styles.getTarget('tableContainer')
       }}
       {...elementProps}
     >
       <table
         css={{
+          backgroundColor: '#e5e7eb',
+          borderWidth: 1,
+          borderColor: '#a1a3a6',
           width: '100%',
           fontSize: '14px',
           textAlign: 'left',
@@ -108,7 +309,7 @@ function TableElement({ element, responsiveStyles, elementProps = {} }: any) {
                   ...styles.getTarget('th')
                 }}
               >
-                {column.display}
+                {column.name}
               </th>
             ))}
           </tr>
@@ -125,34 +326,60 @@ function TableElement({ element, responsiveStyles, elementProps = {} }: any) {
                 }}
               >
                 {columnData.map((column, colIndex) => {
-                  const fieldValue = fieldValues[column.fieldKey];
+                  if (column.type === 'action') {
+                    return (
+                      <td
+                        key={colIndex}
+                        css={{
+                          paddingLeft: '24px',
+                          paddingRight: '24px',
+                          paddingTop: '16px',
+                          paddingBottom: '16px',
+                          ...styles.getTarget('td')
+                        }}
+                      >
+                        <ActionButtons
+                          actions={column.actions}
+                          rowIndex={rowIndex}
+                          column={column}
+                          columnData={columnData}
+                          onClick={onClick}
+                        />
+                      </td>
+                    );
+                  }
+
+                  // Handle field_display columns
+                  const fieldValue = fieldValues[column.field_key];
                   const cellValue = Array.isArray(fieldValue)
                     ? fieldValue[rowIndex]
                     : fieldValue;
 
-                  const isFirstColumn = colIndex === 0;
+                  // Build row_data for cell clicks
+                  const handleCellClick = () => {
+                    const row_data: Record<string, any> = {};
+                    columnData.forEach((col) => {
+                      if (col.type === 'field_display') {
+                        const fValue = fieldValues[col.field_key];
+                        const cValue = Array.isArray(fValue)
+                          ? fValue[rowIndex]
+                          : fValue;
+                        row_data[col.name] = cValue;
+                      }
+                    });
 
-                  return isFirstColumn ? (
-                    <th
-                      key={colIndex}
-                      scope='row'
-                      css={{
-                        paddingLeft: '24px',
-                        paddingRight: '24px',
-                        paddingTop: '16px',
-                        paddingBottom: '16px',
-                        fontWeight: 500,
-                        color: '#111827',
-                        whiteSpace: 'nowrap',
-                        textAlign: 'left',
-                        ...styles.getTarget('th')
-                      }}
-                    >
-                      {cellValue ?? ''}
-                    </th>
-                  ) : (
+                    onClick({
+                      row: rowIndex,
+                      column: column.name,
+                      cell_data: cellValue,
+                      row_data
+                    });
+                  };
+
+                  return (
                     <td
                       key={colIndex}
+                      onClick={handleCellClick}
                       css={{
                         paddingLeft: '24px',
                         paddingRight: '24px',
@@ -161,7 +388,8 @@ function TableElement({ element, responsiveStyles, elementProps = {} }: any) {
                         ...styles.getTarget('td')
                       }}
                     >
-                      {cellValue ?? ''}
+                      {/* TODO: display all values properly (e.g. images) */}
+                      {stringifyWithNull(cellValue) ?? ''}
                     </td>
                   );
                 })}
