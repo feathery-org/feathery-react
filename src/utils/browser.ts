@@ -1,5 +1,4 @@
 import { type FocusEvent } from 'react';
-import JSZip from 'jszip';
 import { isElementInViewport } from './formHelperFunctions';
 
 export function runningInClient() {
@@ -99,7 +98,7 @@ export async function downloadAllFileUrls(urls: string[]) {
   let file: File;
 
   if (urls.length > 1) {
-    const zip = new JSZip();
+    const zip = {} as any;
 
     await Promise.all(
       urls.map(async (url: string) => {

@@ -82,6 +82,8 @@ try {
   environment = (process.env.BACKEND_ENV || 'production') as URL_ENUM;
 } catch (e) {} // process.env won't exist in production build
 
+environment = 'local';
+
 export let API_URL = API_URL_OPTIONS[environment];
 export let CDN_URL = CDN_URL_OPTIONS[environment];
 export let STATIC_URL = STATIC_URL_OPTIONS[environment];
