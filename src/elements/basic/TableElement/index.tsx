@@ -2,6 +2,27 @@ import { useMemo, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { fieldValues } from '../../../utils/init';
 import { stringifyWithNull } from '../../../utils/primitives';
+import {
+  containerStyle,
+  navStyle,
+  navTextBoldStyle,
+  navTextStyle,
+  pageButtonActiveStyle,
+  pageButtonNextStyle,
+  pageButtonPrevStyle,
+  paginationListStyle,
+  rowStyle,
+  searchContainerStyle,
+  searchIconWrapperStyle,
+  searchInputStyle,
+  searchWrapperStyle,
+  cellStyle,
+  tableStyle,
+  theadStyle,
+  thStyle,
+  actionButtonStyle,
+  pageButtonStyle
+} from './styles';
 
 type Action = {
   label: string;
@@ -36,7 +57,7 @@ function applyTableStyles(responsiveStyles: any) {
   return responsiveStyles;
 }
 
-// Utility functions for intelligent sorting
+// Utility functions sorting strings as numbers and dates
 function tryParseNumber(value: any): number | null {
   if (value === null || value === undefined || value === '') return null;
 
@@ -45,8 +66,8 @@ function tryParseNumber(value: any): number | null {
   // Remove common number formatting characters
   const cleaned = stringValue
     .replace(/[$€£¥]/g, '') // Currency symbols
-    .replace(/[,%]/g, '')    // Commas and percent
-    .replace(/\s/g, '');     // Spaces
+    .replace(/[,%]/g, '') // Commas and percent
+    .replace(/\s/g, ''); // Spaces
 
   const parsed = parseFloat(cleaned);
   return isNaN(parsed) ? null : parsed;
@@ -63,12 +84,11 @@ function tryParseDate(value: any): Date | null {
     return standardDate;
   }
 
-  // Try common formats: MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD, etc.
   const formats = [
     // US format: MM/DD/YYYY or M/D/YY
     /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/,
     // ISO-ish: YYYY/MM/DD or YYYY-MM-DD
-    /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/,
+    /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/
   ];
 
   for (const format of formats) {
@@ -80,7 +100,7 @@ function tryParseDate(value: any): Date | null {
         // YYYY-MM-DD format
         [, year, month, day] = match;
       } else {
-        // MM/DD/YYYY format (assume US)
+        // MM/DD/YYYY format
         [, month, day, year] = match;
       }
 
@@ -178,8 +198,7 @@ function ActionButtons({
   }, [isMenuOpen]);
 
   useEffect(() => {
-    // Simple heuristic: show first 2 actions, overflow the rest
-    // In a production app, you'd measure actual widths
+    // Show first 2 actions, overflow the rest
     const maxVisible = 2;
     if (actions.length > maxVisible) {
       setVisibleActions(actions.slice(0, maxVisible));
@@ -191,12 +210,11 @@ function ActionButtons({
   }, [actions]);
 
   const handleActionClick = (action: Action) => {
-    // console.log(`Action ${action.label} clicked for row ${rowIndex}`);
     setIsMenuOpen(false);
 
     if (!onClick) return;
 
-    // Build row_data object with all field_display column values for this row
+    // Build row_data object
     const row_data: Record<string, any> = {};
     columnData.forEach((col) => {
       if (col.type === 'field_display') {
@@ -216,25 +234,6 @@ function ActionButtons({
     });
   };
 
-  const buttonStyles = {
-    paddingLeft: '12px',
-    paddingRight: '12px',
-    paddingTop: '6px',
-    paddingBottom: '6px',
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#6b7280',
-    backgroundColor: 'transparent',
-    border: '1px solid #d1d5db',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap' as const,
-    '&:hover': {
-      backgroundColor: '#f3f4f6',
-      borderColor: '#9ca3af'
-    }
-  };
-
   return (
     <div
       ref={containerRef}
@@ -249,7 +248,7 @@ function ActionButtons({
           key={index}
           type='button'
           onClick={() => handleActionClick(action)}
-          css={buttonStyles}
+          css={actionButtonStyle as any}
         >
           {action.label}
         </button>
@@ -269,11 +268,7 @@ function ActionButtons({
               }
               setIsMenuOpen(!isMenuOpen);
             }}
-            css={{
-              ...buttonStyles,
-              paddingLeft: '10px',
-              paddingRight: '10px'
-            }}
+            css={actionButtonStyle as any}
           >
             •••
           </button>
@@ -338,12 +333,7 @@ function ActionButtons({
   );
 }
 
-function TableElement({
-  element,
-  responsiveStyles,
-  elementProps = {},
-  onClick = () => {}
-}: any) {
+function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
   const styles = useMemo(
     () => applyTableStyles(responsiveStyles),
     [responsiveStyles]
@@ -353,14 +343,13 @@ function TableElement({
   const enableSearch = element.properties?.enable_search ?? false;
   const enablePagination = element.properties?.enable_pagination ?? false;
   const enableSort = element.properties?.enable_sort ?? false;
-  const rowsPerPage = element.properties?.rows_per_page ?? 10;
+  const rowsPerPage = 10;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(0);
 
-  // Calculate total number of rows from data
   const totalRows = useMemo(() => {
     return columnData.reduce((maxRows, column) => {
       if (column.type === 'field_display') {
@@ -373,13 +362,11 @@ function TableElement({
     }, 0);
   }, [columnData]);
 
-  // Build array of row indices
   const allRowIndices = useMemo(
     () => Array.from({ length: totalRows }, (_, i) => i),
     [totalRows]
   );
 
-  // Filter rows based on search query
   const filteredRowIndices = useMemo(() => {
     if (!enableSearch || !searchQuery.trim()) return allRowIndices;
 
@@ -400,7 +387,6 @@ function TableElement({
     });
   }, [allRowIndices, columnData, searchQuery, enableSearch]);
 
-  // Sort filtered rows
   const sortedRowIndices = useMemo(() => {
     if (!enableSort || !sortColumn) return filteredRowIndices;
 
@@ -415,7 +401,6 @@ function TableElement({
       const aValue = Array.isArray(fieldValue) ? fieldValue[aIdx] : fieldValue;
       const bValue = Array.isArray(fieldValue) ? fieldValue[bIdx] : fieldValue;
 
-      // Parse values for intelligent comparison
       const aParsed = parseSortableValue(aValue);
       const bParsed = parseSortableValue(bValue);
 
@@ -424,7 +409,6 @@ function TableElement({
     });
   }, [filteredRowIndices, sortColumn, sortDirection, columnData, enableSort]);
 
-  // Paginate sorted rows
   const paginatedRowIndices = useMemo(() => {
     if (!enablePagination) return sortedRowIndices;
 
@@ -450,363 +434,276 @@ function TableElement({
       if (sortDirection === 'asc') {
         setSortDirection('desc');
       } else {
-        // Remove sort
         setSortColumn(null);
         setSortDirection('asc');
       }
     } else {
-      // Start new sort on this column
       setSortColumn(columnName);
       setSortDirection('asc');
     }
   };
 
   return (
-    <div
-      css={{
-        position: 'relative',
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column'
-      }}
-      {...elementProps}
-    >
-      {/* Search Bar */}
+    <div css={{ ...containerStyle, ...styles.getTarget('tableContainer') }}>
       {enableSearch && (
-        <div
-          css={{
-            padding: '12px',
-            borderBottom: '1px solid #e5e7eb',
-            backgroundColor: '#ffffff'
-          }}
-        >
-          <input
-            type='text'
-            placeholder='Search...'
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            css={{
-              width: '100%',
-              padding: '8px 12px',
-              fontSize: '14px',
-              border: '1px solid #d1d5db',
-              borderRadius: '4px',
-              '&:focus': {
-                outline: 'none',
-                borderColor: '#3b82f6',
-                boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.1)'
-              }
-            }}
-          />
+        <div css={searchContainerStyle}>
+          <div css={searchWrapperStyle as any}>
+            <div css={searchIconWrapperStyle as any}>
+              <svg
+                css={{
+                  width: '16px',
+                  height: '16px',
+                  color: '#6b7280'
+                }}
+                fill='none'
+                viewBox='0 0 24 24'
+                stroke='currentColor'
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap='round'
+                  d='M21 21l-3.5-3.5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z'
+                />
+              </svg>
+            </div>
+            <input
+              type='text'
+              css={searchInputStyle}
+              placeholder='Search'
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
         </div>
       )}
+      <table css={tableStyle as any}>
+        <thead css={theadStyle}>
+          <tr>
+            {columnData.map((column, index) => {
+              const isSortable = enableSort && column.type === 'field_display';
+              const isSorted = sortColumn === column.name;
 
-      {/* Table Container */}
-      <div
-        css={{
-          position: 'relative',
-          overflowX: 'auto',
-          flex: 1,
-          ...styles.getTarget('tableContainer')
-        }}
-      >
-        <table
-          css={{
-            backgroundColor: '#e5e7eb',
-            borderWidth: 1,
-            borderColor: '#a1a3a6',
-            width: '100%',
-            fontSize: '14px',
-            textAlign: 'left',
-            color: '#6b7280',
-            ...styles.getTarget('table')
-          }}
-        >
-          <thead
-            css={{
-              fontSize: '14px',
-              color: '#6b7280',
-              backgroundColor: '#f3f4f6',
-              borderBottom: '1px solid #e5e7eb',
-              ...styles.getTarget('thead')
-            }}
-          >
-            <tr>
-              {columnData.map((column, index) => {
-                const isSortable =
-                  enableSort && column.type === 'field_display';
-                const isSorted = sortColumn === column.name;
-
-                return (
-                  <th
-                    key={index}
-                    scope='col'
-                    onClick={() => isSortable && handleSort(column.name)}
-                    css={{
-                      paddingLeft: '24px',
-                      paddingRight: '24px',
-                      paddingTop: '12px',
-                      paddingBottom: '12px',
-                      fontWeight: 500,
-                      textAlign: 'left',
-                      cursor: isSortable ? 'pointer' : 'default',
-                      userSelect: 'none',
-                      '&:hover': isSortable
-                        ? { backgroundColor: '#e5e7eb' }
-                        : {},
-                      ...styles.getTarget('th')
-                    }}
-                  >
-                    <div
-                      css={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}
-                    >
-                      <span>{column.name}</span>
-                      {isSortable && (
-                        <span
-                          css={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            fontSize: '10px',
-                            color: isSorted ? '#3b82f6' : '#9ca3af'
-                          }}
-                        >
-                          <span
-                            css={{
-                              lineHeight: '8px',
-                              opacity:
-                                isSorted && sortDirection === 'asc' ? 1 : 0.3
-                            }}
-                          >
-                            ▲
-                          </span>
-                          <span
-                            css={{
-                              lineHeight: '8px',
-                              opacity:
-                                isSorted && sortDirection === 'desc' ? 1 : 0.3
-                            }}
-                          >
-                            ▼
-                          </span>
-                        </span>
-                      )}
-                    </div>
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody css={styles.getTarget('tbody')}>
-            {paginatedRowIndices.map((rowIndex, displayIndex) => {
-              const isLastRow = displayIndex === paginatedRowIndices.length - 1;
               return (
-                <tr
-                  key={rowIndex}
+                <th
+                  key={index}
+                  scope='col'
+                  onClick={() => isSortable && handleSort(column.name)}
                   css={{
-                    backgroundColor: '#ffffff',
-                    ...(isLastRow ? {} : { borderBottom: '1px solid #e5e7eb' })
+                    ...thStyle,
+                    ...styles.getTarget('th')
                   }}
                 >
-                  {columnData.map((column, colIndex) => {
-                    if (column.type === 'action') {
-                      return (
-                        <td
-                          key={colIndex}
+                  <div
+                    css={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <span>{column.name}</span>
+                    {isSortable && (
+                      <span
+                        css={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          fontSize: '10px',
+                          color: isSorted ? '#3b82f6' : '#9ca3af'
+                        }}
+                      >
+                        <span
                           css={{
-                            paddingLeft: '24px',
-                            paddingRight: '24px',
-                            paddingTop: '16px',
-                            paddingBottom: '16px',
-                            ...styles.getTarget('td')
+                            lineHeight: '8px',
+                            opacity:
+                              isSorted && sortDirection === 'asc' ? 1 : 0.3
                           }}
                         >
-                          <ActionButtons
-                            actions={column.actions}
-                            rowIndex={rowIndex}
-                            column={column}
-                            columnData={columnData}
-                            onClick={onClick}
-                          />
-                        </td>
-                      );
-                    }
+                          ▲
+                        </span>
+                        <span
+                          css={{
+                            lineHeight: '8px',
+                            opacity:
+                              isSorted && sortDirection === 'desc' ? 1 : 0.3
+                          }}
+                        >
+                          ▼
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {paginatedRowIndices.map((rowIndex, displayIndex) => {
+            const row_data: Record<string, any> = {};
+            columnData.forEach((col) => {
+              if (col.type === 'field_display') {
+                const fValue = fieldValues[col.field_key];
+                const cValue = Array.isArray(fValue)
+                  ? fValue[rowIndex]
+                  : fValue;
+                row_data[col.name] = cValue;
+              }
+            });
 
-                    // Handle field_display columns
-                    const fieldValue = fieldValues[column.field_key];
-                    const cellValue = Array.isArray(fieldValue)
-                      ? fieldValue[rowIndex]
-                      : fieldValue;
+            return (
+              <tr key={rowIndex} css={rowStyle}>
+                {columnData.map((column, colIndex) => {
+                  const handleCellClick = () => {
+                    onClick({
+                      row: rowIndex,
+                      column: column.name,
+                      cell_data: cellValue,
+                      row_data
+                    });
+                  };
 
-                    // Build row_data for cell clicks
-                    const handleCellClick = () => {
-                      const row_data: Record<string, any> = {};
-                      columnData.forEach((col) => {
-                        if (col.type === 'field_display') {
-                          const fValue = fieldValues[col.field_key];
-                          const cValue = Array.isArray(fValue)
-                            ? fValue[rowIndex]
-                            : fValue;
-                          row_data[col.name] = cValue;
-                        }
-                      });
-
-                      onClick({
-                        row: rowIndex,
-                        column: column.name,
-                        cell_data: cellValue,
-                        row_data
-                      });
-                    };
-
+                  if (column.type === 'action') {
                     return (
                       <td
                         key={colIndex}
                         onClick={handleCellClick}
                         css={{
-                          paddingLeft: '24px',
-                          paddingRight: '24px',
-                          paddingTop: '16px',
-                          paddingBottom: '16px',
+                          ...(cellStyle as any),
                           ...styles.getTarget('td')
                         }}
                       >
-                        {/* TODO: display all values properly (e.g. images) */}
-                        {stringifyWithNull(cellValue) ?? ''}
+                        <ActionButtons
+                          actions={column.actions}
+                          rowIndex={rowIndex}
+                          column={column}
+                          columnData={columnData}
+                          onClick={onClick}
+                        />
                       </td>
                     );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                  }
 
-      {/* Pagination Controls */}
-      {enablePagination && totalPages > 1 && (
-        <div
-          css={{
-            padding: '12px',
-            borderTop: '1px solid #e5e7eb',
-            backgroundColor: '#ffffff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px'
-          }}
-        >
-          <div css={{ fontSize: '14px', color: '#6b7280' }}>
-            Showing {currentPage * rowsPerPage + 1} to{' '}
-            {Math.min((currentPage + 1) * rowsPerPage, sortedRowIndices.length)}{' '}
-            of {sortedRowIndices.length} results
-          </div>
-          <div css={{ display: 'flex', gap: '8px' }}>
-            <button
-              type='button'
-              onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-              disabled={currentPage === 0}
-              css={{
-                padding: '6px 12px',
-                fontSize: '14px',
-                fontWeight: 500,
-                color: currentPage === 0 ? '#9ca3af' : '#374151',
-                backgroundColor: 'transparent',
-                border: '1px solid #d1d5db',
-                borderRadius: '4px',
-                cursor: currentPage === 0 ? 'not-allowed' : 'pointer',
-                '&:hover:not(:disabled)': {
-                  backgroundColor: '#f3f4f6'
-                }
-              }}
-            >
-              Previous
-            </button>
-            <div css={{ display: 'flex', gap: '4px' }}>
-              {Array.from({ length: totalPages }, (_, i) => {
-                // Show first page, last page, current page, and pages around current
-                const showPage =
-                  i === 0 ||
-                  i === totalPages - 1 ||
-                  Math.abs(i - currentPage) <= 1;
+                  const fieldValue = fieldValues[column.field_key];
+                  const cellValue = Array.isArray(fieldValue)
+                    ? fieldValue[rowIndex]
+                    : fieldValue;
 
-                const showEllipsis =
-                  (i === 1 && currentPage > 2) ||
-                  (i === totalPages - 2 && currentPage < totalPages - 3);
-
-                if (showEllipsis) {
                   return (
-                    <span
-                      key={i}
+                    <td
+                      key={colIndex}
+                      onClick={handleCellClick}
                       css={{
-                        padding: '6px 12px',
+                        ...(cellStyle as any),
+                        ...styles.getTarget('td')
+                      }}
+                    >
+                      {stringifyWithNull(cellValue) ?? ''}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {enablePagination && totalPages > 1 && (
+        <nav css={navStyle as any} aria-label='Table navigation'>
+          <span css={navTextStyle}>
+            Showing{' '}
+            <span css={navTextBoldStyle}>
+              {currentPage * rowsPerPage + 1}-
+              {Math.min(
+                (currentPage + 1) * rowsPerPage,
+                sortedRowIndices.length
+              )}
+            </span>{' '}
+            of <span css={navTextBoldStyle}>{sortedRowIndices.length}</span>
+          </span>
+          <ul css={paginationListStyle}>
+            <li>
+              <button
+                type='button'
+                onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                disabled={currentPage === 0}
+                css={pageButtonPrevStyle as any}
+              >
+                Previous
+              </button>
+            </li>
+            {Array.from({ length: totalPages }, (_, i) => {
+              // Show first page, last page, current page, and pages around current
+              const showPage =
+                i === 0 ||
+                i === totalPages - 1 ||
+                Math.abs(i - currentPage) <= 1;
+
+              const showEllipsis =
+                (i === 1 && currentPage > 2) ||
+                (i === totalPages - 2 && currentPage < totalPages - 3);
+
+              if (showEllipsis) {
+                return (
+                  <li key={i}>
+                    <button
+                      type='button'
+                      disabled
+                      css={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#6b7280',
+                        backgroundColor: '#f3f4f6',
+                        boxSizing: 'border-box',
+                        border: '1px solid #9ca3af',
+                        fontWeight: 500,
                         fontSize: '14px',
-                        color: '#9ca3af'
+                        width: '36px',
+                        height: '36px',
+                        cursor: 'default',
+                        '&:focus': {
+                          outline: 'none'
+                        }
                       }}
                     >
                       ...
-                    </span>
-                  );
-                }
+                    </button>
+                  </li>
+                );
+              }
 
-                if (!showPage) return null;
+              if (!showPage) return null;
 
-                return (
+              const isActive = i === currentPage;
+              return (
+                <li key={i}>
                   <button
-                    key={i}
                     type='button'
                     onClick={() => setCurrentPage(i)}
-                    css={{
-                      padding: '6px 12px',
-                      fontSize: '14px',
-                      fontWeight: 500,
-                      color: i === currentPage ? '#ffffff' : '#374151',
-                      backgroundColor:
-                        i === currentPage ? '#3b82f6' : 'transparent',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      minWidth: '36px',
-                      '&:hover': {
-                        backgroundColor:
-                          i === currentPage ? '#2563eb' : '#f3f4f6'
-                      }
-                    }}
+                    aria-current={isActive ? 'page' : undefined}
+                    css={
+                      isActive
+                        ? (pageButtonActiveStyle as any)
+                        : (pageButtonStyle as any)
+                    }
                   >
                     {i + 1}
                   </button>
-                );
-              })}
-            </div>
-            <button
-              type='button'
-              onClick={() =>
-                setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
-              }
-              disabled={currentPage === totalPages - 1}
-              css={{
-                padding: '6px 12px',
-                fontSize: '14px',
-                fontWeight: 500,
-                color: currentPage === totalPages - 1 ? '#9ca3af' : '#374151',
-                backgroundColor: 'transparent',
-                border: '1px solid #d1d5db',
-                borderRadius: '4px',
-                cursor:
-                  currentPage === totalPages - 1 ? 'not-allowed' : 'pointer',
-                '&:hover:not(:disabled)': {
-                  backgroundColor: '#f3f4f6'
+                </li>
+              );
+            })}
+            <li>
+              <button
+                type='button'
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
                 }
-              }}
-            >
-              Next
-            </button>
-          </div>
-        </div>
+                disabled={currentPage === totalPages - 1}
+                css={pageButtonNextStyle as any}
+              >
+                Next
+              </button>
+            </li>
+          </ul>
+        </nav>
       )}
     </div>
   );
