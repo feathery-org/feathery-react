@@ -250,86 +250,324 @@ function TableElement({
     [responsiveStyles]
   );
 
-  const columnData: Column[] = element.properties?.columns || []; //defaultColumnData;
+  const columnData: Column[] = element.properties?.columns || [];
+  const enableSearch = element.properties?.enable_search ?? false;
+  const enablePagination = element.properties?.enable_pagination ?? false;
+  const enableSort = element.properties?.enable_sort ?? false;
+  const rowsPerPage = element.properties?.rows_per_page ?? 10;
 
-  const numRows = columnData.reduce((maxRows, column) => {
-    if (column.type === 'field_display') {
-      const fieldValue = fieldValues[column.field_key];
-      if (Array.isArray(fieldValue)) {
-        return Math.max(maxRows, fieldValue.length);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [currentPage, setCurrentPage] = useState(0);
+
+  // Calculate total number of rows from data
+  const totalRows = useMemo(() => {
+    return columnData.reduce((maxRows, column) => {
+      if (column.type === 'field_display') {
+        const fieldValue = fieldValues[column.field_key];
+        if (Array.isArray(fieldValue)) {
+          return Math.max(maxRows, fieldValue.length);
+        }
       }
+      return maxRows;
+    }, 0);
+  }, [columnData]);
+
+  // Build array of row indices
+  const allRowIndices = useMemo(
+    () => Array.from({ length: totalRows }, (_, i) => i),
+    [totalRows]
+  );
+
+  // Filter rows based on search query
+  const filteredRowIndices = useMemo(() => {
+    if (!enableSearch || !searchQuery.trim()) return allRowIndices;
+
+    return allRowIndices.filter((rowIndex) => {
+      return columnData.some((column) => {
+        if (column.type === 'field_display') {
+          const fieldValue = fieldValues[column.field_key];
+          const cellValue = Array.isArray(fieldValue)
+            ? fieldValue[rowIndex]
+            : fieldValue;
+          const stringValue = stringifyWithNull(cellValue) ?? '';
+          return stringValue
+            .toLowerCase()
+            .includes(searchQuery.toLowerCase().trim());
+        }
+        return false;
+      });
+    });
+  }, [allRowIndices, columnData, searchQuery, enableSearch]);
+
+  // Sort filtered rows
+  const sortedRowIndices = useMemo(() => {
+    if (!enableSort || !sortColumn) return filteredRowIndices;
+
+    const column = columnData.find(
+      (col) => col.type === 'field_display' && col.name === sortColumn
+    ) as FieldDisplayColumn | undefined;
+
+    if (!column) return filteredRowIndices;
+
+    return [...filteredRowIndices].sort((aIdx, bIdx) => {
+      const fieldValue = fieldValues[column.field_key];
+      const aValue = Array.isArray(fieldValue) ? fieldValue[aIdx] : fieldValue;
+      const bValue = Array.isArray(fieldValue) ? fieldValue[bIdx] : fieldValue;
+
+      const aString = stringifyWithNull(aValue) ?? '';
+      const bString = stringifyWithNull(bValue) ?? '';
+
+      // Try numeric comparison first
+      const aNum = parseFloat(aString);
+      const bNum = parseFloat(bString);
+
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        return sortDirection === 'asc' ? aNum - bNum : bNum - aNum;
+      }
+
+      // Fall back to string comparison
+      const comparison = aString.localeCompare(bString);
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [filteredRowIndices, sortColumn, sortDirection, columnData, enableSort]);
+
+  // Paginate sorted rows
+  const paginatedRowIndices = useMemo(() => {
+    if (!enablePagination) return sortedRowIndices;
+
+    const startIdx = currentPage * rowsPerPage;
+    const endIdx = startIdx + rowsPerPage;
+    return sortedRowIndices.slice(startIdx, endIdx);
+  }, [sortedRowIndices, currentPage, rowsPerPage, enablePagination]);
+
+  // Reset to first page when search or sort changes
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [searchQuery, sortColumn, sortDirection]);
+
+  const totalPages = enablePagination
+    ? Math.ceil(sortedRowIndices.length / rowsPerPage)
+    : 1;
+
+  const handleSort = (columnName: string) => {
+    if (!enableSort) return;
+
+    if (sortColumn === columnName) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortColumn(columnName);
+      setSortDirection('asc');
     }
-    return maxRows;
-  }, 0);
+  };
 
   return (
     <div
       css={{
         position: 'relative',
-        overflowX: 'auto',
         width: '100%',
         height: '100%',
-        ...styles.getTarget('tableContainer')
+        display: 'flex',
+        flexDirection: 'column'
       }}
       {...elementProps}
     >
-      <table
-        css={{
-          backgroundColor: '#e5e7eb',
-          borderWidth: 1,
-          borderColor: '#a1a3a6',
-          width: '100%',
-          fontSize: '14px',
-          textAlign: 'left',
-          color: '#6b7280',
-          ...styles.getTarget('table')
-        }}
-      >
-        <thead
+      {/* Search Bar */}
+      {enableSearch && (
+        <div
           css={{
-            fontSize: '14px',
-            color: '#6b7280',
-            backgroundColor: '#f3f4f6',
+            padding: '12px',
             borderBottom: '1px solid #e5e7eb',
-            ...styles.getTarget('thead')
+            backgroundColor: '#ffffff'
           }}
         >
-          <tr>
-            {columnData.map((column, index) => (
-              <th
-                key={index}
-                scope='col'
-                css={{
-                  paddingLeft: '24px',
-                  paddingRight: '24px',
-                  paddingTop: '12px',
-                  paddingBottom: '12px',
-                  fontWeight: 500,
-                  textAlign: 'left',
-                  ...styles.getTarget('th')
-                }}
-              >
-                {column.name}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody css={styles.getTarget('tbody')}>
-          {Array.from({ length: numRows }).map((_, rowIndex) => {
-            const isLastRow = rowIndex === numRows - 1;
-            return (
-              <tr
-                key={rowIndex}
-                css={{
-                  backgroundColor: '#ffffff',
-                  ...(isLastRow ? {} : { borderBottom: '1px solid #e5e7eb' })
-                }}
-              >
-                {columnData.map((column, colIndex) => {
-                  if (column.type === 'action') {
+          <input
+            type='text'
+            placeholder='Search...'
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            css={{
+              width: '100%',
+              padding: '8px 12px',
+              fontSize: '14px',
+              border: '1px solid #d1d5db',
+              borderRadius: '4px',
+              '&:focus': {
+                outline: 'none',
+                borderColor: '#3b82f6',
+                boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.1)'
+              }
+            }}
+          />
+        </div>
+      )}
+
+      {/* Table Container */}
+      <div
+        css={{
+          position: 'relative',
+          overflowX: 'auto',
+          flex: 1,
+          ...styles.getTarget('tableContainer')
+        }}
+      >
+        <table
+          css={{
+            backgroundColor: '#e5e7eb',
+            borderWidth: 1,
+            borderColor: '#a1a3a6',
+            width: '100%',
+            fontSize: '14px',
+            textAlign: 'left',
+            color: '#6b7280',
+            ...styles.getTarget('table')
+          }}
+        >
+          <thead
+            css={{
+              fontSize: '14px',
+              color: '#6b7280',
+              backgroundColor: '#f3f4f6',
+              borderBottom: '1px solid #e5e7eb',
+              ...styles.getTarget('thead')
+            }}
+          >
+            <tr>
+              {columnData.map((column, index) => {
+                const isSortable =
+                  enableSort && column.type === 'field_display';
+                const isSorted = sortColumn === column.name;
+
+                return (
+                  <th
+                    key={index}
+                    scope='col'
+                    onClick={() => isSortable && handleSort(column.name)}
+                    css={{
+                      paddingLeft: '24px',
+                      paddingRight: '24px',
+                      paddingTop: '12px',
+                      paddingBottom: '12px',
+                      fontWeight: 500,
+                      textAlign: 'left',
+                      cursor: isSortable ? 'pointer' : 'default',
+                      userSelect: 'none',
+                      '&:hover': isSortable
+                        ? { backgroundColor: '#e5e7eb' }
+                        : {},
+                      ...styles.getTarget('th')
+                    }}
+                  >
+                    <div
+                      css={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      <span>{column.name}</span>
+                      {isSortable && (
+                        <span
+                          css={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            fontSize: '10px',
+                            color: isSorted ? '#3b82f6' : '#9ca3af'
+                          }}
+                        >
+                          <span
+                            css={{
+                              lineHeight: '8px',
+                              opacity:
+                                isSorted && sortDirection === 'asc' ? 1 : 0.3
+                            }}
+                          >
+                            ▲
+                          </span>
+                          <span
+                            css={{
+                              lineHeight: '8px',
+                              opacity:
+                                isSorted && sortDirection === 'desc' ? 1 : 0.3
+                            }}
+                          >
+                            ▼
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody css={styles.getTarget('tbody')}>
+            {paginatedRowIndices.map((rowIndex, displayIndex) => {
+              const isLastRow = displayIndex === paginatedRowIndices.length - 1;
+              return (
+                <tr
+                  key={rowIndex}
+                  css={{
+                    backgroundColor: '#ffffff',
+                    ...(isLastRow ? {} : { borderBottom: '1px solid #e5e7eb' })
+                  }}
+                >
+                  {columnData.map((column, colIndex) => {
+                    if (column.type === 'action') {
+                      return (
+                        <td
+                          key={colIndex}
+                          css={{
+                            paddingLeft: '24px',
+                            paddingRight: '24px',
+                            paddingTop: '16px',
+                            paddingBottom: '16px',
+                            ...styles.getTarget('td')
+                          }}
+                        >
+                          <ActionButtons
+                            actions={column.actions}
+                            rowIndex={rowIndex}
+                            column={column}
+                            columnData={columnData}
+                            onClick={onClick}
+                          />
+                        </td>
+                      );
+                    }
+
+                    // Handle field_display columns
+                    const fieldValue = fieldValues[column.field_key];
+                    const cellValue = Array.isArray(fieldValue)
+                      ? fieldValue[rowIndex]
+                      : fieldValue;
+
+                    // Build row_data for cell clicks
+                    const handleCellClick = () => {
+                      const row_data: Record<string, any> = {};
+                      columnData.forEach((col) => {
+                        if (col.type === 'field_display') {
+                          const fValue = fieldValues[col.field_key];
+                          const cValue = Array.isArray(fValue)
+                            ? fValue[rowIndex]
+                            : fValue;
+                          row_data[col.name] = cValue;
+                        }
+                      });
+
+                      onClick({
+                        row: rowIndex,
+                        column: column.name,
+                        cell_data: cellValue,
+                        row_data
+                      });
+                    };
+
                     return (
                       <td
                         key={colIndex}
+                        onClick={handleCellClick}
                         css={{
                           paddingLeft: '24px',
                           paddingRight: '24px',
@@ -338,66 +576,139 @@ function TableElement({
                           ...styles.getTarget('td')
                         }}
                       >
-                        <ActionButtons
-                          actions={column.actions}
-                          rowIndex={rowIndex}
-                          column={column}
-                          columnData={columnData}
-                          onClick={onClick}
-                        />
+                        {/* TODO: display all values properly (e.g. images) */}
+                        {stringifyWithNull(cellValue) ?? ''}
                       </td>
                     );
-                  }
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
-                  // Handle field_display columns
-                  const fieldValue = fieldValues[column.field_key];
-                  const cellValue = Array.isArray(fieldValue)
-                    ? fieldValue[rowIndex]
-                    : fieldValue;
+      {/* Pagination Controls */}
+      {enablePagination && totalPages > 1 && (
+        <div
+          css={{
+            padding: '12px',
+            borderTop: '1px solid #e5e7eb',
+            backgroundColor: '#ffffff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px'
+          }}
+        >
+          <div css={{ fontSize: '14px', color: '#6b7280' }}>
+            Showing {currentPage * rowsPerPage + 1} to{' '}
+            {Math.min((currentPage + 1) * rowsPerPage, sortedRowIndices.length)}{' '}
+            of {sortedRowIndices.length} results
+          </div>
+          <div css={{ display: 'flex', gap: '8px' }}>
+            <button
+              type='button'
+              onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+              disabled={currentPage === 0}
+              css={{
+                padding: '6px 12px',
+                fontSize: '14px',
+                fontWeight: 500,
+                color: currentPage === 0 ? '#9ca3af' : '#374151',
+                backgroundColor: 'transparent',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                cursor: currentPage === 0 ? 'not-allowed' : 'pointer',
+                '&:hover:not(:disabled)': {
+                  backgroundColor: '#f3f4f6'
+                }
+              }}
+            >
+              Previous
+            </button>
+            <div css={{ display: 'flex', gap: '4px' }}>
+              {Array.from({ length: totalPages }, (_, i) => {
+                // Show first page, last page, current page, and pages around current
+                const showPage =
+                  i === 0 ||
+                  i === totalPages - 1 ||
+                  Math.abs(i - currentPage) <= 1;
 
-                  // Build row_data for cell clicks
-                  const handleCellClick = () => {
-                    const row_data: Record<string, any> = {};
-                    columnData.forEach((col) => {
-                      if (col.type === 'field_display') {
-                        const fValue = fieldValues[col.field_key];
-                        const cValue = Array.isArray(fValue)
-                          ? fValue[rowIndex]
-                          : fValue;
-                        row_data[col.name] = cValue;
-                      }
-                    });
+                const showEllipsis =
+                  (i === 1 && currentPage > 2) ||
+                  (i === totalPages - 2 && currentPage < totalPages - 3);
 
-                    onClick({
-                      row: rowIndex,
-                      column: column.name,
-                      cell_data: cellValue,
-                      row_data
-                    });
-                  };
-
+                if (showEllipsis) {
                   return (
-                    <td
-                      key={colIndex}
-                      onClick={handleCellClick}
+                    <span
+                      key={i}
                       css={{
-                        paddingLeft: '24px',
-                        paddingRight: '24px',
-                        paddingTop: '16px',
-                        paddingBottom: '16px',
-                        ...styles.getTarget('td')
+                        padding: '6px 12px',
+                        fontSize: '14px',
+                        color: '#9ca3af'
                       }}
                     >
-                      {/* TODO: display all values properly (e.g. images) */}
-                      {stringifyWithNull(cellValue) ?? ''}
-                    </td>
+                      ...
+                    </span>
                   );
-                })}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                }
+
+                if (!showPage) return null;
+
+                return (
+                  <button
+                    key={i}
+                    type='button'
+                    onClick={() => setCurrentPage(i)}
+                    css={{
+                      padding: '6px 12px',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      color: i === currentPage ? '#ffffff' : '#374151',
+                      backgroundColor:
+                        i === currentPage ? '#3b82f6' : 'transparent',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      minWidth: '36px',
+                      '&:hover': {
+                        backgroundColor:
+                          i === currentPage ? '#2563eb' : '#f3f4f6'
+                      }
+                    }}
+                  >
+                    {i + 1}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type='button'
+              onClick={() =>
+                setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
+              }
+              disabled={currentPage === totalPages - 1}
+              css={{
+                padding: '6px 12px',
+                fontSize: '14px',
+                fontWeight: 500,
+                color: currentPage === totalPages - 1 ? '#9ca3af' : '#374151',
+                backgroundColor: 'transparent',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                cursor:
+                  currentPage === totalPages - 1 ? 'not-allowed' : 'pointer',
+                '&:hover:not(:disabled)': {
+                  backgroundColor: '#f3f4f6'
+                }
+              }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
