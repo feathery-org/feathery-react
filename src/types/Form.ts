@@ -16,8 +16,14 @@ export type Trigger = {
   id: string;
   _servarId?: string;
   text?: string;
-  type: 'button' | 'text' | 'field' | 'addressSelect';
+  type: 'button' | 'text' | 'field' | 'addressSelect' | 'table';
   repeatIndex: number;
+  // Table-specific fields
+  row?: number;
+  action?: string;
+  column?: string;
+  cell_data?: any;
+  row_data?: Record<string, any>;
 };
 
 export type FieldData = {
