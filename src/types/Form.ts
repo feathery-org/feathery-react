@@ -19,11 +19,9 @@ export type Trigger = {
   type: 'button' | 'text' | 'field' | 'addressSelect' | 'table';
   repeatIndex: number;
   // Table-specific fields
-  row?: number;
+  rowIndex?: number;
   action?: string;
-  column?: string;
-  cell_data?: any;
-  row_data?: Record<string, any>;
+  rowData?: Record<string, any>;
 };
 
 export type FieldData = {

@@ -145,8 +145,9 @@ export const buttonStyle = {
 export const actionButtonStyle = {
   ...buttonStyle,
   borderRadius: '0.25rem',
-  paddingInline: '0.75rem',
-  width: 'auto'
+  paddingInline: '0.5rem',
+  width: 'auto',
+  height: '1.75rem'
 };
 
 export const pageButtonStyle = {
