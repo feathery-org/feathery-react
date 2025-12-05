@@ -68,7 +68,8 @@ export const getAllElements = (step: any) => {
 export const lookUpTrigger = (
   step: any,
   elementID: string,
-  type: string
+  type: string,
+  additionalPayload?: Record<string, any>
 ): Record<string, any> => {
   let payload = {};
   if (type === 'button') {
@@ -87,8 +88,12 @@ export const lookUpTrigger = (
       _servarId: element.servar.id,
       text: element.servar.name
     };
+  } else if (type === 'table') {
+    // For tables, we don't look up additional properties from the step
+    // All table-specific data is provided via additionalPayload
+    payload = {};
   }
-  return { id: elementID, type, ...payload };
+  return { id: elementID, type, ...payload, ...additionalPayload };
 };
 
 /** Update the fieldValues cache with a backend session */

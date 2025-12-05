@@ -1884,6 +1884,15 @@ function Form({
     }
   };
 
+  const tableOnClick = async (table: any, payload: any) => {
+    await runElementActions({
+      actions: [],
+      element: table,
+      elementType: 'table',
+      triggerPayload: payload
+    });
+  };
+
   // Orchestrates all actions triggered by a button/element click.
   // Runs validations and submission first (if submit=true), then executes click actions in order.
   // Prevents race conditions by locking element during execution and tracking global button state.
@@ -1897,7 +1906,8 @@ function Form({
     setElementError = () => {},
     onAsyncEnd = () => {},
     textSpanStart,
-    textSpanEnd
+    textSpanEnd,
+    triggerPayload
   }: {
     actions: any[];
     element: any;
@@ -1907,6 +1917,7 @@ function Form({
     onAsyncEnd?: any;
     textSpanStart?: number | undefined;
     textSpanEnd?: number | undefined;
+    triggerPayload?: Record<string, any>;
   }) => {
     const id = element.id ?? '';
     // Prevent rapid re-clicks on the same element during async operations (file uploads, API calls)
@@ -1930,7 +1941,8 @@ function Form({
       ...lookUpTrigger(
         activeStep,
         elementType === 'container' ? element.key : element.id,
-        elementType
+        elementType,
+        triggerPayload
       ),
       repeatIndex: element.repeat
     } as Trigger;
@@ -2049,7 +2061,8 @@ function Form({
         setElementError,
         onAsyncEnd,
         textSpanStart,
-        textSpanEnd
+        textSpanEnd,
+        triggerPayload
       });
       if (!running) onAsyncEnd();
     };
@@ -2664,6 +2677,7 @@ function Form({
     customClickSelectionState,
     runElementActions,
     buttonOnClick,
+    tableOnClick,
     fieldOnChange,
     buttonLoaders,
     inlineErrors,
