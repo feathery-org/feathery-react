@@ -214,23 +214,22 @@ function ActionButtons({
 
     if (!onClick) return;
 
-    // Build row_data object
-    const row_data: Record<string, any> = {};
+    // Build rowData object
+    const rowData: Record<string, any> = {};
     columnData.forEach((col) => {
       if (col.type === 'field_display') {
         const fieldValue = fieldValues[col.field_key];
         const cellValue = Array.isArray(fieldValue)
           ? fieldValue[rowIndex]
           : fieldValue;
-        row_data[col.name] = cellValue;
+        rowData[col.name] = cellValue;
       }
     });
 
     onClick({
-      row: rowIndex,
+      rowIndex,
       action: action.label,
-      column: column.name,
-      row_data
+      rowData
     });
   };
 
@@ -538,14 +537,14 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
         </thead>
         <tbody>
           {paginatedRowIndices.map((rowIndex, displayIndex) => {
-            const row_data: Record<string, any> = {};
+            const rowData: Record<string, any> = {};
             columnData.forEach((col) => {
               if (col.type === 'field_display') {
                 const fValue = fieldValues[col.field_key];
                 const cValue = Array.isArray(fValue)
                   ? fValue[rowIndex]
                   : fValue;
-                row_data[col.name] = cValue;
+                rowData[col.name] = cValue;
               }
             });
 
@@ -554,10 +553,8 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
                 {columnData.map((column, colIndex) => {
                   const handleCellClick = () => {
                     onClick({
-                      row: rowIndex,
-                      column: column.name,
-                      cell_data: cellValue,
-                      row_data
+                      rowIndex,
+                      rowData
                     });
                   };
 
