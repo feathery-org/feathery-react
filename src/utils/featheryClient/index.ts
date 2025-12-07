@@ -64,10 +64,9 @@ export const updateRegionApiUrls = (region: string) => {
     ca: 'productionCA',
     eu: 'productionEU'
   };
+  if (!environmentMap[region]) return;
 
-  if (environmentMap[region]) setEnvironment(environmentMap[region]);
-  else setEnvironment('production');
-
+  setEnvironment(environmentMap[region]);
   API_URL = getApiUrl();
   CDN_URL = getCdnUrl();
   STATIC_URL = getStaticUrl();
