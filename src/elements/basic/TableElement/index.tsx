@@ -28,21 +28,12 @@ type Action = {
   label: string;
 };
 
-type FieldDisplayColumn = {
+type Column = {
   name: string;
-  type: 'field_display';
   field_id: string;
   field_type: string;
   field_key: string;
 };
-
-type ActionColumn = {
-  name: string;
-  type: 'action';
-  actions: Action[];
-};
-
-type Column = FieldDisplayColumn | ActionColumn;
 
 function applyTableStyles(responsiveStyles: any) {
   responsiveStyles.addTargets(
@@ -158,23 +149,22 @@ function compareSortableValues(a: SortableValue, b: SortableValue): number {
 function ActionButtons({
   actions,
   rowIndex,
-  column,
   columnData,
   onClick
 }: {
   actions: Action[];
   rowIndex: number;
-  column: ActionColumn;
   columnData: Column[];
   onClick?: (payload: any) => void;
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [visibleActions, setVisibleActions] = useState(actions);
-  const [overflowActions, setOverflowActions] = useState<Action[]>([]);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  // If more than 2 actions, show overflow menu; otherwise show inline buttons
+  const useOverflow = actions.length > 2;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -197,18 +187,6 @@ function ActionButtons({
     };
   }, [isMenuOpen]);
 
-  useEffect(() => {
-    // Show first 2 actions, overflow the rest
-    const maxVisible = 2;
-    if (actions.length > maxVisible) {
-      setVisibleActions(actions.slice(0, maxVisible));
-      setOverflowActions(actions.slice(maxVisible));
-    } else {
-      setVisibleActions(actions);
-      setOverflowActions([]);
-    }
-  }, [actions]);
-
   const handleActionClick = (action: Action) => {
     setIsMenuOpen(false);
 
@@ -217,13 +195,11 @@ function ActionButtons({
     // Build rowData object
     const rowData: Record<string, any> = {};
     columnData.forEach((col) => {
-      if (col.type === 'field_display') {
-        const fieldValue = fieldValues[col.field_key];
-        const cellValue = Array.isArray(fieldValue)
-          ? fieldValue[rowIndex]
-          : fieldValue;
-        rowData[col.name] = cellValue;
-      }
+      const fieldValue = fieldValues[col.field_key];
+      const cellValue = Array.isArray(fieldValue)
+        ? fieldValue[rowIndex]
+        : fieldValue;
+      rowData[col.name] = cellValue;
     });
 
     onClick({
@@ -242,17 +218,7 @@ function ActionButtons({
         alignItems: 'center'
       }}
     >
-      {visibleActions.map((action, index) => (
-        <button
-          key={index}
-          type='button'
-          onClick={() => handleActionClick(action)}
-          css={actionButtonStyle as any}
-        >
-          {action.label}
-        </button>
-      ))}
-      {overflowActions.length > 0 && (
+      {useOverflow ? (
         <>
           <button
             ref={menuButtonRef}
@@ -288,7 +254,7 @@ function ActionButtons({
                   minWidth: '120px'
                 }}
               >
-                {overflowActions.map((action, index) => (
+                {actions.map((action, index) => (
                   <button
                     key={index}
                     type='button'
@@ -327,6 +293,17 @@ function ActionButtons({
               document.body
             )}
         </>
+      ) : (
+        actions.map((action, index) => (
+          <button
+            key={index}
+            type='button'
+            onClick={() => handleActionClick(action)}
+            css={actionButtonStyle as any}
+          >
+            {action.label}
+          </button>
+        ))
       )}
     </div>
   );
@@ -339,6 +316,7 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
   );
 
   const columnData: Column[] = element.properties?.columns || [];
+  const actions: Action[] = element.properties?.actions || [];
   const enableSearch = element.properties?.enable_search ?? false;
   const enablePagination = element.properties?.enable_pagination ?? false;
   const enableSort = element.properties?.enable_sort ?? false;
@@ -351,11 +329,9 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
 
   const totalRows = useMemo(() => {
     return columnData.reduce((maxRows, column) => {
-      if (column.type === 'field_display') {
-        const fieldValue = fieldValues[column.field_key];
-        if (Array.isArray(fieldValue)) {
-          return Math.max(maxRows, fieldValue.length);
-        }
+      const fieldValue = fieldValues[column.field_key];
+      if (Array.isArray(fieldValue)) {
+        return Math.max(maxRows, fieldValue.length);
       }
       return maxRows;
     }, 0);
@@ -371,17 +347,14 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
 
     return allRowIndices.filter((rowIndex) => {
       return columnData.some((column) => {
-        if (column.type === 'field_display') {
-          const fieldValue = fieldValues[column.field_key];
-          const cellValue = Array.isArray(fieldValue)
-            ? fieldValue[rowIndex]
-            : fieldValue;
-          const stringValue = stringifyWithNull(cellValue) ?? '';
-          return stringValue
-            .toLowerCase()
-            .includes(searchQuery.toLowerCase().trim());
-        }
-        return false;
+        const fieldValue = fieldValues[column.field_key];
+        const cellValue = Array.isArray(fieldValue)
+          ? fieldValue[rowIndex]
+          : fieldValue;
+        const stringValue = stringifyWithNull(cellValue) ?? '';
+        return stringValue
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase().trim());
       });
     });
   }, [allRowIndices, columnData, searchQuery, enableSearch]);
@@ -389,9 +362,7 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
   const sortedRowIndices = useMemo(() => {
     if (!enableSort || !sortColumn) return filteredRowIndices;
 
-    const column = columnData.find(
-      (col) => col.type === 'field_display' && col.name === sortColumn
-    ) as FieldDisplayColumn | undefined;
+    const column = columnData.find((col) => col.name === sortColumn);
 
     if (!column) return filteredRowIndices;
 
@@ -479,7 +450,7 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
         <thead css={theadStyle}>
           <tr>
             {columnData.map((column, index) => {
-              const isSortable = enableSort && column.type === 'field_display';
+              const isSortable = enableSort;
               const isSorted = sortColumn === column.name;
 
               return (
@@ -533,52 +504,38 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
                 </th>
               );
             })}
+            {actions.length > 0 && (
+              <th
+                scope='col'
+                css={{
+                  ...thStyle,
+                  ...styles.getTarget('th')
+                }}
+              >
+                {/* Empty header for actions column */}
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
-          {paginatedRowIndices.map((rowIndex, displayIndex) => {
+          {paginatedRowIndices.map((rowIndex) => {
             const rowData: Record<string, any> = {};
             columnData.forEach((col) => {
-              if (col.type === 'field_display') {
-                const fValue = fieldValues[col.field_key];
-                const cValue = Array.isArray(fValue)
-                  ? fValue[rowIndex]
-                  : fValue;
-                rowData[col.name] = cValue;
-              }
+              const fValue = fieldValues[col.field_key];
+              const cValue = Array.isArray(fValue) ? fValue[rowIndex] : fValue;
+              rowData[col.name] = cValue;
             });
+
+            const handleCellClick = () => {
+              onClick({
+                rowIndex,
+                rowData
+              });
+            };
 
             return (
               <tr key={rowIndex} css={rowStyle}>
                 {columnData.map((column, colIndex) => {
-                  const handleCellClick = () => {
-                    onClick({
-                      rowIndex,
-                      rowData
-                    });
-                  };
-
-                  if (column.type === 'action') {
-                    return (
-                      <td
-                        key={colIndex}
-                        onClick={handleCellClick}
-                        css={{
-                          ...(cellStyle as any),
-                          ...styles.getTarget('td')
-                        }}
-                      >
-                        <ActionButtons
-                          actions={column.actions}
-                          rowIndex={rowIndex}
-                          column={column}
-                          columnData={columnData}
-                          onClick={onClick}
-                        />
-                      </td>
-                    );
-                  }
-
                   const fieldValue = fieldValues[column.field_key];
                   const cellValue = Array.isArray(fieldValue)
                     ? fieldValue[rowIndex]
@@ -597,6 +554,22 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
                     </td>
                   );
                 })}
+                {actions.length > 0 && (
+                  <td
+                    onClick={handleCellClick}
+                    css={{
+                      ...(cellStyle as any),
+                      ...styles.getTarget('td')
+                    }}
+                  >
+                    <ActionButtons
+                      actions={actions}
+                      rowIndex={rowIndex}
+                      columnData={columnData}
+                      onClick={onClick}
+                    />
+                  </td>
+                )}
               </tr>
             );
           })}
@@ -616,16 +589,17 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
             of <span css={navTextBoldStyle}>{sortedRowIndices.length}</span>
           </span>
           <ul css={paginationListStyle}>
-            <li>
-              <button
-                type='button'
-                onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-                disabled={currentPage === 0}
-                css={pageButtonPrevStyle as any}
-              >
-                Previous
-              </button>
-            </li>
+            {currentPage > 0 && (
+              <li>
+                <button
+                  type='button'
+                  onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                  css={pageButtonPrevStyle as any}
+                >
+                  Previous
+                </button>
+              </li>
+            )}
             {Array.from({ length: totalPages }, (_, i) => {
               // Show first page, last page, current page, and pages around current
               const showPage =
@@ -687,18 +661,19 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
                 </li>
               );
             })}
-            <li>
-              <button
-                type='button'
-                onClick={() =>
-                  setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
-                }
-                disabled={currentPage === totalPages - 1}
-                css={pageButtonNextStyle as any}
-              >
-                Next
-              </button>
-            </li>
+            {currentPage < totalPages - 1 && (
+              <li>
+                <button
+                  type='button'
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
+                  }
+                  css={pageButtonNextStyle as any}
+                >
+                  Next
+                </button>
+              </li>
+            )}
           </ul>
         </nav>
       )}
