@@ -15,6 +15,35 @@ const colors = {
   blue700: 'oklch(48.8% .243 264.376)'
 };
 
+export const searchIconStyle = {
+  width: '16px',
+  height: '16px',
+  color: '#6b7280'
+};
+
+export const sortIconContainerStyle = {
+  display: 'flex',
+  flexDirection: 'column' as const,
+  gap: '2px'
+};
+
+export const sortArrowStyle = {
+  width: '12px',
+  height: '12px',
+  color: colors.gray400,
+  opacity: 0.3,
+  '&[data-active="true"]': {
+    color: colors.blue700,
+    opacity: 1
+  }
+};
+
+export const sortHeaderContentStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px'
+};
+
 export const containerStyle = {
   position: 'relative',
   overflowX: 'auto',
@@ -133,7 +162,7 @@ export const buttonStyle = {
   justifyContent: 'center',
   color: colors.gray600,
   backgroundColor: colors.gray50,
-  boxSizing: 'border-box',
+  boxSizing: 'border-box' as const,
   border: `1px solid ${colors.gray200}`,
   fontWeight: '500',
   fontSize: '0.875rem',
@@ -152,6 +181,55 @@ export const actionButtonStyle = {
   paddingInline: '0.5rem',
   width: 'auto',
   height: '1.75rem'
+};
+
+export const menuIconStyle = {
+  width: '16px',
+  height: '16px',
+  color: colors.gray600
+};
+
+export const actionMenuStyle = {
+  position: 'fixed' as const,
+  backgroundColor: colors.white,
+  border: `1px solid ${colors.gray300}`,
+  borderRadius: '0.25rem',
+  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+  zIndex: 9999,
+  minWidth: '120px'
+};
+
+export const actionMenuItemStyle = {
+  display: 'block',
+  width: '100%',
+  textAlign: 'left' as const,
+  paddingLeft: '12px',
+  paddingRight: '12px',
+  paddingTop: '8px',
+  paddingBottom: '8px',
+  fontSize: '14px',
+  color: colors.gray700,
+  backgroundColor: 'transparent',
+  border: 'none',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap' as const,
+  '&:hover': {
+    backgroundColor: colors.gray100
+  },
+  '&:first-of-type': {
+    borderTopLeftRadius: '0.25rem',
+    borderTopRightRadius: '0.25rem'
+  },
+  '&:last-of-type': {
+    borderBottomLeftRadius: '0.25rem',
+    borderBottomRightRadius: '0.25rem'
+  }
+};
+
+export const actionContainerStyle = {
+  display: 'flex',
+  gap: '8px',
+  justifyContent: 'flex-end'
 };
 
 export const pageButtonStyle = {
@@ -184,6 +262,14 @@ export const pageButtonActiveStyle = {
   color: colors.blue700,
   backgroundColor: colors.blue50,
   border: `1px solid ${colors.gray200}`
+};
+
+export const pageButtonEllipsisStyle = {
+  ...pageButtonStyle,
+  cursor: 'default',
+  '&:focus': {
+    outline: 'none'
+  }
 };
 
 export const pageButtonDisabledStyle = {
