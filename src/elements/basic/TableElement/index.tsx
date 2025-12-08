@@ -5,7 +5,7 @@ import { Search } from './Search';
 import { SortHeader } from './Sort';
 import { Pagination } from './Pagination';
 import { ActionButtons } from './Actions';
-import { Action, Column } from './types';
+import { EmptyState } from './EmptyState';
 import { useTableData } from './useTableData';
 import {
   containerStyle,
@@ -50,8 +50,12 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
     columns,
     actions,
     totalRows,
-    totalPages
+    totalPages,
+    hasData,
+    hasSearchResults
   } = useTableData({ element });
+
+  const showEmptyState = !hasData || (hasData && !hasSearchResults);
 
   return (
     <div
@@ -64,7 +68,10 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
         {enableSearch && (
           <Search searchQuery={searchQuery} onSearchChange={setSearchQuery} />
         )}
-        <table css={{ ...(tableStyle as any), ...styles.getTarget('table') }}>
+        {showEmptyState ? (
+          <EmptyState hasSearchQuery={searchQuery.trim().length > 0} />
+        ) : (
+          <table css={{ ...(tableStyle as any), ...styles.getTarget('table') }}>
           <thead css={theadStyle}>
             <tr>
               <SortHeader
@@ -150,7 +157,8 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
             })}
           </tbody>
         </table>
-        {enablePagination && (
+        )}
+        {!showEmptyState && enablePagination && (
           <Pagination
             currentPage={currentPage}
             totalPages={totalPages}

@@ -58,6 +58,22 @@ export const containerStyle = {
   boxSizing: 'border-box'
 };
 
+export const emptyStateContainerStyle = {
+  display: 'flex',
+  flexDirection: 'column' as const,
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '64px 24px',
+  textAlign: 'center' as const
+};
+
+export const emptyStateTextStyle = {
+  color: colors.gray600,
+  fontSize: '16px',
+  fontWeight: '500',
+  margin: 0
+};
+
 export const searchContainerStyle = {
   padding: '1rem',
   borderBottom: `1px solid ${colors.gray200}`
@@ -115,7 +131,8 @@ export const theadStyle = {
 
 export const thStyle = {
   padding: '0.75rem 1.5rem',
-  fontWeight: '500'
+  fontWeight: '500',
+  userSelect: 'none'
 };
 
 export const rowStyle = {
