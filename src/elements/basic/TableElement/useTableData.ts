@@ -37,6 +37,8 @@ type UseTableDataReturn = {
   totalRows: number;
   totalPages: number;
   rowsPerPage: number;
+  hasData: boolean;
+  hasSearchResults: boolean;
 
   // Handlers
   handleSort: (columnName: string) => void;
@@ -155,6 +157,9 @@ export function useTableData({
     }
   };
 
+  const hasData = numRows > 0;
+  const hasSearchResults = filteredRowIndices.length > 0;
+
   return {
     // State
     searchQuery,
@@ -176,6 +181,8 @@ export function useTableData({
     totalRows: sortedRowIndices.length,
     totalPages,
     rowsPerPage,
+    hasData,
+    hasSearchResults,
 
     // Handlers
     handleSort

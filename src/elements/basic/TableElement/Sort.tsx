@@ -6,32 +6,6 @@ import {
 } from './styles';
 import { Column } from './types';
 
-function SortArrowUp({ active }: { active: boolean }) {
-  return (
-    <svg
-      css={sortArrowStyle}
-      data-active={active || undefined}
-      fill='currentColor'
-      viewBox='0 0 24 24'
-    >
-      <path d='M12 4l-8 8h16z' />
-    </svg>
-  );
-}
-
-function SortArrowDown({ active }: { active: boolean }) {
-  return (
-    <svg
-      css={sortArrowStyle}
-      data-active={active || undefined}
-      fill='currentColor'
-      viewBox='0 0 24 24'
-    >
-      <path d='M12 20l8-8H4z' />
-    </svg>
-  );
-}
-
 type SortHeaderProps = {
   columns: Column[];
   enableSort: boolean;
@@ -40,6 +14,43 @@ type SortHeaderProps = {
   onSort: (columnName: string) => void;
   styles: any;
 };
+
+type SortIconProps = {
+  isSorted: boolean;
+  sortDirection: 'asc' | 'desc';
+};
+
+function SortIcon({ isSorted, sortDirection }: SortIconProps) {
+  return (
+    <svg
+      xmlns='http://www.w3.org/2000/svg'
+      width={24}
+      height={24}
+      fill='none'
+      aria-hidden='true'
+      className='w-4 h-4 ms-1'
+    >
+      <path
+        css={sortArrowStyle}
+        stroke='currentColor'
+        data-active={(isSorted && sortDirection === 'asc') || undefined}
+        strokeLinecap='round'
+        strokeLinejoin='round'
+        strokeWidth={2}
+        d='m8 9 4-4 4 4'
+      />
+      <path
+        css={sortArrowStyle}
+        stroke='currentColor'
+        data-active={(isSorted && sortDirection === 'desc') || undefined}
+        strokeLinecap='round'
+        strokeLinejoin='round'
+        strokeWidth={2}
+        d='m8 15 4 4 4-4'
+      />
+    </svg>
+  );
+}
 
 export function SortHeader({
   columns,
@@ -62,17 +73,15 @@ export function SortHeader({
             onClick={() => isSortable && onSort(column.name)}
             css={{
               ...thStyle,
-              ...styles.getTarget('th')
+              ...styles.getTarget('th'),
+              ...(isSortable ? { cursor: 'pointer' } : {})
             }}
           >
             <div css={sortHeaderContentStyle}>
               <span>{column.name}</span>
               {isSortable && (
                 <span css={sortIconContainerStyle}>
-                  <SortArrowUp active={isSorted && sortDirection === 'asc'} />
-                  <SortArrowDown
-                    active={isSorted && sortDirection === 'desc'}
-                  />
+                  <SortIcon isSorted={isSorted} sortDirection={sortDirection} />
                 </span>
               )}
             </div>
