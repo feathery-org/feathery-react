@@ -18,11 +18,13 @@ const colors = {
 export const containerStyle = {
   position: 'relative',
   overflowX: 'auto',
+  overflowY: 'auto',
   backgroundColor: colors.white,
   boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
   borderRadius: '0.5rem',
   border: `1px solid ${colors.gray200}`,
   minWidth: '100%',
+  maxWidth: '100%',
   height: '100%',
   boxSizing: 'border-box'
 };
@@ -65,12 +67,14 @@ export const searchInputStyle = {
 
 export const tableStyle = {
   width: '100%',
+  maxWidth: '100%',
   fontSize: '0.875rem',
   textAlign: 'left',
   color: colors.gray600,
   textIndent: 0,
   borderColor: 'inherit',
-  borderCollapse: 'collapse'
+  borderCollapse: 'collapse',
+  tableLayout: 'fixed'
 };
 
 export const theadStyle = {
@@ -180,4 +184,14 @@ export const pageButtonActiveStyle = {
   color: colors.blue700,
   backgroundColor: colors.blue50,
   border: `1px solid ${colors.gray200}`
+};
+
+export const pageButtonDisabledStyle = {
+  opacity: 0.8,
+  cursor: 'default',
+  color: colors.gray400,
+  '&:hover': {
+    backgroundColor: colors.gray50,
+    color: colors.gray400
+  }
 };

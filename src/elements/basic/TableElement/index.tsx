@@ -21,7 +21,8 @@ import {
   theadStyle,
   thStyle,
   actionButtonStyle,
-  pageButtonStyle
+  pageButtonStyle,
+  pageButtonDisabledStyle
 } from './styles';
 
 type Action = {
@@ -36,15 +37,9 @@ type Column = {
 };
 
 function applyTableStyles(responsiveStyles: any) {
-  responsiveStyles.addTargets(
-    'tableContainer',
-    'table',
-    'thead',
-    'tbody',
-    'th',
-    'td',
-    'tr'
-  );
+  responsiveStyles.addTargets('table', 'thead', 'tbody', 'th', 'td', 'tr');
+  // responsiveStyles.applyWidth('tableContainer');
+  // responsiveStyles.applyHeight('tableContainer');
   return responsiveStyles;
 }
 
@@ -315,6 +310,7 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
     [responsiveStyles]
   );
 
+  console.log('table', responsiveStyles, element);
   const columnData: Column[] = element.properties?.columns || [];
   const actions: Action[] = element.properties?.actions || [];
   const enableSearch = element.properties?.enable_search ?? false;
@@ -414,269 +410,287 @@ function TableElement({ element, responsiveStyles, onClick = () => {} }: any) {
   };
 
   return (
-    <div css={{ ...containerStyle, ...styles.getTarget('tableContainer') }}>
-      {enableSearch && (
-        <div css={searchContainerStyle}>
-          <div css={searchWrapperStyle as any}>
-            <div css={searchIconWrapperStyle as any}>
-              <svg
-                css={{
-                  width: '16px',
-                  height: '16px',
-                  color: '#6b7280'
-                }}
-                fill='none'
-                viewBox='0 0 24 24'
-                stroke='currentColor'
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap='round'
-                  d='M21 21l-3.5-3.5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z'
-                />
-              </svg>
+    <div
+      css={{
+        ...containerStyle,
+        ...styles.getTarget('container')
+      }}
+    >
+      <div css={{ minWidth: 'fit-content' }}>
+        {enableSearch && (
+          <div css={searchContainerStyle}>
+            <div css={searchWrapperStyle as any}>
+              <div css={searchIconWrapperStyle as any}>
+                <svg
+                  css={{
+                    width: '16px',
+                    height: '16px',
+                    color: '#6b7280'
+                  }}
+                  fill='none'
+                  viewBox='0 0 24 24'
+                  stroke='currentColor'
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap='round'
+                    d='M21 21l-3.5-3.5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z'
+                  />
+                </svg>
+              </div>
+              <input
+                type='text'
+                css={searchInputStyle}
+                placeholder='Search'
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
-            <input
-              type='text'
-              css={searchInputStyle}
-              placeholder='Search'
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
           </div>
-        </div>
-      )}
-      <table css={tableStyle as any}>
-        <thead css={theadStyle}>
-          <tr>
-            {columnData.map((column, index) => {
-              const isSortable = enableSort;
-              const isSorted = sortColumn === column.name;
+        )}
+        <table css={{ ...(tableStyle as any), ...styles.getTarget('table') }}>
+          <thead css={theadStyle}>
+            <tr>
+              {columnData.map((column, index) => {
+                const isSortable = enableSort;
+                const isSorted = sortColumn === column.name;
 
-              return (
+                return (
+                  <th
+                    key={index}
+                    scope='col'
+                    onClick={() => isSortable && handleSort(column.name)}
+                    css={{
+                      ...thStyle,
+                      ...styles.getTarget('th')
+                    }}
+                  >
+                    <div
+                      css={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      <span>{column.name}</span>
+                      {isSortable && (
+                        <span
+                          css={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            fontSize: '10px',
+                            color: isSorted ? '#3b82f6' : '#9ca3af'
+                          }}
+                        >
+                          <span
+                            css={{
+                              lineHeight: '8px',
+                              opacity:
+                                isSorted && sortDirection === 'asc' ? 1 : 0.3
+                            }}
+                          >
+                            ▲
+                          </span>
+                          <span
+                            css={{
+                              lineHeight: '8px',
+                              opacity:
+                                isSorted && sortDirection === 'desc' ? 1 : 0.3
+                            }}
+                          >
+                            ▼
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  </th>
+                );
+              })}
+              {actions.length > 0 && (
                 <th
-                  key={index}
                   scope='col'
-                  onClick={() => isSortable && handleSort(column.name)}
                   css={{
                     ...thStyle,
                     ...styles.getTarget('th')
                   }}
                 >
-                  <div
-                    css={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}
-                  >
-                    <span>{column.name}</span>
-                    {isSortable && (
-                      <span
+                  {/* Empty header for actions column */}
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody css={styles.getTarget('tbody')}>
+            {paginatedRowIndices.map((rowIndex) => {
+              const rowData: Record<string, any> = {};
+              columnData.forEach((col) => {
+                const fValue = fieldValues[col.field_key];
+                const cValue = Array.isArray(fValue)
+                  ? fValue[rowIndex]
+                  : fValue;
+                rowData[col.name] = cValue;
+              });
+
+              const handleCellClick = () => {
+                onClick({
+                  rowIndex,
+                  rowData
+                });
+              };
+
+              return (
+                <tr
+                  key={rowIndex}
+                  css={{ ...rowStyle, ...styles.getTarget('tr') }}
+                >
+                  {columnData.map((column, colIndex) => {
+                    const fieldValue = fieldValues[column.field_key];
+                    const cellValue = Array.isArray(fieldValue)
+                      ? fieldValue[rowIndex]
+                      : fieldValue;
+
+                    return (
+                      <td
+                        key={colIndex}
+                        onClick={handleCellClick}
                         css={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          fontSize: '10px',
-                          color: isSorted ? '#3b82f6' : '#9ca3af'
+                          ...(cellStyle as any),
+                          ...styles.getTarget('td')
                         }}
                       >
-                        <span
-                          css={{
-                            lineHeight: '8px',
-                            opacity:
-                              isSorted && sortDirection === 'asc' ? 1 : 0.3
-                          }}
-                        >
-                          ▲
-                        </span>
-                        <span
-                          css={{
-                            lineHeight: '8px',
-                            opacity:
-                              isSorted && sortDirection === 'desc' ? 1 : 0.3
-                          }}
-                        >
-                          ▼
-                        </span>
-                      </span>
-                    )}
-                  </div>
-                </th>
-              );
-            })}
-            {actions.length > 0 && (
-              <th
-                scope='col'
-                css={{
-                  ...thStyle,
-                  ...styles.getTarget('th')
-                }}
-              >
-                {/* Empty header for actions column */}
-              </th>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {paginatedRowIndices.map((rowIndex) => {
-            const rowData: Record<string, any> = {};
-            columnData.forEach((col) => {
-              const fValue = fieldValues[col.field_key];
-              const cValue = Array.isArray(fValue) ? fValue[rowIndex] : fValue;
-              rowData[col.name] = cValue;
-            });
-
-            const handleCellClick = () => {
-              onClick({
-                rowIndex,
-                rowData
-              });
-            };
-
-            return (
-              <tr key={rowIndex} css={rowStyle}>
-                {columnData.map((column, colIndex) => {
-                  const fieldValue = fieldValues[column.field_key];
-                  const cellValue = Array.isArray(fieldValue)
-                    ? fieldValue[rowIndex]
-                    : fieldValue;
-
-                  return (
+                        {stringifyWithNull(cellValue) ?? ''}
+                      </td>
+                    );
+                  })}
+                  {actions.length > 0 && (
                     <td
-                      key={colIndex}
                       onClick={handleCellClick}
                       css={{
                         ...(cellStyle as any),
                         ...styles.getTarget('td')
                       }}
                     >
-                      {stringifyWithNull(cellValue) ?? ''}
+                      <ActionButtons
+                        actions={actions}
+                        rowIndex={rowIndex}
+                        columnData={columnData}
+                        onClick={onClick}
+                      />
                     </td>
-                  );
-                })}
-                {actions.length > 0 && (
-                  <td
-                    onClick={handleCellClick}
-                    css={{
-                      ...(cellStyle as any),
-                      ...styles.getTarget('td')
-                    }}
-                  >
-                    <ActionButtons
-                      actions={actions}
-                      rowIndex={rowIndex}
-                      columnData={columnData}
-                      onClick={onClick}
-                    />
-                  </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {enablePagination && totalPages > 1 && (
+          <nav css={navStyle as any} aria-label='Table navigation'>
+            <span css={navTextStyle}>
+              Showing{' '}
+              <span css={navTextBoldStyle}>
+                {currentPage * rowsPerPage + 1}-
+                {Math.min(
+                  (currentPage + 1) * rowsPerPage,
+                  sortedRowIndices.length
                 )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      {enablePagination && totalPages > 1 && (
-        <nav css={navStyle as any} aria-label='Table navigation'>
-          <span css={navTextStyle}>
-            Showing{' '}
-            <span css={navTextBoldStyle}>
-              {currentPage * rowsPerPage + 1}-
-              {Math.min(
-                (currentPage + 1) * rowsPerPage,
-                sortedRowIndices.length
-              )}
-            </span>{' '}
-            of <span css={navTextBoldStyle}>{sortedRowIndices.length}</span>
-          </span>
-          <ul css={paginationListStyle}>
-            {currentPage > 0 && (
+              </span>{' '}
+              of <span css={navTextBoldStyle}>{sortedRowIndices.length}</span>
+            </span>
+            <ul css={paginationListStyle}>
               <li>
                 <button
                   type='button'
                   onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-                  css={pageButtonPrevStyle as any}
+                  disabled={currentPage === 0}
+                  css={{
+                    ...(pageButtonPrevStyle as any),
+                    ...(currentPage === 0 ? pageButtonDisabledStyle : {})
+                  }}
                 >
                   Previous
                 </button>
               </li>
-            )}
-            {Array.from({ length: totalPages }, (_, i) => {
-              // Show first page, last page, current page, and pages around current
-              const showPage =
-                i === 0 ||
-                i === totalPages - 1 ||
-                Math.abs(i - currentPage) <= 1;
+              {Array.from({ length: totalPages }, (_, i) => {
+                // Show first page, last page, current page, and pages around current
+                const showPage =
+                  i === 0 ||
+                  i === totalPages - 1 ||
+                  Math.abs(i - currentPage) <= 1;
 
-              const showEllipsis =
-                (i === 1 && currentPage > 2) ||
-                (i === totalPages - 2 && currentPage < totalPages - 3);
+                const showEllipsis =
+                  (i === 1 && currentPage > 2) ||
+                  (i === totalPages - 2 && currentPage < totalPages - 3);
 
-              if (showEllipsis) {
+                if (showEllipsis) {
+                  return (
+                    <li key={i}>
+                      <button
+                        type='button'
+                        disabled
+                        css={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#6b7280',
+                          backgroundColor: '#f3f4f6',
+                          boxSizing: 'border-box',
+                          border: '1px solid #9ca3af',
+                          fontWeight: 500,
+                          fontSize: '14px',
+                          width: '36px',
+                          height: '36px',
+                          cursor: 'default',
+                          '&:focus': {
+                            outline: 'none'
+                          }
+                        }}
+                      >
+                        ...
+                      </button>
+                    </li>
+                  );
+                }
+
+                if (!showPage) return null;
+
+                const isActive = i === currentPage;
                 return (
                   <li key={i}>
                     <button
                       type='button'
-                      disabled
-                      css={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#6b7280',
-                        backgroundColor: '#f3f4f6',
-                        boxSizing: 'border-box',
-                        border: '1px solid #9ca3af',
-                        fontWeight: 500,
-                        fontSize: '14px',
-                        width: '36px',
-                        height: '36px',
-                        cursor: 'default',
-                        '&:focus': {
-                          outline: 'none'
-                        }
-                      }}
+                      onClick={() => setCurrentPage(i)}
+                      aria-current={isActive ? 'page' : undefined}
+                      css={
+                        isActive
+                          ? (pageButtonActiveStyle as any)
+                          : (pageButtonStyle as any)
+                      }
                     >
-                      ...
+                      {i + 1}
                     </button>
                   </li>
                 );
-              }
-
-              if (!showPage) return null;
-
-              const isActive = i === currentPage;
-              return (
-                <li key={i}>
-                  <button
-                    type='button'
-                    onClick={() => setCurrentPage(i)}
-                    aria-current={isActive ? 'page' : undefined}
-                    css={
-                      isActive
-                        ? (pageButtonActiveStyle as any)
-                        : (pageButtonStyle as any)
-                    }
-                  >
-                    {i + 1}
-                  </button>
-                </li>
-              );
-            })}
-            {currentPage < totalPages - 1 && (
+              })}
               <li>
                 <button
                   type='button'
                   onClick={() =>
                     setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
                   }
-                  css={pageButtonNextStyle as any}
+                  disabled={currentPage >= totalPages - 1}
+                  css={{
+                    ...(pageButtonNextStyle as any),
+                    ...(currentPage >= totalPages - 1
+                      ? pageButtonDisabledStyle
+                      : {})
+                  }}
                 >
                   Next
                 </button>
               </li>
-            )}
-          </ul>
-        </nav>
-      )}
+            </ul>
+          </nav>
+        )}
+      </div>
     </div>
   );
 }
