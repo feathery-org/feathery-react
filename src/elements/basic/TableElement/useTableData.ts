@@ -3,17 +3,19 @@ import { fieldValues } from '../../../utils/init';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { Action, Column } from './types';
 import { parseSortableValue, compareSortableValues } from './utils';
+import { DUMMY_COLUMNS, generateDummyDataForColumns } from './dummyData';
 
 type UseTableDataProps = {
   element: {
     properties: {
       columns: Column[];
       actions: Action[];
-      enable_search: boolean;
-      enable_sort: boolean;
-      enable_pagination: boolean;
+      search: boolean;
+      sort: boolean;
+      pagination: boolean;
     };
   };
+  editMode?: boolean;
 };
 
 type UseTableDataReturn = {
@@ -39,20 +41,57 @@ type UseTableDataReturn = {
   rowsPerPage: number;
   hasData: boolean;
   hasSearchResults: boolean;
+  activeFieldValues: Record<string, any>;
 
   // Handlers
   handleSort: (columnName: string) => void;
 };
 
 export function useTableData({
-  element
+  element,
+  editMode = false
 }: UseTableDataProps): UseTableDataReturn {
-  const columns: Column[] = element.properties?.columns || [];
-  const actions: Action[] = element.properties?.actions || [];
-  const enableSearch = element.properties?.enable_search ?? false;
-  const enableSort = element.properties?.enable_sort ?? false;
-  const enablePagination = element.properties?.enable_pagination ?? false;
+  const userColumns: Column[] = element.properties?.columns || [];
+  const actions: Action[] = (element.properties?.actions || []).filter(
+    (action) => action.label && action.label.trim() !== ''
+  );
+  const enableSearch = element.properties?.search ?? false;
+  const enableSort = element.properties?.sort ?? false;
+  const enablePagination = element.properties?.pagination ?? false;
   const rowsPerPage = 10;
+
+  // Use dummy columns if in edit mode and no columns provided
+  // Also ensure all columns have field_key in edit mode
+  const columns = useMemo(() => {
+    let cols = userColumns;
+
+    if (editMode && userColumns.length === 0) {
+      cols = DUMMY_COLUMNS;
+    }
+
+    // In edit mode, replace field_key with a unique dummy key
+    if (editMode) {
+      cols = cols.map((col, index) => ({
+        ...col,
+        field_key: `dummy_column_${index}`
+      }));
+    }
+
+    return cols;
+  }, [editMode, userColumns]);
+
+  // Use dummy data in edit mode
+  const activeFieldValues = useMemo(() => {
+    if (editMode) {
+      const numDummyRows = 3;
+      if (userColumns.length === 0) {
+        return generateDummyDataForColumns(DUMMY_COLUMNS, numDummyRows);
+      } else {
+        return generateDummyDataForColumns(columns, numDummyRows);
+      }
+    }
+    return fieldValues;
+  }, [editMode, columns, userColumns.length]);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -67,13 +106,13 @@ export function useTableData({
   // Calculate total number of rows
   const numRows = useMemo(() => {
     return columns.reduce((maxRows, column) => {
-      const fieldValue = fieldValues[column.field_key];
+      const fieldValue = activeFieldValues[column.field_key];
       if (Array.isArray(fieldValue)) {
         return Math.max(maxRows, fieldValue.length);
       }
       return maxRows;
     }, 0);
-  }, [columns]);
+  }, [columns, activeFieldValues]);
 
   // Generate all row indices
   const allRowIndices = useMemo(
@@ -87,7 +126,7 @@ export function useTableData({
 
     return allRowIndices.filter((rowIndex) => {
       return columns.some((column) => {
-        const fieldValue = fieldValues[column.field_key];
+        const fieldValue = activeFieldValues[column.field_key];
         const cellValue = Array.isArray(fieldValue)
           ? fieldValue[rowIndex]
           : fieldValue;
@@ -97,7 +136,7 @@ export function useTableData({
           .includes(searchQuery.toLowerCase().trim());
       });
     });
-  }, [allRowIndices, columns, searchQuery, enableSearch]);
+  }, [allRowIndices, columns, searchQuery, enableSearch, activeFieldValues]);
 
   // Sort filtered rows
   const sortedRowIndices = useMemo(() => {
@@ -108,7 +147,7 @@ export function useTableData({
     if (!column) return filteredRowIndices;
 
     return [...filteredRowIndices].sort((aIdx, bIdx) => {
-      const fieldValue = fieldValues[column.field_key];
+      const fieldValue = activeFieldValues[column.field_key];
       const aValue = Array.isArray(fieldValue) ? fieldValue[aIdx] : fieldValue;
       const bValue = Array.isArray(fieldValue) ? fieldValue[bIdx] : fieldValue;
 
@@ -118,7 +157,14 @@ export function useTableData({
       const comparison = compareSortableValues(aParsed, bParsed);
       return sortDirection === 'asc' ? comparison : -comparison;
     });
-  }, [filteredRowIndices, sortColumn, sortDirection, columns, enableSort]);
+  }, [
+    filteredRowIndices,
+    sortColumn,
+    sortDirection,
+    columns,
+    enableSort,
+    activeFieldValues
+  ]);
 
   // Paginate sorted rows
   const paginatedRowIndices = useMemo(() => {
@@ -183,6 +229,7 @@ export function useTableData({
     rowsPerPage,
     hasData,
     hasSearchResults,
+    activeFieldValues,
 
     // Handlers
     handleSort

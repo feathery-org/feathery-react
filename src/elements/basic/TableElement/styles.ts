@@ -1,18 +1,15 @@
 const colors = {
   white: '#ffffff',
-  gray50: 'oklch(98.5% .002 247.839)',
-  gray100: 'oklch(96.7% .003 264.542)',
-  gray200: 'oklch(92.8% .006 264.531)',
-  gray300: 'oklch(87.2% .01 258.338)',
-  gray400: 'oklch(70.7% .022 261.325)',
-  gray500: 'oklch(55.1% .027 264.364)',
-  gray600: 'oklch(44.6% .03 256.802)',
-  gray700: 'oklch(37.3% .034 259.733)',
-  gray800: 'oklch(27.8% .033 256.848)',
-  gray900: 'oklch(21% .034 264.665)',
-  gray950: 'oklch(13% .028 261.692)',
-  blue50: 'oklch(97% .014 254.604)',
-  blue700: 'oklch(48.8% .243 264.376)'
+  gray50: '#f9fafb',
+  gray100: '#f3f4f6',
+  gray200: '#e5e7eb',
+  gray300: '#d1d5db',
+  gray400: '#9ca3af',
+  gray600: '#4b5563',
+  gray700: '#374151',
+  gray900: '#111827',
+  blue50: '#eff6ff',
+  blue700: '#1d4ed8'
 };
 
 export const searchIconStyle = {
@@ -24,7 +21,12 @@ export const searchIconStyle = {
 export const sortIconContainerStyle = {
   display: 'flex',
   flexDirection: 'column' as const,
-  gap: '2px'
+  gap: '2px',
+  '& svg': {
+    marginInlineStart: '4px',
+    width: '20px',
+    height: '20px'
+  }
 };
 
 export const sortArrowStyle = {
@@ -50,7 +52,7 @@ export const containerStyle = {
   overflowY: 'auto',
   backgroundColor: colors.white,
   boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-  borderRadius: '0.5rem',
+  borderRadius: '8px',
   border: `1px solid ${colors.gray200}`,
   minWidth: '100%',
   maxWidth: '100%',
@@ -75,7 +77,7 @@ export const emptyStateTextStyle = {
 };
 
 export const searchContainerStyle = {
-  padding: '1rem',
+  padding: '16px',
   borderBottom: `1px solid ${colors.gray200}`
 };
 
@@ -90,30 +92,30 @@ export const searchIconWrapperStyle = {
   left: 0,
   display: 'flex',
   alignItems: 'center',
-  paddingLeft: '0.75rem',
+  paddingLeft: '12px',
   pointerEvents: 'none'
 };
 
 export const searchInputStyle = {
   display: 'block',
   width: '100%',
-  maxWidth: '24rem',
-  paddingLeft: '2.25rem',
-  paddingRight: '0.75rem',
-  paddingTop: '0.625rem',
-  paddingBottom: '0.625rem',
+  maxWidth: '384px',
+  paddingLeft: '36px',
+  paddingRight: '12px',
+  paddingTop: '10px',
+  paddingBottom: '10px',
   backgroundColor: colors.gray50,
   border: `1px solid ${colors.gray200}`,
   color: colors.gray900,
-  fontSize: '0.875rem',
-  borderRadius: '0.5rem',
+  fontSize: '14px',
+  borderRadius: '8px',
   boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
 };
 
 export const tableStyle = {
   width: '100%',
   maxWidth: '100%',
-  fontSize: '0.875rem',
+  fontSize: '14px',
   textAlign: 'left',
   color: colors.gray600,
   textIndent: 0,
@@ -123,14 +125,14 @@ export const tableStyle = {
 };
 
 export const theadStyle = {
-  fontSize: '0.875rem',
+  fontSize: '14px',
   color: colors.gray600,
   backgroundColor: colors.gray50,
   borderBottom: `1px solid ${colors.gray200}`
 };
 
 export const thStyle = {
-  padding: '0.75rem 1.5rem',
+  padding: '12px 24px',
   fontWeight: '500',
   userSelect: 'none'
 };
@@ -142,7 +144,7 @@ export const rowStyle = {
 };
 
 export const cellStyle = {
-  padding: '1rem 1.5rem'
+  padding: '16px 24px'
 };
 
 export const navStyle = {
@@ -150,11 +152,11 @@ export const navStyle = {
   alignItems: 'center',
   flexWrap: 'wrap',
   justifyContent: 'space-between',
-  padding: '1rem'
+  padding: '16px'
 };
 
 export const navTextStyle = {
-  fontSize: '0.875rem',
+  fontSize: '14px',
   fontWeight: 'normal',
   color: colors.gray600
 };
@@ -167,7 +169,7 @@ export const navTextBoldStyle = {
 export const paginationListStyle = {
   display: 'flex',
   marginLeft: '-1px',
-  fontSize: '0.875rem',
+  fontSize: '14px',
   listStyle: 'none',
   padding: 0,
   margin: 0
@@ -182,10 +184,10 @@ export const buttonStyle = {
   boxSizing: 'border-box' as const,
   border: `1px solid ${colors.gray200}`,
   fontWeight: '500',
-  fontSize: '0.875rem',
+  fontSize: '14px',
   textDecoration: 'none',
   cursor: 'pointer',
-  height: '2.25rem',
+  height: '36px',
   '&:hover': {
     backgroundColor: colors.gray100,
     color: colors.gray900
@@ -194,10 +196,10 @@ export const buttonStyle = {
 
 export const actionButtonStyle = {
   ...buttonStyle,
-  borderRadius: '0.25rem',
-  paddingInline: '0.5rem',
+  borderRadius: '4px',
+  paddingInline: '8px',
   width: 'auto',
-  height: '1.75rem'
+  height: '28px'
 };
 
 export const menuIconStyle = {
@@ -210,7 +212,7 @@ export const actionMenuStyle = {
   position: 'fixed' as const,
   backgroundColor: colors.white,
   border: `1px solid ${colors.gray300}`,
-  borderRadius: '0.25rem',
+  borderRadius: '4px',
   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
   zIndex: 9999,
   minWidth: '120px'
@@ -234,12 +236,12 @@ export const actionMenuItemStyle = {
     backgroundColor: colors.gray100
   },
   '&:first-of-type': {
-    borderTopLeftRadius: '0.25rem',
-    borderTopRightRadius: '0.25rem'
+    borderTopLeftRadius: '4px',
+    borderTopRightRadius: '4px'
   },
   '&:last-of-type': {
-    borderBottomLeftRadius: '0.25rem',
-    borderBottomRightRadius: '0.25rem'
+    borderBottomLeftRadius: '4px',
+    borderBottomRightRadius: '4px'
   }
 };
 
@@ -258,25 +260,25 @@ export const actionContainerStyle = {
 
 export const pageButtonStyle = {
   ...buttonStyle,
-  width: '2.25rem',
+  width: '36px',
   borderRightWidth: 0
 };
 
 export const pageButtonPrevStyle = {
   ...pageButtonStyle,
-  borderTopLeftRadius: '0.5rem',
-  borderBottomLeftRadius: '0.5rem',
-  paddingLeft: '0.75rem',
-  paddingRight: '0.75rem',
+  borderTopLeftRadius: '8px',
+  borderBottomLeftRadius: '8px',
+  paddingLeft: '12px',
+  paddingRight: '12px',
   width: 'auto'
 };
 
 export const pageButtonNextStyle = {
   ...pageButtonStyle,
-  borderTopRightRadius: '0.5rem',
-  borderBottomRightRadius: '0.5rem',
-  paddingLeft: '0.75rem',
-  paddingRight: '0.75rem',
+  borderTopRightRadius: '8px',
+  borderBottomRightRadius: '8px',
+  paddingLeft: '12px',
+  paddingRight: '12px',
   width: 'auto',
   borderRightWidth: 1
 };
