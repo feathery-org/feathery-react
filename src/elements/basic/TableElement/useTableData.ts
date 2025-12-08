@@ -3,7 +3,7 @@ import { fieldValues } from '../../../utils/init';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { Action, Column } from './types';
 import { parseSortableValue, compareSortableValues } from './utils';
-import { DUMMY_COLUMNS, generateDummyDataForColumns } from './dummyData';
+import { EXAMPLE_COLUMNS, generateExampleData } from './exampleData';
 
 type UseTableDataProps = {
   element: {
@@ -60,34 +60,34 @@ export function useTableData({
   const enablePagination = element.properties?.pagination ?? false;
   const rowsPerPage = 10;
 
-  // Use dummy columns if in edit mode and no columns provided
+  // Use example columns if in edit mode and no columns provided
   // Also ensure all columns have field_key in edit mode
   const columns = useMemo(() => {
     let cols = userColumns;
 
     if (editMode && userColumns.length === 0) {
-      cols = DUMMY_COLUMNS;
+      cols = EXAMPLE_COLUMNS;
     }
 
-    // In edit mode, replace field_key with a unique dummy key
+    // In edit mode, replace field_key with a unique example key
     if (editMode) {
       cols = cols.map((col, index) => ({
         ...col,
-        field_key: `dummy_column_${index}`
+        field_key: `example_column_${index}`
       }));
     }
 
     return cols;
   }, [editMode, userColumns]);
 
-  // Use dummy data in edit mode
+  // Use example data in edit mode
   const activeFieldValues = useMemo(() => {
     if (editMode) {
-      const numDummyRows = 3;
+      const numExampleRows = 3;
       if (userColumns.length === 0) {
-        return generateDummyDataForColumns(DUMMY_COLUMNS, numDummyRows);
+        return generateExampleData(EXAMPLE_COLUMNS, numExampleRows);
       } else {
-        return generateDummyDataForColumns(columns, numDummyRows);
+        return generateExampleData(columns, numExampleRows);
       }
     }
     return fieldValues;
