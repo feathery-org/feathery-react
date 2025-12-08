@@ -243,6 +243,13 @@ export const actionMenuItemStyle = {
   }
 };
 
+export const actionIconButtonStyle = {
+  ...actionButtonStyle,
+  aspectRatio: 1,
+  paddingLeft: 0,
+  paddingRight: 0
+};
+
 export const actionContainerStyle = {
   display: 'flex',
   gap: '8px',
