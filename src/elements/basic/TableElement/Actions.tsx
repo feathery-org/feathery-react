@@ -6,17 +6,14 @@ import {
   actionMenuStyle,
   actionMenuItemStyle,
   actionContainerStyle,
-  menuIconStyle
+  menuIconStyle,
+  actionIconButtonStyle
 } from './styles';
 import { Action, Column } from './types';
 
 function MenuIcon() {
   return (
-    <svg
-      css={menuIconStyle}
-      fill='currentColor'
-      viewBox='0 0 24 24'
-    >
+    <svg css={menuIconStyle} fill='currentColor' viewBox='0 0 24 24'>
       <circle cx='12' cy='5' r='2' />
       <circle cx='12' cy='12' r='2' />
       <circle cx='12' cy='19' r='2' />
@@ -108,7 +105,7 @@ export function ActionButtons({
               e.stopPropagation();
               handleMenuToggle();
             }}
-            css={actionButtonStyle}
+            css={actionIconButtonStyle}
           >
             <MenuIcon />
           </button>
