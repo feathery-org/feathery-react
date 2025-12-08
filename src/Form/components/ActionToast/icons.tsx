@@ -17,8 +17,8 @@ const CheckIcon = (props: ComponentProps<'svg'>) => (
 const SpinnerIcon = (props: ComponentProps<'svg'>) => (
   <svg
     style={{
-      width: '20',
-      height: '20',
+      width: '20px',
+      height: '20px',
       borderRadius: '50%'
     }}
     viewBox='0 0 50 50'
