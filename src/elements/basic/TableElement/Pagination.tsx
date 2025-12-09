@@ -105,7 +105,11 @@ function PageNumbers({
         if (showEllipsis) {
           return (
             <li key={i}>
-              <button type='button' disabled css={pageButtonEllipsisStyle}>
+              <button
+                type='button'
+                disabled
+                css={pageButtonEllipsisStyle as any}
+              >
                 ...
               </button>
             </li>
