@@ -10,6 +10,7 @@ import {
   actionIconButtonStyle
 } from './styles';
 import { Action, Column } from './types';
+import { featheryDoc } from '../../../utils/browser';
 
 function MenuIcon() {
   return (
@@ -58,11 +59,11 @@ export function ActionButtons({
     };
 
     if (isMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      featheryDoc().addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      featheryDoc().removeEventListener('mousedown', handleClickOutside);
     };
   }, [isMenuOpen]);
 
@@ -131,7 +132,7 @@ export function ActionButtons({
                   </button>
                 ))}
               </div>,
-              document.body
+              featheryDoc().body
             )}
         </>
       ) : (
