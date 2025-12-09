@@ -93,17 +93,13 @@ export function useTableData({
     return fieldValues;
   }, [editMode, columns, userColumns.length]);
 
-  // Search state
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Sort state
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  // Pagination state
   const [currentPage, setCurrentPage] = useState(0);
 
-  // Calculate total number of rows
   const numRows = useMemo(() => {
     return columns.reduce((maxRows, column) => {
       const fieldValue = activeFieldValues[column.field_key];
@@ -114,13 +110,11 @@ export function useTableData({
     }, 0);
   }, [columns, activeFieldValues]);
 
-  // Generate all row indices
   const allRowIndices = useMemo(
     () => Array.from({ length: numRows }, (_, i) => i),
     [numRows]
   );
 
-  // Filter rows based on search query
   const filteredRowIndices = useMemo(() => {
     if (!enableSearch || !searchQuery.trim()) return allRowIndices;
 
@@ -138,7 +132,6 @@ export function useTableData({
     });
   }, [allRowIndices, columns, searchQuery, enableSearch, activeFieldValues]);
 
-  // Sort filtered rows
   const sortedRowIndices = useMemo(() => {
     if (!enableSort || !sortColumn) return filteredRowIndices;
 
@@ -166,7 +159,6 @@ export function useTableData({
     activeFieldValues
   ]);
 
-  // Paginate sorted rows
   const paginatedRowIndices = useMemo(() => {
     if (!enablePagination) return sortedRowIndices;
 
@@ -180,12 +172,10 @@ export function useTableData({
     setCurrentPage(0);
   }, [searchQuery, sortColumn, sortDirection]);
 
-  // Calculate total pages
   const totalPages = enablePagination
     ? Math.ceil(sortedRowIndices.length / rowsPerPage)
     : 1;
 
-  // Handle sort column click
   const handleSort = (columnName: string) => {
     if (!enableSort) return;
 
@@ -207,31 +197,28 @@ export function useTableData({
   const hasSearchResults = filteredRowIndices.length > 0;
 
   return {
-    // State
+    enableSearch,
     searchQuery,
+    hasSearchResults,
     setSearchQuery,
+
+    enableSort,
     sortColumn,
     sortDirection,
+    handleSort,
+
+    enablePagination,
     currentPage,
+    paginatedRowIndices,
+    rowsPerPage,
     setCurrentPage,
 
-    // Properties
     columns,
     actions,
-    enableSearch,
-    enableSort,
-    enablePagination,
 
-    // Computed data
-    paginatedRowIndices,
     totalRows: sortedRowIndices.length,
     totalPages,
-    rowsPerPage,
     hasData,
-    hasSearchResults,
-    activeFieldValues,
-
-    // Handlers
-    handleSort
+    activeFieldValues
   };
 }
