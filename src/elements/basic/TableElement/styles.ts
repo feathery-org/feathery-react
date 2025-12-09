@@ -144,7 +144,9 @@ export const rowStyle = {
 };
 
 export const cellStyle = {
-  padding: '16px 24px'
+  padding: '16px 24px',
+  wordBreak: 'break-word',
+  overflowWrap: 'anywhere'
 };
 
 export const navStyle = {
@@ -188,6 +190,8 @@ export const buttonStyle = {
   textDecoration: 'none',
   cursor: 'pointer',
   height: '36px',
+  wordBreak: 'keep-all',
+  overflowWrap: 'normal',
   '&:hover': {
     backgroundColor: colors.gray100,
     color: colors.gray900

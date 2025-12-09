@@ -105,7 +105,7 @@ export function ActionButtons({
               e.stopPropagation();
               handleMenuToggle();
             }}
-            css={actionIconButtonStyle}
+            css={actionIconButtonStyle as any}
           >
             <MenuIcon />
           </button>
@@ -143,7 +143,7 @@ export function ActionButtons({
               e.stopPropagation();
               handleActionClick(action);
             }}
-            css={actionButtonStyle}
+            css={actionButtonStyle as any}
           >
             {action.label}
           </button>

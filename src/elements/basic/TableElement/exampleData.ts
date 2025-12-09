@@ -2,20 +2,20 @@ import { Column } from './types';
 
 export const EXAMPLE_COLUMNS: Column[] = [
   {
-    name: 'Name',
-    field_id: 'example_name',
+    name: 'Header 1',
+    field_id: 'header_1',
     field_type: 'text',
     field_key: 'example_column_0'
   },
   {
-    name: 'Email',
-    field_id: 'example_email',
+    name: 'Header 2',
+    field_id: 'header_2',
     field_type: 'text',
     field_key: 'example_column_1'
   },
   {
-    name: 'Status',
-    field_id: 'example_status',
+    name: 'Header 3',
+    field_id: 'header_3',
     field_type: 'text',
     field_key: 'example_column_2'
   }
