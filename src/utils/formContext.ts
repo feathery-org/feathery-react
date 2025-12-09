@@ -21,7 +21,6 @@ import internalState, {
   setFormInternalState
 } from './internalState';
 import { validateElements } from './validation';
-
 /**
  * Used by contextRef in <Form />, renderAt for vanillajs, and the lifecycle
  * methods
@@ -178,6 +177,8 @@ export const getFormContext = (formUuid: string) => {
       options = { waitForCompletion: false },
       pages?: PageSelectionInput
     ) => formState.runAIExtraction(extractionId, options, pages),
+    forwardInboxEmail: (options: ForwardInboxEmailOptions) =>
+      formState.forwardInboxEmail(options),
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
       formState.client.alloyJourneyApplication(journeyToken, entities),

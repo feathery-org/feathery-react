@@ -334,6 +334,7 @@ jest.mock('../../utils/featheryClient', () => {
     submitStep = jest.fn();
     registerEvent = jest.fn().mockResolvedValue(undefined);
     runAIExtraction = jest.fn();
+    forwardInboxEmail = jest.fn();
     flushCustomFields = jest.fn();
     offlineRequestHandler = { dbHasRequest: async () => false };
   }

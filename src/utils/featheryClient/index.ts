@@ -39,6 +39,7 @@ import {
   isInteractionDetected,
   setInteractionDetected
 } from '../interactionState';
+import { ForwardInboxEmailOptions } from '@feathery/client-utils/dist/types';
 
 export const API_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
@@ -1015,6 +1016,28 @@ export default class FeatheryClient extends IntegrationClient {
       onStatusUpdate,
       operationName: 'Extraction'
     });
+  }
+
+  async forwardInboxEmail({ options }: { options: ForwardInboxEmailOptions }) {
+    const { userId } = initInfo();
+    const url = `${API_URL}email/forward/`;
+    console.log('Forwarding inbox email with options:', options);
+    const data: Record<string, any> = {
+      user_id: userId,
+      recipients: options.emails || [],
+      email_group: options.emailGroup || '',
+      panel_key: this.formKey
+    };
+
+    const reqOptions = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data)
+    };
+
+    const res = await this._fetch(url, reqOptions, false);
+    if (res && res.ok) return await res.json();
+    else throw Error(parseAPIError(res));
   }
 
   async getConfig(configParams: GetConfigParams) {

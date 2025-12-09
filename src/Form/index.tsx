@@ -216,6 +216,7 @@ import ActionToast from './components/ActionToast';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
+import { ForwardInboxEmailOptions } from '@feathery/client-utils/dist/types';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -1116,6 +1117,9 @@ function Form({
             updateFieldValues(vals);
           }
           return data;
+        },
+        forwardInboxEmail: async (options: ForwardInboxEmailOptions) => {
+          return client.forwardInboxEmail({ options });
         }
       },
       // Avoid all these other obj props going through Object.assign which is not necessary.
