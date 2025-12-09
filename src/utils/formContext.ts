@@ -177,7 +177,7 @@ export const getFormContext = (formUuid: string) => {
       options = { waitForCompletion: false },
       pages?: PageSelectionInput
     ) => formState.runAIExtraction(extractionId, options, pages),
-    forwardInboxEmail: (options: ForwardInboxEmailOptions) =>
+    forwardInboxEmail: (options: { emails?: string[]; emailGroup?: string }) =>
       formState.forwardInboxEmail(options),
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>

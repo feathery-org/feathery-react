@@ -216,7 +216,6 @@ import ActionToast from './components/ActionToast';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
-import { ForwardInboxEmailOptions } from '@feathery/client-utils/dist/types';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -1118,7 +1117,10 @@ function Form({
           }
           return data;
         },
-        forwardInboxEmail: async (options: ForwardInboxEmailOptions) => {
+        forwardInboxEmail: async (options: {
+          emails?: string[];
+          emailGroup?: string;
+        }) => {
           return client.forwardInboxEmail({ options });
         }
       },
