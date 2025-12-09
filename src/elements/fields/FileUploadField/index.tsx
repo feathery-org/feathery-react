@@ -243,8 +243,7 @@ function FileUploadField({
                 ...(thumbnail
                   ? {}
                   : { paddingLeft: '20px', paddingRight: '20px' }),
-                ...responsiveStyles.getTarget('field'),
-                ...responsiveStyles.getTarget('ac')
+                ...responsiveStyles.getTarget('field')
               }}
               onMouseEnter={() => setHoverDownload(index)}
               onMouseLeave={() => setHoverDownload(-1)}
