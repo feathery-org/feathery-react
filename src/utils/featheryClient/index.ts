@@ -1024,7 +1024,6 @@ export default class FeatheryClient extends IntegrationClient {
   }) {
     const { userId } = initInfo();
     const url = `${API_URL}email/forward/`;
-    console.log('Forwarding inbox email with options:', options);
     const data: Record<string, any> = {
       user_id: userId,
       recipients: options.emails || [],
