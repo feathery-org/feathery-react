@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { keyframes } from '@emotion/react';
 import ResponsiveStyles from '../../styles';
 
-interface FieldSkeletonProps {
+interface ElementSkeletonProps {
   responsiveStyles: ResponsiveStyles;
   element: any;
 }
@@ -13,7 +13,8 @@ const shimmerFields = [
   'select',
   'button_group',
   'slider',
-  'rating'
+  'rating',
+  'table_element'
 ];
 
 const shimmer = keyframes`
@@ -40,8 +41,8 @@ const shimmerStyles = {
   }
 };
 
-function applyFieldStyles(field: any, styles: any) {
-  const type = field.servar.type;
+function applyStyles(element: any, styles: any) {
+  const type = element._type;
   styles.addTargets('fc', 'sub-fc', 'field');
   styles.applyFontStyles('fc', false, true);
   switch (type) {
@@ -115,14 +116,15 @@ function applyFieldStyles(field: any, styles: any) {
   return styles;
 }
 
-export default function FieldSkeleton({
+export default function ElementSkeleton({
   responsiveStyles,
   element
-}: FieldSkeletonProps) {
-  const type = element.servar.type;
+}: ElementSkeletonProps) {
+  console.log(element);
+  const type = element._type;
 
   const styles = useMemo(
-    () => applyFieldStyles(element, responsiveStyles),
+    () => applyStyles(element, responsiveStyles),
     [element, responsiveStyles]
   );
 
@@ -171,6 +173,28 @@ export default function FieldSkeleton({
     heightAdjust.height = '166px'; // hardcode qr scanner height
   }
 
+  if (!element.servar) {
+    return (
+      <div
+        css={{
+          maxWidth: '100%',
+          width: '100%',
+          height: '100%',
+          position: 'relative',
+          boxSizing: 'border-box'
+        }}
+      >
+        <div
+          css={{
+            width: '100%',
+            boxSizing: 'border-box',
+            ...heightAdjust,
+            ...shimmerStyles
+          }}
+        ></div>
+      </div>
+    );
+  }
   return (
     <div
       css={{
