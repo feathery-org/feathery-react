@@ -1040,7 +1040,7 @@ export default class FeatheryClient extends IntegrationClient {
 
     const res = await this._fetch(url, reqOptions, false);
     if (res && res.ok) return await res.json();
-    else throw Error(parseAPIError(res));
+    else throw new Error(parseError(await res?.json()));
   }
 
   async getConfig(configParams: GetConfigParams) {
