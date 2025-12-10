@@ -1116,6 +1116,12 @@ function Form({
             updateFieldValues(vals);
           }
           return data;
+        },
+        forwardInboxEmail: async (options: {
+          emails?: string[];
+          emailGroup?: string;
+        }) => {
+          return client.forwardInboxEmail({ options });
         }
       },
       // Avoid all these other obj props going through Object.assign which is not necessary.

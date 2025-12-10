@@ -95,6 +95,10 @@ export interface FormInternalState {
     options: ExtractionActionOptions | boolean,
     pages?: PageSelectionInput
   ) => Promise<Record<string, string>>;
+  forwardInboxEmail: (options: {
+    emails?: string[];
+    emailGroup?: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
   getConfig: GetConfig;
 }
 

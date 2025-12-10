@@ -1017,6 +1017,31 @@ export default class FeatheryClient extends IntegrationClient {
     });
   }
 
+  async forwardInboxEmail({
+    options
+  }: {
+    options: { emails?: string[]; emailGroup?: string };
+  }) {
+    const { userId } = initInfo();
+    const url = `${API_URL}email/forward/`;
+    const data: Record<string, any> = {
+      user_id: userId,
+      recipients: options.emails || [],
+      email_group: options.emailGroup || '',
+      panel_key: this.formKey
+    };
+
+    const reqOptions = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(data)
+    };
+
+    const res = await this._fetch(url, reqOptions, false);
+    if (res && res.ok) return await res.json();
+    else throw new Error(parseError(await res?.json()));
+  }
+
   async getConfig(configParams: GetConfigParams) {
     const url = `${API_URL}account/config/`;
     const reqOptions = {
