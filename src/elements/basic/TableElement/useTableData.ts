@@ -12,7 +12,7 @@ type UseTableDataProps = {
       actions: Action[];
       search: boolean;
       sort: boolean;
-      pagination: boolean;
+      pagination: number;
     };
   };
   editMode?: boolean;
@@ -57,8 +57,12 @@ export function useTableData({
   );
   const enableSearch = element.properties?.search ?? false;
   const enableSort = element.properties?.sort ?? false;
-  const enablePagination = element.properties?.pagination ?? false;
-  const rowsPerPage = 10;
+  const paginationSetting = element.properties?.pagination ?? 0;
+  const rowsPerPage =
+    typeof paginationSetting === 'number' && paginationSetting > 0
+      ? Math.floor(paginationSetting)
+      : 0;
+  const enablePagination = rowsPerPage > 0;
 
   // Use example columns if in edit mode and no columns provided
   // Also ensure all columns have field_key in edit mode
