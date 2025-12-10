@@ -154,7 +154,8 @@ export const navStyle = {
   alignItems: 'center',
   flexWrap: 'wrap',
   justifyContent: 'space-between',
-  padding: '16px'
+  padding: '16px',
+  gap: '8px'
 };
 
 export const navTextStyle = {
