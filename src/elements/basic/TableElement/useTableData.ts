@@ -3,7 +3,7 @@ import { fieldValues } from '../../../utils/init';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { Action, Column } from './types';
 import { parseSortableValue, compareSortableValues } from './utils';
-import { EXAMPLE_COLUMNS, generateExampleData } from './exampleData';
+import { generateExampleData } from './exampleData';
 
 type UseTableDataProps = {
   element: {
@@ -65,10 +65,6 @@ export function useTableData({
   const columns = useMemo(() => {
     let cols = userColumns;
 
-    if (editMode && userColumns.length === 0) {
-      cols = EXAMPLE_COLUMNS;
-    }
-
     // In edit mode, replace field_key with a unique example key
     if (editMode) {
       cols = cols.map((col, index) => ({
@@ -83,12 +79,7 @@ export function useTableData({
   // Use example data in edit mode
   const activeFieldValues = useMemo(() => {
     if (editMode) {
-      const numExampleRows = 3;
-      if (userColumns.length === 0) {
-        return generateExampleData(EXAMPLE_COLUMNS, numExampleRows);
-      } else {
-        return generateExampleData(columns, numExampleRows);
-      }
+      return generateExampleData(columns);
     }
     return fieldValues;
   }, [editMode, columns, userColumns.length]);

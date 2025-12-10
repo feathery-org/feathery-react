@@ -13,7 +13,7 @@ const TableElement = lazy(
   () => import(/* webpackChunkName: "TableElement" */ './basic/TableElement')
 );
 
-import FieldSkeleton from './components/skeletons/FieldSkeleton';
+import ElementSkeleton from './components/skeletons/ElementSkeleton';
 
 const Basic = {
   ImageElement,
@@ -50,7 +50,7 @@ Object.entries(Elements).map(([key, Element]) => {
       const featheryElement = (
         <Suspense
           fallback={
-            <FieldSkeleton
+            <ElementSkeleton
               element={element}
               responsiveStyles={responsiveStyles}
             />
