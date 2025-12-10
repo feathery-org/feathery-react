@@ -1,4 +1,4 @@
-import React, { memo, useMemo, Suspense } from 'react';
+import React, { memo, useMemo, Suspense, lazy } from 'react';
 import { InView } from 'react-intersection-observer';
 
 import Fields from './fields';
@@ -8,7 +8,10 @@ import VideoElement from './basic/VideoElement';
 import TextElement from './basic/TextElement';
 import ButtonElement from './basic/ButtonElement';
 import ProgressBarElement from './basic/ProgressBarElement';
-import TableElement from './basic/TableElement';
+
+const TableElement = lazy(
+  () => import(/* webpackChunkName: "TableElement" */ './basic/TableElement')
+);
 
 import FieldSkeleton from './components/skeletons/FieldSkeleton';
 
@@ -20,6 +23,7 @@ const Basic = {
   ProgressBarElement,
   TableElement
 };
+
 const Elements = { ...Basic, ...Fields };
 
 Object.entries(Elements).map(([key, Element]) => {
