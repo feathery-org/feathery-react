@@ -14,15 +14,14 @@ import {
 import internalState, {
   AlloyEntities,
   GetConfigParams,
+  IntegrationActionIds,
+  IntegrationActionOptions,
   LoanProCustomerObject,
+  PageSelectionInput,
   setFormInternalState
 } from './internalState';
 import { validateElements } from './validation';
-import {
-  IntegrationActionIds,
-  IntegrationActionOptions,
-  PageSelectionInput
-} from '@feathery/client-utils';
+
 /**
  * Used by contextRef in <Form />, renderAt for vanillajs, and the lifecycle
  * methods

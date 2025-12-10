@@ -8,17 +8,25 @@ import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
 import FeatheryClient from './featheryClient';
-import {
-  IntegrationActionIds,
-  IntegrationActionOptions,
-  ExtractionActionOptions,
-  PageSelectionInput
-} from '@feathery/client-utils';
 
+export type PageSelectionInput = (number | string)[] | (number | string)[][];
+
+export type IntegrationActionIds = string[] | string;
+export type IntegrationActionOptions = {
+  waitForCompletion?: boolean;
+  multiple?: boolean;
+};
 export type RunIntegrationActions = (
   actionIds: IntegrationActionIds,
   options: IntegrationActionOptions
 ) => Promise<{ ok: boolean; error?: string; payload?: any }>;
+
+export type ExtractionActionOptions = {
+  waitForCompletion?: boolean;
+  pages?: PageSelectionInput;
+  variantId?: string;
+  meetingUrl?: string;
+};
 
 export type AlloyEntities = Record<string, any>[];
 export type ApplyAlloyJourney = (

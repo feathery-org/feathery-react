@@ -1,18 +1,16 @@
+import { parseError } from '../error';
 import { fieldValues, initFormsPromise, initInfo } from '../init';
 import { encodeGetParams } from '../primitives';
 import { API_URL, STATIC_URL } from '.';
 import { OfflineRequestHandler } from '../offlineRequestHandler';
-import { AlloyEntities, LoanProCustomerObject } from '../internalState';
-import { featheryWindow } from '../browser';
 import {
-  apiFetch,
-  customRolloutAction as apiCustomRolloutAction,
-  sendEmail as apiSendEmail,
-  pollForCompletion,
+  AlloyEntities,
   IntegrationActionIds,
   IntegrationActionOptions,
-  parseAPIError
-} from '@feathery/client-utils';
+  LoanProCustomerObject
+} from '../internalState';
+import { checkResponseSuccess } from './utils';
+import { featheryWindow } from '../browser';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -67,15 +65,32 @@ export default class IntegrationClient {
     propagateNetworkErrors = false
   ) {
     const { sdkKey } = initInfo();
-    return apiFetch(sdkKey, url, options, parseResponse).catch((e) => {
-      // Ignore TypeErrors if form has redirected because `fetch` in
-      // Safari will error after redirect
-      const ignore =
-        this.ignoreNetworkErrors?.current ||
-        TYPE_MESSAGES_TO_IGNORE.includes(e.message);
-      if (ignore && !propagateNetworkErrors && e instanceof TypeError) return;
-      throw e;
-    });
+    options = options ?? {};
+    const { headers, ...otherOptions } = options;
+    options = {
+      cache: 'no-store',
+      // Write requests must succeed so data is tracked
+      keepalive: ['POST', 'PATCH', 'PUT'].includes(options.method),
+      headers: {
+        Authorization: 'Token ' + sdkKey,
+        ...headers
+      },
+      ...otherOptions
+    };
+    return fetch(url, options)
+      .then(async (response) => {
+        if (parseResponse) await checkResponseSuccess(response);
+        return response;
+      })
+      .catch((e) => {
+        // Ignore TypeErrors if form has redirected because `fetch` in
+        // Safari will error after redirect
+        const ignore =
+          this.ignoreNetworkErrors?.current ||
+          TYPE_MESSAGES_TO_IGNORE.includes(e.message);
+        if (ignore && !propagateNetworkErrors && e instanceof TypeError) return;
+        throw e;
+      });
   }
 
   async fetchPlaidLinkToken(kwargs: Record<string, any>) {
@@ -92,7 +107,7 @@ export default class IntegrationClient {
 
     const payload = await res.json();
     if (res?.status === 200) return { token: payload.link_token };
-    return { err: parseAPIError(payload) || 'Ran into an error' };
+    return { err: parseError(payload) || 'Ran into an error' };
   }
 
   async fetchPlaidVerificationStatus(sessionId: string) {
@@ -301,7 +316,7 @@ export default class IntegrationClient {
     return this._fetch(url, options, false).then(async (response) => {
       if (response) {
         if (response.ok) return await response.json();
-        else throw Error(parseAPIError(await response.json()));
+        else throw Error(parseError(await response.json()));
       }
     });
   }
@@ -323,7 +338,7 @@ export default class IntegrationClient {
     return this._fetch(url, options, false).then(async (response) => {
       if (response) {
         if (response.ok) return await response.json();
-        else throw Error(parseAPIError(await response.json()));
+        else throw Error(parseError(await response.json()));
       }
     });
   }
@@ -344,8 +359,63 @@ export default class IntegrationClient {
     return this._fetch(url, options, false).then(async (response) => {
       if (response) {
         if (response.ok) return await response.json();
-        else throw Error(parseAPIError(await response.json()));
+        else throw Error(parseError(await response.json()));
       }
+    });
+  }
+
+  async pollForCompletion({
+    pollUrl,
+    checkInterval,
+    maxTime,
+    onStatusUpdate,
+    operationName = 'Operation'
+  }: {
+    pollUrl: string;
+    checkInterval: number;
+    maxTime: number;
+    onStatusUpdate?: (data: any) => void;
+    operationName?: string;
+  }) {
+    return new Promise((resolve) => {
+      let attempts = 0;
+      const maxAttempts = maxTime / checkInterval;
+
+      const checkCompletion = async () => {
+        const response = await this._fetch(pollUrl, {}, false);
+        if (!response) return;
+
+        const data = await response.json();
+
+        if (onStatusUpdate) {
+          onStatusUpdate(data);
+        }
+
+        if (response.ok) {
+          if (data.status === 'complete') {
+            return resolve(data);
+          } else {
+            attempts += 1;
+
+            if (attempts < maxAttempts) {
+              setTimeout(checkCompletion, checkInterval);
+            } else {
+              const message = `${operationName} took too long...`;
+              console.error(message);
+              return resolve({ status: 'error', message });
+            }
+          }
+        } else {
+          const message = parseError(data);
+          console.error(message);
+          if (onStatusUpdate) {
+            onStatusUpdate({ error: message });
+          }
+          return resolve({ status: 'error', message });
+        }
+      };
+
+      setTimeout(checkCompletion, checkInterval);
     });
   }
 
@@ -353,7 +423,7 @@ export default class IntegrationClient {
   ENVELOPE_MAX_TIME = 3 * 60 * 1000;
 
   generateEnvelopes(action: Record<string, string>) {
-    const { userId, sdkKey } = initInfo();
+    const { userId } = initInfo();
     const signer = fieldValues[action.envelope_signer_field_key];
     const runAsync = action.run_async ?? true;
     const documents = action.documents ?? [];
@@ -380,14 +450,13 @@ export default class IntegrationClient {
           if (!runAsync || data.files) return data;
 
           const pollUrl = `${API_URL}document/form/generate/poll/?fid=${userId}&dids=${documents}`;
-          return await pollForCompletion(
-            sdkKey,
+          return await this.pollForCompletion({
             pollUrl,
-            this.ENVELOPE_CHECK_INTERVAL,
-            this.ENVELOPE_MAX_TIME,
-            'Envelope generation'
-          );
-        } else throw Error(parseAPIError(data));
+            checkInterval: this.ENVELOPE_CHECK_INTERVAL,
+            maxTime: this.ENVELOPE_MAX_TIME,
+            operationName: 'Envelope generation'
+          });
+        } else throw Error(parseError(data));
       }
     });
   }
@@ -431,7 +500,7 @@ export default class IntegrationClient {
     this._fetch(url, options, false).then(async (response) => {
       if (response) {
         if (response.ok) return await response.json();
-        else throw Error(parseAPIError(await response.json()));
+        else throw Error(parseError(await response.json()));
       }
     });
 
@@ -444,7 +513,7 @@ export default class IntegrationClient {
         const response = await this._fetch(pollUrl);
 
         if (response?.status === 400) {
-          return resolve({ error: parseAPIError(await response.json()) });
+          return resolve({ error: parseError(await response.json()) });
         } else if (response?.status === 200) {
           const data = await response.json();
 
@@ -502,7 +571,7 @@ export default class IntegrationClient {
 
           if (response?.status === 400) {
             const errorData = await response.json();
-            return resolve({ error: parseAPIError(errorData) });
+            return resolve({ error: parseError(errorData) });
           } else if (response?.status === 200) {
             const data = await response.json();
             if (data.status === 'complete') {
@@ -592,7 +661,7 @@ export default class IntegrationClient {
         if (finalResponse.ok) {
           const { final_status: finalStatus } = await finalResponse.json();
           return finalStatus;
-        } else throw Error(parseAPIError(await finalResponse.json()));
+        } else throw Error(parseError(await finalResponse.json()));
       }
       return false;
     }
@@ -645,13 +714,23 @@ export default class IntegrationClient {
       if (response.ok) {
         const { otp_status: otpStatus } = await response.json();
         return otpStatus;
-      } else throw Error(parseAPIError(await response.json()));
+      } else throw Error(parseError(await response.json()));
     }
   }
 
   async sendEmail(templateId: string) {
-    const { userId, sdkKey } = initInfo();
-    await apiSendEmail(sdkKey, userId ?? '', this.formKey, templateId);
+    const { userId } = initInfo();
+    const url = `${API_URL}email/logic-rule/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        template_id: templateId,
+        form_key: this.formKey,
+        fuser_key: userId
+      })
+    };
+    await this._fetch(url, options, false);
   }
 
   async alloyJourneyApplication(journeyToken: string, entities: AlloyEntities) {
@@ -733,16 +812,26 @@ export default class IntegrationClient {
     automationIds: IntegrationActionIds,
     options: IntegrationActionOptions
   ) {
-    const { userId, sdkKey } = initInfo();
+    const { userId } = initInfo();
+    const url = `${API_URL}rollout/custom-trigger/`;
+    if (typeof automationIds === 'string') automationIds = [automationIds];
+    const reqOptions = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        automation_ids: automationIds,
+        sync: options.waitForCompletion ?? true,
+        multiple: options.multiple ?? false,
+        payload: fieldValues,
+        form_key: this.formKey,
+        fuser_key: userId
+      })
+    };
     await this.submitQueue;
-    return apiCustomRolloutAction(
-      sdkKey,
-      automationIds,
-      this.formKey,
-      fieldValues,
-      options,
-      userId
-    );
+    const res = await this._fetch(url, reqOptions, false);
+    if (res && res.status === 200)
+      return { ok: true, payload: await res.json() };
+    else return { ok: false, error: (await res?.text()) ?? '' };
   }
 
   async fetchSalesforcePicklistOptions(
