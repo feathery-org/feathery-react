@@ -120,7 +120,6 @@ export default function ElementSkeleton({
   responsiveStyles,
   element
 }: ElementSkeletonProps) {
-  console.log(element);
   const type = element._type;
 
   const styles = useMemo(
