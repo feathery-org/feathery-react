@@ -1,6 +1,5 @@
 const config = require('./webpack.config');
 const webpack = require('webpack');
-const path = require('path');
 
 module.exports = (env) => {
   if (env.analyze) {
@@ -10,8 +9,6 @@ module.exports = (env) => {
       new BundleAnalyzerPlugin({ defaultSizes: 'stat', openAnalyzer: true })
     );
   }
-
-  config.output.path = path.resolve(__dirname, 'dist');
 
   config.devtool = 'eval-cheap-module-source-map';
   config.externals = ['react'];
