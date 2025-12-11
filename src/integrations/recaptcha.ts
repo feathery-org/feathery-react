@@ -47,20 +47,26 @@ export async function installRecaptcha(steps: Record<string, any>) {
     step.buttons.some((button: any) => button.properties.captcha_verification)
   );
   if (shouldInstall) {
-    await dynamicImport(RECAPTCHA_URL).then(() =>
-      // Sometimes recaptcha fails to install, so use ?.
-      // https://feathery-forms.sentry.io/issues/4378968555
-      featheryWindow().grecaptcha?.ready(() => (recaptchaReady = true))
-    );
+    try {
+      await dynamicImport(RECAPTCHA_URL).then(() =>
+        // Sometimes recaptcha fails to install, so use ?.
+        // https://feathery-forms.sentry.io/issues/4378968555
+        featheryWindow().grecaptcha?.ready(() => (recaptchaReady = true))
+      );
+    } catch (error: any) {
+      console.error(error?.message || 'Captcha load failed.');
+      recaptchaLoadFailed = true;
+    }
   }
 }
 
-export async function verifyRecaptcha(client: any) {
-  // verifyRecaptcha returns Promise with boolean, true = invalid
+// returns true if user fails captcha verification
+export async function verifyRecaptcha(client: {
+  verifyRecaptchaToken: (token: string) => Promise<{ score: number }>;
+}): Promise<boolean> {
   const result = await waitOnRecaptcha();
   if (!result.success) {
-    // if recaptcha fails to load, we skip
-    // verification and allow user to continue
+    // if recaptcha errors, skip verification and allow user through
     return false;
   }
 
@@ -69,5 +75,10 @@ export async function verifyRecaptcha(client: any) {
       action: 'submit'
     })
     .then((token: string) => client.verifyRecaptchaToken(token))
-    .then((data: any) => data.score < ERROR_THRESHOLD);
+    .then((data: { score: number }) => data.score < ERROR_THRESHOLD)
+    .catch((error: any) => {
+      // if recaptcha errors, skip verification and allow user through
+      console.error(error?.message || 'Captcha verification error.');
+      return false;
+    });
 }
