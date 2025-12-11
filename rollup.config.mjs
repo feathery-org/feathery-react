@@ -33,7 +33,7 @@ export default {
     'jszip'
   ],
   plugins: [
-    del({ targets: ['dist/*'] }),
+    del({ targets: 'dist/*' }),
     replace({
       preventAssignment: true,
       values: {
