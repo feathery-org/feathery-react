@@ -9,11 +9,11 @@ import TextElement from './basic/TextElement';
 import ButtonElement from './basic/ButtonElement';
 import ProgressBarElement from './basic/ProgressBarElement';
 
+import ElementSkeleton from './components/skeletons/ElementSkeleton';
+
 const TableElement = lazy(
   () => import(/* webpackChunkName: "TableElement" */ './basic/TableElement')
 );
-
-import ElementSkeleton from './components/skeletons/ElementSkeleton';
 
 const Basic = {
   ImageElement,

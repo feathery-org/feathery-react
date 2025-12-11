@@ -190,7 +190,7 @@ export default function ElementSkeleton({
             ...heightAdjust,
             ...shimmerStyles
           }}
-        ></div>
+        />
       </div>
     );
   }
