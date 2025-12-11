@@ -63,12 +63,12 @@ jobs:
           yarn build:umd
           yarn build:node
 
-      - name: Push Changes
-        env:
-          GITHUB_TOKEN: ${{ secrets.FEATHERY_BOT_TOKEN }}
-        run: git push --follow-tags origin master
-
       - name: Publish to NPM
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: yarn publish --non-interactive
+
+      - name: Push Changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.FEATHERY_BOT_TOKEN }}
+        run: git push --follow-tags origin master

@@ -1,0 +1,69 @@
+name: Test Hosted-Forms
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to test'
+        required: true
+        type: number
+
+jobs:
+  test-dependents:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v3
+        with:
+          ref: refs/pull/${{ inputs.pr_number }}/head
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Build and publish PR version
+        run: |
+          npm ci
+          npm run build
+
+          # Create a clear PR version like: 1.2.3-pr-123.abc1234
+          PR_VERSION="pr-${{ inputs.pr_number }}.$(git rev-parse --short HEAD)"
+          npm version prerelease --preid=$PR_VERSION --no-git-tag-version
+
+          # Publish with pr tag (won't affect latest)
+          npm publish --tag pr
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Get published version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      # - name: Test feathery-frontend
+      #   run: |
+      #     git clone https://${{ secrets.FEATHERY_BOT_TOKEN }}@github.com/feathery/feathery-frontend.git
+      #     cd feathery-frontend
+      #     npm ci
+      #     yarn install @feathery/react@${{ steps.version.outputs.version }}
+      #     yarn test
+      #     npx playwright install --with-deps
+      #     yarn test:e2e
+
+      - name: Test hosted-forms
+        run: |
+          git clone https://${{ secrets.FEATHERY_BOT_TOKEN }}@github.com/feathery/hosted-forms-next.git
+          cd feathery-forms
+          yarn install @feathery/react@${{ steps.version.outputs.version }}
+          yarn test
+          npx playwright install --with-deps
+          yarn test:e2e
+
+      - name: Cleanup - Unpublish PR version
+        if: always()
+        run: |
+          npm unpublish @feathery/react@${{ steps.version.outputs.version }} --force || true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
