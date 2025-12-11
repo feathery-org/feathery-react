@@ -84,10 +84,7 @@ export default function DropdownMultiField({
   // Handle input changes for windowed filtering
   const handleInputChange = useCallback(
     (newValue: string, actionMeta: InputActionMeta) => {
-      // Only update on actual input changes, not on menu close/blur
-      if (actionMeta.action === 'input-change') {
-        setInputValue(newValue);
-      }
+      setInputValue(newValue);
     },
     []
   );
@@ -289,7 +286,7 @@ export default function DropdownMultiField({
         onKeyDownCapture={handleKeyDownCapture}
       >
         {customBorder}
-        <SelectComponent {...selectProps} />
+        <SelectComponent {...selectProps} inputValue={inputValue} />
         <Placeholder
           value={selectVal.length || focused}
           element={element}

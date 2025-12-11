@@ -126,7 +126,6 @@ export function createSelectStyles({
     }),
     option: (baseStyles) => ({
       ...baseStyles,
-      // nowrap enables horizontal scroll for long options instead of wrapping
       whiteSpace: 'nowrap'
     }),
     multiValue: (baseStyles, state) => {
