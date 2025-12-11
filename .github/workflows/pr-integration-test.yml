@@ -1,0 +1,42 @@
+name: PR Integration Tests
+
+on:
+  pull_request:
+    branches:
+      - master
+    types: [opened, synchronize]
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.FEATHERY_BOT_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: |
+          yarn build:umd
+          yarn build:node
+
+      - name: Pack Package
+        run: yarn pack --filename feathery-react-${{ github.event.pull_request.number }}.tgz
+
+      - name: Test in hosted-forms
+        run: |
+          git clone https://${{ secrets.FEATHERY_BOT_TOKEN }}@github.com/feathery-org/hosted-forms-next.git
+          cd hosted-forms-next
+          yarn add $GITHUB_WORKSPACE/feathery-react-${{ github.event.pull_request.number }}.tgz
+          yarn test
+          npx playwright install --with-deps
+          yarn test:e2e
