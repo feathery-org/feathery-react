@@ -44,7 +44,7 @@ jobs:
 
       - name: Test hosted-forms
         run: |
-          git clone https://${{ secrets.FEATHERY_BOT_TOKEN }}@github.com/feathery/hosted-forms-next.git
+          git clone https://${{ secrets.FEATHERY_BOT_TOKEN }}@github.com/feathery-org/hosted-forms-next.git
           cd hosted-forms-next
           yarn install @feathery/react@${{ steps.version.outputs.version }}
           yarn test
