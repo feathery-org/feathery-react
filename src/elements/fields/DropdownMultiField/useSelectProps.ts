@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { OptionData, CreatableValidator } from './types';
-import type { SelectInstance, InputActionMeta } from 'react-select';
+import type { SelectInstance } from 'react-select';
 
 interface UseSelectPropsParams {
   // Refs
@@ -49,7 +49,7 @@ interface UseSelectPropsParams {
   isValidNewOption?: CreatableValidator;
 
   // Input handling for windowed options
-  onInputChange?: (newValue: string, actionMeta: InputActionMeta) => void;
+  onInputChange?: (newValue: string) => void;
   // Pass directly from useWindowedOptions - skips react-select filtering when windowing
   filterOption?: (() => true) | undefined;
 

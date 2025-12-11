@@ -1,5 +1,4 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import type { InputActionMeta } from 'react-select';
 import useBorder from '../../components/useBorder';
 import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
@@ -82,12 +81,9 @@ export default function DropdownMultiField({
   });
 
   // Handle input changes for windowed filtering
-  const handleInputChange = useCallback(
-    (newValue: string, actionMeta: InputActionMeta) => {
-      setInputValue(newValue);
-    },
-    []
-  );
+  const handleInputChange = useCallback((newValue: string) => {
+    setInputValue(newValue);
+  }, []);
 
   const {
     collapseSelected,
