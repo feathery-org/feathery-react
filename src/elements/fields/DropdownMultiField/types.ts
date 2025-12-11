@@ -10,6 +10,7 @@ export type OptionData = {
   tooltip?: string;
   value: string;
   label: string;
+  isMoreIndicator?: boolean;
 };
 
 export type Options = string[] | OptionData[];

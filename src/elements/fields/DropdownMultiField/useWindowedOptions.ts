@@ -78,6 +78,16 @@ export default function useWindowedOptions({
     const windowedOptions = [...selectedOptions, ...visibleUnselected];
     const hiddenCount = filteredOptions.length - windowedOptions.length;
 
+    if (hiddenCount > 0) {
+      windowedOptions.push({
+        value: '__more_results_indicator__',
+        label: `${hiddenCount} more result${
+          hiddenCount === 1 ? '' : 's'
+        } — refine your search`,
+        isMoreIndicator: true
+      });
+    }
+
     return {
       windowedOptions,
       filterOption: PASSTHROUGH_FILTER,

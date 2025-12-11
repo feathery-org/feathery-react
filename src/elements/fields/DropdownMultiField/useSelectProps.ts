@@ -131,7 +131,8 @@ export default function useSelectProps({
       onInputChange,
 
       // Option state
-      isOptionDisabled: () =>
+      isOptionDisabled: (option: OptionData) =>
+        option.isMoreIndicator ||
         (servar.max_length && selectVal.length >= servar.max_length) ||
         loadingDynamicOptions,
       noOptionsMessage: create ? () => null : noOptionsMessage,

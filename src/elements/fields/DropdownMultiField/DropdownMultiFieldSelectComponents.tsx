@@ -24,6 +24,24 @@ const TooltipOption = ({
   const [showTooltip, setShowTooltip] = useState(false);
   const { containerRef } = props.selectProps as DropdownSelectProps;
 
+  if (props.data.isMoreIndicator) {
+    return (
+      <div
+        css={{
+          padding: '8px 12px',
+          color: '#999',
+          fontStyle: 'italic',
+          fontSize: '0.9em',
+          textAlign: 'left',
+          cursor: 'default',
+          userSelect: 'none'
+        }}
+      >
+        {props.data.label}
+      </div>
+    );
+  }
+
   return (
     <div
       ref={optionRef}
