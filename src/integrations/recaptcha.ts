@@ -48,11 +48,15 @@ export async function installRecaptcha(steps: Record<string, any>) {
   );
   if (shouldInstall) {
     try {
-      await dynamicImport(RECAPTCHA_URL).then(() =>
+      await dynamicImport(RECAPTCHA_URL).then(() => {
         // Sometimes recaptcha fails to install, so use ?.
         // https://feathery-forms.sentry.io/issues/4378968555
-        featheryWindow().grecaptcha?.ready(() => (recaptchaReady = true))
-      );
+        const grecaptcha = featheryWindow().grecaptcha;
+        if (!grecaptcha) {
+          throw new Error('Captcha load failed.');
+        }
+        grecaptcha.ready(() => (recaptchaReady = true));
+      });
     } catch (error: any) {
       console.error(error?.message || 'Captcha load failed.');
       recaptchaLoadFailed = true;
