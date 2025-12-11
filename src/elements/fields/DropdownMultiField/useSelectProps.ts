@@ -48,6 +48,11 @@ interface UseSelectPropsParams {
   formatCreateLabel?: (inputValue: string) => string;
   isValidNewOption?: CreatableValidator;
 
+  // Input handling for windowed options
+  onInputChange?: (newValue: string) => void;
+  // Pass directly from useWindowedOptions - skips react-select filtering when windowing
+  filterOption?: (() => true) | undefined;
+
   // Accessibility
   ariaLabel?: string;
 }
@@ -85,6 +90,8 @@ export default function useSelectProps({
   create,
   formatCreateLabel,
   isValidNewOption,
+  onInputChange,
+  filterOption,
   ariaLabel
 }: UseSelectPropsParams) {
   return useMemo(
@@ -112,6 +119,8 @@ export default function useSelectProps({
       tabSelectsValue: false,
       blurInputOnSelect: false,
 
+      filterOption,
+
       // Event handlers
       onChange: handleChange,
       onFocus: () => setFocused(true),
@@ -119,9 +128,11 @@ export default function useSelectProps({
       onKeyDown: handleSelectKeyDown,
       onMenuOpen: handleMenuOpen,
       onMenuClose: handleMenuClose,
+      onInputChange,
 
       // Option state
-      isOptionDisabled: () =>
+      isOptionDisabled: (option: OptionData) =>
+        option.isMoreIndicator ||
         (servar.max_length && selectVal.length >= servar.max_length) ||
         loadingDynamicOptions,
       noOptionsMessage: create ? () => null : noOptionsMessage,
@@ -186,7 +197,9 @@ export default function useSelectProps({
       create,
       formatCreateLabel,
       isValidNewOption,
-      ariaLabel
+      onInputChange,
+      ariaLabel,
+      filterOption
     ]
   );
 }
