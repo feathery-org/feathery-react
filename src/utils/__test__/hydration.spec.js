@@ -16,6 +16,7 @@ describe('hydration', () => {
         ],
         images: [],
         videos: [],
+        tables: [],
         progress_bars: [{}],
         subgrids: [
           {
@@ -75,6 +76,7 @@ describe('hydration', () => {
         servar_fields: [],
         images: [],
         videos: [],
+        tables: [],
         progress_bars: [{}],
         subgrids: [
           {
