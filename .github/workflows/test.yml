@@ -42,15 +42,6 @@ jobs:
         id: version
         run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
-      # - name: Test feathery-frontend
-      #   run: |
-      #     git clone https://${{ secrets.FEATHERY_BOT_TOKEN }}@github.com/feathery/feathery-frontend.git
-      #     cd feathery-frontend
-      #     yarn install @feathery/react@${{ steps.version.outputs.version }}
-      #     yarn test
-      #     npx playwright install --with-deps
-      #     yarn test:e2e
-
       - name: Test hosted-forms
         run: |
           git clone https://${{ secrets.FEATHERY_BOT_TOKEN }}@github.com/feathery/hosted-forms-next.git
