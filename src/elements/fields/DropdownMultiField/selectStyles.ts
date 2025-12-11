@@ -117,6 +117,18 @@ export function createSelectStyles({
       zIndex: menuZIndex,
       textAlign: 'start'
     }),
+    menuList: (baseStyles) => ({
+      ...baseStyles,
+      // Grid makes all options same width (widest wins), enabling full-row highlights
+      display: 'grid',
+      overflowX: 'auto',
+      overflowY: 'auto'
+    }),
+    option: (baseStyles) => ({
+      ...baseStyles,
+      // nowrap enables horizontal scroll for long options instead of wrapping
+      whiteSpace: 'nowrap'
+    }),
     multiValue: (baseStyles, state) => {
       const selectProps = state.selectProps as DropdownSelectProps;
       if (!selectProps.collapseSelected) return baseStyles;
