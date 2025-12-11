@@ -852,4 +852,218 @@ describe('DropdownMultiField - Base Functionality', () => {
       expectValueToBeSelected('Persisted Option');
     });
   });
+
+  describe('Windowed Options - Large Datasets', () => {
+    const createLargeOptionsMetadata = (count: number) => ({
+      options: Array.from({ length: count }, (_, i) => `Option ${i + 1}`),
+      option_labels: Array.from({ length: count }, (_, i) => `Option ${i + 1}`)
+    });
+
+    it('renders a subset of options for large datasets (>250)', async () => {
+      const user = userEvent.setup();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createLargeOptionsMetadata(500)
+      );
+      const props = createDropdownMultiProps(element);
+
+      render(<DropdownMultiField {...props} />);
+
+      await openDropdownMenu(user);
+
+      // Should show 250 options + 1 "more results" indicator
+      const options = getOptionElements();
+      expect(options.length).toBeLessThanOrEqual(251);
+    });
+
+    it('displays "more results" indicator when options are hidden', async () => {
+      const user = userEvent.setup();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createLargeOptionsMetadata(500)
+      );
+      const props = createDropdownMultiProps(element);
+
+      render(<DropdownMultiField {...props} />);
+
+      await openDropdownMenu(user);
+
+      // Look for the "more results" text
+      await waitFor(() => {
+        const menu = document.querySelector('div[class*="-menu"]');
+        expect(menu?.textContent).toContain('more result');
+        expect(menu?.textContent).toContain('refine your search');
+      });
+    });
+
+    it('filters options when user types a search term', async () => {
+      const user = userEvent.setup();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createLargeOptionsMetadata(500)
+      );
+      const props = createDropdownMultiProps(element);
+
+      render(<DropdownMultiField {...props} />);
+
+      await openDropdownMenu(user);
+      const input = getSelectInput();
+
+      // Type a search term that matches only a few options
+      await user.type(input, 'Option 42');
+
+      await waitFor(() => {
+        const options = getOptionElements();
+        // Should show much fewer options now
+        expect(options.length).toBeLessThan(20);
+      });
+    });
+
+    it('removes indicator when search reduces results below threshold', async () => {
+      const user = userEvent.setup();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createLargeOptionsMetadata(500)
+      );
+      const props = createDropdownMultiProps(element);
+
+      render(<DropdownMultiField {...props} />);
+
+      await openDropdownMenu(user);
+      const input = getSelectInput();
+
+      // Type a very specific search term
+      await user.type(input, 'Option 123');
+
+      await waitFor(() => {
+        const menu = document.querySelector('div[class*="-menu"]');
+        // Should NOT show "more results" since filtered results are small
+        expect(menu?.textContent).not.toContain('more result');
+      });
+    });
+
+    it('still allows selection from windowed options', async () => {
+      const user = userEvent.setup();
+      const mockOnChange = createStatefulOnChange();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createLargeOptionsMetadata(500)
+      );
+      const props = createDropdownMultiProps(element, {
+        onChange: mockOnChange
+      });
+
+      render(<DropdownMultiField {...props} />);
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Option 1');
+
+      expect(mockOnChange).toHaveBeenCalled();
+      expect(getMockFieldValue()).toEqual(['Option 1']);
+    });
+
+    it('preserves selected values in windowed results', async () => {
+      const user = userEvent.setup();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createLargeOptionsMetadata(500)
+      );
+      const props = createDropdownMultiProps(element, {
+        fieldVal: ['Option 400', 'Option 450']
+      });
+
+      render(<DropdownMultiField {...props} />);
+
+      // Selected values should be displayed
+      expectSelectedValueCount(2);
+      expectValueToBeSelected('Option 400');
+      expectValueToBeSelected('Option 450');
+
+      // When opening menu, selected options should still be accessible
+      await openDropdownMenu(user);
+      const options = getOptionElements();
+      expect(options.length).toBeGreaterThan(0);
+    });
+
+    it('indicator is not selectable', async () => {
+      const user = userEvent.setup();
+      const mockOnChange = createStatefulOnChange();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createLargeOptionsMetadata(500)
+      );
+      const props = createDropdownMultiProps(element, {
+        onChange: mockOnChange
+      });
+
+      render(<DropdownMultiField {...props} />);
+
+      await openDropdownMenu(user);
+
+      // Find and try to click the indicator
+      const menu = document.querySelector('div[class*="-menu"]');
+      const indicatorText = menu?.textContent?.match(/\d+ more results?/);
+
+      if (indicatorText) {
+        // The indicator should be styled as disabled/non-interactive
+        // Clicking it should not trigger onChange
+        const optionsBefore = getMockFieldValue();
+
+        // Find the element containing the indicator text and try to click it
+        const allElements = menu?.querySelectorAll('div');
+        const indicatorElement = Array.from(allElements || []).find((el) =>
+          el.textContent?.includes('more result')
+        );
+
+        if (indicatorElement) {
+          await user.click(indicatorElement);
+          // Value should not have changed
+          expect(getMockFieldValue()).toEqual(optionsBefore);
+        }
+      }
+    });
+
+    it('handles datasets at exact threshold (250 options)', async () => {
+      const user = userEvent.setup();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createLargeOptionsMetadata(250)
+      );
+      const props = createDropdownMultiProps(element);
+
+      render(<DropdownMultiField {...props} />);
+
+      await openDropdownMenu(user);
+
+      // Should show all 250 options without indicator
+      const options = getOptionElements();
+      expect(options).toHaveLength(250);
+
+      const menu = document.querySelector('div[class*="-menu"]');
+      expect(menu?.textContent).not.toContain('more result');
+    });
+
+    it('handles datasets just above threshold (251 options)', async () => {
+      const user = userEvent.setup();
+      const element = createDropdownMultiElement(
+        'dropdown_multi',
+        createLargeOptionsMetadata(251)
+      );
+      const props = createDropdownMultiProps(element);
+
+      render(<DropdownMultiField {...props} />);
+
+      await openDropdownMenu(user);
+
+      // Should show 250 selectable options (indicator is a custom div, not an option)
+      const options = getOptionElements();
+      expect(options).toHaveLength(250);
+
+      // The indicator should appear in menu text
+      const menu = document.querySelector('div[class*="-menu"]');
+      expect(menu?.textContent).toContain('1 more result');
+      // Should use singular form
+      expect(menu?.textContent).not.toContain('1 more results');
+    });
+  });
 });
