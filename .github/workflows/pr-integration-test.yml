@@ -43,15 +43,10 @@ jobs:
           token: ${{ secrets.FEATHERY_BOT_TOKEN }}
           path: hosted-forms-next # Clone into /hosted-forms-next
 
-      - name: hosted-forms Unit Tests
+      - name: Test in hosted-forms
         working-directory: hosted-forms-next
         run: |
           yarn add ../feathery-react/v${{ github.event.pull_request.number }}.tgz
           yarn test
-
-      - name: hosted-forms E2E Tests
-        working-directory: hosted-forms-next
-        uses: docker://mcr.microsoft.com/playwright:v1.34.3-jammy
-        run: |
-          yarn add ../feathery-react/v${{ github.event.pull_request.number }}.tgz
+          npx playwright install --with-deps
           yarn test:e2e
