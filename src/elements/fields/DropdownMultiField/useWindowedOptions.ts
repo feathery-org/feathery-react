@@ -43,9 +43,8 @@ export default function useWindowedOptions({
     let filteredOptions: OptionData[];
 
     if (searchTerm) {
-      filteredOptions = options.filter(
-        (option) =>
-          option.label.toLowerCase().includes(searchTerm)
+      filteredOptions = options.filter((option) =>
+        option.label.toLowerCase().includes(searchTerm)
       );
     } else {
       filteredOptions = options;

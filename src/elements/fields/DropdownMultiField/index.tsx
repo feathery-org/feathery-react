@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import type { InputActionMeta } from 'react-select';
 import useBorder from '../../components/useBorder';
 import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
@@ -19,6 +20,7 @@ import {
 import { createSelectStyles } from './selectStyles';
 import useCollapsedSelectionManager from './useCollapsedSelectionManager';
 import useDropdownOptions from './useDropdownOptions';
+import useWindowedOptions from './useWindowedOptions';
 import useSelectProps from './useSelectProps';
 import useDropdownInteractions from './useDropdownInteractions';
 import type { CreatableValidator } from './types';
@@ -58,8 +60,11 @@ export default function DropdownMultiField({
     : undefined;
   const entityLabel = 'Dropdown field';
 
+  // Controlled inputValue needed to filter full dataset before passing to react-select
+  const [inputValue, setInputValue] = useState('');
+
   // Build all dropdown options and selections
-  const { options, selectVal } = useDropdownOptions({
+  const { options: allOptions, selectVal } = useDropdownOptions({
     fieldVal,
     fieldKey,
     servar,
@@ -68,6 +73,24 @@ export default function DropdownMultiField({
     repeatIndex,
     entityLabel
   });
+
+  // Window options for large datasets to prevent react-select from processing all options
+  const { windowedOptions: options, filterOption } = useWindowedOptions({
+    options: allOptions,
+    inputValue,
+    selectedValues: selectVal
+  });
+
+  // Handle input changes for windowed filtering
+  const handleInputChange = useCallback(
+    (newValue: string, actionMeta: InputActionMeta) => {
+      // Only update on actual input changes, not on menu close/blur
+      if (actionMeta.action === 'input-change') {
+        setInputValue(newValue);
+      }
+    },
+    []
+  );
 
   const {
     collapseSelected,
@@ -221,6 +244,8 @@ export default function DropdownMultiField({
     create,
     formatCreateLabel,
     isValidNewOption: create ? isValidNewOption : undefined,
+    onInputChange: handleInputChange,
+    filterOption,
     ariaLabel: element.properties.aria_label
   });
 
