@@ -63,7 +63,7 @@ jobs:
         run: yarn release -- --release-as ${{ inputs.release-type }}
 
       - name: Publish to NPM
-        run: yarn publish --non-interactive
+        run: npm publish
 
       - name: Push Changes
         env:
