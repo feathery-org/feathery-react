@@ -1,8 +1,9 @@
 import { dynamicImport } from './utils';
 import { featheryWindow } from '../utils/browser';
 
-const RECAPTCHA_URL =
-  'https://www.google.com/recaptcha/api.js?render=6Lcx9vAmAAAAAKnC1kO1nIdr125hCRfukaMb_R_-';
+const RECAPTCHA_SITE_KEY = '6Lcx9vAmAAAAAKnC1kO1nIdr125hCRfukaMb_R_-';
+const RECAPTCHA_URL = `https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_SITE_KEY}`;
+
 const ERROR_THRESHOLD = 0.5;
 const TIMEOUT_MS = 2000;
 const INTERVAL_MS = 100;
@@ -58,7 +59,7 @@ export async function installRecaptcha(steps: Record<string, any>) {
         grecaptcha.ready(() => (recaptchaReady = true));
       });
     } catch (error: any) {
-      console.error(error?.message || 'Captcha load failed.');
+      console.error('Captcha load failed:', error);
       recaptchaLoadFailed = true;
     }
   }
@@ -74,15 +75,20 @@ export async function verifyRecaptcha(client: {
     return false;
   }
 
-  return featheryWindow()
-    .grecaptcha.execute('6Lcx9vAmAAAAAKnC1kO1nIdr125hCRfukaMb_R_-', {
+  const grecaptcha = featheryWindow().grecaptcha;
+  if (!grecaptcha) {
+    console.error('Captcha not available during verification');
+    return false;
+  }
+  return grecaptcha
+    .execute('6Lcx9vAmAAAAAKnC1kO1nIdr125hCRfukaMb_R_-', {
       action: 'submit'
     })
     .then((token: string) => client.verifyRecaptchaToken(token))
     .then((data: { score: number }) => data.score < ERROR_THRESHOLD)
     .catch((error: any) => {
       // if recaptcha errors, skip verification and allow user through
-      console.error(error?.message || 'Captcha verification error.');
+      console.error('Captcha verification error:', error);
       return false;
     });
 }
