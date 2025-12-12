@@ -1,0 +1,52 @@
+name: Integration
+on:
+  pull_request:
+    branches:
+      - master
+    types: [opened, synchronize]
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feathery-react
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.FEATHERY_BOT_TOKEN }}
+          path: feathery-react # Clone into /feathery-react
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: feathery-react/yarn.lock
+
+      - name: Install Dependencies
+        working-directory: feathery-react
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        working-directory: feathery-react
+        run: |
+          yarn build:umd
+          yarn build:node
+
+      - name: Pack Package
+        working-directory: feathery-react
+        run: yarn pack --filename v${{ github.event.pull_request.number }}.tgz
+
+      - name: Checkout hosted-forms-next
+        uses: actions/checkout@v4
+        with:
+          repository: feathery-org/hosted-forms-next
+          token: ${{ secrets.FEATHERY_BOT_TOKEN }}
+          path: hosted-forms-next # Clone into /hosted-forms-next
+
+      - name: Test in hosted-forms
+        working-directory: hosted-forms-next
+        run: |
+          yarn add ../feathery-react/v${{ github.event.pull_request.number }}.tgz
+          yarn test
+          npx playwright install --with-deps
+          yarn test:e2e

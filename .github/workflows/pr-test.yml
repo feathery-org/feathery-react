@@ -1,0 +1,65 @@
+name: Test
+
+on:
+  pull_request:
+    branches:
+      - master
+    types: [opened, synchronize]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Lint
+        run: yarn lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Test
+        run: yarn test:ci
+
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build-type: [umd, node]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install Dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build:${{ matrix.build-type }}
