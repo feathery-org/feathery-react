@@ -37,7 +37,7 @@ function ProgressBarElement({
   );
 
   let userProgress, userSegments;
-  if (progress) {
+  if (![null, undefined].includes(progress)) {
     if (typeof progress === 'number') {
       userProgress = progress;
     } else {
