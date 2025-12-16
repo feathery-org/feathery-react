@@ -57,7 +57,8 @@ export const getAllElements = (step: any) => {
     ...step.progress_bars.map((e: any) => [e, 'progress_bar']),
     ...step.images.map((e: any) => [e, 'image']),
     ...step.videos.map((e: any) => [e, 'video']),
-    ...step.tables.map((e: any) => [e, 'table']),
+    // TODO (table): remove backwards incompatibility
+    ...(step.tables?.map((e: any) => [e, 'table']) ?? []),
     ...step.texts.map((e: any) => [e, 'text']),
     ...step.buttons.map((e: any) => [e, 'button']),
     ...step.servar_fields.map((e: any) => [e, 'field']),

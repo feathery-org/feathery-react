@@ -108,7 +108,9 @@ const buildStepGrid = (step: any, viewport: string, visiblePositions: any) => {
 
 const convertStepToViewport = (step: any, viewport: any) => {
   stepElementTypes.forEach((type) => {
-    step[type].forEach((obj: any, i: any) => {
+    // TODO (table): remove backwards compatibility
+
+    step[type]?.forEach((obj: any, i: any) => {
       step[type][i] =
         type === 'subgrids'
           ? convertToViewport(obj, viewport, viewportProperties.subgrids)

@@ -241,7 +241,8 @@ function getVisiblePositions(step: any, internalId: string) {
   const typeIndex = elementTypes.indexOf('subgrids');
   elementTypes.splice(typeIndex, 1);
   elementTypes.forEach((elementType) => {
-    step[elementType].forEach((el: any) => {
+    // TODO (table): remove backwards compatibility
+    step[elementType]?.forEach((el: any) => {
       _collectHideFlags(
         step,
         el,
