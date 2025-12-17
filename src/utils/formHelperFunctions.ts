@@ -57,6 +57,8 @@ export const getAllElements = (step: any) => {
     ...step.progress_bars.map((e: any) => [e, 'progress_bar']),
     ...step.images.map((e: any) => [e, 'image']),
     ...step.videos.map((e: any) => [e, 'video']),
+    // TODO (table): remove backwards incompatibility
+    ...(step.tables?.map((e: any) => [e, 'table']) ?? []),
     ...step.texts.map((e: any) => [e, 'text']),
     ...step.buttons.map((e: any) => [e, 'button']),
     ...step.servar_fields.map((e: any) => [e, 'field']),
@@ -67,7 +69,8 @@ export const getAllElements = (step: any) => {
 export const lookUpTrigger = (
   step: any,
   elementID: string,
-  type: string
+  type: string,
+  additionalPayload?: Record<string, any>
 ): Record<string, any> => {
   let payload = {};
   if (type === 'button') {
@@ -86,8 +89,12 @@ export const lookUpTrigger = (
       _servarId: element.servar.id,
       text: element.servar.name
     };
+  } else if (type === 'table') {
+    // For tables, we don't look up additional properties from the step
+    // All table-specific data is provided via additionalPayload
+    payload = {};
   }
-  return { id: elementID, type, ...payload };
+  return { id: elementID, type, ...payload, ...additionalPayload };
 };
 
 /** Update the fieldValues cache with a backend session */

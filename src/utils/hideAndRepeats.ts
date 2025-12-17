@@ -153,7 +153,8 @@ const stepElementTypes = [
   'servar_fields',
   'progress_bars',
   'images',
-  'videos'
+  'videos',
+  'tables'
 ];
 
 const getPositionKey = (node: any) => {
@@ -240,7 +241,8 @@ function getVisiblePositions(step: any, internalId: string) {
   const typeIndex = elementTypes.indexOf('subgrids');
   elementTypes.splice(typeIndex, 1);
   elementTypes.forEach((elementType) => {
-    step[elementType].forEach((el: any) => {
+    // TODO (table): remove backwards compatibility
+    step[elementType]?.forEach((el: any) => {
       _collectHideFlags(
         step,
         el,
