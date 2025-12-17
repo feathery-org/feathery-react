@@ -12,13 +12,13 @@ export default {
   input: 'src/index.tsx',
   output: [
     {
-      dir: 'dist/esm',
+      dir: 'dist',
       format: 'esm',
       chunkFileNames: 'fthry_[name].[hash].js',
       preserveModules: false
     },
     {
-      dir: 'dist/cjs',
+      dir: 'cjs',
       format: 'cjs',
       chunkFileNames: 'fthry_[name].[hash].js',
       exports: 'named'
@@ -33,7 +33,7 @@ export default {
     'jszip'
   ],
   plugins: [
-    del({ targets: 'dist/*' }),
+    del({ targets: ['dist/*', 'cjs/*'] }),
     replace({
       preventAssignment: true,
       values: {
@@ -49,7 +49,7 @@ export default {
       tsconfigOverride: {
         compilerOptions: {
           declaration: true,
-          declarationDir: './dist/esm',
+          declarationDir: './dist',
           noEmit: false
         },
         exclude: [
