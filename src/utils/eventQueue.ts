@@ -49,7 +49,7 @@ export class EventQueue {
   }
 
   /**
-   * Replay all queued events using the provided replay function
+   * Apply replay function to all queued events
    * @param replayFn Function to call for each event
    */
   async replayAll(replayFn: (eventData: any) => Promise<any>): Promise<void> {
@@ -58,6 +58,7 @@ export class EventQueue {
     this.setReplayState(true);
 
     try {
+      // while loop handles events added to queue while replaying
       while (!this.isEmpty()) {
         const eventsToReplay = [...this.queue];
         this.queue = [];
