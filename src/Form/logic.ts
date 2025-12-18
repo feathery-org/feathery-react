@@ -26,7 +26,9 @@ export function getAcornParsedNodes(input: string): Program | null {
       sourceType: 'module',
       locations: true
     });
-  } catch {}
+  } catch (error) {
+    console.warn(error);
+  }
 
   return parsedNode;
 }
@@ -419,13 +421,43 @@ export function replaceImportsWithDefinitions(
 ): string {
   const lines = code.split('\n');
   const definitions: string[] = [];
-  const importLinesToRemove = new Set<number>();
 
-  const parsedNodes = getAcornParsedNodes(code);
+  // Find where imports end
+  let importsEndIndex = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed.startsWith('import ')) {
+      importsEndIndex = i + 1;
+    } else if (
+      trimmed &&
+      !trimmed.startsWith('//') &&
+      !trimmed.startsWith('/*')
+    ) {
+      // Hit first non-import, non-comment line
+      break;
+    }
+  }
+
+  // Split code into imports and rest
+  const importLines = lines.slice(0, importsEndIndex);
+  const restLines = lines.slice(importsEndIndex);
+
+  // Reconstruct code: imports at top, rest wrapped in function
+  const importCode = importLines.join('\n');
+  const restCode = restLines.join('\n');
+  const wrappedCode =
+    importCode +
+    (importCode ? '\n' : '') +
+    `async function __temp__() {\n${restCode}\n}`;
+
+  const parsedNodes = getAcornParsedNodes(wrappedCode);
 
   if (!parsedNodes) {
+    console.warn('Failed to parse code');
     return code;
   }
+
+  const importLinesToRemove = new Set<number>();
 
   walk.simple(parsedNodes, {
     ImportDeclaration(node: any) {
@@ -458,11 +490,8 @@ export function replaceImportsWithDefinitions(
           (v: any) => v.name === importedName
         );
         if (matchedVar) {
-          // If value is a plain JS value (string/number/boolean/null/array/object),
-          // print JS code accordingly. For plain strings we output single-quoted literals.
           const rhs = printJsValue(matchedVar.value);
           definitions.push(`const ${localName} = ${rhs};`);
-
           continue;
         }
 
@@ -480,11 +509,39 @@ export function replaceImportsWithDefinitions(
     }
   });
 
-  const remainingLines = lines.filter(
+  // Remove import lines and unwrap the function
+  const wrappedLines = wrappedCode.split('\n');
+  const filteredLines = wrappedLines.filter(
     (_, idx) => !importLinesToRemove.has(idx)
   );
 
-  return [...definitions, '', ...remainingLines].join('\n');
+  // Find and remove the wrapper function line
+  const resultLines = [];
+  let insideWrapper = false;
+
+  for (let i = 0; i < filteredLines.length; i++) {
+    const line = filteredLines[i];
+
+    if (line.trim() === 'async function __temp__() {') {
+      insideWrapper = true;
+      // Add definitions here (inside where the function was)
+      resultLines.push(...definitions);
+      continue;
+    }
+
+    if (
+      insideWrapper &&
+      i === filteredLines.length - 1 &&
+      line.trim() === '}'
+    ) {
+      // Skip the closing brace of wrapper
+      continue;
+    }
+
+    resultLines.push(line);
+  }
+
+  return resultLines.join('\n');
 }
 
 // Used to warn about logic rule errors
