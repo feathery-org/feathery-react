@@ -37,13 +37,9 @@ import {
 import {
   FEATHERY_INTERACTION_EVENT,
   isInteractionDetected,
-  setInteractionDetected,
-  queueEvent,
-  getQueuedEvents,
-  clearEventQueue,
-  isReplayingQueuedEvents,
-  setReplayingEvents
+  setInteractionDetected
 } from '../interactionState';
+import { EventQueue } from '../eventQueue';
 
 export const API_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
@@ -129,6 +125,11 @@ export default class FeatheryClient extends IntegrationClient {
   debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
   customSubmitInFlight: Record<string, any>;
 
+  /**
+   * Queue for events triggered before user interaction
+   */
+  private userEventQueue: EventQueue = new EventQueue();
+
   constructor(
     formKey = '',
     ignoreNetworkErrors?: any,
@@ -167,31 +168,14 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   private async replayQueuedEvents() {
-    const queuedEvents = getQueuedEvents();
-    if (queuedEvents.length === 0) return;
+    if (this.userEventQueue.isEmpty()) return;
 
-    setReplayingEvents(true);
+    console.warn(`Replaying ${this.userEventQueue.size()} queued events`);
 
-    try {
-      for (const queuedEvent of queuedEvents) {
-        console.warn(
-          `Replaying event: ${queuedEvent.eventData.event}\n`,
-          queuedEvent
-        );
-
-        try {
-          const result = await this._registerEventInternal(
-            queuedEvent.eventData
-          );
-          queuedEvent.resolve(result);
-        } catch (error) {
-          queuedEvent.reject(error);
-        }
-      }
-    } finally {
-      clearEventQueue();
-      setReplayingEvents(false);
-    }
+    await this.userEventQueue.replayAll(async (eventData) => {
+      console.warn(`Replaying event: ${eventData.event}\n`, eventData);
+      return this._registerEventInternal(eventData);
+    });
   }
 
   public destroy() {
@@ -859,9 +843,9 @@ export default class FeatheryClient extends IntegrationClient {
     if (this.draft) return;
 
     // If user hasn't interacted yet and we're not replaying, queue the event
-    if (!isInteractionDetected() && !isReplayingQueuedEvents()) {
+    if (!isInteractionDetected() && !this.userEventQueue.isReplayingEvents()) {
       console.warn(`Queueing event: ${eventData.event}\n`, eventData);
-      return queueEvent(eventData);
+      return this.userEventQueue.enqueue(eventData);
     }
 
     return this._registerEventInternal(eventData);
