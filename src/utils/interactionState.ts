@@ -11,9 +11,44 @@
 
 let interactionDetected = false;
 
+interface QueuedEvent {
+  eventData: any;
+  timestamp: number;
+  resolve: (value: any) => void;
+  reject: (error: any) => void;
+}
+
+let eventQueue: QueuedEvent[] = [];
+let isReplayingEvents = false;
+
 export const isInteractionDetected = () => interactionDetected;
 export const setInteractionDetected = () => {
   interactionDetected = true;
+};
+
+export const queueEvent = (eventData: any): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    eventQueue.push({
+      eventData,
+      timestamp: Date.now(),
+      resolve,
+      reject
+    });
+  });
+};
+
+export const getQueuedEvents = (): QueuedEvent[] => {
+  return eventQueue;
+};
+
+export const clearEventQueue = () => {
+  eventQueue = [];
+};
+
+export const isReplayingQueuedEvents = () => isReplayingEvents;
+
+export const setReplayingEvents = (replaying: boolean) => {
+  isReplayingEvents = replaying;
 };
 
 export const FEATHERY_INTERACTION_EVENT = 'feathery:interaction';

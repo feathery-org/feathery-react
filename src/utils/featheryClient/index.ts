@@ -37,7 +37,12 @@ import {
 import {
   FEATHERY_INTERACTION_EVENT,
   isInteractionDetected,
-  setInteractionDetected
+  setInteractionDetected,
+  queueEvent,
+  getQueuedEvents,
+  clearEventQueue,
+  isReplayingQueuedEvents,
+  setReplayingEvents
 } from '../interactionState';
 
 export const API_URL_OPTIONS = {
@@ -155,7 +160,38 @@ export default class FeatheryClient extends IntegrationClient {
       FEATHERY_INTERACTION_EVENT,
       this.handleInteraction
     );
-    return this.submitCustom({}, { shouldFlush: true });
+
+    // replay queued events, then flush fields
+    await this.replayQueuedEvents();
+    await this.submitCustom({}, { shouldFlush: true });
+  }
+
+  private async replayQueuedEvents() {
+    const queuedEvents = getQueuedEvents();
+    if (queuedEvents.length === 0) return;
+
+    setReplayingEvents(true);
+
+    try {
+      for (const queuedEvent of queuedEvents) {
+        console.warn(
+          `Replaying event: ${queuedEvent.eventData.event}\n`,
+          queuedEvent
+        );
+
+        try {
+          const result = await this._registerEventInternal(
+            queuedEvent.eventData
+          );
+          queuedEvent.resolve(result);
+        } catch (error) {
+          queuedEvent.reject(error);
+        }
+      }
+    } finally {
+      clearEventQueue();
+      setReplayingEvents(false);
+    }
   }
 
   public destroy() {
@@ -822,6 +858,16 @@ export default class FeatheryClient extends IntegrationClient {
   async registerEvent(eventData: any) {
     if (this.draft) return;
 
+    // If user hasn't interacted yet and we're not replaying, queue the event
+    if (!isInteractionDetected() && !isReplayingQueuedEvents()) {
+      console.warn(`Queueing event: ${eventData.event}\n`, eventData);
+      return queueEvent(eventData);
+    }
+
+    return this._registerEventInternal(eventData);
+  }
+
+  private async _registerEventInternal(eventData: any) {
     await initFormsPromise;
 
     const { userId, collaboratorId } = initInfo();
