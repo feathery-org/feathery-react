@@ -170,10 +170,7 @@ export default class FeatheryClient extends IntegrationClient {
   private async replayQueuedEvents() {
     if (this.userEventQueue.isEmpty()) return;
 
-    console.warn(`Replaying ${this.userEventQueue.size()} queued events`);
-
     await this.userEventQueue.replayAll(async (eventData) => {
-      console.warn(`Replaying event: ${eventData.event}\n`, eventData);
       return this._registerEventInternal(eventData);
     });
   }
@@ -842,9 +839,7 @@ export default class FeatheryClient extends IntegrationClient {
   async registerEvent(eventData: any) {
     if (this.draft) return;
 
-    // If user hasn't interacted yet and we're not replaying, queue the event
-    if (!isInteractionDetected() && !this.userEventQueue.isReplayingEvents()) {
-      console.warn(`Queueing event: ${eventData.event}\n`, eventData);
+    if (!isInteractionDetected() || this.userEventQueue.isReplayingEvents()) {
       return this.userEventQueue.enqueue(eventData);
     }
 

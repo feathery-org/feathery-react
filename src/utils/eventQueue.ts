@@ -1,5 +1,5 @@
 /**
- * Event queue types and utilities for managing events before user interaction
+ * Event queue for holding events before user interaction
  */
 
 export interface QueuedEvent {
@@ -17,7 +17,7 @@ export class EventQueue {
     return new Promise((resolve, reject) => {
       this.queue.push({
         eventData,
-        timestamp: Date.now(),
+        timestamp: Date.now(), // TODO: pass UTC timestamp to BE
         resolve,
         reject
       });
@@ -58,18 +58,20 @@ export class EventQueue {
     this.setReplayState(true);
 
     try {
-      const sortedEvents = this.getAll();
+      while (!this.isEmpty()) {
+        const eventsToReplay = [...this.queue];
+        this.queue = [];
 
-      for (const queuedEvent of sortedEvents) {
-        try {
-          const result = await replayFn(queuedEvent.eventData);
-          queuedEvent.resolve(result);
-        } catch (error) {
-          queuedEvent.reject(error);
+        for (const queuedEvent of eventsToReplay) {
+          try {
+            const result = await replayFn(queuedEvent.eventData);
+            queuedEvent.resolve(result);
+          } catch (error) {
+            queuedEvent.reject(error);
+          }
         }
       }
     } finally {
-      this.clear();
       this.setReplayState(false);
     }
   }
