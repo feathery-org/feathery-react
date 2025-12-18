@@ -1,3 +1,6 @@
+import FeatheryClient, { API_URL, STATIC_URL } from '../featheryClient';
+import { initInfo } from '../init';
+
 /**
  * Tests for FeatheryClient._getFileValue method and resolveFile logic
  *
@@ -516,5 +519,280 @@ describe('FeatheryClient - _submitFileData optional field handling', () => {
       expect.stringContaining('api/panel/step/submit/file'),
       { fieldKey: 'FileUpload12' }
     );
+  });
+});
+
+jest.mock('../init', () => ({
+  initInfo: jest.fn(),
+  initFormsPromise: Promise.resolve(),
+  initState: { formSessions: {} },
+  fieldValues: {},
+  filePathMap: {}
+}));
+
+describe('FeatheryClient - using api helpers', () => {
+  describe('runAIExtraction', () => {
+    const formKey = 'formKey';
+    const userId = 'userId';
+    let featheryClient;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.fetch = jest.fn();
+      (initInfo as jest.Mock).mockReturnValue({
+        sdkKey: 'sdkKey',
+        userId,
+        collaboratorId: 'collaboratorId'
+      });
+      featheryClient = new FeatheryClient(formKey);
+    });
+
+    afterEach(() => {
+      (global.fetch as jest.Mock).mockClear();
+    });
+
+    it('calls AI vision endpoint with correct parameters for async extraction', async () => {
+      // Arrange
+      const extractionId = 'extraction_123';
+      const options = {
+        waitForCompletion: false,
+        pages: [1, 2, 3],
+        variantId: 'variant_1'
+      };
+      const setPollFuserData = jest.fn(() => jest.fn());
+      const onStatusUpdate = jest.fn();
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        status: 200,
+        json: jest.fn().mockResolvedValue({})
+      });
+
+      // Act
+      await featheryClient.runAIExtraction({
+        extractionId,
+        options,
+        setPollFuserData,
+        onStatusUpdate
+      });
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(`${STATIC_URL}ai/vision/`, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Token sdkKey'
+        },
+        method: 'POST',
+        body: JSON.stringify({
+          fuser_key: userId,
+          extraction_id: extractionId,
+          extraction_variant_id: 'variant_1',
+          trigger_extraction_run_id: undefined,
+          pages: [1, 2, 3],
+          meeting_url: undefined,
+          collaborator_user: 'collaboratorId'
+        }),
+        cache: 'no-store',
+        keepalive: true
+      });
+    });
+
+    it('calls AI vision endpoint with pages parameter from options', async () => {
+      // Arrange
+      const extractionId = 'extraction_123';
+      const options = {
+        waitForCompletion: false,
+        pages: [
+          [1, 2],
+          [3, 4]
+        ]
+      };
+      const setPollFuserData = jest.fn(() => jest.fn());
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        status: 200,
+        json: jest.fn().mockResolvedValue({})
+      });
+
+      // Act
+      await featheryClient.runAIExtraction({
+        extractionId,
+        options,
+        setPollFuserData
+      });
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${STATIC_URL}ai/vision/`,
+        expect.objectContaining({
+          body: JSON.stringify({
+            fuser_key: userId,
+            extraction_id: extractionId,
+            extraction_variant_id: undefined,
+            trigger_extraction_run_id: undefined,
+            pages: [
+              [1, 2],
+              [3, 4]
+            ],
+            meeting_url: undefined,
+            collaborator_user: 'collaboratorId'
+          })
+        })
+      );
+    });
+
+    it('handles boolean options for backwards compatibility', async () => {
+      // Arrange
+      const extractionId = 'extraction_123';
+      const runAsync = true;
+      const setPollFuserData = jest.fn(() => jest.fn());
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        status: 200,
+        json: jest.fn().mockResolvedValue({})
+      });
+
+      // Act
+      await featheryClient.runAIExtraction({
+        extractionId,
+        options: runAsync,
+        setPollFuserData
+      });
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${STATIC_URL}ai/vision/`,
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            fuser_key: userId,
+            extraction_id: extractionId,
+            extraction_variant_id: undefined,
+            trigger_extraction_run_id: undefined,
+            pages: undefined,
+            meeting_url: undefined,
+            collaborator_user: 'collaboratorId'
+          })
+        })
+      );
+    });
+  });
+
+  describe('inviteCollaborator', () => {
+    const formKey = 'formKey';
+    const userId = 'userId';
+    let featheryClient;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.fetch = jest.fn();
+      (initInfo as jest.Mock).mockReturnValue({
+        sdkKey: 'sdkKey',
+        userId,
+        collaboratorId: 'collaboratorId'
+      });
+      featheryClient = new FeatheryClient(formKey);
+    });
+
+    afterEach(() => {
+      (global.fetch as jest.Mock).mockClear();
+    });
+
+    it('calls collaborator invite endpoint with correct parameters and returns result', async () => {
+      // Arrange
+      const usersGroups = ['group1@example.com', 'group2@example.com'];
+      const templateId = 'template_123';
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        status: 201,
+        json: jest.fn().mockResolvedValue({ invites: ['invite1', 'invite2'] })
+      });
+
+      // Act
+      const result = await featheryClient.inviteCollaborator(
+        usersGroups,
+        templateId
+      );
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}collaborator/invite/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Token sdkKey'
+          },
+          method: 'POST',
+          body: JSON.stringify({
+            form_key: formKey,
+            fuser_key: userId,
+            users_groups: usersGroups,
+            template_id: templateId,
+            collaborator_user: 'collaboratorId'
+          }),
+          cache: 'no-store',
+          keepalive: true
+        }
+      );
+      expect(result).toEqual({
+        ok: true,
+        payload: { invites: ['invite1', 'invite2'] }
+      });
+    });
+
+    it('throws error when invite returns error status', async () => {
+      // Arrange
+      const usersGroups = ['group1@example.com'];
+      const templateId = 'template_123';
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        status: 400,
+        text: jest.fn().mockResolvedValue('Invalid email')
+      });
+
+      // Act & Assert
+      await expect(
+        featheryClient.inviteCollaborator(usersGroups, templateId)
+      ).rejects.toThrow();
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}collaborator/invite/`,
+        expect.objectContaining({
+          method: 'POST'
+        })
+      );
+    });
+
+    it('handles undefined collaboratorId', async () => {
+      // Arrange
+      const usersGroups = ['group1@example.com'];
+      const templateId = 'template_123';
+
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 201,
+        json: jest.fn().mockResolvedValue({})
+      });
+      (initInfo as jest.Mock).mockReturnValue({
+        sdkKey: 'sdkKey',
+        userId,
+        collaboratorId: undefined
+      });
+      featheryClient = new FeatheryClient(formKey);
+
+      // Act
+      await featheryClient.inviteCollaborator(usersGroups, templateId);
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}collaborator/invite/`,
+        expect.objectContaining({
+          body: JSON.stringify({
+            form_key: formKey,
+            fuser_key: userId,
+            users_groups: usersGroups,
+            template_id: templateId,
+            collaborator_user: undefined
+          })
+        })
+      );
+    });
   });
 });
