@@ -1,4 +1,5 @@
 import { parse as acornParse, Program } from 'acorn';
+import { parse as acornLooseParse } from 'acorn-loose';
 import * as walk from 'acorn-walk';
 import {
   ExtractedExportFuncInfo,
@@ -26,8 +27,17 @@ export function getAcornParsedNodes(input: string): Program | null {
       sourceType: 'module',
       locations: true
     });
-  } catch {}
-
+  } catch {
+    // attempt parse with more error-tolerant parser.
+    // handles rules with both shared code and top-level
+    // return, which is technically invalid syntax
+    try {
+      parsedNode = acornLooseParse(input, {
+        ecmaVersion: 'latest',
+        locations: true
+      });
+    } catch {}
+  }
   return parsedNode;
 }
 
@@ -177,7 +187,10 @@ function extractJsElements(code: string): {
   const exportVariables: ExtractedExportVarInfo[] = [];
 
   const parsedNodes = getAcornParsedNodes(code);
-  if (!parsedNodes) return { exportVariables, exportFunctions };
+  if (!parsedNodes) {
+    console.warn('Failed to parse logic rule code');
+    return { exportVariables, exportFunctions };
+  }
 
   // Helper: turn a param node into its original text
   const paramText = (p: any) => code.slice(p.start, p.end);
