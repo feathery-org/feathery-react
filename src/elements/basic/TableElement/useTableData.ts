@@ -5,6 +5,64 @@ import { Action, Column } from './types';
 import { parseSortableValue, compareSortableValues } from './utils';
 import { generateExampleData } from './exampleData';
 
+/**
+ * Transpose table data: columns become rows, rows become columns
+ * Returns new columns and transposed field values
+ */
+function transposeTableData(
+  columns: Column[],
+  activeFieldValues: Record<string, any>,
+  numRows: number
+): {
+  transposedColumns: Column[];
+  transposedFieldValues: Record<string, any>;
+} {
+  // Create new columns: one for field names, then one for each original row
+  const transposedColumns: Column[] = [
+    {
+      name: 'Field',
+      field_id: '_transpose_field_name',
+      field_type: 'text',
+      field_key: '_transpose_field_name'
+    }
+  ];
+
+  // Add a column for each original row
+  for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
+    transposedColumns.push({
+      name: `Row ${rowIdx}`,
+      field_id: `_transpose_row_${rowIdx}`,
+      field_type: 'text',
+      field_key: `_transpose_row_${rowIdx}`
+    });
+  }
+
+  // Create transposed field values
+  const transposedFieldValues: Record<string, any> = {
+    _transpose_field_name: columns.map((col) => col.name)
+  };
+
+  // For each original row, create an array of values from all columns
+  for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
+    const transposedRowValues: any[] = [];
+
+    for (const column of columns) {
+      const fieldValue = activeFieldValues[column.field_key];
+      const cellValue = Array.isArray(fieldValue)
+        ? fieldValue[rowIdx]
+        : fieldValue;
+      transposedRowValues.push(cellValue);
+    }
+
+    transposedFieldValues[`_transpose_row_${rowIdx}`] = transposedRowValues;
+  }
+
+  return {
+    transposedColumns,
+    transposedFieldValues
+  };
+}
+
 type UseTableDataProps = {
   element: {
     properties: {
@@ -13,6 +71,7 @@ type UseTableDataProps = {
       search: boolean;
       sort: boolean;
       pagination: number;
+      transpose?: boolean;
     };
   };
   editMode?: boolean;
@@ -57,6 +116,7 @@ export function useTableData({
   );
   const enableSearch = element.properties?.search ?? false;
   const enableSort = element.properties?.sort ?? false;
+  const enableTranspose = element.properties?.transpose ?? true;
   const paginationSetting = element.properties?.pagination ?? 0;
   const rowsPerPage =
     typeof paginationSetting === 'number' && paginationSetting > 0
@@ -66,7 +126,7 @@ export function useTableData({
 
   // Use example columns if in edit mode and no columns provided
   // Also ensure all columns have field_key in edit mode
-  const columns = useMemo(() => {
+  const baseColumns = useMemo(() => {
     let cols = userColumns;
 
     // In edit mode, replace field_key with a unique example key
@@ -81,12 +141,12 @@ export function useTableData({
   }, [editMode, userColumns]);
 
   // Use example data in edit mode
-  const activeFieldValues = useMemo(() => {
+  const baseFieldValues = useMemo(() => {
     if (editMode) {
-      return generateExampleData(columns);
+      return generateExampleData(baseColumns);
     }
     return fieldValues;
-  }, [editMode, columns, userColumns.length]);
+  }, [editMode, baseColumns, userColumns.length]);
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -95,6 +155,39 @@ export function useTableData({
 
   const [currentPage, setCurrentPage] = useState(0);
 
+  // Calculate number of rows from base data (before transpose)
+  const baseNumRows = useMemo(() => {
+    return baseColumns.reduce((maxRows, column) => {
+      const fieldValue = baseFieldValues[column.field_key];
+      if (Array.isArray(fieldValue)) {
+        return Math.max(maxRows, fieldValue.length);
+      }
+      return maxRows;
+    }, 0);
+  }, [baseColumns, baseFieldValues]);
+
+  // Apply transposition if enabled
+  const { columns, activeFieldValues } = useMemo(() => {
+    if (!enableTranspose || baseNumRows === 0) {
+      return {
+        columns: baseColumns,
+        activeFieldValues: baseFieldValues
+      };
+    }
+
+    const { transposedColumns, transposedFieldValues } = transposeTableData(
+      baseColumns,
+      baseFieldValues,
+      baseNumRows
+    );
+
+    return {
+      columns: transposedColumns,
+      activeFieldValues: transposedFieldValues
+    };
+  }, [enableTranspose, baseColumns, baseFieldValues, baseNumRows]);
+
+  // Calculate number of rows from (possibly transposed) data
   const numRows = useMemo(() => {
     return columns.reduce((maxRows, column) => {
       const fieldValue = activeFieldValues[column.field_key];
