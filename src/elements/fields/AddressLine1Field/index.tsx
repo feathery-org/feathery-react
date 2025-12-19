@@ -49,6 +49,9 @@ function AddressLine1({
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
 
+  const autocomplete =
+    servar.type === 'gmap_city' ? 'address-level2' : 'street-address';
+
   return (
     <div
       ref={containerRef}
@@ -111,9 +114,7 @@ function AddressLine1({
           placeholder=''
           disabled={disabled}
           aria-label={element.properties.aria_label}
-          autoComplete={
-            autoComplete === 'on' ? 'street-address' : 'new-password'
-          }
+          autoComplete={autoComplete === 'on' ? autocomplete : 'new-password'}
           value={value}
           ref={(ref) => {
             inputRef.current = ref;
