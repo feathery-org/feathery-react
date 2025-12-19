@@ -1120,6 +1120,7 @@ function Form({
         forwardInboxEmail: async (options: {
           emails?: string[];
           emailGroup?: string;
+          submissionId?: string;
         }) => {
           return client.forwardInboxEmail({ options });
         }
