@@ -1045,12 +1045,12 @@ export default class FeatheryClient extends IntegrationClient {
   async forwardInboxEmail({
     options
   }: {
-    options: { emails?: string[]; emailGroup?: string };
+    options: { emails?: string[]; emailGroup?: string; submissionId?: string };
   }) {
     const { userId } = initInfo();
     const url = `${API_URL}email/forward/`;
     const data: Record<string, any> = {
-      user_id: userId,
+      user_id: options.submissionId || userId,
       recipients: options.emails || [],
       email_group: options.emailGroup || '',
       panel_key: this.formKey

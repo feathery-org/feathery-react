@@ -98,6 +98,7 @@ export interface FormInternalState {
   forwardInboxEmail: (options: {
     emails?: string[];
     emailGroup?: string;
+    submissionId?: string;
   }) => Promise<{ ok: boolean; error?: string }>;
   getConfig: GetConfig;
 }
