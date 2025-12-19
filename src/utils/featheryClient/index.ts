@@ -39,6 +39,7 @@ import {
   isInteractionDetected,
   setInteractionDetected
 } from '../interactionState';
+import { EventQueue } from '../eventQueue';
 
 export const API_URL_OPTIONS = {
   local: 'http://localhost:8006/api/',
@@ -124,6 +125,11 @@ export default class FeatheryClient extends IntegrationClient {
   debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
   customSubmitInFlight: Record<string, any>;
 
+  /**
+   * Queue for events triggered before user interaction
+   */
+  private userEventQueue: EventQueue = new EventQueue();
+
   constructor(
     formKey = '',
     ignoreNetworkErrors?: any,
@@ -155,7 +161,18 @@ export default class FeatheryClient extends IntegrationClient {
       FEATHERY_INTERACTION_EVENT,
       this.handleInteraction
     );
-    return this.submitCustom({}, { shouldFlush: true });
+
+    // replay queued events, then flush fields
+    await this.replayQueuedEvents();
+    await this.submitCustom({}, { shouldFlush: true });
+  }
+
+  private async replayQueuedEvents() {
+    if (this.userEventQueue.isEmpty()) return;
+
+    await this.userEventQueue.replayAll(async (eventData) => {
+      return this._registerEventInternal(eventData);
+    });
   }
 
   public destroy() {
@@ -822,6 +839,14 @@ export default class FeatheryClient extends IntegrationClient {
   async registerEvent(eventData: any) {
     if (this.draft) return;
 
+    if (!isInteractionDetected() || this.userEventQueue.isReplayingEvents()) {
+      return this.userEventQueue.enqueue(eventData);
+    }
+
+    return this._registerEventInternal(eventData);
+  }
+
+  private async _registerEventInternal(eventData: any) {
     await initFormsPromise;
 
     const { userId, collaboratorId } = initInfo();
