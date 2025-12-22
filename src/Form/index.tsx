@@ -131,11 +131,11 @@ import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
-import internalState, {
+import internalState, { setFormInternalState } from '../utils/internalState';
+import {
   ExtractionActionOptions,
-  PageSelectionInput,
-  setFormInternalState
-} from '../utils/internalState';
+  PageSelectionInput
+} from '@feathery/client-utils';
 import useFormAuth from '../auth/internal/useFormAuth';
 import {
   ACTION_ADD_REPEATED_ROW,
