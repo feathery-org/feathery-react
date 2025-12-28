@@ -64,6 +64,13 @@ const getOpenFlinksConnect =
     });
   };
 
+export async function generateQuikDocuments(
+  client: IntegrationClient,
+  action: Record<string, any>
+) {
+  return client.generateQuikEnvelopes(action);
+}
+
 export function useFlinksConnect() {
   const [flinksUrl, setFlinksUrl] = useState('');
 
