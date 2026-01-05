@@ -64,7 +64,9 @@ function TableElement({
     totalPages,
     hasData,
     hasSearchResults,
-    activeFieldValues
+    activeFieldValues,
+    baseColumns,
+    baseFieldValues
   } = useTableData({ element, editMode });
 
   const showEmptyState = !hasData || (hasData && !hasSearchResults);
@@ -113,19 +115,23 @@ function TableElement({
             <tbody css={styles.getTarget('tbody')}>
               {paginatedRowIndices.map((rowIndex) => {
                 const rowData: Record<string, any> = {};
-                columns.forEach((col) => {
-                  const fValue = activeFieldValues[col.field_key];
-                  const cValue = Array.isArray(fValue)
-                    ? fValue[rowIndex]
-                    : fValue;
-                  rowData[col.name] = cValue;
-                });
+                if (!isTransposed) {
+                  columns.forEach((col) => {
+                    const fValue = activeFieldValues[col.field_key];
+                    const cValue = Array.isArray(fValue)
+                      ? fValue[rowIndex]
+                      : fValue;
+                    rowData[col.name] = cValue;
+                  });
+                }
 
                 const handleRowClick = () => {
-                  onClick({
-                    rowIndex,
-                    rowData
-                  });
+                  if (!isTransposed) {
+                    onClick({
+                      rowIndex,
+                      rowData
+                    });
+                  }
                 };
 
                 return (
@@ -149,6 +155,12 @@ function TableElement({
                       const isFirstColumn = colIndex === 0;
                       const isSecondColumn = colIndex === 1;
 
+                      // In transposed mode, get the original row index from the column
+                      const originalRowIndex =
+                        isTransposed && !isFirstColInTranspose
+                          ? (column as any).originalRowIndex
+                          : undefined;
+
                       const cellCss = isFirstColInTranspose
                         ? {
                             ...thStyle,
@@ -161,8 +173,6 @@ function TableElement({
                           }
                         : {
                             ...(cellStyle as any),
-                            // In transposed: keep padding on 2nd column, remove from rest
-                            // In normal: keep padding on 1st column, remove from rest
                             ...(isTransposed
                               ? isSecondColumn
                                 ? {}
@@ -170,15 +180,35 @@ function TableElement({
                               : isFirstColumn
                               ? {}
                               : { paddingLeft: 0 }),
+                            ...(isTransposed && !isFirstColInTranspose
+                              ? { cursor: 'pointer' }
+                              : {}),
                             ...styles.getTarget('td')
                           };
 
-                      // Use th element for first column in transposed table
                       const CellElement = isFirstColInTranspose ? 'th' : 'td';
 
-                      const handleCellClick = () => {
+                      const handleCellClick = (e: React.MouseEvent) => {
                         if (isSortable) {
                           handleTransposedSort(rowIndex);
+                        } else if (
+                          isTransposed &&
+                          originalRowIndex !== undefined
+                        ) {
+                          // In transposed mode, clicking a cell triggers with original row data
+                          e.stopPropagation();
+                          const originalRowData: Record<string, any> = {};
+                          baseColumns.forEach((col) => {
+                            const fValue = baseFieldValues[col.field_key];
+                            const cValue = Array.isArray(fValue)
+                              ? fValue[originalRowIndex]
+                              : fValue;
+                            originalRowData[col.name] = cValue;
+                          });
+                          onClick({
+                            rowIndex: originalRowIndex,
+                            rowData: originalRowData
+                          });
                         }
                       };
 
@@ -221,7 +251,8 @@ function TableElement({
                         <ActionButtons
                           actions={actions}
                           rowIndex={rowIndex}
-                          columnData={columns}
+                          columnData={baseColumns}
+                          fieldValues={baseFieldValues}
                           onClick={onClick}
                         />
                       </td>
@@ -259,7 +290,8 @@ function TableElement({
                         <ActionButtons
                           actions={actions}
                           rowIndex={originalRowIndex}
-                          columnData={columns}
+                          columnData={baseColumns}
+                          fieldValues={baseFieldValues}
                           onClick={onClick}
                           forceInlineButtons
                         />

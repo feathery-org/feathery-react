@@ -108,6 +108,8 @@ type UseTableDataReturn = {
   hasData: boolean;
   hasSearchResults: boolean;
   activeFieldValues: Record<string, any>;
+  baseColumns: Column[];
+  baseFieldValues: Record<string, any>;
 
   // Handlers
   handleSort: (columnName: string) => void;
@@ -447,6 +449,8 @@ export function useTableData({
     totalRows,
     totalPages,
     hasData,
-    activeFieldValues
+    activeFieldValues,
+    baseColumns,
+    baseFieldValues
   };
 }
