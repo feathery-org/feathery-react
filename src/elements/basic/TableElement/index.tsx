@@ -164,8 +164,12 @@ function TableElement({
                             // In transposed: keep padding on 2nd column, remove from rest
                             // In normal: keep padding on 1st column, remove from rest
                             ...(isTransposed
-                              ? isSecondColumn ? {} : { paddingLeft: 0 }
-                              : isFirstColumn ? {} : { paddingLeft: 0 }),
+                              ? isSecondColumn
+                                ? {}
+                                : { paddingLeft: 0 }
+                              : isFirstColumn
+                              ? {}
+                              : { paddingLeft: 0 }),
                             ...styles.getTarget('td')
                           };
 
@@ -203,7 +207,10 @@ function TableElement({
                                   <path
                                     css={sortArrowStyle}
                                     stroke='currentColor'
-                                    data-active={(isSorted && sortDirection === 'asc') || undefined}
+                                    data-active={
+                                      (isSorted && sortDirection === 'asc') ||
+                                      undefined
+                                    }
                                     strokeLinecap='round'
                                     strokeLinejoin='round'
                                     strokeWidth={2}
@@ -212,7 +219,10 @@ function TableElement({
                                   <path
                                     css={sortArrowStyle}
                                     stroke='currentColor'
-                                    data-active={(isSorted && sortDirection === 'desc') || undefined}
+                                    data-active={
+                                      (isSorted && sortDirection === 'desc') ||
+                                      undefined
+                                    }
                                     strokeLinecap='round'
                                     strokeLinejoin='round'
                                     strokeWidth={2}
@@ -252,8 +262,8 @@ function TableElement({
                     scope='row'
                     css={{
                       ...thStyle,
-                      backgroundColor: '#f9fafb', // gray50 - same as header
-                      borderRight: '1px solid #e5e7eb', // gray200
+                      backgroundColor: '#f9fafb',
+                      borderRight: '1px solid #e5e7eb',
                       width: '1px',
                       whiteSpace: 'nowrap',
                       ...styles.getTarget('th')
@@ -266,12 +276,13 @@ function TableElement({
                       key={originalRowIndex}
                       css={{
                         ...(cellStyle as any),
-                        // First action cell (idx === 0) keeps padding, rest have none
                         ...(idx === 0 ? {} : { paddingLeft: 0 }),
                         ...styles.getTarget('td')
                       }}
                     >
-                      <div css={{ display: 'flex', justifyContent: 'flex-start' }}>
+                      <div
+                        css={{ display: 'flex', justifyContent: 'flex-start' }}
+                      >
                         <ActionButtons
                           actions={actions}
                           rowIndex={originalRowIndex}
