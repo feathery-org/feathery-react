@@ -288,7 +288,7 @@ function TableElement({
                           rowIndex={originalRowIndex}
                           columnData={columns}
                           onClick={onClick}
-                          forceInlineButtons={true}
+                          forceInlineButtons
                         />
                       </div>
                     </td>
