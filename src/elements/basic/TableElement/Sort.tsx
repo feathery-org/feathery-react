@@ -63,6 +63,7 @@ export function SortHeader({
       {columns.map((column, index) => {
         const isSortable = enableSort;
         const isSorted = sortColumn === column.name;
+        const isFirstColumn = index === 0;
 
         return (
           <th
@@ -71,6 +72,7 @@ export function SortHeader({
             onClick={() => isSortable && onSort(column.name)}
             css={{
               ...thStyle,
+              ...(isFirstColumn ? {} : { paddingLeft: 0 }),
               ...styles.getTarget('th'),
               ...(isSortable ? { cursor: 'pointer' } : {})
             }}

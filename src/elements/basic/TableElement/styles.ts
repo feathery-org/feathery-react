@@ -121,8 +121,7 @@ export const tableStyle = {
   color: colors.gray600,
   textIndent: 0,
   borderColor: 'inherit',
-  borderCollapse: 'collapse',
-  tableLayout: 'fixed'
+  borderCollapse: 'collapse'
 };
 
 export const theadStyle = {

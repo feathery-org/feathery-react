@@ -100,6 +100,7 @@ function TableElement({
                       scope='col'
                       css={{
                         ...thStyle,
+                        paddingLeft: 0,
                         ...styles.getTarget('th')
                       }}
                     >
@@ -145,16 +146,26 @@ function TableElement({
                       const isSortable = isFirstColInTranspose && enableSort;
                       const isSorted = sortedColumnIndex === rowIndex;
 
+                      const isFirstColumn = colIndex === 0;
+                      const isSecondColumn = colIndex === 1;
+
                       const cellCss = isFirstColInTranspose
                         ? {
                             ...thStyle,
                             backgroundColor: '#f9fafb', // gray50 - same as header
                             borderRight: '1px solid #e5e7eb', // gray200
+                            width: '1px',
+                            whiteSpace: 'nowrap',
                             ...styles.getTarget('th'),
                             ...(isSortable ? { cursor: 'pointer' } : {})
                           }
                         : {
                             ...(cellStyle as any),
+                            // In transposed: keep padding on 2nd column, remove from rest
+                            // In normal: keep padding on 1st column, remove from rest
+                            ...(isTransposed
+                              ? isSecondColumn ? {} : { paddingLeft: 0 }
+                              : isFirstColumn ? {} : { paddingLeft: 0 }),
                             ...styles.getTarget('td')
                           };
 
@@ -220,6 +231,7 @@ function TableElement({
                       <td
                         css={{
                           ...(cellStyle as any),
+                          paddingLeft: 0,
                           ...styles.getTarget('td')
                         }}
                       >
@@ -242,16 +254,20 @@ function TableElement({
                       ...thStyle,
                       backgroundColor: '#f9fafb', // gray50 - same as header
                       borderRight: '1px solid #e5e7eb', // gray200
+                      width: '1px',
+                      whiteSpace: 'nowrap',
                       ...styles.getTarget('th')
                     }}
                   >
                     {/* Empty cell for actions row */}
                   </th>
-                  {transposedRowIndices.map((originalRowIndex) => (
+                  {transposedRowIndices.map((originalRowIndex, idx) => (
                     <td
                       key={originalRowIndex}
                       css={{
                         ...(cellStyle as any),
+                        // First action cell (idx === 0) keeps padding, rest have none
+                        ...(idx === 0 ? {} : { paddingLeft: 0 }),
                         ...styles.getTarget('td')
                       }}
                     >
