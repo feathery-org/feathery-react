@@ -12,7 +12,10 @@ import {
   cellStyle,
   tableStyle,
   theadStyle,
-  thStyle
+  thStyle,
+  sortHeaderContentStyle,
+  sortIconContainerStyle,
+  sortArrowStyle
 } from './styles';
 
 function applyTableStyles(responsiveStyles: any) {
@@ -41,7 +44,9 @@ function TableElement({
     enableSort,
     sortColumn,
     sortDirection,
+    sortedColumnIndex,
     handleSort,
+    handleTransposedSort,
 
     // pagination
     enablePagination,
@@ -53,6 +58,8 @@ function TableElement({
     // data
     columns,
     actions,
+    isTransposed,
+    transposedRowIndices,
     totalRows,
     totalPages,
     hasData,
@@ -77,29 +84,31 @@ function TableElement({
           <EmptyState hasSearchQuery={searchQuery.trim().length > 0} />
         ) : (
           <table css={{ ...(tableStyle as any), ...styles.getTarget('table') }}>
-            <thead css={theadStyle}>
-              <tr>
-                <SortHeader
-                  columns={columns}
-                  enableSort={enableSort}
-                  sortColumn={sortColumn}
-                  sortDirection={sortDirection}
-                  onSort={handleSort}
-                  styles={styles}
-                />
-                {actions.length > 0 && (
-                  <th
-                    scope='col'
-                    css={{
-                      ...thStyle,
-                      ...styles.getTarget('th')
-                    }}
-                  >
-                    {/* Empty header for actions column */}
-                  </th>
-                )}
-              </tr>
-            </thead>
+            {!isTransposed && (
+              <thead css={theadStyle}>
+                <tr>
+                  <SortHeader
+                    columns={columns}
+                    enableSort={enableSort}
+                    sortColumn={sortColumn}
+                    sortDirection={sortDirection}
+                    onSort={handleSort}
+                    styles={styles}
+                  />
+                  {actions.length > 0 && (
+                    <th
+                      scope='col'
+                      css={{
+                        ...thStyle,
+                        ...styles.getTarget('th')
+                      }}
+                    >
+                      {/* Empty header for actions column */}
+                    </th>
+                  )}
+                </tr>
+              </thead>
+            )}
             <tbody css={styles.getTarget('tbody')}>
               {paginatedRowIndices.map((rowIndex) => {
                 const rowData: Record<string, any> = {};
@@ -130,19 +139,84 @@ function TableElement({
                         ? fieldValue[rowIndex]
                         : fieldValue;
 
-                      return (
-                        <td
-                          key={colIndex}
-                          css={{
+                      // Apply header styles to first column when transposed
+                      const isFirstColInTranspose =
+                        isTransposed && colIndex === 0;
+                      const isSortable = isFirstColInTranspose && enableSort;
+                      const isSorted = sortedColumnIndex === rowIndex;
+
+                      const cellCss = isFirstColInTranspose
+                        ? {
+                            ...thStyle,
+                            backgroundColor: '#f9fafb', // gray50 - same as header
+                            borderRight: '1px solid #e5e7eb', // gray200
+                            ...styles.getTarget('th'),
+                            ...(isSortable ? { cursor: 'pointer' } : {})
+                          }
+                        : {
                             ...(cellStyle as any),
                             ...styles.getTarget('td')
-                          }}
+                          };
+
+                      // Use th element for first column in transposed table
+                      const CellElement = isFirstColInTranspose ? 'th' : 'td';
+
+                      const handleCellClick = () => {
+                        if (isSortable) {
+                          handleTransposedSort(rowIndex);
+                        }
+                      };
+
+                      return (
+                        <CellElement
+                          key={colIndex}
+                          css={cellCss}
+                          onClick={handleCellClick}
+                          {...(isFirstColInTranspose ? { scope: 'row' } : {})}
                         >
-                          {stringifyWithNull(cellValue) ?? ''}
-                        </td>
+                          {isFirstColInTranspose && isSortable ? (
+                            <div
+                              css={{
+                                ...sortHeaderContentStyle,
+                                justifyContent: 'space-between'
+                              }}
+                            >
+                              <span>{stringifyWithNull(cellValue) ?? ''}</span>
+                              <span css={sortIconContainerStyle}>
+                                <svg
+                                  xmlns='http://www.w3.org/2000/svg'
+                                  viewBox='0 0 24 24'
+                                  fill='none'
+                                  aria-hidden='true'
+                                >
+                                  <path
+                                    css={sortArrowStyle}
+                                    stroke='currentColor'
+                                    data-active={(isSorted && sortDirection === 'asc') || undefined}
+                                    strokeLinecap='round'
+                                    strokeLinejoin='round'
+                                    strokeWidth={2}
+                                    d='m8 9 4-4 4 4'
+                                  />
+                                  <path
+                                    css={sortArrowStyle}
+                                    stroke='currentColor'
+                                    data-active={(isSorted && sortDirection === 'desc') || undefined}
+                                    strokeLinecap='round'
+                                    strokeLinejoin='round'
+                                    strokeWidth={2}
+                                    d='m8 15 4 4 4-4'
+                                  />
+                                </svg>
+                              </span>
+                            </div>
+                          ) : (
+                            stringifyWithNull(cellValue) ?? ''
+                          )}
+                        </CellElement>
                       );
                     })}
-                    {actions.length > 0 && (
+                    {!isTransposed && actions.length > 0 && (
                       <td
                         css={{
                           ...(cellStyle as any),
@@ -160,6 +234,40 @@ function TableElement({
                   </tr>
                 );
               })}
+              {isTransposed && actions.length > 0 && (
+                <tr css={{ ...rowStyle, ...styles.getTarget('tr') }}>
+                  <th
+                    scope='row'
+                    css={{
+                      ...thStyle,
+                      backgroundColor: '#f9fafb', // gray50 - same as header
+                      borderRight: '1px solid #e5e7eb', // gray200
+                      ...styles.getTarget('th')
+                    }}
+                  >
+                    {/* Empty cell for actions row */}
+                  </th>
+                  {transposedRowIndices.map((originalRowIndex) => (
+                    <td
+                      key={originalRowIndex}
+                      css={{
+                        ...(cellStyle as any),
+                        ...styles.getTarget('td')
+                      }}
+                    >
+                      <div css={{ display: 'flex', justifyContent: 'flex-start' }}>
+                        <ActionButtons
+                          actions={actions}
+                          rowIndex={originalRowIndex}
+                          columnData={columns}
+                          onClick={onClick}
+                          forceInlineButtons={true}
+                        />
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+              )}
             </tbody>
           </table>
         )}

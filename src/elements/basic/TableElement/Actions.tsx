@@ -27,13 +27,15 @@ type ActionButtonsProps = {
   rowIndex: number;
   columnData: Column[];
   onClick: (data: any) => void;
+  forceInlineButtons?: boolean;
 };
 
 export function ActionButtons({
   actions,
   rowIndex,
   columnData,
-  onClick
+  onClick,
+  forceInlineButtons = false
 }: ActionButtonsProps) {
   if (actions.length === 0) return null;
 
@@ -44,7 +46,8 @@ export function ActionButtons({
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   // If more than 1 action, show overflow menu; otherwise show inline buttons
-  const useOverflow = actions.length > 1;
+  // Unless forceInlineButtons is true
+  const useOverflow = !forceInlineButtons && actions.length > 1;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

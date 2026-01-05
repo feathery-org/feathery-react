@@ -8,33 +8,43 @@ import { generateExampleData } from './exampleData';
 /**
  * Transpose table data: columns become rows, rows become columns
  * Returns new columns and transposed field values
+ * @param rowIndicesToInclude - Optional array of original row indices to include (for pagination)
  */
 function transposeTableData(
   columns: Column[],
   activeFieldValues: Record<string, any>,
-  numRows: number
+  numRows: number,
+  rowIndicesToInclude?: number[]
 ): {
   transposedColumns: Column[];
   transposedFieldValues: Record<string, any>;
+  includedRowIndices: number[];
 } {
-  // Create new columns: one for field names, then one for each original row
+  // Determine which original rows to include
+  const includedRowIndices =
+    rowIndicesToInclude || Array.from({ length: numRows }, (_, i) => i);
+
+  // Create new columns: one for field names, then one for each included original row
+  // Use empty strings for header labels
   const transposedColumns: Column[] = [
     {
-      name: 'Field',
+      name: '',
       field_id: '_transpose_field_name',
       field_type: 'text',
       field_key: '_transpose_field_name'
     }
   ];
 
-  // Add a column for each original row
-  for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
+  // Add a column for each included original row (with empty header labels)
+  for (const rowIdx of includedRowIndices) {
     transposedColumns.push({
-      name: `Row ${rowIdx}`,
+      name: '',
       field_id: `_transpose_row_${rowIdx}`,
       field_type: 'text',
-      field_key: `_transpose_row_${rowIdx}`
-    });
+      field_key: `_transpose_row_${rowIdx}`,
+      // Store the original row index for reference
+      originalRowIndex: rowIdx
+    } as Column & { originalRowIndex: number });
   }
 
   // Create transposed field values
@@ -42,8 +52,8 @@ function transposeTableData(
     _transpose_field_name: columns.map((col) => col.name)
   };
 
-  // For each original row, create an array of values from all columns
-  for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
+  // For each included original row, create an array of values from all columns
+  for (const rowIdx of includedRowIndices) {
     const transposedRowValues: any[] = [];
 
     for (const column of columns) {
@@ -59,7 +69,8 @@ function transposeTableData(
 
   return {
     transposedColumns,
-    transposedFieldValues
+    transposedFieldValues,
+    includedRowIndices
   };
 }
 
@@ -83,6 +94,7 @@ type UseTableDataReturn = {
   setSearchQuery: (query: string) => void;
   sortColumn: string | null;
   sortDirection: 'asc' | 'desc';
+  sortedColumnIndex: number | null;
   currentPage: number;
   setCurrentPage: (page: number) => void;
 
@@ -92,9 +104,11 @@ type UseTableDataReturn = {
   enableSort: boolean;
   enableSearch: boolean;
   enablePagination: boolean;
+  isTransposed: boolean;
 
   // Computed data
   paginatedRowIndices: number[];
+  transposedRowIndices: number[];
   totalRows: number;
   totalPages: number;
   rowsPerPage: number;
@@ -104,6 +118,7 @@ type UseTableDataReturn = {
 
   // Handlers
   handleSort: (columnName: string) => void;
+  handleTransposedSort: (rowIndex: number) => void;
 };
 
 export function useTableData({
@@ -116,7 +131,7 @@ export function useTableData({
   );
   const enableSearch = element.properties?.search ?? false;
   const enableSort = element.properties?.sort ?? false;
-  const enableTranspose = element.properties?.transpose ?? true;
+  const enableTranspose = element.properties?.transpose ?? false;
   const paginationSetting = element.properties?.pagination ?? 0;
   const rowsPerPage =
     typeof paginationSetting === 'number' && paginationSetting > 0
@@ -166,26 +181,123 @@ export function useTableData({
     }, 0);
   }, [baseColumns, baseFieldValues]);
 
+  // For transposed tables, we need to search/sort/paginate the original rows (which become columns)
+  const allBaseRowIndices = useMemo(
+    () => Array.from({ length: baseNumRows }, (_, i) => i),
+    [baseNumRows]
+  );
+
+  // Search: For transposed tables, search by original column values (now rows)
+  const filteredBaseRowIndices = useMemo(() => {
+    if (!enableTranspose || !enableSearch || !searchQuery.trim()) {
+      return allBaseRowIndices;
+    }
+
+    // When transposed, we search within each original row to see if it matches
+    return allBaseRowIndices.filter((baseRowIdx) => {
+      return baseColumns.some((column) => {
+        const fieldValue = baseFieldValues[column.field_key];
+        const cellValue = Array.isArray(fieldValue)
+          ? fieldValue[baseRowIdx]
+          : fieldValue;
+        const stringValue = stringifyWithNull(cellValue) ?? '';
+        return stringValue
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase().trim());
+      });
+    });
+  }, [
+    enableTranspose,
+    allBaseRowIndices,
+    baseColumns,
+    searchQuery,
+    enableSearch,
+    baseFieldValues
+  ]);
+
+  // For transposed tables, we need to handle sorting of rows (which represent original columns)
+  // We track which original column (transposed row) is being sorted
+  const [sortedColumnIndex, setSortedColumnIndex] = useState<number | null>(
+    null
+  );
+
+  // Sort: For transposed tables, we can sort rows by column values
+  const sortedBaseRowIndices = useMemo(() => {
+    if (!enableTranspose || !enableSort || sortedColumnIndex === null) {
+      return filteredBaseRowIndices;
+    }
+
+    const column = baseColumns[sortedColumnIndex];
+    if (!column) return filteredBaseRowIndices;
+
+    return [...filteredBaseRowIndices].sort((aIdx, bIdx) => {
+      const fieldValue = baseFieldValues[column.field_key];
+      const aValue = Array.isArray(fieldValue) ? fieldValue[aIdx] : fieldValue;
+      const bValue = Array.isArray(fieldValue) ? fieldValue[bIdx] : fieldValue;
+
+      const aParsed = parseSortableValue(aValue);
+      const bParsed = parseSortableValue(bValue);
+
+      const comparison = compareSortableValues(aParsed, bParsed);
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [
+    enableTranspose,
+    filteredBaseRowIndices,
+    sortedColumnIndex,
+    sortDirection,
+    baseColumns,
+    baseFieldValues,
+    enableSort
+  ]);
+
+  // Pagination: For transposed tables, paginate the original rows (which become columns)
+  const paginatedBaseRowIndices = useMemo(() => {
+    if (!enableTranspose || !enablePagination) {
+      return sortedBaseRowIndices;
+    }
+
+    const startIdx = currentPage * rowsPerPage;
+    const endIdx = startIdx + rowsPerPage;
+    return sortedBaseRowIndices.slice(startIdx, endIdx);
+  }, [
+    enableTranspose,
+    sortedBaseRowIndices,
+    currentPage,
+    rowsPerPage,
+    enablePagination
+  ]);
+
   // Apply transposition if enabled
-  const { columns, activeFieldValues } = useMemo(() => {
+  const { columns, activeFieldValues, transposedRowIndices } = useMemo(() => {
     if (!enableTranspose || baseNumRows === 0) {
       return {
         columns: baseColumns,
-        activeFieldValues: baseFieldValues
+        activeFieldValues: baseFieldValues,
+        transposedRowIndices: []
       };
     }
 
-    const { transposedColumns, transposedFieldValues } = transposeTableData(
-      baseColumns,
-      baseFieldValues,
-      baseNumRows
-    );
+    const { transposedColumns, transposedFieldValues, includedRowIndices } =
+      transposeTableData(
+        baseColumns,
+        baseFieldValues,
+        baseNumRows,
+        paginatedBaseRowIndices
+      );
 
     return {
       columns: transposedColumns,
-      activeFieldValues: transposedFieldValues
+      activeFieldValues: transposedFieldValues,
+      transposedRowIndices: includedRowIndices
     };
-  }, [enableTranspose, baseColumns, baseFieldValues, baseNumRows]);
+  }, [
+    enableTranspose,
+    baseColumns,
+    baseFieldValues,
+    baseNumRows,
+    paginatedBaseRowIndices
+  ]);
 
   // Calculate number of rows from (possibly transposed) data
   const numRows = useMemo(() => {
@@ -198,12 +310,15 @@ export function useTableData({
     }, 0);
   }, [columns, activeFieldValues]);
 
+  // For non-transposed tables, use the regular filtering/sorting/pagination
   const allRowIndices = useMemo(
     () => Array.from({ length: numRows }, (_, i) => i),
     [numRows]
   );
 
   const filteredRowIndices = useMemo(() => {
+    if (enableTranspose) return allRowIndices; // Already filtered during transpose
+
     if (!enableSearch || !searchQuery.trim()) return allRowIndices;
 
     return allRowIndices.filter((rowIndex) => {
@@ -218,9 +333,18 @@ export function useTableData({
           .includes(searchQuery.toLowerCase().trim());
       });
     });
-  }, [allRowIndices, columns, searchQuery, enableSearch, activeFieldValues]);
+  }, [
+    enableTranspose,
+    allRowIndices,
+    columns,
+    searchQuery,
+    enableSearch,
+    activeFieldValues
+  ]);
 
   const sortedRowIndices = useMemo(() => {
+    if (enableTranspose) return filteredRowIndices; // Already sorted during transpose
+
     if (!enableSort || !sortColumn) return filteredRowIndices;
 
     const column = columns.find((col) => col.name === sortColumn);
@@ -239,6 +363,7 @@ export function useTableData({
       return sortDirection === 'asc' ? comparison : -comparison;
     });
   }, [
+    enableTranspose,
     filteredRowIndices,
     sortColumn,
     sortDirection,
@@ -248,21 +373,32 @@ export function useTableData({
   ]);
 
   const paginatedRowIndices = useMemo(() => {
+    if (enableTranspose) return allRowIndices; // Already paginated during transpose
+
     if (!enablePagination) return sortedRowIndices;
 
     const startIdx = currentPage * rowsPerPage;
     const endIdx = startIdx + rowsPerPage;
     return sortedRowIndices.slice(startIdx, endIdx);
-  }, [sortedRowIndices, currentPage, rowsPerPage, enablePagination]);
+  }, [
+    enableTranspose,
+    allRowIndices,
+    sortedRowIndices,
+    currentPage,
+    rowsPerPage,
+    enablePagination
+  ]);
 
   // Reset to first page when search or sort changes
   useEffect(() => {
     setCurrentPage(0);
   }, [searchQuery, sortColumn, sortDirection]);
 
-  const totalPages = enablePagination
-    ? Math.ceil(sortedRowIndices.length / rowsPerPage)
-    : 1;
+  // For transposed tables, totalRows and totalPages are based on original rows (now columns)
+  const totalRows = enableTranspose
+    ? sortedBaseRowIndices.length
+    : sortedRowIndices.length;
+  const totalPages = enablePagination ? Math.ceil(totalRows / rowsPerPage) : 1;
 
   const handleSort = (columnName: string) => {
     if (!enableSort) return;
@@ -281,8 +417,29 @@ export function useTableData({
     }
   };
 
+  // Handle sorting for transposed tables - sort by clicking on a row (original column)
+  const handleTransposedSort = (rowIndex: number) => {
+    if (!enableSort || !enableTranspose) return;
+
+    if (sortedColumnIndex === rowIndex) {
+      // Cycle through: asc → desc → none
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else {
+        setSortedColumnIndex(null);
+        setSortDirection('asc');
+      }
+    } else {
+      setSortedColumnIndex(rowIndex);
+      setSortDirection('asc');
+    }
+  };
+
   const hasData = numRows > 0;
-  const hasSearchResults = filteredRowIndices.length > 0;
+  const hasSearchResults = enableTranspose
+    ? filteredBaseRowIndices.length > 0
+    : filteredRowIndices.length > 0;
+  const isTransposed = enableTranspose && baseNumRows > 0;
 
   return {
     enableSearch,
@@ -293,7 +450,9 @@ export function useTableData({
     enableSort,
     sortColumn,
     sortDirection,
+    sortedColumnIndex,
     handleSort,
+    handleTransposedSort,
 
     enablePagination,
     currentPage,
@@ -303,8 +462,10 @@ export function useTableData({
 
     columns,
     actions,
+    isTransposed,
+    transposedRowIndices,
 
-    totalRows: sortedRowIndices.length,
+    totalRows,
     totalPages,
     hasData,
     activeFieldValues
