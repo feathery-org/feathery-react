@@ -45,8 +45,6 @@ export function ActionButtons({
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
-  // If more than 1 action, show overflow menu; otherwise show inline buttons
-  // Unless forceInlineButtons is true
   const useOverflow = !forceInlineButtons && actions.length > 1;
 
   useEffect(() => {

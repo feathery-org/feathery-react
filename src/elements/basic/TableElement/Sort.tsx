@@ -20,7 +20,7 @@ type SortIconProps = {
   sortDirection: 'asc' | 'desc';
 };
 
-function SortIcon({ isSorted, sortDirection }: SortIconProps) {
+export function SortIcon({ isSorted, sortDirection }: SortIconProps) {
   return (
     <svg
       xmlns='http://www.w3.org/2000/svg'

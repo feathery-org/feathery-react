@@ -8,7 +8,6 @@ import { generateExampleData } from './exampleData';
 /**
  * Transpose table data: columns become rows, rows become columns
  * Returns new columns and transposed field values
- * @param rowIndicesToInclude - Optional array of original row indices to include (for pagination)
  */
 function transposeTableData(
   columns: Column[],
@@ -20,12 +19,9 @@ function transposeTableData(
   transposedFieldValues: Record<string, any>;
   includedRowIndices: number[];
 } {
-  // Determine which original rows to include
   const includedRowIndices =
     rowIndicesToInclude || Array.from({ length: numRows }, (_, i) => i);
 
-  // Create new columns: one for field names, then one for each included original row
-  // Use empty strings for header labels
   const transposedColumns: Column[] = [
     {
       name: '',
@@ -35,24 +31,21 @@ function transposeTableData(
     }
   ];
 
-  // Add a column for each included original row (with empty header labels)
+  // Add a column for each original row
   for (const rowIdx of includedRowIndices) {
     transposedColumns.push({
       name: '',
       field_id: `_transpose_row_${rowIdx}`,
       field_type: 'text',
       field_key: `_transpose_row_${rowIdx}`,
-      // Store the original row index for reference
       originalRowIndex: rowIdx
     } as Column & { originalRowIndex: number });
   }
 
-  // Create transposed field values
   const transposedFieldValues: Record<string, any> = {
     _transpose_field_name: columns.map((col) => col.name)
   };
 
-  // For each included original row, create an array of values from all columns
   for (const rowIdx of includedRowIndices) {
     const transposedRowValues: any[] = [];
 
@@ -131,7 +124,7 @@ export function useTableData({
   );
   const enableSearch = element.properties?.search ?? false;
   const enableSort = element.properties?.sort ?? false;
-  const enableTranspose = element.properties?.transpose ?? false;
+  const enableTranspose = element.properties?.transpose || true;
   const paginationSetting = element.properties?.pagination ?? 0;
   const rowsPerPage =
     typeof paginationSetting === 'number' && paginationSetting > 0
@@ -139,8 +132,6 @@ export function useTableData({
       : 0;
   const enablePagination = rowsPerPage > 0;
 
-  // Use example columns if in edit mode and no columns provided
-  // Also ensure all columns have field_key in edit mode
   const baseColumns = useMemo(() => {
     let cols = userColumns;
 
@@ -170,7 +161,6 @@ export function useTableData({
 
   const [currentPage, setCurrentPage] = useState(0);
 
-  // Calculate number of rows from base data (before transpose)
   const baseNumRows = useMemo(() => {
     return baseColumns.reduce((maxRows, column) => {
       const fieldValue = baseFieldValues[column.field_key];
@@ -181,19 +171,16 @@ export function useTableData({
     }, 0);
   }, [baseColumns, baseFieldValues]);
 
-  // For transposed tables, we need to search/sort/paginate the original rows (which become columns)
   const allBaseRowIndices = useMemo(
     () => Array.from({ length: baseNumRows }, (_, i) => i),
     [baseNumRows]
   );
 
-  // Search: For transposed tables, search by original column values (now rows)
   const filteredBaseRowIndices = useMemo(() => {
     if (!enableTranspose || !enableSearch || !searchQuery.trim()) {
       return allBaseRowIndices;
     }
 
-    // When transposed, we search within each original row to see if it matches
     return allBaseRowIndices.filter((baseRowIdx) => {
       return baseColumns.some((column) => {
         const fieldValue = baseFieldValues[column.field_key];
@@ -215,13 +202,10 @@ export function useTableData({
     baseFieldValues
   ]);
 
-  // For transposed tables, we need to handle sorting of rows (which represent original columns)
-  // We track which original column (transposed row) is being sorted
   const [sortedColumnIndex, setSortedColumnIndex] = useState<number | null>(
     null
   );
 
-  // Sort: For transposed tables, we can sort rows by column values
   const sortedBaseRowIndices = useMemo(() => {
     if (!enableTranspose || !enableSort || sortedColumnIndex === null) {
       return filteredBaseRowIndices;
@@ -251,7 +235,6 @@ export function useTableData({
     enableSort
   ]);
 
-  // Pagination: For transposed tables, paginate the original rows (which become columns)
   const paginatedBaseRowIndices = useMemo(() => {
     if (!enableTranspose || !enablePagination) {
       return sortedBaseRowIndices;
@@ -268,7 +251,6 @@ export function useTableData({
     enablePagination
   ]);
 
-  // Apply transposition if enabled
   const { columns, activeFieldValues, transposedRowIndices } = useMemo(() => {
     if (!enableTranspose || baseNumRows === 0) {
       return {
@@ -299,7 +281,6 @@ export function useTableData({
     paginatedBaseRowIndices
   ]);
 
-  // Calculate number of rows from (possibly transposed) data
   const numRows = useMemo(() => {
     return columns.reduce((maxRows, column) => {
       const fieldValue = activeFieldValues[column.field_key];
@@ -310,7 +291,6 @@ export function useTableData({
     }, 0);
   }, [columns, activeFieldValues]);
 
-  // For non-transposed tables, use the regular filtering/sorting/pagination
   const allRowIndices = useMemo(
     () => Array.from({ length: numRows }, (_, i) => i),
     [numRows]
@@ -417,7 +397,6 @@ export function useTableData({
     }
   };
 
-  // Handle sorting for transposed tables - sort by clicking on a row (original column)
   const handleTransposedSort = (rowIndex: number) => {
     if (!enableSort || !enableTranspose) return;
 

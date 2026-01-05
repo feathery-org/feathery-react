@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { Search } from './Search';
-import { SortHeader } from './Sort';
+import { SortHeader, SortIcon } from './Sort';
 import { Pagination } from './Pagination';
 import { ActionButtons } from './Actions';
 import { EmptyState } from './EmptyState';
@@ -198,37 +198,10 @@ function TableElement({
                             >
                               <span>{stringifyWithNull(cellValue) ?? ''}</span>
                               <span css={sortIconContainerStyle}>
-                                <svg
-                                  xmlns='http://www.w3.org/2000/svg'
-                                  viewBox='0 0 24 24'
-                                  fill='none'
-                                  aria-hidden='true'
-                                >
-                                  <path
-                                    css={sortArrowStyle}
-                                    stroke='currentColor'
-                                    data-active={
-                                      (isSorted && sortDirection === 'asc') ||
-                                      undefined
-                                    }
-                                    strokeLinecap='round'
-                                    strokeLinejoin='round'
-                                    strokeWidth={2}
-                                    d='m8 9 4-4 4 4'
-                                  />
-                                  <path
-                                    css={sortArrowStyle}
-                                    stroke='currentColor'
-                                    data-active={
-                                      (isSorted && sortDirection === 'desc') ||
-                                      undefined
-                                    }
-                                    strokeLinecap='round'
-                                    strokeLinejoin='round'
-                                    strokeWidth={2}
-                                    d='m8 15 4 4 4-4'
-                                  />
-                                </svg>
+                                <SortIcon
+                                  isSorted={isSorted}
+                                  sortDirection={sortDirection}
+                                />
                               </span>
                             </div>
                           ) : (
