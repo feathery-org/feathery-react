@@ -29,6 +29,12 @@ type SearchProps = {
 };
 
 export function Search({ searchQuery, onSearchChange }: SearchProps) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+    }
+  };
+
   return (
     <div css={searchContainerStyle}>
       <div css={searchWrapperStyle as any}>
@@ -41,6 +47,7 @@ export function Search({ searchQuery, onSearchChange }: SearchProps) {
           placeholder='Search'
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
+          onKeyDown={handleKeyDown}
         />
       </div>
     </div>

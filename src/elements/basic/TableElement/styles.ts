@@ -109,7 +109,8 @@ export const searchInputStyle = {
   color: colors.gray900,
   fontSize: '14px',
   borderRadius: '8px',
-  boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+  boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+  boxSizing: 'border-box' as const
 };
 
 export const tableStyle = {
@@ -120,8 +121,7 @@ export const tableStyle = {
   color: colors.gray600,
   textIndent: 0,
   borderColor: 'inherit',
-  borderCollapse: 'collapse',
-  tableLayout: 'fixed'
+  borderCollapse: 'collapse'
 };
 
 export const theadStyle = {
