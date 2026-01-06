@@ -14,8 +14,7 @@ import {
   theadStyle,
   thStyle,
   sortHeaderContentStyle,
-  sortIconContainerStyle,
-  sortArrowStyle
+  sortIconContainerStyle
 } from './styles';
 
 function applyTableStyles(responsiveStyles: any) {
