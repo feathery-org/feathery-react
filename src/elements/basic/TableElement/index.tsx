@@ -145,7 +145,6 @@ function TableElement({
                         ? fieldValue[rowIndex]
                         : fieldValue;
 
-                      // Apply header styles to first column when transposed
                       const isFirstColInTranspose =
                         isTransposed && colIndex === 0;
                       const isSortable = isFirstColInTranspose && enableSort;
@@ -163,8 +162,8 @@ function TableElement({
                       const cellCss = isFirstColInTranspose
                         ? {
                             ...thStyle,
-                            backgroundColor: '#f9fafb', // gray50 - same as header
-                            borderRight: '1px solid #e5e7eb', // gray200
+                            backgroundColor: '#f9fafb',
+                            borderRight: '1px solid #e5e7eb',
                             width: '1px',
                             whiteSpace: 'nowrap',
                             ...styles.getTarget('th'),
