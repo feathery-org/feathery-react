@@ -126,7 +126,7 @@ export function useTableData({
   );
   const enableSearch = element.properties?.search ?? false;
   const enableSort = element.properties?.sort ?? false;
-  const enableTranspose = element.properties?.transpose || true;
+  const enableTranspose = element.properties?.transpose ?? false;
   const paginationSetting = element.properties?.pagination ?? 0;
   const rowsPerPage =
     typeof paginationSetting === 'number' && paginationSetting > 0
