@@ -1090,7 +1090,8 @@ function Form({
         fillQuikForms: async ({
           fillType,
           docusignConnectionId,
-          docusignCustomId
+          docusignCustomId,
+          enableWetSign
         }: FillQuikParams) => {
           await Promise.all([
             client.flushCustomFields(),
@@ -1100,7 +1101,8 @@ function Form({
             form_fill_type: fillType,
             review_action: 'sign',
             auth_user_id: docusignConnectionId,
-            docusign_custom_id: docusignCustomId
+            docusign_custom_id: docusignCustomId,
+            enable_wet_sign: enableWetSign
           });
           if (payload.error) throw Error(payload.error);
           else if (fillType === 'html' && payload.html) {

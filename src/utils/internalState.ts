@@ -29,6 +29,7 @@ export type FillQuikParams = {
   fillType: 'html' | 'pdf';
   docusignConnectionId: 'string';
   docusignCustomId?: 'string';
+  enableWetSign?: boolean;
 };
 
 export interface FormInternalState {
