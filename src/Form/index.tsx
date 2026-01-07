@@ -131,7 +131,10 @@ import { replaceTextVariables } from '../elements/components/TextNodes';
 import { getFormContext } from '../utils/formContext';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
-import internalState, { setFormInternalState } from '../utils/internalState';
+import internalState, {
+  FillQuikParams,
+  setFormInternalState
+} from '../utils/internalState';
 import {
   ExtractionActionOptions,
   PageSelectionInput
@@ -1082,6 +1085,25 @@ function Form({
                 }
               }
             }));
+          }
+        },
+        fillQuikForms: async ({
+          fillType,
+          docusignConnectionId
+        }: FillQuikParams) => {
+          const payload = await client.generateQuikEnvelopes({
+            form_fill_type: fillType,
+            review_action: 'sign',
+            auth_user_id: docusignConnectionId
+          });
+          if (payload.error) throw Error(payload.error);
+          else if (fillType === 'html' && payload.html) {
+            featheryWindow().QuikFeatherySubmitAction = () =>
+              setShowQuikFormViewer(false);
+            setQuikHTMLPayload(payload.html);
+            setShowQuikFormViewer(true);
+          } else if (fillType === 'pdf' && payload.files) {
+            await downloadAllFileUrls(payload.files);
           }
         },
         runAIExtraction: async (
