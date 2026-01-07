@@ -1092,6 +1092,10 @@ function Form({
           docusignConnectionId,
           docusignCustomId
         }: FillQuikParams) => {
+          await Promise.all([
+            client.flushCustomFields(),
+            defaultClient.flushCustomFields()
+          ]);
           const payload = await client.generateQuikEnvelopes({
             form_fill_type: fillType,
             review_action: 'sign',
