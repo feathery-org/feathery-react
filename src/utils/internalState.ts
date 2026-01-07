@@ -28,6 +28,7 @@ export type GetConfig = ({
 export type FillQuikParams = {
   fillType: 'html' | 'pdf';
   docusignConnectionId: 'string';
+  docusignCustomId?: 'string';
 };
 
 export interface FormInternalState {
