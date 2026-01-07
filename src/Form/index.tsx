@@ -1089,12 +1089,14 @@ function Form({
         },
         fillQuikForms: async ({
           fillType,
-          docusignConnectionId
+          docusignConnectionId,
+          docusignCustomId
         }: FillQuikParams) => {
           const payload = await client.generateQuikEnvelopes({
             form_fill_type: fillType,
             review_action: 'sign',
-            auth_user_id: docusignConnectionId
+            auth_user_id: docusignConnectionId,
+            docusign_custom_id: docusignCustomId
           });
           if (payload.error) throw Error(payload.error);
           else if (fillType === 'html' && payload.html) {
