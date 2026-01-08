@@ -31,6 +31,17 @@ export type FillQuikParams = {
   docusignCustomId?: 'string';
   enableWetSign?: boolean;
 };
+type DocusignSigner = {
+  email: string;
+  name: string;
+};
+export type SendDocusignParams = {
+  documents: string[];
+  signers: DocusignSigner[];
+  fillData?: Record<string, any>;
+  emailSubject?: string;
+  emailBlurb?: string;
+};
 
 export interface FormInternalState {
   language: string | undefined;
@@ -80,6 +91,7 @@ export interface FormInternalState {
     submissionId?: string;
   }) => Promise<{ ok: boolean; error?: string }>;
   fillQuikForms: (params: FillQuikParams) => Promise<void>;
+  sendDocusignEnvelope: (params: SendDocusignParams) => Promise<void>;
   getConfig: GetConfig;
 }
 
