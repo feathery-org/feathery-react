@@ -1922,12 +1922,29 @@ function Form({
   };
 
   const tableOnClick = async (table: any, payload: any) => {
-    await runElementActions({
-      actions: [],
-      element: table,
-      elementType: 'table',
-      triggerPayload: payload
-    });
+    // show spinner if action is clicked
+    if (payload.action) {
+      const buttonKey = `${table.id}_${payload.rowIndex}_${payload.action}`;
+      await setLoaders((loaders: Record<string, any>) => ({
+        ...loaders,
+        [buttonKey]: {
+          showOn: 'on_button',
+          loader: <FeatherySpinner />,
+          type: 'default'
+        }
+      }));
+    }
+    try {
+      await runElementActions({
+        actions: [],
+        element: table,
+        elementType: 'table',
+        triggerPayload: payload
+      });
+    } finally {
+      clearLoaders();
+      clearButtonActionState();
+    }
   };
 
   // Orchestrates all actions triggered by a button/element click.
@@ -1966,7 +1983,7 @@ function Form({
       return true;
     }
 
-    updateButtonActionState(elementType, element);
+    updateButtonActionState(elementType, element, triggerPayload);
 
     const metadata = {
       elementType,

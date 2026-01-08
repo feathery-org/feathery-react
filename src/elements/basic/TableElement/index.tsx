@@ -26,7 +26,8 @@ function TableElement({
   element,
   responsiveStyles,
   onClick = () => {},
-  editMode = false
+  editMode = false,
+  buttonLoaders = {}
 }: any) {
   const styles = useMemo(
     () => applyTableStyles(responsiveStyles),
@@ -252,6 +253,8 @@ function TableElement({
                           columnData={baseColumns}
                           fieldValues={baseFieldValues}
                           onClick={onClick}
+                          tableId={element.id}
+                          buttonLoaders={buttonLoaders}
                         />
                       </td>
                     )}
@@ -292,6 +295,8 @@ function TableElement({
                           fieldValues={baseFieldValues}
                           onClick={onClick}
                           forceInlineButtons
+                          tableId={element.id}
+                          buttonLoaders={buttonLoaders}
                         />
                       </div>
                     </td>

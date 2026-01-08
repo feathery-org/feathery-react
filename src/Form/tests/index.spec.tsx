@@ -168,7 +168,8 @@ describe('useCheckButtonAction behavior', () => {
         CheckButtonActionMod._spies.updateButtonActionState
       ).toHaveBeenCalledWith(
         'button',
-        expect.objectContaining({ id: 'b1' })
+        expect.objectContaining({ id: 'b1' }),
+        undefined
       )
     );
   });

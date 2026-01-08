@@ -10,13 +10,13 @@ const colors = {
   gray900: '#111827',
   blue50: '#eff6ff',
   blue700: '#1d4ed8'
-};
+} as const;
 
 export const searchIconStyle = {
   width: '16px',
   height: '16px',
   color: '#6b7280'
-};
+} as const;
 
 export const sortIconContainerStyle = {
   display: 'flex',
@@ -27,7 +27,7 @@ export const sortIconContainerStyle = {
     width: '20px',
     height: '20px'
   }
-};
+} as const;
 
 export const sortArrowStyle = {
   width: '12px',
@@ -38,13 +38,13 @@ export const sortArrowStyle = {
     color: colors.blue700,
     opacity: 1
   }
-};
+} as const;
 
 export const sortHeaderContentStyle = {
   display: 'flex',
   alignItems: 'center',
   gap: '8px'
-};
+} as const;
 
 export const containerStyle = {
   position: 'relative',
@@ -58,7 +58,7 @@ export const containerStyle = {
   maxWidth: '100%',
   height: '100%',
   boxSizing: 'border-box'
-};
+} as const;
 
 export const emptyStateContainerStyle = {
   display: 'flex',
@@ -67,23 +67,23 @@ export const emptyStateContainerStyle = {
   justifyContent: 'center',
   padding: '64px 24px',
   textAlign: 'center' as const
-};
+} as const;
 
 export const emptyStateTextStyle = {
   color: colors.gray600,
   fontSize: '16px',
   fontWeight: '500',
   margin: 0
-};
+} as const;
 
 export const searchContainerStyle = {
   padding: '16px',
   borderBottom: `1px solid ${colors.gray200}`
-};
+} as const;
 
 export const searchWrapperStyle = {
   position: 'relative'
-};
+} as const;
 
 export const searchIconWrapperStyle = {
   position: 'absolute',
@@ -94,7 +94,7 @@ export const searchIconWrapperStyle = {
   alignItems: 'center',
   paddingLeft: '12px',
   pointerEvents: 'none'
-};
+} as const;
 
 export const searchInputStyle = {
   display: 'block',
@@ -111,7 +111,7 @@ export const searchInputStyle = {
   borderRadius: '8px',
   boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
   boxSizing: 'border-box' as const
-};
+} as const;
 
 export const tableStyle = {
   width: '100%',
@@ -122,32 +122,32 @@ export const tableStyle = {
   textIndent: 0,
   borderColor: 'inherit',
   borderCollapse: 'collapse'
-};
+} as const;
 
 export const theadStyle = {
   fontSize: '14px',
   color: colors.gray600,
   backgroundColor: colors.gray50,
   borderBottom: `1px solid ${colors.gray200}`
-};
+} as const;
 
 export const thStyle = {
   padding: '12px 24px',
   fontWeight: '500',
   userSelect: 'none'
-};
+} as const;
 
 export const rowStyle = {
   backgroundColor: colors.white,
   borderBottom: `1px solid ${colors.gray200}`,
   transition: 'background-color 0.2s'
-};
+} as const;
 
 export const cellStyle = {
   padding: '16px 24px',
   wordBreak: 'break-word',
   overflowWrap: 'anywhere'
-};
+} as const;
 
 export const navStyle = {
   display: 'flex',
@@ -156,18 +156,18 @@ export const navStyle = {
   justifyContent: 'space-between',
   padding: '16px',
   gap: '8px'
-};
+} as const;
 
 export const navTextStyle = {
   fontSize: '14px',
   fontWeight: 'normal',
   color: colors.gray600
-};
+} as const;
 
 export const navTextBoldStyle = {
   fontWeight: '600',
   color: colors.gray900
-};
+} as const;
 
 export const paginationListStyle = {
   display: 'flex',
@@ -176,7 +176,7 @@ export const paginationListStyle = {
   listStyle: 'none',
   padding: 0,
   margin: 0
-};
+} as const;
 
 export const buttonStyle = {
   display: 'flex',
@@ -196,22 +196,27 @@ export const buttonStyle = {
   '&:hover': {
     backgroundColor: colors.gray100,
     color: colors.gray900
+  },
+  '&:disabled:hover': {
+    color: colors.gray600,
+    backgroundColor: colors.gray50
   }
-};
+} as const;
 
 export const actionButtonStyle = {
   ...buttonStyle,
   borderRadius: '4px',
   paddingInline: '8px',
   width: 'auto',
-  height: '28px'
-};
+  height: '28px',
+  position: 'relative'
+} as const;
 
 export const menuIconStyle = {
   width: '16px',
   height: '16px',
   color: colors.gray600
-};
+} as const;
 
 export const actionMenuStyle = {
   position: 'fixed' as const,
@@ -221,10 +226,13 @@ export const actionMenuStyle = {
   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
   zIndex: 9999,
   minWidth: '120px'
-};
+} as const;
 
 export const actionMenuItemStyle = {
-  display: 'block',
+  display: 'flex',
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'between',
   width: '100%',
   textAlign: 'left' as const,
   paddingLeft: '12px',
@@ -237,8 +245,12 @@ export const actionMenuItemStyle = {
   border: 'none',
   cursor: 'pointer',
   whiteSpace: 'nowrap' as const,
+  position: 'relative',
   '&:hover': {
     backgroundColor: colors.gray100
+  },
+  '&:disabled:hover': {
+    backgroundColor: 'transparent'
   },
   '&:first-of-type': {
     borderTopLeftRadius: '4px',
@@ -248,26 +260,26 @@ export const actionMenuItemStyle = {
     borderBottomLeftRadius: '4px',
     borderBottomRightRadius: '4px'
   }
-};
+} as const;
 
 export const actionIconButtonStyle = {
   ...actionButtonStyle,
   aspectRatio: 1,
   paddingLeft: 0,
   paddingRight: 0
-};
+} as const;
 
 export const actionContainerStyle = {
   display: 'flex',
   gap: '8px',
   justifyContent: 'flex-end'
-};
+} as const;
 
 export const pageButtonStyle = {
   ...buttonStyle,
   width: '36px',
   borderRightWidth: 0
-};
+} as const;
 
 export const pageButtonPrevStyle = {
   ...pageButtonStyle,
@@ -276,7 +288,7 @@ export const pageButtonPrevStyle = {
   paddingLeft: '12px',
   paddingRight: '12px',
   width: 'auto'
-};
+} as const;
 
 export const pageButtonNextStyle = {
   ...pageButtonStyle,
@@ -286,14 +298,14 @@ export const pageButtonNextStyle = {
   paddingRight: '12px',
   width: 'auto',
   borderRightWidth: 1
-};
+} as const;
 
 export const pageButtonActiveStyle = {
   ...pageButtonStyle,
   color: colors.blue700,
   backgroundColor: colors.blue50,
   border: `1px solid ${colors.gray200}`
-};
+} as const;
 
 export const pageButtonEllipsisStyle = {
   ...pageButtonStyle,
@@ -301,7 +313,7 @@ export const pageButtonEllipsisStyle = {
   '&:focus': {
     outline: 'none'
   }
-};
+} as const;
 
 export const pageButtonDisabledStyle = {
   opacity: 0.8,
@@ -311,4 +323,4 @@ export const pageButtonDisabledStyle = {
     backgroundColor: colors.gray50,
     color: colors.gray400
   }
-};
+} as const;
