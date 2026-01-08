@@ -8,40 +8,13 @@ import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
 import FeatheryClient from './featheryClient';
-
-export type PageSelectionInput = (number | string)[] | (number | string)[][];
-
-export type IntegrationActionIds = string[] | string;
-export type IntegrationActionOptions = {
-  waitForCompletion?: boolean;
-  multiple?: boolean;
-};
-export type RunIntegrationActions = (
-  actionIds: IntegrationActionIds,
-  options: IntegrationActionOptions
-) => Promise<{ ok: boolean; error?: string; payload?: any }>;
-
-export type ExtractionActionOptions = {
-  waitForCompletion?: boolean;
-  pages?: PageSelectionInput;
-  variantId?: string;
-  meetingUrl?: string;
-};
+import {
+  ExtractionActionOptions,
+  PageSelectionInput
+} from '@feathery/client-utils';
 
 export type AlloyEntities = Record<string, any>[];
-export type ApplyAlloyJourney = (
-  journeyToken: string,
-  entities: AlloyEntities
-) => Promise<{ ok: boolean; error?: string; payload?: any }>;
 export type LoanProCustomerObject = Record<string, any>;
-export type SearchLoanProCustomer = () => Promise<{
-  ok: boolean;
-  error?: any;
-  payload?: any;
-}>;
-export type CreateLoanProCustomer = (
-  bodyParams: LoanProCustomerObject
-) => Promise<{ ok: boolean; error?: any; payload?: any }>;
 export type GetConfigParams = {
   filter?: Record<string, any>;
   keys?: string[];
@@ -52,6 +25,12 @@ export type GetConfig = ({
   keys,
   unique
 }: GetConfigParams) => Promise<Record<string, any>[]>;
+export type FillQuikParams = {
+  fillType: 'html' | 'pdf';
+  docusignConnectionId: 'string';
+  docusignCustomId?: 'string';
+  enableWetSign?: boolean;
+};
 
 export interface FormInternalState {
   language: string | undefined;
@@ -100,6 +79,7 @@ export interface FormInternalState {
     emailGroup?: string;
     submissionId?: string;
   }) => Promise<{ ok: boolean; error?: string }>;
+  fillQuikForms: (params: FillQuikParams) => Promise<void>;
   getConfig: GetConfig;
 }
 

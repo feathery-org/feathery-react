@@ -26,14 +26,18 @@ type ActionButtonsProps = {
   actions: Action[];
   rowIndex: number;
   columnData: Column[];
+  fieldValues?: Record<string, any>;
   onClick: (data: any) => void;
+  forceInlineButtons?: boolean;
 };
 
 export function ActionButtons({
   actions,
   rowIndex,
   columnData,
-  onClick
+  fieldValues: fieldValuesProp,
+  onClick,
+  forceInlineButtons = false
 }: ActionButtonsProps) {
   if (actions.length === 0) return null;
 
@@ -43,8 +47,7 @@ export function ActionButtons({
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
-  // If more than 1 action, show overflow menu; otherwise show inline buttons
-  const useOverflow = actions.length > 1;
+  const useOverflow = !forceInlineButtons && actions.length > 1;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -70,9 +73,11 @@ export function ActionButtons({
   const handleActionClick = (action: Action) => {
     setIsMenuOpen(false);
 
+    const activeFieldValues = fieldValuesProp || fieldValues;
+
     const rowData: Record<string, any> = {};
     columnData.forEach((col) => {
-      const fValue = fieldValues[col.field_key];
+      const fValue = activeFieldValues[col.field_key];
       const cValue = Array.isArray(fValue) ? fValue[rowIndex] : fValue;
       rowData[col.name] = cValue;
     });

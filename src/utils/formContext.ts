@@ -13,14 +13,18 @@ import {
 } from './init';
 import internalState, {
   AlloyEntities,
+  FillQuikParams,
   GetConfigParams,
-  IntegrationActionIds,
-  IntegrationActionOptions,
   LoanProCustomerObject,
-  PageSelectionInput,
   setFormInternalState
 } from './internalState';
 import { validateElements } from './validation';
+import {
+  IntegrationActionIds,
+  IntegrationActionOptions,
+  PageSelectionInput
+} from '@feathery/client-utils';
+
 /**
  * Used by contextRef in <Form />, renderAt for vanillajs, and the lifecycle
  * methods
@@ -183,6 +187,7 @@ export const getFormContext = (formUuid: string) => {
       submissionId?: string;
     }) => formState.forwardInboxEmail(options),
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
+    fillQuikForms: (params: FillQuikParams) => formState.fillQuikForms(params),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
       formState.client.alloyJourneyApplication(journeyToken, entities),
     searchLoanProCustomer: () =>

@@ -64,7 +64,8 @@ function QuikFormViewer({
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'QUIK_BACK_BUTTON_CLICK') {
-        featheryWindow().QuikFeatheryBackAction();
+        const backAction = featheryWindow().QuikFeatheryBackAction;
+        if (backAction) backAction();
         setShow(false);
       }
     };
