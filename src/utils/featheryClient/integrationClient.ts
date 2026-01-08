@@ -486,6 +486,22 @@ export default class IntegrationClient {
     });
   }
 
+  getQuikAccountForms({
+    custodian,
+    accountType,
+    isTransition = false
+  }: {
+    custodian: string;
+    accountType: string;
+    isTransition?: boolean;
+  }) {
+    const url = `${API_URL}quik/meta/account-forms/?form_key=${this.formKey}&custodian=${custodian}&account_type=${accountType}&is_transition=${isTransition}`;
+    return this._fetch(url).then(async (response) => {
+      if (response?.ok) return await response.json();
+      return {};
+    });
+  }
+
   PERSONA_CHECK_INTERVAL = 2000;
   PERSONA_MAX_TIME = 60 * 2000;
 

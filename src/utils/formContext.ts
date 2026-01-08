@@ -207,6 +207,11 @@ export const getFormContext = (formUuid: string) => {
       formState.client.getQuikForms(props),
     getQuikFormRoles: (props: { formIds: number[] }) =>
       formState.client.getQuikFormRoles(props),
+    getQuikAccountForms: (props: {
+      custodian: string;
+      accountType: string;
+      isTransition?: boolean;
+    }) => formState.client.getQuikAccountForms(props),
     getConfig: (params: GetConfigParams) => formState.client.getConfig(params),
     // deprecated
     setFieldValues: (userVals: FieldValues): void => {
