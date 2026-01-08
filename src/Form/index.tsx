@@ -1922,11 +1922,10 @@ function Form({
   };
 
   const tableOnClick = async (table: any, payload: any) => {
-    // payload action means action button was clicked
+    // show spinner if action is clicked
     if (payload.action) {
       const buttonKey = `${table.id}_${payload.rowIndex}_${payload.action}`;
-
-      setLoaders((loaders: Record<string, any>) => ({
+      await setLoaders((loaders: Record<string, any>) => ({
         ...loaders,
         [buttonKey]: {
           showOn: 'on_button',
@@ -1934,28 +1933,17 @@ function Form({
           type: 'default'
         }
       }));
-
-      try {
-        await runElementActions({
-          actions: [],
-          element: table,
-          elementType: 'table',
-          triggerPayload: payload
-        });
-      } finally {
-        setLoaders((loaders: Record<string, any>) => {
-          const newLoaders = { ...loaders };
-          delete newLoaders[buttonKey];
-          return newLoaders;
-        });
-      }
-    } else {
+    }
+    try {
       await runElementActions({
         actions: [],
         element: table,
         elementType: 'table',
         triggerPayload: payload
       });
+    } finally {
+      clearLoaders();
+      clearButtonActionState();
     }
   };
 
@@ -1995,7 +1983,7 @@ function Form({
       return true;
     }
 
-    updateButtonActionState(elementType, element);
+    updateButtonActionState(elementType, element, triggerPayload);
 
     const metadata = {
       elementType,

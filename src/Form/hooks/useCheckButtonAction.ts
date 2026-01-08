@@ -17,9 +17,22 @@ export function useCheckButtonAction(
     buttonActionStateRef.current?.isElementActionRunning ||
     buttonActionStateRef.current?.isUserLogicRunning;
 
-  const updateButtonActionState = (elementType: string, element: any) => {
-    // Track element action state for every button to block repeat clicks by default
-    const isRunning = elementType === 'button';
+  const updateButtonActionState = (
+    elementType: string,
+    element: any,
+    triggerPayload?: Record<string, any>
+  ) => {
+    let isRunning = elementType === 'button';
+
+    if (elementType === 'table' && triggerPayload?.action !== undefined) {
+      isRunning = true;
+      const buttonId = `${element.id}_${triggerPayload.rowIndex}_${triggerPayload.action}`;
+      element = {
+        id: buttonId,
+        properties: element.properties || {},
+        repeat: element.repeat
+      };
+    }
 
     if (isRunning) {
       buttonActionStateRef.current = {
