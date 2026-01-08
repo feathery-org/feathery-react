@@ -1922,12 +1922,41 @@ function Form({
   };
 
   const tableOnClick = async (table: any, payload: any) => {
-    await runElementActions({
-      actions: [],
-      element: table,
-      elementType: 'table',
-      triggerPayload: payload
-    });
+    // payload action means action button was clicked
+    if (payload.action) {
+      const buttonKey = `${table.id}_${payload.rowIndex}_${payload.action}`;
+
+      setLoaders((loaders: Record<string, any>) => ({
+        ...loaders,
+        [buttonKey]: {
+          showOn: 'on_button',
+          loader: <FeatherySpinner />,
+          type: 'default'
+        }
+      }));
+
+      try {
+        await runElementActions({
+          actions: [],
+          element: table,
+          elementType: 'table',
+          triggerPayload: payload
+        });
+      } finally {
+        setLoaders((loaders: Record<string, any>) => {
+          const newLoaders = { ...loaders };
+          delete newLoaders[buttonKey];
+          return newLoaders;
+        });
+      }
+    } else {
+      await runElementActions({
+        actions: [],
+        element: table,
+        elementType: 'table',
+        triggerPayload: payload
+      });
+    }
   };
 
   // Orchestrates all actions triggered by a button/element click.

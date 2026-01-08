@@ -94,6 +94,7 @@ const Element = ({ node: el, form }: any) => {
       <Elements.TableElement
         {...basicProps}
         onClick={(payload: any) => tableOnClick(el, payload)}
+        buttonLoaders={buttonLoaders}
       />
     );
   else if (type === 'text')

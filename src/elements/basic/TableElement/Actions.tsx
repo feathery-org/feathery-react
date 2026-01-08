@@ -27,8 +27,10 @@ type ActionButtonsProps = {
   rowIndex: number;
   columnData: Column[];
   fieldValues?: Record<string, any>;
-  onClick: (data: any) => void;
+  onClick: (data: any) => void | Promise<void>;
   forceInlineButtons?: boolean;
+  tableId?: string;
+  buttonLoaders?: Record<string, any>;
 };
 
 export function ActionButtons({
@@ -37,7 +39,9 @@ export function ActionButtons({
   columnData,
   fieldValues: fieldValuesProp,
   onClick,
-  forceInlineButtons = false
+  forceInlineButtons = false,
+  tableId = '',
+  buttonLoaders = {}
 }: ActionButtonsProps) {
   if (actions.length === 0) return null;
 
@@ -111,7 +115,7 @@ export function ActionButtons({
               e.stopPropagation();
               handleMenuToggle();
             }}
-            css={actionIconButtonStyle as any}
+            css={actionIconButtonStyle}
           >
             <MenuIcon />
           </button>
@@ -126,34 +130,74 @@ export function ActionButtons({
                   transform: 'translateX(-100%)'
                 }}
               >
-                {actions.map((action, index) => (
-                  <button
-                    key={index}
-                    type='button'
-                    onClick={() => handleActionClick(action)}
-                    css={actionMenuItemStyle}
-                  >
-                    {action.label}
-                  </button>
-                ))}
+                {actions.map((action, index) => {
+                  const buttonKey = `${tableId}_${rowIndex}_${action.label}`;
+                  const loader = buttonLoaders[buttonKey]?.loader;
+                  const disabled = Object.keys(buttonLoaders).length > 0;
+                  return (
+                    <button
+                      key={index}
+                      type='button'
+                      onClick={() => handleActionClick(action)}
+                      css={actionMenuItemStyle}
+                      disabled={disabled}
+                    >
+                      <span css={{ flex: 1 }}>{action.label}</span>
+                      {loader && (
+                        <div
+                          style={{
+                            height: '16px',
+                            width: '16px',
+                            flexShrink: 0
+                          }}
+                        >
+                          {loader}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
               </div>,
               featheryDoc().body
             )}
         </>
       ) : (
-        actions.map((action, index) => (
-          <button
-            key={index}
-            type='button'
-            onClick={(e) => {
-              e.stopPropagation();
-              handleActionClick(action);
-            }}
-            css={actionButtonStyle as any}
-          >
-            {action.label}
-          </button>
-        ))
+        actions.map((action, index) => {
+          const buttonKey = `${tableId}_${rowIndex}_${action.label}`;
+          const loader = buttonLoaders[buttonKey]?.loader;
+          const disabled = Object.keys(buttonLoaders).length > 0;
+          console.log(disabled);
+          return (
+            <button
+              key={index}
+              type='button'
+              onClick={(e) => {
+                e.stopPropagation();
+                handleActionClick(action);
+              }}
+              css={actionButtonStyle}
+              disabled={disabled}
+            >
+              <span style={{ visibility: loader ? 'hidden' : 'visible' }}>
+                {action.label}
+              </span>
+              {loader && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    height: '16px',
+                    width: '16px'
+                  }}
+                >
+                  {loader}
+                </div>
+              )}
+            </button>
+          );
+        })
       )}
     </div>
   );
