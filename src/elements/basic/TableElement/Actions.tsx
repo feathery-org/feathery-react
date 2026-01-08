@@ -166,7 +166,6 @@ export function ActionButtons({
           const buttonKey = `${tableId}_${rowIndex}_${action.label}`;
           const loader = buttonLoaders[buttonKey]?.loader;
           const disabled = Object.keys(buttonLoaders).length > 0;
-          console.log(disabled);
           return (
             <button
               key={index}
