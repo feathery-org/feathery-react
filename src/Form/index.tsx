@@ -133,6 +133,7 @@ import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
   FillQuikParams,
+  SendDocusignParams,
   setFormInternalState
 } from '../utils/internalState';
 import {
@@ -1086,6 +1087,13 @@ function Form({
               }
             }));
           }
+        },
+        sendDocusignEnvelope: async (params: SendDocusignParams) => {
+          await Promise.all([
+            client.flushCustomFields(),
+            defaultClient.flushCustomFields()
+          ]);
+          return client.sendDocusignEnvelope(params);
         },
         fillQuikForms: async ({
           fillType,
