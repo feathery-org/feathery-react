@@ -16,6 +16,7 @@ import internalState, {
   FillQuikParams,
   GetConfigParams,
   LoanProCustomerObject,
+  SendDocusignParams,
   setFormInternalState
 } from './internalState';
 import { validateElements } from './validation';
@@ -188,6 +189,8 @@ export const getFormContext = (formUuid: string) => {
     }) => formState.forwardInboxEmail(options),
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     fillQuikForms: (params: FillQuikParams) => formState.fillQuikForms(params),
+    sendDocusignEnvelope: (params: SendDocusignParams) =>
+      formState.sendDocusignEnvelope(params),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
       formState.client.alloyJourneyApplication(journeyToken, entities),
     searchLoanProCustomer: () =>
