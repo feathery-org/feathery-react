@@ -878,12 +878,13 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   runServerSideLogicRule(id: string) {
-    const { userId } = initInfo();
+    const { userId, collaboratorId } = initInfo();
     const data: any = {
       id: id,
       form_key: this.formKey,
       fuser_key: userId
     };
+    if (collaboratorId) data.collaborator_id = collaboratorId;
 
     const url = `${API_URL}panel/logic-rule/execute/`;
     const options = {
