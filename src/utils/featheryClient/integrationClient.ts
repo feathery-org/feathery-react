@@ -2,16 +2,20 @@ import { fieldValues, initFormsPromise, initInfo } from '../init';
 import { encodeGetParams } from '../primitives';
 import { API_URL, STATIC_URL } from '.';
 import { OfflineRequestHandler } from '../offlineRequestHandler';
-import { AlloyEntities, LoanProCustomerObject } from '../internalState';
+import {
+  AlloyEntities,
+  LoanProCustomerObject,
+  SendDocusignParams
+} from '../internalState';
 import { featheryWindow } from '../browser';
 import {
   apiFetch,
   customRolloutAction as apiCustomRolloutAction,
-  sendEmail as apiSendEmail,
-  pollForCompletion,
   IntegrationActionIds,
   IntegrationActionOptions,
-  parseAPIError
+  parseAPIError,
+  pollForCompletion,
+  sendEmail as apiSendEmail
 } from '@feathery/client-utils';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
@@ -388,6 +392,36 @@ export default class IntegrationClient {
             'Envelope generation'
           );
         } else throw Error(parseAPIError(data));
+      }
+    });
+  }
+
+  sendDocusignEnvelope({
+    documents,
+    fillData,
+    emailSubject,
+    emailBlurb,
+    signers
+  }: SendDocusignParams) {
+    const { userId } = initInfo();
+    const url = `${API_URL}docusign/envelope/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        fuser_key: userId,
+        form_key: this.formKey,
+        documents,
+        fill_data: fillData,
+        email_subject: emailSubject,
+        email_blurb: emailBlurb,
+        signers: signers
+      })
+    };
+    return this._fetch(url, options, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseAPIError(await response.json()));
       }
     });
   }
