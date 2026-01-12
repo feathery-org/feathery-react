@@ -1,9 +1,23 @@
 import { featheryWindow } from '../browser';
-import { FetchError } from '@feathery/client-utils';
-import { SDKKeyError } from '../error';
+import {
+  FetchError,
+  FormConflictError,
+  SDKKeyError
+} from '@feathery/client-utils';
 import { untrackUnload } from '../offlineRequestHandler';
 
 let conflictAlertShown = false;
+export function handleFormConflict() {
+  // Prevent multiple 409s from displaying multiple alerts
+  if (conflictAlertShown) return;
+  conflictAlertShown = true;
+
+  untrackUnload(true);
+  featheryWindow().alert(
+    'This form has been updated. Please fill it out again.'
+  );
+  location.reload();
+}
 
 export async function checkResponseSuccess(response: any) {
   let payload;
@@ -21,17 +35,7 @@ export async function checkResponseSuccess(response: any) {
     case 404:
       throw new FetchError("Can't find object");
     case 409:
-      // prevent multiple 409s from displaying multiple alerts
-      if (conflictAlertShown) return;
-      conflictAlertShown = true;
-
-      // Note: remove beforeunload listeners if there is a conflict
-      untrackUnload(true);
-      featheryWindow().alert(
-        'This form has been updated. Please fill it out again.'
-      );
-      location.reload();
-      return;
+      throw new FormConflictError();
     case 500:
       throw new FetchError('Internal server error');
     default:

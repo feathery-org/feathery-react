@@ -15,8 +15,10 @@ import {
   IntegrationActionOptions,
   parseAPIError,
   pollForCompletion,
-  sendEmail as apiSendEmail
+  sendEmail as apiSendEmail,
+  FormConflictError
 } from '@feathery/client-utils';
+import { handleFormConflict } from './utils';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -72,6 +74,11 @@ export default class IntegrationClient {
   ) {
     const { sdkKey } = initInfo();
     return apiFetch(sdkKey, url, options, parseResponse).catch((e) => {
+      if (e instanceof FormConflictError) {
+        handleFormConflict();
+        return;
+      }
+
       // Ignore TypeErrors if form has redirected because `fetch` in
       // Safari will error after redirect
       const ignore =
