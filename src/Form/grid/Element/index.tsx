@@ -230,18 +230,26 @@ const Element = ({ node: el, form }: any) => {
 
     const required = isFieldActuallyRequired(el, activeStep);
 
+    // Submit steps by pressing `Enter`
     const onEnter = (e: any) => {
       e.preventDefault();
       e.stopPropagation();
       if (!formSettings.enterToSubmit) return;
 
-      // Submit steps by pressing `Enter`
-      const enterButton = activeStep.buttons.find(
-        (b: any) => b.properties.submit
+      // { element: Element, last: Boolean, type: 'buttons' }
+      const visibleButtons = getVisibleElements(
+        activeStep,
+        visiblePositions,
+        ['buttons'],
+        false
+      );
+
+      const enterButton = visibleButtons.find(
+        ({ element }: any) => element.properties.submit
       );
       if (enterButton) {
         // Simulate button click if available
-        buttonOnClick(enterButton);
+        buttonOnClick(enterButton.element);
       }
     };
 
