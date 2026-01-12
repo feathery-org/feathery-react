@@ -11,12 +11,12 @@ import { featheryWindow } from '../browser';
 import {
   apiFetch,
   customRolloutAction as apiCustomRolloutAction,
+  FormConflictError,
   IntegrationActionIds,
   IntegrationActionOptions,
   parseAPIError,
   pollForCompletion,
-  sendEmail as apiSendEmail,
-  FormConflictError
+  sendEmail as apiSendEmail
 } from '@feathery/client-utils';
 import { handleFormConflict } from './utils';
 
