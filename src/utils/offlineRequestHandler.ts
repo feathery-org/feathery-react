@@ -2,8 +2,12 @@ import { useEffect } from 'react';
 import { featheryWindow, runningInClient } from './browser';
 import { fileRetryStatus, initInfo } from './init';
 import type FeatheryClient from './featheryClient';
-import { checkResponseSuccess } from './featheryClient/utils';
 import { isInteractionDetected } from './interactionState';
+import {
+  checkResponseSuccess,
+  FormConflictError
+} from '@feathery/client-utils';
+import { handleFormConflict } from './featheryClient/utils';
 
 // Constants for the IndexedDB database
 const DB_NAME = 'requestsDB';
@@ -491,6 +495,10 @@ export class OfflineRequestHandler {
               await this.removeRequest(key);
               return;
             } catch (error: any) {
+              if (error instanceof FormConflictError) {
+                handleFormConflict();
+                return;
+              }
               attempts++;
               await this.updateRetryAttempts(key, attempts);
 
