@@ -1,11 +1,5 @@
 import { featheryWindow } from './browser';
-
-export class SDKKeyError extends Error {
-  constructor(message = 'Invalid SDK Key') {
-    super(message);
-    this.name = 'SDKKeyError';
-  }
-}
+export { SDKKeyError } from '@feathery/client-utils';
 
 export class UserIdError extends Error {
   constructor() {
