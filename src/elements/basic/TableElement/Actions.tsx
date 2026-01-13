@@ -104,6 +104,16 @@ export function ActionButtons({
     setIsMenuOpen(!isMenuOpen);
   };
 
+  const overflowLoader =
+    buttonLoaders[
+      `${tableId}_${rowIndex}_${
+        actions.find((action) => {
+          const buttonKey = `${tableId}_${rowIndex}_${action.label}`;
+          return buttonLoaders[buttonKey]?.loader;
+        })?.label
+      }`
+    ]?.loader ?? null;
+
   return (
     <div ref={containerRef} css={actionContainerStyle}>
       {useOverflow ? (
@@ -111,13 +121,28 @@ export function ActionButtons({
           <button
             ref={menuButtonRef}
             type='button'
+            disabled={overflowLoader}
             onClick={(e) => {
               e.stopPropagation();
               handleMenuToggle();
             }}
             css={actionIconButtonStyle}
           >
-            <MenuIcon />
+            {overflowLoader ? (
+              <div
+                style={{
+                  height: '16px',
+                  width: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                {overflowLoader}
+              </div>
+            ) : (
+              <MenuIcon />
+            )}
           </button>
           {isMenuOpen &&
             createPortal(
@@ -131,29 +156,19 @@ export function ActionButtons({
                 }}
               >
                 {actions.map((action, index) => {
-                  const buttonKey = `${tableId}_${rowIndex}_${action.label}`;
-                  const loader = buttonLoaders[buttonKey]?.loader;
                   const disabled = Object.keys(buttonLoaders).length > 0;
                   return (
                     <button
                       key={index}
                       type='button'
-                      onClick={() => handleActionClick(action)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleActionClick(action);
+                      }}
                       css={actionMenuItemStyle}
                       disabled={disabled}
                     >
-                      <span css={{ flex: 1 }}>{action.label}</span>
-                      {loader && (
-                        <div
-                          style={{
-                            height: '16px',
-                            width: '16px',
-                            flexShrink: 0
-                          }}
-                        >
-                          {loader}
-                        </div>
-                      )}
+                      {action.label}
                     </button>
                   );
                 })}

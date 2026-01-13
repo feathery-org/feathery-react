@@ -199,7 +199,8 @@ export const buttonStyle = {
   },
   '&:disabled:hover': {
     color: colors.gray600,
-    backgroundColor: colors.gray50
+    backgroundColor: colors.gray50,
+    cursor: 'auto'
   }
 } as const;
 
@@ -229,10 +230,7 @@ export const actionMenuStyle = {
 } as const;
 
 export const actionMenuItemStyle = {
-  display: 'flex',
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'between',
+  display: 'block',
   width: '100%',
   textAlign: 'left' as const,
   paddingLeft: '12px',
@@ -250,7 +248,8 @@ export const actionMenuItemStyle = {
     backgroundColor: colors.gray100
   },
   '&:disabled:hover': {
-    backgroundColor: 'transparent'
+    backgroundColor: 'transparent',
+    cursor: 'auto'
   },
   '&:first-of-type': {
     borderTopLeftRadius: '4px',
