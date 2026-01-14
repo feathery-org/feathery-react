@@ -244,4 +244,69 @@ describe('IntegrationClient', () => {
       );
     });
   });
+
+  describe('getQuikForms', () => {
+    it('calls quik dealer endpoint with correct parameters', async () => {
+      // Arrange
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const dealerNames = ['dealer1', 'dealer2', 'dealer3'];
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ forms: ['form1', 'form2'] })
+      });
+
+      // Act
+      const result = await integrationClient.getQuikForms({ dealerNames });
+
+      // Assert
+      const dealerStr = encodeURIComponent(dealerNames.join(','));
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}quik/meta/dealer/?form_key=${formKey}&dealer=${dealerStr}`,
+        {
+          headers: {
+            Authorization: 'Token test_sdk_key'
+          },
+          cache: 'no-store',
+          method: 'GET',
+          keepalive: false
+        }
+      );
+      expect(result).toEqual({ forms: ['form1', 'form2'] });
+    });
+  });
+
+  describe('getQuikFormRoles', () => {
+    it('calls quik form roles endpoint with correct parameters', async () => {
+      // Arrange
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const formIds = [123, 456, 789];
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ roles: ['signer', 'reviewer'] })
+      });
+
+      // Act
+      const result = await integrationClient.getQuikFormRoles({ formIds });
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}quik/meta/form-roles/?form_key=${formKey}&quik_form_ids=${formIds.join(
+          ','
+        )}`,
+        {
+          headers: {
+            Authorization: 'Token test_sdk_key'
+          },
+          cache: 'no-store',
+          method: 'GET',
+          keepalive: false
+        }
+      );
+      expect(result).toEqual({ roles: ['signer', 'reviewer'] });
+    });
+  });
 });

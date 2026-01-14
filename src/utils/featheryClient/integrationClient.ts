@@ -12,6 +12,8 @@ import {
   apiFetch,
   customRolloutAction as apiCustomRolloutAction,
   FormConflictError,
+  getQuikFormRoles as apiGetQuikFormRoles,
+  getQuikForms as apiGetQuikForms,
   IntegrationActionIds,
   IntegrationActionOptions,
   parseAPIError,
@@ -508,23 +510,14 @@ export default class IntegrationClient {
     });
   }
 
-  getQuikForms({ dealerNames }: { dealerNames: string[] }) {
-    const dealerStr = encodeURIComponent(dealerNames.join(','));
-    const url = `${API_URL}quik/meta/dealer/?form_key=${this.formKey}&dealer=${dealerStr}`;
-    return this._fetch(url).then(async (response) => {
-      if (response?.ok) return await response.json();
-      return {};
-    });
+  async getQuikForms({ dealerNames }: { dealerNames: string[] }) {
+    const { sdkKey } = initInfo();
+    return await apiGetQuikForms(sdkKey, this.formKey, dealerNames);
   }
 
-  getQuikFormRoles({ formIds }: { formIds: number[] }) {
-    const url = `${API_URL}quik/meta/form-roles/?form_key=${
-      this.formKey
-    }&quik_form_ids=${formIds.join(',')}`;
-    return this._fetch(url).then(async (response) => {
-      if (response?.ok) return await response.json();
-      return {};
-    });
+  async getQuikFormRoles({ formIds }: { formIds: number[] }) {
+    const { sdkKey } = initInfo();
+    return await apiGetQuikFormRoles(sdkKey, this.formKey, formIds);
   }
 
   getQuikAccountForms({
