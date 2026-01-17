@@ -254,6 +254,7 @@ describe('IntegrationClient', () => {
 
       global.fetch.mockResolvedValue({
         ok: true,
+        status: 200,
         json: jest.fn().mockResolvedValue({ forms: ['form1', 'form2'] })
       });
 
@@ -269,7 +270,6 @@ describe('IntegrationClient', () => {
             Authorization: 'Token test_sdk_key'
           },
           cache: 'no-store',
-          method: 'GET',
           keepalive: false
         }
       );
@@ -286,6 +286,7 @@ describe('IntegrationClient', () => {
 
       global.fetch.mockResolvedValue({
         ok: true,
+        status: 200,
         json: jest.fn().mockResolvedValue({ roles: ['signer', 'reviewer'] })
       });
 
@@ -302,11 +303,57 @@ describe('IntegrationClient', () => {
             Authorization: 'Token test_sdk_key'
           },
           cache: 'no-store',
-          method: 'GET',
           keepalive: false
         }
       );
       expect(result).toEqual({ roles: ['signer', 'reviewer'] });
+    });
+  });
+
+  describe('generateEnvelopes', () => {
+    it('calls document generate endpoint with correct parameters', async () => {
+      // Arrange
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        envelope_signer_field_key: 'signer_field',
+        documents: ['doc1', 'doc2'],
+        repeatable: true,
+        run_async: false
+      };
+
+      Object.assign(fieldValues, { signer_field: 'test@example.com' });
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['file1.pdf', 'file2.pdf'] })
+      });
+
+      // Act
+      const result = await integrationClient.generateEnvelopes(action);
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}document/form/generate/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Token test_sdk_key'
+          },
+          method: 'POST',
+          body: JSON.stringify({
+            form_key: formKey,
+            fuser_key: 'test_user_id',
+            documents: action.documents,
+            signer_email: 'test@example.com',
+            repeatable: true,
+            run_async: false
+          }),
+          cache: 'no-store',
+          keepalive: true
+        }
+      );
+      expect(result).toEqual({ files: ['file1.pdf', 'file2.pdf'] });
     });
   });
 });

@@ -12,12 +12,12 @@ import {
   apiFetch,
   customRolloutAction as apiCustomRolloutAction,
   FormConflictError,
+  generateFormDocuments as apiGenerateFormDocuments,
   getQuikFormRoles as apiGetQuikFormRoles,
   getQuikForms as apiGetQuikForms,
   IntegrationActionIds,
   IntegrationActionOptions,
   parseAPIError,
-  pollForCompletion,
   sendEmail as apiSendEmail
 } from '@feathery/client-utils';
 import { handleFormConflict } from './utils';
@@ -365,44 +365,27 @@ export default class IntegrationClient {
   ENVELOPE_CHECK_INTERVAL = 2000;
   ENVELOPE_MAX_TIME = 3 * 60 * 1000;
 
-  generateEnvelopes(action: Record<string, string>) {
+  async generateEnvelopes(action: Record<string, any>) {
     const { userId, sdkKey } = initInfo();
     const signer = fieldValues[action.envelope_signer_field_key];
     const runAsync = action.run_async ?? true;
     const documents = action.documents ?? [];
-    const payload: Record<string, any> = {
-      form_key: this.formKey,
-      fuser_key: userId,
-      documents,
-      signer_email: signer,
-      repeatable: action.repeatable ?? false,
-      run_async: runAsync
-    };
 
-    const url = `${API_URL}document/form/generate/`;
     const options = {
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-      body: JSON.stringify(payload)
+      signerEmail: signer as string,
+      repeatable: action.repeatable ?? false,
+      runAsync,
+      checkInterval: this.ENVELOPE_CHECK_INTERVAL,
+      maxTime: this.ENVELOPE_MAX_TIME
     };
 
-    return this._fetch(url, options, false).then(async (response) => {
-      if (response) {
-        const data = await response.json();
-        if (response.ok) {
-          if (!runAsync || data.files) return data;
-
-          const pollUrl = `${API_URL}document/form/generate/poll/?fid=${userId}&dids=${documents}`;
-          return await pollForCompletion(
-            sdkKey,
-            pollUrl,
-            this.ENVELOPE_CHECK_INTERVAL,
-            this.ENVELOPE_MAX_TIME,
-            'Envelope generation'
-          );
-        } else throw Error(parseAPIError(data));
-      }
-    });
+    return await apiGenerateFormDocuments(
+      sdkKey,
+      this.formKey,
+      documents,
+      userId,
+      options
+    );
   }
 
   sendDocusignEnvelope({
