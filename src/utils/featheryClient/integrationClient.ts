@@ -20,6 +20,8 @@ import {
 } from '@feathery/client-utils';
 import { handleFormConflict } from './utils';
 
+import { v4 as uuidv4 } from 'uuid';
+
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
   'Failed to fetch',
@@ -438,10 +440,12 @@ export default class IntegrationClient {
 
   async generateQuikEnvelopes(action: Record<string, string>) {
     const { userId } = initInfo();
+    const submissionId = uuidv4();
     const payload: Record<string, any> = {
       form_key: this.formKey,
       fuser_key: userId,
       run_async: true,
+      instance_id: submissionId,
       ...action
     };
 
@@ -479,7 +483,7 @@ export default class IntegrationClient {
     return await new Promise((resolve) => {
       let attempts = 0;
       const maxAttempts = this.QUIK_MAX_TIME / this.QUIK_CHECK_INTERVAL;
-      const pollUrl = `${STATIC_URL}quik/document/poll/?fuser_key=${userId}`;
+      const pollUrl = `${STATIC_URL}quik/document/poll/?fuser_key=${userId}&instance_id=${submissionId}`;
 
       const checkCompletion = async () => {
         const response = await this._fetch(pollUrl);
