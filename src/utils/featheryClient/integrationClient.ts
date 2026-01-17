@@ -436,7 +436,7 @@ export default class IntegrationClient {
   QUIK_CHECK_INTERVAL = 2000;
   QUIK_MAX_TIME = 2 * 60 * 1000;
 
-  generateQuikEnvelopes(action: Record<string, string>) {
+  async generateQuikEnvelopes(action: Record<string, string>) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
       form_key: this.formKey,
@@ -469,14 +469,14 @@ export default class IntegrationClient {
       method: 'POST',
       body: JSON.stringify(payload)
     };
-    this._fetch(url, options, false).then(async (response) => {
+    await this._fetch(url, options, false).then(async (response) => {
       if (response) {
         if (response.ok) return await response.json();
         else throw Error(parseAPIError(await response.json()));
       }
     });
 
-    return new Promise((resolve) => {
+    return await new Promise((resolve) => {
       let attempts = 0;
       const maxAttempts = this.QUIK_MAX_TIME / this.QUIK_CHECK_INTERVAL;
       const pollUrl = `${STATIC_URL}quik/document/poll/?fuser_key=${userId}`;
