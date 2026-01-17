@@ -927,8 +927,8 @@ export default class FeatheryClient extends IntegrationClient {
       pages,
       undefined,
       collaboratorId,
-      undefined,
-      undefined,
+      this.AI_CHECK_INTERVAL,
+      this.AI_MAX_TIME,
       () => setPollFuserData?.(true),
       onStatusUpdate
     );
