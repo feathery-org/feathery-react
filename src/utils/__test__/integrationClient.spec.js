@@ -310,6 +310,43 @@ describe('IntegrationClient', () => {
     });
   });
 
+  describe('getQuikAccountForms', () => {
+    it('calls quik form account forms endpoint with correct parameters', async () => {
+      // Arrange
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const custodian = 'custodian1';
+      const accountType = 'account_type1';
+      const isTransition = true;
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ forms: ['form1', 'form2'] })
+      });
+
+      // Act
+      const result = await integrationClient.getQuikAccountForms({
+        custodian,
+        accountType,
+        isTransition
+      });
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}quik/meta/account-forms/?form_key=${formKey}&custodian=${custodian}&account_type=${accountType}&is_transition=${isTransition}`,
+        {
+          headers: {
+            Authorization: 'Token test_sdk_key'
+          },
+          cache: 'no-store',
+          keepalive: false
+        }
+      );
+      expect(result).toEqual({ forms: ['form1', 'form2'] });
+    });
+  });
+
   describe('generateEnvelopes', () => {
     it('calls document generate endpoint with correct parameters', async () => {
       // Arrange

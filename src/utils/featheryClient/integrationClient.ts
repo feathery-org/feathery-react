@@ -15,6 +15,7 @@ import {
   generateFormDocuments as apiGenerateFormDocuments,
   getQuikFormRoles as apiGetQuikFormRoles,
   getQuikForms as apiGetQuikForms,
+  getQuikAccountForms as apiGetQuikAccountForms,
   IntegrationActionIds,
   IntegrationActionOptions,
   parseAPIError,
@@ -503,7 +504,7 @@ export default class IntegrationClient {
     return await apiGetQuikFormRoles(sdkKey, this.formKey, formIds);
   }
 
-  getQuikAccountForms({
+  async getQuikAccountForms({
     custodian,
     accountType,
     isTransition = false
@@ -512,11 +513,14 @@ export default class IntegrationClient {
     accountType: string;
     isTransition?: boolean;
   }) {
-    const url = `${API_URL}quik/meta/account-forms/?form_key=${this.formKey}&custodian=${custodian}&account_type=${accountType}&is_transition=${isTransition}`;
-    return this._fetch(url).then(async (response) => {
-      if (response?.ok) return await response.json();
-      return {};
-    });
+    const { sdkKey } = initInfo();
+    return await apiGetQuikAccountForms(
+      sdkKey,
+      this.formKey,
+      custodian,
+      accountType,
+      isTransition
+    );
   }
 
   PERSONA_CHECK_INTERVAL = 2000;
