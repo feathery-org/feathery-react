@@ -40,7 +40,8 @@ import {
   getApiUrl,
   getStaticUrl,
   getS3Url,
-  getCdnUrl
+  getCdnUrl,
+  forwardInboxEmail
 } from '@feathery/client-utils';
 import {
   FEATHERY_INTERACTION_EVENT,
@@ -925,6 +926,8 @@ export default class FeatheryClient extends IntegrationClient {
       pages,
       undefined,
       collaboratorId,
+      undefined,
+      undefined,
       () => setPollFuserData?.(true),
       onStatusUpdate
     );
@@ -933,26 +936,29 @@ export default class FeatheryClient extends IntegrationClient {
   async forwardInboxEmail({
     options
   }: {
-    options: { emails?: string[]; emailGroup?: string; submissionId?: string };
+    options: {
+      prefix?: string;
+      emails?: string[];
+      emailGroup?: string;
+      submissionId?: string;
+    };
   }) {
-    const { userId } = initInfo();
-    const url = `${API_URL}email/forward/`;
-    const data: Record<string, any> = {
-      user_id: options.submissionId || userId,
-      recipients: options.emails || [],
-      email_group: options.emailGroup || '',
-      panel_key: this.formKey
-    };
+    const { userId, sdkKey } = initInfo();
+    const forwardUserId = options.submissionId || userId;
 
-    const reqOptions = {
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-      body: JSON.stringify(data)
-    };
+    if (!forwardUserId) {
+      throw new Error('No submission ID or user ID available for forwarding');
+    }
 
-    const res = await this._fetch(url, reqOptions, false);
-    if (res && res.ok) return await res.json();
-    else throw new Error(parseAPIError(await res?.json()));
+    await forwardInboxEmail(
+      sdkKey,
+      forwardUserId,
+      options.prefix || '',
+      options.emails || [],
+      options.emailGroup || '',
+      undefined,
+      this.formKey
+    );
   }
 
   async getConfig(configParams: GetConfigParams) {

@@ -86,10 +86,11 @@ export interface FormInternalState {
     pages?: PageSelectionInput
   ) => Promise<Record<string, string>>;
   forwardInboxEmail: (options: {
+    prefix?: string;
     emails?: string[];
     emailGroup?: string;
     submissionId?: string;
-  }) => Promise<{ ok: boolean; error?: string }>;
+  }) => Promise<void>;
   fillQuikForms: (params: FillQuikParams) => Promise<void>;
   sendDocusignEnvelope: (params: SendDocusignParams) => Promise<void>;
   getConfig: GetConfig;

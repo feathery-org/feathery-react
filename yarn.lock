@@ -1693,10 +1693,10 @@
     minimatch "^3.1.2"
     strip-json-comments "^3.1.1"
 
-"@feathery/client-utils@^0.2.0":
-  version "0.2.0"
-  resolved "https://registry.yarnpkg.com/@feathery/client-utils/-/client-utils-0.2.0.tgz#ba93d440c7d7540648d74823b690d2b87b6ecdc0"
-  integrity sha512-kZomRO/87cgLd3pB5DshNeX5YSII20hFL1lXCRT8mXMTvqLzZ8I0VkcX6KzgJZ5gjevI1Lo3Muo1DYF7TtYzbw==
+"@feathery/client-utils@^0.4.0":
+  version "0.4.0"
+  resolved "https://registry.yarnpkg.com/@feathery/client-utils/-/client-utils-0.4.0.tgz#7b75a3f0c7cb2c2d964d07cd52d634e015d8c0e2"
+  integrity sha512-JqnJhsmrffG0vCG/7tjxz6PjpjkndV+AhuTPS8KEd20t4iA4Yixxb1HHLYcWt25DpVoAwZwbHZ9eqZkPF+TesA==
 
 "@fingerprintjs/fingerprintjs@4.6.2":
   version "4.6.2"
