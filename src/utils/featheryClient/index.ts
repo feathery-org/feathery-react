@@ -944,14 +944,15 @@ export default class FeatheryClient extends IntegrationClient {
     };
   }) {
     const { userId, sdkKey } = initInfo();
+    const forwardUserId = options.submissionId || userId;
 
-    if (!options.submissionId && !userId) {
+    if (!forwardUserId) {
       throw new Error('No submission ID or user ID available for forwarding');
     }
 
     await forwardInboxEmail(
       sdkKey,
-      (options.submissionId || userId)!,
+      forwardUserId,
       options.prefix || '',
       options.emails || [],
       options.emailGroup || '',
