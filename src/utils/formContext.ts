@@ -183,6 +183,7 @@ export const getFormContext = (formUuid: string) => {
       pages?: PageSelectionInput
     ) => formState.runAIExtraction(extractionId, options, pages),
     forwardInboxEmail: (options: {
+      prefix?: string;
       emails?: string[];
       emailGroup?: string;
       submissionId?: string;

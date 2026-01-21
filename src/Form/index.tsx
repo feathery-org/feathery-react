@@ -1156,6 +1156,7 @@ function Form({
           return data;
         },
         forwardInboxEmail: async (options: {
+          prefix?: string;
           emails?: string[];
           emailGroup?: string;
           submissionId?: string;
