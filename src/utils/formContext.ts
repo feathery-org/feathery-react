@@ -13,7 +13,6 @@ import {
 } from './init';
 import internalState, {
   AlloyEntities,
-  FillQuikParams,
   GetConfigParams,
   LoanProCustomerObject,
   SendDocusignParams,
@@ -21,6 +20,7 @@ import internalState, {
 } from './internalState';
 import { validateElements } from './validation';
 import {
+  FillQuikParams,
   IntegrationActionIds,
   IntegrationActionOptions,
   PageSelectionInput

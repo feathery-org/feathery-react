@@ -132,12 +132,12 @@ import { getFormContext } from '../utils/formContext';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
-  FillQuikParams,
   SendDocusignParams,
   setFormInternalState
 } from '../utils/internalState';
 import {
   ExtractionActionOptions,
+  FillQuikParams,
   PageSelectionInput
 } from '@feathery/client-utils';
 import useFormAuth from '../auth/internal/useFormAuth';
@@ -1112,7 +1112,7 @@ function Form({
             docusign_custom_id: docusignCustomId,
             enable_wet_sign: enableWetSign
           });
-          if (payload.error) throw Error(payload.error);
+          if (payload.status === 'error') throw Error(payload.message);
           else if (fillType === 'html' && payload.html) {
             featheryWindow().QuikFeatherySubmitAction = () =>
               setShowQuikFormViewer(false);
@@ -2485,7 +2485,7 @@ function Form({
         await Promise.all([submitPromise, client.flushCustomFields()]);
         try {
           const payload = await client.generateQuikEnvelopes(action);
-          if (payload.error) setElementError(payload.error);
+          if (payload.status === 'error') setElementError(payload.message);
           else if (action.form_fill_type === 'html' && payload.html) {
             featheryWindow().QuikFeatherySubmitAction = () => {
               flowOnSuccess(i)().then(() => {

@@ -38,8 +38,8 @@ function QuikFormViewer({
       new FeatheryClient(formKey)
         .generateQuikEnvelopes(action)
         .then((payload: any) => {
-          if (payload.error) {
-            console.error('Error generating Quik envelopes:', payload.error);
+          if (payload.status === 'error') {
+            console.error('Error generating Quik envelopes:', payload.message);
           } else if (action.form_fill_type === 'html' && payload.html) {
             setHtmlContent(processHtml(payload.html, true));
           }

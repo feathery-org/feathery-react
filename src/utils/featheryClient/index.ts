@@ -1065,13 +1065,15 @@ export default class FeatheryClient extends IntegrationClient {
     download?: boolean;
   }) {
     const { userId, sdkKey } = initInfo();
-    const data = await apiGenerateFormDocuments(
+    const payload = await apiGenerateFormDocuments({
       sdkKey,
-      this.formKey,
+      formId: this.formKey,
       documentIds,
       userId
-    );
-    const files = data?.files;
+    });
+    if (payload.status === 'error') throw Error(payload.message);
+
+    const files = payload?.files;
     if (download) await downloadAllFileUrls(files);
     return { files };
   }

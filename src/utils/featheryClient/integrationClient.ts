@@ -13,6 +13,7 @@ import {
   customRolloutAction as apiCustomRolloutAction,
   FormConflictError,
   generateFormDocuments as apiGenerateFormDocuments,
+  generateQuikEnvelopes as apiGenerateQuikEnvelopes,
   getQuikFormRoles as apiGetQuikFormRoles,
   getQuikForms as apiGetQuikForms,
   getQuikAccountForms as apiGetQuikAccountForms,
@@ -369,24 +370,18 @@ export default class IntegrationClient {
   async generateEnvelopes(action: Record<string, any>) {
     const { userId, sdkKey } = initInfo();
     const signer = fieldValues[action.envelope_signer_field_key];
-    const runAsync = action.run_async ?? true;
-    const documents = action.documents ?? [];
 
-    const options = {
-      signerEmail: signer as string,
+    return await apiGenerateFormDocuments({
+      sdkKey,
+      formId: this.formKey,
+      documentIds: action.documents ?? [],
+      userId,
+      signerEmail: signer?.toString() ?? '',
       repeatable: action.repeatable ?? false,
-      runAsync,
+      runAsync: action.run_async ?? true,
       checkInterval: this.ENVELOPE_CHECK_INTERVAL,
       maxTime: this.ENVELOPE_MAX_TIME
-    };
-
-    return await apiGenerateFormDocuments(
-      sdkKey,
-      this.formKey,
-      documents,
-      userId,
-      options
-    );
+    });
   }
 
   sendDocusignEnvelope({
@@ -422,86 +417,45 @@ export default class IntegrationClient {
   QUIK_CHECK_INTERVAL = 2000;
   QUIK_MAX_TIME = 2 * 60 * 1000;
 
-  async generateQuikEnvelopes(action: Record<string, string>) {
-    const { userId } = initInfo();
-    const payload: Record<string, any> = {
-      form_key: this.formKey,
-      fuser_key: userId,
-      run_async: true,
-      ...action
-    };
-
-    if (action.form_fill_type === 'html' && action.review_action === 'sign') {
-      if (!action.auth_user_id) {
-        throw new Error('No connection name provided for Quik DocuSign config');
-      }
-    }
+  async generateQuikEnvelopes(action: Record<string, any>) {
+    const { userId, sdkKey } = initInfo();
+    let tags: any[] = [];
 
     const fieldVal = fieldValues[action.quik_tags_field_key];
 
     if (action.quik_tags_field_key) {
       if (typeof fieldVal === 'string') {
-        payload.tags = (fieldVal as string).split(',').map((tag) => tag.trim());
+        tags = (fieldVal as string).split(',').map((tag) => tag.trim());
       } else if (fieldVal instanceof Array) {
-        payload.tags = fieldVal;
+        tags = fieldVal;
       } else {
-        payload.tags = [JSON.stringify(fieldVal)];
+        tags = [JSON.stringify(fieldVal)];
       }
     }
 
-    const url = `${STATIC_URL}quik/document/`;
-    const options = {
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-      body: JSON.stringify(payload)
-    };
-    await this._fetch(url, options, false).then(async (response) => {
-      if (response) {
-        if (response.ok) return await response.json();
-        else throw Error(parseAPIError(await response.json()));
-      }
-    });
-
-    return await new Promise((resolve) => {
-      let attempts = 0;
-      const maxAttempts = this.QUIK_MAX_TIME / this.QUIK_CHECK_INTERVAL;
-      const pollUrl = `${STATIC_URL}quik/document/poll/?fuser_key=${userId}`;
-
-      const checkCompletion = async () => {
-        const response = await this._fetch(pollUrl);
-
-        if (response?.status === 400) {
-          return resolve({ error: parseAPIError(await response.json()) });
-        } else if (response?.status === 200) {
-          const data = await response.json();
-
-          if (data.status === 'complete') {
-            return resolve(data);
-          } else {
-            attempts += 1;
-
-            if (attempts < maxAttempts) {
-              setTimeout(checkCompletion, this.QUIK_CHECK_INTERVAL);
-            } else {
-              console.warn('Quik document generation took too long...');
-              return resolve({});
-            }
-          }
-        }
-      };
-
-      setTimeout(checkCompletion, this.QUIK_CHECK_INTERVAL); // Check every 2 seconds for a response
+    return await apiGenerateQuikEnvelopes({
+      sdkKey,
+      formId: this.formKey,
+      action,
+      userId,
+      tags,
+      checkInterval: this.QUIK_CHECK_INTERVAL,
+      maxTime: this.QUIK_MAX_TIME
     });
   }
 
   async getQuikForms({ dealerNames }: { dealerNames: string[] }) {
     const { sdkKey } = initInfo();
-    return await apiGetQuikForms(sdkKey, this.formKey, dealerNames);
+    return await apiGetQuikForms({ sdkKey, formId: this.formKey, dealerNames });
   }
 
   async getQuikFormRoles({ formIds }: { formIds: number[] }) {
     const { sdkKey } = initInfo();
-    return await apiGetQuikFormRoles(sdkKey, this.formKey, formIds);
+    return await apiGetQuikFormRoles({
+      sdkKey,
+      formId: this.formKey,
+      formIdList: formIds
+    });
   }
 
   async getQuikAccountForms({
@@ -514,13 +468,13 @@ export default class IntegrationClient {
     isTransition?: boolean;
   }) {
     const { sdkKey } = initInfo();
-    return await apiGetQuikAccountForms(
+    return await apiGetQuikAccountForms({
       sdkKey,
-      this.formKey,
+      formId: this.formKey,
       custodian,
       accountType,
       isTransition
-    );
+    });
   }
 
   PERSONA_CHECK_INTERVAL = 2000;
