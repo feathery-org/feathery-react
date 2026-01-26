@@ -244,4 +244,153 @@ describe('IntegrationClient', () => {
       );
     });
   });
+
+  describe('getQuikForms', () => {
+    it('calls quik dealer endpoint with correct parameters', async () => {
+      // Arrange
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const dealerNames = ['dealer1', 'dealer2', 'dealer3'];
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ forms: ['form1', 'form2'] })
+      });
+
+      // Act
+      const result = await integrationClient.getQuikForms({ dealerNames });
+
+      // Assert
+      const dealerStr = encodeURIComponent(dealerNames.join(','));
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}quik/meta/dealer/?form_key=${formKey}&dealer=${dealerStr}`,
+        {
+          headers: {
+            Authorization: 'Token test_sdk_key'
+          },
+          cache: 'no-store',
+          keepalive: false
+        }
+      );
+      expect(result).toEqual({ forms: ['form1', 'form2'] });
+    });
+  });
+
+  describe('getQuikFormRoles', () => {
+    it('calls quik form roles endpoint with correct parameters', async () => {
+      // Arrange
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const formIds = [123, 456, 789];
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ roles: ['signer', 'reviewer'] })
+      });
+
+      // Act
+      const result = await integrationClient.getQuikFormRoles({ formIds });
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}quik/meta/form-roles/?form_key=${formKey}&quik_form_ids=${formIds.join(
+          ','
+        )}`,
+        {
+          headers: {
+            Authorization: 'Token test_sdk_key'
+          },
+          cache: 'no-store',
+          keepalive: false
+        }
+      );
+      expect(result).toEqual({ roles: ['signer', 'reviewer'] });
+    });
+  });
+
+  describe('getQuikAccountForms', () => {
+    it('calls quik form account forms endpoint with correct parameters', async () => {
+      // Arrange
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const custodian = 'custodian1';
+      const accountType = 'account_type1';
+      const isTransition = true;
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ forms: ['form1', 'form2'] })
+      });
+
+      // Act
+      const result = await integrationClient.getQuikAccountForms({
+        custodian,
+        accountType,
+        isTransition
+      });
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}quik/meta/account-forms/?form_key=${formKey}&custodian=${custodian}&account_type=${accountType}&is_transition=${isTransition}`,
+        {
+          headers: {
+            Authorization: 'Token test_sdk_key'
+          },
+          cache: 'no-store',
+          keepalive: false
+        }
+      );
+      expect(result).toEqual({ forms: ['form1', 'form2'] });
+    });
+  });
+
+  describe('generateEnvelopes', () => {
+    it('calls document generate endpoint with correct parameters', async () => {
+      // Arrange
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        envelope_signer_field_key: 'signer_field',
+        documents: ['doc1', 'doc2'],
+        repeatable: true,
+        run_async: false
+      };
+
+      Object.assign(fieldValues, { signer_field: 'test@example.com' });
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['file1.pdf', 'file2.pdf'] })
+      });
+
+      // Act
+      const result = await integrationClient.generateEnvelopes(action);
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}document/form/generate/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Token test_sdk_key'
+          },
+          method: 'POST',
+          body: JSON.stringify({
+            form_key: formKey,
+            fuser_key: 'test_user_id',
+            documents: action.documents,
+            run_async: false,
+            signer_email: 'test@example.com',
+            repeatable: true
+          }),
+          cache: 'no-store',
+          keepalive: true
+        }
+      );
+      expect(result).toEqual({ files: ['file1.pdf', 'file2.pdf'] });
+    });
+  });
 });

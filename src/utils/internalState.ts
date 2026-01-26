@@ -9,6 +9,7 @@ import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
 import FeatheryClient from './featheryClient';
 import {
+  FillQuikParams,
   ExtractionActionOptions,
   PageSelectionInput
 } from '@feathery/client-utils';
@@ -25,12 +26,6 @@ export type GetConfig = ({
   keys,
   unique
 }: GetConfigParams) => Promise<Record<string, any>[]>;
-export type FillQuikParams = {
-  fillType: 'html' | 'pdf';
-  docusignConnectionId: 'string';
-  docusignCustomId?: 'string';
-  enableWetSign?: boolean;
-};
 type DocusignSigner = {
   email: string;
   name: string;

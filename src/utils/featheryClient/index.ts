@@ -31,6 +31,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { GetConfigParams } from '../internalState';
 import {
   ExtractionActionOptions,
+  generateFormDocuments as apiGenerateFormDocuments,
   PageSelectionInput,
   parseAPIError,
   extractAIDocument,
@@ -926,8 +927,8 @@ export default class FeatheryClient extends IntegrationClient {
       pages,
       undefined,
       collaboratorId,
-      undefined,
-      undefined,
+      this.AI_CHECK_INTERVAL,
+      this.AI_MAX_TIME,
       () => setPollFuserData?.(true),
       onStatusUpdate
     );
@@ -1063,32 +1064,18 @@ export default class FeatheryClient extends IntegrationClient {
     documentIds: string[];
     download?: boolean;
   }) {
-    const { userId } = initInfo();
-    const payload: Record<string, any> = {
-      form_key: this.formKey,
-      fuser_key: userId,
-      documents: documentIds
-    };
-
-    const url = `${API_URL}document/form/generate/`;
-    return this._fetch(
-      url,
-      {
-        headers: { 'Content-Type': 'application/json' },
-        method: 'POST',
-        body: JSON.stringify(payload)
-      },
-      false
-    ).then(async (response) => {
-      if (response) {
-        if (response.ok) {
-          const data = await response.json();
-          const files = data.files;
-          if (download) await downloadAllFileUrls(files);
-          return { files };
-        } else throw Error(parseAPIError(await response.json()));
-      }
+    const { userId, sdkKey } = initInfo();
+    const payload = await apiGenerateFormDocuments({
+      sdkKey,
+      formId: this.formKey,
+      documentIds,
+      userId
     });
+    if (payload.status === 'error') throw Error(payload.message);
+
+    const files = payload?.files;
+    if (download) await downloadAllFileUrls(files);
+    return { files };
   }
 
   async resetPendingFileUploads(fieldKeys: string[]) {
