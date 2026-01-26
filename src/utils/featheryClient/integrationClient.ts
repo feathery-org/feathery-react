@@ -370,6 +370,10 @@ export default class IntegrationClient {
   async generateEnvelopes(action: Record<string, any>) {
     const { userId, sdkKey } = initInfo();
     const signer = fieldValues[action.envelope_signer_field_key];
+    const envelopeAction =
+      !action.envelope_action || action.envelope_action === 'sign'
+        ? 'sign'
+        : 'fill';
 
     return await apiGenerateFormDocuments({
       sdkKey,
@@ -379,6 +383,7 @@ export default class IntegrationClient {
       signerEmail: signer?.toString() ?? '',
       repeatable: action.repeatable ?? false,
       runAsync: action.run_async ?? true,
+      envelopeAction,
       checkInterval: this.ENVELOPE_CHECK_INTERVAL,
       maxTime: this.ENVELOPE_MAX_TIME
     });
