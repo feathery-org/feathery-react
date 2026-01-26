@@ -382,9 +382,9 @@ describe('IntegrationClient', () => {
             form_key: formKey,
             fuser_key: 'test_user_id',
             documents: action.documents,
+            run_async: false,
             signer_email: 'test@example.com',
-            repeatable: true,
-            run_async: false
+            repeatable: true
           }),
           cache: 'no-store',
           keepalive: true
