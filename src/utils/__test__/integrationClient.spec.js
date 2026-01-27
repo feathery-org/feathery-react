@@ -357,7 +357,7 @@ describe('IntegrationClient', () => {
         documents: ['doc1', 'doc2'],
         repeatable: true,
         run_async: false,
-        envelope_action: 'fill'
+        envelope_action: 'download'
       };
 
       Object.assign(fieldValues, { signer_field: 'test@example.com' });
@@ -385,6 +385,7 @@ describe('IntegrationClient', () => {
             documents: action.documents,
             run_async: false,
             envelope_action: 'fill',
+            merge_docs: false,
             signer_email: 'test@example.com',
             repeatable: true
           }),

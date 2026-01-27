@@ -1059,10 +1059,12 @@ export default class FeatheryClient extends IntegrationClient {
 
   async generateDocuments({
     documentIds,
-    download = false
+    download = false,
+    merge = false
   }: {
     documentIds: string[];
     download?: boolean;
+    merge?: boolean;
   }) {
     const { userId, sdkKey } = initInfo();
     const payload = await apiGenerateFormDocuments({
@@ -1070,7 +1072,8 @@ export default class FeatheryClient extends IntegrationClient {
       formId: this.formKey,
       documentIds,
       userId,
-      envelopeAction: 'fill'
+      envelopeAction: 'fill',
+      mergeDocuments: merge
     });
     if (payload.status === 'error') throw Error(payload.message);
 
