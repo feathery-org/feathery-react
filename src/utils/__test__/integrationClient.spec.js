@@ -356,7 +356,8 @@ describe('IntegrationClient', () => {
         envelope_signer_field_key: 'signer_field',
         documents: ['doc1', 'doc2'],
         repeatable: true,
-        run_async: false
+        run_async: false,
+        envelope_action: 'fill'
       };
 
       Object.assign(fieldValues, { signer_field: 'test@example.com' });
@@ -383,6 +384,7 @@ describe('IntegrationClient', () => {
             fuser_key: 'test_user_id',
             documents: action.documents,
             run_async: false,
+            envelope_action: 'fill',
             signer_email: 'test@example.com',
             repeatable: true
           }),
