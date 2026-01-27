@@ -1069,7 +1069,8 @@ export default class FeatheryClient extends IntegrationClient {
       sdkKey,
       formId: this.formKey,
       documentIds,
-      userId
+      userId,
+      envelopeAction: 'fill'
     });
     if (payload.status === 'error') throw Error(payload.message);
 
