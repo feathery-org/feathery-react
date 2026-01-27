@@ -1067,7 +1067,6 @@ export default class FeatheryClient extends IntegrationClient {
     merge?: boolean;
   }) {
     const { userId, sdkKey } = initInfo();
-    console.log('merge', merge);
     const payload = await apiGenerateFormDocuments({
       sdkKey,
       formId: this.formKey,
