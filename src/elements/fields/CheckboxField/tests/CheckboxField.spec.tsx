@@ -75,6 +75,24 @@ describe('CheckboxField - Base Functionality', () => {
 
       expectCheckboxToBeUnchecked();
     });
+
+    it('renders with checked state with string value', () => {
+      const element = createCheckboxElement('checkbox');
+      const props = createCheckboxProps(element, { fieldVal: 'true' });
+
+      render(<CheckboxField {...props} />);
+
+      expectCheckboxToBeChecked();
+    });
+
+    it('renders with unchecked state with string value', () => {
+      const element = createCheckboxElement('checkbox');
+      const props = createCheckboxProps(element, { fieldVal: 'false' });
+
+      render(<CheckboxField {...props} />);
+
+      expectCheckboxToBeUnchecked();
+    });
   });
 
   describe('onChange Functionality', () => {

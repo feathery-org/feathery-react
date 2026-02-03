@@ -256,6 +256,8 @@ function CheckboxField({
 
   const servar = element.servar;
 
+  const isChecked = fieldVal === 'false' ? false : Boolean(fieldVal);
+
   return (
     <div
       css={{
@@ -270,7 +272,7 @@ function CheckboxField({
         id={servar.key}
         name={servar.key}
         type='checkbox'
-        checked={fieldVal}
+        checked={isChecked}
         disabled={disabled}
         onChange={onChange}
         onFocus={iosScrollOnFocus}
