@@ -125,6 +125,8 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
 
     useContainerEngine(node, rawNode, ref);
 
+    const elementType = node.servar?.type ?? node.type;
+
     if (component) {
       const Component = component;
 
@@ -160,6 +162,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
             }}
             ref={fixedContainerRef}
             data-feathery-id={node.key}
+            data-element={elementType}
           >
             <div className='inner-container' css={innerStyles}>
               {children}
@@ -171,9 +174,10 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           ref={ref}
           css={isFixed ? { ...styles, visibility: 'hidden' } : styles}
           className={classNames('styled-container', type, className)}
+          {...props}
           data-id={node.id}
           data-feathery-id={node.key}
-          {...props}
+          data-element={elementType}
         >
           {/* An inner container is required to properly size px-height
             elements as the outer container is dependent on content size. */}
