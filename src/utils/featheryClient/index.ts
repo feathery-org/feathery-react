@@ -1097,4 +1097,35 @@ export default class FeatheryClient extends IntegrationClient {
     );
     this.offlineRequestHandler.replayRequests().catch(() => {});
   }
+
+  async dataHubAction({
+    hubId,
+    operation,
+    entryId,
+    data
+  }: {
+    hubId: string;
+    operation: 'get' | 'create' | 'update' | 'delete';
+    entryId?: string;
+    data?: Record<string, any>;
+  }) {
+    const baseUrl = new URL(getApiUrl()).origin;
+    const url = `${baseUrl}/api/hub/${hubId}/action/`;
+
+    const response = await this._fetch(
+      url,
+      {
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        body: JSON.stringify({ operation, entry_id: entryId, data })
+      },
+      false
+    );
+
+    if (response) {
+      if (response.status === 204) return null;
+      if (response.ok) return await response.json();
+      throw Error(parseAPIError(await response.json()));
+    }
+  }
 }
