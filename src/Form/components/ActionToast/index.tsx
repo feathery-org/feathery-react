@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { forwardRef, useState } from 'react';
 import { ChevronDown, ChevronUp } from './icons';
 import ToastItem from './ToastItem';
 import { DataItem } from './useAIExtractionToast';
@@ -27,69 +27,72 @@ const getTitle = (data: DataItem[]): string => {
   return 'Scanning Documents';
 };
 
-const ActionToast = ({ data, bottom = 20 }: ActionToastProps) => {
-  const [isToastExpanded, setIsToastExpanded] = useState(true);
+const ActionToast = forwardRef<HTMLDivElement, ActionToastProps>(
+  ({ data, bottom = 20 }, ref) => {
+    const [isToastExpanded, setIsToastExpanded] = useState(true);
 
-  if (data.length === 0) return null;
+    if (data.length === 0) return null;
 
-  return (
-    <div
-      css={{
-        position: 'fixed',
-        bottom: `${bottom}px`,
-        right: '16px',
-        width: '384px',
-        background: 'white',
-        borderRadius: '8px',
-        boxShadow:
-          '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-        border: '1px solid #e5e7eb',
-        overflow: 'hidden',
-        zIndex: 1000
-      }}
-    >
+    return (
       <div
+        ref={ref}
         css={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 16px',
-          background: '#f9fafb',
-          borderBottom: '1px solid #e5e7eb',
-          cursor: 'pointer',
-          ':hover': {
-            background: '#f3f4f6'
-          }
+          position: 'fixed',
+          bottom: `${bottom}px`,
+          right: '16px',
+          width: '384px',
+          background: 'white',
+          borderRadius: '8px',
+          boxShadow:
+            '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+          border: '1px solid #e5e7eb',
+          overflow: 'hidden',
+          zIndex: 1000
         }}
-        onClick={() => setIsToastExpanded(!isToastExpanded)}
       >
-        <h3
-          css={{
-            fontWeight: 600,
-            color: '#111827',
-            margin: 0,
-            fontSize: '16px'
-          }}
-        >
-          {getTitle(data)}
-        </h3>
-        {isToastExpanded ? <ChevronUp /> : <ChevronDown />}
-      </div>
-
-      {isToastExpanded && (
         <div
           css={{
-            maxHeight: '384px',
-            overflowY: 'auto'
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '8px 16px',
+            background: '#f9fafb',
+            borderBottom: '1px solid #e5e7eb',
+            cursor: 'pointer',
+            ':hover': {
+              background: '#f3f4f6'
+            }
           }}
+          onClick={() => setIsToastExpanded(!isToastExpanded)}
         >
-          {data.map((item, index) => (
-            <ToastItem key={index} item={item} />
-          ))}
+          <h3
+            css={{
+              fontWeight: 600,
+              color: '#111827',
+              margin: 0,
+              fontSize: '16px'
+            }}
+          >
+            {getTitle(data)}
+          </h3>
+          {isToastExpanded ? <ChevronUp /> : <ChevronDown />}
         </div>
-      )}
-    </div>
-  );
-};
+
+        {isToastExpanded && (
+          <div
+            css={{
+              maxHeight: '384px',
+              overflowY: 'auto'
+            }}
+          >
+            {data.map((item, index) => (
+              <ToastItem key={index} item={item} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+);
 
 export default ActionToast;

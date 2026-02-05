@@ -220,6 +220,7 @@ import ActionToast from './components/ActionToast';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
+import AssistantChat from './components/Assistant';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -346,7 +347,10 @@ function Form({
     clearHideIfFields: false,
     completionBehavior: '',
     globalStyles: {},
-    mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT
+    mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT,
+    assistantEnabled: false,
+    assistantContext: '',
+    assistantColor: '#6b7280'
   });
   const trackHashes = useRef(false);
   const curLanguage = useRef<undefined | string>(undefined);
@@ -521,11 +525,57 @@ function Form({
     handleExtractionStatusUpdate
   } = useAIExtractionToast();
 
+  // Track if any extraction has completed (for showing assistant)
+  // eventually we will always show the assistant regardless of extraction status
+  const [hasCompletedExtraction, setHasCompletedExtraction] = useState(false);
+  useEffect(() => {
+    if (
+      !hasCompletedExtraction &&
+      currentActionExtractions.some((e) => e.status === 'complete')
+    ) {
+      setHasCompletedExtraction(true);
+    }
+  }, [currentActionExtractions, hasCompletedExtraction]);
+
   const {
     currentEnvelopeGeneration,
     initializeEnvelopeGeneration,
     updateEnvelopeGeneration
   } = useEnvelopeGenerationToast();
+
+  // Track ActionToast height for positioning WorkflowChat above it
+  const [actionToastHeight, setActionToastHeight] = useState(0);
+  const actionToastRef = useRef<HTMLDivElement | null>(null);
+  const actionToastObserverRef = useRef<ResizeObserver | null>(null);
+
+  // Reset height when toast data becomes empty
+  const actionToastData = useMemo(
+    () => [...currentActionExtractions, ...currentEnvelopeGeneration],
+    [currentActionExtractions, currentEnvelopeGeneration]
+  );
+
+  useEffect(() => {
+    if (actionToastData.length === 0) {
+      setActionToastHeight(0);
+    }
+  }, [actionToastData.length]);
+
+  const setActionToastRef = useCallback((node: HTMLDivElement | null) => {
+    if (actionToastObserverRef.current) {
+      actionToastObserverRef.current.disconnect();
+      actionToastObserverRef.current = null;
+    }
+
+    actionToastRef.current = node;
+
+    if (node) {
+      const observer = new ResizeObserver((entries) => {
+        setActionToastHeight(entries[0].contentRect.height);
+      });
+      observer.observe(node);
+      actionToastObserverRef.current = observer;
+    }
+  }, []);
 
   // Tracks element to focus
   const focusRef = useRef<any>(undefined);
@@ -2861,7 +2911,8 @@ function Form({
           brandPosition={formSettings.brandPosition}
         />
         <ActionToast
-          data={[...currentActionExtractions, ...currentEnvelopeGeneration]}
+          ref={setActionToastRef}
+          data={actionToastData}
           bottom={
             formSettings.showBrand &&
             formSettings.brandPosition === 'bottom_right'
@@ -2869,6 +2920,21 @@ function Form({
               : 20
           }
         />
+        {formSettings.assistantEnabled && hasCompletedExtraction && (
+          <AssistantChat
+            enabled
+            bottom={
+              (formSettings.showBrand &&
+              formSettings.brandPosition === 'bottom_right'
+                ? 67
+                : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
+            }
+            color={formSettings.assistantColor}
+            context={{
+              instructions: formSettings.assistantContext
+            }}
+          />
+        )}
       </form>
     </ReactPortal>
   );
