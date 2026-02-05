@@ -2987,7 +2987,6 @@ function Form({
         />
         {formSettings.assistantEnabled && hasCompletedExtraction && (
           <AssistantChat
-            enabled
             formId={formId}
             bottom={
               (formSettings.showBrand &&

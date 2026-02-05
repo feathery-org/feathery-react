@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CheckIcon, LinkIcon, MinimizeIcon, SpinnerIcon } from './icons';
-import { DEFAULT_CHAT_COLOR } from './colors';
+import { DEFAULT_CHAT_COLOR, GRAY_200, GRAY_400, GRAY_500 } from './colors';
 
 // Tool status labels mapping
 const TOOL_LABELS: Record<string, { running: string; done: string }> = {
@@ -99,7 +99,7 @@ const ToolStatus = ({
         gap: '4px',
         padding: '8px 12px',
         backgroundColor: 'white',
-        border: '1px solid #e5e7eb',
+        border: `1px solid ${GRAY_200}`,
         borderRadius: '8px',
         fontSize: '13px'
       }}
@@ -112,7 +112,7 @@ const ToolStatus = ({
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          color: '#6b7280',
+          color: GRAY_500,
           cursor: hasLinks ? 'pointer' : 'default'
         }}
         onClick={() => hasLinks && setIsExpanded(!isExpanded)}
@@ -128,7 +128,7 @@ const ToolStatus = ({
           <span
             css={{
               marginLeft: 'auto',
-              color: '#9ca3af',
+              color: GRAY_400,
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
@@ -152,7 +152,7 @@ const ToolStatus = ({
       {query && (
         <div
           css={{
-            color: '#9ca3af',
+            color: GRAY_400,
             fontSize: '12px',
             paddingLeft: '22px',
             fontStyle: 'italic'

@@ -11,23 +11,29 @@ import { DefaultChatTransport } from 'ai';
 import { ChatIcon, MinimizeIcon, SendIcon, SpinnerIcon } from './icons';
 import { initInfo } from '../../../utils/init';
 import { API_URL } from '../../../utils/featheryClient';
-import { DEFAULT_CHAT_COLOR, getChatColors } from './colors';
+import {
+  DEFAULT_CHAT_COLOR,
+  getChatColors,
+  GRAY_50,
+  GRAY_100,
+  GRAY_200,
+  GRAY_400,
+  GRAY_800
+} from './colors';
 import ToolStatus from './ToolStatus';
 import MarkdownText from './MarkdownText';
 
+const FAB_SIZE = 56;
+const PANEL_WIDTH = 380;
+const PANEL_HEIGHT = 500;
+
 export interface AssistantChatProps {
-  enabled?: boolean;
   formId: string;
   bottom?: number;
   color?: string;
 }
 
-const AssistantChat = ({
-  enabled = true,
-  formId,
-  bottom = 20,
-  color
-}: AssistantChatProps) => {
+const AssistantChat = ({ formId, bottom = 20, color }: AssistantChatProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -60,17 +66,9 @@ const AssistantChat = ({
   const { messages, sendMessage, status, error } = useChat({ transport });
 
   // TODO: Implement smooth scroll takeover - stop auto-scroll when user scrolls up
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  if (!enabled) {
-    return null;
-  }
 
   const handleSend = () => {
     if (input.trim() && status === 'ready') {
@@ -99,8 +97,8 @@ const AssistantChat = ({
           position: 'fixed',
           bottom: `${bottom}px`,
           right: '20px',
-          width: '56px',
-          height: '56px',
+          width: `${FAB_SIZE}px`,
+          height: `${FAB_SIZE}px`,
           borderRadius: '50%',
           backgroundColor: colors.primary,
           color: 'white',
@@ -133,12 +131,12 @@ const AssistantChat = ({
         position: 'fixed',
         bottom: `${bottom}px`,
         right: '20px',
-        width: '380px',
-        height: '500px',
+        width: `${PANEL_WIDTH}px`,
+        height: `${PANEL_HEIGHT}px`,
         backgroundColor: 'white',
         borderRadius: '12px',
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-        border: '1px solid #e5e7eb',
+        border: `1px solid ${GRAY_200}`,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -161,6 +159,7 @@ const AssistantChat = ({
           <span css={{ fontWeight: 600, fontSize: '14px' }}>AI Assistant</span>
         </div>
         <button
+          type='button'
           onClick={() => setIsOpen(false)}
           css={{
             background: 'none',
@@ -196,7 +195,7 @@ const AssistantChat = ({
           <div
             css={{
               textAlign: 'center',
-              color: '#9ca3af',
+              color: GRAY_400,
               fontSize: '14px',
               marginTop: '40px'
             }}
@@ -254,7 +253,7 @@ const AssistantChat = ({
                           fontSize: '14px',
                           lineHeight: '1.5',
                           backgroundColor: colors.light,
-                          color: '#1f2937'
+                          color: GRAY_800
                         }}
                       >
                         <MarkdownText text={part.text} />
@@ -334,8 +333,8 @@ const AssistantChat = ({
           alignItems: 'center',
           gap: '8px',
           padding: '12px 16px',
-          borderTop: '1px solid #e5e7eb',
-          backgroundColor: '#f9fafb'
+          borderTop: `1px solid ${GRAY_200}`,
+          backgroundColor: GRAY_50
         }}
       >
         <input
@@ -348,7 +347,7 @@ const AssistantChat = ({
           css={{
             flex: 1,
             padding: '10px 14px',
-            border: '1px solid #e5e7eb',
+            border: `1px solid ${GRAY_200}`,
             borderRadius: '8px',
             fontSize: '14px',
             outline: 'none',
@@ -357,7 +356,7 @@ const AssistantChat = ({
               borderColor: colors.primary
             },
             ':disabled': {
-              backgroundColor: '#f3f4f6',
+              backgroundColor: GRAY_100,
               cursor: 'not-allowed'
             }
           }}
