@@ -57,6 +57,7 @@ type InitState = {
   region: string;
   initNoSave: boolean;
   _internalUserId: string;
+  authenticationError?: string;
 } & InitOptions;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
@@ -110,6 +111,8 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   logFeatheryBadge();
 
   initState.initialized = true;
+  // Clear any previous authentication errors on new initialization
+  initState.authenticationError = undefined;
 
   initState.sdkKey = sdkKey;
   if (options._enterpriseRegion)

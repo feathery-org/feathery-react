@@ -497,6 +497,8 @@ export class OfflineRequestHandler {
             } catch (error: any) {
               if (error instanceof FormConflictError) {
                 handleFormConflict();
+                markFileUploadRetrySuccess(request.metadata?.fieldKey);
+                await this.removeRequest(key);
                 return;
               }
               attempts++;
