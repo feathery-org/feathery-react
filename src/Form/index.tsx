@@ -98,6 +98,7 @@ import CallbackQueue from '../utils/callbackQueue';
 import {
   downloadAllFileUrls,
   featheryWindow,
+  isIOS,
   openTab,
   runningInClient
 } from '../utils/browser';
@@ -2111,6 +2112,20 @@ function Form({
     // to ensure all actions are run as expected
     actions = prioritizeActions(actions);
 
+    // Pre-open open_tab windows on iOS WebKit (needs sync user gesture).
+    const preOpenedWindows = new Map<number, Window | null>();
+    if (isIOS()) {
+      actions.forEach((action, idx) => {
+        if (action.type === ACTION_URL && action.open_tab) {
+          const win = featheryWindow().open('about:blank', '_blank');
+          if (win) {
+            win.opener = null; // Prevent reverse tabnabbing
+            preOpenedWindows.set(idx, win);
+          }
+        }
+      });
+    }
+
     const flowOnSuccess = (index: number) => async () => {
       flowCompleted.current = true;
       elementClicks[id] = false;
@@ -2220,7 +2235,15 @@ function Form({
         let url = replaceTextVariables(action.url, element.repeat);
         if (url) {
           if (!url.includes(':')) url = 'https://' + url;
-          if (action.open_tab) openTab(url);
+          if (action.open_tab) {
+            const preOpened = preOpenedWindows.get(i);
+            if (preOpened) {
+              preOpened.location.href = url;
+              preOpenedWindows.delete(i);
+            } else {
+              openTab(url);
+            }
+          }
         }
         if (!action.open_tab) {
           const eventData: Record<string, any> = {
@@ -2647,6 +2670,9 @@ function Form({
         }
       }
     }
+    // Close any pre-opened windows that weren't used (e.g., validation failed)
+    preOpenedWindows.forEach((win) => win?.close());
+
     if (i < actions.length) {
       elementClicks[id] = false;
       clearButtonActionState();
