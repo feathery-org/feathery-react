@@ -1,6 +1,8 @@
 import { RouterProvider, useLocation, useNavigate } from '../hooks/router';
 import React, {
   ReactNode,
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -221,7 +223,10 @@ import ActionToast from './components/ActionToast';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
-import AssistantChat from './components/Assistant';
+
+const AssistantChat = lazy(
+  () => import(/* webpackChunkName: "AssistantChat" */ './components/Assistant')
+);
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -2986,16 +2991,18 @@ function Form({
           }
         />
         {formSettings.assistantEnabled && hasCompletedExtraction && (
-          <AssistantChat
-            formId={formId}
-            bottom={
-              (formSettings.showBrand &&
-              formSettings.brandPosition === 'bottom_right'
-                ? 67
-                : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
-            }
-            color={formSettings.assistantColor}
-          />
+          <Suspense fallback={null}>
+            <AssistantChat
+              formId={formId}
+              bottom={
+                (formSettings.showBrand &&
+                formSettings.brandPosition === 'bottom_right'
+                  ? 67
+                  : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
+              }
+              color={formSettings.assistantColor}
+            />
+          </Suspense>
         )}
       </form>
     </ReactPortal>
