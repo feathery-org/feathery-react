@@ -25,7 +25,6 @@ const formatUrl = (url: string): string => {
   }
 };
 
-// Extract URLs from various possible output structures
 const extractUrls = (output: unknown): string[] => {
   if (!output || typeof output !== 'object') return [];
 

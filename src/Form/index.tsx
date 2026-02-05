@@ -2923,6 +2923,7 @@ function Form({
         {formSettings.assistantEnabled && hasCompletedExtraction && (
           <AssistantChat
             enabled
+            formId={formId}
             bottom={
               (formSettings.showBrand &&
               formSettings.brandPosition === 'bottom_right'
@@ -2930,9 +2931,6 @@ function Form({
                 : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
             }
             color={formSettings.assistantColor}
-            context={{
-              instructions: formSettings.assistantContext
-            }}
           />
         )}
       </form>
