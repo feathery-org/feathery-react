@@ -1,5 +1,12 @@
 export const DEFAULT_CHAT_COLOR = '#6b7280';
 
+export const GRAY_50 = '#f9fafb';
+export const GRAY_100 = '#f3f4f6';
+export const GRAY_200 = '#e5e7eb';
+export const GRAY_400 = '#9ca3af';
+export const GRAY_500 = '#6b7280';
+export const GRAY_800 = '#1f2937';
+
 // Generate lighter/darker variants from hex color
 export const adjustColor = (hex: string, percent: number): string => {
   const num = parseInt(hex.replace('#', ''), 16);

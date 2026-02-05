@@ -1,7 +1,14 @@
-import { ReactNode } from 'react';
+import { memo, ReactNode } from 'react';
+
+// Regex patterns defined outside component to avoid recreation
+const BOLD_PATTERN = /\*\*(.+?)\*\*/g;
+const H3_PATTERN = /^###\s+(.+)$/;
+const H2_PATTERN = /^##\s+(.+)$/;
+const H1_PATTERN = /^#\s+(.+)$/;
+const LIST_PATTERN = /^[-*]\s+(.+)$/;
 
 const processBold = (text: string): ReactNode[] => {
-  const parts = text.split(/\*\*(.+?)\*\*/g);
+  const parts = text.split(BOLD_PATTERN);
   return parts.map((part, i) =>
     i % 2 === 1 ? <strong key={i}>{part}</strong> : part
   );
@@ -12,13 +19,13 @@ interface MarkdownTextProps {
 }
 
 // Simple markdown renderer for headers, bold, and lists
-const MarkdownText = ({ text }: MarkdownTextProps) => {
+const MarkdownText = memo(({ text }: MarkdownTextProps) => {
   const lines = text.split('\n');
 
   return (
     <span>
       {lines.map((line, i) => {
-        const h3Match = line.match(/^###\s+(.+)$/);
+        const h3Match = line.match(H3_PATTERN);
         if (h3Match) {
           return (
             <div
@@ -29,7 +36,7 @@ const MarkdownText = ({ text }: MarkdownTextProps) => {
             </div>
           );
         }
-        const h2Match = line.match(/^##\s+(.+)$/);
+        const h2Match = line.match(H2_PATTERN);
         if (h2Match) {
           return (
             <div
@@ -40,7 +47,7 @@ const MarkdownText = ({ text }: MarkdownTextProps) => {
             </div>
           );
         }
-        const h1Match = line.match(/^#\s+(.+)$/);
+        const h1Match = line.match(H1_PATTERN);
         if (h1Match) {
           return (
             <div
@@ -51,7 +58,7 @@ const MarkdownText = ({ text }: MarkdownTextProps) => {
             </div>
           );
         }
-        const listMatch = line.match(/^[-*]\s+(.+)$/);
+        const listMatch = line.match(LIST_PATTERN);
         if (listMatch) {
           return (
             <div key={i} css={{ marginLeft: '12px' }}>
@@ -68,6 +75,8 @@ const MarkdownText = ({ text }: MarkdownTextProps) => {
       })}
     </span>
   );
-};
+});
+
+MarkdownText.displayName = 'MarkdownText';
 
 export default MarkdownText;
