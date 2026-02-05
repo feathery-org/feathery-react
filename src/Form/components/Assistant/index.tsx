@@ -17,18 +17,16 @@ import MarkdownText from './MarkdownText';
 
 export interface AssistantChatProps {
   enabled?: boolean;
+  formId: string;
   bottom?: number;
   color?: string;
-  context?: {
-    instructions?: string;
-  };
 }
 
 const AssistantChat = ({
   enabled = true,
+  formId,
   bottom = 20,
-  color,
-  context
+  color
 }: AssistantChatProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -42,10 +40,6 @@ const AssistantChat = ({
 
   const { sdkKey, userId } = initInfo();
 
-  // Memoize context by value to avoid transport recreation on parent re-renders
-  const instructions = context?.instructions;
-  const memoizedContext = useMemo(() => ({ instructions }), [instructions]);
-
   // Memoize transport to avoid recreating on every render
   const transport = useMemo(
     () =>
@@ -56,10 +50,10 @@ const AssistantChat = ({
         },
         body: {
           fuser_key: userId,
-          context: memoizedContext
+          form_id: formId
         }
       }),
-    [sdkKey, userId, memoizedContext]
+    [sdkKey, userId, formId]
   );
 
   // @ts-ignore
