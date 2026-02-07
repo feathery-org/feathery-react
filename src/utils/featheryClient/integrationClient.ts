@@ -1,4 +1,4 @@
-import { fieldValues, initFormsPromise, initInfo } from '../init';
+import { fieldValues, initFormsPromise, initInfo, initState } from '../init';
 import { encodeGetParams } from '../primitives';
 import { API_URL, STATIC_URL } from '.';
 import { OfflineRequestHandler } from '../offlineRequestHandler';
@@ -12,6 +12,7 @@ import {
   apiFetch,
   customRolloutAction as apiCustomRolloutAction,
   FormConflictError,
+  FormAuthenticationError,
   generateFormDocuments as apiGenerateFormDocuments,
   generateQuikEnvelopes as apiGenerateQuikEnvelopes,
   getQuikFormRoles as apiGetQuikFormRoles,
@@ -22,7 +23,7 @@ import {
   parseAPIError,
   sendEmail as apiSendEmail
 } from '@feathery/client-utils';
-import { handleFormConflict } from './utils';
+import { handleFormConflict, handleFormAuthenticationError } from './utils';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -77,9 +78,18 @@ export default class IntegrationClient {
     propagateNetworkErrors = false
   ) {
     const { sdkKey } = initInfo();
+    // Stop making requests if authentication error has occurred
+    if (initState.authenticationError) {
+      return Promise.resolve(undefined);
+    }
     return apiFetch(sdkKey, url, options, parseResponse).catch((e) => {
       if (e instanceof FormConflictError) {
         handleFormConflict();
+        return;
+      }
+
+      if (e instanceof FormAuthenticationError) {
+        handleFormAuthenticationError(e.message);
         return;
       }
 

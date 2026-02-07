@@ -20,7 +20,13 @@ const messages: any = {
 export default function FormOff({
   width = 400,
   reason = CLOSED,
-  showCTA = true
+  showCTA = true,
+  message
+}: {
+  width?: number;
+  reason?: string;
+  showCTA?: boolean;
+  message?: string;
 }) {
   return (
     <div
@@ -46,7 +52,7 @@ export default function FormOff({
           margin: '50px 0'
         }}
       >
-        {messages[reason]}
+        {message || messages[reason]}
       </div>
       {showCTA && (
         <button

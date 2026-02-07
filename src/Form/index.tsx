@@ -2807,6 +2807,16 @@ function Form({
     handleFormComplete().then(redirectForm);
   }, [anyFinished]);
 
+  // Form authentication error (403)
+  if (initState.authenticationError) {
+    return (
+      <FormOff
+        reason={CLOSED}
+        message={initState.authenticationError}
+        showCTA={false}
+      />
+    );
+  }
   // Form is turned off
   if (formOffReason.current === CLOSED)
     return <FormOff showCTA={formSettings.showBrand} />;
