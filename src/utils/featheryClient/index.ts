@@ -1117,7 +1117,12 @@ export default class FeatheryClient extends IntegrationClient {
       {
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
-        body: JSON.stringify({ operation, entry_id: entryId, data })
+        body: JSON.stringify({
+          operation,
+          entry_id: entryId,
+          data,
+          form_key: this.formKey
+        })
       },
       false
     );
