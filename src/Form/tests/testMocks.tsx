@@ -209,6 +209,7 @@ jest.mock('../../utils/browser', () => ({
     scrollTo: jest.fn(),
     location: { href: '', pathname: '/', search: '' }
   }),
+  isIOS: () => false,
   openTab: jest.fn(),
   runningInClient: () => true
 }));
