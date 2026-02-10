@@ -278,6 +278,28 @@ const getSubmissionErrorMessage = (error: unknown): string => {
   return 'Submission failed. Please try again.';
 };
 
+function closePreOpenedWindows(windows: Map<number, Window | null>) {
+  windows.forEach((win) => win?.close());
+}
+
+// Pre-open windows synchronously within the user-gesture call stack on iOS.
+// iOS Safari blocks window.open() after any await breaks the gesture chain.
+function preOpenIOSWindows(actions: any[]) {
+  const windows = new Map<number, Window | null>();
+  if (isIOS()) {
+    actions.forEach((action, idx) => {
+      if (action.type === ACTION_URL && action.open_tab) {
+        const win = featheryWindow().open('about:blank', '_blank');
+        if (win) {
+          win.opener = null;
+          windows.set(idx, win);
+        }
+      }
+    });
+  }
+  return windows;
+}
+
 function Form({
   _internalId,
   _isAuthLoading = false,
@@ -1897,10 +1919,14 @@ function Form({
       );
     };
 
+    const actions = prioritizeActions(button.properties.actions ?? []);
+    const preOpenedWindows = preOpenIOSWindows(actions);
+
     try {
       if (button.properties.captcha_verification && !initState.isTestEnv) {
         const invalid = await verifyRecaptcha(client);
         if (invalid) {
+          closePreOpenedWindows(preOpenedWindows);
           setButtonError("You didn't pass CAPTCHA verification");
 
           return;
@@ -1908,18 +1934,20 @@ function Form({
       }
 
       const running = await runElementActions({
-        actions: button.properties.actions ?? [],
+        actions,
         element: button,
         elementType: 'button',
         submit: button.properties.submit,
         setElementError: setButtonError,
-        onAsyncEnd: () => clearLoaders()
+        onAsyncEnd: () => clearLoaders(),
+        preOpenedWindows
       });
 
       if (!running && !isButtonActionRunning()) {
         clearLoaders();
       }
     } catch (e: any) {
+      closePreOpenedWindows(preOpenedWindows);
       // Clear the click lock so user can retry
       if (button.id) {
         elementClicks[button.id] = false;
@@ -1971,7 +1999,8 @@ function Form({
     onAsyncEnd = () => {},
     textSpanStart,
     textSpanEnd,
-    triggerPayload
+    triggerPayload,
+    preOpenedWindows: externalPreOpenedWindows
   }: {
     actions: any[];
     element: any;
@@ -1982,14 +2011,20 @@ function Form({
     textSpanStart?: number | undefined;
     textSpanEnd?: number | undefined;
     triggerPayload?: Record<string, any>;
+    preOpenedWindows?: Map<number, Window | null>;
   }) => {
     const id = element.id ?? '';
+    const preOpenedWindows =
+      externalPreOpenedWindows ?? new Map<number, Window | null>();
     // Prevent rapid re-clicks on the same element during async operations (file uploads, API calls)
-    if (id && elementClicks[id]) return;
+    if (id && elementClicks[id]) {
+      closePreOpenedWindows(preOpenedWindows);
+      return;
+    }
     elementClicks[id] = true;
-
     if (isButtonActionRunning()) {
       elementClicks[id] = false;
+      closePreOpenedWindows(preOpenedWindows);
       return true;
     }
 
@@ -2024,6 +2059,7 @@ function Form({
         elementClicks[id] = false;
         clearButtonActionState();
 
+        closePreOpenedWindows(preOpenedWindows);
         return;
       }
 
@@ -2061,6 +2097,7 @@ function Form({
         elementClicks[id] = false;
         clearButtonActionState();
 
+        closePreOpenedWindows(preOpenedWindows);
         return;
       }
 
@@ -2088,6 +2125,7 @@ function Form({
         elementClicks[id] = false;
         clearButtonActionState();
 
+        closePreOpenedWindows(preOpenedWindows);
         return;
       }
 
@@ -2108,22 +2146,13 @@ function Form({
       submitPromise.catch(() => {});
     }
 
-    // Adjust action order to prioritize certain actions and
-    // to ensure all actions are run as expected
-    actions = prioritizeActions(actions);
+    if (!externalPreOpenedWindows) actions = prioritizeActions(actions);
 
-    // Pre-open open_tab windows on iOS WebKit (needs sync user gesture).
-    const preOpenedWindows = new Map<number, Window | null>();
-    if (isIOS()) {
-      actions.forEach((action, idx) => {
-        if (action.type === ACTION_URL && action.open_tab) {
-          const win = featheryWindow().open('about:blank', '_blank');
-          if (win) {
-            win.opener = null; // Prevent reverse tabnabbing
-            preOpenedWindows.set(idx, win);
-          }
-        }
-      });
+    // Guards text/container callers if an async onAction or action logic rule breaks the gesture chain
+    if (!externalPreOpenedWindows) {
+      preOpenIOSWindows(actions).forEach((win, idx) =>
+        preOpenedWindows.set(idx, win)
+      );
     }
 
     const flowOnSuccess = (index: number) => async () => {
@@ -2670,8 +2699,8 @@ function Form({
         }
       }
     }
-    // Close any pre-opened windows that weren't used (e.g., validation failed)
-    preOpenedWindows.forEach((win) => win?.close());
+
+    closePreOpenedWindows(preOpenedWindows);
 
     if (i < actions.length) {
       elementClicks[id] = false;
