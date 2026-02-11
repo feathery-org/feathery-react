@@ -553,18 +553,6 @@ function Form({
     handleExtractionStatusUpdate
   } = useAIExtractionToast();
 
-  // Track if any extraction has completed (for showing assistant)
-  // eventually we will always show the assistant regardless of extraction status
-  const [hasCompletedExtraction, setHasCompletedExtraction] = useState(false);
-  useEffect(() => {
-    if (
-      !hasCompletedExtraction &&
-      currentActionExtractions.some((e) => e.status === 'complete')
-    ) {
-      setHasCompletedExtraction(true);
-    }
-  }, [currentActionExtractions, hasCompletedExtraction]);
-
   const {
     currentEnvelopeGeneration,
     initializeEnvelopeGeneration,
@@ -2990,7 +2978,7 @@ function Form({
               : 20
           }
         />
-        {formSettings.assistantEnabled && hasCompletedExtraction && (
+        {formSettings.assistantEnabled && (
           <Suspense fallback={null}>
             <AssistantChat
               formId={formId}
