@@ -256,7 +256,9 @@ export function clearFilePathMapEntry(key: any, index = null) {
     filePathMap[key] = null;
   }
   delete fileDeduplicationCount[key];
-  fileRetryStatus[key] = false;
+  if (key in fileRetryStatus) {
+    fileRetryStatus[key] = false;
+  }
 }
 
 export function registerRenderCallback(
