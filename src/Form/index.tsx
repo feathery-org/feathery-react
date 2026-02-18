@@ -2501,12 +2501,15 @@ function Form({
                   },
                   undefined,
                   setPollFuserData,
-                  onStatusUpdate: (pollData: any) =>
+                  onStatusUpdate: (pollData: any) => {
                     handleExtractionStatusUpdate(
                       curAction.extraction_id,
                       curAction.variant_id || '',
                       pollData
-                    )
+                    );
+                    if (pollData.status === 'complete' && pollData.data)
+                      updateFieldValues(pollData.data);
+                  }
                 })
               );
               // set current extraction to pending
