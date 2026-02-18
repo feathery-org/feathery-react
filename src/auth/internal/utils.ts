@@ -50,9 +50,21 @@ export function hasAuthGatedSteps(integrations: any): boolean {
 export function getRedirectUrl() {
   const { origin, pathname, hash, search } = featheryWindow().location;
   const queryParams = new URLSearchParams(search);
+
+  // If no _slug param, extract slug from /to/<slug> path
+  if (!queryParams.has('_slug')) {
+    const toMatch = pathname.match(/\/to\/([^/]+)/);
+    if (toMatch) {
+      queryParams.set('_slug', toMatch[1]);
+    }
+  }
+
   queryParams.forEach((value, key) => {
     if (!['_slug'].includes(key)) queryParams.delete(key);
   });
+
+  // Strip the /to/<slug> segment
+  const cleanPathname = pathname.replace(/\/to\/[^/]+/, '');
   const queryString = queryParams.has('_slug') ? `?${queryParams}` : '';
-  return `${origin}${pathname}${queryString}${hash}`;
+  return `${origin}${cleanPathname}${queryString}${hash}`;
 }
