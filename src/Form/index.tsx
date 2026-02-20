@@ -1295,7 +1295,28 @@ function Form({
       const newFieldVals: Record<string, any> = {};
       activeStep.servar_fields.forEach((sf: any) => {
         const key = getPositionKey(sf);
-        if (!visiblePositions[key][0]) {
+        const flags = visiblePositions[key];
+        const isRepeated = !!getRepeatedContainer(activeStep, sf);
+
+        if (isRepeated) {
+          const currentVal = fieldValues[sf.servar.key];
+          if (!Array.isArray(currentVal)) return;
+          const defaultVal = getDefaultFieldValue(sf);
+          const defaultJson = JSON.stringify(defaultVal);
+          let changed = false;
+          const newArray = currentVal.map((val: any, i: number) => {
+            if (
+              i < flags.length &&
+              !flags[i] &&
+              JSON.stringify(val) !== defaultJson
+            ) {
+              changed = true;
+              return defaultVal;
+            }
+            return val;
+          });
+          if (changed) newFieldVals[sf.servar.key] = newArray;
+        } else if (!flags[0]) {
           const newVal = getDefaultFormFieldValue(sf);
           if (
             JSON.stringify(newVal) !== JSON.stringify(getFieldValue(sf).value)
