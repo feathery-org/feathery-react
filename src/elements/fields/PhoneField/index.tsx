@@ -7,7 +7,7 @@ import { resetStyles } from '../../styles';
 import countryData from '../../components/data/countries';
 import exampleNumbers from './exampleNumbers';
 import { isNum } from '../../../utils/primitives';
-import { phoneLibPromise } from '../../../utils/validation';
+import * as validation from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
@@ -101,10 +101,10 @@ function PhoneField({
   useEffect(() => {
     if (fullNumber === curFullNumber || editMode) return;
 
-    phoneLibPromise.then(() => {
-      if (!global.libphonenumber) return;
+    validation.phoneLibPromise.then((LPN: any) => {
+      if (!LPN) return;
 
-      const ayt = new global.libphonenumber.AsYouType();
+      const ayt = new LPN.AsYouType();
       ayt.input(`+${fullNumber}`);
       const numberObj = ayt.getNumber() ?? '';
       setCurFullNumber(fullNumber);
@@ -116,7 +116,7 @@ function PhoneField({
   }, [fullNumber]);
 
   const formattedNumber = useMemo(() => {
-    const LPN = global.libphonenumber;
+    const LPN = validation.phoneLib;
     if (!LPN) return `+${rawNumber}`;
     // handle blurred and empty input
     if (rawNumber === '') return '';
@@ -134,12 +134,11 @@ function PhoneField({
     }
 
     const exampleNumber = exampleNumbers[curCountryCode];
-    phoneLibPromise.then(() => {
-      if (!global.libphonenumber) return;
+    validation.phoneLibPromise.then((LPN: any) => {
+      if (!LPN) return;
 
       setPlaceholder(
-        global.libphonenumber
-          .parsePhoneNumber(exampleNumber, curCountryCode)
+        LPN.parsePhoneNumber(exampleNumber, curCountryCode)
           .formatInternational()
       );
     });
@@ -319,7 +318,7 @@ function PhoneField({
               let start = e.target.selectionStart;
               let newNum = e.target.value;
               if (newNum) {
-                const LPN = global.libphonenumber;
+                const LPN = validation.phoneLib;
                 if (!LPN) return;
                 // Handle pasted numbers:
                 // If there are multiple plus symbols, take everything after the last one

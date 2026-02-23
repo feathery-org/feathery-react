@@ -1,3 +1,40 @@
+jest.mock('../../../../utils/validation', () => {
+  const lib = {
+    AsYouType: jest.fn(() => ({
+      input: jest.fn((number: string) => {
+        if (number.startsWith('+1')) {
+          const digits = number.replace(/\D/g, '');
+          if (digits.length >= 4) {
+            return `+1 ${digits.slice(1, 4)} ${digits.slice(
+              4,
+              7
+            )} ${digits.slice(7, 11)}`.trim();
+          }
+          return number;
+        }
+        return number;
+      }),
+      getNumber: jest.fn(() => ({
+        country: 'US',
+        nationalNumber: '1234567890'
+      }))
+    })),
+    parseDigits: jest.fn((number: string) => number.replace(/\D/g, '')),
+    parsePhoneNumber: jest.fn((number: string, country: string) => ({
+      formatInternational: jest.fn(() => '+1 555 123 4567'),
+      isValid: jest.fn(() => true),
+      country: country || 'US'
+    })),
+    isSupportedCountry: jest.fn(() => true),
+    getExampleNumber: jest.fn(() => '+1 555 123 4567'),
+    validatePhoneNumberLength: () => undefined
+  };
+  return {
+    phoneLibPromise: Promise.resolve(lib),
+    phoneLib: lib
+  };
+});
+
 // Shared browser mocks (matchMedia included) are defined in test-utils
 jest.mock('../../../../utils/browser', () => ({
   runningInClient: jest.fn(() => true),

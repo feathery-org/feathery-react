@@ -1,7 +1,7 @@
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { setFormElementError } from './formHelperFunctions';
 import { ARRAY_FIELD_TYPES } from './fieldHelperFunctions';
-import { dynamicImport } from '../integrations/utils';
+
 import React from 'react';
 import { fieldValues, initInfo } from './init';
 import { getVisibleElements } from './hideAndRepeats';
@@ -176,12 +176,16 @@ const emailPatternStr =
   "^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]{2,63})+$";
 const emailPattern = new RegExp(emailPatternStr);
 
-const LIB_PHONE_NUMBER_URL =
-  'https://cdn.jsdelivr.net/npm/libphonenumber-js@1.11.16/bundle/libphonenumber-js.min.js';
-
-let phoneLibPromise = Promise.resolve();
-const loadPhoneValidator = () =>
-  (phoneLibPromise = dynamicImport(LIB_PHONE_NUMBER_URL));
+let phoneLib: any = null;
+let phoneLibPromise: Promise<any> = Promise.resolve();
+const loadPhoneValidator = () => {
+  phoneLibPromise = import(
+    /* webpackChunkName: "libphonenumber" */ 'libphonenumber-js'
+  ).then((mod) => {
+    phoneLib = mod;
+    return mod;
+  });
+};
 
 const validators = {
   email: (a: string) => {
@@ -197,7 +201,7 @@ const validators = {
   },
   phone: (a: string) => {
     try {
-      return global.libphonenumber.isValidPhoneNumber(`+${a}`);
+      return phoneLib.isValidPhoneNumber(`+${a}`);
     } catch (e) {
       // Invalid phone number
       return false;
@@ -346,5 +350,6 @@ export {
   emailPatternStr,
   loadPhoneValidator,
   validators,
-  phoneLibPromise
+  phoneLibPromise,
+  phoneLib
 };
