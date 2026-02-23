@@ -138,8 +138,10 @@ function PhoneField({
       if (!LPN) return;
 
       setPlaceholder(
-        LPN.parsePhoneNumber(exampleNumber, curCountryCode)
-          .formatInternational()
+        LPN.parsePhoneNumber(
+          exampleNumber,
+          curCountryCode
+        ).formatInternational()
       );
     });
   }, [curCountryCode, element]);
