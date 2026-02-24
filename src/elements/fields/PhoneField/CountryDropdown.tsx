@@ -4,6 +4,7 @@ import countryData, {
   firebaseSMSCountries
 } from '../../components/data/countries';
 import { authState } from '../../../auth/LoginForm';
+import * as validation from '../../../utils/validation';
 import { DROPDOWN_Z_INDEX } from '../index';
 
 function CountryDropdown(
@@ -27,7 +28,7 @@ function CountryDropdown(
     const filteredData = countryData.filter(
       ({ countryCode, countryName, phoneCode }) => {
         if (
-          !global.libphonenumber?.isSupportedCountry(countryCode) ||
+          !validation.phoneLib?.isSupportedCountry(countryCode) ||
           (authState.client && !firebaseSMSCountries.has(countryCode))
         )
           return false;

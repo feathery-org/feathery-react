@@ -131,6 +131,7 @@
     "is-url": "^1.2.4",
     "js-big-decimal": "^1.4.1",
     "jszip": "^3.10.1",
+    "libphonenumber-js": "^1.11.16",
     "lodash.debounce": "^4.0.8",
     "lodash.throttle": "^4.1.1",
     "quill-delta": "^4.2.2",

@@ -55,13 +55,9 @@ const mockLibphonenumber = {
   }
 };
 
-Object.defineProperty(global, 'libphonenumber', {
-  value: mockLibphonenumber,
-  writable: true
-});
-
 jest.mock('../../../../utils/validation', () => ({
-  phoneLibPromise: Promise.resolve()
+  phoneLibPromise: Promise.resolve(mockLibphonenumber),
+  phoneLib: mockLibphonenumber
 }));
 
 Object.defineProperty(global.Intl, 'DateTimeFormat', {
