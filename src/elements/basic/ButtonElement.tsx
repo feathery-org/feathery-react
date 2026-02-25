@@ -193,6 +193,18 @@ function ButtonElement({
 
   const actions = element.properties.actions ?? [];
   const noActions = actions.length === 0 && !element.properties.submit;
+
+  const buttonDisabled = !editMode && (noActions || loader || disabled);
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (buttonDisabled) {
+      e.preventDefault();
+      return;
+    }
+
+    onClick?.(e);
+  };
+
   return (
     <button
       id={element.id}
@@ -201,7 +213,7 @@ function ButtonElement({
       className={active ? 'active' : undefined}
       style={{
         display: 'flex',
-        cursor: editMode || noActions ? 'default' : 'pointer',
+        cursor: editMode || buttonDisabled ? 'default' : 'pointer',
         width: '100%',
         height: '100%',
         position: 'relative',
@@ -214,20 +226,22 @@ function ButtonElement({
         alignItems: 'center',
         border: 'none',
         transition: '0.2s ease all !important',
-        '&:disabled': {
+        '&[aria-disabled="true"]': {
           cursor: 'default !important',
           ...styles.getTarget('buttonDisabled'),
           ...borderStyles.disabled
         },
-        '&:hover:enabled': hoverStyles,
-        '&.active:enabled': activeStyles,
+        '&[aria-disabled="false"]:hover': hoverStyles,
+        '&[aria-disabled="false"].active': activeStyles,
         // Fall back on default focus behavior if custom active state
         // is not set for button
-        ...(active === null ? { '&:focus:enabled': activeStyles } : {}),
+        ...(active === null
+          ? { '&[aria-disabled="false"]:focus': activeStyles }
+          : {}),
         '&&&': styles.getTarget('button')
       }}
-      disabled={!editMode && (noActions || loader || disabled)}
-      onClick={onClick}
+      aria-disabled={buttonDisabled}
+      onClick={handleClick}
       aria-label={element.properties.aria_label}
       {...elementProps}
     >
