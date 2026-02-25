@@ -633,7 +633,7 @@ export class OfflineRequestHandler {
     const { store } = dbTransaction;
     const request = store.openCursor();
 
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve) => {
       request.onsuccess = (event) => {
         const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
           .result;

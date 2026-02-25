@@ -856,16 +856,7 @@ export default class FeatheryClient extends IntegrationClient {
               if (error instanceof TypeError) return;
               throw error;
             })
-            .then(() =>
-              this._fetch(url, options, true, true).catch((e) => {
-                if (e instanceof TypeError && navigator.onLine)
-                  // Wait 5 seconds since event may have actually been registered
-                  // and just needs to be processed. If online, means it's not an
-                  // offline error.
-                  return new Promise((resolve) => setTimeout(resolve, 5000));
-                throw e;
-              })
-            ),
+            .then(() => this._fetch(url, options, true, true)),
         url,
         options,
         'registerEvent',
