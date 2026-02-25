@@ -240,6 +240,7 @@ function ButtonElement({
           : {}),
         '&&&': styles.getTarget('button')
       }}
+      // Use aria-disabled instead of disabled since disabled elements cannot display html errors
       aria-disabled={buttonDisabled}
       onClick={handleClick}
       aria-label={element.properties.aria_label}
