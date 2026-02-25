@@ -824,7 +824,9 @@ export default class FeatheryClient extends IntegrationClient {
     const data: Record<string, string> = {
       form_key: this.formKey,
       ...eventData,
-      ...(userId ? { fuser_key: userId } : {})
+      ...(userId ? { fuser_key: userId } : {}),
+      event_id: uuidv4(),
+      timestamp: new Date().toISOString()
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
     if (this.version) data.__feathery_version = this.version;
