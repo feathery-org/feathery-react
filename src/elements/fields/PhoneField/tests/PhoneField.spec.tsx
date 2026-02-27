@@ -107,7 +107,7 @@ jest.mock('../CountryDropdown', () => {
 });
 
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PhoneField from '../index';
 import {
@@ -278,6 +278,116 @@ describe('PhoneField Component', () => {
       // Complete the number
       typePhoneNumber(input, '+15551234567');
       expect(onComplete).toHaveBeenCalledWith('15551234567');
+    });
+  });
+
+  describe('Cursor placement after focus', () => {
+    it('positions cursor after phone code on focus so first digit is not dropped', () => {
+      // Regression: resetToPhoneCode was setting cursor state but not toggling
+      // cursorChange, so the setSelectionRange effect never fired. Cursor stayed
+      // at 0 (before +), causing the onChange guard to drop the first keystroke.
+      const element = createPhoneElement();
+      const props = createPhoneProps(element);
+      render(<PhoneField {...props} />);
+
+      const input = getPhoneInput();
+      const setSelectionRangeSpy = jest.spyOn(input, 'setSelectionRange');
+
+      act(() => {
+        fireEvent.focus(input);
+      });
+
+      // Cursor should be placed after "+1" (position 2)
+      expect(setSelectionRangeSpy).toHaveBeenCalledWith(2, 2);
+    });
+
+    it('positions cursor after phone code when country is changed via dropdown', () => {
+      const element = createPhoneElement();
+      const props = createPhoneProps(element);
+      render(<PhoneField {...props} />);
+
+      const input = getPhoneInput();
+      const setSelectionRangeSpy = jest.spyOn(input, 'setSelectionRange');
+
+      // Select UK (phone code "44", length=2, not > 3 → delta=1, cursor = 2 + 1 = 3)
+      act(() => {
+        fireEvent.click(document.querySelector('[data-testid="country-trigger"]')!);
+      });
+      act(() => {
+        fireEvent.click(
+          document.querySelector('[data-testid="country-option-GB"]')!
+        );
+      });
+
+      expect(setSelectionRangeSpy).toHaveBeenCalledWith(3, 3);
+    });
+
+    it('keeps cursor after phone code when clicking before plus sign', () => {
+      const element = createPhoneElement();
+      const props = createPhoneProps(element);
+      render(<PhoneField {...props} />);
+
+      const input = getPhoneInput();
+
+      act(() => {
+        fireEvent.focus(input);
+      });
+      input.setSelectionRange(0, 0);
+      const setSelectionRangeSpy = jest.spyOn(input, 'setSelectionRange');
+      act(() => {
+        fireEvent.click(input);
+      });
+
+      expect(setSelectionRangeSpy).toHaveBeenCalledWith(2, 2);
+      expect(input.selectionStart).toBe(2);
+    });
+
+    it('moves cursor to the end on refocus when a partial number already exists', () => {
+      const element = createPhoneElement();
+      const props = createPhoneProps(element);
+      render(<PhoneField {...props} />);
+
+      const input = getPhoneInput();
+      act(() => {
+        fireEvent.focus(input);
+      });
+      typePartialPhoneNumber(input, '+1555');
+      act(() => {
+        fireEvent.blur(input);
+      });
+
+      input.setSelectionRange(0, 0);
+      const setSelectionRangeSpy = jest.spyOn(input, 'setSelectionRange');
+      act(() => {
+        fireEvent.focus(input);
+        fireEvent.click(input);
+      });
+
+      const end = input.value.length;
+      expect(setSelectionRangeSpy).toHaveBeenCalledWith(end, end);
+      expect(input.selectionStart).toBe(end);
+    });
+
+    it('keeps subsequent typing at the clicked cursor position', async () => {
+      const element = createPhoneElement();
+      const props = createPhoneProps(element);
+      render(<PhoneField {...props} />);
+
+      const input = getPhoneInput();
+      const user = userEvent.setup();
+
+      await user.click(input);
+      await user.type(input, '647');
+
+      act(() => {
+        input.setSelectionRange(3, 3);
+        fireEvent.click(input);
+      });
+
+      await user.keyboard('5');
+      await user.keyboard('8');
+
+      expect(input.value.replace(/\D/g, '')).toBe('158647');
     });
   });
 
