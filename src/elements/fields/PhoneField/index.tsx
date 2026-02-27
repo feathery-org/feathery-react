@@ -49,9 +49,7 @@ function PhoneField({
   const dropdownRef = useRef<any>(null);
   const inputRef = useRef<any>(null);
   const [cursor, setCursor] = useState<number | null>(null);
-  // Track cursorChange since cursor may stay in same place but need to be
-  // re-applied (e.g. delete)
-  const [cursorChange, setCursorChange] = useState(false);
+  const [cursorTick, setCursorTick] = useState(0);
   const [show, setShow] = useState(false);
   // The number parsed from the fullNumber prop, updated via triggerOnChange to rawNumber
   const [curFullNumber, setCurFullNumber] = useState('');
@@ -88,15 +86,38 @@ function PhoneField({
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
 
+  const minCursorForPhoneCode = (code: string) =>
+    code.length + (code.length > 3 ? 2 : 1);
+
+  // cursorTick forces the effect to re-run even when position is unchanged
+  // (e.g. re-focusing on the "+1" prefix)
+  const moveCursor = (pos: number) => {
+    setCursor(pos);
+    setCursorTick((t) => t + 1);
+  };
+
   const resetToPhoneCode = (code: string) => {
-    const delta = code.length > 3 ? 2 : 1;
-    setCursor(code.length + delta);
+    moveCursor(minCursorForPhoneCode(code));
+  };
+
+  const clampCursorAfterPhoneCode = (input: HTMLInputElement | null) => {
+    if (!input) return;
+    const minCursor = minCursorForPhoneCode(phoneCode);
+    const start = input.selectionStart ?? minCursor;
+    if (start >= minCursor) {
+      setCursor(start);
+      return;
+    }
+    const cursor =
+      rawNumber.length > phoneCode.length ? input.value.length : minCursor;
+    input.setSelectionRange(cursor, cursor);
+    setCursor(cursor);
   };
 
   useEffect(() => {
     const input = inputRef.current;
     if (input && cursor !== null) input.setSelectionRange(cursor, cursor);
-  }, [cursorChange]);
+  }, [cursorTick]);
 
   useEffect(() => {
     if (fullNumber === curFullNumber || editMode) return;
@@ -300,6 +321,9 @@ function PhoneField({
               });
               setFocused(true);
             }}
+            onClick={(e) => {
+              clampCursorAfterPhoneCode(e.currentTarget);
+            }}
             onBlur={() => {
               let newRawNumber = rawNumber;
               if (phoneCode.startsWith(rawNumber)) {
@@ -386,12 +410,10 @@ function PhoneField({
                 }
               } else {
                 setRawNumber(phoneCode);
-                const delta = phoneCode.length > 3 ? 2 : 1;
-                start = phoneCode.length + delta;
+                start = minCursorForPhoneCode(phoneCode);
               }
 
-              setCursor(start);
-              setCursorChange(!cursorChange);
+              moveCursor(start ?? 0);
             }}
           />
           <Placeholder
