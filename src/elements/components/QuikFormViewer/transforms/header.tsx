@@ -250,22 +250,22 @@ function createNewHeaderElements(
   actionButtons.className = 'action-buttons';
 
   // Reset Button
-  if (content.btnReset) {
-    const resetButton = doc.createElement('button');
-    resetButton.className = 'button reset-button';
-    resetButton.textContent = content.btnReset.value;
-    resetButton.id = content.btnReset.id;
-    actionButtons.appendChild(resetButton);
-  }
+  // if (content.btnReset) {
+  //   const resetButton = doc.createElement('button');
+  //   resetButton.className = 'button reset-button';
+  //   resetButton.textContent = content.btnReset.value;
+  //   resetButton.id = content.btnReset.id;
+  //   actionButtons.appendChild(resetButton);
+  // }
 
   // Download Button
-  if (content.btnPrint) {
-    const downloadButton = doc.createElement('button');
-    downloadButton.className = 'button download-button';
-    downloadButton.textContent = content.btnPrint.value;
-    downloadButton.id = content.btnPrint.id;
-    actionButtons.appendChild(downloadButton);
-  }
+  // if (content.btnPrint) {
+  //   const downloadButton = doc.createElement('button');
+  //   downloadButton.className = 'button download-button';
+  //   downloadButton.textContent = content.btnPrint.value;
+  //   downloadButton.id = content.btnPrint.id;
+  //   actionButtons.appendChild(downloadButton);
+  // }
 
   if (content.btnSign) {
     // Draft Button
@@ -277,17 +277,17 @@ function createNewHeaderElements(
     draftButton.id = 'btnSaveDraft';
     actionButtons.appendChild(draftButton);
 
-    const sendButton = doc.createElement('button');
-    sendButton.className = 'button sign-button';
-    const sendIcon = doc.createElement('div');
-    sendIcon.className = 'check-icon';
-    sendIcon.innerHTML = SIGN_BUTTON_ICON;
-    sendButton.appendChild(sendIcon);
-    const sendText = doc.createElement('span');
-    sendText.textContent = 'Sign';
-    sendButton.appendChild(sendText);
-    sendButton.id = 'btnSign';
-    actionButtons.appendChild(sendButton);
+    // const sendButton = doc.createElement('button');
+    // sendButton.className = 'button sign-button';
+    // const sendIcon = doc.createElement('div');
+    // sendIcon.className = 'check-icon';
+    // sendIcon.innerHTML = SIGN_BUTTON_ICON;
+    // sendButton.appendChild(sendIcon);
+    // const sendText = doc.createElement('span');
+    // sendText.textContent = 'Sign';
+    // sendButton.appendChild(sendText);
+    // sendButton.id = 'btnSign';
+    // actionButtons.appendChild(sendButton);
 
     content.btnSign.remove();
 
