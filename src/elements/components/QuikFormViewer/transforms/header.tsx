@@ -289,7 +289,8 @@ function createNewHeaderElements(
     // sendButton.id = 'btnSign';
     // actionButtons.appendChild(sendButton);
 
-    content.btnSign.remove();
+    content.btnSign.style.display = 'none';
+    actionButtons.appendChild(content.btnSign);
 
     // Handle pressing the draft button or send button
     // Overwrite content sent to docusign/sign
