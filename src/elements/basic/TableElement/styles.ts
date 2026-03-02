@@ -208,8 +208,10 @@ export const actionButtonStyle = {
   ...buttonStyle,
   borderRadius: '4px',
   paddingInline: '8px',
+  paddingBlock: '4px',
   width: 'auto',
-  height: '28px',
+  height: 'auto',
+  minHeight: '28px',
   position: 'relative'
 } as const;
 
