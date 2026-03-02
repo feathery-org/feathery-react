@@ -7,7 +7,7 @@ import {
   pageButtonPrevStyle,
   pageButtonStyle,
   pageButtonDisabledStyle,
-  pageButtonEllipsisStyle,
+  overflowSelectStyle,
   paginationListStyle
 } from './styles';
 
@@ -80,6 +80,33 @@ function NextButton({ disabled, onClick }: NextButtonProps) {
   );
 }
 
+type OverflowSelectProps = {
+  pages: number[];
+  onPageChange: (page: number) => void;
+};
+
+function OverflowSelect({ pages, onPageChange }: OverflowSelectProps) {
+  return (
+    <select
+      value=''
+      onChange={(e) => {
+        onPageChange(Number(e.target.value));
+      }}
+      aria-label='Go to page'
+      css={overflowSelectStyle as any}
+    >
+      <option value='' disabled hidden>
+        ...
+      </option>
+      {pages.map((page) => (
+        <option key={page} value={page}>
+          {page + 1}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 type PageNumbersProps = {
   currentPage: number;
   totalPages: number;
@@ -91,39 +118,54 @@ function PageNumbers({
   totalPages,
   onPageChange
 }: PageNumbersProps) {
+  const visiblePages = new Set<number>();
+  visiblePages.add(0);
+  visiblePages.add(totalPages - 1);
+  for (
+    let i = Math.max(0, currentPage - 1);
+    i <= Math.min(totalPages - 1, currentPage + 1);
+    i++
+  ) {
+    visiblePages.add(i);
+  }
+
+  const items: Array<
+    { type: 'page'; page: number } | { type: 'overflow'; pages: number[] }
+  > = [];
+  const sortedVisible = Array.from(visiblePages).sort((a, b) => a - b);
+
+  for (let i = 0; i < sortedVisible.length; i++) {
+    const page = sortedVisible[i];
+    const prevPage = i > 0 ? sortedVisible[i - 1] : -1;
+
+    if (page - prevPage > 1) {
+      const hiddenPages: number[] = [];
+      for (let j = prevPage + 1; j < page; j++) {
+        hiddenPages.push(j);
+      }
+      items.push({ type: 'overflow', pages: hiddenPages });
+    }
+
+    items.push({ type: 'page', page });
+  }
+
   return (
     <>
-      {Array.from({ length: totalPages }, (_, i) => {
-        // Show first page, last page, current page, and pages around current
-        const showPage =
-          i === 0 || i === totalPages - 1 || Math.abs(i - currentPage) <= 1;
-
-        const showEllipsis =
-          (i === 1 && currentPage > 2) ||
-          (i === totalPages - 2 && currentPage < totalPages - 3);
-
-        if (showEllipsis) {
+      {items.map((item, idx) => {
+        if (item.type === 'overflow') {
           return (
-            <li key={i}>
-              <button
-                type='button'
-                disabled
-                css={pageButtonEllipsisStyle as any}
-              >
-                ...
-              </button>
+            <li key={`overflow-${idx}`}>
+              <OverflowSelect pages={item.pages} onPageChange={onPageChange} />
             </li>
           );
         }
 
-        if (!showPage) return null;
-
-        const isActive = i === currentPage;
+        const isActive = item.page === currentPage;
         return (
-          <li key={i}>
+          <li key={item.page}>
             <button
               type='button'
-              onClick={() => onPageChange(i)}
+              onClick={() => onPageChange(item.page)}
               aria-current={isActive ? 'page' : undefined}
               css={
                 isActive
@@ -131,7 +173,7 @@ function PageNumbers({
                   : (pageButtonStyle as any)
               }
             >
-              {i + 1}
+              {item.page + 1}
             </button>
           </li>
         );
