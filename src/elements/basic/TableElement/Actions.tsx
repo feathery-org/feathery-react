@@ -54,6 +54,8 @@ export function ActionButtons({
   const useOverflow = !forceInlineButtons && actions.length > 1;
 
   useEffect(() => {
+    if (!isMenuOpen) return;
+
     const handleClickOutside = (event: MouseEvent) => {
       if (
         menuRef.current &&
@@ -65,12 +67,17 @@ export function ActionButtons({
       }
     };
 
-    if (isMenuOpen) {
-      featheryDoc().addEventListener('mousedown', handleClickOutside);
-    }
+    const handleScroll = () => {
+      setIsMenuOpen(false);
+    };
+
+    const doc = featheryDoc();
+    doc.addEventListener('mousedown', handleClickOutside);
+    doc.addEventListener('scroll', handleScroll, true);
 
     return () => {
-      featheryDoc().removeEventListener('mousedown', handleClickOutside);
+      doc.removeEventListener('mousedown', handleClickOutside);
+      doc.removeEventListener('scroll', handleScroll, true);
     };
   }, [isMenuOpen]);
 
