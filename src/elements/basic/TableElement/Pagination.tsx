@@ -153,6 +153,19 @@ function PageNumbers({
     <>
       {items.map((item, idx) => {
         if (item.type === 'overflow') {
+          if (item.pages.length === 1) {
+            return (
+              <li key={`overflow-${idx}`}>
+                <button
+                  type='button'
+                  onClick={() => onPageChange(item.pages[0])}
+                  css={pageButtonStyle as any}
+                >
+                  {item.pages[0] + 1}
+                </button>
+              </li>
+            );
+          }
           return (
             <li key={`overflow-${idx}`}>
               <OverflowSelect pages={item.pages} onPageChange={onPageChange} />
