@@ -21,6 +21,7 @@ import internalState, {
 import { validateElements } from './validation';
 import {
   FillQuikParams,
+  ForwardInboxEmailOptions,
   IntegrationActionIds,
   IntegrationActionOptions,
   PageSelectionInput
@@ -182,12 +183,8 @@ export const getFormContext = (formUuid: string) => {
       options = { waitForCompletion: false },
       pages?: PageSelectionInput
     ) => formState.runAIExtraction(extractionId, options, pages),
-    forwardInboxEmail: (options: {
-      prefix?: string;
-      emails?: string[];
-      emailGroup?: string;
-      submissionId?: string;
-    }) => formState.forwardInboxEmail(options),
+    forwardInboxEmail: (options: ForwardInboxEmailOptions) =>
+      formState.forwardInboxEmail(options),
     setCalendlyUrl: (url: string) => formState.setCalendlyUrl(url),
     fillQuikForms: (params: FillQuikParams) => formState.fillQuikForms(params),
     sendDocusignEnvelope: (params: SendDocusignParams) =>

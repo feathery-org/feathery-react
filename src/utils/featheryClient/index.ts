@@ -42,7 +42,8 @@ import {
   getStaticUrl,
   getS3Url,
   getCdnUrl,
-  forwardInboxEmail
+  forwardInboxEmail,
+  ForwardInboxEmailOptions
 } from '@feathery/client-utils';
 import {
   FEATHERY_INTERACTION_EVENT,
@@ -927,16 +928,7 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
-  async forwardInboxEmail({
-    options
-  }: {
-    options: {
-      prefix?: string;
-      emails?: string[];
-      emailGroup?: string;
-      submissionId?: string;
-    };
-  }) {
+  async forwardInboxEmail({ options }: { options: ForwardInboxEmailOptions }) {
     const { userId, sdkKey } = initInfo();
     const forwardUserId = options.submissionId || userId;
 
@@ -947,9 +939,7 @@ export default class FeatheryClient extends IntegrationClient {
     await forwardInboxEmail(
       sdkKey,
       forwardUserId,
-      options.prefix || '',
-      options.emails || [],
-      options.emailGroup || '',
+      options,
       undefined,
       this.formKey
     );
