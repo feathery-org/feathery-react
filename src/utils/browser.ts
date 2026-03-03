@@ -101,12 +101,28 @@ export async function downloadAllFileUrls(urls: string[]) {
   if (urls.length > 1) {
     const zip = new JSZip();
 
-    await Promise.all(
-      urls.map(async (url: string) => {
-        const { fileName, blob } = await getFileData(url);
-        zip.file(fileName, blob);
-      })
+    const files = await Promise.all(
+      urls.map((url: string) => getFileData(url))
     );
+
+    const nameCount: Record<string, number> = {};
+    for (const { fileName, blob } of files) {
+      let uniqueName = fileName;
+      if (nameCount[fileName] != null) {
+        nameCount[fileName]++;
+        const dotIndex = fileName.lastIndexOf('.');
+        if (dotIndex !== -1) {
+          uniqueName = `${fileName.slice(0, dotIndex)} (${
+            nameCount[fileName]
+          })${fileName.slice(dotIndex)}`;
+        } else {
+          uniqueName = `${fileName} (${nameCount[fileName]})`;
+        }
+      } else {
+        nameCount[fileName] = 0;
+      }
+      zip.file(uniqueName, blob);
+    }
 
     const zipBlob = await zip.generateAsync({ type: 'blob' });
     file = new File([zipBlob], 'Feathery_Download.zip', {
