@@ -1,8 +1,8 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { fieldValues } from '../../../utils/init';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { Action, Column } from './types';
-import { parseSortableValue, compareSortableValues } from './utils';
+import { compareSortableValues, parseSortableValue } from './utils';
 import { generateExampleData } from './exampleData';
 
 /**
@@ -67,8 +67,28 @@ function transposeTableData(
   };
 }
 
+const TABLE_PAGE_CACHE_KEY_PREFIX = '__feathery_table_page_';
+
+function getTablePageCacheKey(elementId: string): string {
+  return `${TABLE_PAGE_CACHE_KEY_PREFIX}${elementId}`;
+}
+
+function getCachedPage(elementId: string): number {
+  const key = getTablePageCacheKey(elementId);
+  const cached = sessionStorage.getItem(key);
+  if (!cached) return 0;
+  const page = parseInt(cached, 10);
+  return Number.isInteger(page) && page >= 0 ? page : 0;
+}
+
+function setCachedPage(elementId: string, page: number): void {
+  const key = getTablePageCacheKey(elementId);
+  sessionStorage.setItem(key, page.toString());
+}
+
 type UseTableDataProps = {
   element: {
+    id: string;
     properties: {
       columns: Column[];
       actions: Action[];
@@ -161,7 +181,9 @@ export function useTableData({
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  const [currentPage, setCurrentPage] = useState(0);
+  const [currentPage, setCurrentPage] = useState(() =>
+    getCachedPage(element.id)
+  );
 
   const baseNumRows = useMemo(() => {
     return baseColumns.reduce((maxRows, column) => {
@@ -371,9 +393,32 @@ export function useTableData({
     enablePagination
   ]);
 
-  // Reset to first page when search or sort changes
+  // Reset to first page when search or sort *change* (not on initial mount, so cached page is preserved)
+  const searchParamRef = useRef({
+    initialMount: true,
+    search: '',
+    sortColumn: '',
+    sortDirection: ''
+  });
   useEffect(() => {
-    setCurrentPage(0);
+    const cur = searchParamRef.current;
+    if (cur.initialMount) {
+      cur.initialMount = false;
+      cur.search = searchQuery;
+      cur.sortColumn = sortColumn as any;
+      cur.sortDirection = sortDirection;
+      return;
+    }
+    if (
+      searchQuery !== cur.search ||
+      sortColumn !== cur.sortColumn ||
+      sortDirection !== cur.sortDirection
+    ) {
+      setCurrentPage(0);
+      cur.search = searchQuery;
+      cur.sortColumn = sortColumn as any;
+      cur.sortDirection = sortDirection;
+    }
   }, [searchQuery, sortColumn, sortDirection]);
 
   // For transposed tables, totalRows and totalPages are based on original rows (now columns)
@@ -381,6 +426,18 @@ export function useTableData({
     ? sortedBaseRowIndices.length
     : sortedRowIndices.length;
   const totalPages = enablePagination ? Math.ceil(totalRows / rowsPerPage) : 1;
+
+  // Persist page to window cache when user navigates (keyed by element.id)
+  useEffect(() => {
+    if (element.id) setCachedPage(element.id, currentPage);
+  }, [element.id, currentPage]);
+
+  // Clamp cached page to valid range when totalPages is known
+  useEffect(() => {
+    if (totalPages > 0 && currentPage >= totalPages) {
+      setCurrentPage(totalPages - 1);
+    }
+  }, [totalPages]);
 
   const handleSort = (columnName: string) => {
     if (!enableSort) return;

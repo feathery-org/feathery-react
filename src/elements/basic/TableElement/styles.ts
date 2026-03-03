@@ -208,8 +208,10 @@ export const actionButtonStyle = {
   ...buttonStyle,
   borderRadius: '4px',
   paddingInline: '8px',
+  paddingBlock: '4px',
   width: 'auto',
-  height: '28px',
+  height: 'auto',
+  minHeight: '28px',
   position: 'relative'
 } as const;
 
@@ -306,14 +308,6 @@ export const pageButtonActiveStyle = {
   border: `1px solid ${colors.gray200}`
 } as const;
 
-export const pageButtonEllipsisStyle = {
-  ...pageButtonStyle,
-  cursor: 'default',
-  '&:focus': {
-    outline: 'none'
-  }
-} as const;
-
 export const pageButtonDisabledStyle = {
   opacity: 0.8,
   cursor: 'default',
@@ -321,5 +315,24 @@ export const pageButtonDisabledStyle = {
   '&:hover': {
     backgroundColor: colors.gray50,
     color: colors.gray400
+  }
+} as const;
+
+export const overflowSelectStyle = {
+  ...pageButtonStyle,
+  appearance: 'none' as const,
+  WebkitAppearance: 'none' as const,
+  cursor: 'pointer',
+  paddingLeft: '8px',
+  paddingRight: '8px',
+  width: '36px',
+  textAlign: 'center' as const,
+  outline: 'none',
+  '&:hover': {
+    backgroundColor: colors.gray100,
+    color: colors.gray900
+  },
+  '&:focus': {
+    outline: 'none'
   }
 } as const;
