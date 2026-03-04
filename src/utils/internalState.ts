@@ -11,7 +11,8 @@ import FeatheryClient from './featheryClient';
 import {
   FillQuikParams,
   ExtractionActionOptions,
-  PageSelectionInput
+  PageSelectionInput,
+  ForwardInboxEmailOptions
 } from '@feathery/client-utils';
 
 export type AlloyEntities = Record<string, any>[];
@@ -80,12 +81,7 @@ export interface FormInternalState {
     options: ExtractionActionOptions | boolean,
     pages?: PageSelectionInput
   ) => Promise<Record<string, string>>;
-  forwardInboxEmail: (options: {
-    prefix?: string;
-    emails?: string[];
-    emailGroup?: string;
-    submissionId?: string;
-  }) => Promise<void>;
+  forwardInboxEmail: (options: ForwardInboxEmailOptions) => Promise<void>;
   fillQuikForms: (params: FillQuikParams) => Promise<void>;
   sendDocusignEnvelope: (params: SendDocusignParams) => Promise<void>;
   getConfig: GetConfig;

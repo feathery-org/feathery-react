@@ -141,6 +141,7 @@ import internalState, {
 import {
   ExtractionActionOptions,
   FillQuikParams,
+  ForwardInboxEmailOptions,
   PageSelectionInput
 } from '@feathery/client-utils';
 import useFormAuth from '../auth/internal/useFormAuth';
@@ -1221,12 +1222,7 @@ function Form({
           }
           return data;
         },
-        forwardInboxEmail: async (options: {
-          prefix?: string;
-          emails?: string[];
-          emailGroup?: string;
-          submissionId?: string;
-        }) => {
+        forwardInboxEmail: async (options: ForwardInboxEmailOptions) => {
           return client.forwardInboxEmail({ options });
         }
       },
