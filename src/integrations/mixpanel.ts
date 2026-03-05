@@ -1,4 +1,5 @@
 import { featheryDoc, featheryWindow } from '../utils/browser';
+import { initInfo } from '../utils/init';
 
 export let mixpanelInstalled = false;
 
@@ -21,6 +22,7 @@ export function installMixpanel(mixpanelConfig: any) {
               a.push([d].concat(Array.prototype.slice.call(arguments, 0)));
             };
           }
+
           let a = b;
           typeof c !== 'undefined' ? (a = b[c] = []) : (c = 'mixpanel');
           a.people = a.people || [];
@@ -49,6 +51,7 @@ export function installMixpanel(mixpanelConfig: any) {
                 a.push([e, call2]);
               };
             }
+
             let d;
             for (
               d = {},
@@ -79,7 +82,10 @@ export function installMixpanel(mixpanelConfig: any) {
       }
     })(featheryDoc(), featheryWindow().mixpanel || []);
 
-    featheryWindow().mixpanel.init(mixpanelConfig.metadata.api_key);
+    const meta = mixpanelConfig.metadata;
+    featheryWindow().mixpanel.init(meta.api_key);
+    if (meta.identify_user)
+      featheryWindow().mixpanel.identify(initInfo().userId);
   }
 
   return Promise.resolve();
