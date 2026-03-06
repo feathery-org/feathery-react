@@ -7,7 +7,6 @@ import ErrorInput from '../../components/ErrorInput';
 
 function SignatureField({
   element,
-  fieldLabel,
   responsiveStyles,
   defaultValue = null,
   editMode,
@@ -67,7 +66,6 @@ function SignatureField({
         {...elementProps}
       >
         {children}
-        {fieldLabel}
         <div
           css={{
             position: 'relative',
@@ -107,7 +105,7 @@ function SignatureField({
                 }
               }}
             >
-              {!defaultValue && !disabled && t.label}
+              {!defaultValue && !disabled && (servar.name || t.label)}
             </div>
             <SignatureCanvas
               fieldKey={fieldKey}
