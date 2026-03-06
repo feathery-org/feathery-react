@@ -22,6 +22,7 @@ function SignatureField({
   const Portal = ReactPortal ?? (({ children }: any) => <>{children}</>);
   const servar = element.servar ?? {};
   const fieldKey = servar.key ?? element.key;
+  const isInitials = servar.metadata?.sign_type === 'initials';
 
   const t = {
     ...defaultTranslations,
@@ -51,6 +52,7 @@ function SignatureField({
           onClear={onClear}
           onEnd={onEnd}
           signMethods={servar.metadata?.sign_methods ?? ''}
+          isInitials={isInitials}
           translation={t}
         />
       </Portal>
@@ -105,7 +107,9 @@ function SignatureField({
                 }
               }}
             >
-              {!defaultValue && !disabled && (servar.name || t.label)}
+              {!defaultValue &&
+                !disabled &&
+                (servar.name || (isInitials ? t.initials_label : t.label))}
             </div>
             <SignatureCanvas
               fieldKey={fieldKey}

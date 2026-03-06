@@ -8,12 +8,14 @@ import { cloneCanvas, generateSignatureImage, trimCanvas } from './utils';
 import { SignatureTranslations } from '../translation';
 
 const SIGNER_NAME_KEY = 'feathery-signer-name';
+const SIGNER_INITIALS_KEY = 'feathery-signer-initials';
 
 type SignatureModalProps = SignatureCanvasProps & {
   show: boolean;
   setShow: (val: boolean) => void;
   returnFile?: boolean;
   signMethods: '' | 'draw' | 'type';
+  isInitials?: boolean;
   translation: SignatureTranslations;
   onEnd: (file: File) => void;
 };
@@ -29,6 +31,7 @@ function SignatureModal(props: SignatureModalProps) {
     onClear = () => {},
     onEnd = () => {},
     signMethods = '',
+    isInitials = false,
     translation: t
   } = props;
 
@@ -42,8 +45,10 @@ function SignatureModal(props: SignatureModalProps) {
   const fullNameRef = useRef<string>(fullName);
   const signatureCanvasRef = useRef<any>(null);
 
+  const storageKey = isInitials ? SIGNER_INITIALS_KEY : SIGNER_NAME_KEY;
+
   const getSignerNameFromSessionStorage = (): string => {
-    const signerName = sessionStorage.getItem(SIGNER_NAME_KEY);
+    const signerName = sessionStorage.getItem(storageKey);
     return signerName || '';
   };
 
@@ -135,7 +140,7 @@ function SignatureModal(props: SignatureModalProps) {
   const handleSubmit = () => {
     if (signatureFile) {
       onEnd(signatureFile);
-      sessionStorage.setItem(SIGNER_NAME_KEY, fullName);
+      sessionStorage.setItem(storageKey, fullName);
       setShow(false);
       resetState();
     }
@@ -191,7 +196,9 @@ function SignatureModal(props: SignatureModalProps) {
             borderBottom: '1px solid #e9e9e9'
           }}
         >
-          <h3 css={{ padding: 0, margin: 0, flex: '1' }}>{t.title}</h3>
+          <h3 css={{ padding: 0, margin: 0, flex: '1' }}>
+            {isInitials ? t.initials_title : t.title}
+          </h3>
           <CloseIcon
             onClick={() => handleCancel()}
             css={{ '&:hover': { cursor: 'pointer' } }}
@@ -218,14 +225,18 @@ function SignatureModal(props: SignatureModalProps) {
                   paddingBottom: '30px'
                 }}
               >
-                <h3>{t.type_option}</h3>
+                <h3>{isInitials ? t.initials_type_option : t.type_option}</h3>
                 <input
                   defaultValue={getSignerNameFromSessionStorage()}
                   onChange={(e) => {
                     const val = e.target.value.trim();
                     setFullName(val);
                   }}
-                  placeholder={t.type_placeholder}
+                  placeholder={
+                    isInitials
+                      ? t.initials_type_placeholder
+                      : t.type_placeholder
+                  }
                   css={{
                     padding: '8px 10px',
                     borderRadius: '4px',
@@ -266,11 +277,15 @@ function SignatureModal(props: SignatureModalProps) {
                         borderRadius: '4px'
                       }}
                     >
-                      {t.type_loading}
+                      {isInitials ? t.initials_type_loading : t.type_loading}
                     </div>
                   )}
                   {!signatureImgData ? (
-                    t.type_example
+                    isInitials ? (
+                      t.initials_type_example
+                    ) : (
+                      t.type_example
+                    )
                   ) : (
                     <img
                       src={signatureImgData}
@@ -327,8 +342,14 @@ function SignatureModal(props: SignatureModalProps) {
                         }
                       }}
                     >
-                      <h3>{t.draw_option}</h3>
-                      <p>{t.draw_subtitle}</p>
+                      <h3>
+                        {isInitials ? t.initials_draw_option : t.draw_option}
+                      </h3>
+                      <p>
+                        {isInitials
+                          ? t.initials_draw_subtitle
+                          : t.draw_subtitle}
+                      </p>
                     </div>
                   </div>
                 </>
@@ -349,7 +370,9 @@ function SignatureModal(props: SignatureModalProps) {
                   padding: 0
                 }}
               >
-                {t.draw_instructions}
+                {isInitials
+                  ? t.initials_draw_instructions
+                  : t.draw_instructions}
               </p>
               <div
                 css={{ position: 'relative', width: '100%', height: '200px' }}
@@ -441,7 +464,7 @@ function SignatureModal(props: SignatureModalProps) {
                 }
               }}
             >
-              {t.confirm}
+              {isInitials ? t.initials_confirm : t.confirm}
             </button>
           </div>
         </div>
