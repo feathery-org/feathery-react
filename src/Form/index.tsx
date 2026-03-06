@@ -2475,9 +2475,10 @@ function Form({
             action.template_id
           );
           const collabKey = action.collaborator_field_key;
-          if (res && collabKey) {
+          if (res && res.ok && collabKey) {
+            const { collaborators } = res.payload;
             const newVals = {
-              [collabKey]: res.collaborators.map((c: any) => c.id)
+              [collabKey]: collaborators.map((c: any) => c.id)
             };
             updateFieldValues(newVals);
             await client.submitCustom(newVals);
