@@ -1,8 +1,8 @@
 import { RouterProvider, useLocation, useNavigate } from '../hooks/router';
 import React, {
+  lazy,
   ReactNode,
   Suspense,
-  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -1166,7 +1166,8 @@ function Form({
           fillType,
           docusignConnectionId,
           docusignCustomId,
-          enableWetSign
+          enableWetSign,
+          documentTemplates
         }: FillQuikParams) => {
           await Promise.all([
             client.flushCustomFields(),
@@ -1177,7 +1178,8 @@ function Form({
             review_action: 'sign',
             auth_user_id: docusignConnectionId,
             docusign_custom_id: docusignCustomId,
-            enable_wet_sign: enableWetSign
+            enable_wet_sign: enableWetSign,
+            document_template_attachments: documentTemplates
           });
           if (payload.status === 'error') throw Error(payload.message);
           else if (fillType === 'html' && payload.html) {
