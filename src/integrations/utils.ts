@@ -23,7 +23,7 @@ import {
   rudderStackInstalled,
   trackRudderEvent
 } from './rudderstack';
-import { fieldValues } from '../utils/init';
+import { fieldValues, initInfo } from '../utils/init';
 import { installPersona } from './persona';
 import { authState } from '../auth/LoginForm';
 import { installTrustedForm } from './trustedform';
@@ -124,7 +124,10 @@ export function trackEvent(
   formName: string,
   fieldData?: any
 ) {
-  const metadata: Record<string, string> = { formName };
+  const metadata: Record<string, string> = {
+    formName,
+    userId: initInfo().userId ?? ''
+  };
   if (stepId) metadata.stepId = stepId;
 
   // Google Tag Manager
