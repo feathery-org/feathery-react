@@ -85,6 +85,15 @@ jest.mock('../../utils/init', () => {
     FieldValues: {} as any,
     fieldValues: {} as any,
     initState,
+    initInfo: jest.fn(() => ({
+      userId: '',
+      sdkKey: '',
+      formSessions: {},
+      renderCallbacks: {},
+      redirectCallbacks: {},
+      remountCallbacks: {},
+      defaultErrors: {}
+    })),
     updateUserId: jest.fn()
   };
 });
