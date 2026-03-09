@@ -9,8 +9,6 @@ import {
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { ChatIcon, MinimizeIcon, SendIcon, SpinnerIcon } from './icons';
-import { initInfo } from '../../../utils/init';
-import { API_URL } from '../../../utils/featheryClient';
 import {
   DEFAULT_CHAT_COLOR,
   getChatColors,
@@ -27,43 +25,45 @@ const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 500;
 
+export interface Transport {
+  url: string;
+  headers: Record<string, string> | (() => Record<string, string>);
+  body: Record<string, unknown>;
+}
+
 export interface AssistantChatProps {
-  formId: string;
+  transport: Transport;
   bottom?: number;
   color?: string;
 }
 
-const AssistantChat = ({ formId, bottom = 20, color }: AssistantChatProps) => {
+const AssistantChat = ({
+  transport,
+  bottom = 20,
+  color
+}: AssistantChatProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Compute color variants from primary color
   const colors = useMemo(
     () => getChatColors(color || DEFAULT_CHAT_COLOR),
     [color]
   );
 
-  const { sdkKey, userId } = initInfo();
-
   // Memoize transport to avoid recreating on every render
-  const transport = useMemo(
+  const chatTransport = useMemo(
     () =>
       new DefaultChatTransport({
-        api: `${API_URL}ai/assistant/chat/`,
-        headers: {
-          Authorization: `Token ${sdkKey}`
-        },
-        body: {
-          fuser_key: userId,
-          form_id: formId
-        }
+        api: transport.url,
+        headers: transport.headers,
+        body: transport.body
       }),
-    [sdkKey, userId, formId]
+    [transport]
   );
 
   // @ts-ignore
-  const { messages, sendMessage, status, error } = useChat({ transport });
+  const { messages, sendMessage, status, error } = useChat({ transport: chatTransport });
 
   // TODO: Implement smooth scroll takeover - stop auto-scroll when user scrolls up
   useEffect(() => {

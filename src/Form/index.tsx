@@ -74,11 +74,12 @@ import {
   FieldValues,
   fieldValues,
   fileRetryStatus,
+  initInfo,
   initState,
   updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
-import FeatheryClient from '../utils/featheryClient';
+import FeatheryClient, { API_URL } from '../utils/featheryClient';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
 import {
@@ -226,7 +227,7 @@ import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelope
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
 
 const AssistantChat = lazy(
-  () => import(/* webpackChunkName: "AssistantChat" */ './components/Assistant')
+  () => import(/* webpackChunkName: "AssistantChat" */ '../assistant')
 );
 
 export * from './grid/StyledContainer';
@@ -601,6 +602,15 @@ function Form({
   // Tracks if the form has redirected
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
+
+  const transport = useMemo(() => {
+    const { sdkKey, userId } = initInfo();
+    return {
+      url: `${API_URL}ai/assistant/chat/`,
+      headers: { Authorization: `Token ${sdkKey}` },
+      body: { form_id: formId, fuser_key: userId }
+    };
+  }, [formId]);
 
   const extractedSharedCodeInfo = useMemo(() => {
     if (sharedCodes.length < 1) {
@@ -3004,7 +3014,7 @@ function Form({
         {formSettings.assistantEnabled && (
           <Suspense fallback={null}>
             <AssistantChat
-              formId={formId}
+              transport={transport}
               bottom={
                 (formSettings.showBrand &&
                 formSettings.brandPosition === 'bottom_right'
