@@ -9,10 +9,10 @@ import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
 import FeatheryClient from './featheryClient';
 import {
-  FillQuikParams,
   ExtractionActionOptions,
-  PageSelectionInput,
-  ForwardInboxEmailOptions
+  FillQuikParams,
+  ForwardInboxEmailOptions,
+  PageSelectionInput
 } from '@feathery/client-utils';
 
 export type AlloyEntities = Record<string, any>[];
@@ -33,7 +33,8 @@ type DocusignSigner = {
 };
 export type SendDocusignParams = {
   documents: string[];
-  signers: DocusignSigner[];
+  existingEnvelopeId?: string;
+  signers?: DocusignSigner[];
   fillData?: Record<string, any>;
   emailSubject?: string;
   emailBlurb?: string;

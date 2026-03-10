@@ -7,7 +7,6 @@ import ErrorInput from '../../components/ErrorInput';
 
 function SignatureField({
   element,
-  fieldLabel,
   responsiveStyles,
   defaultValue = null,
   editMode,
@@ -23,6 +22,7 @@ function SignatureField({
   const Portal = ReactPortal ?? (({ children }: any) => <>{children}</>);
   const servar = element.servar ?? {};
   const fieldKey = servar.key ?? element.key;
+  const isInitials = servar.metadata?.sign_type === 'initials';
 
   const t = {
     ...defaultTranslations,
@@ -52,6 +52,7 @@ function SignatureField({
           onClear={onClear}
           onEnd={onEnd}
           signMethods={servar.metadata?.sign_methods ?? ''}
+          isInitials={isInitials}
           translation={t}
         />
       </Portal>
@@ -67,7 +68,6 @@ function SignatureField({
         {...elementProps}
       >
         {children}
-        {fieldLabel}
         <div
           css={{
             position: 'relative',
@@ -107,7 +107,9 @@ function SignatureField({
                 }
               }}
             >
-              {!defaultValue && !disabled && t.label}
+              {!defaultValue &&
+                !disabled &&
+                (servar.name || (isInitials ? t.initials_label : t.label))}
             </div>
             <SignatureCanvas
               fieldKey={fieldKey}
