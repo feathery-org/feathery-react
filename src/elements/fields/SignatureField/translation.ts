@@ -12,7 +12,18 @@ export const defaultTranslations = {
   confirm: 'Sign',
   cancel: 'Cancel',
   back: 'Back',
-  clear: 'Clear'
+  clear: 'Clear',
+  initials_label: 'Initial here',
+  initials_title: 'Add your initials',
+  initials_type_option: 'Type your initials',
+  initials_type_placeholder: 'Your initials',
+  initials_type_example: 'A.B.',
+  initials_type_loading: 'Generating initials',
+  initials_draw_option: 'Draw your initials',
+  initials_draw_subtitle:
+    'Draw your initials here using your mouse or trackpad',
+  initials_draw_instructions: 'Draw your initials in the box below',
+  initials_confirm: 'Initial'
 } as const;
 
 export type SignatureTranslations = typeof defaultTranslations;
