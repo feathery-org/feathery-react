@@ -54,12 +54,6 @@ function SignatureModal(props: SignatureModalProps) {
   const imgStorageKey = isInitials ? SIGNER_INITIALS_KEY : SIGNER_SIGNATURE_KEY;
 
   useEffect(() => {
-    if (show) {
-      setFullName('');
-    }
-  }, [show]);
-
-  useEffect(() => {
     fullNameRef.current = fullName;
     if (fullName !== '') {
       setLoading(true);
@@ -229,7 +223,6 @@ function SignatureModal(props: SignatureModalProps) {
               >
                 <h3>{isInitials ? t.initials_type_option : t.type_option}</h3>
                 <input
-                  defaultValue=''
                   onChange={(e) => {
                     const val = e.target.value.trim();
                     setFullName(val);
