@@ -1,6 +1,9 @@
 import React, { Suspense, useEffect, useState } from 'react';
 import SignatureCanvas from './components/SignatureCanvas';
-import SignatureModal from './components/SignatureModal';
+import SignatureModal, {
+  getSignatureSessionData
+} from './components/SignatureModal';
+import { dataURLToFile } from '../../../utils/image';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { defaultTranslations, SignatureTranslations } from './translation';
 import ErrorInput from '../../components/ErrorInput';
@@ -89,7 +92,20 @@ function SignatureField({
           >
             <div
               onClick={() => {
-                if (!disabled) setShowSignatureModal(true);
+                if (disabled) return;
+                // If field already has value, open modal
+                if (defaultValue) {
+                  setShowSignatureModal(true);
+                  return;
+                }
+                const sessionImgData = getSignatureSessionData(isInitials);
+                if (sessionImgData) {
+                  // Auto-prefill from session data
+                  const file = dataURLToFile(sessionImgData, `${fieldKey}.png`);
+                  onEnd(file);
+                } else {
+                  setShowSignatureModal(true);
+                }
               }}
               css={{
                 position: 'absolute',
