@@ -63,7 +63,9 @@ const AssistantChat = ({
   );
 
   // @ts-ignore
-  const { messages, sendMessage, status, error } = useChat({ transport: chatTransport });
+  const { messages, sendMessage, status, error } = useChat({
+    transport: chatTransport
+  });
 
   // TODO: Implement smooth scroll takeover - stop auto-scroll when user scrolls up
   useEffect(() => {
