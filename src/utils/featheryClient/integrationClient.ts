@@ -11,19 +11,19 @@ import { featheryWindow } from '../browser';
 import {
   apiFetch,
   customRolloutAction as apiCustomRolloutAction,
-  FormConflictError,
   FormAuthenticationError,
+  FormConflictError,
   generateFormDocuments as apiGenerateFormDocuments,
   generateQuikEnvelopes as apiGenerateQuikEnvelopes,
+  getQuikAccountForms as apiGetQuikAccountForms,
   getQuikFormRoles as apiGetQuikFormRoles,
   getQuikForms as apiGetQuikForms,
-  getQuikAccountForms as apiGetQuikAccountForms,
   IntegrationActionIds,
   IntegrationActionOptions,
   parseAPIError,
   sendEmail as apiSendEmail
 } from '@feathery/client-utils';
-import { handleFormConflict, handleFormAuthenticationError } from './utils';
+import { handleFormAuthenticationError, handleFormConflict } from './utils';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -404,7 +404,8 @@ export default class IntegrationClient {
     fillData,
     emailSubject,
     emailBlurb,
-    signers
+    signers,
+    existingEnvelopeId
   }: SendDocusignParams) {
     const { userId } = initInfo();
     const url = `${API_URL}docusign/envelope/`;
@@ -418,7 +419,8 @@ export default class IntegrationClient {
         fill_data: fillData,
         email_subject: emailSubject,
         email_blurb: emailBlurb,
-        signers: signers
+        signers: signers,
+        docusign_envelope_id: existingEnvelopeId
       })
     };
     return this._fetch(url, options, false).then(async (response) => {
