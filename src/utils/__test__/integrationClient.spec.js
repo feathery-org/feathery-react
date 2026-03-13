@@ -1,6 +1,6 @@
 import IntegrationClient from '../featheryClient/integrationClient';
-import { initInfo, fieldValues } from '../init';
-import { setEnvironment, getApiUrl } from '@feathery/client-utils';
+import { fieldValues, initInfo } from '../init';
+import { getApiUrl, setEnvironment } from '@feathery/client-utils';
 
 // Mock the API_URL and STATIC_URL to avoid circular dependency issues
 // since ../featheryClient/integrationClient imports them from ../featheryClient
@@ -262,7 +262,7 @@ describe('IntegrationClient', () => {
       const result = await integrationClient.getQuikForms({ dealerNames });
 
       // Assert
-      const dealerStr = encodeURIComponent(dealerNames.join(','));
+      const dealerStr = encodeURIComponent(JSON.stringify(dealerNames));
       expect(global.fetch).toHaveBeenCalledWith(
         `${API_URL}quik/meta/dealer/?form_key=${formKey}&dealer=${dealerStr}`,
         {
