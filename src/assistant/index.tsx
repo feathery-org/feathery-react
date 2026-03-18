@@ -1,12 +1,15 @@
 import {
   Fragment,
+  KeyboardEvent,
+  MouseEvent,
   useState,
   useRef,
   useEffect,
-  KeyboardEvent,
+  useCallback,
   useMemo
 } from 'react';
-import { useChat } from '@ai-sdk/react';
+import { v4 as uuidv4 } from 'uuid';
+import { Chat, useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { ChatIcon, MinimizeIcon, SendIcon, SpinnerIcon } from './icons';
 import {
@@ -20,22 +23,23 @@ import {
 } from './colors';
 import ToolStatus from './ToolStatus';
 import MarkdownText from './MarkdownText';
+import {
+  AssistantThreadDetail,
+  AssistantTransport,
+  deleteThread,
+  getThreadDetail,
+  getThreadList
+} from './utils';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 500;
 
-export interface Transport {
-  url: string;
-  headers: Record<string, string> | (() => Record<string, string>);
-  body: Record<string, unknown>;
-}
-
-export interface AssistantChatProps {
-  transport: Transport;
+export type AssistantChatProps = {
+  transport: AssistantTransport;
   bottom?: number;
   color?: string;
-}
+};
 
 const AssistantChat = ({
   transport,
@@ -44,6 +48,9 @@ const AssistantChat = ({
 }: AssistantChatProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
+  const [threads, setThreads] = useState<AssistantThreadDetail[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const colors = useMemo(
@@ -51,20 +58,66 @@ const AssistantChat = ({
     [color]
   );
 
-  // Memoize transport to avoid recreating on every render
-  const chatTransport = useMemo(
-    () =>
-      new DefaultChatTransport({
-        api: transport.url,
-        headers: transport.headers,
-        body: transport.body
-      }),
-    [transport]
-  );
+  const makeChat = (
+    threadId: string | null,
+    initialMessages: any[] = []
+  ): Chat<any> => {
+    let resolvedThreadId = threadId;
+
+    const chatTransport = new DefaultChatTransport({
+      api: `${transport.url}chat/`,
+      headers: transport.headers,
+      body: () => ({ ...transport.body, thread_id: resolvedThreadId || null }),
+      fetch: async (url: any, init?: any) => {
+        const res = await fetch(url, init);
+        const threadId = res.headers.get('X-Thread-Id');
+        if (threadId && !resolvedThreadId) {
+          resolvedThreadId = threadId;
+          setThreads((prev) =>
+            prev.map((t) =>
+              t.chat === chat ? { ...t, id: threadId, isTemporary: false } : t
+            )
+          );
+          setActiveThreadId(threadId);
+          getThreadDetail(transport, threadId).then((t) => {
+            if (t)
+              setThreads((prev) =>
+                prev.map((thread) =>
+                  thread.id === threadId ? { ...t, chat: chat } : thread
+                )
+              );
+          });
+        }
+        return res;
+      }
+    });
+
+    const chat = new Chat<any>({
+      transport: chatTransport,
+      messages: initialMessages,
+      onFinish: ({ isAbort, isError }: any) => {
+        if (isAbort || isError || !resolvedThreadId) return;
+        setThreads((prev) => {
+          const thread = prev.find((t) => t.id === resolvedThreadId);
+          if (!thread) return prev;
+          return [
+            { ...thread, updated_at: new Date().toISOString() },
+            ...prev.filter((t) => t.id !== resolvedThreadId)
+          ];
+        });
+      }
+    });
+
+    return chat;
+  };
+
+  const readyChat = useMemo(() => makeChat(null), [transport]);
+  const activeThread = threads.find((t) => t.id === activeThreadId);
+  const activeChat = activeThread?.chat ?? readyChat;
 
   // @ts-ignore
   const { messages, sendMessage, status, error } = useChat({
-    transport: chatTransport
+    chat: activeChat
   });
 
   // TODO: Implement smooth scroll takeover - stop auto-scroll when user scrolls up
@@ -72,8 +125,97 @@ const AssistantChat = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const fetchThreads = useCallback(async () => {
+    const data = await getThreadList(transport);
+    if (!data) return;
+    setThreads((prev) => [
+      ...data.map((d) => ({
+        ...d,
+        chat: prev.find((p) => p.id === d.id)?.chat
+      })),
+      ...prev.filter((p) => !data.find((d) => d.id === p.id))
+    ]);
+  }, [transport]);
+
+  useEffect(() => {
+    if (isOpen) fetchThreads();
+  }, [isOpen, fetchThreads]);
+
+  const handleNewThread = () => {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const chat = makeChat(null);
+    setThreads((prev) => [
+      {
+        id,
+        title: '',
+        created_at: now,
+        updated_at: now,
+        isTemporary: true,
+        chat
+      },
+      ...prev.filter((t) => !t.isTemporary || t.title)
+    ]);
+    setActiveThreadId(id);
+    setIsDropdownOpen(false);
+  };
+
+  const handleSelectThread = async (id: string) => {
+    if (threads.find((t) => t.id === id)?.chat) {
+      setActiveThreadId(id);
+      setIsDropdownOpen(false);
+      return;
+    }
+    const thread = await getThreadDetail(transport, id);
+    if (!thread) return;
+    const chat = makeChat(id, thread.messages ?? []);
+    setThreads((prev) =>
+      prev.map((t) => (t.id === id ? { ...thread, chat } : t))
+    );
+    setActiveThreadId(id);
+    setIsDropdownOpen(false);
+  };
+
+  const handleDeleteThread = async (id: string, e: MouseEvent) => {
+    e.stopPropagation();
+    const thread = threads.find((t) => t.id === id);
+    if (!thread?.isTemporary) {
+      await deleteThread(transport, id);
+    }
+    setThreads((prev) => prev.filter((t) => t.id !== id));
+    if (activeThreadId === id) handleNewThread();
+  };
+
   const handleSend = () => {
     if (input.trim() && status === 'ready') {
+      const now = new Date().toISOString();
+      if (!activeThreadId) {
+        // First send, register readyChat as a real thread entry
+        const id = uuidv4();
+        setThreads((prev) => [
+          {
+            id,
+            title: input.trim().slice(0, 60),
+            created_at: now,
+            updated_at: now,
+            isTemporary: true,
+            chat: activeChat
+          },
+          ...prev
+        ]);
+        setActiveThreadId(id);
+      } else {
+        if (activeThread && !activeThread.title) {
+          setThreads((prev) => [
+            {
+              ...activeThread,
+              title: input.trim().slice(0, 60),
+              updated_at: now
+            },
+            ...prev.filter((t) => t.id !== activeThreadId)
+          ]);
+        }
+      }
       sendMessage({ text: input });
       setInput('');
     }
@@ -87,7 +229,13 @@ const AssistantChat = ({
     }
   };
 
+  // Only show threads that have had at least one message sent
+  const visibleThreads = threads.filter((t) => t.title);
+
   const isLoading = status === 'submitted' || status === 'streaming';
+  const hasAssistantMessage =
+    messages[messages.length - 1]?.role === 'assistant' &&
+    (messages[messages.length - 1].parts as any[]).length > 0;
 
   // Collapsed state - show chat bubble
   if (!isOpen) {
@@ -137,7 +285,7 @@ const AssistantChat = ({
         height: `${PANEL_HEIGHT}px`,
         backgroundColor: 'white',
         borderRadius: '12px',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
         border: `1px solid ${GRAY_200}`,
         display: 'flex',
         flexDirection: 'column',
@@ -153,12 +301,32 @@ const AssistantChat = ({
           justifyContent: 'space-between',
           padding: '12px 16px',
           backgroundColor: colors.primary,
-          color: 'white'
+          color: 'white',
+          position: 'relative'
         }}
       >
         <div css={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <ChatIcon />
-          <span css={{ fontWeight: 600, fontSize: '14px' }}>AI Assistant</span>
+          <button
+            type='button'
+            onClick={() => setIsDropdownOpen((prev) => !prev)}
+            css={{
+              background: 'none',
+              border: 'none',
+              color: 'white',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '14px',
+              padding: '0',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              ':hover': { opacity: 0.85 }
+            }}
+          >
+            {activeThread?.title || 'AI Assistant'}
+            <span css={{ fontSize: '10px', opacity: 0.8 }}>▾</span>
+          </button>
         </div>
         <button
           type='button'
@@ -180,6 +348,125 @@ const AssistantChat = ({
         >
           <MinimizeIcon />
         </button>
+
+        {/* Thread dropdown */}
+        {isDropdownOpen && (
+          <>
+            <div
+              css={{ position: 'fixed', inset: 0, zIndex: 1000 }}
+              onClick={() => setIsDropdownOpen(false)}
+            />
+            <div
+              css={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                width: '100%',
+                backgroundColor: 'white',
+                border: `1px solid ${GRAY_200}`,
+                borderTop: 'none',
+                borderRadius: '0 0 8px 8px',
+                boxShadow: '0 8px 16px rgba(0,0,0,0.12)',
+                zIndex: 1001,
+                maxHeight: '240px',
+                overflowY: 'auto'
+              }}
+            >
+              <button
+                type='button'
+                onClick={handleNewThread}
+                css={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: `1px solid ${GRAY_100}`,
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: colors.primary,
+                  textAlign: 'left',
+                  ':hover': { backgroundColor: GRAY_50 }
+                }}
+              >
+                + New Thread
+              </button>
+
+              {visibleThreads.length === 0 && (
+                <div
+                  css={{
+                    padding: '12px 14px',
+                    fontSize: '13px',
+                    color: GRAY_400
+                  }}
+                >
+                  No threads yet
+                </div>
+              )}
+              {visibleThreads.map((thread) => (
+                <div
+                  key={thread.id}
+                  onClick={() => handleSelectThread(thread.id)}
+                  css={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 14px',
+                    cursor: 'pointer',
+                    backgroundColor:
+                      thread.id === activeThreadId ? colors.light : 'white',
+                    ':hover': { backgroundColor: GRAY_50 }
+                  }}
+                >
+                  <div css={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      css={{
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        color: GRAY_800,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {thread.title || 'Untitled conversation'}
+                    </div>
+                    <div
+                      css={{
+                        fontSize: '11px',
+                        color: GRAY_400,
+                        marginTop: '2px'
+                      }}
+                    >
+                      {new Date(thread.updated_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <button
+                    type='button'
+                    onClick={(e) => handleDeleteThread(thread.id, e)}
+                    css={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: GRAY_400,
+                      fontSize: '16px',
+                      padding: '2px 6px',
+                      marginLeft: '8px',
+                      borderRadius: '4px',
+                      lineHeight: 1,
+                      ':hover': {
+                        color: '#dc2626',
+                        backgroundColor: '#fef2f2'
+                      }
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Messages */}
@@ -227,7 +514,7 @@ const AssistantChat = ({
                   color: 'white'
                 }}
               >
-                {message.parts.map((part, index) =>
+                {message.parts.map((part: any, index: number) =>
                   part.type === 'text' ? (
                     <span key={index}>{part.text}</span>
                   ) : null
@@ -237,7 +524,7 @@ const AssistantChat = ({
           ) : (
             // Assistant message - separate blocks for each part
             <Fragment key={message.id}>
-              {message.parts.map((part, index) => {
+              {message.parts.map((part: any, index: number) => {
                 if (part.type === 'text' && part.text.trim()) {
                   return (
                     <div
@@ -291,7 +578,7 @@ const AssistantChat = ({
           )
         )}
 
-        {status === 'submitted' && (
+        {isLoading && !hasAssistantMessage && (
           <div css={{ display: 'flex', justifyContent: 'flex-start' }}>
             <div
               css={{
@@ -345,7 +632,6 @@ const AssistantChat = ({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder='Type a message...'
-          disabled={isLoading}
           css={{
             flex: 1,
             padding: '10px 14px',
@@ -356,10 +642,6 @@ const AssistantChat = ({
             transition: 'border-color 0.2s',
             ':focus': {
               borderColor: colors.primary
-            },
-            ':disabled': {
-              backgroundColor: GRAY_100,
-              cursor: 'not-allowed'
             }
           }}
         />

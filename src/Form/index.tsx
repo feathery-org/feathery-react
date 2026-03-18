@@ -101,6 +101,7 @@ import CallbackQueue from '../utils/callbackQueue';
 import {
   downloadAllFileUrls,
   featheryWindow,
+  getCookie,
   isIOS,
   openTab,
   runningInClient
@@ -606,9 +607,15 @@ function Form({
   const transport = useMemo(() => {
     const { sdkKey, userId } = initInfo();
     return {
-      url: `${API_URL}ai/assistant/chat/`,
-      headers: { Authorization: `Token ${sdkKey}` },
-      body: { form_id: formId, fuser_key: userId }
+      url: `${API_URL}ai/assistant/`,
+      headers: () => {
+        const sessionJwt = getCookie('feathery_session_token');
+        return {
+          Authorization: `Token ${sdkKey}`,
+          'X-Feathery-Session': sessionJwt
+        };
+      },
+      body: { form_key: formId, fuser_key: userId }
     };
   }, [formId]);
 
