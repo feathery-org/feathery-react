@@ -11,24 +11,29 @@ export const getPrivateActions = (formUuid: string) => {
   }
 
   return {
-    _sendSmsCode: (phoneNumber: string) => {
+    _sendSmsCode: async (phoneNumber: string) => {
       const { client } = internalState[formUuid];
+      await client.flushCustomFields();
       return Auth.sendSms(phoneNumber, client);
     },
-    _telesignVoice: (phoneNumber: string) => {
+    _telesignVoice: async (phoneNumber: string) => {
       const { client } = internalState[formUuid];
+      await client.flushCustomFields();
       return client.telesignSendOTP(phoneNumber, 'voice');
     },
-    _telesignSms: (phoneNumber: string) => {
+    _telesignSms: async (phoneNumber: string) => {
       const { client } = internalState[formUuid];
+      await client.flushCustomFields();
       return client.telesignSendOTP(phoneNumber, 'sms');
     },
-    _sendEmail: (templateId: string) => {
+    _sendEmail: async (templateId: string) => {
       const { client } = internalState[formUuid];
+      await client.flushCustomFields();
       return client.sendEmail(templateId);
     },
-    _sendEmailOTP: (emailAddress: string) => {
+    _sendEmailOTP: async (emailAddress: string) => {
       const { client } = internalState[formUuid];
+      await client.flushCustomFields();
       return client.sendEmailOTP(emailAddress);
     }
   };
