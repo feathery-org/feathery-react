@@ -148,7 +148,7 @@ const SignatureCanvas = forwardRef<
         maxWidth={3}
         clearOnResize={false}
         canvasProps={{
-          id: `${fieldKey}${repeatIndex}`,
+          id: `canvas_${fieldKey}${repeatIndex ?? ''}`,
           style: {
             ...signatureCanvasStyles,
             width: '100%',
