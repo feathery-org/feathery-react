@@ -1,5 +1,4 @@
 import {
-  searchContainerStyle,
   searchIconWrapperStyle,
   searchIconStyle,
   searchInputStyle,
@@ -36,20 +35,18 @@ export function Search({ searchQuery, onSearchChange }: SearchProps) {
   };
 
   return (
-    <div css={searchContainerStyle}>
-      <div css={searchWrapperStyle as any}>
-        <div css={searchIconWrapperStyle as any}>
-          <SearchIcon />
-        </div>
-        <input
-          type='text'
-          css={searchInputStyle}
-          placeholder='Search'
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-        />
+    <div css={searchWrapperStyle as any}>
+      <div css={searchIconWrapperStyle as any}>
+        <SearchIcon />
       </div>
+      <input
+        type='text'
+        css={searchInputStyle}
+        placeholder='Search'
+        value={searchQuery}
+        onChange={(e) => onSearchChange(e.target.value)}
+        onKeyDown={handleKeyDown}
+      />
     </div>
   );
 }

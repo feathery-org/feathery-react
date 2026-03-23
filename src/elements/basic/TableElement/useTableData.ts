@@ -96,9 +96,13 @@ type UseTableDataProps = {
       sort: boolean;
       pagination: number;
       transpose?: boolean;
+      enable_editing?: boolean;
+      add_rows?: boolean;
+      delete_rows?: boolean;
     };
   };
   editMode?: boolean;
+  dataVersion?: number;
 };
 
 type UseTableDataReturn = {
@@ -118,6 +122,9 @@ type UseTableDataReturn = {
   enableSearch: boolean;
   enablePagination: boolean;
   isTransposed: boolean;
+  enableEditing: boolean;
+  enableAddRows: boolean;
+  enableDeleteRows: boolean;
 
   // Computed data
   paginatedRowIndices: number[];
@@ -138,7 +145,8 @@ type UseTableDataReturn = {
 
 export function useTableData({
   element,
-  editMode = false
+  editMode = false,
+  dataVersion = 0
 }: UseTableDataProps): UseTableDataReturn {
   const userColumns: Column[] = element.properties?.columns || [];
   const actions: Action[] = (element.properties?.actions || []).filter(
@@ -147,6 +155,9 @@ export function useTableData({
   const enableSearch = element.properties?.search ?? false;
   const enableSort = element.properties?.sort ?? false;
   const enableTranspose = element.properties?.transpose ?? false;
+  const enableEditing = element.properties?.enable_editing ?? false;
+  const enableAddRows = element.properties?.add_rows ?? false;
+  const enableDeleteRows = element.properties?.delete_rows ?? false;
   const paginationSetting = element.properties?.pagination ?? 0;
   const rowsPerPage =
     typeof paginationSetting === 'number' && paginationSetting > 0
@@ -169,12 +180,13 @@ export function useTableData({
   }, [editMode, userColumns]);
 
   // Use example data in edit mode
+  // dataVersion busts this memo when mutations (add/edit/delete) change fieldValues contents
   const baseFieldValues = useMemo(() => {
     if (editMode) {
       return generateExampleData(baseColumns);
     }
-    return fieldValues;
-  }, [editMode, baseColumns, userColumns.length]);
+    return { ...fieldValues };
+  }, [editMode, baseColumns, userColumns.length, dataVersion]);
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -502,6 +514,9 @@ export function useTableData({
     actions,
     isTransposed,
     transposedRowIndices,
+    enableEditing,
+    enableAddRows,
+    enableDeleteRows,
 
     totalRows,
     totalPages,
