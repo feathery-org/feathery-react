@@ -1,4 +1,5 @@
 import internalState, { setFormInternalState } from './internalState';
+import { defaultClient } from './init';
 import Auth from '../auth/internal/AuthIntegrationInterface';
 
 // Certain actions are only supported in the no code logic rule
@@ -13,27 +14,42 @@ export const getPrivateActions = (formUuid: string) => {
   return {
     _sendSmsCode: async (phoneNumber: string) => {
       const { client } = internalState[formUuid];
-      await client.flushCustomFields();
+      await Promise.all([
+        client.flushCustomFields(),
+        defaultClient.flushCustomFields()
+      ]);
       return Auth.sendSms(phoneNumber, client);
     },
     _telesignVoice: async (phoneNumber: string) => {
       const { client } = internalState[formUuid];
-      await client.flushCustomFields();
+      await Promise.all([
+        client.flushCustomFields(),
+        defaultClient.flushCustomFields()
+      ]);
       return client.telesignSendOTP(phoneNumber, 'voice');
     },
     _telesignSms: async (phoneNumber: string) => {
       const { client } = internalState[formUuid];
-      await client.flushCustomFields();
+      await Promise.all([
+        client.flushCustomFields(),
+        defaultClient.flushCustomFields()
+      ]);
       return client.telesignSendOTP(phoneNumber, 'sms');
     },
     _sendEmail: async (templateId: string) => {
       const { client } = internalState[formUuid];
-      await client.flushCustomFields();
+      await Promise.all([
+        client.flushCustomFields(),
+        defaultClient.flushCustomFields()
+      ]);
       return client.sendEmail(templateId);
     },
     _sendEmailOTP: async (emailAddress: string) => {
       const { client } = internalState[formUuid];
-      await client.flushCustomFields();
+      await Promise.all([
+        client.flushCustomFields(),
+        defaultClient.flushCustomFields()
+      ]);
       return client.sendEmailOTP(emailAddress);
     }
   };
