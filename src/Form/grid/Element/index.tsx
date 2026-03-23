@@ -74,7 +74,7 @@ const Element = ({ node: el, form }: any) => {
     featheryContext,
     formSettings
   };
-  const fieldId = el.servar?.key ?? el.id;
+  const fieldId = el.servar?.id ?? el.id;
   if (elementOnView && onViewElements.includes(fieldId))
     basicProps.onView = (inView: boolean) => elementOnView(fieldId, inView);
 
@@ -94,6 +94,7 @@ const Element = ({ node: el, form }: any) => {
       <Elements.TableElement
         {...basicProps}
         onClick={(payload: any) => tableOnClick(el, payload)}
+        updateFieldValues={updateFieldValues}
         buttonLoaders={buttonLoaders}
       />
     );
