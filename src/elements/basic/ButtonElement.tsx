@@ -242,9 +242,6 @@ function ButtonElement({
       }}
       // Use aria-disabled instead of disabled since disabled elements cannot display html errors
       aria-disabled={buttonDisabled}
-      // Prevent browser-native validation on submit since Feathery handles validation programmatically.
-      // Without this, CSS-hidden required fields throw "not focusable" errors.
-      formNoValidate
       onClick={handleClick}
       aria-label={element.properties.aria_label}
       {...elementProps}

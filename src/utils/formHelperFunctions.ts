@@ -183,7 +183,24 @@ export async function setFormElementError({
         }
       });
     }
-    if (triggerErrors && !errorTriggered) formRef.current.reportValidity();
+    if (triggerErrors && !errorTriggered) {
+      // Find the first visible invalid element to show the browser tooltip.
+      // Calling reportValidity() on the entire form fails if the first
+      // invalid control is hidden via CSS (display:none).
+      const formElements = Array.from(
+        formRef.current.elements
+      ) as HTMLElement[];
+      for (const el of formElements) {
+        if (
+          'checkValidity' in el &&
+          !(el as HTMLInputElement).checkValidity() &&
+          el.offsetParent !== null
+        ) {
+          (el as HTMLInputElement).reportValidity();
+          break;
+        }
+      }
+    }
     invalid = !formRef.current.checkValidity();
   } else if (errorType === 'inline') {
     if (fieldKey) inlineErrors[fieldKey] = { message };
