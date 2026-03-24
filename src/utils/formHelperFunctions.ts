@@ -27,11 +27,13 @@ export const getABVariant = (stepRes: any) => {
   delete stepRes.data;
   if (!stepRes.variant) return stepRes;
 
-  const { sdkKey, userId } = initInfo();
+  const { sdkKey, userId, overrideUserId } = initInfo();
   // If userId was not passed in, sdkKey is assumed to be a user admin key
   // and thus a unique user ID
-
-  const useVariant = !getRandomBoolean(userId || sdkKey, stepRes.form_name);
+  // If userId was preset (e.g. from _id URL param), skip AB variant
+  // since the submission is tied to the original form
+  const useVariant =
+    !overrideUserId && !getRandomBoolean(userId || sdkKey, stepRes.form_name);
 
   if (useVariant) {
     stepRes.new_form_id = stepRes.variant_id;
