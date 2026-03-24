@@ -100,19 +100,7 @@ export const lookUpTrigger = (
 
 /** Update the fieldValues cache with a backend session */
 export function updateSessionValues(session: any) {
-  // Convert files of the format { url, path } to Promise<File>
-  const filePromises = objectMap(session.file_values, (fileOrFiles: any) =>
-    Array.isArray(fileOrFiles)
-      ? fileOrFiles.map((f) => fetchS3File(f.url))
-      : fetchS3File(fileOrFiles.url)
-  );
-
-  // Create a map of servar keys to S3 paths so we know which files have been uploaded already
-  const newFilePathMap = objectMap(session.file_values, (fileOrFiles: any) =>
-    Array.isArray(fileOrFiles)
-      ? fileOrFiles.map((f) => f.path)
-      : fileOrFiles.path
-  );
+  processFileValues(session.file_values);
 
   const replaceNullInServarArrays = (
     acc: Record<string, any>,
@@ -131,8 +119,7 @@ export function updateSessionValues(session: any) {
     {}
   );
 
-  Object.assign(fieldValues, { ...transformedFieldValues, ...filePromises });
-  Object.assign(filePathMap, newFilePathMap);
+  Object.assign(fieldValues, transformedFieldValues);
 }
 
 /**
@@ -243,6 +230,30 @@ export async function fetchS3File(url: any) {
   return new File([blob], decodeURI(url.split('?')[0].split('/').slice(-1)), {
     type: blob.type
   });
+}
+
+/**
+ * Process file_values from a backend response: fetch files from S3 and
+ * update fieldValues + filePathMap. Used by session, logic rule, and
+ * extraction completion responses.
+ */
+export function processFileValues(fileValues: Record<string, any>) {
+  if (!fileValues || Object.keys(fileValues).length === 0) return;
+
+  const filePromises = objectMap(fileValues, (fileOrFiles: any) =>
+    Array.isArray(fileOrFiles)
+      ? fileOrFiles.map((f: any) => fetchS3File(f.url))
+      : fetchS3File(fileOrFiles.url)
+  );
+
+  const newFilePathMap = objectMap(fileValues, (fileOrFiles: any) =>
+    Array.isArray(fileOrFiles)
+      ? fileOrFiles.map((f: any) => f.path)
+      : fileOrFiles.path
+  );
+
+  Object.assign(fieldValues, filePromises);
+  Object.assign(filePathMap, newFilePathMap);
 }
 
 // Update the map we maintain to track files that have already been uploaded to S3

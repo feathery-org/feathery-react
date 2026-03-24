@@ -9,12 +9,11 @@ import {
 } from './definitions';
 import {
   httpHelpers,
-  fetchS3File,
-  objectMap,
+  processFileValues,
   rerenderAllForms
 } from '../utils/formHelperFunctions';
 import { isValidFieldIdentifier } from '../utils/fieldHelperFunctions';
-import { fieldValues, filePathMap, setFieldValues } from '../utils/init';
+import { setFieldValues } from '../utils/init';
 import {
   ClientSideLogicRule,
   LogicRule,
@@ -528,21 +527,8 @@ export const runServerSideLogic = async (
   if (response?.field_data) {
     setFieldValues(response.field_data, true, true);
   }
-  // Handle file values the same way as the session v3 endpoint:
-  // convert { url, path } to Promise<File> and track S3 paths
   if (response?.file_values) {
-    const filePromises = objectMap(response.file_values, (fileOrFiles: any) =>
-      Array.isArray(fileOrFiles)
-        ? fileOrFiles.map((f: any) => fetchS3File(f.url))
-        : fetchS3File(fileOrFiles.url)
-    );
-    const newFilePathMap = objectMap(response.file_values, (fileOrFiles: any) =>
-      Array.isArray(fileOrFiles)
-        ? fileOrFiles.map((f: any) => f.path)
-        : fileOrFiles.path
-    );
-    Object.assign(fieldValues, filePromises);
-    Object.assign(filePathMap, newFilePathMap);
+    processFileValues(response.file_values);
     rerenderAllForms();
   }
   if (response?.error) {
