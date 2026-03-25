@@ -126,6 +126,7 @@
     "acorn-loose": "^8.5.2",
     "acorn-walk": "^8.3.4",
     "ai": "^6.0.69",
+    "country-flag-emoji-polyfill": "^0.1.8",
     "date-fns": "^4.1.0",
     "flat-map-polyfill": "^0.3.8",
     "is-url": "^1.2.4",
