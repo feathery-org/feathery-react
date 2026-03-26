@@ -20,6 +20,7 @@ import {
   lookUpTrigger,
   mapFormSettingsResponse,
   prioritizeActions,
+  processFileValues,
   registerRenderCallback,
   rerenderAllForms,
   setFormElementError,
@@ -1238,6 +1239,7 @@ function Form({
           if (data.status !== 'error') {
             const vals = data.data ?? {};
             updateFieldValues(vals);
+            processFileValues(data.file_values);
           }
           return data;
         },
@@ -2544,8 +2546,10 @@ function Form({
                       curAction.variant_id || '',
                       pollData
                     );
-                    if (pollData.status === 'complete' && pollData.data)
+                    if (pollData.status === 'complete' && pollData.data) {
                       updateFieldValues(pollData.data);
+                      processFileValues(pollData.file_values);
+                    }
                   }
                 })
               );
@@ -2569,6 +2573,7 @@ function Form({
           } else {
             data.forEach((entry) => {
               if (entry.data) updateFieldValues(entry.data);
+              processFileValues(entry.file_values);
             });
           }
         } catch (e: any) {
