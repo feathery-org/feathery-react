@@ -111,7 +111,8 @@ function CountryDropdown(
                 css={{
                   fontSize: '24px',
                   marginRight: '7px',
-                  lineHeight: '33px'
+                  lineHeight: '33px',
+                  fontFamily: '"Twemoji Country Flags", sans-serif'
                 }}
               >
                 {flag}
