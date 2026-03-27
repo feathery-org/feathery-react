@@ -35,6 +35,7 @@ function TableElement({
   responsiveStyles,
   onClick = () => {},
   updateFieldValues = () => {},
+  submitCustom = () => {},
   editMode = false,
   buttonLoaders = {}
 }: any) {
@@ -90,6 +91,7 @@ function TableElement({
     useTableMutations({
       columns: baseColumns,
       updateFieldValues,
+      submitCustom,
       editMode,
       editModeFieldValues: activeFieldValues,
       enablePagination,

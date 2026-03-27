@@ -5,6 +5,7 @@ import { Column } from './types';
 type UseTableMutationsProps = {
   columns: Column[];
   updateFieldValues: (values: Record<string, any>) => void;
+  submitCustom: (values: Record<string, any>) => void;
   editMode: boolean;
   editModeFieldValues: Record<string, any>;
   enablePagination: boolean;
@@ -24,6 +25,7 @@ type UseTableMutationsReturn = {
 export function useTableMutations({
   columns,
   updateFieldValues,
+  submitCustom,
   editMode,
   editModeFieldValues,
   enablePagination,
@@ -53,6 +55,7 @@ export function useTableMutations({
     // Clear search so the new row is visible
     if (searchQuery) setSearchQuery('');
     updateFieldValues(updates);
+    if (!editMode) submitCustom(updates);
     onMutate();
     // Navigate to first page where the new row appears
     if (enablePagination) setCurrentPage(0);
@@ -60,6 +63,8 @@ export function useTableMutations({
     columns,
     getFieldArray,
     updateFieldValues,
+    submitCustom,
+    editMode,
     onMutate,
     enablePagination,
     setCurrentPage,
@@ -75,9 +80,17 @@ export function useTableMutations({
         updates[col.field_key] = existing.filter((_, i) => i !== rowIndex);
       });
       updateFieldValues(updates);
+      if (!editMode) submitCustom(updates);
       onMutate();
     },
-    [columns, getFieldArray, updateFieldValues, onMutate]
+    [
+      columns,
+      getFieldArray,
+      updateFieldValues,
+      submitCustom,
+      editMode,
+      onMutate
+    ]
   );
 
   const handleCellEdit = useCallback(
@@ -85,10 +98,12 @@ export function useTableMutations({
       const existing = getFieldArray(fieldKey);
       const updated = [...existing];
       updated[rowIndex] = newValue;
-      updateFieldValues({ [fieldKey]: updated });
+      const values = { [fieldKey]: updated };
+      updateFieldValues(values);
+      if (!editMode) submitCustom(values);
       onMutate();
     },
-    [getFieldArray, updateFieldValues, onMutate]
+    [getFieldArray, updateFieldValues, submitCustom, editMode, onMutate]
   );
 
   const handleCellClear = useCallback(
