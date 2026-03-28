@@ -218,7 +218,13 @@ export const getFormContext = (formUuid: string) => {
       download?: boolean;
       merge?: boolean;
       mergedFileName?: string;
-    }) => formState.client.generateDocuments({ documentIds, download, merge, mergedFileName }),
+    }) =>
+      formState.client.generateDocuments({
+        documentIds,
+        download,
+        merge,
+        mergedFileName
+      }),
     getQuikForms: (props: { dealerNames: string[] }) =>
       formState.client.getQuikForms(props),
     getQuikFormRoles: (props: { formIds: number[] }) =>
