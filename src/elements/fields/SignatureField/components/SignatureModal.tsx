@@ -140,17 +140,15 @@ function SignatureModal(props: SignatureModalProps) {
   };
 
   const handleSubmit = () => {
-    if (signatureFile) {
-      onEnd(signatureFile);
-      sessionStorage.setItem(storageKey, fullName);
-      setShow(false);
-      resetState();
-    }
+    onEnd(signatureFile!);
+    sessionStorage.setItem(storageKey, fullName);
+    setShow(false);
+    resetState();
   };
 
   const handleSignAll = () => {
-    if (signatureFile && onSignAll) {
-      onSignAll(signatureFile);
+    if (onSignAll) {
+      onSignAll(signatureFile!);
       sessionStorage.setItem(storageKey, fullName);
       setShow(false);
       resetState();
@@ -477,7 +475,7 @@ function SignatureModal(props: SignatureModalProps) {
                   }
                 }}
               >
-                {isInitials ? 'Initial All' : 'Sign All'}
+                {isInitials ? t.initials_confirm_all : t.confirm_all}
               </button>
             )}
             <button
