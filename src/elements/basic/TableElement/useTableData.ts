@@ -179,14 +179,14 @@ export function useTableData({
     return cols;
   }, [editMode, userColumns]);
 
-  // Use example data in edit mode
-  // dataVersion busts this memo when mutations (add/edit/delete) change fieldValues contents
+  // fieldValues is mutated outside React state, so we need dataVersion
+  // as a manual dirty flag to trigger re-snapshots
   const baseFieldValues = useMemo(() => {
     if (editMode) {
       return generateExampleData(baseColumns);
     }
     return { ...fieldValues };
-  }, [editMode, baseColumns, userColumns.length, dataVersion]);
+  }, [editMode, baseColumns, dataVersion]);
 
   const [searchQuery, setSearchQuery] = useState('');
 

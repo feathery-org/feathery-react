@@ -108,7 +108,8 @@ function TableElement({
 
   const canEdit = enableEditing && !isTransposed;
   const showAddRow = canEdit && enableAddRows;
-  const showDeleteColumn = canEdit && enableDeleteRows;
+  const canDeleteRows = canEdit && enableDeleteRows;
+  const showDeleteColumn = canEdit && (enableDeleteRows || enableAddRows);
 
   const [pendingAddRows, setPendingAddRows] = useState<Set<number>>(new Set());
   const pendingAddRowsRef = useRef(pendingAddRows);
@@ -141,9 +142,6 @@ function TableElement({
     },
     [handleRemoveRowLocal]
   );
-
-  // Prevents layout shift when pending rows appear/disappear
-  const showDismissColumn = showAddRow && !showDeleteColumn;
 
   const [deleteRowIndex, setDeleteRowIndex] = useState<number | null>(null);
   const prevPageRef = useRef(currentPage);
@@ -222,7 +220,7 @@ function TableElement({
                       {/* Empty header for actions column */}
                     </th>
                   )}
-                  {(showDeleteColumn || showDismissColumn) && (
+                  {showDeleteColumn && (
                     <th
                       scope='col'
                       css={{
@@ -394,54 +392,51 @@ function TableElement({
                           ...styles.getTarget('td')
                         }}
                       >
-                        <button
-                          type='button'
-                          ref={(el) => {
-                            if (el) deleteIconRefs.current.set(rowIndex, el);
-                            else deleteIconRefs.current.delete(rowIndex);
-                          }}
-                          css={deleteIconStyle}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteRowIndex(
-                              deleteRowIndex === rowIndex ? null : rowIndex
-                            );
-                          }}
-                        >
-                          <TrashIcon />
-                        </button>
-                        {deleteRowIndex === rowIndex && (
-                          <DeleteConfirm
-                            anchorEl={
-                              deleteIconRefs.current.get(rowIndex) ?? null
-                            }
-                            onConfirm={() => {
-                              handleDeleteRow(rowIndex);
-                              setDeleteRowIndex(null);
-                            }}
-                            onCancel={handleCancelDelete}
-                          />
-                        )}
-                      </td>
-                    )}
-                    {showDismissColumn && (
-                      <td
-                        css={{
-                          ...deleteColumnStyle,
-                          ...styles.getTarget('td')
-                        }}
-                      >
-                        {pendingAddRows.has(rowIndex) && (
-                          <button
-                            type='button'
-                            css={{ ...deleteIconStyle, opacity: 1 }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDismissAddRow(rowIndex);
-                            }}
-                          >
-                            <TrashIcon />
-                          </button>
+                        {canDeleteRows ? (
+                          <>
+                            <button
+                              type='button'
+                              ref={(el) => {
+                                if (el)
+                                  deleteIconRefs.current.set(rowIndex, el);
+                                else deleteIconRefs.current.delete(rowIndex);
+                              }}
+                              css={deleteIconStyle}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteRowIndex(
+                                  deleteRowIndex === rowIndex ? null : rowIndex
+                                );
+                              }}
+                            >
+                              <TrashIcon />
+                            </button>
+                            {deleteRowIndex === rowIndex && (
+                              <DeleteConfirm
+                                anchorEl={
+                                  deleteIconRefs.current.get(rowIndex) ?? null
+                                }
+                                onConfirm={() => {
+                                  handleDeleteRow(rowIndex);
+                                  setDeleteRowIndex(null);
+                                }}
+                                onCancel={handleCancelDelete}
+                              />
+                            )}
+                          </>
+                        ) : (
+                          pendingAddRows.has(rowIndex) && (
+                            <button
+                              type='button'
+                              css={{ ...deleteIconStyle, opacity: 1 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDismissAddRow(rowIndex);
+                              }}
+                            >
+                              <TrashIcon />
+                            </button>
+                          )
                         )}
                       </td>
                     )}

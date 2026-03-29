@@ -26,9 +26,11 @@ export function DeleteConfirm({
 }: DeleteConfirmProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  const anchorRect = anchorEl?.getBoundingClientRect();
-  const top = (anchorRect?.bottom ?? 0) + 4;
-  const left = anchorRect?.right ?? 0;
+  if (!anchorEl) return null;
+
+  const anchorRect = anchorEl.getBoundingClientRect();
+  const top = anchorRect.bottom + 4;
+  const left = anchorRect.right;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

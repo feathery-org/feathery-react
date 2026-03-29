@@ -55,6 +55,8 @@ export function useTableMutations({
     });
     // Clear search so the new row is visible
     if (searchQuery) setSearchQuery('');
+    // No submitCustom — new rows are provisional until the user edits a cell,
+    // avoiding empty-row noise in the backend
     updateFieldValues(updates);
     onMutate();
     // Navigate to first page where the new row appears

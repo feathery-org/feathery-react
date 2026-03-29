@@ -78,11 +78,6 @@ export const emptyStateTextStyle = {
   margin: 0
 } as const;
 
-export const searchContainerStyle = {
-  padding: '16px',
-  borderBottom: `1px solid ${colors.gray200}`
-} as const;
-
 export const searchWrapperStyle = {
   position: 'relative',
   flex: 1

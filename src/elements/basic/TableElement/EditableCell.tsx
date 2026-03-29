@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { featheryDoc } from '../../../utils/browser';
 import { stringifyWithNull } from '../../../utils/primitives';
@@ -46,6 +46,8 @@ export function EditableCell({
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const shouldSaveRef = useRef(true);
+
+  const closeClearConfirm = useCallback(() => setShowClearConfirm(false), []);
 
   const displayValue = stringifyWithNull(value) ?? '';
   const isEmpty = displayValue === '';
@@ -208,10 +210,10 @@ export function EditableCell({
           message='Clear this field?'
           confirmLabel='Clear'
           onConfirm={() => {
-            setShowClearConfirm(false);
+            closeClearConfirm();
             onClear(fieldKey, rowIndex);
           }}
-          onCancel={() => setShowClearConfirm(false)}
+          onCancel={closeClearConfirm}
         />
       )}
     </div>
