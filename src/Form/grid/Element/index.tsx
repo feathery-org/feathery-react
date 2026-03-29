@@ -75,7 +75,7 @@ const Element = ({ node: el, form }: any) => {
     featheryContext,
     formSettings
   };
-  const fieldId = el.servar?.id ?? el.id;
+  const fieldId = el.servar?.key ?? el.id;
   if (elementOnView && onViewElements.includes(fieldId))
     basicProps.onView = (inView: boolean) => elementOnView(fieldId, inView);
 
