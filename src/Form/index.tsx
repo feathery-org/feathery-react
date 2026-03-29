@@ -1101,7 +1101,6 @@ function Form({
           );
           setSteps(JSON.parse(JSON.stringify(steps)));
           updateStepFieldOptions(newStep, newOptions, repeatIndex);
-          setActiveStep(JSON.parse(JSON.stringify(newStep)));
         },
         updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => {
           Object.values(steps).forEach((step) =>
@@ -1110,7 +1109,6 @@ function Form({
           setSteps(JSON.parse(JSON.stringify(steps)));
 
           updateStepFieldStyles(newStep, fieldKey, newStyles);
-          setActiveStep(JSON.parse(JSON.stringify(newStep)));
         },
         updateFieldProperties: (
           fieldKey: string,
@@ -1123,7 +1121,6 @@ function Form({
           setSteps(JSON.parse(JSON.stringify(steps)));
 
           updateStepFieldProperties(newStep, fieldKey, newProperties, onServar);
-          setActiveStep(JSON.parse(JSON.stringify(newStep)));
         },
         setFieldErrors: (
           errors: Record<string, string | { index: number; message: string }>
