@@ -87,23 +87,63 @@ function TableElement({
     baseFieldValues
   } = useTableData({ element, editMode, dataVersion });
 
-  const { handleAddRow, handleDeleteRow, handleCellEdit, handleCellClear } =
-    useTableMutations({
-      columns: baseColumns,
-      updateFieldValues,
-      submitCustom,
-      editMode,
-      editModeFieldValues: activeFieldValues,
-      enablePagination,
-      setCurrentPage,
-      setSearchQuery,
-      searchQuery,
-      onMutate
-    });
+  const {
+    handleAddRow,
+    handleDeleteRow,
+    handleRemoveRowLocal,
+    handleCellEdit,
+    handleCellClear
+  } = useTableMutations({
+    columns: baseColumns,
+    updateFieldValues,
+    submitCustom,
+    editMode,
+    editModeFieldValues: activeFieldValues,
+    enablePagination,
+    setCurrentPage,
+    setSearchQuery,
+    searchQuery,
+    onMutate
+  });
 
   const canEdit = enableEditing && !isTransposed;
   const showAddRow = canEdit && enableAddRows;
   const showDeleteColumn = canEdit && enableDeleteRows;
+
+  const [pendingAddRows, setPendingAddRows] = useState<Set<number>>(new Set());
+  const pendingAddRowsRef = useRef(pendingAddRows);
+  pendingAddRowsRef.current = pendingAddRows;
+
+  const wrappedHandleCellEdit = useCallback(
+    (fieldKey: string, rowIndex: number, newValue: any) => {
+      if (pendingAddRowsRef.current.has(rowIndex)) {
+        setPendingAddRows((prev) => {
+          const next = new Set(prev);
+          next.delete(rowIndex);
+          return next;
+        });
+      }
+      handleCellEdit(fieldKey, rowIndex, newValue);
+    },
+    [handleCellEdit]
+  );
+
+  const handleDismissAddRow = useCallback(
+    (rowIndex: number) => {
+      handleRemoveRowLocal(rowIndex);
+      setPendingAddRows((prev) => {
+        const next = new Set<number>();
+        prev.forEach((idx) => {
+          if (idx !== rowIndex) next.add(idx > rowIndex ? idx - 1 : idx);
+        });
+        return next;
+      });
+    },
+    [handleRemoveRowLocal]
+  );
+
+  // Prevents layout shift when pending rows appear/disappear
+  const showDismissColumn = showAddRow && !showDeleteColumn;
 
   const [deleteRowIndex, setDeleteRowIndex] = useState<number | null>(null);
   const prevPageRef = useRef(currentPage);
@@ -142,6 +182,12 @@ function TableElement({
                 onClick={() => {
                   setDeleteRowIndex(null);
                   handleAddRow();
+                  setPendingAddRows((prev) => {
+                    const next = new Set<number>();
+                    next.add(0);
+                    prev.forEach((idx) => next.add(idx + 1));
+                    return next;
+                  });
                 }}
               >
                 + Add Row
@@ -176,7 +222,7 @@ function TableElement({
                       {/* Empty header for actions column */}
                     </th>
                   )}
-                  {showDeleteColumn && (
+                  {(showDeleteColumn || showDismissColumn) && (
                     <th
                       scope='col'
                       css={{
@@ -313,7 +359,7 @@ function TableElement({
                               value={cellValue}
                               fieldKey={column.field_key}
                               rowIndex={rowIndex}
-                              onEdit={handleCellEdit}
+                              onEdit={wrappedHandleCellEdit}
                               onClear={handleCellClear}
                             />
                           ) : (
@@ -375,6 +421,27 @@ function TableElement({
                             }}
                             onCancel={handleCancelDelete}
                           />
+                        )}
+                      </td>
+                    )}
+                    {showDismissColumn && (
+                      <td
+                        css={{
+                          ...deleteColumnStyle,
+                          ...styles.getTarget('td')
+                        }}
+                      >
+                        {pendingAddRows.has(rowIndex) && (
+                          <button
+                            type='button'
+                            css={{ ...deleteIconStyle, opacity: 1 }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDismissAddRow(rowIndex);
+                            }}
+                          >
+                            <TrashIcon />
+                          </button>
                         )}
                       </td>
                     )}

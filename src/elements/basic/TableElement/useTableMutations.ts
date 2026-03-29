@@ -18,6 +18,7 @@ type UseTableMutationsProps = {
 type UseTableMutationsReturn = {
   handleAddRow: () => void;
   handleDeleteRow: (rowIndex: number) => void;
+  handleRemoveRowLocal: (rowIndex: number) => void;
   handleCellEdit: (fieldKey: string, rowIndex: number, newValue: any) => void;
   handleCellClear: (fieldKey: string, rowIndex: number) => void;
 };
@@ -55,7 +56,6 @@ export function useTableMutations({
     // Clear search so the new row is visible
     if (searchQuery) setSearchQuery('');
     updateFieldValues(updates);
-    if (!editMode) submitCustom(updates);
     onMutate();
     // Navigate to first page where the new row appears
     if (enablePagination) setCurrentPage(0);
@@ -63,8 +63,6 @@ export function useTableMutations({
     columns,
     getFieldArray,
     updateFieldValues,
-    submitCustom,
-    editMode,
     onMutate,
     enablePagination,
     setCurrentPage,
@@ -72,25 +70,41 @@ export function useTableMutations({
     searchQuery
   ]);
 
-  const handleDeleteRow = useCallback(
+  const buildRowRemovalUpdates = useCallback(
     (rowIndex: number) => {
       const updates: Record<string, any> = {};
       columns.forEach((col) => {
         const existing = getFieldArray(col.field_key);
         updates[col.field_key] = existing.filter((_, i) => i !== rowIndex);
       });
+      return updates;
+    },
+    [columns, getFieldArray]
+  );
+
+  const handleDeleteRow = useCallback(
+    (rowIndex: number) => {
+      const updates = buildRowRemovalUpdates(rowIndex);
       updateFieldValues(updates);
       if (!editMode) submitCustom(updates);
       onMutate();
     },
     [
-      columns,
-      getFieldArray,
+      buildRowRemovalUpdates,
       updateFieldValues,
       submitCustom,
       editMode,
       onMutate
     ]
+  );
+
+  const handleRemoveRowLocal = useCallback(
+    (rowIndex: number) => {
+      const updates = buildRowRemovalUpdates(rowIndex);
+      updateFieldValues(updates);
+      onMutate();
+    },
+    [buildRowRemovalUpdates, updateFieldValues, onMutate]
   );
 
   const handleCellEdit = useCallback(
@@ -113,5 +127,11 @@ export function useTableMutations({
     [handleCellEdit]
   );
 
-  return { handleAddRow, handleDeleteRow, handleCellEdit, handleCellClear };
+  return {
+    handleAddRow,
+    handleDeleteRow,
+    handleRemoveRowLocal,
+    handleCellEdit,
+    handleCellClear
+  };
 }
