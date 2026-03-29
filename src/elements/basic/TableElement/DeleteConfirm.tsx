@@ -13,12 +13,16 @@ type DeleteConfirmProps = {
   anchorEl: HTMLElement | null;
   onConfirm: () => void;
   onCancel: () => void;
+  message?: string;
+  confirmLabel?: string;
 };
 
 export function DeleteConfirm({
   anchorEl,
   onConfirm,
-  onCancel
+  onCancel,
+  message = 'Delete this row?',
+  confirmLabel = 'Delete'
 }: DeleteConfirmProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -59,7 +63,7 @@ export function DeleteConfirm({
     <div
       ref={popoverRef}
       role='alertdialog'
-      aria-label='Confirm row deletion'
+      aria-label={message}
       css={{
         ...confirmPopoverStyle,
         top: `${top}px`,
@@ -67,7 +71,7 @@ export function DeleteConfirm({
         transform: 'translateX(-100%)'
       }}
     >
-      <p css={confirmTextStyle}>Delete this row?</p>
+      <p css={confirmTextStyle}>{message}</p>
       <div css={confirmButtonRowStyle}>
         <button
           type='button'
@@ -87,7 +91,7 @@ export function DeleteConfirm({
             onConfirm();
           }}
         >
-          Delete
+          {confirmLabel}
         </button>
       </div>
     </div>,

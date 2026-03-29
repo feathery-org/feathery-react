@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { featheryDoc } from '../../../utils/browser';
 import { stringifyWithNull } from '../../../utils/primitives';
+import { DeleteConfirm } from './DeleteConfirm';
 import {
   clickToEditStyle,
   cellInputStyle,
@@ -39,6 +40,7 @@ export function EditableCell({
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -192,7 +194,7 @@ export function EditableCell({
               onClick={(e) => {
                 e.stopPropagation();
                 setIsMenuOpen(false);
-                onClear(fieldKey, rowIndex);
+                setShowClearConfirm(true);
               }}
             >
               Clear Field
@@ -200,6 +202,18 @@ export function EditableCell({
           </div>,
           featheryDoc().body
         )}
+      {showClearConfirm && (
+        <DeleteConfirm
+          anchorEl={menuButtonRef.current}
+          message='Clear this field?'
+          confirmLabel='Clear'
+          onConfirm={() => {
+            setShowClearConfirm(false);
+            onClear(fieldKey, rowIndex);
+          }}
+          onCancel={() => setShowClearConfirm(false)}
+        />
+      )}
     </div>
   );
 }
