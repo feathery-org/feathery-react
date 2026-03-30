@@ -10,6 +10,7 @@ export const defaultTranslations = {
   draw_subtitle: 'Draw your signature here using your mouse or trackpad',
   draw_instructions: 'Draw your signature in the box below',
   confirm: 'Sign',
+  confirm_all: 'Sign All',
   cancel: 'Cancel',
   back: 'Back',
   clear: 'Clear',
@@ -23,7 +24,8 @@ export const defaultTranslations = {
   initials_draw_subtitle:
     'Draw your initials here using your mouse or trackpad',
   initials_draw_instructions: 'Draw your initials in the box below',
-  initials_confirm: 'Initial'
+  initials_confirm: 'Initial',
+  initials_confirm_all: 'Initial All'
 } as const;
 
 export type SignatureTranslations = typeof defaultTranslations;

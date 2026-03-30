@@ -18,6 +18,7 @@ type SignatureModalProps = SignatureCanvasProps & {
   isInitials?: boolean;
   translation: SignatureTranslations;
   onEnd: (file: File) => void;
+  onSignAll?: (file: File) => void;
 };
 
 function SignatureModal(props: SignatureModalProps) {
@@ -32,6 +33,7 @@ function SignatureModal(props: SignatureModalProps) {
     onEnd = () => {},
     signMethods = '',
     isInitials = false,
+    onSignAll,
     translation: t
   } = props;
 
@@ -140,6 +142,15 @@ function SignatureModal(props: SignatureModalProps) {
   const handleSubmit = () => {
     if (signatureFile) {
       onEnd(signatureFile);
+      sessionStorage.setItem(storageKey, fullName);
+      setShow(false);
+      resetState();
+    }
+  };
+
+  const handleSignAll = () => {
+    if (signatureFile && onSignAll) {
+      onSignAll(signatureFile);
       sessionStorage.setItem(storageKey, fullName);
       setShow(false);
       resetState();
@@ -444,6 +455,29 @@ function SignatureModal(props: SignatureModalProps) {
                 }}
               >
                 {t.clear}
+              </button>
+            )}
+            {onSignAll && (
+              <button
+                onClick={() => {
+                  if (!isLoading) handleSignAll();
+                }}
+                disabled={isLoading || !signatureFile}
+                css={{
+                  marginRight: '10px',
+                  backgroundColor: '#535353',
+                  color: '#fff',
+                  '&:hover': {
+                    backgroundColor: '#3a3a3a'
+                  },
+                  '&:disabled': {
+                    '&:hover': {
+                      cursor: 'not-allowed'
+                    }
+                  }
+                }}
+              >
+                {isInitials ? t.initials_confirm_all : t.confirm_all}
               </button>
             )}
             <button
