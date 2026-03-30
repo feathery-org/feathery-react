@@ -357,7 +357,8 @@ export function mapFormSettingsResponse(res: any) {
     assistantEnabled: res.ai_assistant_settings?.enabled,
     assistantColor: res.ai_assistant_settings?.color
       ? `#${res.ai_assistant_settings.color}`
-      : '#6b7280'
+      : '#6b7280',
+    assistantWorkflowActions: res.ai_assistant_settings?.workflow_actions ?? []
   };
 }
 
