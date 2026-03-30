@@ -381,7 +381,6 @@ function Form({
     globalStyles: {},
     mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT,
     assistantEnabled: false,
-    assistantContext: '',
     assistantColor: '#6b7280'
   });
   const trackHashes = useRef(false);
