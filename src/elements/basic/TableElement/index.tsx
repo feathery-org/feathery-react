@@ -9,6 +9,7 @@ import { EditableCell } from './EditableCell';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
+import { useColumnWidths } from './useColumnWidths';
 import { TrashIcon } from '../../components/icons';
 import {
   containerStyle,
@@ -70,8 +71,7 @@ function TableElement({
 
     // editing
     enableEditing,
-    enableAddRows,
-    enableDeleteRows,
+    enableAddDeleteRows,
 
     // data
     columns,
@@ -87,29 +87,25 @@ function TableElement({
     baseFieldValues
   } = useTableData({ element, editMode, dataVersion });
 
-  const {
-    handleAddRow,
-    handleDeleteRow,
-    handleRemoveRowLocal,
-    handleCellEdit,
-    handleCellClear
-  } = useTableMutations({
-    columns: baseColumns,
-    updateFieldValues,
-    submitCustom,
-    editMode,
-    editModeFieldValues: activeFieldValues,
-    enablePagination,
-    setCurrentPage,
-    setSearchQuery,
-    searchQuery,
-    onMutate
-  });
+  const { handleAddRow, handleDeleteRow, handleCellEdit, handleCellClear } =
+    useTableMutations({
+      columns: baseColumns,
+      updateFieldValues,
+      submitCustom,
+      editMode,
+      editModeFieldValues: activeFieldValues,
+      enablePagination,
+      setCurrentPage,
+      setSearchQuery,
+      searchQuery,
+      onMutate
+    });
 
   const canEdit = enableEditing && !isTransposed;
-  const showAddRow = canEdit && enableAddRows;
-  const canDeleteRows = canEdit && enableDeleteRows;
-  const showDeleteColumn = canEdit && (enableDeleteRows || enableAddRows);
+  const showAddRow = canEdit && enableAddDeleteRows;
+  const canDeleteRows = canEdit && enableAddDeleteRows;
+  const hasOverflowMenu = actions.length > 1;
+  const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
 
   const [pendingAddRows, setPendingAddRows] = useState<Set<number>>(new Set());
   const pendingAddRowsRef = useRef(pendingAddRows);
@@ -129,20 +125,6 @@ function TableElement({
     [handleCellEdit]
   );
 
-  const handleDismissAddRow = useCallback(
-    (rowIndex: number) => {
-      handleRemoveRowLocal(rowIndex);
-      setPendingAddRows((prev) => {
-        const next = new Set<number>();
-        prev.forEach((idx) => {
-          if (idx !== rowIndex) next.add(idx > rowIndex ? idx - 1 : idx);
-        });
-        return next;
-      });
-    },
-    [handleRemoveRowLocal]
-  );
-
   const [deleteRowIndex, setDeleteRowIndex] = useState<number | null>(null);
   const prevPageRef = useRef(currentPage);
   if (prevPageRef.current !== currentPage) {
@@ -151,9 +133,17 @@ function TableElement({
   }
   const handleCancelDelete = useCallback(() => setDeleteRowIndex(null), []);
   const deleteIconRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+  const actionCellRefs = useRef<Map<number, HTMLTableCellElement>>(new Map());
 
   const showEmptyState = !hasData || !hasSearchResults;
   const showToolbar = enableSearch || showAddRow;
+
+  const tableRef = useRef<HTMLTableElement>(null);
+  const visibleColumnCount =
+    columns.length +
+    (!isTransposed && actions.length > 0 ? 1 : 0) +
+    (showStandaloneDeleteColumn ? 1 : 0);
+  const columnWidths = useColumnWidths(tableRef, visibleColumnCount);
 
   return (
     <div
@@ -162,41 +152,60 @@ function TableElement({
         ...styles.getTarget('container')
       }}
     >
-      <div css={{ minWidth: 'fit-content' }}>
-        {showToolbar && (
-          <div css={toolbarStyle}>
-            {enableSearch ? (
-              <Search
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-              />
-            ) : (
-              <div />
+      {showToolbar && (
+        <div css={toolbarStyle}>
+          {enableSearch ? (
+            <Search searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+          ) : (
+            <div />
+          )}
+          {showAddRow && (
+            <button
+              type='button'
+              css={addRowButtonStyle}
+              onClick={() => {
+                setDeleteRowIndex(null);
+                handleAddRow();
+                setPendingAddRows((prev) => {
+                  const next = new Set<number>();
+                  next.add(0);
+                  prev.forEach((idx) => next.add(idx + 1));
+                  return next;
+                });
+              }}
+            >
+              + Add Row
+            </button>
+          )}
+        </div>
+      )}
+      {showEmptyState ? (
+        <EmptyState hasSearchQuery={searchQuery.trim().length > 0} />
+      ) : (
+        <div css={{ overflowX: 'auto' }}>
+          <table
+            ref={tableRef}
+            css={{
+              ...(tableStyle as any),
+              ...(columnWidths
+                ? {
+                    tableLayout: 'fixed',
+                    minWidth: `${columnWidths.reduce((a, b) => a + b, 0)}px`
+                  }
+                : {
+                    tableLayout: 'auto',
+                    width: 'max-content'
+                  }),
+              ...styles.getTarget('table')
+            }}
+          >
+            {columnWidths && (
+              <colgroup>
+                {columnWidths.map((w, i) => (
+                  <col key={i} style={{ width: `${w}px` }} />
+                ))}
+              </colgroup>
             )}
-            {showAddRow && (
-              <button
-                type='button'
-                css={addRowButtonStyle}
-                onClick={() => {
-                  setDeleteRowIndex(null);
-                  handleAddRow();
-                  setPendingAddRows((prev) => {
-                    const next = new Set<number>();
-                    next.add(0);
-                    prev.forEach((idx) => next.add(idx + 1));
-                    return next;
-                  });
-                }}
-              >
-                + Add Row
-              </button>
-            )}
-          </div>
-        )}
-        {showEmptyState ? (
-          <EmptyState hasSearchQuery={searchQuery.trim().length > 0} />
-        ) : (
-          <table css={{ ...(tableStyle as any), ...styles.getTarget('table') }}>
             {!isTransposed && (
               <thead css={theadStyle}>
                 <tr>
@@ -220,7 +229,7 @@ function TableElement({
                       {/* Empty header for actions column */}
                     </th>
                   )}
-                  {showDeleteColumn && (
+                  {showStandaloneDeleteColumn && (
                     <th
                       scope='col'
                       css={{
@@ -368,6 +377,10 @@ function TableElement({
                     })}
                     {!isTransposed && actions.length > 0 && (
                       <td
+                        ref={(el) => {
+                          if (el) actionCellRefs.current.set(rowIndex, el);
+                          else actionCellRefs.current.delete(rowIndex);
+                        }}
                         css={{
                           ...(cellStyle as any),
                           paddingLeft: 0,
@@ -382,61 +395,64 @@ function TableElement({
                           onClick={onClick}
                           tableId={element.id}
                           buttonLoaders={buttonLoaders}
+                          canDeleteRows={canDeleteRows && hasOverflowMenu}
+                          onDeleteRow={(ri) => setDeleteRowIndex(ri)}
                         />
+                        {hasOverflowMenu &&
+                          canDeleteRows &&
+                          deleteRowIndex === rowIndex && (
+                            <DeleteConfirm
+                              anchorEl={
+                                actionCellRefs.current.get(rowIndex) ?? null
+                              }
+                              onConfirm={() => {
+                                handleDeleteRow(rowIndex);
+                                setDeleteRowIndex(null);
+                              }}
+                              onCancel={handleCancelDelete}
+                            />
+                          )}
                       </td>
                     )}
-                    {showDeleteColumn && (
+                    {showStandaloneDeleteColumn && (
                       <td
                         css={{
                           ...deleteColumnStyle,
                           ...styles.getTarget('td')
                         }}
                       >
-                        {canDeleteRows ? (
-                          <>
-                            <button
-                              type='button'
-                              ref={(el) => {
-                                if (el)
-                                  deleteIconRefs.current.set(rowIndex, el);
-                                else deleteIconRefs.current.delete(rowIndex);
-                              }}
-                              css={deleteIconStyle}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDeleteRowIndex(
-                                  deleteRowIndex === rowIndex ? null : rowIndex
-                                );
-                              }}
-                            >
-                              <TrashIcon />
-                            </button>
-                            {deleteRowIndex === rowIndex && (
-                              <DeleteConfirm
-                                anchorEl={
-                                  deleteIconRefs.current.get(rowIndex) ?? null
-                                }
-                                onConfirm={() => {
-                                  handleDeleteRow(rowIndex);
-                                  setDeleteRowIndex(null);
-                                }}
-                                onCancel={handleCancelDelete}
-                              />
-                            )}
-                          </>
-                        ) : (
-                          pendingAddRows.has(rowIndex) && (
-                            <button
-                              type='button'
-                              css={{ ...deleteIconStyle, opacity: 1 }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDismissAddRow(rowIndex);
-                              }}
-                            >
-                              <TrashIcon />
-                            </button>
-                          )
+                        <button
+                          type='button'
+                          ref={(el) => {
+                            if (el) deleteIconRefs.current.set(rowIndex, el);
+                            else deleteIconRefs.current.delete(rowIndex);
+                          }}
+                          css={{
+                            ...deleteIconStyle,
+                            ...(deleteRowIndex === rowIndex && {
+                              opacity: 1
+                            })
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteRowIndex(
+                              deleteRowIndex === rowIndex ? null : rowIndex
+                            );
+                          }}
+                        >
+                          <TrashIcon />
+                        </button>
+                        {deleteRowIndex === rowIndex && (
+                          <DeleteConfirm
+                            anchorEl={
+                              deleteIconRefs.current.get(rowIndex) ?? null
+                            }
+                            onConfirm={() => {
+                              handleDeleteRow(rowIndex);
+                              setDeleteRowIndex(null);
+                            }}
+                            onCancel={handleCancelDelete}
+                          />
                         )}
                       </td>
                     )}
@@ -487,17 +503,17 @@ function TableElement({
               )}
             </tbody>
           </table>
-        )}
-        {!showEmptyState && enablePagination && (
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            totalItems={totalRows}
-            rowsPerPage={rowsPerPage}
-            onPageChange={setCurrentPage}
-          />
-        )}
-      </div>
+        </div>
+      )}
+      {!showEmptyState && enablePagination && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalRows}
+          rowsPerPage={rowsPerPage}
+          onPageChange={setCurrentPage}
+        />
+      )}
     </div>
   );
 }

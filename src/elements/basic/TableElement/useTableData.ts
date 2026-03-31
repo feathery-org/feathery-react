@@ -97,8 +97,7 @@ type UseTableDataProps = {
       pagination: number;
       transpose?: boolean;
       enable_editing?: boolean;
-      add_rows?: boolean;
-      delete_rows?: boolean;
+      add_delete_rows?: boolean;
     };
   };
   editMode?: boolean;
@@ -123,8 +122,7 @@ type UseTableDataReturn = {
   enablePagination: boolean;
   isTransposed: boolean;
   enableEditing: boolean;
-  enableAddRows: boolean;
-  enableDeleteRows: boolean;
+  enableAddDeleteRows: boolean;
 
   // Computed data
   paginatedRowIndices: number[];
@@ -156,8 +154,7 @@ export function useTableData({
   const enableSort = element.properties?.sort ?? false;
   const enableTranspose = element.properties?.transpose ?? false;
   const enableEditing = element.properties?.enable_editing ?? false;
-  const enableAddRows = element.properties?.add_rows ?? false;
-  const enableDeleteRows = element.properties?.delete_rows ?? false;
+  const enableAddDeleteRows = element.properties?.add_delete_rows ?? false;
   const paginationSetting = element.properties?.pagination ?? 0;
   const rowsPerPage =
     typeof paginationSetting === 'number' && paginationSetting > 0
@@ -515,8 +512,7 @@ export function useTableData({
     isTransposed,
     transposedRowIndices,
     enableEditing,
-    enableAddRows,
-    enableDeleteRows,
+    enableAddDeleteRows,
 
     totalRows,
     totalPages,

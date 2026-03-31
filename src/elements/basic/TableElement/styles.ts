@@ -132,7 +132,8 @@ export const theadStyle = {
 export const thStyle = {
   padding: '12px 24px',
   fontWeight: '500',
-  userSelect: 'none'
+  userSelect: 'none',
+  whiteSpace: 'nowrap'
 } as const;
 
 export const rowStyle = {
@@ -258,6 +259,20 @@ export const actionMenuItemStyle = {
   '&:last-of-type': {
     borderBottomLeftRadius: '4px',
     borderBottomRightRadius: '4px'
+  }
+} as const;
+
+export const actionMenuSeparatorStyle = {
+  borderTop: `1px solid ${colors.gray200}`,
+  margin: '4px 0'
+} as const;
+
+export const actionMenuDeleteItemStyle = {
+  ...actionMenuItemStyle,
+  color: colors.red500,
+  '&:hover': {
+    backgroundColor: colors.gray100,
+    color: colors.red600
   }
 } as const;
 
