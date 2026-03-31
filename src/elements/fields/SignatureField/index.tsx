@@ -15,6 +15,7 @@ function SignatureField({
   disabled = false,
   onEnd = () => {},
   onClear = () => {},
+  onSignAll,
   ReactPortal = null, // This is allowing the ability to pass a portal for the modal
   children
 }: any) {
@@ -53,6 +54,7 @@ function SignatureField({
           onEnd={onEnd}
           signMethods={servar.metadata?.sign_methods ?? ''}
           isInitials={isInitials}
+          onSignAll={onSignAll}
           translation={t}
         />
       </Portal>

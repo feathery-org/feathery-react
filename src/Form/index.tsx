@@ -1108,7 +1108,6 @@ function Form({
           );
           setSteps(JSON.parse(JSON.stringify(steps)));
           updateStepFieldOptions(newStep, newOptions, repeatIndex);
-          setActiveStep(JSON.parse(JSON.stringify(newStep)));
         },
         updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => {
           Object.values(steps).forEach((step) =>
@@ -1117,7 +1116,6 @@ function Form({
           setSteps(JSON.parse(JSON.stringify(steps)));
 
           updateStepFieldStyles(newStep, fieldKey, newStyles);
-          setActiveStep(JSON.parse(JSON.stringify(newStep)));
         },
         updateFieldProperties: (
           fieldKey: string,
@@ -1130,7 +1128,6 @@ function Form({
           setSteps(JSON.parse(JSON.stringify(steps)));
 
           updateStepFieldProperties(newStep, fieldKey, newProperties, onServar);
-          setActiveStep(JSON.parse(JSON.stringify(newStep)));
         },
         setFieldErrors: (
           errors: Record<string, string | { index: number; message: string }>
@@ -2608,7 +2605,10 @@ function Form({
             } else openTab(url);
           } else if (envAction === 'download' && data.files) {
             // Download files directly
-            await downloadAllFileUrls(data.files);
+            await downloadAllFileUrls(
+              data.files,
+              replaceTextVariables(action.envelope_zip_name)
+            );
           } else if (envAction === 'save') {
             let files = data.files;
             if (files.length === 1) files = files[0];
@@ -2642,7 +2642,10 @@ function Form({
             setShowQuikFormViewer(true);
             break;
           } else if (action.form_fill_type === 'pdf' && payload.files) {
-            await downloadAllFileUrls(payload.files);
+            await downloadAllFileUrls(
+              payload.files,
+              replaceTextVariables(action.envelope_zip_name)
+            );
           }
         } catch (e: any) {
           setElementError((e as Error).message);

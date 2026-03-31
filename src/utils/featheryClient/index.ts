@@ -1043,11 +1043,15 @@ export default class FeatheryClient extends IntegrationClient {
   async generateDocuments({
     documentIds,
     download = false,
-    merge = false
+    merge = false,
+    zipName,
+    mergedFileName
   }: {
     documentIds: string[];
     download?: boolean;
     merge?: boolean;
+    zipName?: string;
+    mergedFileName?: string;
   }) {
     const { userId, sdkKey } = initInfo();
     const payload = await apiGenerateFormDocuments({
@@ -1056,12 +1060,13 @@ export default class FeatheryClient extends IntegrationClient {
       documentIds,
       userId,
       envelopeAction: 'fill',
-      mergeDocuments: merge
+      mergeDocuments: merge,
+      mergedFileName
     });
     if (payload.status === 'error') throw Error(payload.message);
 
     const files = payload?.files;
-    if (download) await downloadAllFileUrls(files);
+    if (download) await downloadAllFileUrls(files, zipName);
     return { files };
   }
 

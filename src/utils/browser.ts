@@ -93,7 +93,7 @@ async function getFileData(url: string) {
   return { fileName, blob };
 }
 
-export async function downloadAllFileUrls(urls: string[]) {
+export async function downloadAllFileUrls(urls: string[], zipName?: string) {
   if (urls.length === 0) return;
 
   let file: File;
@@ -125,7 +125,9 @@ export async function downloadAllFileUrls(urls: string[]) {
     }
 
     const zipBlob = await zip.generateAsync({ type: 'blob' });
-    file = new File([zipBlob], 'Feathery_Download.zip', {
+    const finalZipName =
+      zipName && !zipName.endsWith('.zip') ? `${zipName}.zip` : zipName;
+    file = new File([zipBlob], finalZipName || 'Feathery_Download.zip', {
       type: 'application/zip'
     });
   } else {

@@ -1,4 +1,5 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { polyfillCountryFlagEmojis } from 'country-flag-emoji-polyfill';
 
 import timeZoneCountries from './timeZoneCountries';
 import Placeholder from '../../components/Placeholder';
@@ -70,6 +71,14 @@ function PhoneField({
   const [curCountryCode, setCurCountryCode] = useState<string>(defaultCountry);
 
   useEffect(() => setCurCountryCode(defaultCountry), [defaultCountry]);
+
+  useEffect(() => {
+    try {
+      polyfillCountryFlagEmojis();
+    } catch {
+      // Gracefully degrade if polyfill fails (e.g. in test environments)
+    }
+  }, []);
 
   const phoneCode = countryMap[curCountryCode].phoneCode;
   // The raw number entered by the user, including phone code
@@ -233,6 +242,7 @@ function PhoneField({
             padding: '0 6px',
             position: 'relative',
             cursor: 'default',
+            fontFamily: '"Twemoji Country Flags", sans-serif',
             ...responsiveStyles.getTarget('fieldToggle'),
             ...enabledCountryStyles
           }}
