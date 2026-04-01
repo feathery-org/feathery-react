@@ -54,6 +54,7 @@ const Element = ({ node: el, form }: any) => {
     setInlineErrors,
     changeValue,
     updateFieldValues,
+    submitCustom,
     elementOnView,
     onViewElements,
     formSettings,
@@ -94,6 +95,8 @@ const Element = ({ node: el, form }: any) => {
       <Elements.TableElement
         {...basicProps}
         onClick={(payload: any) => tableOnClick(el, payload)}
+        updateFieldValues={updateFieldValues}
+        submitCustom={submitCustom}
         buttonLoaders={buttonLoaders}
       />
     );
