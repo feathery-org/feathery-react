@@ -9,7 +9,9 @@ const colors = {
   gray700: '#374151',
   gray900: '#111827',
   blue50: '#eff6ff',
-  blue700: '#1d4ed8'
+  blue700: '#1d4ed8',
+  red500: '#ef4444',
+  red600: '#dc2626'
 } as const;
 
 export const searchIconStyle = {
@@ -76,13 +78,9 @@ export const emptyStateTextStyle = {
   margin: 0
 } as const;
 
-export const searchContainerStyle = {
-  padding: '16px',
-  borderBottom: `1px solid ${colors.gray200}`
-} as const;
-
 export const searchWrapperStyle = {
-  position: 'relative'
+  position: 'relative',
+  flex: 1
 } as const;
 
 export const searchIconWrapperStyle = {
@@ -134,7 +132,8 @@ export const theadStyle = {
 export const thStyle = {
   padding: '12px 24px',
   fontWeight: '500',
-  userSelect: 'none'
+  userSelect: 'none',
+  whiteSpace: 'nowrap'
 } as const;
 
 export const rowStyle = {
@@ -263,6 +262,20 @@ export const actionMenuItemStyle = {
   }
 } as const;
 
+export const actionMenuSeparatorStyle = {
+  borderTop: `1px solid ${colors.gray200}`,
+  margin: '4px 0'
+} as const;
+
+export const actionMenuDeleteItemStyle = {
+  ...actionMenuItemStyle,
+  color: colors.red500,
+  '&:hover': {
+    backgroundColor: colors.gray100,
+    color: colors.red600
+  }
+} as const;
+
 export const actionIconButtonStyle = {
   ...actionButtonStyle,
   aspectRatio: 1,
@@ -334,5 +347,146 @@ export const overflowSelectStyle = {
   },
   '&:focus': {
     outline: 'none'
+  }
+} as const;
+
+// Editing styles
+
+export const toolbarStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '16px',
+  borderBottom: `1px solid ${colors.gray200}`,
+  gap: '12px'
+} as const;
+
+export const addRowButtonStyle = {
+  ...buttonStyle,
+  borderRadius: '8px',
+  paddingLeft: '12px',
+  paddingRight: '12px',
+  whiteSpace: 'nowrap' as const
+} as const;
+
+export const clickToEditStyle = {
+  color: colors.gray400,
+  cursor: 'pointer',
+  userSelect: 'none' as const,
+  fontSize: '14px'
+} as const;
+
+export const cellInputStyle = {
+  width: '100%',
+  padding: '4px 8px',
+  border: `1px solid ${colors.blue700}`,
+  borderRadius: '4px',
+  fontSize: '14px',
+  color: colors.gray900,
+  outline: 'none',
+  boxSizing: 'border-box' as const
+} as const;
+
+export const editableCellContentStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px'
+} as const;
+
+export const overflowIconStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '24px',
+  height: '24px',
+  borderRadius: '4px',
+  border: 'none',
+  backgroundColor: 'transparent',
+  color: colors.gray400,
+  cursor: 'pointer',
+  opacity: 0,
+  transition: 'opacity 0.15s',
+  flexShrink: 0,
+  padding: 0,
+  'tr:hover &, &[aria-expanded="true"]': {
+    opacity: 1
+  },
+  '&:hover': {
+    backgroundColor: colors.gray100,
+    color: colors.gray600
+  }
+} as const;
+
+export const deleteColumnStyle = {
+  width: '40px',
+  padding: '0 8px'
+} as const;
+
+export const deleteIconStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '28px',
+  height: '28px',
+  borderRadius: '4px',
+  border: 'none',
+  backgroundColor: 'transparent',
+  color: colors.gray400,
+  cursor: 'pointer',
+  opacity: 0,
+  transition: 'opacity 0.15s',
+  padding: 0,
+  'tr:hover &': {
+    opacity: 1
+  },
+  '&:hover': {
+    backgroundColor: colors.gray100,
+    color: colors.red500
+  }
+} as const;
+
+export const confirmPopoverStyle = {
+  position: 'fixed' as const,
+  backgroundColor: colors.white,
+  border: `1px solid ${colors.gray300}`,
+  borderRadius: '8px',
+  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+  zIndex: 9999,
+  padding: '12px 16px'
+} as const;
+
+export const confirmTextStyle = {
+  margin: '0 0 12px 0',
+  fontSize: '14px',
+  fontWeight: '500',
+  color: colors.gray900
+} as const;
+
+export const confirmButtonRowStyle = {
+  display: 'flex',
+  gap: '8px',
+  justifyContent: 'flex-end'
+} as const;
+
+export const confirmCancelButtonStyle = {
+  ...buttonStyle,
+  borderRadius: '6px',
+  paddingLeft: '12px',
+  paddingRight: '12px',
+  height: '32px'
+} as const;
+
+export const confirmDeleteButtonStyle = {
+  ...buttonStyle,
+  borderRadius: '6px',
+  paddingLeft: '12px',
+  paddingRight: '12px',
+  height: '32px',
+  backgroundColor: colors.red500,
+  color: colors.white,
+  border: `1px solid ${colors.red500}`,
+  '&:hover': {
+    backgroundColor: colors.red600,
+    color: colors.white
   }
 } as const;
