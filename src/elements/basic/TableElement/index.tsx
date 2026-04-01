@@ -1,16 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { Search } from './Search';
 import { SortHeader, SortIcon } from './Sort';
 import { Pagination } from './Pagination';
 import { ActionButtons } from './Actions';
 import { EmptyState } from './EmptyState';
-import { EditableCell } from './EditableCell';
-import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
-import { useTableMutations } from './useTableMutations';
-import { useColumnWidths } from './useColumnWidths';
-import { TrashIcon } from '../../components/icons';
 import {
   containerStyle,
   rowStyle,
@@ -19,11 +14,7 @@ import {
   theadStyle,
   thStyle,
   sortHeaderContentStyle,
-  sortIconContainerStyle,
-  toolbarStyle,
-  addRowButtonStyle,
-  deleteColumnStyle,
-  deleteIconStyle
+  sortIconContainerStyle
 } from './styles';
 
 function applyTableStyles(responsiveStyles: any) {
@@ -35,8 +26,6 @@ function TableElement({
   element,
   responsiveStyles,
   onClick = () => {},
-  updateFieldValues = () => {},
-  submitCustom = () => {},
   editMode = false,
   buttonLoaders = {}
 }: any) {
@@ -44,9 +33,6 @@ function TableElement({
     () => applyTableStyles(responsiveStyles),
     [responsiveStyles]
   );
-
-  const [dataVersion, setDataVersion] = useState(0);
-  const onMutate = useCallback(() => setDataVersion((v) => v + 1), []);
 
   const {
     // search
@@ -69,10 +55,6 @@ function TableElement({
     paginatedRowIndices,
     rowsPerPage,
 
-    // editing
-    enableEditing,
-    enableAddDeleteRows,
-
     // data
     columns,
     actions,
@@ -85,65 +67,9 @@ function TableElement({
     activeFieldValues,
     baseColumns,
     baseFieldValues
-  } = useTableData({ element, editMode, dataVersion });
+  } = useTableData({ element, editMode });
 
-  const { handleAddRow, handleDeleteRow, handleCellEdit, handleCellClear } =
-    useTableMutations({
-      columns: baseColumns,
-      updateFieldValues,
-      submitCustom,
-      editMode,
-      editModeFieldValues: activeFieldValues,
-      enablePagination,
-      setCurrentPage,
-      setSearchQuery,
-      searchQuery,
-      onMutate
-    });
-
-  const canEdit = enableEditing && !isTransposed;
-  const showAddRow = canEdit && enableAddDeleteRows;
-  const canDeleteRows = canEdit && enableAddDeleteRows;
-  const hasOverflowMenu = actions.length > 1;
-  const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
-
-  const [pendingAddRows, setPendingAddRows] = useState<Set<number>>(new Set());
-  const pendingAddRowsRef = useRef(pendingAddRows);
-  pendingAddRowsRef.current = pendingAddRows;
-
-  const wrappedHandleCellEdit = useCallback(
-    (fieldKey: string, rowIndex: number, newValue: any) => {
-      if (pendingAddRowsRef.current.has(rowIndex)) {
-        setPendingAddRows((prev) => {
-          const next = new Set(prev);
-          next.delete(rowIndex);
-          return next;
-        });
-      }
-      handleCellEdit(fieldKey, rowIndex, newValue);
-    },
-    [handleCellEdit]
-  );
-
-  const [deleteRowIndex, setDeleteRowIndex] = useState<number | null>(null);
-  const prevPageRef = useRef(currentPage);
-  if (prevPageRef.current !== currentPage) {
-    prevPageRef.current = currentPage;
-    setDeleteRowIndex(null);
-  }
-  const handleCancelDelete = useCallback(() => setDeleteRowIndex(null), []);
-  const deleteIconRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
-  const actionCellRefs = useRef<Map<number, HTMLTableCellElement>>(new Map());
-
-  const showEmptyState = !hasData || !hasSearchResults;
-  const showToolbar = enableSearch || showAddRow;
-
-  const tableRef = useRef<HTMLTableElement>(null);
-  const visibleColumnCount =
-    columns.length +
-    (!isTransposed && actions.length > 0 ? 1 : 0) +
-    (showStandaloneDeleteColumn ? 1 : 0);
-  const columnWidths = useColumnWidths(tableRef, visibleColumnCount);
+  const showEmptyState = !hasData || (hasData && !hasSearchResults);
 
   return (
     <div
@@ -152,60 +78,14 @@ function TableElement({
         ...styles.getTarget('container')
       }}
     >
-      {showToolbar && (
-        <div css={toolbarStyle}>
-          {enableSearch ? (
-            <Search searchQuery={searchQuery} onSearchChange={setSearchQuery} />
-          ) : (
-            <div />
-          )}
-          {showAddRow && (
-            <button
-              type='button'
-              css={addRowButtonStyle}
-              onClick={() => {
-                setDeleteRowIndex(null);
-                handleAddRow();
-                setPendingAddRows((prev) => {
-                  const next = new Set<number>();
-                  next.add(0);
-                  prev.forEach((idx) => next.add(idx + 1));
-                  return next;
-                });
-              }}
-            >
-              + Add Row
-            </button>
-          )}
-        </div>
-      )}
-      {showEmptyState ? (
-        <EmptyState hasSearchQuery={searchQuery.trim().length > 0} />
-      ) : (
-        <div css={{ overflowX: 'auto' }}>
-          <table
-            ref={tableRef}
-            css={{
-              ...(tableStyle as any),
-              ...(columnWidths
-                ? {
-                    tableLayout: 'fixed',
-                    minWidth: `${columnWidths.reduce((a, b) => a + b, 0)}px`
-                  }
-                : {
-                    tableLayout: 'auto',
-                    width: 'max-content'
-                  }),
-              ...styles.getTarget('table')
-            }}
-          >
-            {columnWidths && (
-              <colgroup>
-                {columnWidths.map((w, i) => (
-                  <col key={i} style={{ width: `${w}px` }} />
-                ))}
-              </colgroup>
-            )}
+      <div css={{ minWidth: 'fit-content' }}>
+        {enableSearch && (
+          <Search searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+        )}
+        {showEmptyState ? (
+          <EmptyState hasSearchQuery={searchQuery.trim().length > 0} />
+        ) : (
+          <table css={{ ...(tableStyle as any), ...styles.getTarget('table') }}>
             {!isTransposed && (
               <thead css={theadStyle}>
                 <tr>
@@ -229,16 +109,6 @@ function TableElement({
                       {/* Empty header for actions column */}
                     </th>
                   )}
-                  {showStandaloneDeleteColumn && (
-                    <th
-                      scope='col'
-                      css={{
-                        ...thStyle,
-                        ...deleteColumnStyle,
-                        ...styles.getTarget('th')
-                      }}
-                    />
-                  )}
                 </tr>
               </thead>
             )}
@@ -256,7 +126,7 @@ function TableElement({
                 }
 
                 const handleRowClick = () => {
-                  if (!isTransposed && !canEdit) {
+                  if (!isTransposed) {
                     onClick({
                       rowIndex,
                       rowData
@@ -284,6 +154,7 @@ function TableElement({
                       const isFirstColumn = colIndex === 0;
                       const isSecondColumn = colIndex === 1;
 
+                      // In transposed mode, get the original row index from the column
                       const originalRowIndex =
                         isTransposed && !isFirstColInTranspose
                           ? (column as any).originalRowIndex
@@ -323,6 +194,7 @@ function TableElement({
                           isTransposed &&
                           originalRowIndex !== undefined
                         ) {
+                          // In transposed mode, clicking a cell triggers with original row data
                           e.stopPropagation();
                           const originalRowData: Record<string, any> = {};
                           baseColumns.forEach((col) => {
@@ -361,14 +233,6 @@ function TableElement({
                                 />
                               </span>
                             </div>
-                          ) : canEdit ? (
-                            <EditableCell
-                              value={cellValue}
-                              fieldKey={column.field_key}
-                              rowIndex={rowIndex}
-                              onEdit={wrappedHandleCellEdit}
-                              onClear={handleCellClear}
-                            />
                           ) : (
                             stringifyWithNull(cellValue) ?? ''
                           )}
@@ -377,10 +241,6 @@ function TableElement({
                     })}
                     {!isTransposed && actions.length > 0 && (
                       <td
-                        ref={(el) => {
-                          if (el) actionCellRefs.current.set(rowIndex, el);
-                          else actionCellRefs.current.delete(rowIndex);
-                        }}
                         css={{
                           ...(cellStyle as any),
                           paddingLeft: 0,
@@ -395,65 +255,7 @@ function TableElement({
                           onClick={onClick}
                           tableId={element.id}
                           buttonLoaders={buttonLoaders}
-                          canDeleteRows={canDeleteRows && hasOverflowMenu}
-                          onDeleteRow={(ri) => setDeleteRowIndex(ri)}
                         />
-                        {hasOverflowMenu &&
-                          canDeleteRows &&
-                          deleteRowIndex === rowIndex && (
-                            <DeleteConfirm
-                              anchorEl={
-                                actionCellRefs.current.get(rowIndex) ?? null
-                              }
-                              onConfirm={() => {
-                                handleDeleteRow(rowIndex);
-                                setDeleteRowIndex(null);
-                              }}
-                              onCancel={handleCancelDelete}
-                            />
-                          )}
-                      </td>
-                    )}
-                    {showStandaloneDeleteColumn && (
-                      <td
-                        css={{
-                          ...deleteColumnStyle,
-                          ...styles.getTarget('td')
-                        }}
-                      >
-                        <button
-                          type='button'
-                          ref={(el) => {
-                            if (el) deleteIconRefs.current.set(rowIndex, el);
-                            else deleteIconRefs.current.delete(rowIndex);
-                          }}
-                          css={{
-                            ...deleteIconStyle,
-                            ...(deleteRowIndex === rowIndex && {
-                              opacity: 1
-                            })
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteRowIndex(
-                              deleteRowIndex === rowIndex ? null : rowIndex
-                            );
-                          }}
-                        >
-                          <TrashIcon />
-                        </button>
-                        {deleteRowIndex === rowIndex && (
-                          <DeleteConfirm
-                            anchorEl={
-                              deleteIconRefs.current.get(rowIndex) ?? null
-                            }
-                            onConfirm={() => {
-                              handleDeleteRow(rowIndex);
-                              setDeleteRowIndex(null);
-                            }}
-                            onCancel={handleCancelDelete}
-                          />
-                        )}
                       </td>
                     )}
                   </tr>
@@ -503,17 +305,17 @@ function TableElement({
               )}
             </tbody>
           </table>
-        </div>
-      )}
-      {!showEmptyState && enablePagination && (
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalItems={totalRows}
-          rowsPerPage={rowsPerPage}
-          onPageChange={setCurrentPage}
-        />
-      )}
+        )}
+        {!showEmptyState && enablePagination && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={totalRows}
+            rowsPerPage={rowsPerPage}
+            onPageChange={setCurrentPage}
+          />
+        )}
+      </div>
     </div>
   );
 }

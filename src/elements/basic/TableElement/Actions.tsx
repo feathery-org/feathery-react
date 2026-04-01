@@ -5,8 +5,6 @@ import {
   actionButtonStyle,
   actionMenuStyle,
   actionMenuItemStyle,
-  actionMenuSeparatorStyle,
-  actionMenuDeleteItemStyle,
   actionContainerStyle,
   menuIconStyle,
   actionIconButtonStyle
@@ -33,8 +31,6 @@ type ActionButtonsProps = {
   forceInlineButtons?: boolean;
   tableId?: string;
   buttonLoaders?: Record<string, any>;
-  canDeleteRows?: boolean;
-  onDeleteRow?: (rowIndex: number) => void;
 };
 
 export function ActionButtons({
@@ -45,9 +41,7 @@ export function ActionButtons({
   onClick,
   forceInlineButtons = false,
   tableId = '',
-  buttonLoaders = {},
-  canDeleteRows = false,
-  onDeleteRow
+  buttonLoaders = {}
 }: ActionButtonsProps) {
   if (actions.length === 0) return null;
 
@@ -185,22 +179,6 @@ export function ActionButtons({
                     </button>
                   );
                 })}
-                {canDeleteRows && onDeleteRow && (
-                  <>
-                    <div css={actionMenuSeparatorStyle} />
-                    <button
-                      type='button'
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsMenuOpen(false);
-                        onDeleteRow(rowIndex);
-                      }}
-                      css={actionMenuDeleteItemStyle}
-                    >
-                      Delete
-                    </button>
-                  </>
-                )}
               </div>,
               featheryDoc().body
             )}
