@@ -87,5 +87,4 @@ export {
 };
 
 export type { OPERATOR_CODE, FormContext };
-export type { AssistantChatProps } from './assistant';
 export type { StyledContainerProps } from './Form/grid/StyledContainer';
