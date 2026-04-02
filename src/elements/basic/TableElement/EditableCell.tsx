@@ -8,6 +8,8 @@ import {
   cellInputStyle,
   overflowIconStyle,
   editableCellContentStyle,
+  editingCellContentStyle,
+  editingCellInputStyle,
   actionMenuStyle,
   actionMenuItemStyle
 } from './styles';
@@ -132,16 +134,18 @@ export function EditableCell({
 
   if (isEditing) {
     return (
-      <input
-        ref={inputRef}
-        type='text'
-        value={editValue}
-        onChange={(e) => setEditValue(e.target.value)}
-        onBlur={handleBlur}
-        onKeyDown={handleKeyDown}
-        css={cellInputStyle}
-        onClick={(e) => e.stopPropagation()}
-      />
+      <div css={editingCellContentStyle}>
+        <input
+          ref={inputRef}
+          type='text'
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
+          css={{ ...cellInputStyle, ...editingCellInputStyle }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      </div>
     );
   }
 

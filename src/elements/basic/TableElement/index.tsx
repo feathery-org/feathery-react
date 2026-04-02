@@ -9,7 +9,6 @@ import { EditableCell } from './EditableCell';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
-import { useColumnWidths } from './useColumnWidths';
 import { TrashIcon } from '../../components/icons';
 import {
   containerStyle,
@@ -138,13 +137,6 @@ function TableElement({
   const showEmptyState = !hasData || !hasSearchResults;
   const showToolbar = enableSearch || showAddRow;
 
-  const tableRef = useRef<HTMLTableElement>(null);
-  const visibleColumnCount =
-    columns.length +
-    (!isTransposed && actions.length > 0 ? 1 : 0) +
-    (showStandaloneDeleteColumn ? 1 : 0);
-  const columnWidths = useColumnWidths(tableRef, visibleColumnCount);
-
   return (
     <div
       css={{
@@ -184,28 +176,11 @@ function TableElement({
       ) : (
         <div css={{ overflowX: 'auto' }}>
           <table
-            ref={tableRef}
             css={{
               ...(tableStyle as any),
-              ...(columnWidths
-                ? {
-                    tableLayout: 'fixed',
-                    minWidth: `${columnWidths.reduce((a, b) => a + b, 0)}px`
-                  }
-                : {
-                    tableLayout: 'auto',
-                    width: 'max-content'
-                  }),
               ...styles.getTarget('table')
             }}
           >
-            {columnWidths && (
-              <colgroup>
-                {columnWidths.map((w, i) => (
-                  <col key={i} style={{ width: `${w}px` }} />
-                ))}
-              </colgroup>
-            )}
             {!isTransposed && (
               <thead css={theadStyle}>
                 <tr>

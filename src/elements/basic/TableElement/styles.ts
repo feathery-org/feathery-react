@@ -377,7 +377,10 @@ export const clickToEditStyle = {
 } as const;
 
 export const cellInputStyle = {
+  display: 'block',
   width: '100%',
+  minWidth: 0,
+  maxWidth: '100%',
   padding: '4px 8px',
   border: `1px solid ${colors.blue700}`,
   borderRadius: '4px',
@@ -391,6 +394,18 @@ export const editableCellContentStyle = {
   display: 'flex',
   alignItems: 'center',
   gap: '8px'
+} as const;
+
+export const editingCellContentStyle = {
+  ...editableCellContentStyle,
+  position: 'relative' as const,
+  minHeight: '28px'
+} as const;
+
+export const editingCellInputStyle = {
+  position: 'absolute' as const,
+  inset: 0,
+  height: '100%'
 } as const;
 
 export const overflowIconStyle = {
