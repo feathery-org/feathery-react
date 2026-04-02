@@ -387,19 +387,42 @@ export const cellInputStyle = {
   fontSize: '14px',
   color: colors.gray900,
   outline: 'none',
-  boxSizing: 'border-box' as const
+  boxSizing: 'border-box' as const,
+  resize: 'none' as const,
+  overflowY: 'auto' as const,
+  fontFamily: 'inherit',
+  lineHeight: 1.5
 } as const;
 
 export const editableCellContentStyle = {
   display: 'flex',
-  alignItems: 'center',
+  alignItems: 'flex-start',
   gap: '8px'
 } as const;
 
+export const editableCellTextStyle = {
+  flex: 1,
+  minWidth: 0,
+  whiteSpace: 'pre-wrap' as const,
+  overflowWrap: 'anywhere' as const,
+  wordBreak: 'break-word' as const,
+  lineHeight: 1.5
+} as const;
+
 export const editingCellContentStyle = {
-  ...editableCellContentStyle,
+  flex: 1,
+  minWidth: 0,
   position: 'relative' as const,
-  minHeight: '28px'
+  alignSelf: 'stretch'
+} as const;
+
+export const editingCellSizerStyle = {
+  ...cellInputStyle,
+  whiteSpace: 'pre-wrap' as const,
+  overflowWrap: 'anywhere' as const,
+  wordBreak: 'break-word' as const,
+  visibility: 'hidden' as const,
+  pointerEvents: 'none' as const
 } as const;
 
 export const editingCellInputStyle = {

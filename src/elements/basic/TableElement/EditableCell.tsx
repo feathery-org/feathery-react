@@ -8,8 +8,10 @@ import {
   cellInputStyle,
   overflowIconStyle,
   editableCellContentStyle,
+  editableCellTextStyle,
   editingCellContentStyle,
   editingCellInputStyle,
+  editingCellSizerStyle,
   actionMenuStyle,
   actionMenuItemStyle
 } from './styles';
@@ -44,7 +46,7 @@ export function EditableCell({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const shouldSaveRef = useRef(true);
@@ -109,8 +111,8 @@ export function EditableCell({
     shouldSaveRef.current = true;
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
       shouldSaveRef.current = false;
       saveEdit();
@@ -135,9 +137,9 @@ export function EditableCell({
   if (isEditing) {
     return (
       <div css={editingCellContentStyle}>
-        <input
+        <div css={editingCellSizerStyle}>{`${editValue}\u200b`}</div>
+        <textarea
           ref={inputRef}
-          type='text'
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
           onBlur={handleBlur}
@@ -159,7 +161,7 @@ export function EditableCell({
 
   return (
     <div css={editableCellContentStyle}>
-      <span css={{ flex: 1, minWidth: 0 }}>{displayValue}</span>
+      <span css={editableCellTextStyle}>{displayValue}</span>
       <button
         ref={menuButtonRef}
         type='button'
