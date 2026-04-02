@@ -27,6 +27,7 @@ import {
   AssistantThreadDetail,
   AssistantTransport,
   deleteThread,
+  generateThreadTitle,
   getThreadDetail,
   getThreadList
 } from './utils';
@@ -79,6 +80,18 @@ const AssistantChat = ({
             )
           );
           setActiveThreadId(threadId);
+          const titleMessage = chat.messages.find((m: any) => m.role === 'user')
+            ?.parts?.[0]?.text;
+          if (titleMessage) {
+            generateThreadTitle(transport, threadId, titleMessage).then(
+              (title) => {
+                if (title)
+                  setThreads((prev) =>
+                    prev.map((t) => (t.id === threadId ? { ...t, title } : t))
+                  );
+              }
+            );
+          }
           getThreadDetail(transport, threadId).then((t) => {
             if (t)
               setThreads((prev) =>
@@ -157,7 +170,6 @@ const AssistantChat = ({
       ...prev.filter((t) => !t.isTemporary || t.title)
     ]);
     setActiveThreadId(id);
-    setIsDropdownOpen(false);
   };
 
   const handleSelectThread = async (id: string) => {
@@ -195,7 +207,7 @@ const AssistantChat = ({
         setThreads((prev) => [
           {
             id,
-            title: input.trim().slice(0, 60),
+            title: 'New Thread',
             created_at: now,
             updated_at: now,
             isTemporary: true,
@@ -209,7 +221,7 @@ const AssistantChat = ({
           setThreads((prev) => [
             {
               ...activeThread,
-              title: input.trim().slice(0, 60),
+              title: 'New Thread',
               updated_at: now
             },
             ...prev.filter((t) => t.id !== activeThreadId)
@@ -305,7 +317,15 @@ const AssistantChat = ({
           position: 'relative'
         }}
       >
-        <div css={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div
+          css={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            minWidth: 0,
+            overflow: 'hidden'
+          }}
+        >
           <ChatIcon />
           <button
             type='button'
@@ -321,11 +341,22 @@ const AssistantChat = ({
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
+              minWidth: 0,
               ':hover': { opacity: 0.85 }
             }}
           >
-            {activeThread?.title || 'AI Assistant'}
-            <span css={{ fontSize: '10px', opacity: 0.8 }}>▾</span>
+            <span
+              css={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {activeThread?.title || 'AI Assistant'}
+            </span>
+            <span css={{ fontSize: '10px', opacity: 0.8, flexShrink: 0 }}>
+              ▾
+            </span>
           </button>
         </div>
         <button
@@ -374,7 +405,10 @@ const AssistantChat = ({
             >
               <button
                 type='button'
-                onClick={handleNewThread}
+                onClick={() => {
+                  handleNewThread();
+                  setIsDropdownOpen(false);
+                }}
                 css={{
                   width: '100%',
                   padding: '10px 14px',
