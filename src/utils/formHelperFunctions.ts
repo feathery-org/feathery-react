@@ -354,9 +354,11 @@ export function mapFormSettingsResponse(res: any) {
     saveHideIfFields: res.save_hide_if_fields,
     clearHideIfFields: res.clear_hide_if_fields,
     mobileBreakpoint: res.mobile_breakpoint ?? DEFAULT_MOBILE_BREAKPOINT,
-    assistantEnabled: res.assistant_enabled,
-    assistantContext: res.assistant_context,
-    assistantColor: res.assistant_color ? `#${res.assistant_color}` : '#6b7280'
+    assistantEnabled: res.ai_assistant_settings?.enabled,
+    assistantColor: res.ai_assistant_settings?.color
+      ? `#${res.ai_assistant_settings.color}`
+      : '#6b7280',
+    assistantWorkflowActions: res.ai_assistant_settings?.workflow_actions ?? []
   };
 }
 
