@@ -96,9 +96,12 @@ type UseTableDataProps = {
       sort: boolean;
       pagination: number;
       transpose?: boolean;
+      enable_editing?: boolean;
+      add_delete_rows?: boolean;
     };
   };
   editMode?: boolean;
+  dataVersion?: number;
 };
 
 type UseTableDataReturn = {
@@ -118,6 +121,8 @@ type UseTableDataReturn = {
   enableSearch: boolean;
   enablePagination: boolean;
   isTransposed: boolean;
+  enableEditing: boolean;
+  enableAddDeleteRows: boolean;
 
   // Computed data
   paginatedRowIndices: number[];
@@ -138,7 +143,8 @@ type UseTableDataReturn = {
 
 export function useTableData({
   element,
-  editMode = false
+  editMode = false,
+  dataVersion = 0
 }: UseTableDataProps): UseTableDataReturn {
   const userColumns: Column[] = element.properties?.columns || [];
   const actions: Action[] = (element.properties?.actions || []).filter(
@@ -147,6 +153,8 @@ export function useTableData({
   const enableSearch = element.properties?.search ?? false;
   const enableSort = element.properties?.sort ?? false;
   const enableTranspose = element.properties?.transpose ?? false;
+  const enableEditing = element.properties?.enable_editing ?? false;
+  const enableAddDeleteRows = element.properties?.add_delete_rows ?? false;
   const paginationSetting = element.properties?.pagination ?? 0;
   const rowsPerPage =
     typeof paginationSetting === 'number' && paginationSetting > 0
@@ -168,13 +176,14 @@ export function useTableData({
     return cols;
   }, [editMode, userColumns]);
 
-  // Use example data in edit mode
+  // fieldValues is mutated outside React state, so we need dataVersion
+  // as a manual dirty flag to trigger re-snapshots
   const baseFieldValues = useMemo(() => {
     if (editMode) {
       return generateExampleData(baseColumns);
     }
-    return fieldValues;
-  }, [editMode, baseColumns, userColumns.length]);
+    return { ...fieldValues };
+  }, [editMode, baseColumns, dataVersion]);
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -502,6 +511,8 @@ export function useTableData({
     actions,
     isTransposed,
     transposedRowIndices,
+    enableEditing,
+    enableAddDeleteRows,
 
     totalRows,
     totalPages,

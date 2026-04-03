@@ -2895,6 +2895,7 @@ function Form({
     changeStep: (nextStepKey: string) =>
       changeFormStep(nextStepKey, activeStep.key, false),
     updateFieldValues,
+    submitCustom: (values: Record<string, any>) => client?.submitCustom(values),
     elementOnView,
     onViewElements: viewElements,
     formSettings,
