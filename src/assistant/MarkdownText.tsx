@@ -1,4 +1,5 @@
 import { memo, ReactNode } from 'react';
+import { GRAY_200 } from './colors';
 
 // Regex patterns defined outside component to avoid recreation
 const BOLD_PATTERN = /\*\*(.+?)\*\*/g;
@@ -6,6 +7,7 @@ const H3_PATTERN = /^###\s+(.+)$/;
 const H2_PATTERN = /^##\s+(.+)$/;
 const H1_PATTERN = /^#\s+(.+)$/;
 const LIST_PATTERN = /^[-*]\s+(.+)$/;
+const HR_PATTERN = /^---+$/;
 
 const processBold = (text: string): ReactNode[] => {
   const parts = text.split(BOLD_PATTERN);
@@ -56,6 +58,14 @@ const MarkdownText = memo(({ text }: MarkdownTextProps) => {
             >
               {processBold(h1Match[1])}
             </div>
+          );
+        }
+        if (HR_PATTERN.test(line)) {
+          return (
+            <hr
+              key={i}
+              css={{ border: 'none', borderTop: `1px solid ${GRAY_200}` }}
+            />
           );
         }
         const listMatch = line.match(LIST_PATTERN);
