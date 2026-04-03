@@ -30,6 +30,7 @@ import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
 import { GetConfigParams } from '../internalState';
 import {
+  dataHubAction as apiDataHubAction,
   ExtractionActionOptions,
   generateFormDocuments as apiGenerateFormDocuments,
   PageSelectionInput,
@@ -1097,28 +1098,12 @@ export default class FeatheryClient extends IntegrationClient {
     entryId?: string;
     data?: Record<string, any>;
   }) {
-    const baseUrl = new URL(getApiUrl()).origin;
-    const url = `${baseUrl}/api/hub/${hubId}/action/`;
-
-    const response = await this._fetch(
-      url,
-      {
-        headers: { 'Content-Type': 'application/json' },
-        method: 'POST',
-        body: JSON.stringify({
-          operation,
-          entry_id: entryId,
-          data,
-          form_key: this.formKey
-        })
-      },
-      false
-    );
-
-    if (response) {
-      if (response.status === 204) return null;
-      if (response.ok) return await response.json();
-      throw Error(parseAPIError(await response.json()));
-    }
+    const { userId, sdkKey } = initInfo();
+    return apiDataHubAction(sdkKey, this.formKey, userId ?? null, {
+      hubId,
+      operation,
+      entryId,
+      data
+    });
   }
 }
