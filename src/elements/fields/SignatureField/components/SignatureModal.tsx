@@ -7,8 +7,14 @@ import debounce from 'lodash.debounce';
 import { cloneCanvas, generateSignatureImage, trimCanvas } from './utils';
 import { SignatureTranslations } from '../translation';
 
-const SIGNER_NAME_KEY = 'feathery-signer-name';
+const SIGNER_SIGNATURE_KEY = 'feathery-signer-signature';
 const SIGNER_INITIALS_KEY = 'feathery-signer-initials';
+
+export function getSignatureSessionData(isInitials: boolean) {
+  const imgKey = isInitials ? SIGNER_INITIALS_KEY : SIGNER_SIGNATURE_KEY;
+  const imgData = sessionStorage.getItem(imgKey);
+  return imgData || '';
+}
 
 type SignatureModalProps = SignatureCanvasProps & {
   show: boolean;
@@ -47,19 +53,7 @@ function SignatureModal(props: SignatureModalProps) {
   const fullNameRef = useRef<string>(fullName);
   const signatureCanvasRef = useRef<any>(null);
 
-  const storageKey = isInitials ? SIGNER_INITIALS_KEY : SIGNER_NAME_KEY;
-
-  const getSignerNameFromSessionStorage = (): string => {
-    const signerName = sessionStorage.getItem(storageKey);
-    return signerName || '';
-  };
-
-  useEffect(() => {
-    if (show) {
-      const storedName = getSignerNameFromSessionStorage();
-      setFullName(storedName);
-    }
-  }, [show]);
+  const imgStorageKey = isInitials ? SIGNER_INITIALS_KEY : SIGNER_SIGNATURE_KEY;
 
   useEffect(() => {
     fullNameRef.current = fullName;
@@ -142,7 +136,9 @@ function SignatureModal(props: SignatureModalProps) {
   const handleSubmit = () => {
     if (signatureFile) {
       onEnd(signatureFile);
-      sessionStorage.setItem(storageKey, fullName);
+      if (signatureImgData) {
+        sessionStorage.setItem(imgStorageKey, signatureImgData);
+      }
       setShow(false);
       resetState();
     }
@@ -238,7 +234,6 @@ function SignatureModal(props: SignatureModalProps) {
               >
                 <h3>{isInitials ? t.initials_type_option : t.type_option}</h3>
                 <input
-                  defaultValue={getSignerNameFromSessionStorage()}
                   onChange={(e) => {
                     const val = e.target.value.trim();
                     setFullName(val);
@@ -447,6 +442,7 @@ function SignatureModal(props: SignatureModalProps) {
               <button
                 onClick={(e) => {
                   e.preventDefault();
+                  sessionStorage.removeItem(imgStorageKey);
                   onClear();
                 }}
                 css={{
