@@ -4,6 +4,7 @@ import typescript from 'rollup-plugin-typescript2';
 import del from 'rollup-plugin-delete';
 import copy from 'rollup-plugin-copy';
 import replace from '@rollup/plugin-replace';
+import babel from '@rollup/plugin-babel';
 import { readFileSync } from 'fs';
 
 // Read package.json
@@ -60,6 +61,11 @@ export default {
       extensions: ['.ts', '.tsx', '.js', '.jsx']
     }),
     commonjs(),
+    babel({
+      include: ['node_modules/@fingerprintjs/fingerprintjs/**'],
+      babelHelpers: 'bundled',
+      presets: [['@babel/preset-env', { targets: { ie: '11' } }]]
+    }),
     typescript({
       tsconfig: './tsconfig.json',
       tsconfigOverride: {
