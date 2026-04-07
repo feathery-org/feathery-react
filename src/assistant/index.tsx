@@ -207,7 +207,7 @@ const AssistantChat = ({
         setThreads((prev) => [
           {
             id,
-            title: 'New Thread',
+            title: 'New Chat',
             created_at: now,
             updated_at: now,
             isTemporary: true,
@@ -221,7 +221,7 @@ const AssistantChat = ({
           setThreads((prev) => [
             {
               ...activeThread,
-              title: 'New Thread',
+              title: 'New Chat',
               updated_at: now
             },
             ...prev.filter((t) => t.id !== activeThreadId)
@@ -423,7 +423,7 @@ const AssistantChat = ({
                   ':hover': { backgroundColor: GRAY_50 }
                 }}
               >
-                + New Thread
+                + New Chat
               </button>
 
               {visibleThreads.length === 0 && (
@@ -434,7 +434,7 @@ const AssistantChat = ({
                     color: GRAY_400
                   }}
                 >
-                  No threads yet
+                  No chats yet
                 </div>
               )}
               {visibleThreads.map((thread) => (
