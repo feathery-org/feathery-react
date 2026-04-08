@@ -381,8 +381,8 @@ function Form({
     globalStyles: {},
     mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT,
     assistantEnabled: false,
-    assistantContext: '',
-    assistantColor: '#6b7280'
+    assistantColor: '#6b7280',
+    assistantWorkflowActions: []
   });
   const trackHashes = useRef(false);
   const curLanguage = useRef<undefined | string>(undefined);
@@ -3038,6 +3038,7 @@ function Form({
                   : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
               }
               color={formSettings.assistantColor}
+              workflowActions={formSettings.assistantWorkflowActions}
             />
           </Suspense>
         )}

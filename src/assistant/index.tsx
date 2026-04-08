@@ -36,22 +36,35 @@ const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 500;
 
+export type WorkflowAction = {
+  name: string;
+  description?: string;
+  instructions: string;
+};
+
 export type AssistantChatProps = {
   transport: AssistantTransport;
   bottom?: number;
   color?: string;
+  workflowActions?: WorkflowAction[];
 };
 
 const AssistantChat = ({
   transport,
   bottom = 20,
-  color
+  color,
+  workflowActions = []
 }: AssistantChatProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [threads, setThreads] = useState<AssistantThreadDetail[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [actionTooltip, setActionTooltip] = useState<{
+    text: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const colors = useMemo(
@@ -231,6 +244,42 @@ const AssistantChat = ({
       sendMessage({ text: input });
       setInput('');
     }
+  };
+
+  const handleWorkflowAction = (action: WorkflowAction) => {
+    if (status !== 'ready') return;
+    const now = new Date().toISOString();
+    if (!activeThreadId) {
+      const id = uuidv4();
+      setThreads((prev) => [
+        {
+          id,
+          title: action.name,
+          created_at: now,
+          updated_at: now,
+          isTemporary: true,
+          chat: activeChat
+        },
+        ...prev
+      ]);
+      setActiveThreadId(id);
+    } else if (activeThread && !activeThread.title) {
+      setThreads((prev) => [
+        { ...activeThread, title: action.name, updated_at: now },
+        ...prev.filter((t) => t.id !== activeThreadId)
+      ]);
+    }
+    sendMessage({
+      parts: [
+        { type: 'text', text: action.name },
+        {
+          type: 'text',
+          text: action.instructions,
+          hidden: true,
+          interpolate: true
+        }
+      ]
+    } as any);
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -548,11 +597,13 @@ const AssistantChat = ({
                   color: 'white'
                 }}
               >
-                {message.parts.map((part: any, index: number) =>
-                  part.type === 'text' ? (
-                    <span key={index}>{part.text}</span>
-                  ) : null
-                )}
+                {message.parts
+                  .filter((part: any) => !part.hidden)
+                  .map((part: any, index: number) =>
+                    part.type === 'text' ? (
+                      <span key={index}>{part.text}</span>
+                    ) : null
+                  )}
               </div>
             </div>
           ) : (
@@ -648,6 +699,77 @@ const AssistantChat = ({
 
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Workflow action buttons */}
+      {workflowActions.length > 0 && (
+        <div
+          css={{
+            position: 'relative',
+            zIndex: 1,
+            borderTop: `1px solid ${GRAY_200}`,
+            backgroundColor: GRAY_50,
+            padding: '8px 16px',
+            display: 'flex',
+            gap: '6px',
+            overflowX: 'auto'
+          }}
+        >
+          {workflowActions.map((action, index) => (
+            <button
+              key={index}
+              type='button'
+              disabled={isLoading}
+              onClick={() => handleWorkflowAction(action)}
+              onMouseEnter={(e: React.MouseEvent) => {
+                if (!action.description) return;
+                const r = e.currentTarget.getBoundingClientRect();
+                setActionTooltip({
+                  text: action.description,
+                  x: r.left + r.width / 2,
+                  y: r.top
+                });
+              }}
+              onMouseLeave={() => setActionTooltip(null)}
+              css={{
+                flexShrink: 0,
+                padding: '4px 10px',
+                fontSize: '12px',
+                border: `1px solid ${colors.primary}`,
+                borderRadius: '12px',
+                backgroundColor: 'white',
+                color: colors.primary,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                ':disabled': { opacity: 0.5, cursor: 'not-allowed' },
+                ':hover:not(:disabled)': { backgroundColor: colors.light },
+                transition: 'background-color 0.15s, color 0.15s'
+              }}
+            >
+              {action.name}
+            </button>
+          ))}
+          {actionTooltip && (
+            <div
+              css={{
+                position: 'fixed',
+                top: actionTooltip.y - 34,
+                left: actionTooltip.x,
+                transform: 'translateX(-50%)',
+                backgroundColor: 'rgba(0,0,0,0.9)',
+                color: 'white',
+                fontSize: '12px',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+                zIndex: 10000
+              }}
+            >
+              {actionTooltip.text}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Input */}
       <div
