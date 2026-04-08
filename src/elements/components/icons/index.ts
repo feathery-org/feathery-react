@@ -8,6 +8,7 @@ import DownloadIcon from './DownloadIcon';
 import FormClosedIcon from './FormClosed';
 import HideEyeIcon from './HideEyeIcon';
 import ShowEyeIcon from './ShowEyeIcon';
+import TrashIcon from './TrashIcon';
 
 export {
   DownloadIcon,
@@ -19,5 +20,6 @@ export {
   CloseIcon,
   FormClosedIcon,
   HideEyeIcon,
-  ShowEyeIcon
+  ShowEyeIcon,
+  TrashIcon
 };
