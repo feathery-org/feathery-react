@@ -12,7 +12,7 @@ import {
   stringifyWithNull
 } from '../../../utils/primitives';
 import { isFieldValueEmpty } from '../../../utils/validation';
-import { justRemove } from '../../../utils/array';
+import { justInsert, justRemove } from '../../../utils/array';
 import { fieldValues, initState } from '../../../utils/init';
 import {
   ACTION_STORE_FIELD,
@@ -529,6 +529,19 @@ const Element = ({ node: el, form }: any) => {
                 index
               );
               onChange({ valueRepeatIndex: returnIndex });
+            }}
+            onSelectAll={(newValues: string[]) => {
+              const servar = el.servar;
+              const fieldValue = getFieldValue(el);
+              if (fieldValue.repeated) {
+                const { valueList, index: repeatIdx } = fieldValue;
+                updateFieldValues({
+                  [servar.key]: justInsert(valueList, newValues, repeatIdx)
+                });
+              } else {
+                updateFieldValues({ [servar.key]: newValues });
+              }
+              onChange({ valueRepeatIndex: newValues.length - 1 });
             }}
             repeatIndex={index}
           />
