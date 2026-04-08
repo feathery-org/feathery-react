@@ -32,8 +32,11 @@ export const getABVariant = (stepRes: any) => {
   // and thus a unique user ID
   // If userId was preset (e.g. from _id URL param), skip AB variant
   // since the submission is tied to the original form
+  const ratio =
+    stepRes.variant_ratio != null ? stepRes.variant_ratio / 100 : 0.5;
   const useVariant =
-    !overrideUserId && !getRandomBoolean(userId || sdkKey, stepRes.form_name);
+    !overrideUserId &&
+    !getRandomBoolean(userId || sdkKey, stepRes.form_name, ratio);
 
   if (useVariant) {
     stepRes.new_form_id = stepRes.variant_id;
