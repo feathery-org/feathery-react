@@ -254,7 +254,7 @@ const AssistantChat = ({
       setThreads((prev) => [
         {
           id,
-          title: action.name,
+          title: 'New Chat',
           created_at: now,
           updated_at: now,
           isTemporary: true,
@@ -265,7 +265,7 @@ const AssistantChat = ({
       setActiveThreadId(id);
     } else if (activeThread && !activeThread.title) {
       setThreads((prev) => [
-        { ...activeThread, title: action.name, updated_at: now },
+        { ...activeThread, title: 'New Chat', updated_at: now },
         ...prev.filter((t) => t.id !== activeThreadId)
       ]);
     }
