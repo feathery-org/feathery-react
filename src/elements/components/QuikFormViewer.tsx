@@ -125,9 +125,48 @@ function QuikFormViewer({
   );
 }
 
+// Walk the HTML character by character, and when inside a
+// single- or double-quoted string, replace actual newlines with \n.
+const escapeNewlinesInJsStrings = (html: string): string => {
+  const out: string[] = [];
+  let inString = false;
+  let quote = '';
+
+  for (let i = 0; i < html.length; i++) {
+    const ch = html[i];
+
+    if (inString) {
+      if (ch === '\\') {
+        out.push(ch, html[i + 1] ?? ''); // pass escape sequence through unchanged
+        i++;
+      } else if (ch === quote) {
+        inString = false;
+        out.push(ch);
+      } else if (ch === '\n') {
+        out.push('\\n');
+      } else if (ch === '\r') {
+        out.push('\\r');
+      } else {
+        out.push(ch);
+      }
+    } else {
+      if (ch === '"' || ch === "'") {
+        inString = true;
+        quote = ch;
+      }
+      out.push(ch);
+    }
+  }
+
+  return out.join('');
+};
+
 const processHtml = (rawHtml: string, inline?: boolean): string => {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(rawHtml, 'text/html');
+  const doc = parser.parseFromString(
+    escapeNewlinesInJsStrings(rawHtml),
+    'text/html'
+  );
 
   // Disable scrolling on iframe <html> to fix floating back button UI issue
   const styleTag = doc.createElement('style');
