@@ -125,46 +125,25 @@ function QuikFormViewer({
   );
 }
 
-// Walk the HTML character by character, and when inside a
-// single- or double-quoted string, replace actual newlines with \n.
-const escapeNewlinesInJsStrings = (html: string): string => {
-  const out: string[] = [];
-  let inString = false;
-  let quote = '';
-
-  for (let i = 0; i < html.length; i++) {
-    const ch = html[i];
-
-    if (inString) {
-      if (ch === '\\') {
-        out.push(ch, html[i + 1] ?? ''); // pass escape sequence through unchanged
-        i++;
-      } else if (ch === quote) {
-        inString = false;
-        out.push(ch);
-      } else if (ch === '\n') {
-        out.push('\\n');
-      } else if (ch === '\r') {
-        out.push('\\r');
-      } else {
-        out.push(ch);
-      }
-    } else {
-      if (ch === '"' || ch === "'") {
-        inString = true;
-        quote = ch;
-      }
-      out.push(ch);
+function fixNewlinesInScriptStrings(htmlString: string): string {
+  return htmlString.replace(
+    // script tags - javascript
+    /(<script[\s\S]*?>)([\s\S]*?)(<\/script>)/gi,
+    (_: string, openTag: string, scriptContent: string, closeTag: string) => {
+      const fixed = scriptContent.replace(
+        // replace newlines inside of string literals with \\n
+        /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,
+        (str: string) => str.replace(/\n/g, '\\n')
+      );
+      return openTag + fixed + closeTag;
     }
-  }
-
-  return out.join('');
-};
+  );
+}
 
 const processHtml = (rawHtml: string, inline?: boolean): string => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(
-    escapeNewlinesInJsStrings(rawHtml),
+    fixNewlinesInScriptStrings(rawHtml),
     'text/html'
   );
 
