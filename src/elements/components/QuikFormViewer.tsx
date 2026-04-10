@@ -125,9 +125,27 @@ function QuikFormViewer({
   );
 }
 
+function fixNewlinesInScriptStrings(htmlString: string): string {
+  return htmlString.replace(
+    // script tags - javascript
+    /(<script[\s\S]*?>)([\s\S]*?)(<\/script>)/gi,
+    (_: string, openTag: string, scriptContent: string, closeTag: string) => {
+      const fixed = scriptContent.replace(
+        // replace newlines inside of string literals with \\n
+        /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,
+        (str: string) => str.replace(/\n/g, '\\n')
+      );
+      return openTag + fixed + closeTag;
+    }
+  );
+}
+
 const processHtml = (rawHtml: string, inline?: boolean): string => {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(rawHtml, 'text/html');
+  const doc = parser.parseFromString(
+    fixNewlinesInScriptStrings(rawHtml),
+    'text/html'
+  );
 
   // Disable scrolling on iframe <html> to fix floating back button UI issue
   const styleTag = doc.createElement('style');
