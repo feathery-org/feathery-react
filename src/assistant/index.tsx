@@ -77,6 +77,7 @@ const AssistantChat = ({
     initialMessages: any[] = []
   ): Chat<any> => {
     let resolvedThreadId = threadId;
+    let titleGenerated = false;
 
     const chatTransport = new DefaultChatTransport({
       api: `${transport.url}chat/`,
@@ -93,18 +94,6 @@ const AssistantChat = ({
             )
           );
           setActiveThreadId(threadId);
-          const titleMessage = chat.messages.find((m: any) => m.role === 'user')
-            ?.parts?.[0]?.text;
-          if (titleMessage) {
-            generateThreadTitle(transport, threadId, titleMessage).then(
-              (title) => {
-                if (title)
-                  setThreads((prev) =>
-                    prev.map((t) => (t.id === threadId ? { ...t, title } : t))
-                  );
-              }
-            );
-          }
           getThreadDetail(transport, threadId).then((t) => {
             if (t)
               setThreads((prev) =>
@@ -113,6 +102,30 @@ const AssistantChat = ({
                 )
               );
           });
+        }
+        if (!titleGenerated) {
+          const titleMessage = chat.messages.find((m: any) => m.role === 'user')
+            ?.parts?.[0]?.text;
+          if (titleMessage) {
+            const currentThreadId = resolvedThreadId || threadId || null;
+            generateThreadTitle(transport, currentThreadId, titleMessage).then(
+              (title) => {
+                if (!title) return;
+                titleGenerated = true;
+                if (currentThreadId) {
+                  setThreads((prev) =>
+                    prev.map((t) =>
+                      t.id === currentThreadId ? { ...t, title } : t
+                    )
+                  );
+                } else {
+                  setThreads((prev) =>
+                    prev.map((t) => (t.chat === chat ? { ...t, title } : t))
+                  );
+                }
+              }
+            );
+          }
         }
         return res;
       }
