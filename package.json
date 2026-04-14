@@ -20,10 +20,6 @@
   "engines": {
     "node": ">=10"
   },
-  "resolutions": {
-    "@types/d3-dispatch": "3.0.6",
-    "mermaid": "11.12.2"
-  },
   "scripts": {
     "build": "npm-run-all -p build:node build:umd",
     "build:node": "rollup -c",
@@ -150,7 +146,7 @@
     "react-select": "5.10.1",
     "react-signature-canvas": "1.1.0-alpha.2",
     "scriptjs": "^2.5.9",
-    "streamdown": "^2.5.0",
+    "streamdown": "2.4.0",
     "uuid": "^8.3.2",
     "webfontloader": "^1.6.28",
     "zod": "^4.3.6"
