@@ -21,6 +21,7 @@
     "node": ">=10"
   },
   "resolutions": {
+    "@types/d3-dispatch": "3.0.6",
     "mermaid": "11.12.2"
   },
   "scripts": {
