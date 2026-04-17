@@ -45,7 +45,12 @@ function QuikFormViewer({
           if (payload.status === 'error') {
             console.error('Error generating Quik envelopes:', payload.message);
           } else if (action.form_fill_type === 'html' && payload.html) {
-            setHtmlContent(processHtml(payload.html, hideHeaderActions));
+            setHtmlContent(
+              processHtml(payload.html, {
+                inline: true,
+                hideHeaderActions
+              })
+            );
           }
         });
     }
@@ -144,7 +149,11 @@ function fixNewlinesInScriptStrings(htmlString: string): string {
   );
 }
 
-const processHtml = (rawHtml: string, inline?: boolean): string => {
+const processHtml = (
+  rawHtml: string,
+  options?: { inline?: boolean; hideHeaderActions?: boolean }
+): string => {
+  const { inline, hideHeaderActions } = options || {};
   const parser = new DOMParser();
   const doc = parser.parseFromString(
     fixNewlinesInScriptStrings(rawHtml),
@@ -197,7 +206,10 @@ const processHtml = (rawHtml: string, inline?: boolean): string => {
   const bodyDiv = doc.body.querySelector('div');
   if (bodyDiv) {
     bodyDiv.innerHTML = '';
-    if (header && !inline) {
+    // Show header in non-inline mode or in inline mode when
+    // hideHeaderActions isn't set
+    const showHeader = inline ? !hideHeaderActions : true;
+    if (header && showHeader) {
       bodyDiv.appendChild(header);
     }
     const contentDiv = doc.createElement('div');
