@@ -62,6 +62,8 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
           key='quik'
           inline
           formKey={form.featheryContext.formId}
+          enableSubmit={!!props.quik_enable_submit}
+          hideHeaderActions={!!props.quik_hide_header_actions}
         />
       );
     }
