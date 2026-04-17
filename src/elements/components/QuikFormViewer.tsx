@@ -11,6 +11,8 @@ interface FrameProps {
   inline?: boolean;
   setShow?: (val: boolean) => void;
   formKey?: string;
+  enableSubmit?: boolean;
+  hideHeaderActions?: boolean;
 }
 
 function QuikFormViewer({
@@ -18,7 +20,9 @@ function QuikFormViewer({
   css,
   setShow = () => {},
   inline,
-  formKey
+  formKey,
+  enableSubmit = false,
+  hideHeaderActions = false
 }: FrameProps) {
   const [htmlContent, setHtmlContent] = React.useState<string | null>(null);
   const fetchedRef = React.useRef(false);
@@ -30,7 +34,7 @@ function QuikFormViewer({
       const action = {
         type: '',
         auth_user_id: '',
-        review_action: '',
+        review_action: enableSubmit ? 'submit' : '',
         form_fill_type: 'html',
         sign_callback_url: ''
       };
@@ -41,11 +45,16 @@ function QuikFormViewer({
           if (payload.status === 'error') {
             console.error('Error generating Quik envelopes:', payload.message);
           } else if (action.form_fill_type === 'html' && payload.html) {
-            setHtmlContent(processHtml(payload.html, true));
+            setHtmlContent(
+              processHtml(payload.html, {
+                inline: true,
+                hideHeaderActions
+              })
+            );
           }
         });
     }
-  }, [inline, formKey]);
+  }, [inline, formKey, enableSubmit, hideHeaderActions]);
 
   useEffect(() => {
     if (html) {
@@ -140,7 +149,11 @@ function fixNewlinesInScriptStrings(htmlString: string): string {
   );
 }
 
-const processHtml = (rawHtml: string, inline?: boolean): string => {
+const processHtml = (
+  rawHtml: string,
+  options?: { inline?: boolean; hideHeaderActions?: boolean }
+): string => {
+  const { inline, hideHeaderActions } = options || {};
   const parser = new DOMParser();
   const doc = parser.parseFromString(
     fixNewlinesInScriptStrings(rawHtml),
@@ -193,7 +206,10 @@ const processHtml = (rawHtml: string, inline?: boolean): string => {
   const bodyDiv = doc.body.querySelector('div');
   if (bodyDiv) {
     bodyDiv.innerHTML = '';
-    if (header) {
+    // Show header in non-inline mode or in inline mode when
+    // hideHeaderActions isn't set
+    const showHeader = inline ? !hideHeaderActions : true;
+    if (header && showHeader) {
       bodyDiv.appendChild(header);
     }
     const contentDiv = doc.createElement('div');
