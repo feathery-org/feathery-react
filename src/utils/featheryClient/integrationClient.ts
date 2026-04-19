@@ -4,6 +4,7 @@ import { API_URL, STATIC_URL } from '.';
 import { OfflineRequestHandler } from '../offlineRequestHandler';
 import {
   AlloyEntities,
+  GetDocusignEnvelopeParams,
   LoanProCustomerObject,
   SendDocusignParams
 } from '../internalState';
@@ -424,6 +425,22 @@ export default class IntegrationClient {
       })
     };
     return this._fetch(url, options, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseAPIError(await response.json()));
+      }
+    });
+  }
+
+  getDocusignEnvelope({ envelopeId }: GetDocusignEnvelopeParams) {
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      fuser_key: userId,
+      form_key: this.formKey,
+      docusign_envelope_id: envelopeId
+    });
+    const url = `${API_URL}docusign/envelope/?${params}`;
+    return this._fetch(url, {}, false).then(async (response) => {
       if (response) {
         if (response.ok) return await response.json();
         else throw Error(parseAPIError(await response.json()));
