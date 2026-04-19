@@ -39,6 +39,9 @@ export type SendDocusignParams = {
   emailSubject?: string;
   emailBlurb?: string;
 };
+export type GetDocusignEnvelopeParams = {
+  envelopeId: string;
+};
 
 export interface FormInternalState {
   language: string | undefined;
@@ -85,6 +88,7 @@ export interface FormInternalState {
   forwardInboxEmail: (options: ForwardInboxEmailOptions) => Promise<void>;
   fillQuikForms: (params: FillQuikParams) => Promise<void>;
   sendDocusignEnvelope: (params: SendDocusignParams) => Promise<void>;
+  getDocusignEnvelope: (params: GetDocusignEnvelopeParams) => Promise<any>;
   getConfig: GetConfig;
 }
 

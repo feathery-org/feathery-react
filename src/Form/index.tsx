@@ -138,6 +138,7 @@ import { getFormContext } from '../utils/formContext';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
+  GetDocusignEnvelopeParams,
   SendDocusignParams,
   setFormInternalState
 } from '../utils/internalState';
@@ -1177,6 +1178,8 @@ function Form({
           ]);
           return client.sendDocusignEnvelope(params);
         },
+        getDocusignEnvelope: (params: GetDocusignEnvelopeParams) =>
+          client.getDocusignEnvelope(params),
         fillQuikForms: async ({
           fillType,
           docusignConnectionId,

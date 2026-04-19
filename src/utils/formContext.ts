@@ -13,6 +13,7 @@ import {
 } from './init';
 import internalState, {
   AlloyEntities,
+  GetDocusignEnvelopeParams,
   GetConfigParams,
   LoanProCustomerObject,
   SendDocusignParams,
@@ -189,6 +190,8 @@ export const getFormContext = (formUuid: string) => {
     fillQuikForms: (params: FillQuikParams) => formState.fillQuikForms(params),
     sendDocusignEnvelope: (params: SendDocusignParams) =>
       formState.sendDocusignEnvelope(params),
+    getDocusignEnvelope: (params: GetDocusignEnvelopeParams) =>
+      formState.getDocusignEnvelope(params),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
       formState.client.alloyJourneyApplication(journeyToken, entities),
     searchLoanProCustomer: () =>
