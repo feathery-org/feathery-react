@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo } from 'react';
 import { css } from '@emotion/react';
 import { Streamdown, type Components } from 'streamdown';
 
@@ -21,18 +21,20 @@ const assistantLink = css({
   }
 });
 
-const MarkdownText = memo(({ text }: MarkdownTextProps) => {
-  const components = useMemo<Components>(
-    () => ({
-      a: ({ href, children }) => (
-        <a href={href} css={assistantLink}>
-          {children}
-        </a>
-      )
-    }),
-    []
-  );
+const components: Components = {
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      target='_blank'
+      rel='noopener noreferrer'
+      css={assistantLink}
+    >
+      {children}
+    </a>
+  )
+};
 
+const MarkdownText = memo(({ text }: MarkdownTextProps) => {
   return <Streamdown components={components}>{text}</Streamdown>;
 });
 
