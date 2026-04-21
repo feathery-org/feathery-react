@@ -24,13 +24,16 @@ import {
 import ToolStatus from './ToolStatus';
 import MarkdownText from './MarkdownText';
 import {
+  AssistantHeaders,
   AssistantThreadDetail,
-  AssistantTransport,
   deleteThread,
   generateThreadTitle,
+  getAssistantUrl,
   getThreadDetail,
   getThreadList
 } from './utils';
+import { initInfo } from '../utils/init';
+import { getCookie } from '../utils/browser';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
@@ -43,18 +46,40 @@ export type WorkflowAction = {
 };
 
 export type AssistantChatProps = {
-  transport: AssistantTransport;
+  formId?: string;
+  runId?: string;
+  getJwt?: () => string;
   bottom?: number;
   color?: string;
   workflowActions?: WorkflowAction[];
 };
 
 const AssistantChat = ({
-  transport,
+  formId,
+  runId,
+  getJwt,
   bottom = 20,
   color,
   workflowActions = []
 }: AssistantChatProps) => {
+  const headers = useMemo<AssistantHeaders>(() => {
+    if (getJwt) return () => ({ Authorization: `Bearer ${getJwt()}` });
+    const { sdkKey } = initInfo();
+    return () => {
+      const headers: Record<string, string> = {
+        Authorization: `Token ${sdkKey}`
+      };
+      const sessionJwt = getCookie('feathery_session_token');
+      if (sessionJwt) headers['X-Feathery-Session'] = sessionJwt;
+      return headers;
+    };
+  }, [getJwt]);
+  const chatBody = useMemo<Record<string, unknown>>(() => {
+    if (getJwt) return runId ? { run_id: runId } : {};
+    const { userId } = initInfo();
+    return { form_key: formId, fuser_key: userId };
+  }, [formId, runId, getJwt]);
+
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [threads, setThreads] = useState<AssistantThreadDetail[]>([]);
@@ -80,9 +105,12 @@ const AssistantChat = ({
     let titleGenerated = false;
 
     const chatTransport = new DefaultChatTransport({
-      api: `${transport.url}chat/`,
-      headers: transport.headers,
-      body: () => ({ ...transport.body, thread_id: resolvedThreadId || null }),
+      api: `${getAssistantUrl()}chat/`,
+      headers: headers,
+      body: () => ({
+        ...chatBody,
+        thread_id: resolvedThreadId || null
+      }),
       fetch: async (url: any, init?: any) => {
         const res = await fetch(url, init);
         const threadId = res.headers.get('X-Thread-Id');
@@ -94,7 +122,7 @@ const AssistantChat = ({
             )
           );
           setActiveThreadId(threadId);
-          getThreadDetail(transport, threadId).then((t) => {
+          getThreadDetail(headers, threadId).then((t) => {
             if (t)
               setThreads((prev) =>
                 prev.map((thread) =>
@@ -108,7 +136,7 @@ const AssistantChat = ({
             ?.parts?.[0]?.text;
           if (titleMessage) {
             const currentThreadId = resolvedThreadId || threadId || null;
-            generateThreadTitle(transport, currentThreadId, titleMessage).then(
+            generateThreadTitle(headers, currentThreadId, titleMessage).then(
               (title) => {
                 if (!title) return;
                 titleGenerated = true;
@@ -150,7 +178,7 @@ const AssistantChat = ({
     return chat;
   };
 
-  const readyChat = useMemo(() => makeChat(null), [transport]);
+  const readyChat = useMemo(() => makeChat(null), [headers, chatBody]);
   const activeThread = threads.find((t) => t.id === activeThreadId);
   const activeChat = activeThread?.chat ?? readyChat;
 
@@ -165,7 +193,7 @@ const AssistantChat = ({
   }, [messages]);
 
   const fetchThreads = useCallback(async () => {
-    const data = await getThreadList(transport);
+    const data = await getThreadList(headers);
     if (!data) return;
     setThreads((prev) => [
       ...data.map((d) => ({
@@ -174,7 +202,7 @@ const AssistantChat = ({
       })),
       ...prev.filter((p) => !data.find((d) => d.id === p.id))
     ]);
-  }, [transport]);
+  }, [headers]);
 
   useEffect(() => {
     if (isOpen) fetchThreads();
@@ -204,7 +232,7 @@ const AssistantChat = ({
       setIsDropdownOpen(false);
       return;
     }
-    const thread = await getThreadDetail(transport, id);
+    const thread = await getThreadDetail(headers, id);
     if (!thread) return;
     const chat = makeChat(id, thread.messages ?? []);
     setThreads((prev) =>
@@ -218,7 +246,7 @@ const AssistantChat = ({
     e.stopPropagation();
     const thread = threads.find((t) => t.id === id);
     if (!thread?.isTemporary) {
-      await deleteThread(transport, id);
+      await deleteThread(headers, id);
     }
     setThreads((prev) => prev.filter((t) => t.id !== id));
     if (activeThreadId === id) handleNewThread();
