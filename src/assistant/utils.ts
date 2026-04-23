@@ -1,10 +1,9 @@
 import { Chat } from '@ai-sdk/react';
+import { API_URL } from '../utils/featheryClient';
 
-export type AssistantTransport = {
-  url: string;
-  headers: () => Record<string, string>;
-  body: Record<string, unknown>;
-};
+export const getAssistantUrl = () => `${API_URL}ai/assistant/`;
+
+export type AssistantHeaders = () => Record<string, string>;
 
 export type AssistantThreadDetail = {
   id: string;
@@ -16,66 +15,48 @@ export type AssistantThreadDetail = {
   chat?: Chat<any>;
 };
 
-const toQueryString = (params: Record<string, unknown>): string => {
-  const filtered = Object.entries(params)
-    .filter(([, v]) => v !== undefined && v !== null)
-    .map(([k, v]) => [k, String(v)]) as [string, string][];
-  if (!filtered.length) return '';
-  return '?' + new URLSearchParams(filtered).toString();
-};
-
 export const getThreadList = async (
-  transport: AssistantTransport
+  headers: AssistantHeaders
 ): Promise<AssistantThreadDetail[] | null> => {
-  const threadsUrl = `${transport.url}threads/${toQueryString(transport.body)}`;
-  const res = await fetch(threadsUrl, {
-    headers: transport.headers()
+  const res = await fetch(`${getAssistantUrl()}threads/`, {
+    headers: headers()
   });
   if (!res.ok) return null;
   return res.json();
 };
 
 export const getThreadDetail = async (
-  transport: AssistantTransport,
+  headers: AssistantHeaders,
   threadId: string
 ): Promise<AssistantThreadDetail | null> => {
-  const threadsUrl = `${transport.url}threads/${threadId}/${toQueryString(
-    transport.body
-  )}`;
-  const res = await fetch(threadsUrl, {
-    headers: transport.headers()
+  const res = await fetch(`${getAssistantUrl()}threads/${threadId}/`, {
+    headers: headers()
   });
   if (!res.ok) return null;
   return res.json();
 };
 
 export const generateThreadTitle = async (
-  transport: AssistantTransport,
+  headers: AssistantHeaders,
   threadId: string | null,
   message: string
 ): Promise<string | null> => {
-  const res = await fetch(
-    `${transport.url}threads/title/${toQueryString(transport.body)}`,
-    {
-      method: 'POST',
-      headers: { ...transport.headers(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, thread_id: threadId ?? undefined })
-    }
-  );
+  const res = await fetch(`${getAssistantUrl()}threads/title/`, {
+    method: 'POST',
+    headers: { ...headers(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, thread_id: threadId ?? undefined })
+  });
   if (!res.ok) return null;
   const data = await res.json();
   return data.title ?? null;
 };
 
 export const deleteThread = async (
-  transport: AssistantTransport,
+  headers: AssistantHeaders,
   threadId: string
 ): Promise<void> => {
-  const threadsUrl = `${transport.url}threads/${threadId}/${toQueryString(
-    transport.body
-  )}`;
-  await fetch(threadsUrl, {
+  await fetch(`${getAssistantUrl()}threads/${threadId}/`, {
     method: 'DELETE',
-    headers: transport.headers()
+    headers: headers()
   });
 };
