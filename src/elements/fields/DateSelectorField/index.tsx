@@ -298,10 +298,6 @@ function DateSelectorField({
           onSelect={(date) => onDateChange(date)} // when day is clicked
           onChange={(date) => onDateChange(date)} // only when value has changed
           onFocus={(e: any) => {
-            if (isMobile) {
-              // hide keyboard on mobile focus
-              e.target.readOnly = true;
-            }
             // select all text on focus
             e.target.select();
             setFocused(true);
@@ -354,7 +350,12 @@ function DateSelectorField({
             pickerRef.current = ref;
             setRef(ref);
           }}
-          customInput={<CustomMaskedInput dateMask={dateMask} />}
+          customInput={
+            <CustomMaskedInput
+              dateMask={dateMask}
+              inputMode={isMobile ? 'none' : undefined}
+            />
+          }
         />
         <Placeholder
           value={value}
