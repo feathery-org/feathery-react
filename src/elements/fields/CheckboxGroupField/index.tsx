@@ -161,7 +161,7 @@ function CheckboxGroupField({
           );
         })}
         {servar.metadata.other && (
-          <div style={{ display: 'flex' }}>
+          <div style={{ display: 'flex', flexGrow: 1 }}>
             <input
               type='checkbox'
               id={`${servar.key}-`}

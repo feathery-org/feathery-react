@@ -161,7 +161,7 @@ function RadioButtonGroupField({
           );
         })}
         {servar.metadata.other && (
-          <div style={{ display: 'flex' }}>
+          <div style={{ display: 'flex', flexGrow: 1 }}>
             <input
               type='radio'
               id={`${servar.key}-`}
