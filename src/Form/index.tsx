@@ -1168,7 +1168,8 @@ function Form({
           docusignConnectionId,
           docusignCustomId,
           enableWetSign,
-          documentTemplates
+          documentTemplates,
+          envelopes
         }: FillQuikParams) => {
           await Promise.all([
             client.flushCustomFields(),
@@ -1180,7 +1181,8 @@ function Form({
             auth_user_id: docusignConnectionId,
             docusign_custom_id: docusignCustomId,
             enable_wet_sign: enableWetSign,
-            document_template_attachments: documentTemplates
+            document_template_attachments: documentTemplates,
+            envelope_attachments: envelopes
           });
           if (payload.status === 'error') throw Error(payload.message);
           else if (fillType === 'html' && payload.html) {
