@@ -39,13 +39,22 @@ export const getThreadDetail = async (
 export const generateThreadTitle = async (
   headers: AssistantHeaders,
   threadId: string | null,
-  message: string
+  message: string,
+  context?: {
+    form_key?: string;
+    run_id?: string;
+    panel_runtime?: unknown;
+  }
 ): Promise<string | null> => {
-  const res = await fetch(`${getAssistantUrl()}threads/title/`, {
-    method: 'POST',
-    headers: { ...headers(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, thread_id: threadId ?? undefined })
-  });
+  if (!threadId) return null;
+  const res = await fetch(
+    `${getAssistantUrl()}threads/${threadId}/generate-title/`,
+    {
+      method: 'POST',
+      headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, ...(context ?? {}) })
+    }
+  );
   if (!res.ok) return null;
   const data = await res.json();
   return data.title ?? null;

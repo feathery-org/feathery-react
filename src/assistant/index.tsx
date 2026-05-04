@@ -21,7 +21,7 @@ import {
   GRAY_400,
   GRAY_800
 } from './colors';
-import ToolStatus from './ToolStatus';
+import ToolStatus, { TOOL_LABELS } from './ToolStatus';
 import MarkdownText from './MarkdownText';
 import {
   AssistantHeaders,
@@ -34,6 +34,9 @@ import {
 } from './utils';
 import { initInfo } from '../utils/init';
 import { getCookie } from '../utils/browser';
+import internalState from '../utils/internalState';
+import { getPanelRuntimeSnapshot } from './panelRuntime';
+import { useApplyValueOps } from './useApplyValueOps';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
@@ -45,9 +48,26 @@ export type WorkflowAction = {
   instructions: string;
 };
 
+export type ResourceRef = { type: string; id: string };
+
 export type AssistantChatProps = {
   formId?: string;
+  /**
+   * Internal stable id assigned by `<Form>` (`_internalId`); used to look up
+   * the renderer's live form state in `internalState`. Not part of the
+   * public dashboard surface.
+   */
+  _internalId?: string;
   runId?: string;
+  /**
+   * Lazily produces the Builder-aligned `targets[]` for the request body.
+   * Called at every send so route/state changes are picked up without
+   * re-rendering the chat. When omitted, AssistantChat falls back to a
+   * default that derives panel + fuser from `formId` + `initInfo().userId`
+   * (the hosted-form path). Dashboard callers should pass an explicit
+   * resolver tied to URL/Redux.
+   */
+  getTargets?: () => ResourceRef[];
   getJwt?: () => string;
   bottom?: number;
   color?: string;
@@ -56,7 +76,9 @@ export type AssistantChatProps = {
 
 const AssistantChat = ({
   formId,
+  _internalId,
   runId,
+  getTargets,
   getJwt,
   bottom = 20,
   color,
@@ -74,11 +96,52 @@ const AssistantChat = ({
       return headers;
     };
   }, [getJwt]);
-  const chatBody = useMemo<Record<string, unknown>>(() => {
-    if (getJwt) return runId ? { run_id: runId } : {};
-    const { userId } = initInfo();
-    return { form_key: formId, fuser_key: userId };
-  }, [formId, runId, getJwt]);
+  // Builds the per-send body. Called from inside DefaultChatTransport.body
+  // (Builder pattern) so getTargets re-runs each send and picks up route
+  // changes without re-rendering AssistantChat.
+  const buildChatBody = (): Record<string, unknown> => {
+    const body: Record<string, unknown> = {};
+    if (getJwt) {
+      if (runId) body.run_id = runId;
+    } else {
+      const { userId } = initInfo();
+      if (formId) body.form_key = formId;
+      if (userId) body.fuser_key = userId;
+    }
+
+    let targets: ResourceRef[];
+    if (getTargets) {
+      targets = getTargets();
+    } else {
+      // Default fallback for surfaces that don't supply getTargets (mainly
+      // hosted forms via @feathery/react's <Form>): derive panel + fuser
+      // from local scope. Prefer the resolved panel UUID from the form
+      // fetch response over the slug so agent endpoints can look it up.
+      const { userId } = initInfo();
+      const formState = _internalId ? internalState[_internalId] : undefined;
+      const panelId = formState?.panelId;
+      // Step is intentionally NOT pushed as a target. Targets feed the
+      // cached system prompt's manifest; per-step churn there would bust
+      // the system cache breakpoint. Current step is exposed via the
+      // getPanelRuntime tool, which lives outside the cached prefix.
+      targets = [];
+      if (panelId || formId) {
+        targets.push({ type: 'panel', id: panelId ?? (formId as string) });
+      }
+      if (userId) targets.push({ type: 'fuser', id: userId });
+      if (runId) targets.push({ type: 'extraction_run', id: runId });
+    }
+    if (targets.length > 0) body.targets = targets;
+
+    // Push live form state from the renderer (Builder-style frontend snapshot)
+    // so the assistant sees what's filled, what's visible, and the current
+    // step. Joins with getPanelSnapshot via servar.key + step.key.
+    if (_internalId) {
+      const panelRuntime = getPanelRuntimeSnapshot(_internalId);
+      if (panelRuntime) body.panel_runtime = panelRuntime;
+    }
+    return body;
+  };
 
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -97,6 +160,11 @@ const AssistantChat = ({
     [color]
   );
 
+  // Server-emitted `data-changeop` parts land here. The component
+  // derives `applying` below by inspecting the in-flight assistant
+  // message's parts directly.
+  const { handleDataPart, queueLen } = useApplyValueOps(_internalId);
+
   const makeChat = (
     threadId: string | null,
     initialMessages: any[] = []
@@ -108,7 +176,7 @@ const AssistantChat = ({
       api: `${getAssistantUrl()}chat/`,
       headers: headers,
       body: () => ({
-        ...chatBody,
+        ...buildChatBody(),
         thread_id: resolvedThreadId || null
       }),
       fetch: async (url: any, init?: any) => {
@@ -136,7 +204,21 @@ const AssistantChat = ({
             ?.parts?.[0]?.text;
           if (titleMessage) {
             const currentThreadId = resolvedThreadId || threadId || null;
-            generateThreadTitle(headers, currentThreadId, titleMessage).then(
+            // Pass the same grounding context the chat uses so the title
+            // can reflect the workflow (e.g. "Income verification step
+            // question" instead of "Form question").
+            const titleContext: {
+              form_key?: string;
+              run_id?: string;
+              panel_runtime?: unknown;
+            } = {};
+            if (formId) titleContext.form_key = formId;
+            if (runId) titleContext.run_id = runId;
+            if (_internalId) {
+              const snap = getPanelRuntimeSnapshot(_internalId);
+              if (snap) titleContext.panel_runtime = snap;
+            }
+            generateThreadTitle(headers, currentThreadId, titleMessage, titleContext).then(
               (title) => {
                 if (!title) return;
                 titleGenerated = true;
@@ -162,6 +244,7 @@ const AssistantChat = ({
     const chat = new Chat<any>({
       transport: chatTransport,
       messages: initialMessages,
+      onData: handleDataPart,
       onFinish: ({ isAbort, isError }: any) => {
         if (isAbort || isError || !resolvedThreadId) return;
         setThreads((prev) => {
@@ -178,19 +261,34 @@ const AssistantChat = ({
     return chat;
   };
 
-  const readyChat = useMemo(() => makeChat(null), [headers, chatBody]);
+  const readyChat = useMemo(() => makeChat(null), [headers, formId, runId, getTargets, getJwt]);
   const activeThread = threads.find((t) => t.id === activeThreadId);
   const activeChat = activeThread?.chat ?? readyChat;
 
   // @ts-ignore
   const { messages, sendMessage, status, error } = useChat({
-    chat: activeChat
+    chat: activeChat,
+    onData: handleDataPart
   });
 
   // TODO: Implement smooth scroll takeover - stop auto-scroll when user scrolls up
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // When the agent finishes (status -> 'ready'), the actions bar may render
+  // and the smooth scroll above can leave the last message behind it. Run a
+  // final settling scroll once layout is stable.
+  useEffect(() => {
+    if (status !== 'ready') return;
+    const id = window.requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'end'
+      });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [status]);
 
   const fetchThreads = useCallback(async () => {
     const data = await getThreadList(headers);
@@ -334,7 +432,54 @@ const AssistantChat = ({
   // Only show threads that have had at least one message sent
   const visibleThreads = threads.filter((t) => t.title);
 
-  const isLoading = status === 'submitted' || status === 'streaming';
+  const streaming = status === 'submitted' || status === 'streaming';
+  const lastMsg = messages[messages.length - 1] as { role?: string; parts?: any[] } | undefined;
+
+  // Background tools whose only on-screen presence is the live "trailing
+  // pill" at the bottom of the chat. Kept in sync with the BACKGROUND_TOOLS
+  // set used by the message-rendering loop above.
+  const BACKGROUND_TOOL_NAMES = new Set<string>([
+    'getPanelRuntime',
+    'getPanelSnapshot',
+    'getFuserSnapshot',
+    'getExtractionSnapshot',
+    'getExtractionResults',
+    'listFormExtractions',
+    'listRunDocuments',
+    'setFieldValue',
+  ]);
+
+  // Walk the in-flight assistant message's parts. The trailing pill shows
+  // the *most recent* background tool that hasn't been closed off by a
+  // following text part. setFieldValue is sticky across the whole fill
+  // window so sequential writes don't flicker; intervening data-changeop
+  // and step-start parts don't reset it.
+  const liveParts: any[] = streaming && lastMsg?.role === 'assistant' && lastMsg?.parts
+    ? lastMsg.parts
+    : [];
+  let trailingTool: string | null = null;
+  for (const p of liveParts) {
+    if (p?.type === 'text' && (p.text ?? '').trim().length > 0) {
+      trailingTool = null;
+      continue;
+    }
+    const isStatic = typeof p?.type === 'string' && p.type.startsWith('tool-');
+    const isDynamic = p?.type === 'dynamic-tool';
+    if (!isStatic && !isDynamic) continue;
+    const name = isStatic ? p.type.replace('tool-', '') : (p.toolName as string) || 'unknown';
+    if (BACKGROUND_TOOL_NAMES.has(name)) trailingTool = name;
+    else trailingTool = null;
+  }
+
+  const showThinkingPlaceholder = streaming && (!lastMsg || lastMsg.role !== 'assistant' || (lastMsg.parts ?? []).length === 0);
+  const livePillLabel: string | null = trailingTool
+    ? TOOL_LABELS[trailingTool]?.running ?? 'Thinking...'
+    : showThinkingPlaceholder
+      ? 'Thinking...'
+      : null;
+
+  const applying = trailingTool === 'setFieldValue' || queueLen > 0;
+  const isLoading = streaming || applying;
   const hasAssistantMessage =
     messages[messages.length - 1]?.role === 'assistant' &&
     (messages[messages.length - 1].parts as any[]).length > 0;
@@ -490,7 +635,14 @@ const AssistantChat = ({
                 boxShadow: '0 8px 16px rgba(0,0,0,0.12)',
                 zIndex: 1001,
                 maxHeight: '240px',
-                overflowY: 'auto'
+                // `scroll` (not `auto`) keeps the scrollbar's space
+                // reserved on classic-scrollbar systems so deleting
+                // threads doesn't reflow the row width and shift the
+                // delete (×) button under the cursor. Rows still fill
+                // to the scrollbar's inner edge, so the hover/active
+                // highlight reaches the end. macOS overlay scrollbars
+                // don't take layout space either way.
+                overflowY: 'scroll'
               }}
             >
               <button
@@ -635,7 +787,9 @@ const AssistantChat = ({
                   fontSize: '14px',
                   lineHeight: '1.5',
                   backgroundColor: colors.primary,
-                  color: 'white'
+                  color: 'white',
+                  overflowWrap: 'anywhere',
+                  wordBreak: 'break-word'
                 }}
               >
                 {message.parts
@@ -648,63 +802,142 @@ const AssistantChat = ({
               </div>
             </div>
           ) : (
-            // Assistant message - separate blocks for each part
+            // Assistant message - we collapse all background-tool calls
+            // into a single loading-style "thinking" indicator that lives
+            // just before the next visible content (text or outcome tool).
+            // This keeps the chat alive while the agent works without
+            // leaving stale per-tool residue in history. Outcome-bearing
+            // tools (searchDocs, searchWeb, extraction results) keep their
+            // own pills so sources/citations stay attached.
             <Fragment key={message.id}>
-              {message.parts.map((part: any, index: number) => {
-                if (part.type === 'text' && part.text.trim()) {
-                  return (
-                    <div
-                      key={index}
-                      css={{
-                        display: 'flex',
-                        justifyContent: 'flex-start'
-                      }}
-                    >
+              {(() => {
+                const BACKGROUND_TOOLS = new Set([
+                  'getPanelRuntime',
+                  'getPanelSnapshot',
+                  'getFuserSnapshot',
+                  'getExtractionSnapshot',
+                  'getExtractionResults',
+                  'listFormExtractions',
+                  'listRunDocuments',
+                  'setFieldValue'
+                ]);
+                type Entry =
+                  | { kind: 'text'; key: string; text: string }
+                  | {
+                      kind: 'outcome';
+                      key: string;
+                      toolName: string;
+                      state: string;
+                      input: any;
+                      output: unknown;
+                    };
+
+                // Build text + outcome entries. Background-tool "thinking"
+                // pills render as a single live pill at the bottom of the
+                // chat (see below) - we don't bake one into each message
+                // here, so old assistant messages don't leave a stale
+                // "Filling in..." artifact in history.
+                const entries: Entry[] = [];
+
+                message.parts.forEach((part: any, index: number) => {
+                  if (part.type === 'text' && part.text.trim()) {
+                    // If the previous entry is also text (only background
+                    // tools between them, which are invisible to the user),
+                    // merge into one bubble so the agent's multi-step
+                    // thinking doesn't read as two separate messages.
+                    const prev = entries[entries.length - 1];
+                    if (prev && prev.kind === 'text') {
+                      prev.text = `${prev.text}\n\n${part.text}`;
+                    } else {
+                      entries.push({
+                        kind: 'text',
+                        key: `text-${index}`,
+                        text: part.text
+                      });
+                    }
+                    return;
+                  }
+                  const isStatic = part.type.startsWith('tool-');
+                  const isDynamic = part.type === 'dynamic-tool';
+                  if (!isStatic && !isDynamic) return;
+                  const toolPart = part as Record<string, unknown>;
+                  const toolName = isStatic
+                    ? part.type.replace('tool-', '')
+                    : (toolPart.toolName as string) || 'unknown';
+                  if (BACKGROUND_TOOLS.has(toolName)) {
+                    // Background tools don't get their own outcome pill.
+                    // The single trailing live pill at the bottom of the
+                    // chat shows the running label for the most recent
+                    // background tool that wasn't followed by text.
+                    return;
+                  }
+                  entries.push({
+                    kind: 'outcome',
+                    key: `tool-${index}`,
+                    toolName,
+                    state: toolPart.state as string,
+                    input: toolPart.input,
+                    output: toolPart.output
+                  });
+                });
+
+                return entries.map((entry) => {
+                  if (entry.kind === 'text') {
+                    return (
                       <div
+                        key={entry.key}
                         css={{
-                          maxWidth: '80%',
-                          padding: '10px 14px',
-                          borderRadius: '12px',
-                          fontSize: '14px',
-                          lineHeight: '1.5',
-                          backgroundColor: colors.light,
-                          color: GRAY_800
+                          display: 'flex',
+                          justifyContent: 'flex-start'
                         }}
                       >
-                        <MarkdownText text={part.text} />
+                        <div
+                          css={{
+                            maxWidth: '80%',
+                            padding: '10px 14px',
+                            borderRadius: '12px',
+                            fontSize: '14px',
+                            lineHeight: '1.5',
+                            backgroundColor: colors.light,
+                            color: GRAY_800,
+                            overflowWrap: 'anywhere',
+                            wordBreak: 'break-word'
+                          }}
+                        >
+                          <MarkdownText text={entry.text} />
+                        </div>
                       </div>
-                    </div>
-                  );
-                }
-                // Tool status - separate styled block
-                if (part.type.startsWith('tool-')) {
-                  const toolName = part.type.replace('tool-', '');
-                  const toolPart = part as Record<string, unknown>;
+                    );
+                  }
+                  // outcome
                   return (
                     <div
-                      key={index}
+                      key={entry.key}
                       css={{
                         display: 'flex',
-                        justifyContent: 'flex-start'
+                        justifyContent: 'flex-start',
+                        maxWidth: '80%',
+                        minWidth: 0
                       }}
                     >
                       <ToolStatus
-                        toolName={toolName}
-                        state={toolPart.state as string}
-                        input={toolPart.input as { query?: string }}
-                        output={toolPart.output}
+                        toolName={entry.toolName}
+                        state={entry.state}
+                        input={entry.input}
+                        output={entry.output}
                         linkColor={colors.primary}
                       />
                     </div>
                   );
-                }
-                return null;
-              })}
+                });
+              })()}
             </Fragment>
           )
         )}
 
-        {isLoading && !hasAssistantMessage && (
+
+
+        {livePillLabel && (
           <div css={{ display: 'flex', justifyContent: 'flex-start' }}>
             <div
               css={{
@@ -718,7 +951,7 @@ const AssistantChat = ({
             >
               <SpinnerIcon />
               <span css={{ fontSize: '14px', color: colors.primary }}>
-                Thinking...
+                {livePillLabel}
               </span>
             </div>
           </div>

@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import Elements from './elements';
 import Form, { JSForm, Props as FormProps, StyledContainer } from './Form';
@@ -15,8 +16,18 @@ import { v4 as uuidv4 } from 'uuid';
 import { FormContext } from './types/Form';
 import LoginForm from './auth/LoginForm';
 import useAuthClient from './auth/useAuthClient';
-import AssistantChat from './assistant';
+import type { AssistantChatProps } from './assistant';
 import './utils/polyfills';
+
+// Lazy-loaded so the assistant's heavy deps (e.g. streamdown, which touches
+// `document` at module init) are not evaluated when consumers like
+// hosted-forms-next SSR-import `Form` without ever rendering AssistantChat.
+const LazyAssistantChat = lazy(() => import('./assistant'));
+const AssistantChat = (props: AssistantChatProps) => (
+  <Suspense fallback={null}>
+    <LazyAssistantChat {...props} />
+  </Suspense>
+);
 
 const mountedForms: Record<string, Root> = {};
 /**

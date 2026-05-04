@@ -51,6 +51,9 @@ export interface FormInternalState {
   client: FeatheryClient;
   formName: string;
   formId: string;
+  // Resolved panel UUID from the form fetch response. May be absent on the
+  // first render before fetchForm resolves; consumers must handle null.
+  panelId?: string;
   fields: Record<string, Field>;
   products: Record<string, SimplifiedProduct>;
   cart: Cart;

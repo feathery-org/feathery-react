@@ -1360,6 +1360,9 @@ function Form({
         if (res.new_form_id) {
           setFormId(res.new_form_id);
         }
+        if (res.id && internalState[_internalId]) {
+          internalState[_internalId].panelId = res.id;
+        }
         steps = steps.reduce((result: any, step: any) => {
           result[step.key] = step;
           return result;
@@ -3017,6 +3020,7 @@ function Form({
           <Suspense fallback={null}>
             <AssistantChat
               formId={formId}
+              _internalId={_internalId}
               bottom={
                 (formSettings.showBrand &&
                 formSettings.brandPosition === 'bottom_right'

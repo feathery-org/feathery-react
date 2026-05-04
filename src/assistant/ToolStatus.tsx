@@ -1,14 +1,88 @@
 import { useState } from 'react';
-import { CheckIcon, LinkIcon, MinimizeIcon, SpinnerIcon } from './icons';
+import { CheckIcon, CloseIcon, LinkIcon, MinimizeIcon, SpinnerIcon } from './icons';
 import { DEFAULT_CHAT_COLOR, GRAY_200, GRAY_400, GRAY_500 } from './colors';
 
+export interface ToolLabel {
+  running: string;
+  done: string;
+  empty?: string;
+}
+
 // Tool status labels mapping
-const TOOL_LABELS: Record<string, { running: string; done: string }> = {
+export const TOOL_LABELS: Record<string, ToolLabel> = {
+  searchDocuments: {
+    running: 'Searching documents...',
+    done: 'Documents searched'
+  },
+  searchWeb: { running: 'Searching the web...', done: 'Web searched' },
+  getPanelRuntime: {
+    running: 'Reading the page...',
+    done: 'Page read'
+  },
+  getPanelSnapshot: {
+    running: 'Reading the form...',
+    done: 'Form read'
+  },
+  getFuserSnapshot: {
+    running: 'Looking up your submission...',
+    done: 'Submission details loaded'
+  },
+  listFormExtractions: {
+    running: 'Looking up extractions...',
+    done: 'Extractions found',
+    empty: 'No extractions configured'
+  },
+  listRunDocuments: {
+    running: 'Finding documents...',
+    done: 'Documents found',
+    empty: 'No documents in this run'
+  },
+  getExtractionSnapshot: {
+    running: 'Reading extraction setup...',
+    done: 'Extraction setup loaded'
+  },
+  getExtractionResults: {
+    running: 'Reading extraction results...',
+    done: 'Results loaded',
+    empty: 'No results in this run'
+  },
+  setFieldValue: {
+    running: 'Filling in...',
+    done: 'Filled in'
+  },
+  // Legacy names kept so thread history saved before renames still renders
   search_documents: {
     running: 'Searching documents...',
     done: 'Documents searched'
   },
-  search_web: { running: 'Searching the web...', done: 'Web searched' }
+  search_web: { running: 'Searching the web...', done: 'Web searched' },
+  getExtractionConfig: {
+    running: 'Reading extraction setup...',
+    done: 'Extraction setup loaded'
+  },
+  listFuserDocuments: {
+    running: 'Finding your documents...',
+    done: 'Documents found',
+    empty: 'No documents found'
+  },
+  listExtractionRuns: {
+    running: 'Looking up runs...',
+    done: 'Runs found',
+    empty: 'No runs found'
+  }
+};
+
+const isEmptyToolOutput = (output: unknown): boolean => {
+  if (Array.isArray(output)) return output.length === 0;
+  if (output && typeof output === 'object') {
+    const obj = output as Record<string, unknown>;
+    if ('error' in obj) return false; // errors render via the normal done path
+    // Common list-shaped payloads: { results: [...] }, { items: [...] }
+    for (const k of ['results', 'items', 'entries']) {
+      if (Array.isArray(obj[k])) return (obj[k] as unknown[]).length === 0;
+    }
+  }
+  return false;
 };
 
 // Format URL for display (show domain + truncated path)
@@ -81,7 +155,7 @@ const ToolStatus = ({
   linkColor = DEFAULT_CHAT_COLOR
 }: ToolStatusProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const labels = TOOL_LABELS[toolName] || {
+  const labels: ToolLabel = TOOL_LABELS[toolName] || {
     running: 'Processing...',
     done: 'Done'
   };
@@ -90,6 +164,8 @@ const ToolStatus = ({
 
   const urls = extractUrls(output);
   const hasLinks = urls.length > 0;
+  const isEmptyDone = !isRunning && labels.empty !== undefined && isEmptyToolOutput(output);
+  const doneLabel = isEmptyDone ? (labels.empty as string) : labels.done;
 
   return (
     <div
@@ -101,7 +177,11 @@ const ToolStatus = ({
         backgroundColor: 'white',
         border: `1px solid ${GRAY_200}`,
         borderRadius: '8px',
-        fontSize: '13px'
+        fontSize: '13px',
+        maxWidth: '100%',
+        minWidth: 0,
+        overflowWrap: 'anywhere',
+        wordBreak: 'break-word'
       }}
     >
       {/* Status row */}
@@ -122,8 +202,8 @@ const ToolStatus = ({
           setIsExpanded(!isExpanded)
         }
       >
-        {isRunning ? <SpinnerIcon /> : <CheckIcon />}
-        <span>{isRunning ? labels.running : labels.done}</span>
+        {isRunning ? <SpinnerIcon /> : isEmptyDone ? <CloseIcon width={14} height={14} /> : <CheckIcon />}
+        <span>{isRunning ? labels.running : doneLabel}</span>
         {hasLinks && (
           <span
             css={{
@@ -186,11 +266,14 @@ const ToolStatus = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '4px',
+                minWidth: 0,
+                overflowWrap: 'anywhere',
+                wordBreak: 'break-word',
                 ':hover': { textDecoration: 'underline' }
               }}
             >
               <LinkIcon />
-              {formatUrl(url)}
+              <span css={{ minWidth: 0, overflowWrap: 'anywhere' }}>{formatUrl(url)}</span>
             </a>
           ))}
         </div>
