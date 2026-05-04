@@ -146,10 +146,10 @@ function PhoneField({
   }, [fullNumber]);
 
   const formattedNumber = useMemo(() => {
-    const LPN = validation.phoneLib;
-    if (!LPN) return `+${rawNumber}`;
     // handle blurred and empty input
     if (rawNumber === '') return '';
+    const LPN = validation.phoneLib;
+    if (!LPN) return `+${rawNumber}`;
 
     const asYouType = new LPN.AsYouType(curCountryCode);
     const onlyDigits = LPN.parseDigits(rawNumber, curCountryCode);
@@ -426,12 +426,14 @@ function PhoneField({
               moveCursor(start ?? 0);
             }}
           />
-          <Placeholder
-            value={formattedNumber}
-            element={{ properties: { placeholder } }}
-            responsiveStyles={responsiveStyles}
-            repeatIndex={repeatIndex}
-          />
+          {placeholder && (
+            <Placeholder
+              value={formattedNumber}
+              element={{ properties: { placeholder } }}
+              responsiveStyles={responsiveStyles}
+              repeatIndex={repeatIndex}
+            />
+          )}
           <InlineTooltip
             containerRef={containerRef}
             id={element.id}
