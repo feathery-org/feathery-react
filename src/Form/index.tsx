@@ -1,8 +1,6 @@
 import { RouterProvider, useLocation, useNavigate } from '../hooks/router';
 import React, {
-  lazy,
   ReactNode,
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -79,7 +77,7 @@ import {
   updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
-import FeatheryClient from '../utils/featheryClient';
+import FeatheryClient, { API_URL } from '../utils/featheryClient';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
 import {
@@ -229,10 +227,7 @@ import ActionToast from './components/ActionToast';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
-
-const AssistantChat = lazy(
-  () => import(/* webpackChunkName: "AssistantChat" */ '../assistant')
-);
+import { AssistantChat } from '../assistant';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -796,6 +791,13 @@ function Form({
     debounce(() => setRender((render) => ({ ...render })), 500),
     [setRender, render]
   );
+
+  const getAssistantTargets = useCallback(() => {
+    const targets: { type: string; id: string }[] = [];
+    if (formId) targets.push({ type: 'panel', id: formId });
+    if (initState.userId) targets.push({ type: 'fuser', id: initState.userId });
+    return targets;
+  }, [formId]);
 
   useEffect(() => {
     return () => {
@@ -3021,19 +3023,19 @@ function Form({
           }
         />
         {formSettings.assistantEnabled && (
-          <Suspense fallback={null}>
-            <AssistantChat
-              formId={formId}
-              bottom={
-                (formSettings.showBrand &&
-                formSettings.brandPosition === 'bottom_right'
-                  ? 67
-                  : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
-              }
-              color={formSettings.assistantColor}
-              workflowActions={formSettings.assistantWorkflowActions}
-            />
-          </Suspense>
+          <AssistantChat
+            instanceId={_internalId}
+            baseUrl={`${new URL(API_URL).origin}/agent/assistant/`}
+            getTargets={getAssistantTargets}
+            bottom={
+              (formSettings.showBrand &&
+              formSettings.brandPosition === 'bottom_right'
+                ? 67
+                : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
+            }
+            color={formSettings.assistantColor}
+            workflowActions={formSettings.assistantWorkflowActions}
+          />
         )}
       </form>
     </ReactPortal>
