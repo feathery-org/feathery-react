@@ -147,10 +147,14 @@ export function trackEvent(
   // Google Analytics
   if (gaInstalled) trackGAEvent(formName, title, stepId);
   // Segment
-  const segmentData: any = { ...metadata };
-  if (fieldData?.segment) segmentData.submittedData = fieldData.segment;
-  if (featheryWindow().analytics)
+  if (featheryWindow().analytics) {
+    const segmentData: any = { ...metadata };
+    // Only include userId when identify_user is enabled and userId is non-empty
+    if (!integrations?.segment?.metadata?.identify_user || !segmentData.userId)
+      delete segmentData.userId;
+    if (fieldData?.segment) segmentData.submittedData = fieldData.segment;
     featheryWindow().analytics.track(title, segmentData);
+  }
 
   const amplitudeData: any = { ...metadata };
   if (fieldData?.amplitude) amplitudeData.submittedData = fieldData.amplitude;
