@@ -367,7 +367,6 @@ function PhoneField({
               const LPN = validation.phoneLib;
               if (!LPN) return;
 
-              e.preventDefault();
               const resolved = resolvePhoneNumber(
                 LPN,
                 pasted,
@@ -375,9 +374,31 @@ function PhoneField({
                 getBrowserCountry(),
                 curCountryCode
               );
+              const resolvedCountryCode =
+                countriesEnabled && resolved.countryCode in countryMap
+                  ? resolved.countryCode
+                  : curCountryCode;
+
+              if (
+                !countriesEnabled &&
+                !resolved.fullNumber.startsWith(phoneCode)
+              )
+                return;
+
+              const lengthValidation = LPN.validatePhoneNumberLength(
+                resolved.fullNumber,
+                resolvedCountryCode
+              );
+              if (
+                lengthValidation ||
+                !isValidPhoneLength(resolved.fullNumber, resolvedCountryCode)
+              )
+                return;
+
+              e.preventDefault();
               setRawNumber(resolved.fullNumber);
-              if (resolved.countryCode in countryMap) {
-                setCurCountryCode(resolved.countryCode);
+              if (countriesEnabled && resolved.countryCode in countryMap) {
+                setCurCountryCode(resolvedCountryCode);
               }
               handleOnComplete(resolved.fullNumber);
             }}

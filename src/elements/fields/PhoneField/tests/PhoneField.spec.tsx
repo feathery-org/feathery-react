@@ -81,6 +81,7 @@ import {
   resetMockFieldValue,
   createUSPhoneElement,
   createUKPhoneElement,
+  createRestrictedPhoneElement,
   getPhoneInput,
   getCountryTrigger,
   openCountryDropdown,
@@ -434,6 +435,26 @@ describe('PhoneField Component', () => {
   });
 
   describe('Copy/Paste & Autofill', () => {
+    const pasteIntoPhoneInput = async (
+      input: HTMLInputElement,
+      value: string
+    ) => {
+      const pasteEvent = new Event('paste', {
+        bubbles: true,
+        cancelable: true
+      });
+      Object.defineProperty(pasteEvent, 'clipboardData', {
+        value: { getData: () => value }
+      });
+
+      await act(async () => {
+        input.dispatchEvent(pasteEvent);
+        await Promise.resolve();
+      });
+
+      return pasteEvent;
+    };
+
     it('strips formatting when a formatted number is pasted', () => {
       const element = createUSPhoneElement();
       const onComplete = jest.fn();
@@ -478,32 +499,57 @@ describe('PhoneField Component', () => {
       expect((input.value.match(/\+/g) || []).length).toBe(1);
     });
 
-    it('routes onPaste through the resolver with selectedCountry as priority', async () => {
+    it('uses selected country when resolving national-format paste', async () => {
       // Default = US, but user has selected UK before pasting a UK number.
-      // Strict-valid GB number — step 1 of resolver should pick GB regardless
-      // of selected country, but this also exercises the onPaste wiring.
       const element = createUSPhoneElement();
       const onComplete = jest.fn();
       const props = createPhoneProps(element, { onComplete });
 
       render(<PhoneField {...props} />);
       const input = getPhoneInput();
+      act(() => {
+        fireEvent.click(getCountryTrigger()!);
+      });
+      act(() => {
+        selectCountry('GB');
+      });
+      onComplete.mockClear();
 
-      // Build a paste event with clipboardData
-      const pasteEvent = new Event('paste', {
-        bubbles: true,
-        cancelable: true
-      });
-      Object.defineProperty(pasteEvent, 'clipboardData', {
-        value: { getData: () => '+442079460958' }
-      });
-      await act(async () => {
-        input.dispatchEvent(pasteEvent);
-        await Promise.resolve();
-      });
+      const pasteEvent = await pasteIntoPhoneInput(input, '2079460958');
 
+      expect(pasteEvent.defaultPrevented).toBe(true);
       expect(onComplete).toHaveBeenCalledWith('442079460958');
       expectCurrentCountryToBe('GB', '44');
+    });
+
+    it('lets partial paste use native insert behavior', async () => {
+      const element = createUSPhoneElement();
+      const onComplete = jest.fn();
+      const props = createPhoneProps(element, { onComplete });
+
+      render(<PhoneField {...props} />);
+
+      const pasteEvent = await pasteIntoPhoneInput(getPhoneInput(), '226');
+
+      expect(pasteEvent.defaultPrevented).toBe(false);
+      expect(onComplete).not.toHaveBeenCalled();
+    });
+
+    it('does not let paste change country when other countries are disabled', async () => {
+      const element = createRestrictedPhoneElement({ default_country: 'US' });
+      const onComplete = jest.fn();
+      const props = createPhoneProps(element, { onComplete });
+
+      render(<PhoneField {...props} />);
+
+      const pasteEvent = await pasteIntoPhoneInput(
+        getPhoneInput(),
+        '+442079460958'
+      );
+
+      expect(pasteEvent.defaultPrevented).toBe(false);
+      expect(onComplete).not.toHaveBeenCalled();
+      expectCurrentCountryToBe('US', '1');
     });
 
     it('rejects paste that would shorten below the country code', () => {
