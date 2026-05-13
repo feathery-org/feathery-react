@@ -5,6 +5,7 @@ import {
   phoneLib,
   phoneLibPromise
 } from '../utils/validation';
+import { stateMap } from '../elements/components/data/states';
 
 type RuntimeFieldEntry = {
   key: string;
@@ -204,24 +205,41 @@ export async function applyServarValues(
 
   const payload: Record<string, never> = {};
   for (const { fieldKey, value } of entries) {
-    payload[fieldKey] = (await normalizeIfPhone(
-      value,
-      fieldKey,
-      state
-    )) as never;
+    const servar = findServar(state, fieldKey);
+    let normalized = value;
+    if (servar?.type === 'gmap_state') {
+      normalized = normalizeGmapState(value, servar);
+    } else if (servar?.type === 'phone_number') {
+      normalized = await normalizePhone(value, servar, state, fieldKey);
+    }
+    payload[fieldKey] = normalized as never;
   }
   setFieldValues(payload, true, true);
 }
 
-async function normalizeIfPhone(
-  value: unknown,
-  fieldKey: string,
-  state: any
-): Promise<unknown> {
-  // Skip non-phone fields
-  const servar = findServar(state, fieldKey);
-  if (!servar || servar.type !== 'phone_number') return value;
+function normalizeGmapState(value: unknown, servar: any): unknown {
+  if (typeof value !== 'string' || !value) return value;
 
+  const wantShort = !!servar.metadata?.store_abbreviation;
+  const dc = servar.metadata?.default_country;
+  const country = ((dc && dc !== 'auto' ? dc : 'us') as string).toLowerCase();
+  const states = stateMap[country];
+  if (!states || states.length === 0) return value;
+
+  const lower = value.toLowerCase();
+  const match = states.find(
+    (s) => s.code.toLowerCase() === lower || s.name.toLowerCase() === lower
+  );
+  if (!match) return value;
+  return wantShort ? match.code : match.name;
+}
+
+async function normalizePhone(
+  value: unknown,
+  servar: any,
+  state: any,
+  fieldKey: string
+): Promise<unknown> {
   // Coerce to string; let libphonenumber-js handle formatting and a leading '+'.
   const incoming =
     typeof value === 'number'
