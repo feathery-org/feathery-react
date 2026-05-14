@@ -228,6 +228,7 @@ import { useAIExtractionToast } from './components/ActionToast/useAIExtractionTo
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
 import { AssistantChat } from '../assistant';
+import AssistantClient from '../assistant/AssistantClient';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -998,6 +999,7 @@ function Form({
   if (internalState[_internalId]) {
     internalState[_internalId].setInlineErrors = setInlineErrors;
     internalState[_internalId].inlineErrors = inlineErrors;
+    internalState[_internalId].logicRules = logicRules;
   }
 
   const changeFormStep = (newKey: string, oldKey: string, load: boolean) => {
@@ -2901,6 +2903,13 @@ function Form({
     calendly: integrations?.calendly?.metadata,
     featheryContext: getFormContext(_internalId)
   };
+
+  if (internalState[_internalId]) {
+    internalState[_internalId].assistantClient = new AssistantClient({
+      buttonOnClick,
+      runElementActions
+    });
+  }
 
   // If form was completed in a previous session and edits are disabled,
   // consider the form finished

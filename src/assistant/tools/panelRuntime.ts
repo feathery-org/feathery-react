@@ -1,6 +1,7 @@
-import internalState from '../utils/internalState';
-import { initState } from '../utils/init';
-import { replaceTextVariables } from '../elements/components/TextNodes';
+import internalState from '../../utils/internalState';
+import { initState } from '../../utils/init';
+import { replaceTextVariables } from '../../elements/components/TextNodes';
+import { findClickableAncestorSubgrids } from '../utils';
 
 export type PanelRuntimeFieldEntry = {
   key: string;
@@ -10,6 +11,8 @@ export type PanelRuntimeFieldEntry = {
   disabled: boolean;
   required: boolean;
   repeated: boolean;
+  hasLogicRules?: boolean;
+  clickableAncestorIds?: string[];
   placeholder?: string;
   tooltip?: string;
   error?: string;
@@ -27,9 +30,37 @@ export type PanelRuntimeFieldEntry = {
 
 export type PanelRuntimeElementEntry =
   | {
-      type: 'text' | 'button' | 'image';
+      type: 'text';
+      id?: string;
+      text: string;
+      templateText?: string;
+      visible: boolean;
+      actions?: Array<Record<string, unknown>>;
+      hasLogicRules?: boolean;
+      clickableAncestorIds?: string[];
+    }
+  | {
+      type: 'image';
       text: string;
       visible: boolean;
+      clickableAncestorIds?: string[];
+    }
+  | {
+      type: 'button';
+      id: string;
+      text: string;
+      visible: boolean;
+      submit: boolean;
+      actions: Array<Record<string, unknown>>;
+      hasLogicRules?: boolean;
+    }
+  | {
+      type: 'container';
+      id: string;
+      visible: boolean;
+      actions: Array<Record<string, unknown>>;
+      hasLogicRules?: boolean;
+      clickableAncestorIds?: string[];
     }
   | {
       type: 'progress';
@@ -81,6 +112,24 @@ const resolveText = (text: string, repeat?: number): string => {
 export const getCurrentStepKey = (formId: string): string | undefined =>
   internalState[formId]?.currentStep?.key;
 
+// Mirrors canRunAction in utils/elementActions.ts; step events run for every in-scope step, element events require elementId in rule.elements.
+const STEP_EVENTS = new Set(['submit', 'load']);
+const elementHasLogicRules = (
+  logicRules: any[] | undefined,
+  triggerEvent: string,
+  stepId: string,
+  elementId: string
+): boolean =>
+  (logicRules ?? []).some((rule) => {
+    if (rule?.trigger_event !== triggerEvent) return false;
+    if (rule.enabled === false || rule.valid === false) return false;
+    const { steps, elements } = rule;
+    if (Array.isArray(steps) && steps.length > 0 && !steps.includes(stepId))
+      return false;
+    if (STEP_EVENTS.has(triggerEvent)) return true;
+    return Array.isArray(elements) && elements.includes(elementId);
+  });
+
 export const getPanelRuntimeSnapshot = (
   formId: string
 ): PanelRuntimeSnapshot | null => {
@@ -91,9 +140,22 @@ export const getPanelRuntimeSnapshot = (
   const visiblePositions = state.visiblePositions ?? {};
   const fieldsMap = state.fields ?? {};
   const inlineErrors = state.inlineErrors ?? {};
+  const logicRules = state.logicRules;
   const formReadOnly = !!(
     state.formSettings?.readOnly || initState.collaboratorReview === 'readOnly'
   );
+
+  // Every subgrid has onClick wired so its handler fires on bubble; include any that'll do something - actions or an action-trigger rule scoped to its id.
+  const clickableSubgrids = ((step.subgrids ?? []) as any[]).filter((sg) => {
+    const acts = sg?.properties?.actions;
+    if (Array.isArray(acts) && acts.length > 0) return true;
+    return elementHasLogicRules(logicRules, 'action', step.id, sg.id ?? '');
+  });
+  const findClickableAncestorIds = (el: any): string[] =>
+    findClickableAncestorSubgrids(
+      clickableSubgrids,
+      Array.isArray(el?.position) ? el.position : []
+    ).map((sg: any) => sg.id ?? '');
 
   // Build per-field entries for the current step
   const currentStepFields: PanelRuntimeFieldEntry[] = (
@@ -148,6 +210,13 @@ export const getPanelRuntimeSnapshot = (
           }
         : undefined;
     const disabled = !!(props.disabled || formReadOnly);
+    const hasLogicRules = elementHasLogicRules(
+      logicRules,
+      'change',
+      step.id,
+      servar.id ?? ''
+    );
+    const clickableAncestorIds = findClickableAncestorIds(field);
     return {
       key: servar.key,
       type: servar.type,
@@ -156,6 +225,8 @@ export const getPanelRuntimeSnapshot = (
       disabled,
       required: !!servar.required,
       repeated: !!servar.repeated,
+      ...(hasLogicRules ? { hasLogicRules: true } : {}),
+      ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {}),
       ...(placeholder ? { placeholder } : {}),
       ...(tooltip ? { tooltip } : {}),
       ...(error ? { error } : {}),
@@ -205,26 +276,77 @@ export const getPanelRuntimeSnapshot = (
     }
   }
 
-  // Collect non-field elements (text, buttons, images, progress bars)
   const currentStepElements: PanelRuntimeElementEntry[] = [];
   const visibilityFor = (el: any): boolean => {
     const positionKey = el.position?.join(',') || 'root';
     const flags = visiblePositions[positionKey];
     return Array.isArray(flags) ? flags.some(Boolean) : true;
   };
-  const collectText = (list: any[] | undefined, type: 'text' | 'button') => {
-    (list ?? []).forEach((el: any) => {
-      const raw = extractRawText(el?.properties ?? {});
-      if (!raw) return;
-      currentStepElements.push({
-        type,
-        text: resolveText(raw),
-        visible: visibilityFor(el)
-      });
+
+  clickableSubgrids.forEach((sg: any) => {
+    const actions = sg.properties.actions;
+    const hasLogicRules = elementHasLogicRules(
+      logicRules,
+      'action',
+      step.id,
+      sg.id ?? ''
+    );
+    const clickableAncestorIds = findClickableAncestorIds(sg);
+    currentStepElements.push({
+      type: 'container',
+      id: sg.id ?? '',
+      visible: visibilityFor(sg),
+      actions,
+      ...(hasLogicRules ? { hasLogicRules: true } : {}),
+      ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {})
     });
-  };
-  collectText(step.texts, 'text');
-  collectText(step.buttons, 'button');
+  });
+
+  (step.texts ?? []).forEach((el: any) => {
+    const raw = extractRawText(el?.properties ?? {});
+    if (!raw) return;
+    const resolved = resolveText(raw);
+    const props = el?.properties ?? {};
+    const actions = Array.isArray(props.actions) ? props.actions : [];
+    const hasLogicRules = elementHasLogicRules(
+      logicRules,
+      'action',
+      step.id,
+      el.id ?? ''
+    );
+    const clickableAncestorIds = findClickableAncestorIds(el);
+    currentStepElements.push({
+      type: 'text',
+      text: resolved,
+      visible: visibilityFor(el),
+      ...(el.id ? { id: el.id } : {}),
+      ...(raw !== resolved ? { templateText: raw } : {}),
+      ...(actions.length > 0 ? { actions } : {}),
+      ...(hasLogicRules ? { hasLogicRules: true } : {}),
+      ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {})
+    });
+  });
+  (step.buttons ?? []).forEach((el: any) => {
+    const raw = extractRawText(el?.properties ?? {});
+    if (!raw) return;
+    const props = el?.properties ?? {};
+    const actions = Array.isArray(props.actions) ? props.actions : [];
+    // submit-flagged buttons also fire submit-trigger and form_complete-trigger rules on this step
+    const hasLogicRules =
+      elementHasLogicRules(logicRules, 'action', step.id, el.id ?? '') ||
+      (!!props.submit &&
+        (elementHasLogicRules(logicRules, 'submit', step.id, '') ||
+          elementHasLogicRules(logicRules, 'form_complete', step.id, '')));
+    currentStepElements.push({
+      type: 'button',
+      id: el.id ?? '',
+      text: resolveText(raw),
+      visible: visibilityFor(el),
+      submit: !!props.submit,
+      actions,
+      ...(hasLogicRules ? { hasLogicRules: true } : {})
+    });
+  });
   (step.images ?? []).forEach((el: any) => {
     const props = el?.properties ?? {};
     const altRaw =
@@ -232,10 +354,12 @@ export const getPanelRuntimeSnapshot = (
       (typeof props.caption === 'string' && props.caption) ||
       '';
     if (!altRaw) return;
+    const clickableAncestorIds = findClickableAncestorIds(el);
     currentStepElements.push({
       type: 'image',
       text: resolveText(altRaw),
-      visible: visibilityFor(el)
+      visible: visibilityFor(el),
+      ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {})
     });
   });
   (step.progress_bars ?? []).forEach((el: any) => {

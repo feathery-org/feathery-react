@@ -4,7 +4,7 @@ import { DEFAULT_CHAT_COLOR, GRAY_200, GRAY_400, GRAY_500 } from './colors';
 
 export interface ToolLabel {
   running: string;
-  done: string;
+  done?: string;
 }
 
 // Tool status labels mapping
@@ -15,34 +15,15 @@ export const TOOL_LABELS: Record<string, ToolLabel> = {
   },
   searchWeb: { running: 'Searching the web...', done: 'Web searched' },
   scrapeUrl: { running: 'Reading page...', done: 'Page read' },
-  getPanelRuntime: {
-    running: 'Reading the page...',
-    done: 'Page read'
-  },
-  getPanelSnapshot: {
-    running: 'Reading the form...',
-    done: 'Form read'
-  },
-  getFuserSnapshot: {
-    running: 'Looking up your submission...',
-    done: 'Submission details loaded'
-  },
-  listFormExtractions: {
-    running: 'Looking up extractions...',
-    done: 'Extractions found'
-  },
-  getExtractionSnapshot: {
-    running: 'Reading extraction setup...',
-    done: 'Extraction setup loaded'
-  },
-  getExtractionResults: {
-    running: 'Reading extraction results...',
-    done: 'Results loaded'
-  },
-  setFieldValue: {
-    running: 'Filling in...',
-    done: 'Filled in'
-  }
+  getPanelRuntime: { running: 'Reading the page...' },
+  getPanelSnapshot: { running: 'Reading the form...' },
+  getFuserSnapshot: { running: 'Looking up your submission...' },
+  listFormExtractions: { running: 'Looking up extractions...' },
+  getExtractionSnapshot: { running: 'Reading extraction setup...' },
+  getExtractionResults: { running: 'Reading extraction results...' },
+  setFieldValue: { running: 'Filling in...' },
+  clickElement: { running: 'Just a moment...' },
+  getLogicRules: { running: 'Reading form logic...' }
 };
 
 export const BACKGROUND_TOOL_NAMES = new Set<string>([
@@ -52,7 +33,9 @@ export const BACKGROUND_TOOL_NAMES = new Set<string>([
   'getExtractionSnapshot',
   'getExtractionResults',
   'listFormExtractions',
-  'setFieldValue'
+  'getLogicRules',
+  'setFieldValue',
+  'clickElement'
 ]);
 
 export function readPartType(

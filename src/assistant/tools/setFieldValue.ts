@@ -1,11 +1,11 @@
-import { setFieldValues } from '../utils/init';
-import internalState from '../utils/internalState';
+import { setFieldValues } from '../../utils/init';
+import internalState from '../../utils/internalState';
 import {
   loadPhoneValidator,
   phoneLib,
   phoneLibPromise
-} from '../utils/validation';
-import { stateMap } from '../elements/components/data/states';
+} from '../../utils/validation';
+import { stateMap } from '../../elements/components/data/states';
 
 type RuntimeFieldEntry = {
   key: string;

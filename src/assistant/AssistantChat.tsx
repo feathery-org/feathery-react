@@ -40,12 +40,16 @@ import {
 } from './utils';
 import { initInfo } from '../utils/init';
 import { featheryWindow, getCookie } from '../utils/browser';
-import { getCurrentStepKey, getPanelRuntimeSnapshot } from './panelRuntime';
+import {
+  getCurrentStepKey,
+  getPanelRuntimeSnapshot
+} from './tools/panelRuntime';
 import {
   applyServarValues,
   validateSetFieldValue,
   type ErrorType
-} from './setFieldValue';
+} from './tools/setFieldValue';
+import { dispatchClickElement } from './tools/clickElement';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
@@ -363,6 +367,16 @@ const AssistantChat = ({
             tool: 'setFieldValue',
             toolCallId: toolCall.toolCallId,
             output: { results }
+          });
+        } else if (toolCall.toolName === 'clickElement') {
+          const input = (toolCall.input ?? {}) as { elementId?: unknown };
+          const elementId =
+            typeof input.elementId === 'string' ? input.elementId : '';
+          const output = await dispatchClickElement(instanceId, elementId);
+          chat.addToolOutput({
+            tool: 'clickElement',
+            toolCallId: toolCall.toolCallId,
+            output
           });
         }
       },
