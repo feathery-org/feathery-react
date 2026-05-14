@@ -222,10 +222,11 @@ const AssistantChat = ({
 
   const makeChat = (
     threadId: string | null,
-    initialMessages: any[] = []
+    initialMessages: any[] = [],
+    initialTitle?: string
   ): Chat<any> => {
     let resolvedThreadId = threadId;
-    let titleGenerated = false;
+    let titleGenerated = !!initialTitle;
 
     const chatTransport = new DefaultChatTransport({
       api: baseUrl,
@@ -258,6 +259,7 @@ const AssistantChat = ({
           const titleMessage = chat.messages.find((m: any) => m.role === 'user')
             ?.parts?.[0]?.text;
           if (titleMessage) {
+            titleGenerated = true;
             const currentThreadId = resolvedThreadId || threadId || null;
             const titleContext: {
               targets?: ResourceRef[];
@@ -277,7 +279,6 @@ const AssistantChat = ({
               titleContext
             ).then((title) => {
               if (!title) return;
-              titleGenerated = true;
               if (currentThreadId) {
                 setThreads((prev) =>
                   prev.map((t) =>
@@ -465,7 +466,7 @@ const AssistantChat = ({
     }
     const thread = await getThreadDetail(baseUrl, headers, id);
     if (!thread) return;
-    const chat = makeChat(id, thread.messages ?? []);
+    const chat = makeChat(id, thread.messages ?? [], thread.title);
     setThreads((prev) =>
       prev.map((t) => (t.id === id ? { ...thread, chat } : t))
     );

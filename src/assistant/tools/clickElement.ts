@@ -121,15 +121,16 @@ export async function dispatchClickElement(
     if (found.elementType === 'button') {
       await client.click(found.element);
     } else {
+      // Capture ancestors before the child's action runs, it may navigate
+      const ancestors = findClickableAncestorSubgrids(
+        state.currentStep.subgrids,
+        found.position
+      );
       await client.runActions({
         actions: found.actions,
         element: found.element,
         elementType: found.elementType
       });
-      const ancestors = findClickableAncestorSubgrids(
-        state.currentStep.subgrids,
-        found.position
-      );
       for (const sg of ancestors) {
         const acts = sg?.properties?.actions;
         await client.runActions({
