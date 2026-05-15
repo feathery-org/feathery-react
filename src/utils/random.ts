@@ -29,9 +29,13 @@ function sfc32RNG(a: any, b: any, c: any, d: any) {
   };
 }
 
-export default function getRandomBoolean(userID: any, testName: any) {
+export function getWeightedBoolean(userID: any, testName: any, weight = 50) {
   const userIDSeed = xmur3Hash(userID);
   const testSeed = xmur3Hash(testName);
   const rng = sfc32RNG(userIDSeed(), userIDSeed(), testSeed(), testSeed());
-  return rng() > 0.5;
+  return rng() > 1 - weight / 100;
+}
+
+export default function getRandomBoolean(userID: any, testName: any) {
+  return getWeightedBoolean(userID, testName);
 }

@@ -6,6 +6,18 @@ jest.mock('../init');
 
 describe('formHelperFunctions', () => {
   describe('getABVariant', () => {
+    const baseStepRes = () => ({
+      variant_id: 'variant-id',
+      variant_name: 'Variant Name',
+      variant_version: 'variant-version',
+      variant: 'variant',
+      variant_logic_rules: 'variant-logic-rules',
+      variant_shared_codes: 'variant-shared-codes',
+      variant_connector_fields: 'variant-connector-fields',
+      form_name: 'Form Name',
+      data: 'data'
+    });
+
     it('returns the same variant for the same information', () => {
       // Arrange
       const stepRes = {
@@ -24,6 +36,40 @@ describe('formHelperFunctions', () => {
 
       // Assert
       expect(actual1).toEqual(actual2);
+    });
+
+    it('uses valid data weights for variant selection', () => {
+      const stepRes = {
+        ...baseStepRes(),
+        ab_test_data_weight: 40
+      };
+      initInfo.mockReturnValue({
+        sdkKey: 'sdkKey',
+        userId: 'a'
+      });
+
+      const actual = getABVariant(stepRes);
+
+      expect(actual.form_name).toEqual('Variant Name');
+      expect(actual.steps).toEqual('variant');
+      expect(actual.ab_test_data_weight).toBeUndefined();
+    });
+
+    it('falls back to 50 for invalid data weights', () => {
+      const stepRes = {
+        ...baseStepRes(),
+        ab_test_data_weight: 500
+      };
+      initInfo.mockReturnValue({
+        sdkKey: 'sdkKey',
+        userId: 'a'
+      });
+
+      const actual = getABVariant(stepRes);
+
+      expect(actual.form_name).toEqual('Form Name');
+      expect(actual.steps).toEqual('data');
+      expect(actual.ab_test_data_weight).toBeUndefined();
     });
   });
 

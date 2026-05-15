@@ -1,4 +1,4 @@
-import getRandomBoolean from './random';
+import { getWeightedBoolean } from './random';
 import {
   fieldValues,
   filePathMap,
@@ -25,15 +25,28 @@ export function isStoreFieldValueAction(el: any) {
 export const getABVariant = (stepRes: any) => {
   stepRes.steps = stepRes.data;
   delete stepRes.data;
-  if (!stepRes.variant) return stepRes;
+  if (!stepRes.variant) {
+    delete stepRes.ab_test_data_weight;
+    return stepRes;
+  }
 
   const { sdkKey, userId, overrideUserId } = initInfo();
+  const dataWeight = stepRes.ab_test_data_weight;
+  const sanitizedDataWeight =
+    Number.isInteger(dataWeight) && dataWeight >= 1 && dataWeight <= 99
+      ? dataWeight
+      : 50;
   // If userId was not passed in, sdkKey is assumed to be a user admin key
   // and thus a unique user ID
   // If userId was preset (e.g. from _id URL param), skip AB variant
   // since the submission is tied to the original form
   const useVariant =
-    !overrideUserId && !getRandomBoolean(userId || sdkKey, stepRes.form_name);
+    !overrideUserId &&
+    !getWeightedBoolean(
+      userId || sdkKey,
+      stepRes.form_name,
+      sanitizedDataWeight
+    );
 
   if (useVariant) {
     stepRes.new_form_id = stepRes.variant_id;
@@ -52,6 +65,7 @@ export const getABVariant = (stepRes: any) => {
   delete stepRes.variant_logic_rules;
   delete stepRes.variant_shared_codes;
   delete stepRes.variant_connector_fields;
+  delete stepRes.ab_test_data_weight;
   return stepRes;
 };
 
