@@ -21,6 +21,7 @@ import {
 import {
   getInlineError,
   handleCheckboxGroupChange,
+  handleCheckboxGroupSelectAllChange,
   isFieldActuallyRequired,
   otherChangeCheckboxGroup,
   otherChangeRadioButtonGroup,
@@ -519,6 +520,15 @@ const Element = ({ node: el, form }: any) => {
             otherVal={otherVal}
             onChange={(e: any) => {
               const index = handleCheckboxGroupChange(e, el, updateFieldValues);
+              onChange({ valueRepeatIndex: index });
+            }}
+            onSelectAllChange={(optionValues: any[], checked: boolean) => {
+              const index = handleCheckboxGroupSelectAllChange(
+                optionValues,
+                checked,
+                el,
+                updateFieldValues
+              );
               onChange({ valueRepeatIndex: index });
             }}
             onOtherChange={(e: any) => {

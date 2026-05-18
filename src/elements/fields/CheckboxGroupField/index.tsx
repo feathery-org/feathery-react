@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { FormControl } from '../../components/FormControl';
 import { resetStyles } from '../../styles';
 import {
@@ -25,6 +25,7 @@ function CheckboxGroupField({
   repeatIndex = null,
   editMode,
   onChange = () => {},
+  onSelectAllChange = () => {},
   onOtherChange = () => {},
   onEnter = () => {},
   elementProps = {},
@@ -37,6 +38,7 @@ function CheckboxGroupField({
   const otherChecked = fieldVal.includes(otherVal);
   const otherLabel = servar.metadata.other_label ?? 'Other';
   const containerRef = useRef(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   const styles = useMemo(() => {
     applyCheckableInputStyles(element, responsiveStyles);
@@ -85,6 +87,24 @@ function CheckboxGroupField({
     }));
   }
 
+  const optionValues = options.map((option: any) => option.value ?? option);
+  const selectedOptionCount = optionValues.filter((value: any) =>
+    fieldVal.includes(value)
+  ).length;
+  const allSelected =
+    optionValues.length > 0 && selectedOptionCount === optionValues.length;
+  const someSelected = selectedOptionCount > 0;
+  const indeterminate = someSelected && !allSelected;
+  const showSelectAll =
+    servar.metadata.select_all && !servar.max_length && optionValues.length > 0;
+  const selectAllDisabled = disabled || loadingDynamicOptions;
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = indeterminate;
+    }
+  }, [indeterminate]);
+
   return (
     <div
       ref={containerRef}
@@ -105,6 +125,52 @@ function CheckboxGroupField({
           ...styles.getTarget('row-container')
         }}
       >
+        {showSelectAll && (
+          <div
+            css={{
+              display: 'flex',
+              pointerEvents: selectAllDisabled ? 'none' : 'auto'
+            }}
+          >
+            <label style={{ display: 'contents' }}>
+              <input
+                ref={selectAllRef}
+                type='checkbox'
+                id={`${servar.key}-select-all`}
+                checked={allSelected}
+                onChange={() => onSelectAllChange(optionValues, !allSelected)}
+                onFocus={iosScrollOnFocus}
+                style={{ padding: 0, lineHeight: 'normal' }}
+                css={{
+                  ...composeCheckableInputStyle(styles, selectAllDisabled),
+                  ...styles.getTarget('checkboxGroup'),
+                  ...(selectAllDisabled
+                    ? responsiveStyles.getTarget('disabled')
+                    : {}),
+                  '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' },
+                  '&:indeterminate': {
+                    ...styles.getTarget('checkboxSelected')
+                  },
+                  '&:indeterminate::before': {
+                    transform: 'scale(1)',
+                    clipPath: 'inset(45% 15%)'
+                  }
+                }}
+                disabled={selectAllDisabled}
+                aria-label='Select all'
+              />
+              <span
+                css={{
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  ...styles.getTarget('checkboxLabel')
+                }}
+              >
+                Select all
+              </span>
+            </label>
+          </div>
+        )}
         {options.map((option: any, i: number) => {
           const value = option.value ?? option;
           const label = option.label ?? option;
