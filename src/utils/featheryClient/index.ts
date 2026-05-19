@@ -1,8 +1,8 @@
 import IntegrationClient from './integrationClient';
 import {
   fieldValues,
-  filePathMap,
   fileDeduplicationCount,
+  filePathMap,
   fileRetryStatus,
   initFormsPromise,
   initInfo,
@@ -30,20 +30,21 @@ import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
 import { GetConfigParams } from '../internalState';
 import {
+  dataHubAction as apiDataHubAction,
+  extractAIDocument,
   ExtractionActionOptions,
+  forwardInboxEmail,
+  ForwardInboxEmailOptions,
   generateFormDocuments as apiGenerateFormDocuments,
+  getApiUrl,
+  getCdnUrl,
+  getS3Url,
+  getStaticUrl,
+  inviteFormCollaborator as apiInviteFormCollaborator,
   PageSelectionInput,
   parseAPIError,
-  extractAIDocument,
-  inviteFormCollaborator as apiInviteFormCollaborator,
   setEnvironment,
-  URL_ENUM,
-  getApiUrl,
-  getStaticUrl,
-  getS3Url,
-  getCdnUrl,
-  forwardInboxEmail,
-  ForwardInboxEmailOptions
+  URL_ENUM
 } from '@feathery/client-utils';
 import {
   FEATHERY_INTERACTION_EVENT,
@@ -1097,28 +1098,16 @@ export default class FeatheryClient extends IntegrationClient {
     entryId?: string;
     data?: Record<string, any>;
   }) {
-    const baseUrl = new URL(getApiUrl()).origin;
-    const url = `${baseUrl}/api/hub/${hubId}/action/`;
-
-    const response = await this._fetch(
-      url,
+    const { sdkKey } = initInfo();
+    return apiDataHubAction(
+      sdkKey,
       {
-        headers: { 'Content-Type': 'application/json' },
-        method: 'POST',
-        body: JSON.stringify({
-          operation,
-          entry_id: entryId,
-          data,
-          form_key: this.formKey
-        })
+        hubId,
+        operation,
+        entryId,
+        data
       },
-      false
+      this.formKey
     );
-
-    if (response) {
-      if (response.status === 204) return null;
-      if (response.ok) return await response.json();
-      throw Error(parseAPIError(await response.json()));
-    }
   }
 }
