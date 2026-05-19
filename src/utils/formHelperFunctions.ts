@@ -27,6 +27,9 @@ export const getABVariant = (stepRes: any) => {
   delete stepRes.data;
   if (!stepRes.variant) {
     delete stepRes.ab_test_data_weight;
+    delete stepRes.ab_test_id;
+    delete stepRes.ab_test_variant_a_weight;
+    delete stepRes.ab_test_data_variant;
     return stepRes;
   }
 
@@ -36,17 +39,37 @@ export const getABVariant = (stepRes: any) => {
     Number.isInteger(dataWeight) && dataWeight >= 1 && dataWeight <= 99
       ? dataWeight
       : 50;
+  const variantAWeight = stepRes.ab_test_variant_a_weight;
+  const dataVariant = stepRes.ab_test_data_variant;
+  const canAssignByABTest =
+    stepRes.ab_test_id &&
+    Number.isInteger(variantAWeight) &&
+    variantAWeight >= 1 &&
+    variantAWeight <= 99 &&
+    (dataVariant === 'variant_a' || dataVariant === 'variant_b');
+  const shouldUseVariantPayload = () => {
+    const assignedVariant = getWeightedBoolean(
+      userId || sdkKey,
+      stepRes.ab_test_id,
+      variantAWeight
+    )
+      ? 'variant_a'
+      : 'variant_b';
+    return dataVariant !== assignedVariant;
+  };
   // If userId was not passed in, sdkKey is assumed to be a user admin key
-  // and thus a unique user ID
+  // and thus a unique user ID.
   // If userId was preset (e.g. from _id URL param), skip AB variant
-  // since the submission is tied to the original form
+  // since the submission is tied to the original form.
   const useVariant =
     !overrideUserId &&
-    !getWeightedBoolean(
-      userId || sdkKey,
-      stepRes.form_name,
-      sanitizedDataWeight
-    );
+    (canAssignByABTest
+      ? shouldUseVariantPayload()
+      : !getWeightedBoolean(
+          userId || sdkKey,
+          stepRes.form_name,
+          sanitizedDataWeight
+        ));
 
   if (useVariant) {
     stepRes.new_form_id = stepRes.variant_id;
@@ -66,6 +89,9 @@ export const getABVariant = (stepRes: any) => {
   delete stepRes.variant_shared_codes;
   delete stepRes.variant_connector_fields;
   delete stepRes.ab_test_data_weight;
+  delete stepRes.ab_test_id;
+  delete stepRes.ab_test_variant_a_weight;
+  delete stepRes.ab_test_data_variant;
   return stepRes;
 };
 
