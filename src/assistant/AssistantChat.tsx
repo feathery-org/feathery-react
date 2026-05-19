@@ -14,7 +14,20 @@ import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithToolCalls
 } from 'ai';
-import { ChatIcon, MinimizeIcon, SendIcon, SpinnerIcon } from './icons';
+import {
+  ChatIcon,
+  ChevronDownIcon,
+  ChevronsLeftIcon,
+  ChevronsRightIcon,
+  CloseIcon,
+  FloatingIcon,
+  FullscreenIcon,
+  MinusIcon,
+  SendIcon,
+  SidebarLeftIcon,
+  SidebarRightIcon,
+  SpinnerIcon
+} from './icons';
 import {
   DEFAULT_CHAT_COLOR,
   getChatColors,
@@ -39,7 +52,7 @@ import {
   getThreadList
 } from './utils';
 import { initInfo } from '../utils/init';
-import { featheryWindow, getCookie } from '../utils/browser';
+import { featheryDoc, featheryWindow, getCookie } from '../utils/browser';
 import {
   getCurrentStepKey,
   getPanelRuntimeSnapshot
@@ -54,6 +67,84 @@ import { dispatchClickElement } from './tools/clickElement';
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 500;
+
+export type AssistantMode =
+  | 'current'
+  | 'sidebar-left'
+  | 'sidebar-right'
+  | 'fullscreen';
+
+const MODE_STORAGE_KEY = 'feathery.assistant.mode';
+const DEFAULT_MODE: AssistantMode = 'current';
+
+const isAssistantMode = (v: unknown): v is AssistantMode =>
+  v === 'current' ||
+  v === 'sidebar-left' ||
+  v === 'sidebar-right' ||
+  v === 'fullscreen';
+
+const readStoredMode = (): AssistantMode => {
+  try {
+    const raw = featheryWindow().localStorage.getItem(MODE_STORAGE_KEY);
+    return isAssistantMode(raw) ? raw : DEFAULT_MODE;
+  } catch {
+    return DEFAULT_MODE;
+  }
+};
+
+const writeStoredMode = (mode: AssistantMode) => {
+  try {
+    featheryWindow().localStorage.setItem(MODE_STORAGE_KEY, mode);
+  } catch {
+    // localStorage unavailable, mode stays in component state for the session
+  }
+};
+
+const SIDEBAR_WIDTH_STORAGE_KEY = 'feathery.assistant.sidebarWidth';
+const SIDEBAR_MIN_WIDTH = 280;
+const SIDEBAR_MAX_ABS = 800;
+const SIDEBAR_MAX_VIEWPORT_RATIO = 0.6;
+const DEFAULT_SIDEBAR_WIDTH = 380;
+
+const getSidebarMaxWidth = (): number => {
+  try {
+    return Math.min(
+      SIDEBAR_MAX_ABS,
+      Math.floor(featheryWindow().innerWidth * SIDEBAR_MAX_VIEWPORT_RATIO)
+    );
+  } catch {
+    return SIDEBAR_MAX_ABS;
+  }
+};
+
+const clampSidebarWidth = (w: number): number => {
+  const max = Math.max(SIDEBAR_MIN_WIDTH, getSidebarMaxWidth());
+  if (w < SIDEBAR_MIN_WIDTH) return SIDEBAR_MIN_WIDTH;
+  if (w > max) return max;
+  return w;
+};
+
+const readStoredSidebarWidth = (): number => {
+  try {
+    const raw = featheryWindow().localStorage.getItem(
+      SIDEBAR_WIDTH_STORAGE_KEY
+    );
+    const parsed = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(parsed) && parsed > 0
+      ? clampSidebarWidth(parsed)
+      : DEFAULT_SIDEBAR_WIDTH;
+  } catch {
+    return DEFAULT_SIDEBAR_WIDTH;
+  }
+};
+
+const writeStoredSidebarWidth = (w: number): void => {
+  try {
+    featheryWindow().localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(w));
+  } catch {
+    // localStorage unavailable, width stays in component state for the session
+  }
+};
 
 type AssistantEntry =
   | { kind: 'text'; key: string; text: string }
@@ -159,6 +250,21 @@ export type WorkflowAction = {
   instructions: string;
 };
 
+export type AssistantLayoutState = {
+  mode: AssistantMode;
+  isOpen: boolean;
+  side: 'left' | 'right' | null;
+  width: number;
+  isResizing: boolean;
+};
+
+const DEFAULT_MODES: AssistantMode[] = [
+  'current',
+  'sidebar-left',
+  'sidebar-right',
+  'fullscreen'
+];
+
 export type AssistantChatProps = {
   instanceId?: string;
   baseUrl: string;
@@ -167,6 +273,8 @@ export type AssistantChatProps = {
   bottom?: number;
   color?: string;
   workflowActions?: WorkflowAction[];
+  allowedModes?: AssistantMode[];
+  onLayoutChange?: null | ((state: AssistantLayoutState) => void);
 };
 
 const AssistantChat = ({
@@ -176,7 +284,9 @@ const AssistantChat = ({
   baseUrl,
   bottom = 20,
   color,
-  workflowActions = []
+  workflowActions = [],
+  allowedModes = DEFAULT_MODES,
+  onLayoutChange
 }: AssistantChatProps) => {
   const headers = useMemo<AssistantHeaders>(() => {
     if (getJwt) return () => ({ Authorization: `Bearer ${getJwt()}` });
@@ -204,10 +314,74 @@ const AssistantChat = ({
   };
 
   const [isOpen, setIsOpen] = useState(false);
+  const [mode, setModeState] = useState<AssistantMode>(readStoredMode);
+  const setMode = useCallback((next: AssistantMode) => {
+    setModeState(next);
+    writeStoredMode(next);
+  }, []);
+
+  const [sidebarWidth, setSidebarWidth] = useState<number>(
+    readStoredSidebarWidth
+  );
+  const [isResizing, setIsResizing] = useState(false);
+
+  useEffect(() => {
+    const onWindowResize = () => {
+      setSidebarWidth((w) => {
+        const newWidth = clampSidebarWidth(w);
+        if (newWidth !== w) writeStoredSidebarWidth(newWidth);
+        return newWidth;
+      });
+    };
+    featheryWindow().addEventListener('resize', onWindowResize);
+    return () => featheryWindow().removeEventListener('resize', onWindowResize);
+  }, []);
+
+  const handleResizePointerDown = useCallback(
+    (side: 'left' | 'right') => (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      setIsResizing(true);
+
+      const body = featheryDoc().body;
+      body.style.cursor = 'col-resize';
+      body.style.userSelect = 'none';
+
+      let currentWidth = sidebarWidth;
+      const handleMove = (moveEvent: PointerEvent) => {
+        const raw =
+          side === 'right'
+            ? featheryWindow().innerWidth - moveEvent.clientX
+            : moveEvent.clientX;
+        currentWidth = clampSidebarWidth(raw);
+        setSidebarWidth(currentWidth);
+      };
+      const handleUp = () => {
+        featheryWindow().removeEventListener('pointermove', handleMove);
+        featheryWindow().removeEventListener('pointerup', handleUp);
+        featheryWindow().removeEventListener('pointercancel', handleUp);
+        setIsResizing(false);
+        body.style.cursor = '';
+        body.style.userSelect = '';
+        writeStoredSidebarWidth(currentWidth);
+      };
+      featheryWindow().addEventListener('pointermove', handleMove);
+      featheryWindow().addEventListener('pointerup', handleUp);
+      featheryWindow().addEventListener('pointercancel', handleUp);
+    },
+    [sidebarWidth]
+  );
+
+  const handleResizeDoubleClick = useCallback(() => {
+    setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+    writeStoredSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+  }, []);
+
   const [input, setInput] = useState('');
   const [threads, setThreads] = useState<AssistantThreadDetail[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
   const [actionTooltip, setActionTooltip] = useState<{
     text: string;
     x: number;
@@ -568,6 +742,44 @@ const AssistantChat = ({
 
   const { livePillLabel, isLoading } = getLivePillState(messages, status);
 
+  const layoutSide: 'left' | 'right' | null =
+    mode === 'sidebar-left'
+      ? 'left'
+      : mode === 'sidebar-right'
+      ? 'right'
+      : null;
+  const layoutWidth = isOpen && layoutSide ? sidebarWidth : 0;
+
+  const onLayoutChangeRef = useRef(onLayoutChange);
+  onLayoutChangeRef.current = onLayoutChange;
+  useEffect(() => {
+    onLayoutChangeRef.current?.({
+      mode,
+      isOpen,
+      side: layoutSide,
+      width: layoutWidth,
+      isResizing
+    });
+  }, [mode, isOpen, layoutSide, layoutWidth, isResizing]);
+
+  const CollapseIcon =
+    mode === 'sidebar-left'
+      ? ChevronsLeftIcon
+      : mode === 'sidebar-right'
+      ? ChevronsRightIcon
+      : mode === 'fullscreen'
+      ? CloseIcon
+      : MinusIcon;
+
+  const ModeTriggerIcon =
+    mode === 'sidebar-left'
+      ? SidebarLeftIcon
+      : mode === 'sidebar-right'
+      ? SidebarRightIcon
+      : mode === 'fullscreen'
+      ? FullscreenIcon
+      : FloatingIcon;
+
   // Collapsed state - show chat bubble
   if (!isOpen) {
     return (
@@ -606,34 +818,108 @@ const AssistantChat = ({
   }
 
   // Expanded state - show full chat panel
+  const panelGeometry =
+    mode === 'sidebar-left'
+      ? {
+          top: 0,
+          left: 0,
+          width: `${sidebarWidth}px`,
+          height: '100vh',
+          borderRadius: 0,
+          boxShadow: '4px 0 24px rgba(0, 0, 0, 0.12)',
+          borderRight: `1px solid ${GRAY_200}`
+        }
+      : mode === 'sidebar-right'
+      ? {
+          top: 0,
+          right: 0,
+          width: `${sidebarWidth}px`,
+          height: '100vh',
+          borderRadius: 0,
+          boxShadow: '-4px 0 24px rgba(0, 0, 0, 0.12)',
+          borderLeft: `1px solid ${GRAY_200}`
+        }
+      : mode === 'fullscreen'
+      ? {
+          inset: 0,
+          borderRadius: 0,
+          boxShadow: 'none',
+          border: 'none'
+        }
+      : {
+          bottom: `${bottom}px`,
+          right: '20px',
+          width: `${PANEL_WIDTH}px`,
+          height: `${PANEL_HEIGHT}px`,
+          borderRadius: '12px',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+          border: `1px solid ${GRAY_200}`
+        };
+
   return (
     <div
       css={{
         position: 'fixed',
-        bottom: `${bottom}px`,
-        right: '20px',
-        width: `${PANEL_WIDTH}px`,
-        height: `${PANEL_HEIGHT}px`,
         backgroundColor: 'white',
-        borderRadius: '12px',
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
-        border: `1px solid ${GRAY_200}`,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        zIndex: 1000
+        zIndex: 1000,
+        ...panelGeometry
       }}
     >
+      {layoutSide && (
+        <div
+          role='separator'
+          aria-orientation='vertical'
+          aria-label='Resize assistant panel'
+          title='Drag to resize, double-click to reset'
+          onPointerDown={handleResizePointerDown(layoutSide)}
+          onDoubleClick={handleResizeDoubleClick}
+          css={{
+            position: 'absolute',
+            top: 0,
+            [layoutSide === 'right' ? 'left' : 'right']: 0,
+            width: '6px',
+            height: '100%',
+            cursor: 'col-resize',
+            zIndex: 2,
+            touchAction: 'none',
+            userSelect: 'none',
+            '::after': {
+              content: '""',
+              position: 'absolute',
+              top: 0,
+              [layoutSide === 'right' ? 'left' : 'right']: '2px',
+              width: '2px',
+              height: '100%',
+              backgroundColor: 'transparent',
+              transition: 'background-color 120ms ease'
+            },
+            ':hover::after': {
+              backgroundColor: 'rgba(0, 0, 0, 0.15)'
+            }
+          }}
+        />
+      )}
+
       {/* Header */}
       <div
         css={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          gap: '2px',
           padding: '12px 16px',
           backgroundColor: colors.primary,
           color: 'white',
-          position: 'relative'
+          position: 'relative',
+          ...(layoutSide
+            ? {
+                minHeight: 'var(--main-nav-height, 55px)',
+                boxSizing: 'border-box'
+              }
+            : {})
         }}
       >
         <div
@@ -642,6 +928,7 @@ const AssistantChat = ({
             alignItems: 'center',
             gap: '8px',
             minWidth: 0,
+            flex: 1,
             overflow: 'hidden'
           }}
         >
@@ -656,48 +943,163 @@ const AssistantChat = ({
               cursor: 'pointer',
               fontWeight: 600,
               fontSize: '14px',
-              padding: '0',
+              padding: '4px',
+              borderRadius: '4px',
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
               minWidth: 0,
-              ':hover': { opacity: 0.85 }
+              maxWidth: '100%',
+              ':hover': { backgroundColor: 'rgba(255, 255, 255, 0.1)' }
             }}
           >
             <span
               css={{
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                minWidth: 0
               }}
             >
               {activeThread?.title || 'AI Assistant'}
             </span>
-            <span css={{ fontSize: '10px', opacity: 0.8, flexShrink: 0 }}>
-              ▾
+            <span css={{ display: 'flex', opacity: 0.8, flexShrink: 0 }}>
+              <ChevronDownIcon />
             </span>
           </button>
         </div>
-        <button
-          type='button'
-          onClick={() => setIsOpen(false)}
+        <div
           css={{
-            background: 'none',
-            border: 'none',
-            color: 'white',
-            cursor: 'pointer',
-            padding: '4px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '4px',
-            ':hover': {
-              backgroundColor: 'rgba(255, 255, 255, 0.1)'
-            }
+            gap: '2px',
+            position: 'relative',
+            flexShrink: 0
           }}
         >
-          <MinimizeIcon />
-        </button>
+          <button
+            type='button'
+            onClick={() => setIsModeMenuOpen((prev) => !prev)}
+            css={{
+              background: 'none',
+              border: 'none',
+              color: 'white',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '4px',
+              ':hover': { backgroundColor: 'rgba(255, 255, 255, 0.1)' }
+            }}
+          >
+            <ModeTriggerIcon />
+          </button>
+          <button
+            type='button'
+            onClick={() => setIsOpen(false)}
+            css={{
+              background: 'none',
+              border: 'none',
+              color: 'white',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '4px',
+              ':hover': {
+                backgroundColor: 'rgba(255, 255, 255, 0.1)'
+              }
+            }}
+          >
+            <CollapseIcon />
+          </button>
+          {isModeMenuOpen && (
+            <>
+              <div
+                css={{ position: 'fixed', inset: 0, zIndex: 1000 }}
+                onClick={() => setIsModeMenuOpen(false)}
+              />
+              <div
+                css={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: '4px',
+                  minWidth: '180px',
+                  backgroundColor: 'white',
+                  border: `1px solid ${GRAY_200}`,
+                  borderRadius: '8px',
+                  boxShadow: '0 8px 16px rgba(0,0,0,0.12)',
+                  zIndex: 1001,
+                  overflow: 'hidden'
+                }}
+              >
+                {(
+                  [
+                    { value: 'current', label: 'Floating', Icon: FloatingIcon },
+                    {
+                      value: 'sidebar-left',
+                      label: 'Sidebar left',
+                      Icon: SidebarLeftIcon
+                    },
+                    {
+                      value: 'sidebar-right',
+                      label: 'Sidebar right',
+                      Icon: SidebarRightIcon
+                    },
+                    {
+                      value: 'fullscreen',
+                      label: 'Fullscreen',
+                      Icon: FullscreenIcon
+                    }
+                  ] as Array<{
+                    value: AssistantMode;
+                    label: string;
+                    Icon: typeof FloatingIcon;
+                  }>
+                )
+                  .filter(({ value }) => allowedModes.includes(value))
+                  .map(({ value, label, Icon }) => (
+                    <button
+                      key={value}
+                      type='button'
+                      onClick={() => {
+                        setMode(value);
+                        setIsModeMenuOpen(false);
+                      }}
+                      css={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        background: value === mode ? colors.light : 'white',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        color: GRAY_800,
+                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        ':hover': { backgroundColor: GRAY_50 }
+                      }}
+                    >
+                      <span
+                        css={{
+                          display: 'flex',
+                          color: GRAY_400,
+                          flexShrink: 0
+                        }}
+                      >
+                        <Icon />
+                      </span>
+                      <span>{label}</span>
+                    </button>
+                  ))}
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Thread dropdown */}
         {isDropdownOpen && (

@@ -228,6 +228,7 @@ import { useAIExtractionToast } from './components/ActionToast/useAIExtractionTo
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
 import { AssistantChat } from '../assistant';
+import type { AssistantLayoutState } from '../assistant/AssistantChat';
 import AssistantClient from '../assistant/AssistantClient';
 
 export * from './grid/StyledContainer';
@@ -243,6 +244,9 @@ export interface Props {
   onError?: null | ((context: ContextOnError) => Promise<any> | void);
   onView?: null | ((context: ContextOnView) => Promise<any> | void);
   onAction?: null | ((context: ContextOnAction) => Promise<any> | void);
+  onAssistantLayoutChange?:
+    | null
+    | ((state: AssistantLayoutState) => Promise<any> | void);
   onViewElements?: string[];
   saveUrlParams?: boolean;
   initialValues?: FieldValues;
@@ -323,6 +327,7 @@ function Form({
   onError = null,
   onView = null,
   onAction = null,
+  onAssistantLayoutChange = null,
   onViewElements = [],
   saveUrlParams = false,
   hideTestUI = false,
@@ -3044,6 +3049,7 @@ function Form({
             }
             color={formSettings.assistantColor}
             workflowActions={formSettings.assistantWorkflowActions}
+            onLayoutChange={onAssistantLayoutChange}
           />
         )}
       </form>
