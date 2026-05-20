@@ -926,7 +926,8 @@ export default class FeatheryClient extends IntegrationClient {
       this.AI_CHECK_INTERVAL,
       this.AI_MAX_TIME,
       () => setPollFuserData?.(true),
-      onStatusUpdate
+      onStatusUpdate,
+      this.formKey
     );
   }
 
