@@ -1728,10 +1728,10 @@
     minimatch "^3.1.2"
     strip-json-comments "^3.1.1"
 
-"@feathery/client-utils@^0.15.1":
-  version "0.15.1"
-  resolved "https://registry.yarnpkg.com/@feathery/client-utils/-/client-utils-0.15.1.tgz#2a6a4750c604211e25120c0a5ca3cf55324d854d"
-  integrity sha512-wg1awTgR0J4XvkZD2fNboPd25BJeyURZlI4U+638q2eOXaDXuKL7kVZI72KLLeUm30z+kKBupaIafOftFd3IlA==
+"@feathery/client-utils@^0.15.2":
+  version "0.15.2"
+  resolved "https://registry.yarnpkg.com/@feathery/client-utils/-/client-utils-0.15.2.tgz#bbf6a8d6046aea540b4b6fe2fac023aae48e551d"
+  integrity sha512-ts5uSy0M2F2Cl+3NU2RV/1mkS4NmP2b/Qui1zl3XE5VSxy2lfObvCq0u68ZM/WflpYm6VV0YbZM9ffgMkIXtzQ==
 
 "@fingerprintjs/fingerprintjs@4.6.2":
   version "4.6.2"
