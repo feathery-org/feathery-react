@@ -37,6 +37,7 @@ function CheckboxGroupField({
     useSalesforceSync(servar.metadata.salesforce_sync, editMode);
   const otherChecked = fieldVal.includes(otherVal);
   const otherLabel = servar.metadata.other_label ?? 'Other';
+  const selectAllLabel = servar.metadata.select_all_label || 'Select All';
   const containerRef = useRef(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
@@ -157,7 +158,7 @@ function CheckboxGroupField({
                   }
                 }}
                 disabled={selectAllDisabled}
-                aria-label='Select all'
+                aria-label={selectAllLabel}
               />
               <span
                 css={{
@@ -166,7 +167,7 @@ function CheckboxGroupField({
                   ...styles.getTarget('checkboxLabel')
                 }}
               >
-                Select all
+                {selectAllLabel}
               </span>
             </label>
           </div>

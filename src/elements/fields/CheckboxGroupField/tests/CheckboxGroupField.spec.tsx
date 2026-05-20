@@ -182,9 +182,39 @@ describe('CheckboxGroupField - Base Functionality', () => {
 
       render(<CheckboxGroupField {...props} />);
 
-      expect(screen.getByText('Select all')).toBeTruthy();
+      expect(screen.getByText('Select All')).toBeTruthy();
       expect(getSelectAllCheckbox()).toBeTruthy();
       expectCheckboxGroupToHaveOptionCount(3);
+    });
+
+    it('uses custom select all label', () => {
+      const element = createCheckboxGroupElement('checkbox_group', {
+        select_all: true,
+        select_all_label: 'Select everything'
+      });
+      const props = createCheckboxGroupProps(element);
+
+      render(<CheckboxGroupField {...props} />);
+
+      expect(screen.getByText('Select everything')).toBeTruthy();
+      expect(getSelectAllCheckbox().getAttribute('aria-label')).toBe(
+        'Select everything'
+      );
+    });
+
+    it('falls back to default select all label when label is empty', () => {
+      const element = createCheckboxGroupElement('checkbox_group', {
+        select_all: true,
+        select_all_label: ''
+      });
+      const props = createCheckboxGroupProps(element);
+
+      render(<CheckboxGroupField {...props} />);
+
+      expect(screen.getByText('Select All')).toBeTruthy();
+      expect(getSelectAllCheckbox().getAttribute('aria-label')).toBe(
+        'Select All'
+      );
     });
 
     it('selects all normal options', () => {
@@ -264,7 +294,7 @@ describe('CheckboxGroupField - Base Functionality', () => {
 
       render(<CheckboxGroupField {...createCheckboxGroupProps(element)} />);
 
-      expect(screen.queryByText('Select all')).toBeNull();
+      expect(screen.queryByText('Select All')).toBeNull();
     });
   });
 
