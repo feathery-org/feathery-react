@@ -534,7 +534,7 @@ describe('FeatheryClient - using api helpers', () => {
   describe('runAIExtraction', () => {
     const formKey = 'formKey';
     const userId = 'userId';
-    let featheryClient;
+    let featheryClient: FeatheryClient;
 
     beforeEach(() => {
       jest.clearAllMocks();
@@ -589,7 +589,8 @@ describe('FeatheryClient - using api helpers', () => {
           trigger_extraction_run_id: undefined,
           pages: [1, 2, 3],
           meeting_url: undefined,
-          collaborator_user: 'collaboratorId'
+          collaborator_user: 'collaboratorId',
+          form_key: 'formKey'
         }),
         cache: 'no-store',
         keepalive: true
@@ -634,7 +635,8 @@ describe('FeatheryClient - using api helpers', () => {
               [3, 4]
             ],
             meeting_url: undefined,
-            collaborator_user: 'collaboratorId'
+            collaborator_user: 'collaboratorId',
+            form_key: 'formKey'
           })
         })
       );
@@ -670,7 +672,8 @@ describe('FeatheryClient - using api helpers', () => {
             trigger_extraction_run_id: undefined,
             pages: undefined,
             meeting_url: undefined,
-            collaborator_user: 'collaboratorId'
+            collaborator_user: 'collaboratorId',
+            form_key: 'formKey'
           })
         })
       );
@@ -680,7 +683,7 @@ describe('FeatheryClient - using api helpers', () => {
   describe('inviteCollaborator', () => {
     const formKey = 'formKey';
     const userId = 'userId';
-    let featheryClient;
+    let featheryClient: FeatheryClient;
 
     beforeEach(() => {
       jest.clearAllMocks();
