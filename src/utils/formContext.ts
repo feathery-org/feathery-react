@@ -13,8 +13,8 @@ import {
 } from './init';
 import internalState, {
   AlloyEntities,
-  GetDocusignEnvelopeParams,
   GetConfigParams,
+  GetDocusignEnvelopeParams,
   LoanProCustomerObject,
   SendDocusignParams,
   setFormInternalState
@@ -23,6 +23,7 @@ import { validateElements } from './validation';
 import {
   FillQuikParams,
   ForwardInboxEmailOptions,
+  HubActionOptions,
   IntegrationActionIds,
   IntegrationActionOptions,
   PageSelectionInput
@@ -200,17 +201,8 @@ export const getFormContext = (formUuid: string) => {
       formState.client.createLoanProCustomerWithAuthorizedEmail(bodyParams),
     setCollaboratorAsCompleted: (templateId: string) =>
       formState.client.setCollaboratorAsCompleted(templateId),
-    dataHubAction: ({
-      hubId,
-      operation,
-      entryId,
-      data
-    }: {
-      hubId: string;
-      operation: 'get' | 'create' | 'update' | 'delete';
-      entryId?: string;
-      data?: Record<string, any>;
-    }) => formState.client.dataHubAction({ hubId, operation, entryId, data }),
+    dataHubAction: ({ hubId, operation, entryId, data }: HubActionOptions) =>
+      formState.client.dataHubAction({ hubId, operation, entryId, data }),
     generateDocuments: ({
       documentIds,
       download,

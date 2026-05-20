@@ -40,6 +40,7 @@ import {
   getCdnUrl,
   getS3Url,
   getStaticUrl,
+  HubActionOptions,
   inviteFormCollaborator as apiInviteFormCollaborator,
   PageSelectionInput,
   parseAPIError,
@@ -1087,27 +1088,8 @@ export default class FeatheryClient extends IntegrationClient {
     this.offlineRequestHandler.replayRequests().catch(() => {});
   }
 
-  async dataHubAction({
-    hubId,
-    operation,
-    entryId,
-    data
-  }: {
-    hubId: string;
-    operation: 'get' | 'create' | 'update' | 'delete';
-    entryId?: string;
-    data?: Record<string, any>;
-  }) {
+  async dataHubAction(options: HubActionOptions) {
     const { sdkKey } = initInfo();
-    return apiDataHubAction(
-      sdkKey,
-      {
-        hubId,
-        operation,
-        entryId,
-        data
-      },
-      this.formKey
-    );
+    return apiDataHubAction(sdkKey, options, this.formKey);
   }
 }
