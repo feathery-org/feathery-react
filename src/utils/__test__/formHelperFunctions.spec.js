@@ -18,6 +18,23 @@ describe('formHelperFunctions', () => {
       data: 'data'
     });
 
+    const baseABTestStepResponse = ({
+      dataVariant,
+      formName,
+      variantName,
+      data,
+      variant
+    }) => ({
+      ...baseStepRes(),
+      ab_test_id: 'ab-test-id',
+      ab_test_variant_a_weight: 70,
+      ab_test_data_variant: dataVariant,
+      form_name: formName,
+      variant_name: variantName,
+      data,
+      variant
+    });
+
     it('returns the same variant for the same information', () => {
       // Arrange
       const stepRes = {
@@ -38,21 +55,36 @@ describe('formHelperFunctions', () => {
       expect(actual1).toEqual(actual2);
     });
 
-    it('uses valid data weights for variant selection', () => {
-      const stepRes = {
-        ...baseStepRes(),
-        ab_test_data_weight: 40
-      };
+    it('uses the same AB test assignment from either variant link', () => {
+      const variantAResponse = baseABTestStepResponse({
+        dataVariant: 'variant_a',
+        formName: 'Variant A',
+        variantName: 'Variant B',
+        data: 'variant-a-data',
+        variant: 'variant-b-data'
+      });
+      const variantBResponse = baseABTestStepResponse({
+        dataVariant: 'variant_b',
+        formName: 'Variant B',
+        variantName: 'Variant A',
+        data: 'variant-b-data',
+        variant: 'variant-a-data'
+      });
       initInfo.mockReturnValue({
         sdkKey: 'sdkKey',
         userId: 'a'
       });
 
-      const actual = getABVariant(stepRes);
+      const variantAResult = getABVariant(variantAResponse);
+      const variantBResult = getABVariant(variantBResponse);
 
-      expect(actual.form_name).toEqual('Variant Name');
-      expect(actual.steps).toEqual('variant');
-      expect(actual.ab_test_data_weight).toBeUndefined();
+      expect(variantAResult.form_name).toEqual('Variant B');
+      expect(variantAResult.steps).toEqual('variant-b-data');
+      expect(variantBResult.form_name).toEqual('Variant B');
+      expect(variantBResult.steps).toEqual('variant-b-data');
+      expect(variantAResult.ab_test_id).toBeUndefined();
+      expect(variantAResult.ab_test_variant_a_weight).toBeUndefined();
+      expect(variantAResult.ab_test_data_variant).toBeUndefined();
     });
 
     it('falls back to 50 for invalid data weights', () => {
