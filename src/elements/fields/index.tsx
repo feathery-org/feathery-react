@@ -503,7 +503,7 @@ Object.entries(Fields).map(([key, Field]: any) => {
         // Doesn't work for repeats currently since repeating field IDs aren't unique
         htmlFor={servar.repeated ? undefined : servar.key}
         style={{
-          marginBottom: '10px',
+          marginBottom: servar.type === 'checkbox' ? 0 : '10px',
           display: 'inline-block',
           whiteSpace: 'pre-wrap',
           overflowWrap: 'anywhere'
