@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { isNum } from '../../../utils/primitives';
 import SmoothBar from './components/SmoothBar';
 import SegmentBar from './components/SegmentBar';
+import StepperBar from './components/StepperBar';
 
 function applyProgressBarStyles(responsiveStyles: any) {
   responsiveStyles.addTargets('barContainer', 'bar', 'barWrapper');
@@ -28,6 +29,8 @@ function ProgressBarElement({
   progress,
   curDepth = 1,
   maxDepth = 1,
+  stepKey,
+  changeStep,
   elementProps = {},
   children
 }: any) {
@@ -35,6 +38,32 @@ function ProgressBarElement({
     () => applyProgressBarStyles(responsiveStyles),
     [responsiveStyles]
   );
+
+  const containerProps = {
+    css: {
+      display: 'flex',
+      flexDirection: 'column',
+      position: 'relative',
+      width: '100%',
+      ...styles.getTarget('barContainer')
+    },
+    ...elementProps
+  };
+
+  if (element.properties?.stepper) {
+    return (
+      <div {...containerProps}>
+        {children}
+        <StepperBar
+          styles={styles}
+          stepConfigs={element.properties?.stepper_steps ?? []}
+          stepKey={stepKey}
+          textPlacement={element.styles.percent_text_layout}
+          onStepClick={changeStep}
+        />
+      </div>
+    );
+  }
 
   let userProgress, userSegments;
   if (![null, undefined].includes(progress)) {
@@ -45,14 +74,13 @@ function ProgressBarElement({
       userSegments = progress.segments ?? element.properties.num_segments;
     }
   }
-
   userProgress = userProgress ?? element.properties?.progress;
   const percent = isNum(userProgress)
     ? userProgress
     : Math.round((100 * (curDepth + 1)) / ((maxDepth || 1) + 1));
 
   const BarComponent = userSegments ? SegmentBar : SmoothBar;
-  const progressBarElements = [
+  const progressBarElements: React.ReactNode[] = [
     <BarComponent
       key='progress'
       styles={styles}
@@ -75,16 +103,7 @@ function ProgressBarElement({
   }
 
   return (
-    <div
-      css={{
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'relative',
-        width: '100%',
-        ...styles.getTarget('barContainer')
-      }}
-      {...elementProps}
-    >
+    <div {...containerProps}>
       {children}
       {progressBarElements}
     </div>
