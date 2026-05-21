@@ -103,6 +103,30 @@ describe('formHelperFunctions', () => {
       expect(actual.steps).toEqual('data');
       expect(actual.ab_test_data_weight).toBeUndefined();
     });
+
+    it('uses variant_publish_version when present', () => {
+      const variantRes = baseABTestStepResponse({
+        dataVariant: 'variant_a',
+        formName: 'Variant A',
+        variantName: 'Variant B',
+        data: 'variant-a-data',
+        variant: 'variant-b-data'
+      });
+      variantRes.variant_publish_version = 7;
+      variantRes.variant_version = 6;
+      initInfo.mockReturnValue({
+        sdkKey: 'sdkKey',
+        userId: 'a'
+      });
+
+      const actual = getABVariant(variantRes);
+
+      expect(actual.form_name).toEqual('Variant B');
+      expect(actual.version).toEqual(6);
+      expect(actual.publish_version).toEqual(7);
+      expect(actual.variant_version).toBeUndefined();
+      expect(actual.variant_publish_version).toBeUndefined();
+    });
   });
 
   describe('httpHelpers', () => {

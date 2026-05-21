@@ -51,6 +51,7 @@ export const getFormContext = (formUuid: string) => {
     sdkKey: initState.sdkKey,
     formName: formState.formName,
     formId: formState.formId,
+    publishVersion: formState.publishVersion ?? 0,
     _getInternalUserId: () => initState._internalUserId,
     fields: formState.fields,
     products: formState.products,

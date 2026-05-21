@@ -344,6 +344,7 @@ function Form({
 }: InternalProps & Props) {
   const [formName, setFormName] = useState('');
   const [formId, setFormId] = useState(formIdProp);
+  const [publishVersion, setPublishVersion] = useState(0);
   const clientRef = useRef<any>(undefined);
   const client = clientRef.current;
   const navigate = useNavigate();
@@ -1074,6 +1075,7 @@ function Form({
         trackHashes: trackHashes.current,
         formId,
         formName,
+        publishVersion,
         formRef,
         formSettings,
         getErrorCallback,
@@ -1239,6 +1241,11 @@ function Form({
       // But for only fields it is fine and necessary.
       ['fields']
     );
+    if (
+      contextRef &&
+      Object.prototype.hasOwnProperty.call(contextRef, 'current')
+    )
+      contextRef.current = getFormContext(_internalId);
 
     setUserLogicRunning(true);
     if (!formLoadRan.current) {
@@ -1361,6 +1368,7 @@ function Form({
       })
       .then(({ steps, form_name: formNameResult, ...res }: any) => {
         setFormName(formNameResult);
+        setPublishVersion(res.publish_version);
         if (res.new_form_id) {
           setFormId(res.new_form_id);
         }

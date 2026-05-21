@@ -51,6 +51,7 @@ export interface FormInternalState {
   client: FeatheryClient;
   formName: string;
   formId: string;
+  publishVersion?: number;
   fields: Record<string, Field>;
   products: Record<string, SimplifiedProduct>;
   cart: Cart;
