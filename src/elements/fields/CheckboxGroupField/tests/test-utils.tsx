@@ -134,7 +134,15 @@ export const createOtherOptionElement = (
 export const getCheckboxInputs = () => {
   return Array.from(
     document.querySelectorAll('input[type="checkbox"]:not([id$="-"])')
+  ).filter(
+    (checkbox) => !checkbox.id.endsWith('-select-all')
   ) as HTMLInputElement[];
+};
+
+export const getSelectAllCheckbox = () => {
+  return document.querySelector(
+    'input[id$="-select-all"]'
+  ) as HTMLInputElement;
 };
 
 export const getCheckboxInput = (index: number) => {

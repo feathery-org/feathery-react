@@ -134,6 +134,32 @@ export function handleCheckboxGroupChange(
   return target.checked ? newValue.length - 1 : -1;
 }
 
+export function handleCheckboxGroupSelectAllChange(
+  optionValues: any[],
+  shouldSelectAll: boolean,
+  field: any,
+  updateFieldValues: any
+) {
+  const servar = field.servar;
+  const fieldValue = getFieldValue(field);
+  const { value } = fieldValue;
+  const optionValueSet = new Set(optionValues);
+  const otherValues = value.filter((v: any) => !optionValueSet.has(v));
+  const newValue = shouldSelectAll
+    ? [...otherValues, ...optionValues]
+    : otherValues;
+
+  if (fieldValue.repeated) {
+    const { valueList, index } = fieldValue;
+    updateFieldValues({
+      [servar.key]: justInsert(valueList, newValue, index)
+    });
+  } else {
+    updateFieldValues({ [servar.key]: newValue });
+  }
+  return shouldSelectAll ? newValue.length - 1 : -1;
+}
+
 export function fieldAllowedFromList(allowLists: any[], fieldKey: string) {
   const [whitelist, blacklist] = allowLists;
   if (whitelist && !whitelist.includes(fieldKey)) return false;

@@ -11,6 +11,7 @@ import {
   setMockFieldValue,
   getCheckboxInputs,
   getCheckboxInputByValue,
+  getSelectAllCheckbox,
   getOtherCheckbox,
   getOtherTextInput,
   getOptionLabels,
@@ -169,6 +170,131 @@ describe('CheckboxGroupField - Base Functionality', () => {
       expectCheckboxToBeChecked('Option 1');
       expectCheckboxToBeUnchecked('Option 2');
       expectCheckboxToBeChecked('Option 3');
+    });
+  });
+
+  describe('Select All Option', () => {
+    it('renders when enabled', () => {
+      const element = createCheckboxGroupElement('checkbox_group', {
+        select_all: true
+      });
+      const props = createCheckboxGroupProps(element);
+
+      render(<CheckboxGroupField {...props} />);
+
+      expect(screen.getByText('Select All')).toBeTruthy();
+      expect(getSelectAllCheckbox()).toBeTruthy();
+      expectCheckboxGroupToHaveOptionCount(3);
+    });
+
+    it('uses custom select all label', () => {
+      const element = createCheckboxGroupElement('checkbox_group', {
+        select_all: true,
+        select_all_label: 'Select everything'
+      });
+      const props = createCheckboxGroupProps(element);
+
+      render(<CheckboxGroupField {...props} />);
+
+      expect(screen.getByText('Select everything')).toBeTruthy();
+      expect(getSelectAllCheckbox().getAttribute('aria-label')).toBe(
+        'Select everything'
+      );
+    });
+
+    it('falls back to default select all label when label is empty', () => {
+      const element = createCheckboxGroupElement('checkbox_group', {
+        select_all: true,
+        select_all_label: ''
+      });
+      const props = createCheckboxGroupProps(element);
+
+      render(<CheckboxGroupField {...props} />);
+
+      expect(screen.getByText('Select All')).toBeTruthy();
+      expect(getSelectAllCheckbox().getAttribute('aria-label')).toBe(
+        'Select All'
+      );
+    });
+
+    it('selects all normal options', () => {
+      const mockOnSelectAllChange = jest.fn();
+      const element = createCheckboxGroupElement('checkbox_group', {
+        select_all: true
+      });
+      const props = createCheckboxGroupProps(element, {
+        onSelectAllChange: mockOnSelectAllChange
+      });
+
+      render(<CheckboxGroupField {...props} />);
+
+      fireEvent.click(getSelectAllCheckbox());
+
+      expect(mockOnSelectAllChange).toHaveBeenCalledWith(
+        ['Option 1', 'Option 2', 'Option 3'],
+        true
+      );
+    });
+
+    it('clears normal options when all are selected', () => {
+      const mockOnSelectAllChange = jest.fn();
+      const element = createCheckboxGroupElement('checkbox_group', {
+        select_all: true
+      });
+      const props = createCheckboxGroupProps(element, {
+        fieldVal: ['Option 1', 'Option 2', 'Option 3'],
+        onSelectAllChange: mockOnSelectAllChange
+      });
+
+      render(<CheckboxGroupField {...props} />);
+
+      fireEvent.click(getSelectAllCheckbox());
+
+      expect(mockOnSelectAllChange).toHaveBeenCalledWith(
+        ['Option 1', 'Option 2', 'Option 3'],
+        false
+      );
+    });
+
+    it('shows indeterminate state when some options are selected', () => {
+      const element = createCheckboxGroupElement('checkbox_group', {
+        select_all: true
+      });
+      const props = createCheckboxGroupProps(element, {
+        fieldVal: ['Option 1']
+      });
+
+      render(<CheckboxGroupField {...props} />);
+
+      expect(getSelectAllCheckbox().indeterminate).toBe(true);
+    });
+
+    it('does not include other in select all values', () => {
+      const mockOnSelectAllChange = jest.fn();
+      const element = createOtherOptionElement();
+      element.servar.metadata.select_all = true;
+      const props = createCheckboxGroupProps(element, {
+        otherVal: 'custom',
+        onSelectAllChange: mockOnSelectAllChange
+      });
+
+      render(<CheckboxGroupField {...props} />);
+
+      fireEvent.click(getSelectAllCheckbox());
+
+      expect(mockOnSelectAllChange).toHaveBeenCalledWith(
+        ['Option 1', 'Option 2'],
+        true
+      );
+    });
+
+    it('does not render when max length is set', () => {
+      const element = createMaxLengthElement(2);
+      element.servar.metadata.select_all = true;
+
+      render(<CheckboxGroupField {...createCheckboxGroupProps(element)} />);
+
+      expect(screen.queryByText('Select All')).toBeNull();
     });
   });
 
