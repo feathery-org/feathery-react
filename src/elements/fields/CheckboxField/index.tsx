@@ -161,6 +161,16 @@ export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
     responsiveStyles.applyWidth('checkboxCheckmark');
     responsiveStyles.applyHeight('checkboxCheckmarkHover');
     responsiveStyles.applyWidth('checkboxCheckmarkHover');
+    responsiveStyles.apply(
+      'checkbox',
+      ['width', 'width_unit'],
+      (width: any, widthUnit: any) => {
+        if (widthUnit !== 'px' || !width) return {};
+        // Scale spacing up between checkbox and label as checkbox size
+        // increases. Minimum space of 5px.
+        return { marginRight: `${Math.max(Math.round(width * 0.4), 5)}px` };
+      }
+    );
     applyCheckmark(
       responsiveStyles,
       'checkboxCheckmark',
@@ -261,7 +271,8 @@ function CheckboxField({
       css={{
         ...responsiveStyles.getTarget('fc'),
         position: 'relative',
-        display: 'flex'
+        display: 'flex',
+        alignItems: 'center'
       }}
       {...elementProps}
     >
@@ -277,8 +288,8 @@ function CheckboxField({
         aria-label={element.properties.aria_label}
         css={{
           ...composeCheckableInputStyle(styles, disabled),
+          ...(!fieldLabel ? { marginRight: 5 } : {}),
           ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          marginTop: '4px',
           '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
         }}
       />
