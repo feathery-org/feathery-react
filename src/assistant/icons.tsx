@@ -46,11 +46,9 @@ export const SendIcon = (props: ComponentProps<'svg'>) => (
 
 export const SpinnerIcon = (props: ComponentProps<'svg'>) => (
   <svg
-    style={{
-      width: '16px',
-      height: '16px',
-      borderRadius: '50%'
-    }}
+    width='16'
+    height='16'
+    style={{ borderRadius: '50%' }}
     viewBox='0 0 50 50'
     {...props}
   >

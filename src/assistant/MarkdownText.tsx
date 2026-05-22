@@ -6,6 +6,7 @@ type LinkProps = { href?: string; children?: ReactNode };
 
 interface MarkdownTextProps {
   text: string;
+  isStreaming?: boolean;
 }
 
 const assistantLink = css({
@@ -134,13 +135,21 @@ const components = {
   )
 } as unknown as Components;
 
-const MarkdownText = memo(({ text }: MarkdownTextProps) => {
-  return (
-    <div css={markdownReset}>
-      <Streamdown components={components}>{text}</Streamdown>
-    </div>
-  );
-});
+const MarkdownText = memo(
+  ({ text, isStreaming = false }: MarkdownTextProps) => {
+    return (
+      <div css={markdownReset}>
+        <Streamdown
+          components={components}
+          isAnimating={isStreaming}
+          parseIncompleteMarkdown={isStreaming}
+        >
+          {text}
+        </Streamdown>
+      </div>
+    );
+  }
+);
 
 MarkdownText.displayName = 'MarkdownText';
 

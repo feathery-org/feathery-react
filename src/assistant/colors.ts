@@ -6,6 +6,7 @@ export const GRAY_200 = '#e5e7eb';
 export const GRAY_400 = '#9ca3af';
 export const GRAY_500 = '#6b7280';
 export const GRAY_800 = '#1f2937';
+export const RED_500 = '#ef4444';
 
 // Generate lighter/darker variants from hex color
 export const adjustColor = (hex: string, percent: number): string => {

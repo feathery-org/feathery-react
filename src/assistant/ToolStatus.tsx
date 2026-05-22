@@ -1,42 +1,71 @@
 import { useState } from 'react';
-import { CheckIcon, LinkIcon, MinimizeIcon, SpinnerIcon } from './icons';
-import { DEFAULT_CHAT_COLOR, GRAY_200, GRAY_400, GRAY_500 } from './colors';
+import {
+  CheckIcon,
+  CloseIcon,
+  LinkIcon,
+  MinimizeIcon,
+  SpinnerIcon
+} from './icons';
+import {
+  DEFAULT_CHAT_COLOR,
+  GRAY_200,
+  GRAY_400,
+  GRAY_500,
+  RED_500
+} from './colors';
 
 export interface ToolLabel {
   running: string;
   done?: string;
 }
 
-// Tool status labels mapping
 export const TOOL_LABELS: Record<string, ToolLabel> = {
   searchDocuments: {
     running: 'Searching documents...',
-    done: 'Documents searched'
+    done: 'Searched the documents'
   },
-  searchWeb: { running: 'Searching the web...', done: 'Web searched' },
-  scrapeUrl: { running: 'Reading page...', done: 'Page read' },
-  getPanelRuntime: { running: 'Reading the page...' },
-  getPanelSnapshot: { running: 'Reading the form...' },
-  getFuserSnapshot: { running: 'Looking up your submission...' },
-  listFormExtractions: { running: 'Looking up extractions...' },
-  getExtractionSnapshot: { running: 'Reading extraction setup...' },
-  getExtractionResults: { running: 'Reading extraction results...' },
-  setFieldValue: { running: 'Filling in...' },
-  clickElement: { running: 'Just a moment...' },
-  getLogicRules: { running: 'Reading form logic...' }
+  searchWeb: {
+    running: 'Searching the web...',
+    done: 'Searched the web'
+  },
+  scrapeUrl: { running: 'Reading web page...', done: 'Read the web page' },
+  getPanelRuntime: {
+    running: 'Reading the page...',
+    done: 'Reviewed the page'
+  },
+  getPanelSnapshot: {
+    running: 'Reading the form...',
+    done: 'Reviewed the form'
+  },
+  getFuserSnapshot: {
+    running: 'Looking up your submission...',
+    done: 'Reviewed the submission'
+  },
+  listFormExtractions: {
+    running: 'Looking up extractions...',
+    done: 'Reviewed available extractions'
+  },
+  getExtractionSnapshot: {
+    running: 'Reading extraction setup...',
+    done: 'Reviewed the extraction setup'
+  },
+  getExtractionResults: {
+    running: 'Reading extraction results...',
+    done: 'Reviewed the extraction results'
+  },
+  setFieldValue: {
+    running: 'Updating form fields...',
+    done: 'Updated form fields'
+  },
+  clickElement: {
+    running: 'Just a moment...',
+    done: 'Triggered a form action'
+  },
+  getLogicRules: {
+    running: 'Reading form logic...',
+    done: 'Reviewed form logic'
+  }
 };
-
-export const BACKGROUND_TOOL_NAMES = new Set<string>([
-  'getPanelRuntime',
-  'getPanelSnapshot',
-  'getFuserSnapshot',
-  'getExtractionSnapshot',
-  'getExtractionResults',
-  'listFormExtractions',
-  'getLogicRules',
-  'setFieldValue',
-  'clickElement'
-]);
 
 export function readPartType(
   part: any
@@ -52,59 +81,6 @@ export function readPartType(
   return { kind: 'tool', toolName };
 }
 
-function getTrailingBackgroundTool(parts: any[]): string | null {
-  let trailing: string | null = null;
-  for (const part of parts) {
-    const meta = readPartType(part);
-    if (!meta) continue;
-    if (meta.kind === 'text') {
-      if ((part.text ?? '').trim().length > 0) trailing = null;
-      continue;
-    }
-    trailing =
-      meta.toolName && BACKGROUND_TOOL_NAMES.has(meta.toolName)
-        ? meta.toolName
-        : null;
-  }
-  return trailing;
-}
-
-export function getLivePillState(
-  messages: any[],
-  status: string
-): { livePillLabel: string | null; isLoading: boolean } {
-  const streaming = status === 'submitted' || status === 'streaming';
-  const lastMsg = messages[messages.length - 1] as
-    | { role?: string; parts?: any[] }
-    | undefined;
-  const isAssistantMsg = lastMsg?.role === 'assistant';
-  const liveParts = streaming && isAssistantMsg ? lastMsg?.parts ?? [] : [];
-
-  const trailingTool = getTrailingBackgroundTool(liveParts);
-  const last = liveParts[liveParts.length - 1];
-  const trailingIsStreamingText =
-    last?.type === 'text' && (last.text ?? '').trim().length > 0;
-  const lastMeta = readPartType(last);
-  const trailingIsForegroundToolRunning =
-    lastMeta?.kind === 'tool' &&
-    !!lastMeta.toolName &&
-    !BACKGROUND_TOOL_NAMES.has(lastMeta.toolName) &&
-    last?.state !== 'output-available' &&
-    last?.state !== 'output-error';
-  const showThinkingPlaceholder =
-    streaming &&
-    (!isAssistantMsg ||
-      (!trailingIsStreamingText && !trailingIsForegroundToolRunning));
-
-  const livePillLabel = trailingTool
-    ? TOOL_LABELS[trailingTool]?.running ?? 'Thinking...'
-    : showThinkingPlaceholder
-    ? 'Thinking...'
-    : null;
-  const isLoading = streaming || trailingTool === 'setFieldValue';
-  return { livePillLabel, isLoading };
-}
-
 // Format URL for display (show domain + path); CSS handles truncation.
 const formatUrl = (url: string): string => {
   try {
@@ -117,12 +93,10 @@ const formatUrl = (url: string): string => {
 
 const extractUrls = (output: unknown): string[] => {
   if (!output || typeof output !== 'object') return [];
-
   const out = output as Record<string, unknown>;
   const urls: string[] = [];
-
-  const extractFromArray = (arr: unknown[]): string[] => {
-    return arr
+  const extractFromArray = (arr: unknown[]): string[] =>
+    arr
       .map((r: unknown) => {
         if (typeof r === 'object' && r !== null) {
           const item = r as Record<string, unknown>;
@@ -131,174 +105,271 @@ const extractUrls = (output: unknown): string[] => {
         return '';
       })
       .filter(Boolean);
-  };
-
-  if (Array.isArray(out.web)) {
-    urls.push(...extractFromArray(out.web));
-  }
-  if (Array.isArray(out.news)) {
-    urls.push(...extractFromArray(out.news));
-  }
-  if (Array.isArray(out.images)) {
-    urls.push(...extractFromArray(out.images));
-  }
-  if (typeof out.url === 'string' && out.url) {
-    urls.push(out.url);
-  }
-
-  if (urls.length > 0) {
-    return Array.from(new Set(urls));
-  }
-
-  if (Array.isArray(output)) {
+  if (Array.isArray(out.web)) urls.push(...extractFromArray(out.web));
+  if (Array.isArray(out.news)) urls.push(...extractFromArray(out.news));
+  if (Array.isArray(out.images)) urls.push(...extractFromArray(out.images));
+  if (typeof out.url === 'string' && out.url) urls.push(out.url);
+  if (urls.length > 0) return Array.from(new Set(urls));
+  if (Array.isArray(output))
     return Array.from(new Set(extractFromArray(output)));
-  }
-
   return [];
 };
 
-interface ToolStatusProps {
+export interface ToolRow {
+  key: string;
   toolName: string;
   state: string;
   input?: { query?: string };
   output?: unknown;
-  linkColor?: string;
 }
 
-// Tool status component - shows running/done state for tool calls
-const ToolStatus = ({
-  toolName,
-  state,
-  input,
-  output,
-  linkColor = DEFAULT_CHAT_COLOR
-}: ToolStatusProps) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const labels: ToolLabel = TOOL_LABELS[toolName] || {
-    running: 'Processing...',
-    done: 'Done'
-  };
-  const isRunning = state === 'input-streaming' || state === 'input-available';
-  const query = input?.query;
+const isRunningState = (s: string) =>
+  s === 'input-streaming' || s === 'input-available';
+const isErrorState = (s: string) => s === 'output-error';
 
-  const urls = extractUrls(output);
-  const hasLinks = urls.length > 0;
+interface ToolRowDetailProps {
+  row: ToolRow;
+  linkColor: string;
+  indent?: number;
+}
 
+const ToolRowDetail = ({ row, linkColor, indent = 24 }: ToolRowDetailProps) => {
+  const query = row.input?.query;
+  const urls = extractUrls(row.output);
+  const hasContent = !!query || urls.length > 0;
+  if (!hasContent) return null;
   return (
     <div
       css={{
         display: 'flex',
         flexDirection: 'column',
         gap: '4px',
-        padding: '8px 12px',
-        backgroundColor: 'white',
-        border: `1px solid ${GRAY_200}`,
-        borderRadius: '8px',
-        fontSize: '13px',
-        maxWidth: '100%',
-        minWidth: 0,
-        overflowWrap: 'anywhere',
-        wordBreak: 'break-word'
+        paddingLeft: `${indent}px`,
+        marginTop: '2px',
+        marginBottom: '4px'
       }}
     >
-      {/* Status row */}
-      <div
-        role={hasLinks ? 'button' : undefined}
-        tabIndex={hasLinks ? 0 : undefined}
-        css={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          color: GRAY_500,
-          cursor: hasLinks ? 'pointer' : 'default'
-        }}
-        onClick={() => hasLinks && setIsExpanded(!isExpanded)}
-        onKeyDown={(e) =>
-          hasLinks &&
-          (e.key === 'Enter' || e.key === ' ') &&
-          setIsExpanded(!isExpanded)
-        }
-      >
-        {isRunning ? <SpinnerIcon /> : <CheckIcon />}
-        <span>{isRunning ? labels.running : labels.done}</span>
-        {hasLinks && (
-          <span
-            css={{
-              marginLeft: 'auto',
-              color: GRAY_400,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              fontSize: '11px'
-            }}
-          >
-            {urls.length} {urls.length === 1 ? 'source' : 'sources'}
-            <MinimizeIcon
-              css={{
-                width: '12px',
-                height: '12px',
-                transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
-                transition: 'transform 0.2s ease'
-              }}
-            />
-          </span>
-        )}
-      </div>
-
-      {/* Query */}
       {query && (
         <div
           css={{
             color: GRAY_400,
             fontSize: '12px',
-            paddingLeft: '22px',
             fontStyle: 'italic'
           }}
         >
-          "{query.length > 50 ? query.substring(0, 50) + '...' : query}"
+          &quot;{query.length > 80 ? query.substring(0, 80) + '...' : query}
+          &quot;
         </div>
       )}
+      {urls.map((url, i) => (
+        <a
+          key={i}
+          href={url}
+          target='_blank'
+          rel='noopener noreferrer'
+          css={{
+            fontSize: '12px',
+            color: linkColor,
+            textDecoration: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            minWidth: 0,
+            ':hover': { textDecoration: 'underline' }
+          }}
+        >
+          <LinkIcon css={{ flexShrink: 0 }} />
+          <span
+            css={{
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {formatUrl(url)}
+          </span>
+        </a>
+      ))}
+    </div>
+  );
+};
 
-      {/* Collapsible links */}
-      {hasLinks && isExpanded && (
+const hasDetail = (row: ToolRow): boolean => {
+  if (row.input?.query) return true;
+  if (extractUrls(row.output).length > 0) return true;
+  return false;
+};
+
+const labelFor = (row: ToolRow): string => {
+  const labels = TOOL_LABELS[row.toolName] || {
+    running: 'Working...',
+    done: 'Done'
+  };
+  if (isRunningState(row.state)) return labels.running;
+  if (isErrorState(row.state)) return labels.done ?? 'Failed';
+  return labels.done ?? labels.running;
+};
+
+// background-clip:text so the gradient sweep only paints the glyphs
+const shimmerCss = {
+  backgroundImage: `linear-gradient(90deg, ${GRAY_500} 25%, #d1d5db 50%, ${GRAY_500} 75%)`,
+  backgroundSize: '220% 100%',
+  backgroundClip: 'text',
+  WebkitBackgroundClip: 'text',
+  color: 'transparent',
+  animation: 'feathery-tool-shimmer 1.6s linear infinite',
+  '@keyframes feathery-tool-shimmer': {
+    from: { backgroundPosition: '160% 0' },
+    to: { backgroundPosition: '-60% 0' }
+  }
+} as const;
+
+interface ToolChunkProps {
+  rows: ToolRow[];
+  followedByText: boolean;
+  turnFinished: boolean;
+  linkColor?: string;
+  isFirstChunk?: boolean;
+}
+
+export const ToolChunk = ({
+  rows,
+  followedByText,
+  turnFinished,
+  linkColor = DEFAULT_CHAT_COLOR,
+  isFirstChunk = false
+}: ToolChunkProps) => {
+  const isRunning = rows.some((r) => isRunningState(r.state));
+  const chunkDone = !isRunning && (followedByText || turnFinished);
+  const shouldCollapse = !isRunning && followedByText;
+  const defaultExpanded = !shouldCollapse;
+  const [override, setOverride] = useState<boolean | null>(null);
+  const expanded = override ?? defaultExpanded;
+  const toggle = () => setOverride(!expanded);
+
+  // Match the message bubble's horizontal padding
+  const TEXT_ALIGN_PADDING = 14;
+
+  const containerCss = {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '2px',
+    fontSize: '13px',
+    minWidth: 0,
+    paddingLeft: `${TEXT_ALIGN_PADDING}px`,
+    ...(isFirstChunk
+      ? {}
+      : {
+          animation: 'feathery-chunk-fade-in 220ms ease-out both',
+          '@keyframes feathery-chunk-fade-in': {
+            from: { opacity: 0, transform: 'translateY(4px)' },
+            to: { opacity: 1, transform: 'translateY(0)' }
+          }
+        })
+  };
+
+  // Inline only when done; wrapping while in-flight avoids reflow on a 2nd row
+  if (chunkDone && rows.length === 1) {
+    const row = rows[0];
+    const error = isErrorState(row.state);
+    const expandable = hasDetail(row);
+    return (
+      <div css={containerCss}>
+        <button
+          type='button'
+          onClick={expandable ? toggle : undefined}
+          css={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: 'none',
+            border: 'none',
+            padding: '4px 0',
+            cursor: expandable ? 'pointer' : 'default',
+            color: GRAY_500,
+            textAlign: 'left',
+            font: 'inherit',
+            fontSize: '13px',
+            alignSelf: 'flex-start'
+          }}
+        >
+          {error && (
+            <CloseIcon
+              css={{ width: '12px', height: '12px', color: RED_500 }}
+            />
+          )}
+          <span>{labelFor(row)}</span>
+          {expandable && (
+            <MinimizeIcon
+              css={{
+                width: '12px',
+                height: '12px',
+                color: GRAY_400,
+                transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+                transition: 'transform 0.2s ease',
+                flexShrink: 0
+              }}
+            />
+          )}
+        </button>
+        {expandable && expanded && (
+          <ToolRowDetail row={row} linkColor={linkColor} indent={6} />
+        )}
+      </div>
+    );
+  }
+
+  // Multi-tool case
+  const headerLabel = chunkDone ? 'Finished working' : 'Working on it...';
+
+  return (
+    <div css={containerCss}>
+      {/* Header: label + chevron, no spinner/check. Chevron sits inline
+          immediately after the label as the expand/collapse affordance. */}
+      <button
+        type='button'
+        onClick={toggle}
+        css={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '6px',
+          background: 'none',
+          border: 'none',
+          padding: '4px 0',
+          cursor: 'pointer',
+          color: GRAY_500,
+          textAlign: 'left',
+          font: 'inherit',
+          fontSize: '13px',
+          alignSelf: 'flex-start'
+        }}
+      >
+        <span css={chunkDone ? undefined : shimmerCss}>{headerLabel}</span>
+        <MinimizeIcon
+          css={{
+            width: '12px',
+            height: '12px',
+            color: GRAY_400,
+            transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+            transition: 'transform 0.2s ease',
+            flexShrink: 0
+          }}
+        />
+      </button>
+      {expanded && (
         <div
           css={{
             display: 'flex',
             flexDirection: 'column',
             gap: '2px',
-            paddingLeft: '22px',
-            marginTop: '4px'
+            marginLeft: '5px',
+            paddingLeft: '13px',
+            borderLeft: `2px solid ${GRAY_200}`
           }}
         >
-          {urls.map((url, i) => (
-            <a
-              key={i}
-              href={url}
-              target='_blank'
-              rel='noopener noreferrer'
-              css={{
-                fontSize: '12px',
-                color: linkColor,
-                textDecoration: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                minWidth: 0,
-                ':hover': { textDecoration: 'underline' }
-              }}
-            >
-              <LinkIcon />
-              <span
-                css={{
-                  minWidth: 0,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                {formatUrl(url)}
-              </span>
-            </a>
+          {rows.map((row) => (
+            <ToolChunkRow key={row.key} row={row} linkColor={linkColor} />
           ))}
         </div>
       )}
@@ -306,4 +377,98 @@ const ToolStatus = ({
   );
 };
 
-export default ToolStatus;
+interface ToolChunkRowProps {
+  row: ToolRow;
+  linkColor: string;
+}
+
+const ToolChunkRow = ({ row, linkColor }: ToolChunkRowProps) => {
+  const expandable = hasDetail(row);
+  const running = isRunningState(row.state);
+  const error = isErrorState(row.state);
+  // Auto-expanded while running, collapses when output lands
+  const [override, setOverride] = useState<boolean | null>(null);
+  const expanded = override ?? running;
+  const setExpanded = (next: boolean) => setOverride(next);
+  const RowEl = expandable ? 'button' : 'div';
+  return (
+    <div css={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+      <RowEl
+        type={expandable ? 'button' : undefined}
+        onClick={expandable ? () => setExpanded(!expanded) : undefined}
+        css={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '6px',
+          color: error ? RED_500 : GRAY_500,
+          background: 'none',
+          border: 'none',
+          padding: '2px 0',
+          textAlign: 'left',
+          cursor: expandable ? 'pointer' : 'default',
+          font: 'inherit',
+          fontSize: '13px',
+          alignSelf: 'flex-start'
+        }}
+      >
+        {running ? (
+          <SpinnerIcon css={{ width: '12px', height: '12px' }} />
+        ) : error ? (
+          <CloseIcon css={{ width: '12px', height: '12px' }} />
+        ) : (
+          <CheckIcon css={{ width: '12px', height: '12px' }} />
+        )}
+        <span css={running ? shimmerCss : undefined}>{labelFor(row)}</span>
+        {expandable && (
+          <MinimizeIcon
+            css={{
+              width: '10px',
+              height: '10px',
+              color: GRAY_400,
+              transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+              transition: 'transform 0.2s ease',
+              flexShrink: 0
+            }}
+          />
+        )}
+      </RowEl>
+      {expandable && expanded && (
+        <ToolRowDetail row={row} linkColor={linkColor} />
+      )}
+    </div>
+  );
+};
+
+// Mimics the chunk header so a real tool arriving doesn't reflow the layout
+export const ToolChunkPlaceholder = () => {
+  return (
+    <div
+      css={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+        fontSize: '13px',
+        minWidth: 0,
+        paddingLeft: '14px',
+        animation: 'feathery-chunk-fade-in 220ms ease-out both',
+        '@keyframes feathery-chunk-fade-in': {
+          from: { opacity: 0, transform: 'translateY(4px)' },
+          to: { opacity: 1, transform: 'translateY(0)' }
+        }
+      }}
+    >
+      <div
+        css={{
+          padding: '4px 0',
+          color: GRAY_500,
+          fontSize: '13px',
+          alignSelf: 'flex-start'
+        }}
+      >
+        <span css={shimmerCss}>Working on it...</span>
+      </div>
+    </div>
+  );
+};
+
+export default ToolChunk;

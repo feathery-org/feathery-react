@@ -25,8 +25,7 @@ import {
   MinusIcon,
   SendIcon,
   SidebarLeftIcon,
-  SidebarRightIcon,
-  SpinnerIcon
+  SidebarRightIcon
 } from './icons';
 import {
   DEFAULT_CHAT_COLOR,
@@ -37,10 +36,11 @@ import {
   GRAY_400,
   GRAY_800
 } from './colors';
-import ToolStatus, {
-  BACKGROUND_TOOL_NAMES,
-  getLivePillState,
-  readPartType
+import {
+  ToolChunk,
+  ToolChunkPlaceholder,
+  readPartType,
+  type ToolRow
 } from './ToolStatus';
 import MarkdownText from './MarkdownText';
 import {
@@ -146,100 +146,43 @@ const writeStoredSidebarWidth = (w: number): void => {
   }
 };
 
-type AssistantEntry =
+type AssistantChunk =
   | { kind: 'text'; key: string; text: string }
-  | {
-      kind: 'outcome';
-      key: string;
-      toolName: string;
-      state: string;
-      input: any;
-      output: unknown;
-    };
+  | { kind: 'tools'; key: string; rows: ToolRow[] };
 
-const isRunningState = (s: string) =>
-  s === 'input-streaming' || s === 'input-available';
-
-const WEB_TOOL_NAMES = new Set(['searchWeb', 'scrapeUrl']);
-const sameToolGroup = (a: string, b: string) =>
-  a === b || (WEB_TOOL_NAMES.has(a) && WEB_TOOL_NAMES.has(b));
-
-// Precedence ladder so the merged pill surfaces the worst outcome:
-// any running > any error > all done.
-const mergeStates = (a: string, b: string): string => {
-  if (isRunningState(a) || isRunningState(b)) return 'input-available';
-  if (a === 'output-error' || b === 'output-error') return 'output-error';
-  return 'output-available';
-};
-
-const mergeToolOutputs = (a: unknown, b: unknown): unknown => {
-  const aObj = a && typeof a === 'object' ? (a as Record<string, unknown>) : {};
-  const bObj = b && typeof b === 'object' ? (b as Record<string, unknown>) : {};
-  const merged: Record<string, unknown> = { ...aObj, ...bObj };
-  for (const k of ['web', 'news', 'images']) {
-    const aArr = Array.isArray(aObj[k]) ? (aObj[k] as unknown[]) : [];
-    const bArr = Array.isArray(bObj[k]) ? (bObj[k] as unknown[]) : [];
-    if (aArr.length || bArr.length) merged[k] = [...aArr, ...bArr];
-  }
-  return merged;
-};
-
-const mergeToolInputs = (a: any, b: any): any => {
-  const queries = [a?.query, b?.query].filter(
-    (q): q is string => typeof q === 'string' && q.length > 0
-  );
-  const urls = [a?.url, b?.url].filter(
-    (u): u is string => typeof u === 'string' && u.length > 0
-  );
-  return {
-    ...a,
-    ...b,
-    ...(queries.length ? { query: queries.join(' • ') } : {}),
-    ...(urls.length ? { url: urls.join(' • ') } : {})
-  };
-};
-
-const mergeAssistantParts = (parts: any[]): AssistantEntry[] => {
-  const entries: AssistantEntry[] = [];
+const mergeAssistantParts = (parts: any[]): AssistantChunk[] => {
+  const chunks: AssistantChunk[] = [];
   parts.forEach((part: any, index: number) => {
     if (part.type === 'text' && part.text.trim()) {
-      const prev = entries[entries.length - 1];
+      const prev = chunks[chunks.length - 1];
       if (prev && prev.kind === 'text') {
         prev.text = `${prev.text}\n\n${part.text}`;
       } else {
-        entries.push({
-          kind: 'text',
-          key: `text-${index}`,
-          text: part.text
-        });
+        chunks.push({ kind: 'text', key: `text-${index}`, text: part.text });
       }
       return;
     }
     const meta = readPartType(part);
     if (!meta || meta.kind !== 'tool' || !meta.toolName) return;
-    if (BACKGROUND_TOOL_NAMES.has(meta.toolName)) return;
-    const prev = entries[entries.length - 1];
-    if (
-      prev &&
-      prev.kind === 'outcome' &&
-      sameToolGroup(prev.toolName, meta.toolName)
-    ) {
-      prev.state = mergeStates(prev.state, part.state as string);
-      prev.toolName = meta.toolName;
-      prev.input = mergeToolInputs(prev.input, part.input);
-      prev.output = mergeToolOutputs(prev.output, part.output);
-      return;
-    }
-    entries.push({
-      kind: 'outcome',
+    const row: ToolRow = {
       key: `tool-${index}`,
       toolName: meta.toolName,
       state: part.state as string,
       input: part.input,
       output: part.output
-    });
+    };
+    const prev = chunks[chunks.length - 1];
+    if (prev && prev.kind === 'tools') {
+      prev.rows.push(row);
+    } else {
+      chunks.push({
+        kind: 'tools',
+        key: `tools-${index}`,
+        rows: [row]
+      });
+    }
   });
-  return entries;
+  return chunks;
 };
 
 export type ResourceRef = { type: string; id: string };
@@ -388,6 +331,17 @@ const AssistantChat = ({
     y: number;
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  // Suppresses auto-scroll when the user has scrolled up to read earlier content
+  const atBottomRef = useRef(true);
+  const BOTTOM_THRESHOLD_PX = 60;
+
+  const handleMessagesScroll = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    atBottomRef.current = distance < BOTTOM_THRESHOLD_PX;
+  }, []);
 
   const colors = useMemo(
     () => getChatColors(color || DEFAULT_CHAT_COLOR),
@@ -424,7 +378,9 @@ const AssistantChat = ({
             if (t)
               setThreads((prev) =>
                 prev.map((thread) =>
-                  thread.id === threadId ? { ...t, chat: chat } : thread
+                  thread.id === threadId
+                    ? { ...t, chat, title: thread.title || t.title }
+                    : thread
                 )
               );
           });
@@ -578,17 +534,43 @@ const AssistantChat = ({
   const activeThread = threads.find((t) => t.id === activeThreadId);
   const activeChat = activeThread?.chat ?? readyChat;
 
-  const { messages, sendMessage, status, error } = useChat({
+  const {
+    messages: rawMessages,
+    sendMessage,
+    status,
+    error
+  } = useChat({
     chat: activeChat
   });
 
-  // TODO: Implement smooth scroll takeover - stop auto-scroll when user scrolls up
+  const messages = useMemo(() => {
+    const combined: typeof rawMessages = [];
+    for (const m of rawMessages) {
+      const prev = combined[combined.length - 1] as any;
+      if (
+        prev &&
+        prev.role === 'assistant' &&
+        (m as any).role === 'assistant'
+      ) {
+        combined[combined.length - 1] = {
+          ...prev,
+          parts: [...(prev.parts ?? []), ...((m as any).parts ?? [])]
+        } as any;
+      } else {
+        combined.push(m);
+      }
+    }
+    return combined;
+  }, [rawMessages]);
+
   useEffect(() => {
+    if (!atBottomRef.current) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   useEffect(() => {
     if (status !== 'ready') return;
+    if (!atBottomRef.current) return;
     const id = featheryWindow().requestAnimationFrame(() => {
       messagesEndRef.current?.scrollIntoView({
         behavior: 'smooth',
@@ -615,6 +597,7 @@ const AssistantChat = ({
   }, [isOpen, fetchThreads]);
 
   const handleNewThread = () => {
+    atBottomRef.current = true;
     const id = uuidv4();
     const now = new Date().toISOString();
     const chat = makeChat(null);
@@ -633,6 +616,7 @@ const AssistantChat = ({
   };
 
   const handleSelectThread = async (id: string) => {
+    atBottomRef.current = true;
     if (threads.find((t) => t.id === id)?.chat) {
       setActiveThreadId(id);
       setIsDropdownOpen(false);
@@ -660,6 +644,7 @@ const AssistantChat = ({
 
   const handleSend = () => {
     if (input.trim() && status === 'ready') {
+      atBottomRef.current = true;
       const now = new Date().toISOString();
       if (!activeThreadId) {
         // First send, register readyChat as a real thread entry
@@ -740,7 +725,7 @@ const AssistantChat = ({
   // Only show threads that have had at least one message sent
   const visibleThreads = threads.filter((t) => t.title);
 
-  const { livePillLabel, isLoading } = getLivePillState(messages, status);
+  const isLoading = status === 'submitted' || status === 'streaming';
 
   const layoutSide: 'left' | 'right' | null =
     mode === 'sidebar-left'
@@ -1226,6 +1211,8 @@ const AssistantChat = ({
 
       {/* Messages */}
       <div
+        ref={messagesContainerRef}
+        onScroll={handleMessagesScroll}
         css={{
           flex: 1,
           overflowY: 'auto',
@@ -1248,7 +1235,7 @@ const AssistantChat = ({
           </div>
         )}
 
-        {messages.map((message) =>
+        {messages.map((message, mIdx) =>
           message.role === 'user' ? (
             // User message - single bubble
             <div
@@ -1281,80 +1268,94 @@ const AssistantChat = ({
               </div>
             </div>
           ) : (
-            // Assistant message - separate blocks for each part
             <Fragment key={message.id}>
-              {mergeAssistantParts(message.parts).map((entry) => {
-                if (entry.kind === 'text') {
-                  return (
-                    <div
-                      key={entry.key}
-                      css={{
-                        display: 'flex',
-                        justifyContent: 'flex-start'
-                      }}
-                    >
+              {(() => {
+                const isLastMsg = mIdx === messages.length - 1;
+                const chunks = mergeAssistantParts(message.parts);
+                const lastPart = message.parts[message.parts.length - 1];
+                const turnFinished =
+                  !isLastMsg ||
+                  (status === 'ready' && lastPart?.type === 'text');
+                return chunks.map((chunk, chunkIdx) => {
+                  if (chunk.kind === 'text') {
+                    return (
                       <div
+                        key={chunk.key}
                         css={{
-                          maxWidth: '80%',
-                          padding: '10px 14px',
-                          borderRadius: '12px',
-                          fontSize: '14px',
-                          lineHeight: '1.5',
-                          backgroundColor: colors.light,
-                          color: GRAY_800,
-                          overflowWrap: 'anywhere',
-                          wordBreak: 'break-word'
+                          display: 'flex',
+                          justifyContent: 'flex-start'
                         }}
                       >
-                        <MarkdownText text={entry.text} />
+                        <div
+                          css={{
+                            maxWidth: '80%',
+                            padding: '10px 14px',
+                            borderRadius: '12px',
+                            fontSize: '14px',
+                            lineHeight: '1.5',
+                            backgroundColor: colors.light,
+                            color: GRAY_800,
+                            overflowWrap: 'anywhere',
+                            wordBreak: 'break-word'
+                          }}
+                        >
+                          <MarkdownText
+                            text={chunk.text}
+                            isStreaming={
+                              isLoading &&
+                              isLastMsg &&
+                              chunkIdx === chunks.length - 1
+                            }
+                          />
+                        </div>
                       </div>
+                    );
+                  }
+                  const followedByText = chunks
+                    .slice(chunkIdx + 1)
+                    .some((c) => c.kind === 'text');
+                  return (
+                    <div
+                      key={chunk.key}
+                      css={{
+                        display: 'flex',
+                        justifyContent: 'flex-start',
+                        maxWidth: '80%',
+                        minWidth: 0
+                      }}
+                    >
+                      <ToolChunk
+                        rows={chunk.rows}
+                        turnFinished={turnFinished}
+                        followedByText={followedByText}
+                        linkColor={colors.primary}
+                        isFirstChunk={chunkIdx === 0}
+                      />
                     </div>
                   );
-                }
-                // Tool status - separate styled block
-                return (
-                  <div
-                    key={entry.key}
-                    css={{
-                      display: 'flex',
-                      justifyContent: 'flex-start',
-                      maxWidth: '80%',
-                      minWidth: 0
-                    }}
-                  >
-                    <ToolStatus
-                      toolName={entry.toolName}
-                      state={entry.state}
-                      input={entry.input}
-                      output={entry.output}
-                      linkColor={colors.primary}
-                    />
-                  </div>
-                );
-              })}
+                });
+              })()}
             </Fragment>
           )
         )}
 
-        {livePillLabel && (
-          <div css={{ display: 'flex', justifyContent: 'flex-start' }}>
-            <div
-              css={{
-                padding: '10px 14px',
-                borderRadius: '12px',
-                backgroundColor: colors.light,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <SpinnerIcon />
-              <span css={{ fontSize: '14px', color: colors.primary }}>
-                {livePillLabel}
-              </span>
-            </div>
-          </div>
-        )}
+        {(() => {
+          if (!isLoading) return null;
+          const last = messages[messages.length - 1] as
+            | { role?: string; parts?: any[] }
+            | undefined;
+          if (!last) return null;
+          if (last.role !== 'user') {
+            const parts = last.parts || [];
+            const hasContent = parts.some((p: any) => {
+              if (p?.type === 'text') return (p.text ?? '').trim().length > 0;
+              const t = typeof p?.type === 'string' ? p.type : '';
+              return t.startsWith('tool-') || t === 'dynamic-tool';
+            });
+            if (hasContent) return null;
+          }
+          return <ToolChunkPlaceholder />;
+        })()}
 
         {error && (
           <div
