@@ -3,15 +3,14 @@ import { untrackUnload } from '../offlineRequestHandler';
 import { initState } from '../init';
 
 let conflictAlertShown = false;
+
 export function handleFormConflict() {
   // Prevent multiple 409s from displaying multiple alerts
   if (conflictAlertShown) return;
   conflictAlertShown = true;
 
   untrackUnload(true);
-  featheryWindow().alert(
-    'This form has been updated. Please fill it out again.'
-  );
+  featheryWindow().alert('This form has been updated. Please reload.');
   location.reload();
 }
 
