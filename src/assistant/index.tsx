@@ -2,23 +2,30 @@ import {
   Fragment,
   KeyboardEvent,
   MouseEvent,
-  useState,
-  useRef,
-  useEffect,
   useCallback,
-  useMemo
+  useEffect,
+  useMemo,
+  useRef,
+  useState
 } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Chat, useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { ChatIcon, MinimizeIcon, SendIcon, SpinnerIcon } from './icons';
+import {
+  ArrowUpIcon,
+  ChatIcon,
+  MinimizeIcon,
+  PaperclipIcon,
+  SpinnerIcon,
+  WaveformIcon
+} from './icons';
 import {
   DEFAULT_CHAT_COLOR,
   getChatColors,
-  GRAY_50,
   GRAY_100,
   GRAY_200,
   GRAY_400,
+  GRAY_50,
   GRAY_800
 } from './colors';
 import ToolStatus from './ToolStatus';
@@ -91,6 +98,12 @@ const AssistantChat = ({
     y: number;
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const voiceSendRef = useRef<(text: string) => void>(() => {});
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
 
   const colors = useMemo(
     () => getChatColors(color || DEFAULT_CHAT_COLOR),
@@ -187,6 +200,16 @@ const AssistantChat = ({
     chat: activeChat
   });
 
+  useEffect(() => {
+    const formEl = document.querySelector('.feathery') as HTMLElement | null;
+    if (!formEl) return;
+    formEl.style.transition = 'margin-right 0.3s ease';
+    formEl.style.marginRight = isOpen ? `${PANEL_WIDTH}px` : '0px';
+    return () => {
+      formEl.style.marginRight = '';
+    };
+  }, [isOpen]);
+
   // TODO: Implement smooth scroll takeover - stop auto-scroll when user scrolls up
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -207,6 +230,28 @@ const AssistantChat = ({
   useEffect(() => {
     if (isOpen) fetchThreads();
   }, [isOpen, fetchThreads]);
+
+  useEffect(() => () => { recognitionRef.current?.stop(); }, []);
+
+  // Reassigned every render so the voice recognition callback always sees current state
+  voiceSendRef.current = (text: string) => {
+    if (!text.trim() || status !== 'ready') return;
+    const now = new Date().toISOString();
+    if (!activeThreadId) {
+      const id = uuidv4();
+      setThreads((prev) => [
+        { id, title: 'New Chat', created_at: now, updated_at: now, isTemporary: true, chat: activeChat },
+        ...prev
+      ]);
+      setActiveThreadId(id);
+    } else if (activeThread && !activeThread.title) {
+      setThreads((prev) => [
+        { ...activeThread, title: 'New Chat', updated_at: now },
+        ...prev.filter((t) => t.id !== activeThreadId)
+      ]);
+    }
+    sendMessage({ text });
+  };
 
   const handleNewThread = () => {
     const id = uuidv4();
@@ -252,39 +297,62 @@ const AssistantChat = ({
     if (activeThreadId === id) handleNewThread();
   };
 
-  const handleSend = () => {
-    if (input.trim() && status === 'ready') {
-      const now = new Date().toISOString();
-      if (!activeThreadId) {
-        // First send, register readyChat as a real thread entry
-        const id = uuidv4();
-        setThreads((prev) => [
-          {
-            id,
-            title: 'New Chat',
-            created_at: now,
-            updated_at: now,
-            isTemporary: true,
-            chat: activeChat
-          },
-          ...prev
-        ]);
-        setActiveThreadId(id);
-      } else {
-        if (activeThread && !activeThread.title) {
-          setThreads((prev) => [
-            {
-              ...activeThread,
-              title: 'New Chat',
-              updated_at: now
-            },
-            ...prev.filter((t) => t.id !== activeThreadId)
-          ]);
-        }
-      }
-      sendMessage({ text: input });
-      setInput('');
+  const handleSend = async () => {
+    if ((!input.trim() && attachedFiles.length === 0) || status !== 'ready') return;
+
+    if (isRecording) {
+      recognitionRef.current?.stop();
+      setIsRecording(false);
     }
+
+    const now = new Date().toISOString();
+    if (!activeThreadId) {
+      // First send, register readyChat as a real thread entry
+      const id = uuidv4();
+      setThreads((prev) => [
+        {
+          id,
+          title: 'New Chat',
+          created_at: now,
+          updated_at: now,
+          isTemporary: true,
+          chat: activeChat
+        },
+        ...prev
+      ]);
+      setActiveThreadId(id);
+    } else if (activeThread && !activeThread.title) {
+      setThreads((prev) => [
+        { ...activeThread, title: 'New Chat', updated_at: now },
+        ...prev.filter((t) => t.id !== activeThreadId)
+      ]);
+    }
+
+    const msgOptions: any = { text: input };
+    if (attachedFiles.length > 0) {
+      msgOptions.experimental_attachments = await Promise.all(
+        attachedFiles.map(
+          (file) =>
+            new Promise<{ name: string; contentType: string; url: string }>(
+              (resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) =>
+                  resolve({
+                    name: file.name,
+                    contentType: file.type,
+                    url: e.target?.result as string
+                  });
+                reader.readAsDataURL(file);
+              }
+            )
+        )
+      );
+    }
+
+    sendMessage(msgOptions);
+    setInput('');
+    setAttachedFiles([]);
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
   };
 
   const handleWorkflowAction = (action: WorkflowAction) => {
@@ -323,12 +391,51 @@ const AssistantChat = ({
     } as any);
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();
       handleSend();
     }
+  };
+
+  const handleFileAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setAttachedFiles((prev) => [...prev, ...files]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleToggleVoice = () => {
+    if (isRecording) {
+      recognitionRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+    const SpeechRecognition =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+    recognition.onresult = (event: any) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          const t = event.results[i][0].transcript.trim();
+          if (t) voiceSendRef.current(t);
+        }
+      }
+    };
+    recognition.onend = () => { setIsRecording(false); };
+    recognition.onerror = () => { setIsRecording(false); };
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsRecording(true);
   };
 
   // Only show threads that have had at least one message sent
@@ -339,249 +446,549 @@ const AssistantChat = ({
     messages[messages.length - 1]?.role === 'assistant' &&
     (messages[messages.length - 1].parts as any[]).length > 0;
 
-  // Collapsed state - show chat bubble
-  if (!isOpen) {
-    return (
-      <button
-        type='button'
-        onClick={() => setIsOpen(true)}
-        css={{
-          position: 'fixed',
-          bottom: `${bottom}px`,
-          right: '20px',
-          width: `${FAB_SIZE}px`,
-          height: `${FAB_SIZE}px`,
-          borderRadius: '50%',
-          backgroundColor: colors.primary,
-          color: 'white',
-          border: 'none',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow:
-            '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-          transition: 'transform 0.2s, box-shadow 0.2s, background-color 0.2s',
-          zIndex: 1000,
-          ':hover': {
-            backgroundColor: colors.hover,
-            transform: 'scale(1.05)',
-            boxShadow:
-              '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
-          }
-        }}
-      >
-        <ChatIcon />
-      </button>
-    );
-  }
-
-  // Expanded state - show full chat panel
   return (
-    <div
-      css={{
-        position: 'fixed',
-        bottom: `${bottom}px`,
-        right: '20px',
-        width: `${PANEL_WIDTH}px`,
-        height: `${PANEL_HEIGHT}px`,
-        backgroundColor: 'white',
-        borderRadius: '12px',
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
-        border: `1px solid ${GRAY_200}`,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        zIndex: 1000
-      }}
-    >
-      {/* Header */}
+    <>
+      {/* FAB button - shown when panel is closed */}
+      {!isOpen && (
+        <button
+          type='button'
+          onClick={() => setIsOpen(true)}
+          css={{
+            position: 'fixed',
+            bottom: `${bottom}px`,
+            right: '20px',
+            width: `${FAB_SIZE}px`,
+            height: `${FAB_SIZE}px`,
+            borderRadius: '50%',
+            backgroundColor: colors.primary,
+            color: 'white',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow:
+              '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+            transition:
+              'transform 0.2s, box-shadow 0.2s, background-color 0.2s',
+            zIndex: 1000,
+            ':hover': {
+              backgroundColor: colors.hover,
+              transform: 'scale(1.05)',
+              boxShadow:
+                '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+            }
+          }}
+        >
+          <ChatIcon />
+        </button>
+      )}
+
+      {/* Sidebar panel - always mounted, slides in/out */}
       <div
         css={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          width: `${PANEL_WIDTH}px`,
+          height: '100vh',
+          backgroundColor: 'white',
+          borderRadius: '0',
+          boxShadow: '-4px 0 24px rgba(0, 0, 0, 0.12)',
+          borderLeft: `1px solid ${GRAY_200}`,
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '12px 16px',
-          backgroundColor: colors.primary,
-          color: 'white',
-          position: 'relative'
+          flexDirection: 'column',
+          overflow: 'hidden',
+          zIndex: 1000,
+          transform: isOpen ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 0.3s ease',
+          pointerEvents: isOpen ? 'auto' : 'none'
         }}
       >
+        {/* Header */}
         <div
           css={{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            minWidth: 0,
-            overflow: 'hidden'
+            justifyContent: 'space-between',
+            padding: '12px 16px',
+            backgroundColor: colors.primary,
+            color: 'white',
+            position: 'relative'
           }}
         >
-          <ChatIcon />
+          <div
+            css={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              minWidth: 0,
+              overflow: 'hidden'
+            }}
+          >
+            <ChatIcon />
+            <button
+              type='button'
+              onClick={() => setIsDropdownOpen((prev) => !prev)}
+              css={{
+                background: 'none',
+                border: 'none',
+                color: 'white',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '14px',
+                padding: '0',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                minWidth: 0,
+                ':hover': { opacity: 0.85 }
+              }}
+            >
+              <span
+                css={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {activeThread?.title || 'AI Assistant'}
+              </span>
+              <span css={{ fontSize: '10px', opacity: 0.8, flexShrink: 0 }}>
+                ▾
+              </span>
+            </button>
+          </div>
           <button
             type='button'
-            onClick={() => setIsDropdownOpen((prev) => !prev)}
+            onClick={() => setIsOpen(false)}
             css={{
               background: 'none',
               border: 'none',
               color: 'white',
               cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '14px',
-              padding: '0',
+              padding: '4px',
               display: 'flex',
               alignItems: 'center',
-              gap: '4px',
-              minWidth: 0,
-              ':hover': { opacity: 0.85 }
+              justifyContent: 'center',
+              borderRadius: '4px',
+              ':hover': {
+                backgroundColor: 'rgba(255, 255, 255, 0.1)'
+              }
             }}
           >
-            <span
-              css={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {activeThread?.title || 'AI Assistant'}
-            </span>
-            <span css={{ fontSize: '10px', opacity: 0.8, flexShrink: 0 }}>
-              ▾
-            </span>
+            <MinimizeIcon />
           </button>
-        </div>
-        <button
-          type='button'
-          onClick={() => setIsOpen(false)}
-          css={{
-            background: 'none',
-            border: 'none',
-            color: 'white',
-            cursor: 'pointer',
-            padding: '4px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '4px',
-            ':hover': {
-              backgroundColor: 'rgba(255, 255, 255, 0.1)'
-            }
-          }}
-        >
-          <MinimizeIcon />
-        </button>
 
-        {/* Thread dropdown */}
-        {isDropdownOpen && (
-          <>
-            <div
-              css={{ position: 'fixed', inset: 0, zIndex: 1000 }}
-              onClick={() => setIsDropdownOpen(false)}
-            />
-            <div
-              css={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
-                width: '100%',
-                backgroundColor: 'white',
-                border: `1px solid ${GRAY_200}`,
-                borderTop: 'none',
-                borderRadius: '0 0 8px 8px',
-                boxShadow: '0 8px 16px rgba(0,0,0,0.12)',
-                zIndex: 1001,
-                maxHeight: '240px',
-                overflowY: 'auto'
-              }}
-            >
-              <button
-                type='button'
-                onClick={() => {
-                  handleNewThread();
-                  setIsDropdownOpen(false);
-                }}
+          {/* Thread dropdown */}
+          {isDropdownOpen && (
+            <>
+              <div
+                css={{ position: 'fixed', inset: 0, zIndex: 1000 }}
+                onClick={() => setIsDropdownOpen(false)}
+              />
+              <div
                 css={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
                   width: '100%',
-                  padding: '10px 14px',
-                  background: 'none',
-                  border: 'none',
-                  borderBottom: `1px solid ${GRAY_100}`,
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: colors.primary,
-                  textAlign: 'left',
-                  ':hover': { backgroundColor: GRAY_50 }
+                  backgroundColor: 'white',
+                  border: `1px solid ${GRAY_200}`,
+                  borderTop: 'none',
+                  borderRadius: '0 0 8px 8px',
+                  boxShadow: '0 8px 16px rgba(0,0,0,0.12)',
+                  zIndex: 1001,
+                  maxHeight: '240px',
+                  overflowY: 'auto'
                 }}
               >
-                + New Chat
-              </button>
-
-              {visibleThreads.length === 0 && (
-                <div
-                  css={{
-                    padding: '12px 14px',
-                    fontSize: '13px',
-                    color: GRAY_400
+                <button
+                  type='button'
+                  onClick={() => {
+                    handleNewThread();
+                    setIsDropdownOpen(false);
                   }}
-                >
-                  No chats yet
-                </div>
-              )}
-              {visibleThreads.map((thread) => (
-                <div
-                  key={thread.id}
-                  onClick={() => handleSelectThread(thread.id)}
                   css={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
+                    width: '100%',
                     padding: '10px 14px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: `1px solid ${GRAY_100}`,
                     cursor: 'pointer',
-                    backgroundColor:
-                      thread.id === activeThreadId ? colors.light : 'white',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: colors.primary,
+                    textAlign: 'left',
                     ':hover': { backgroundColor: GRAY_50 }
                   }}
                 >
-                  <div css={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      css={{
-                        fontSize: '13px',
-                        fontWeight: 500,
-                        color: GRAY_800,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
-                      {thread.title || 'Untitled conversation'}
-                    </div>
-                    <div
-                      css={{
-                        fontSize: '11px',
-                        color: GRAY_400,
-                        marginTop: '2px'
-                      }}
-                    >
-                      {new Date(thread.updated_at).toLocaleDateString()}
-                    </div>
+                  + New Chat
+                </button>
+
+                {visibleThreads.length === 0 && (
+                  <div
+                    css={{
+                      padding: '12px 14px',
+                      fontSize: '13px',
+                      color: GRAY_400
+                    }}
+                  >
+                    No chats yet
                   </div>
+                )}
+                {visibleThreads.map((thread) => (
+                  <div
+                    key={thread.id}
+                    onClick={() => handleSelectThread(thread.id)}
+                    css={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 14px',
+                      cursor: 'pointer',
+                      backgroundColor:
+                        thread.id === activeThreadId ? colors.light : 'white',
+                      ':hover': { backgroundColor: GRAY_50 }
+                    }}
+                  >
+                    <div css={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        css={{
+                          fontSize: '13px',
+                          fontWeight: 500,
+                          color: GRAY_800,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {thread.title || 'Untitled conversation'}
+                      </div>
+                      <div
+                        css={{
+                          fontSize: '11px',
+                          color: GRAY_400,
+                          marginTop: '2px'
+                        }}
+                      >
+                        {new Date(thread.updated_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <button
+                      type='button'
+                      onClick={(e) => handleDeleteThread(thread.id, e)}
+                      css={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: GRAY_400,
+                        fontSize: '16px',
+                        padding: '2px 6px',
+                        marginLeft: '8px',
+                        borderRadius: '4px',
+                        lineHeight: 1,
+                        ':hover': {
+                          color: '#dc2626',
+                          backgroundColor: '#fef2f2'
+                        }
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Messages */}
+        <div
+          css={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px'
+          }}
+        >
+          {messages.length === 0 && (
+            <div
+              css={{
+                textAlign: 'center',
+                color: GRAY_400,
+                fontSize: '14px',
+                marginTop: '40px'
+              }}
+            >
+              How can I help?
+            </div>
+          )}
+
+          {messages.map((message) =>
+            message.role === 'user' ? (
+              // User message - single bubble
+              <div
+                key={message.id}
+                css={{
+                  display: 'flex',
+                  justifyContent: 'flex-end'
+                }}
+              >
+                <div
+                  css={{
+                    maxWidth: '80%',
+                    padding: '10px 14px',
+                    borderRadius: '12px',
+                    fontSize: '14px',
+                    lineHeight: '1.5',
+                    backgroundColor: colors.primary,
+                    color: 'white'
+                  }}
+                >
+                  {message.parts
+                    .filter((part: any) => !part.hidden)
+                    .map((part: any, index: number) =>
+                      part.type === 'text' ? (
+                        <span key={index}>{part.text}</span>
+                      ) : null
+                    )}
+                </div>
+              </div>
+            ) : (
+              // Assistant message - separate blocks for each part
+              <Fragment key={message.id}>
+                {message.parts.map((part: any, index: number) => {
+                  if (part.type === 'text' && part.text.trim()) {
+                    return (
+                      <div
+                        key={index}
+                        css={{
+                          display: 'flex',
+                          justifyContent: 'flex-start'
+                        }}
+                      >
+                        <div
+                          css={{
+                            maxWidth: '80%',
+                            padding: '10px 14px',
+                            borderRadius: '12px',
+                            fontSize: '14px',
+                            lineHeight: '1.5',
+                            backgroundColor: colors.light,
+                            color: GRAY_800
+                          }}
+                        >
+                          <MarkdownText text={part.text} />
+                        </div>
+                      </div>
+                    );
+                  }
+                  // Tool status - separate styled block
+                  if (part.type.startsWith('tool-')) {
+                    const toolName = part.type.replace('tool-', '');
+                    const toolPart = part as Record<string, unknown>;
+                    return (
+                      <div
+                        key={index}
+                        css={{
+                          display: 'flex',
+                          justifyContent: 'flex-start'
+                        }}
+                      >
+                        <ToolStatus
+                          toolName={toolName}
+                          state={toolPart.state as string}
+                          input={toolPart.input as { query?: string }}
+                          output={toolPart.output}
+                          linkColor={colors.primary}
+                        />
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+              </Fragment>
+            )
+          )}
+
+          {isLoading && !hasAssistantMessage && (
+            <div css={{ display: 'flex', justifyContent: 'flex-start' }}>
+              <div
+                css={{
+                  padding: '10px 14px',
+                  borderRadius: '12px',
+                  backgroundColor: colors.light,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <SpinnerIcon />
+                <span css={{ fontSize: '14px', color: colors.primary }}>
+                  Thinking...
+                </span>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div
+              css={{
+                padding: '10px 14px',
+                borderRadius: '8px',
+                backgroundColor: '#fef2f2',
+                color: '#dc2626',
+                fontSize: '14px'
+              }}
+            >
+              Something went wrong. Please try again.
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Workflow action buttons */}
+        {workflowActions.length > 0 && (
+          <div
+            css={{
+              position: 'relative',
+              zIndex: 1,
+              borderTop: `1px solid ${GRAY_200}`,
+              backgroundColor: GRAY_50,
+              padding: '8px 16px',
+              display: 'flex',
+              gap: '6px',
+              overflowX: 'auto'
+            }}
+          >
+            {workflowActions.map((action, index) => (
+              <button
+                key={index}
+                type='button'
+                disabled={isLoading}
+                onClick={() => handleWorkflowAction(action)}
+                onMouseEnter={(e: React.MouseEvent) => {
+                  if (!action.description) return;
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setActionTooltip({
+                    text: action.description,
+                    x: r.left + r.width / 2,
+                    y: r.top
+                  });
+                }}
+                onMouseLeave={() => setActionTooltip(null)}
+                css={{
+                  flexShrink: 0,
+                  padding: '4px 10px',
+                  fontSize: '12px',
+                  border: `1px solid ${colors.primary}`,
+                  borderRadius: '12px',
+                  backgroundColor: 'white',
+                  color: colors.primary,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  ':disabled': { opacity: 0.5, cursor: 'not-allowed' },
+                  ':hover:not(:disabled)': { backgroundColor: colors.light },
+                  transition: 'background-color 0.15s, color 0.15s'
+                }}
+              >
+                {action.name}
+              </button>
+            ))}
+            {actionTooltip && (
+              <div
+                css={{
+                  position: 'fixed',
+                  top: actionTooltip.y - 34,
+                  left: actionTooltip.x,
+                  transform: 'translateX(-50%)',
+                  backgroundColor: 'rgba(0,0,0,0.9)',
+                  color: 'white',
+                  fontSize: '12px',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  whiteSpace: 'nowrap',
+                  pointerEvents: 'none',
+                  zIndex: 10000
+                }}
+              >
+                {actionTooltip.text}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Input */}
+        <div
+          css={{
+            padding: '12px 16px',
+            borderTop: `1px solid ${GRAY_200}`,
+            backgroundColor: GRAY_50
+          }}
+        >
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type='file'
+            multiple
+            style={{ display: 'none' }}
+            onChange={handleFileAttach}
+          />
+
+          {/* Attached file chips */}
+          {attachedFiles.length > 0 && (
+            <div
+              css={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '6px',
+                marginBottom: '8px'
+              }}
+            >
+              {attachedFiles.map((file, i) => (
+                <div
+                  key={i}
+                  css={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '3px 6px 3px 8px',
+                    backgroundColor: GRAY_100,
+                    border: `1px solid ${GRAY_200}`,
+                    borderRadius: '99px',
+                    fontSize: '12px',
+                    color: GRAY_800
+                  }}
+                >
+                  <PaperclipIcon width='10' height='10' css={{ flexShrink: 0 }} />
+                  <span
+                    css={{
+                      maxWidth: '110px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {file.name}
+                  </span>
                   <button
                     type='button'
-                    onClick={(e) => handleDeleteThread(thread.id, e)}
+                    onClick={() => handleRemoveFile(i)}
                     css={{
                       background: 'none',
                       border: 'none',
                       cursor: 'pointer',
                       color: GRAY_400,
-                      fontSize: '16px',
-                      padding: '2px 6px',
-                      marginLeft: '8px',
-                      borderRadius: '4px',
+                      padding: '0 2px',
+                      fontSize: '14px',
                       lineHeight: 1,
-                      ':hover': {
-                        color: '#dc2626',
-                        backgroundColor: '#fef2f2'
-                      }
+                      display: 'flex',
+                      alignItems: 'center',
+                      ':hover': { color: '#dc2626' }
                     }}
                   >
                     ×
@@ -589,287 +996,132 @@ const AssistantChat = ({
                 </div>
               ))}
             </div>
-          </>
-        )}
-      </div>
+          )}
 
-      {/* Messages */}
-      <div
-        css={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '16px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '12px'
-        }}
-      >
-        {messages.length === 0 && (
+          {/* Pill input */}
           <div
             css={{
-              textAlign: 'center',
-              color: GRAY_400,
-              fontSize: '14px',
-              marginTop: '40px'
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              border: `1px solid ${GRAY_200}`,
+              borderRadius: '99px',
+              backgroundColor: 'white',
+              padding: '6px 6px 6px 14px',
+              transition: 'border-color 0.2s',
+              ':focus-within': { borderColor: colors.primary }
             }}
           >
-            Ask me anything about your documents
-          </div>
-        )}
-
-        {messages.map((message) =>
-          message.role === 'user' ? (
-            // User message - single bubble
-            <div
-              key={message.id}
+            {/* + attach button */}
+            <button
+              type='button'
+              onClick={() => fileInputRef.current?.click()}
               css={{
-                display: 'flex',
-                justifyContent: 'flex-end'
-              }}
-            >
-              <div
-                css={{
-                  maxWidth: '80%',
-                  padding: '10px 14px',
-                  borderRadius: '12px',
-                  fontSize: '14px',
-                  lineHeight: '1.5',
-                  backgroundColor: colors.primary,
-                  color: 'white'
-                }}
-              >
-                {message.parts
-                  .filter((part: any) => !part.hidden)
-                  .map((part: any, index: number) =>
-                    part.type === 'text' ? (
-                      <span key={index}>{part.text}</span>
-                    ) : null
-                  )}
-              </div>
-            </div>
-          ) : (
-            // Assistant message - separate blocks for each part
-            <Fragment key={message.id}>
-              {message.parts.map((part: any, index: number) => {
-                if (part.type === 'text' && part.text.trim()) {
-                  return (
-                    <div
-                      key={index}
-                      css={{
-                        display: 'flex',
-                        justifyContent: 'flex-start'
-                      }}
-                    >
-                      <div
-                        css={{
-                          maxWidth: '80%',
-                          padding: '10px 14px',
-                          borderRadius: '12px',
-                          fontSize: '14px',
-                          lineHeight: '1.5',
-                          backgroundColor: colors.light,
-                          color: GRAY_800
-                        }}
-                      >
-                        <MarkdownText text={part.text} />
-                      </div>
-                    </div>
-                  );
-                }
-                // Tool status - separate styled block
-                if (part.type.startsWith('tool-')) {
-                  const toolName = part.type.replace('tool-', '');
-                  const toolPart = part as Record<string, unknown>;
-                  return (
-                    <div
-                      key={index}
-                      css={{
-                        display: 'flex',
-                        justifyContent: 'flex-start'
-                      }}
-                    >
-                      <ToolStatus
-                        toolName={toolName}
-                        state={toolPart.state as string}
-                        input={toolPart.input as { query?: string }}
-                        output={toolPart.output}
-                        linkColor={colors.primary}
-                      />
-                    </div>
-                  );
-                }
-                return null;
-              })}
-            </Fragment>
-          )
-        )}
-
-        {isLoading && !hasAssistantMessage && (
-          <div css={{ display: 'flex', justifyContent: 'flex-start' }}>
-            <div
-              css={{
-                padding: '10px 14px',
-                borderRadius: '12px',
-                backgroundColor: colors.light,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: GRAY_400,
+                fontSize: '20px',
+                lineHeight: 1,
+                width: '26px',
+                height: '26px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <SpinnerIcon />
-              <span css={{ fontSize: '14px', color: colors.primary }}>
-                Thinking...
-              </span>
-            </div>
-          </div>
-        )}
-
-        {error && (
-          <div
-            css={{
-              padding: '10px 14px',
-              borderRadius: '8px',
-              backgroundColor: '#fef2f2',
-              color: '#dc2626',
-              fontSize: '14px'
-            }}
-          >
-            Something went wrong. Please try again.
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Workflow action buttons */}
-      {workflowActions.length > 0 && (
-        <div
-          css={{
-            position: 'relative',
-            zIndex: 1,
-            borderTop: `1px solid ${GRAY_200}`,
-            backgroundColor: GRAY_50,
-            padding: '8px 16px',
-            display: 'flex',
-            gap: '6px',
-            overflowX: 'auto'
-          }}
-        >
-          {workflowActions.map((action, index) => (
-            <button
-              key={index}
-              type='button'
-              disabled={isLoading}
-              onClick={() => handleWorkflowAction(action)}
-              onMouseEnter={(e: React.MouseEvent) => {
-                if (!action.description) return;
-                const r = e.currentTarget.getBoundingClientRect();
-                setActionTooltip({
-                  text: action.description,
-                  x: r.left + r.width / 2,
-                  y: r.top
-                });
-              }}
-              onMouseLeave={() => setActionTooltip(null)}
-              css={{
+                justifyContent: 'center',
                 flexShrink: 0,
-                padding: '4px 10px',
-                fontSize: '12px',
-                border: `1px solid ${colors.primary}`,
-                borderRadius: '12px',
-                backgroundColor: 'white',
-                color: colors.primary,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                ':disabled': { opacity: 0.5, cursor: 'not-allowed' },
-                ':hover:not(:disabled)': { backgroundColor: colors.light },
-                transition: 'background-color 0.15s, color 0.15s'
+                borderRadius: '50%',
+                ':hover': { color: GRAY_800, backgroundColor: GRAY_100 }
               }}
             >
-              {action.name}
+              +
             </button>
-          ))}
-          {actionTooltip && (
-            <div
-              css={{
-                position: 'fixed',
-                top: actionTooltip.y - 34,
-                left: actionTooltip.x,
-                transform: 'translateX(-50%)',
-                backgroundColor: 'rgba(0,0,0,0.9)',
-                color: 'white',
-                fontSize: '12px',
-                padding: '4px 8px',
-                borderRadius: '4px',
-                whiteSpace: 'nowrap',
-                pointerEvents: 'none',
-                zIndex: 10000
-              }}
-            >
-              {actionTooltip.text}
-            </div>
-          )}
-        </div>
-      )}
 
-      {/* Input */}
-      <div
-        css={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '12px 16px',
-          borderTop: `1px solid ${GRAY_200}`,
-          backgroundColor: GRAY_50
-        }}
-      >
-        <input
-          type='text'
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder='Type a message...'
-          css={{
-            flex: 1,
-            padding: '10px 14px',
-            border: `1px solid ${GRAY_200}`,
-            borderRadius: '8px',
-            fontSize: '14px',
-            outline: 'none',
-            transition: 'border-color 0.2s',
-            ':focus': {
-              borderColor: colors.primary
-            }
-          }}
-        />
-        <button
-          type='button'
-          onClick={handleSend}
-          disabled={isLoading || !input.trim()}
-          css={{
-            padding: '10px',
-            backgroundColor: colors.primary,
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'background-color 0.2s',
-            ':hover:not(:disabled)': {
-              backgroundColor: colors.hover
-            },
-            ':disabled': {
-              backgroundColor: colors.disabled,
-              cursor: 'not-allowed'
-            }
-          }}
-        >
-          <SendIcon />
-        </button>
+            {/* Textarea */}
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height =
+                  Math.min(e.target.scrollHeight, 120) + 'px';
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder={isRecording ? 'Listening...' : 'Ask anything'}
+              rows={1}
+              css={{
+                flex: 1,
+                border: 'none',
+                resize: 'none',
+                fontSize: '14px',
+                outline: 'none',
+                backgroundColor: 'transparent',
+                lineHeight: '1.5',
+                maxHeight: '120px',
+                overflowY: 'auto',
+                boxSizing: 'border-box',
+                fontFamily: 'inherit',
+                padding: '4px 0'
+              }}
+            />
+
+            {/* Voice / Send */}
+            {input.trim() || attachedFiles.length > 0 ? (
+              <button
+                type='button'
+                onClick={handleSend}
+                disabled={isLoading}
+                css={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  backgroundColor: isLoading ? GRAY_200 : colors.primary,
+                  color: 'white',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  transition: 'background-color 0.2s',
+                  ':hover:not(:disabled)': { backgroundColor: colors.hover },
+                  ':disabled': { cursor: 'not-allowed' }
+                }}
+              >
+                <ArrowUpIcon />
+              </button>
+            ) : (
+              <button
+                type='button'
+                onClick={handleToggleVoice}
+                disabled={isLoading}
+                css={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  backgroundColor: isRecording ? '#ef4444' : colors.primary,
+                  color: 'white',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  transition: 'background-color 0.2s',
+                  ':hover:not(:disabled)': {
+                    backgroundColor: isRecording ? '#dc2626' : colors.hover
+                  },
+                  ':disabled': { cursor: 'not-allowed' }
+                }}
+              >
+                <WaveformIcon />
+              </button>
+            )}
+          </div>
+
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 
