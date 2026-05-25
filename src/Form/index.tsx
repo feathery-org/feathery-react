@@ -430,7 +430,7 @@ function Form({
   const getPendingFileUploadKeys = () => {
     return Object.entries(fileRetryStatus).reduce<string[]>(
       (pending, [fieldKey, status]) => {
-        if (status !== false) return pending;
+        if (status) return pending;
         const servar = getServarByFieldKey(fieldKey);
         if (!servar) return pending;
         if (servar.type !== 'file_upload' && servar.type !== 'signature')
