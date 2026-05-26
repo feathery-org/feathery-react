@@ -201,7 +201,10 @@ import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
 import { fieldAllowedFromList } from './grid/Element/utils/utils';
 import { triggerPersona } from '../integrations/persona';
 import Collaborator from '../utils/entities/Collaborator';
-import { useOfflineRequestHandler } from '../utils/offlineRequestHandler';
+import {
+  useOfflineRequestHandler,
+  verifyConnectivity
+} from '../utils/offlineRequestHandler';
 import {
   removeCustomErrorHandler,
   setCustomErrorHandler
@@ -1806,7 +1809,7 @@ function Form({
           requireSuccessfulFileUploads();
 
           // Block form completion if user is actively offline
-          if (!navigator.onLine) {
+          if (!(await verifyConnectivity())) {
             throw new Error(
               'You are offline. Please check your connection and try again.'
             );

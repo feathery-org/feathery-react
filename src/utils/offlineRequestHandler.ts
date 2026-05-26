@@ -56,6 +56,52 @@ interface SerializedRequest {
   retryAttempts?: number;
 }
 
+let _connectivityCache: { online: boolean; timestamp: number } | null = null;
+let _connectivityProbe: Promise<boolean> | null = null;
+const CONNECTIVITY_CACHE_TTL_MS = 3_000;
+
+/**
+ * navigator.onLine can return false negatives in some browsers/environments.
+ * When it reports offline, probe the network directly before trusting it.
+ * Results are cached for 3 s and concurrent calls share one in-flight probe.
+ */
+export async function verifyConnectivity(): Promise<boolean> {
+  if (navigator.onLine) return true;
+
+  const now = Date.now();
+  if (
+    _connectivityCache &&
+    now - _connectivityCache.timestamp < CONNECTIVITY_CACHE_TTL_MS
+  ) {
+    return _connectivityCache.online;
+  }
+
+  if (!_connectivityProbe) {
+    _connectivityProbe = (async (timeoutMs = 5000) => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        await fetch('https://www.google.com/generate_204', {
+          method: 'HEAD',
+          mode: 'no-cors',
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        _connectivityCache = { online: true, timestamp: Date.now() };
+        return true;
+      } catch {
+        _connectivityCache = { online: false, timestamp: Date.now() };
+        return false;
+      }
+    })().finally(() => {
+      _connectivityProbe = null;
+    });
+  }
+
+  return _connectivityProbe;
+}
+
 const beforeUnloadEventHandler = (event: any) => {
   // allow navigation if user has not interacted with form
   if (!isInteractionDetected()) return;
@@ -244,7 +290,7 @@ export class OfflineRequestHandler {
     stepKey?: string,
     metadata?: RequestMetadata
   ): Promise<void> {
-    if (navigator.onLine) {
+    if (await verifyConnectivity()) {
       // Prevent page unload while processing requests to avoid data loss
       trackUnload();
       if (this.indexedDBSupported) {
@@ -390,7 +436,7 @@ export class OfflineRequestHandler {
       return;
     }
 
-    if (!navigator.onLine) {
+    if (!(await verifyConnectivity())) {
       // If offline, block until requests are replayed from online event handler
       await this.onlineAndReplayed();
       return;
@@ -504,7 +550,7 @@ export class OfflineRequestHandler {
               attempts++;
               await this.updateRetryAttempts(key, attempts);
 
-              if (navigator.onLine) {
+              if (await verifyConnectivity()) {
                 const nextDelay = this.getExponentialDelay(attempts);
                 if (attempts >= this.maxRetryAttempts) {
                   // Skip alerting when a specific field upload already surfaces its own retry error
